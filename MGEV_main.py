@@ -10,7 +10,7 @@ philipp.rosner@tum.de
 September 2nd, 2021
 
 --- Contributors ---
-David Eickholt, B.Sc. - Semester Thesis
+David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 
 --- Detailed Description ---
 This script models an energy system representing a minigrid for rural electrification in sub-saharan Africa and its
