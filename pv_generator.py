@@ -53,6 +53,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import os
+import math
 
 from datetime import datetime, date
 from scipy import integrate
@@ -61,6 +62,12 @@ from scipy import integrate
 # Function Definitions
 ###############################################################################
 
+def circ_movmean(array, windowsize):
+    oh = math.floor(windowsize/2)
+    longarray = np.concatenate((array[-oh:], array, array[:oh]), axis=0)
+    output = [np.average(longarray[pos - oh : pos + oh + 1], weights = [1, 1.5, 2, 1.5, 1]) for pos in range(0+oh,len(longarray)-oh)]
+    return output
+
 ###############################################################################
 # Input
 ###############################################################################
@@ -68,6 +75,7 @@ from scipy import integrate
 use_api = False  # If true, new data is downloaded via PVGIS APIand no local file is used. Otherwise, a local file is used.
 
 week2watch = 2
+window_size = 5  # odd number required
 
 pvgis_filename = "Zatta_CI_1kWp.csv"
 pvgis_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", pvgis_filename)
@@ -109,40 +117,42 @@ pvgis_data["P"] = pvgis_data["P"] / 1000
 # Generate weekwise statistical information
 ##########################################################################
 
-weekly_data = pd.DataFrame(columns=['isoweek'])
-weekly_data['isoweek'] = list(range(1,54))
-key_weekdata = np.zeros((53, 5))
+weekly_data = pd.DataFrame()
+key_weekdata = np.zeros((53, 7))
 
-for week in range(1, 54):#(1, 54)
-    onlyweek = pvgis_data[pvgis_data['week'] == week]
-    hourly_data = pd.DataFrame()
+for week in range(1, 54):
+    dayids = list(pvgis_data[pvgis_data['week'] == week]['dayid'].unique())
+    hourly_data = pvgis_data[pvgis_data['dayid'].isin(dayids)].pivot(index='hour', columns='dayid', values='P')
 
-    for day in onlyweek['dayid'].unique():
-        hourly_data[str(day)] = onlyweek[onlyweek.dayid == day].P.tolist()
+    integrals = []
+    [integrals.append(integrate.trapz(hourly_data[dayid])) for dayid in dayids]
+    integrals = pd.DataFrame([integrals], columns=hourly_data.columns, index=['int'])
+    hourly_data = pd.concat([hourly_data, integrals])
 
-    integrals = np.zeros((1, len(hourly_data.columns)))
-    for day in range(0,len(hourly_data.columns)):
-        integrals[0, day] = integrate.trapz(hourly_data.iloc[:, day])
-
-    hourly_data = hourly_data.append(pd.DataFrame(integrals, index=[24], columns=hourly_data.columns))
     hourly_data['mean'] = hourly_data.mean(axis=1)
     hourly_data['median'] = hourly_data.drop('mean', axis=1).median(axis=1)
     hourly_data['std'] = hourly_data.drop(['mean', 'median'], axis=1).std(axis=1)
 
-    key_weekdata[week-1, 0] = hourly_data.loc[24,'mean']
-    key_weekdata[week-1, 1] = hourly_data.loc[24,'median']
-    key_weekdata[week-1, 2] = hourly_data.loc[24,'std']
-    key_weekdata[week-1, 3] = hourly_data.drop(['mean', 'median', 'std'], axis=1).iloc[24].max()
-    key_weekdata[week-1, 4] = hourly_data.drop(['mean', 'median', 'std'], axis=1).iloc[24].min()
+    key_weekdata[week - 1, 0] = week
+    key_weekdata[week - 1, 1] = len(hourly_data.columns)
+    key_weekdata[week - 1, 2] = hourly_data.loc['int', 'mean']
+    key_weekdata[week - 1, 3] = hourly_data.loc['int', 'median']
+    key_weekdata[week - 1, 4] = hourly_data.loc['int', 'std']
+    key_weekdata[week - 1, 5] = hourly_data.drop(['mean', 'median', 'std'], axis=1).loc['int'].max()
+    key_weekdata[week - 1, 6] = hourly_data.drop(['mean', 'median', 'std'], axis=1).loc['int'].min()
+
 
     if week == week2watch:
         watchweek = hourly_data
 
-weekly_data['mean'] = key_weekdata[:, 0]
-weekly_data['median'] = key_weekdata[:, 1]
-weekly_data['std'] = key_weekdata[:, 2]
-weekly_data['max'] = key_weekdata[:, 3]
-weekly_data['min'] = key_weekdata[:, 4]
+weekly_data = pd.DataFrame(key_weekdata, columns=['isoweek', 'days', 'mean', 'median', 'std', 'max', 'min'])
+weekly_data['mean_sm'] = circ_movmean(weekly_data['mean'], window_size)
+weekly_data['median_sm'] = circ_movmean(weekly_data['median'], window_size)
+weekly_data['std_sm'] = circ_movmean(weekly_data['std'], window_size)
+weekly_data['max_sm'] = circ_movmean(weekly_data['max'], window_size)
+weekly_data['min_sm'] = circ_movmean(weekly_data['min'], window_size)
+
+print(weekly_data)
 
 ##########################################################################
 # Save and plot data
@@ -154,12 +164,18 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.set(title='Photovoltaic power prediction', xlabel='ISO calendar week', ylabel='Daily normalized PV energy generation in kWh/kWp')
 plt.ylim((0,8))
-plt.plot(weekly_data['isoweek'], weekly_data['mean'])
-plt.plot(weekly_data['isoweek'], weekly_data['median'])
-plt.plot(weekly_data['isoweek'], weekly_data['mean'] + weekly_data['std'])
-plt.plot(weekly_data['isoweek'], weekly_data['mean'] - weekly_data['std'])
-plt.plot(weekly_data['isoweek'], weekly_data['max'])
-plt.plot(weekly_data['isoweek'], weekly_data['min'])
+plt.plot(weekly_data['isoweek'], weekly_data['mean'], 'b+')
+plt.plot(weekly_data['isoweek'], weekly_data['median'], 'c+')
+plt.plot(weekly_data['isoweek'], weekly_data['mean'] + weekly_data['std'], 'g+')
+plt.plot(weekly_data['isoweek'], weekly_data['mean'] - weekly_data['std'], 'g+')
+plt.plot(weekly_data['isoweek'], weekly_data['max'], 'r+')
+plt.plot(weekly_data['isoweek'], weekly_data['min'], 'r+')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'], 'b-')
+plt.plot(weekly_data['isoweek'], weekly_data['median_sm'], 'c-')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] + weekly_data['std'], 'g-')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] - weekly_data['std'], 'g-')
+plt.plot(weekly_data['isoweek'], weekly_data['max_sm'], 'r-')
+plt.plot(weekly_data['isoweek'], weekly_data['min_sm'], 'r-')
 plt.show()
 
 fig = plt.figure()
