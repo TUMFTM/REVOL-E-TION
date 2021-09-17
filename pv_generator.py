@@ -75,6 +75,7 @@ def circ_movmean(array, windowsize):
 use_api = False  # If true, new data is downloaded via PVGIS APIand no local file is used. Otherwise, a local file is used.
 
 week2watch = 2
+hours2watch = list(range(6, 19))
 window_size = 5  # odd number required
 
 pvgis_filename = "Zatta_CI_1kWp.csv"
@@ -152,7 +153,10 @@ weekly_data['std_sm'] = circ_movmean(weekly_data['std'], window_size)
 weekly_data['max_sm'] = circ_movmean(weekly_data['max'], window_size)
 weekly_data['min_sm'] = circ_movmean(weekly_data['min'], window_size)
 
+print('Weekly data')
 print(weekly_data)
+print('\n hourly data of examined week')
+print(watchweek.head())
 
 ##########################################################################
 # Save and plot data
@@ -160,9 +164,10 @@ print(weekly_data)
 
 weekly_data.to_csv(path_or_buf=output_filepath)
 
-fig = plt.figure()
-ax = fig.add_subplot(1, 1, 1)
-ax.set(title='Photovoltaic power prediction', xlabel='ISO calendar week', ylabel='Daily normalized PV energy generation in kWh/kWp')
+fig1 = plt.figure()
+plt.title('Photovoltaic power prediction')
+plt.xlabel('ISO calendar week')
+plt.ylabel('Daily normalized PV energy generation in kWh/kWp')
 plt.ylim((0,8))
 plt.plot(weekly_data['isoweek'], weekly_data['mean'], 'b+')
 plt.plot(weekly_data['isoweek'], weekly_data['median'], 'c+')
@@ -178,10 +183,28 @@ plt.plot(weekly_data['isoweek'], weekly_data['max_sm'], 'r-')
 plt.plot(weekly_data['isoweek'], weekly_data['min_sm'], 'r-')
 plt.show()
 
-fig = plt.figure()
-ax = fig.add_subplot(1, 1, 1)
-ax.set(title='Photovoltaic power prediction', xlabel='hour of the day', ylabel='Normalized PV power generation in kW/kWp')
-plt.ylim((0,1.5))
+watchweek.drop(['mean', 'median', 'std'], axis=1).iloc[0:23].plot.line(x=None, y=None, color='yellow', legend=False)
+watchweek['mean'].iloc[0:23].plot.line(x=None, y=None, color='blue', legend=False)
+watchweek['median'].iloc[0:23].plot.line(x=None, y=None, color='cyan', legend=False)
+watchweek[''].iloc[0:23].plot.line(x=None, y=None, color='yellow', legend=False)
+plt.title('Photovoltaic power model')
+plt.xlabel('hour of the day')
+plt.ylabel('Normalized PV power generation in kW/kWp')
+plt.xlim((0, 24))
+plt.ylim((0, 1))
+plt.show()
+
+fig, ax=plt.subplots(2, 6, sharex=True, figsize=(25,15))
+plt.xlim(left=0)
+plt.title('PDFs for week ' + str(week2watch))
+m=0
+for i in range(2):
+    for j in range(6):
+        hour = hours2watch[m]
+        kfactor = watchweek.drop(['mean', 'median', 'std'], axis=1).iloc[hour] / watchweek.drop(['mean', 'median', 'std'], axis=1).iloc[hour].max()
+        kfactor.hist(bins=10, ax=ax[i,j])
+        ax[i, j].set_title('hour' + str(hour))
+        m+=1
 plt.show()
 
 
