@@ -10,7 +10,7 @@ philipp.rosner@tum.de
 September 2nd, 2021
 
 --- Contributors ---
-David Eickholt, B.Sc. - Semester Thesis
+David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 
 --- Detailed Description ---
 This script models an energy system representing a minigrid for rural electrification in sub-saharan Africa and its
@@ -37,48 +37,49 @@ license:    GPLv3
 
 from oemof.tools import logger, economics
 from oemof import solph
-from oemof.solph import processing, views
 
-from datetime import datetime as dt
-
-import matplotlib.pyplot as plt
-import importlib
 import logging
 import os
 import pandas as pd
-import numpy as np
-import pprint as pp
-import datetime
+
+from datetime import datetime as dt
 
 ###############################################################################
 # Function Definitions
 ###############################################################################
 
-def adjust_capex(ce, me, ls, wacc):
+def discount(value, deltat, discrate):
     """
-    This function adjusts a component's capex (ce) to include discounted present cost for maintenance (pme)
+    This function calculates the present cost of an actual cost in the future (in year deltat)
     """
-    pme = 0                 # initialize present maintenance cost variable
-    for i in range(0,ls):
-        pme += present_cost(me, ls, wacc)
-    adj_ce = ce + pme
-    return adj_ce
-
-def present_cost(cost, ts, wacc):
-    """
-    This function calculates the present cost of an actual cost in the future (ts years ahead)
-    """
-    pc = cost / ((1 + wacc) ** (ts + 1))
+    pc = value / ((1 + discrate) ** deltat)  # used to be (deltat + 1) - why?
     return pc
+
+def acc_discount(value, ts, discrate):
+    """
+    This function calculates the accumulated present cost of a yearly cost in the future (from now to ls years ahead)
+    """
+    apc = 0
+    for year in range(0,ts):
+        apc += discount(value, year, discrate)
+    return apc
+
+def adj_ce(ce, me, ls, wacc):
+    """
+    This function adjusts a component's capex (ce) to include discounted present cost for time based maintenance (pme)
+    """
+    ace = ce + acc_discount(me, ls, wacc)
+    return ace
 
 ###############################################################################
 # Input
 ###############################################################################
 
 # Simulation options
-sim_name = "MGEV_main"      # name of scenario
+sim_name = "mg_ev_main"      # name of scenario
 sim_solver = "cbc"          # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_debug = False           # activates mathematical model saving
+epsi = 1e-6                 # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 sim_ts = dt.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
 sim_tsname = sim_ts + "_" + sim_name
 sim_resultpath = os.path.join(os.getcwd(), "results")
@@ -95,7 +96,7 @@ dti = pd.date_range(dti_start, periods=dti_num, freq=dti_freq)  # create dateran
 
 # Project data
 wacc = 0.07                 # unitless weighted average cost of capital for the project
-epsi = 1e-6                 # minimum variable cost in k$/kWh for transformers to incentivize minimum flow
+
 proj_ls = 25                # project duration in years
 
 # External data file
@@ -108,36 +109,37 @@ trafo_eff = 0.95            # unitless bidirectional conversion efficiency
 
 # Wind component data
 wind_enable = True
-wind_ce = 1.355             # capital expenses of the component in $/W
-wind_me = 0                 # maintenance expenses of the component in $/(W*year)
-wind_oe = 0                 # operational expenses of the component in $/Wh
+wind_sce = 1.355            # specific capital expenses of the component in $/W
+wind_sme = 0                # specific maintenance expenses of the component in $/(W*year)
+wind_soe = 0                # specific operational expenses of the component in $/Wh
 wind_ls= 20                 # lifespan of the component in years
-wind_ace = adjust_capex(wind_ce, wind_me, wind_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+wind_ace = adj_ce(wind_sce, wind_sme, wind_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
 wind_epc = economics.annuity(capex=wind_ace, n=proj_ls, wacc=wacc, u=wind_ls)
 
 # Photovoltaic array component data
 pv_enable = True
-pv_ce = 0.8                 # capital expenses of the component in $/W
-pv_me = 0                   # maintenance expenses of the component in $/(W*year)
-pv_oe = 0                   # operational expenses of the component in $/Wh
+#pv_data =
+pv_sce = 0.8                # specific capital expenses of the component in $/W
+pv_sme = 0                  # specific maintenance expenses of the component in $/(W*year)
+pv_soe = 0                  # specific operational expenses of the component in $/Wh
 pv_ls = 25                  # lifespan of the component in years
-pv_ace = adjust_capex(pv_ce, pv_oe, pv_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+pv_ace = adj_ce(pv_sce, pv_soe, pv_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
 pv_epc = economics.annuity(capex=pv_ace, n=proj_ls, wacc=wacc, u=pv_ls)
 
 # Diesel generator component data
 gen_enable = False
-gen_ce = 1.15               # capital expenses of the component in $/W
-gen_me = 0                  # maintenance expenses of the component in $/(W*year)
-gen_oe = 0.00036            # operational expenses of the component in $/Wh
+gen_sce = 1.15              # specific capital expenses of the component in $/W
+gen_sme = 0                 # specific maintenance expenses of the component in $/(W*year)
+gen_soe = 0.00036           # specific operational expenses of the component in $/Wh
 gen_ls = 10                 # lifespan of the component in years
-gen_ace = adjust_capex(gen_ce, gen_oe, gen_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+gen_ace = adj_ce(gen_sce, gen_soe, gen_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
 gen_epc = economics.annuity(capex=gen_ace, n=proj_ls, wacc=wacc, u=gen_ls)
 
 # Stationary storage system component data
 ess_enable = True
-ess_ce = 0.8                # capital expenses of the component in $/Wh
-ess_me = 0                  # maintenance expenses of the component in $/(Wh*year)
-ess_oe = 0                  # operational expenses of the component in $/Wh
+ess_sce = 0.8               # specific capital expenses of the component in $/Wh
+ess_sme = 0                 # specific maintenance expenses of the component in $/(Wh*year)
+ess_soe = 0                 # specific operational expenses of the component in $/Wh
 ess_ls = 10                 # lifespan of the component in years
 ess_chg_eff = 0.95          # charging efficiency
 ess_dis_eff = 0.85          # discharge efficiency
@@ -145,7 +147,7 @@ ess_chg_crate = 0.5         # maximum charging C-rate in 1/h
 ess_dis_crate = 0.5         # maximum discharging C-rate in 1/h
 ess_init_soc = 0.5          # initial state of charge
 ess_sd = 0                  # self-discharge rate of the component in ???
-ess_ace = adjust_capex(ess_ce, ess_me, ess_ls, wacc)  # adjusted ce (including maintenance) of the component in $/Wh
+ess_ace = adj_ce(ess_sce, ess_sme, ess_ls, wacc)  # adjusted ce (including maintenance) of the component in $/Wh
 ess_epc = economics.annuity(capex=ess_ace, n=proj_ls, wacc=wacc, u=ess_ls)
 
 # BEV
@@ -262,7 +264,7 @@ if pv_enable:
 if gen_enable:
     gen_src = solph.Source(
         label='gen_src',
-        outputs={ac_bus: solph.Flow(investment=solph.Investment(ep_costs=gen_epc),variable_costs=gen_oe)})
+        outputs={ac_bus: solph.Flow(investment=solph.Investment(ep_costs=gen_epc),variable_costs=gen_soe)})
     es.add(gen_src)
 
 ##########################################################################
@@ -400,7 +402,7 @@ if sim_debug:
 
 # Solve the optimization problem
 logging.info("Solve the optimization problem")
-om.solve(solver=sim_solver, solve_kwargs={"tee": True})  # If "tee" is True, solver messages will be displayed
+om.solve(solver=sim_solver, solve_kwargs={"tee": False})  # If "tee" is True, solver messages will be displayed
 
 # Add the results to the energy system object and dump it as an .oemof file
 logging.info("Save model and result data into an energy system file")
@@ -409,11 +411,11 @@ es.results["meta"] = solph.processing.meta_results(om)
 es.dump(sim_resultpath,sim_tsname + ".oemof")
 
 # Create a pandas dataframe from the results and dump it as a .csv file
-es_results = processing.create_dataframe(om)
+es_results = solph.processing.create_dataframe(om)
 es_results.to_csv(os.path.join(sim_resultpath,sim_tsname + ".csv"), sep=';')
 
 ##########################################################################
-# Display key results in text
+# Display key results in text and calculate economic parameters
 ##########################################################################
 
 logging.info("Display key results")
@@ -433,10 +435,11 @@ print("#####")
 if wind_enable:
     wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
     wind_ten = results[(wind_src, wind_bus)]['sequences']['flow'].sum()
-    wind_tce = wind_inv * wind_ce
-    wind_tme = wind_inv * wind_me
-    wind_toe = wind_ten * wind_oe
+    wind_tce = wind_inv * wind_sce
+    wind_tme = wind_inv * wind_sme
+    wind_toe = wind_ten * wind_soe
     wind_ann = wind_inv * wind_epc + wind_toe
+    wind_tmpc = acc_discount(wind_tme, proj_ls, wacc)  # Total maintenance present cost
 
     print("Wind Power Results:")
     print("Optimum Capacity: " + str(wind_inv) + "W")
@@ -454,10 +457,11 @@ if wind_enable:
 if pv_enable:
     pv_inv = results[(pv_src, pv_bus)]["scalars"]["invest"]
     pv_ten = results[(pv_src, pv_bus)]['sequences']['flow'].sum()
-    pv_tce = pv_inv * pv_ce
-    pv_tme = pv_inv * pv_me
-    pv_toe = pv_ten * pv_oe
+    pv_tce = pv_inv * pv_sce
+    pv_tme = pv_inv * pv_sme
+    pv_toe = pv_ten * pv_soe
     pv_ann = pv_inv * pv_epc + pv_toe
+    pv_tmpc = acc_discount(pv_tme, proj_ls, wacc)  # Total maintenance present cost
 
     print("Solar Power Results:")
     print("Optimum Capacity: " + str(pv_inv) + "Wp")
@@ -475,10 +479,11 @@ if pv_enable:
 if gen_enable:
     gen_inv = results[(gen_src, ac_bus)]["scalars"]["invest"]
     gen_ten = results[(gen_src, ac_bus)]['sequences']['flow'].sum()
-    gen_tce = gen_inv * gen_ce
-    gen_tme = gen_inv * gen_me
-    gen_toe = gen_ten * gen_oe
+    gen_tce = gen_inv * gen_sce
+    gen_tme = gen_inv * gen_sme
+    gen_toe = gen_ten * gen_soe
     gen_ann = gen_inv * gen_epc + gen_toe
+    gen_tmpc = acc_discount(gen_tme, proj_ls, wacc)  # Total maintenance present cost
 
     print("Diesel Power Results:")
     print("Optimum Capacity: " + str(gen_inv) + "W")
@@ -496,10 +501,11 @@ if gen_enable:
 if ess_enable:
     ess_inv = results[(ess, None)]["scalars"]["invest"]
     ess_ten = results[(ess, dc_bus)]['sequences']['flow'].sum()  # absolute sum needed in the future!!!
-    ess_tce = ess_inv * ess_ce
-    ess_tme = ess_inv * ess_me
-    ess_toe = ess_ten * ess_oe
+    ess_tce = ess_inv * ess_sce
+    ess_tme = ess_inv * ess_sme
+    ess_toe = ess_ten * ess_soe
     ess_ann = ess_inv * ess_epc + ess_toe
+    ess_tmpc = acc_discount(ess_tme, proj_ls, wacc)  # Total maintenance present cost
 
     print("Energy Storage Results:")
     print("Optimum Capacity: " + str(ess_inv) + "W")
@@ -520,50 +526,24 @@ if bev_enable:
     total_bev_dem = total_bev_chg - total_bev_dis
     total_dem += total_bev_dem
 
+    print("Electric Vehicle Results:")
+    print("Gross Charged Energy: " + str(total_bev_chg) + "Wh")
+    print("Net Charged Energy: " + str(total_bev_dem) + "Wh")
+    print("#####")
+
 ##########################################################################
 # LCOE and NPC calculation
 ##########################################################################
 
-# disc_factor_project = 0
-# for i in range(0,proj_ls)
-#     disc_factor_project += 1 / ((1 + wacc) ** (i+1))
-#
-# disc_wind_maint_project = wind_maint * disc_factor_project #Calculate the discounted maintainacne for the project lifespan
-# disc_pv_maint_project = pv_maint * disc_factor_project
-# disc_gen_maint_project = gen_maint * disc_factor_project
-# disc_ess_maint_project = ess_maint * disc_factor_project
-#
-# disc_total_energy = yearly_prod_energy * disc_factor_project
-# disc_used_energy = yearly_used_energy * disc_factor_project
-#
-# disc_fuel_cost = yearly_fuel_cost * disc_factor_project
-#
-# npc = (wind_epc * wind_invest + pv_epc * pv_invest + gen_epc * gen_invest + ess_epc * ess_invest + yearly_fuel_cost) \
-#       * disc_factor_project
-# prod_lcoe = npc/disc_total_energy
-# used_lcoe = npc/disc_used_energy
-#
-# print('Invested capacities and energy usage:')
-# print('Wind Investment: ' + str(wind_invest) + '[W] and ' + str(wind_invest * wind_capex) + '[Euro] upfront investment')
-# print('PV Investment: ' + str(pv_invest) + '[W] and ' + str(pv_invest * pv_capex) + '[Euro] upfront investment')
-# print('Generator Investment: ' + str(gen_invest) + '[W] and ' + str(gen_invest * gen_capex) + '[Euro] upfront investment')
-# print('Storage Investment: ' + str(ess_invest) + '[Wh] and ' + str(ess_invest * ess_capex) + '[Euro] upfront investment')
-#
-# print('Yearly fuel cost: ' + str(yearly_fuel_cost) + 'Euro')
-# print('Yearly maintenance: ' + str(maint_sum) + 'Euro')
-#
-# print('BEV demand: ' + str(bev_sum) + '[Wh]')
-# print('V2G usage: ' + str(v2g_sum) + '[Wh]')
-#
-# print('Yearly produced energy: ' + str(yearly_prod_energy) + '[Wh]')
-# print('Yearly used energy: ' + str(yearly_used_energy) + '[Wh]')
-#
-# print('Economic metrics: ')
-# print('Initial Investment: ' + str(initial_invest) + '[Euro]')
-# print('Annuity (Investments + Maintenance + Fuel): ' + str(annuity) + '[Euro]')
-# print('LCOE (produced energy): ' + str(prod_lcoe*1000) + '[Euro/kWh]')
-# print('LCOE (used energy): ' + str(used_lcoe*1000) + '[Euro/kWh]')
-# print('NPC: ' + str(npc) + '[Euro]')
+total_discdem = acc_discount(total_dem, proj_ls, wacc)
+total_lcoe = total_ann/total_dem
+
+print("Economic Results:")
+print("Initial Investment: " + str(total_ce) + "USD")
+print("Net Present Cost: ")
+print("Annuity: " + str(total_ann) + "USD")
+print("LCOE: " + str(total_lcoe) + "USD/kWh")
+print("#####")
 
 ##########################################################################
 # Save the results
