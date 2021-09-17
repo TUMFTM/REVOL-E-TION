@@ -7,7 +7,7 @@ Philipp Rosner, M.Sc.
 Institute of Automotive Technology
 Technical University of Munich
 philipp.rosner@tum.de
-September 2nd, 2021
+September 17th, 2021
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
@@ -15,15 +15,32 @@ David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 --- Detailed Description ---
 This script models an energy system representing a minigrid for rural electrification in sub-saharan Africa and its
 interaction with electric vehicles. It transforms the energy system graph into a (mixed-integer) linear program and
-transfers it to a solver. The results are saved and the most important aspects visualized.
+transfers it to a solver. The results, especially optimum component sizes  are saved and the most important aspects
+visualized.
 
 --- Input & Output ---
-The script requires input data in the code block "Input". Additionally, several .csv-files for timeseries data are
-required.
+The script requires input data in the code block "Input".
+Additionally, several .csv-files for timeseries data are required.
 
 --- Requirements ---
-This tool requires oemof.solph. Install by "pip install oemof.solph==0.4.4"
-All input data files need to be located in the same directory as this file
+This tool requires oemof.solph==0.4.4. Install by "pip install oemof.solph==0.4.4"
+oemof.solph requires Python>=3.7 and pyomo>=5.7.0.
+
+A (MI)LP solver is required as well. A very good open-source option is "CBC" which is available at
+    http://ampl.com/dl/open/cbc/cbc-win64.zip
+The unpacked executable should be packed in the same folder as this script.
+
+All input data files need to be located in ./scenarios
+
+Currently, due to a bug in pyomo, the following file has to be altered after installation as a quickfix:
+    C:\Users\USER\AppData\Roaming\Python\Python38\site-packages\oemof\solph\models.py
+The change occurs in lines 204ff. and comments out these operations
+    status = solver_results["Solver"][0]["Status"].key
+    termination_condition = solver_results["Solver"][0]["Termination condition"].key
+replacing them with
+    status = "ok"
+    termination_condition = "optimal"
+which disables a specific solver error occuring when looking for the .key method
 
 --- File Information ---
 coding:     utf-8
@@ -87,49 +104,37 @@ sim_solver = "cbc"          # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = False            # activates oemof model and result saving
 sim_debug = False           # activates mathematical model saving and extended solver output
 epsi = 1e-6                 # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-sim_ts = dt.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
-sim_tsname = sim_ts + "_" + sim_name
-sim_resultpath = os.path.join(os.getcwd(), "results")
-
-# Start logging
-logger.define_logging(logfile=sim_tsname + ".log")
-logging.info("Get input data")
 
 # Simulation timeframe
 dti_start = "1/1/2021"      # start date of the simulation
 dti_freq = 'H'              # time step length ('H'=hourly, '15M'=15 minutes)
-dti_num = 96                # total number of equidistant time steps
-dti = pd.date_range(dti_start, periods=dti_num, freq=dti_freq)  # create daterange object containing all timesteps
+dti_num = 8760                # total number of equidistant time steps
 
 # Project data
 wacc = 0.07                 # unitless weighted average cost of capital for the project
 proj_ls = 25                # project duration in years
 
-# External data file
-data_name = "New_data.csv"  # input data file containing timeseries for normalized power of RE and electricity demand
-data_filepath = os.path.join(os.getcwd(), data_name)
-data = pd.read_csv(data_filepath, sep=";")
+# Demand data file
+dem_filename = "dem_data.csv"  # input data file containing timeseries for electricity demand
 
 # AC-DC bus transformer component data
 trafo_eff = 0.95            # unitless bidirectional conversion efficiency
 
 # Wind component data
 wind_enable = False
+wind_filename = "wind_test.csv"  # name of the normalized wind power profile csv file in ./scenarios to evaluate
 wind_sce = 1.355            # specific capital expenses of the component in $/W
 wind_sme = 0                # specific maintenance expenses of the component in $/(W*year)
 wind_soe = 0                # specific operational expenses of the component in $/Wh
-wind_ls = 20                 # lifespan of the component in years
-wind_ace = adj_ce(wind_sce, wind_sme, wind_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
-wind_epc = economics.annuity(capex=wind_ace, n=proj_ls, wacc=wacc, u=wind_ls)
+wind_ls = 20                # lifespan of the component in years
 
 # Photovoltaic array component data
 pv_enable = True
+pv_filename = "Zatta_CI_1kWp.csv"  # name of the normalized pv power profile csv file in ./scenarios to evaluate
 pv_sce = 0.8                # specific capital expenses of the component in $/W
 pv_sme = 0                  # specific maintenance expenses of the component in $/(W*year)
 pv_soe = 0                  # specific operational expenses of the component in $/Wh
 pv_ls = 25                  # lifespan of the component in years
-pv_ace = adj_ce(pv_sce, pv_soe, pv_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
-pv_epc = economics.annuity(capex=pv_ace, n=proj_ls, wacc=wacc, u=pv_ls)
 
 # Diesel generator component data
 gen_enable = True
@@ -137,8 +142,6 @@ gen_sce = 1.5             # specific capital expenses of the component in $/W (o
 gen_sme = 0                 # specific maintenance expenses of the component in $/(W*year)
 gen_soe = 0.00065           # specific operational expenses of the component in $/Wh (original 0.00036)
 gen_ls = 10                 # lifespan of the component in years
-gen_ace = adj_ce(gen_sce, gen_soe, gen_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
-gen_epc = economics.annuity(capex=gen_ace, n=proj_ls, wacc=wacc, u=gen_ls)
 
 # Stationary storage system component data
 ess_enable = True
@@ -152,8 +155,6 @@ ess_chg_crate = 0.5         # maximum charging C-rate in 1/h
 ess_dis_crate = 0.5         # maximum discharging C-rate in 1/h
 ess_init_soc = 0.5          # initial state of charge
 ess_sd = 0                  # self-discharge rate of the component in ???
-ess_ace = adj_ce(ess_sce, ess_sme, ess_ls, wacc)  # adjusted ce (including maintenance) of the component in $/Wh
-ess_epc = economics.annuity(capex=ess_ace, n=proj_ls, wacc=wacc, u=ess_ls)
 
 # BEV
 bev_enable = True          #
@@ -164,9 +165,42 @@ bev_dis_pwr = 3600          #
 bev_charge_eff = 0.95       #
 bev_discharge_eff = 0.9     #
 bev_bat_size = 30000        #
-bev_data_name = "ind_car_data.csv"
-bev_filepath = os.path.join(os.getcwd(), bev_data_name)
+bev_filename = "ind_car_data.csv"
+
+##########################################################################
+# Process input data
+##########################################################################
+
+sim_ts = dt.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
+sim_tsname = sim_ts + "_" + sim_name
+sim_resultpath = os.path.join(os.getcwd(), "results")
+logger.define_logging(logfile=sim_tsname + ".log")
+
+dti = pd.date_range(dti_start, periods=dti_num, freq=dti_freq)  # create daterange object containing all timesteps
+
+dem_filepath = os.path.join(os.getcwd(), "scenarios", dem_filename)
+dem_data = pd.read_csv(dem_filepath, sep=",", skip_blank_lines=False)
+
+pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", pv_filename)
+pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
+pv_data['time'] = pd.to_datetime(pv_data['time'], format='%Y%m%d:%H%M')
+pv_data["P"] = pv_data["P"]/1000
+
+bev_filepath = os.path.join(os.getcwd(), bev_filename)
 bev_data = pd.read_csv(bev_filepath, sep=";")
+
+wind_ace = adj_ce(wind_sce, wind_sme, wind_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+wind_epc = economics.annuity(capex=wind_ace, n=proj_ls, wacc=wacc, u=wind_ls)
+
+pv_ace = adj_ce(pv_sce, pv_soe, pv_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+pv_epc = economics.annuity(capex=pv_ace, n=proj_ls, wacc=wacc, u=pv_ls)
+
+gen_ace = adj_ce(gen_sce, gen_soe, gen_ls, wacc)  # adjusted ce (including maintenance) of the component in $/W
+gen_epc = economics.annuity(capex=gen_ace, n=proj_ls, wacc=wacc, u=gen_ls)
+
+ess_ace = adj_ce(ess_sce, ess_sme, ess_ls, wacc)  # adjusted ce (including maintenance) of the component in $/Wh
+ess_epc = economics.annuity(capex=ess_ace, n=proj_ls, wacc=wacc, u=ess_ls)
+
 
 ##########################################################################
 # Initialize oemof energy system instance
@@ -204,7 +238,7 @@ dc_ac = solph.Transformer(
     conversion_factors={ac_bus: trafo_eff})
 dem = solph.Sink(
     label='dem',
-    inputs={ac_bus: solph.Flow(actual_value=data['demand'], nominal_value=1, fixed=True)}
+    inputs={ac_bus: solph.Flow(actual_value=dem_data['P'], nominal_value=1, fixed=True)}
     )
 exc = solph.Sink(
     label="exc",
@@ -230,7 +264,7 @@ if wind_enable:
         conversion_factors={ac_bus: 1})
     wind_src = solph.Source(
         label="wind_src",
-        outputs={wind_bus: solph.Flow(actual_value=data["wind_energy"], fixed=True, investment=solph.Investment(ep_costs=wind_epc))})
+        outputs={wind_bus: solph.Flow(actual_value=wind_data['P'], fixed=True, investment=solph.Investment(ep_costs=wind_epc))})
     wind_exc = solph.Sink(
         label="wind_exc",
         inputs={wind_bus: solph.Flow()})
@@ -256,7 +290,7 @@ if pv_enable:
         conversion_factors={dc_bus: 1})
     pv_src = solph.Source(
         label="pv_src",
-        outputs={pv_bus: solph.Flow(actual_value=data["pv_radiation"], fixed=True, investment=solph.Investment(ep_costs=pv_epc))})
+        outputs={pv_bus: solph.Flow(actual_value=pv_data["P"], fixed=True, investment=solph.Investment(ep_costs=pv_epc))})
     pv_exc = solph.Sink(
         label="pv_exc",
         inputs={pv_bus: solph.Flow()})
@@ -548,9 +582,13 @@ if bev_enable:
 ##########################################################################
 
 total_discdem = acc_discount(total_dem, proj_ls, wacc)
-total_lcoe = round(total_ann/total_dem,4)
+total_lcoe = round(total_ann/total_discdem,4)
+total_eta = round(total_dem/total_en,3)
 
 print("Economic Results:")
+print("Total supplied energy: " + str(total_dem) + "Wh")
+print("Total generated energy: " + str(total_en) + "Wh")
+print("Overall efficiency: " + str(total_eta))
 print("Initial Investment: " + str(total_ce) + "USD")
 print("Net Present Cost: functionality not implemented yet")
 print("Annuity: " + str(total_ann) + "USD")

@@ -1,7 +1,7 @@
-results
-lp_models
-scenarios
-.idea
+results/*
+lp_models/*
+scenarios/*
+.idea/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
