@@ -57,7 +57,7 @@ import logging
 import os
 import pandas as pd
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 import functions as fcs
@@ -69,7 +69,7 @@ import vehicle as veh
 
 # Simulation options
 sim_name = "mg_ev_main"     # name of scenario
-sim_solver = "cbc"          # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_solver = "gurobi"       # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = True             # "True" activates oemof model and result saving
 sim_debug = False           # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'              # time step length ('H'=hourly, other lengths not tested yet!)
@@ -95,6 +95,7 @@ wind_sce = 1.355            # specific capital expenses of the component in $/W
 wind_sme = 0                # specific maintenance expenses of the component in $/(W*year)
 wind_soe = 0                # specific operational expenses of the component in $/Wh
 wind_ls = 20                # lifespan of the component in years
+wind_cdc = 1                # annual ratio of component cost decrease
 
 # Photovoltaic array component data
 pv_enable = True
@@ -103,6 +104,7 @@ pv_sce = 0.8                # specific capital expenses of the component in $/W
 pv_sme = 0                  # specific maintenance expenses of the component in $/(W*year)
 pv_soe = 0                  # specific operational expenses of the component in $/Wh
 pv_ls = 25                  # lifespan of the component in years
+pv_cdc = 1                  # annual ratio of cost decrease
 
 # Diesel generator component data
 gen_enable = True
@@ -110,6 +112,7 @@ gen_sce = 1.5               # specific capital expenses of the component in $/W 
 gen_sme = 0                 # specific maintenance expenses of the component in $/(W*year)
 gen_soe = 0.00065           # specific operational expenses of the component in $/Wh (original 0.00036)
 gen_ls = 10                 # lifespan of the component in years
+gen_cdc = 1                 # annual ratio of component cost decrease
 
 # Stationary storage system component data
 ess_enable = True
@@ -123,6 +126,7 @@ ess_chg_crate = 0.5         # maximum charging C-rate in 1/h
 ess_dis_crate = 0.5         # maximum discharging C-rate in 1/h
 ess_init_soc = 0.5          # initial state of charge
 ess_sd = 0                  # self-discharge rate of the component in ???
+ess_cdc = 1                 # annual ratio of component cost decrease
 
 # BEV
 bev_enable = True
@@ -154,26 +158,34 @@ proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=sim_step).delet
 dem_filepath = os.path.join(os.getcwd(), "scenarios", dem_filename)
 dem_data = pd.read_csv(dem_filepath, sep=",", skip_blank_lines=False)
 
-pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", pv_filename)
-pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
-pv_data['time'] = pd.to_datetime(pv_data['time'], format='%Y%m%d:%H%M')
-pv_data["P"] = pv_data["P"]/1000
+if wind_enable:
+    wind_filepath = os.path.join(os.getcwd(), "scenarios", wind_filename)
+    wind_data = pd.read_csv(wind_filepath, sep=",", skip_blank_lines=False)
+    wind_ace = fcs.adj_ce(wind_sce, wind_sme, wind_ls,
+                          proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    wind_epc = fcs.ann_recur(wind_ace, wind_ls, proj_ls, proj_wacc, wind_cdc)
 
-bev_filepath = os.path.join(os.getcwd(), "scenarios", bev_filename)
-bev_data = pd.read_csv(bev_filepath, sep=";")
+if pv_enable:
+    pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", pv_filename)
+    pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
+    pv_data['time'] = pd.to_datetime(pv_data['time'], format='%Y%m%d:%H%M')
+    pv_data["P"] = pv_data["P"]/1000
+    pv_ace = fcs.adj_ce(pv_sce, pv_soe, pv_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    pv_epc = fcs.ann_recur(pv_ace, pv_ls, proj_ls, proj_wacc, pv_cdc)
 
-wind_ace = fcs.adj_ce(wind_sce, wind_sme, wind_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-wind_epc = fcs.ann_recur(wind_ace, wind_ls, proj_ls, proj_wacc)
+if gen_enable:
+    gen_ace = fcs.adj_ce(gen_sce, gen_soe, gen_ls,
+                         proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    gen_epc = fcs.ann_recur(gen_ace, gen_ls, proj_ls, proj_wacc, gen_cdc)
 
-pv_ace = fcs.adj_ce(pv_sce, pv_soe, pv_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-pv_epc = fcs.ann(pv_ace, pv_ls, proj_ls, proj_wacc)
+if ess_enable:
+    ess_ace = fcs.adj_ce(ess_sce, ess_sme, ess_ls,
+                         proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
+    ess_epc = fcs.ann_recur(ess_ace, ess_ls, proj_ls, proj_wacc, ess_cdc)
 
-gen_ace = fcs.adj_ce(gen_sce, gen_soe, gen_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-gen_epc = fcs.ann(gen_ace, gen_ls, proj_ls, proj_wacc)
-
-ess_ace = fcs.adj_ce(ess_sce, ess_sme, ess_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
-ess_epc = fcs.ann(ess_ace, ess_ls, proj_ls, proj_wacc)
-
+if bev_enable:
+    bev_filepath = os.path.join(os.getcwd(), "scenarios", bev_filename)
+    bev_data = pd.read_csv(bev_filepath, sep=";")
 
 ##########################################################################
 # Initialize oemof energy system instance
@@ -443,7 +455,7 @@ print("#####")
 if wind_enable:
     wind_inv = round(results[(wind_src, wind_bus)]["scalars"]["invest"])
     wind_ten = round(results[(wind_src, wind_bus)]['sequences']['flow'].sum())
-    wind_tce = round(wind_inv * wind_sce)
+    wind_ice = round(wind_inv * wind_sce)
     wind_tme = round(wind_inv * wind_sme)
     wind_toe = round(wind_ten * wind_soe)
     wind_ann = round(wind_inv * wind_epc + wind_toe)
@@ -451,14 +463,14 @@ if wind_enable:
 
     print("Wind Power Results:")
     print("Optimum Capacity: " + str(round(wind_inv/1000)) + " kW")
-    print("Capital Expenses: " + str(wind_tce) + " USD")
+    print("Initial Capital Expenses: " + str(wind_ice) + " USD")
     print("Maintenance Expenses: " + str(wind_tme) + " USD")
     print("Operational Expenses: " + str(wind_toe) + " USD")
     print("Total Energy: " + str(round(wind_ten/1e6)) + " MWh")
     print("#####")
 
     total_en += wind_ten
-    total_ce += wind_tce
+    total_ce += wind_ice
     total_me += wind_tme
     total_oe += wind_toe
     total_ann += wind_ann
@@ -466,7 +478,7 @@ if wind_enable:
 if pv_enable:
     pv_inv = round(results[(pv_src, pv_bus)]["scalars"]["invest"])
     pv_ten = round(results[(pv_src, pv_bus)]['sequences']['flow'].sum())
-    pv_tce = round(pv_inv * pv_sce)
+    pv_ice = round(pv_inv * pv_sce)
     pv_tme = round(pv_inv * pv_sme)
     pv_toe = round(pv_ten * pv_soe)
     pv_ann = round(pv_inv * pv_epc + pv_toe)
@@ -474,14 +486,14 @@ if pv_enable:
 
     print("Solar Power Results:")
     print("Optimum Capacity: " + str(round(pv_inv/1000)) + " kW (peak)")
-    print("Capital Expenses: " + str(pv_tce) + " USD")
+    print("Capital Expenses: " + str(pv_ice) + " USD")
     print("Maintenance Expenses: " + str(pv_tme) + " USD")
     print("Operational Expenses: " + str(pv_toe) + " USD")
     print("Total Energy: " + str(round(pv_ten/1e6)) + " MWh")
     print("#####")
 
     total_en += pv_ten
-    total_ce += pv_tce
+    total_ce += pv_ice
     total_ann += pv_ann
     total_me += pv_tme
     total_oe += pv_toe
@@ -489,7 +501,7 @@ if pv_enable:
 if gen_enable:
     gen_inv = round(results[(gen_src, ac_bus)]["scalars"]["invest"])
     gen_ten = round(results[(gen_src, ac_bus)]['sequences']['flow'].sum())
-    gen_tce = round(gen_inv * gen_sce)
+    gen_ice = round(gen_inv * gen_sce)
     gen_tme = round(gen_inv * gen_sme)
     gen_toe = round(gen_ten * gen_soe)
     gen_ann = round(gen_inv * gen_epc + gen_toe)
@@ -497,14 +509,14 @@ if gen_enable:
 
     print("Diesel Power Results:")
     print("Optimum Capacity: " + str(round(gen_inv/1000)) + " kW")
-    print("Capital Expenses: " + str(gen_tce) + " USD")
+    print("Capital Expenses: " + str(gen_ice) + " USD")
     print("Maintenance Expenses: " + str(gen_tme) + " USD")
     print("Operational Expenses: " + str(gen_toe) + " USD")
     print("Total Energy: " + str(round(gen_ten/1e6)) + " MWh")
     print("#####")
 
     total_en += gen_ten
-    total_ce += gen_tce
+    total_ce += gen_ice
     total_ann += gen_ann
     total_me += gen_tme
     total_oe += gen_toe
@@ -512,7 +524,7 @@ if gen_enable:
 if ess_enable:
     ess_inv = round(results[(ess, None)]["scalars"]["invest"])
     ess_ten = round(results[(ess, dc_bus)]['sequences']['flow'].sum())  # absolute sum needed in the future!!!
-    ess_tce = round(ess_inv * ess_sce)
+    ess_ice = round(ess_inv * ess_sce)
     ess_tme = round(ess_inv * ess_sme)
     ess_toe = round(ess_ten * ess_soe)
     ess_ann = round(ess_inv * ess_epc + ess_toe)
@@ -520,13 +532,13 @@ if ess_enable:
 
     print("Energy Storage Results:")
     print("Optimum Capacity: " + str(round(ess_inv/1e3)) + " kWh")
-    print("Capital Expenses: " + str(ess_tce) + " USD")
+    print("Capital Expenses: " + str(ess_ice) + " USD")
     print("Maintenance Expenses: " + str(ess_tme) + " USD")
     print("Operational Expenses: " + str(ess_toe) + " USD")
     print("Total Energy: " + str(ess_ten) + " Wh")
     print("#####")
 
-    total_ce += ess_tce
+    total_ce += ess_ice
     total_ann += ess_ann
     total_me += ess_tme
     total_oe += ess_toe
@@ -546,10 +558,10 @@ if bev_enable:
 # LCOE and NPC calculation
 ##########################################################################
 
-total_npc = fcs.acc_discount(total_ce + total_me + total_oe, proj_ls, proj_wacc)
-total_discdem = fcs.acc_discount(total_dem, proj_ls, proj_wacc)
-total_lcoe = total_ann/total_discdem
-total_eta = total_dem/total_en
+total_npc = fcs.acc_discount(total_ce + total_me + total_oe, proj_ls, proj_wacc)  # update needed
+total_discdem = fcs.acc_discount(total_dem, proj_ls, proj_wacc)  # update needed
+total_lcoe = total_ann/total_discdem  # update needed
+total_eta = total_dem/total_en  # update needed
 
 print("Economic Results:")
 print("Total supplied energy: " + str(round(total_dem/1e6, 1)) + " MWh")
