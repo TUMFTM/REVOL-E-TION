@@ -1,7 +1,7 @@
 # MG_EV_Opti
 
 """
---- Tool name ---
+--- Toolset name ---
 Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
 
 --- Created by ---
@@ -9,26 +9,40 @@ Philipp Rosner, M.Sc.
 Institute of Automotive Technology
 Technical University of Munich
 philipp.rosner@tum.de
-September 2nd, 2021
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 
 --- Detailed Description ---
-This script models an energy system representing a minigrid for rural electrification in sub-saharan Africa and its
-interaction with electric vehicles. It transforms the energy system graph into a (mixed-integer) linear program and
-transfers it to a solver. The results are saved and the most important aspects visualized.
+This is a toolset to simulate electric vehicles operating in minigrids for rural electrification in emerging economies such as sub-saharan
+Africa and optimize component sizes to show least-cost and/or least-emission options. It models a stand-alone minigrid using graph-based
+representation, generates a pyomo model and hands it to a solver. Results are summarized in the 
 
 --- Input & Output ---
 The script requires input data in the code block "Input". 
 Additionally, several .csv-files for timeseries data are required.
 
 --- Requirements ---
-This tool requires oemof. Install by "pip install 'oemof.solph>=0.4,<0.5'"
-All input data files need to be located in the same directory as this file
+This code was designed to run on Python 3.8 under Windows 10 
+Packages required to run this code are:
+	oemof.solph >= 0.4.4
+	pyomo >=5.7.1
+	pandas
+	numpy
+	matplotlib
+	datetime
 
---- File Information ---
-coding:     utf-8
-license:    GPLv3
+--- Steps to run the code ---
+1.	Make sure to have installed the correct Python and Package versions listed above
+2.	Get the cbc solver executable from http://ampl.com/dl/open/cbc/cbc-win64.zip and place it in your working directiory
+3.	Generate the following folders in your working directory (they are not under version control):
+		./lp_models
+		./results
+		./scenarios
+		./scenarios/pvgis_data
+4.	Get pvgis data from https://re.jrc.ec.europa.eu/pvg_tools/en/#HR or the repository holder
+5.	Get exemplary vehicle and demand data from the repository holder
+6.	Run main.py	
+
 
 """
