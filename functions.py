@@ -28,7 +28,7 @@ license:    GPLv3
 
 def discount(value, deltat, discrate):
     """
-    This function calculates the present cost of an actual cost in the future (in year deltat)
+    This function calculates the present value of an actual cost in the future (in year deltat)
     """
     pc = value / ((1 + discrate) ** deltat)  # used to be (deltat + 1) - why?
     return pc
@@ -50,3 +50,21 @@ def adj_ce(ce, me, ls, discrate):
     """
     ace = ce + acc_discount(me, ls, discrate)
     return ace
+
+
+def ann(ce, hor, discrate):
+    """
+        This function calculates the annuity of an initial investment ce (the equivalent yearly sum to generate the same
+        NPV) over a horizon of hor years
+    """
+    a = ce * (discrate * (1 + discrate) ** hor) / ((1 + discrate) ** hor - 1)
+    return a
+
+
+def ann_recur(ce, ls, hor, discrate, cost_decr):
+    """
+        This function calculates the annuity of a recurring (every ls years) and cheapening (annual ratio cost_decr <1)
+        investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
+    """
+    a = ann(ce, hor, discrate) * ((1 - ((1-cost_decr)/(1+discrate))**hor) / (1 - ((1-cost_decr)/(1+discrate))**ls))
+    return a
