@@ -9,35 +9,22 @@ Technical University of Munich
 philipp.rosner@tum.de
 Created September 2nd, 2021
 
+Last update: September 19th, 2021
+
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 
 --- Detailed Description ---
-This script is the main model generator and optimizer for the toolset. It takes in data from external files
+This script is the main model generator and optimizer for the toolset.
+Its results are output to files and key ones printed to the terminal.
+Visualization is done via different scripts (to be done)
 
 --- Input & Output ---
 The script requires input data in the code block "Input".
 Additionally, several .csv-files for timeseries data are required.
 
 --- Requirements ---
-This tool requires oemof.solph==0.4.4. Install by "pip install oemof.solph==0.4.4"
-oemof.solph requires Python>=3.7 and pyomo>=5.7.0.
-
-A (MI)LP solver is required as well. A very good open-source option is "CBC" which is available at
-    http://ampl.com/dl/open/cbc/cbc-win64.zip
-The unpacked executable should be packed in the same folder as this script.
-
-All input data files need to be located in ./scenarios
-
-Currently, due to a bug in pyomo, the following file has to be altered after installation as a quickfix:
-    C:/Users/USER/AppData/Roaming/Python/Python38/site-packages/oemof/solph/models.py
-The change occurs in lines 204ff. and comments out these operations
-    status = solver_results["Solver"][0]["Status"].key
-    termination_condition = solver_results["Solver"][0]["Termination condition"].key
-replacing them with
-    status = "ok"
-    termination_condition = "optimal"
-which disables a specific solver error occuring when looking for the .key method
+see readme
 
 --- File Information ---
 coding:     utf-8
@@ -68,75 +55,75 @@ import vehicle as veh
 ###############################################################################
 
 # Simulation options
-sim_name = "mg_ev_main"     # name of scenario
-sim_solver = "gurobi"       # solver selection. Options: "cbc", "gplk", "gurobi"
-sim_dump = True             # "True" activates oemof model and result saving
-sim_debug = False           # "True" activates mathematical model saving and extended solver output
-sim_step = 'H'              # time step length ('H'=hourly, other lengths not tested yet!)
-sim_eps = 1e-6              # minimum variable cost in $/Wh for transformers to incentivize minimum flow
+sim_name = "mg_ev_main"  # name of scenario
+sim_solver = "gurobi"  # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_dump = True  # "True" activates oemof model and result saving
+sim_debug = False  # "True" activates mathematical model saving and extended solver output
+sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
+sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 
 # Project data
-proj_start = "1/1/2015"     # Project start date (DD/MM/YYYY)
-proj_sim = 365              # Simulation timeframe in days
-proj_ls = 25                # Project duration in years
-proj_wacc = 0.07            # unitless weighted average cost of capital for the project
+proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
+proj_sim = 365  # Simulation timeframe in days
+proj_ls = 25  # Project duration in years
+proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
 # Demand data file
 dem_filename = "dem_data.csv"  # input data file containing timeseries for electricity demand in W
 
 # Transformer component data
-ac_dc_eff = 0.95            # unitless conversion efficiency of ac-dc bus transformer component
-dc_ac_eff = 0.95            # unitless conversion efficiency of dc-ac bus transformer component
+ac_dc_eff = 0.95  # unitless conversion efficiency of ac-dc bus transformer component
+dc_ac_eff = 0.95  # unitless conversion efficiency of dc-ac bus transformer component
 
 # Wind component data
 wind_enable = False
 wind_filename = "wind_test.csv"  # name of the normalized wind power profile csv file in ./scenarios to evaluate
-wind_sce = 1.355            # specific capital expenses of the component in $/W
-wind_sme = 0                # specific maintenance expenses of the component in $/(W*year)
-wind_soe = 0                # specific operational expenses of the component in $/Wh
-wind_ls = 20                # lifespan of the component in years
-wind_cdc = 1                # annual ratio of component cost decrease
+wind_sce = 1.355  # specific capital expenses of the component in $/W
+wind_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+wind_soe = 0  # specific operational expenses of the component in $/Wh
+wind_ls = 20  # lifespan of the component in years
+wind_cdc = 1  # annual ratio of component cost decrease
 
 # Photovoltaic array component data
 pv_enable = True
 pv_filename = "Zatta_CI_1kWp.csv"  # name of the normalized pv power profile csv file in ./scenarios to evaluate
-pv_sce = 0.8                # specific capital expenses of the component in $/W
-pv_sme = 0                  # specific maintenance expenses of the component in $/(W*year)
-pv_soe = 0                  # specific operational expenses of the component in $/Wh
-pv_ls = 25                  # lifespan of the component in years
-pv_cdc = 1                  # annual ratio of cost decrease
+pv_sce = 0.8  # specific capital expenses of the component in $/W
+pv_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+pv_soe = 0  # specific operational expenses of the component in $/Wh
+pv_ls = 25  # lifespan of the component in years
+pv_cdc = 1  # annual ratio of cost decrease
 
 # Diesel generator component data
 gen_enable = True
-gen_sce = 1.5               # specific capital expenses of the component in $/W (original 1.15)
-gen_sme = 0                 # specific maintenance expenses of the component in $/(W*year)
-gen_soe = 0.00065           # specific operational expenses of the component in $/Wh (original 0.00036)
-gen_ls = 10                 # lifespan of the component in years
-gen_cdc = 1                 # annual ratio of component cost decrease
+gen_sce = 1.5  # specific capital expenses of the component in $/W (original 1.15)
+gen_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+gen_soe = 0.00065  # specific operational expenses of the component in $/Wh (original 0.00036)
+gen_ls = 10  # lifespan of the component in years
+gen_cdc = 1  # annual ratio of component cost decrease
 
 # Stationary storage system component data
 ess_enable = True
-ess_sce = 0.8               # specific capital expenses of the component in $/Wh
-ess_sme = 0                 # specific maintenance expenses of the component in $/(Wh*year)
-ess_soe = 0                 # specific operational expenses of the component in $/Wh
-ess_ls = 10                 # lifespan of the component in years
-ess_chg_eff = 0.95          # charging efficiency
-ess_dis_eff = 0.85          # discharge efficiency
-ess_chg_crate = 0.5         # maximum charging C-rate in 1/h
-ess_dis_crate = 0.5         # maximum discharging C-rate in 1/h
-ess_init_soc = 0.5          # initial state of charge
-ess_sd = 0                  # self-discharge rate of the component in ???
-ess_cdc = 1                 # annual ratio of component cost decrease
+ess_sce = 0.8  # specific capital expenses of the component in $/Wh
+ess_sme = 0  # specific maintenance expenses of the component in $/(Wh*year)
+ess_soe = 0  # specific operational expenses of the component in $/Wh
+ess_ls = 10  # lifespan of the component in years
+ess_chg_eff = 0.95  # charging efficiency
+ess_dis_eff = 0.85  # discharge efficiency
+ess_chg_crate = 0.5  # maximum charging C-rate in 1/h
+ess_dis_crate = 0.5  # maximum discharging C-rate in 1/h
+ess_init_soc = 0.5  # initial state of charge
+ess_sd = 0  # self-discharge rate of the component in ???
+ess_cdc = 1  # annual ratio of component cost decrease
 
 # BEV
 bev_enable = True
-bev_agr = False             # boolean triggering simplified simulation of BEVs as a single set of components when true
-bev_num = 10                # number of vehicles to be simulated
-bev_chg_pwr = 3600          # maximum allowable charge power for each individual BEV
-bev_dis_pwr = 3600          # maximum allowable discharge power for each individual BEV
-bev_charge_eff = 0.95       # unitless charge efficiency
-bev_discharge_eff = 0.95    # unitless discharge efficiency
-bev_bat_size = 30000        # battery size of vehicles in Wh
+bev_agr = False  # boolean triggering simplified simulation of BEVs as a single set of components when true
+bev_num = 10  # number of vehicles to be simulated
+bev_chg_pwr = 3600  # maximum allowable charge power for each individual BEV
+bev_dis_pwr = 3600  # maximum allowable discharge power for each individual BEV
+bev_charge_eff = 0.95  # unitless charge efficiency
+bev_discharge_eff = 0.95  # unitless discharge efficiency
+bev_bat_size = 30000  # battery size of vehicles in Wh
 bev_filename = "ind_car_data.csv"
 
 ##########################################################################
@@ -147,12 +134,14 @@ sim_ts = datetime.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
 sim_tsname = sim_ts + "_" + sim_name
 sim_resultpath = os.path.join(os.getcwd(), "results")
 logger.define_logging(logfile=sim_tsname + ".log")
+logging.info('Processing inputs')
 
 proj_start = datetime.strptime(proj_start, '%d/%m/%Y')
 proj_simend = proj_start + relativedelta(days=proj_sim)
 proj_end = proj_start + relativedelta(years=proj_ls)
 proj_dur = (proj_end - proj_start).days
-proj_simrat = proj_sim/proj_dur
+proj_simrat = proj_sim / proj_dur
+proj_yrrat = proj_sim / 365.25
 proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=sim_step).delete(-1)
 
 dem_filepath = os.path.join(os.getcwd(), "scenarios", dem_filename)
@@ -169,7 +158,7 @@ if pv_enable:
     pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", pv_filename)
     pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
     pv_data['time'] = pd.to_datetime(pv_data['time'], format='%Y%m%d:%H%M')
-    pv_data["P"] = pv_data["P"]/1000
+    pv_data["P"] = pv_data["P"] / 1000
     pv_ace = fcs.adj_ce(pv_sce, pv_soe, pv_ls, proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
     pv_epc = fcs.ann_recur(pv_ace, pv_ls, proj_ls, proj_wacc, pv_cdc)
 
@@ -191,12 +180,12 @@ if bev_enable:
 # Initialize oemof energy system instance
 ##########################################################################
 
-logging.info("Initialize the energy system")
+logging.info("Initializing the energy system")
 es = solph.EnergySystem(timeindex=proj_dti)
 
-logging.info("Create oemof objects")
+logging.info("Creating oemof objects")
 
-src_components = []         #create empty component list to iterate over later when displaying results
+src_components = []  # create empty component list to iterate over later when displaying results
 
 ##########################################################################
 # Create basic two-bus structure
@@ -224,11 +213,11 @@ dc_ac = solph.Transformer(
 dem = solph.Sink(
     label='dem',
     inputs={ac_bus: solph.Flow(actual_value=dem_data['P'], nominal_value=1, fixed=True)}
-    )
+)
 exc = solph.Sink(
     label="exc",
     inputs={ac_bus: solph.Flow()})
-es.add(ac_bus, dc_bus, ac_dc, dc_ac, dem)#, exc)
+es.add(ac_bus, dc_bus, ac_dc, dc_ac, dem)  # , exc)
 
 ##########################################################################
 # Create wind power objects and add them to the energy system
@@ -249,7 +238,8 @@ if wind_enable:
         conversion_factors={ac_bus: 1})
     wind_src = solph.Source(
         label="wind_src",
-        outputs={wind_bus: solph.Flow(actual_value=wind_data['P'], fixed=True, investment=solph.Investment(ep_costs=wind_epc))})
+        outputs={wind_bus: solph.Flow(actual_value=wind_data['P'], fixed=True,
+                                      investment=solph.Investment(ep_costs=wind_epc))})
     wind_exc = solph.Sink(
         label="wind_exc",
         inputs={wind_bus: solph.Flow()})
@@ -275,7 +265,8 @@ if pv_enable:
         conversion_factors={dc_bus: 1})
     pv_src = solph.Source(
         label="pv_src",
-        outputs={pv_bus: solph.Flow(actual_value=pv_data["P"], fixed=True, investment=solph.Investment(ep_costs=pv_epc))})
+        outputs={
+            pv_bus: solph.Flow(actual_value=pv_data["P"], fixed=True, investment=solph.Investment(ep_costs=pv_epc))})
     pv_exc = solph.Sink(
         label="pv_exc",
         inputs={pv_bus: solph.Flow()})
@@ -317,7 +308,7 @@ if ess_enable:
         invest_relation_output_capacity=ess_dis_crate,
         inflow_conversion_factor=ess_chg_eff,
         outflow_conversion_factor=ess_dis_eff,
-        investment=solph.Investment(ep_costs=ess_epc),)
+        investment=solph.Investment(ep_costs=ess_epc), )
     es.add(ess)
 
 ##########################################################################
@@ -357,11 +348,11 @@ if bev_enable:
         outputs={ac_bus: solph.Flow()},
         conversion_factors={ac_bus: 1})
     es.add(bev_bus, ac_bev, bev_ac)
-    if bev_agr:                                     # When vehicles are aggregated into three basic components
-        bev_snk = solph.Sink(                       # Aggregated sink component modelling leaving vehicles
+    if bev_agr:  # When vehicles are aggregated into three basic components
+        bev_snk = solph.Sink(  # Aggregated sink component modelling leaving vehicles
             label="bev_snk",
             inputs={bev_bus: solph.Flow(actual_value=bev_data["sink_data"], fixed=True, nominal_value=1)})
-        bev_src = solph.Source(                     # Aggregated source component modelling arriving vehicles
+        bev_src = solph.Source(  # Aggregated source component modelling arriving vehicles
             label='bev_src',
             outputs={bev_bus: solph.Flow(actual_value=bev_data['source_data'], fixed=True, nominal_value=1)})
         bev_ess = solph.components.GenericStorage(  # Aggregated storage modelling the connected vehicles' batteries
@@ -378,8 +369,8 @@ if bev_enable:
             min_storage_level=bev_data['min_charge'],  # This models the varying storage capacity with (dis)connects
             max_storage_level=bev_data['max_charge'])  # This models the varying storage capacity with (dis)connects
         es.add(bev_snk, bev_src, bev_ess)
-    else:                                           # When vehicles are modeled individually
-        for i in range(0, bev_num):                  # Create individual vehicles having a bus, a storage and a sink
+    else:  # When vehicles are modeled individually
+        for i in range(0, bev_num):  # Create individual vehicles having a bus, a storage and a sink
             bus_label = "bev" + str(i + 1) + "_bus"
             snk_label = "bev" + str(i + 1) + "_snk"
             ess_label = "bev" + str(i + 1) + "_ess"
@@ -389,11 +380,12 @@ if bev_enable:
             chg_datalabel = 'at_charger_' + str(i + 1)
             maxsoc_datalabel = 'max_charge_' + str(i + 1)
             minsoc_datalabel = 'min_charge_' + str(i + 1)
-            bevx_bus = solph.Bus(                        # bevx denominates an individual vehicle component
+            bevx_bus = solph.Bus(  # bevx denominates an individual vehicle component
                 label=bus_label)
             bev_bevx = solph.Transformer(
                 label=chg_label,
-                inputs={bev_bus: solph.Flow(nominal_value=bev_chg_pwr, max=bev_data[chg_datalabel], variable_costs=sim_eps)},
+                inputs={bev_bus: solph.Flow(nominal_value=bev_chg_pwr, max=bev_data[chg_datalabel],
+                                            variable_costs=sim_eps)},
                 outputs={bevx_bus: solph.Flow()},
                 conversion_factors={bevx_bus: bev_charge_eff})
             bevx_bev = solph.Transformer(
@@ -412,7 +404,8 @@ if bev_enable:
                 inflow_conversion_factor=1,
                 outflow_conversion_factor=1,
                 max_storage_level=1,
-                min_storage_level=bev_data[minsoc_datalabel],)  # this ensures the vehicle is charged when it leaves the system
+                min_storage_level=bev_data[
+                    minsoc_datalabel], )  # this ensures the vehicle is charged when it leaves the system
             bevx_snk = solph.Sink(
                 label=snk_label,
                 inputs={bevx_bus: solph.Flow(actual_value=bev_data[snk_datalabel], fixed=True, nominal_value=1)})
@@ -423,7 +416,7 @@ if bev_enable:
 ##########################################################################
 
 # Formulate the (MI)LP problem
-logging.info("Create optimization model")
+logging.info("Creating optimization model")
 om = solph.Model(es)
 
 if sim_debug:
@@ -431,146 +424,219 @@ if sim_debug:
     # the lp file for debugging or other reasons
 
 # Solve the optimization problem
-logging.info("Solve the optimization problem")
+logging.info("Solving the optimization problem")
 om.solve(solver=sim_solver, solve_kwargs={"tee": sim_debug})
+
+logging.info("Getting the results from the solver")
+results = prcs.results(om)
 
 ##########################################################################
 # Display key results in text, add energies and costs
 ##########################################################################
 
-logging.info("Display key results")
-results = prcs.results(om)
+logging.info("Displaying key results")
 
-total_ce = 0  # total capital expenses for investment over the simulation timeframe (not project lifespan!)
-total_me = 0  # total maintenance expenses for investment over the simulation timeframe (not project lifespan!)
-total_oe = 0  # total operational expenses for investment over the simulation timeframe (not project lifespan!)
-total_ann = 0  # total annuity of adjusted capital and operational expenses
-total_en = 0  # total produced energy over the simulation timeframe (not project lifespan!)
-total_dem = results[(ac_bus, dem)]['sequences']['flow'].sum()  # total energy demand over the simulation timeframe
-total_bev_chg = 0 # total energy charged by BEVs over the simulation timeframe (not project lifespan!)
-total_bev_dis = 0 # total energy discharged from BEVs over the simulation timeframe (not project lifespan!)
+
+tot = {}
+tot = dict.fromkeys(['ice', 'tce', 'pce', 'yme', 'tme', 'pme', 'yoe', 'toe', 'poe', 'yen', 'ten', 'pen',
+                     'yde', 'tde', 'pde', 'ann', 'npc', 'lcoe', 'eta'], 0)
+tot['yde'] += results[(ac_bus, dem)]['sequences']['flow'].sum() / proj_yrrat
 
 print("#####")
 
 if wind_enable:
-    wind_inv = round(results[(wind_src, wind_bus)]["scalars"]["invest"])
-    wind_ten = round(results[(wind_src, wind_bus)]['sequences']['flow'].sum())
-    wind_ice = round(wind_inv * wind_sce)
-    wind_tme = round(wind_inv * wind_sme)
-    wind_toe = round(wind_ten * wind_soe)
-    wind_ann = round(wind_inv * wind_epc + wind_toe)
-    wind_tmpc = round(fcs.acc_discount(wind_tme, proj_ls, proj_wacc))  # Total maintenance present cost
+    wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
+    wind_ice = wind_inv * wind_sce
+    wind_tce = fcs.tce(wind_ice, wind_ice, wind_ls, proj_ls)
+    wind_pce = fcs.pce(wind_ice, wind_ice, wind_ls, proj_ls, proj_wacc)
+    wind_yen = results[(wind_src, wind_bus)]['sequences']['flow'].sum() / proj_yrrat
+    wind_ten = wind_yen * proj_ls
+    wind_pen = fcs.acc_discount(wind_yen, proj_ls, proj_wacc)
+    wind_yme = wind_inv * wind_sme
+    wind_tme = wind_yme * proj_ls
+    wind_pme = fcs.acc_discount(wind_yme, proj_ls, proj_wacc)
+    wind_yoe = wind_yen * wind_soe
+    wind_toe = wind_ten * wind_soe
+    wind_poe = fcs.acc_discount(wind_yoe, proj_ls, proj_wacc)
+    wind_ann = fcs.ann_recur(wind_ice, wind_ls, proj_ls, proj_wacc, wind_cdc) \
+                + fcs.ann_recur(wind_yme + wind_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Wind Power Results:")
-    print("Optimum Capacity: " + str(round(wind_inv/1000)) + " kW")
-    print("Initial Capital Expenses: " + str(wind_ice) + " USD")
-    print("Maintenance Expenses: " + str(wind_tme) + " USD")
-    print("Operational Expenses: " + str(wind_toe) + " USD")
-    print("Total Energy: " + str(round(wind_ten/1e6)) + " MWh")
+    print("Optimum Capacity: " + str(round(wind_inv / 1e3)) + " kW")
+    print("Initial Capital Expenses: " + str(round(wind_ice)) + " USD")
+    print("Yearly Maintenance Expenses: " + str(round(wind_yme)) + " USD")
+    print("Yearly Operational Expenses: " + str(round(wind_yoe)) + " USD")
+    print("Yearly Produced Energy: " + str(round(wind_ten / 1e6)) + " MWh")
     print("#####")
 
-    total_en += wind_ten
-    total_ce += wind_ice
-    total_me += wind_tme
-    total_oe += wind_toe
-    total_ann += wind_ann
+    tot['ice'] += wind_ice
+    tot['tce'] += wind_tce
+    tot['pce'] += wind_pce
+    tot['yme'] += wind_yme
+    tot['tme'] += wind_tme
+    tot['pme'] += wind_pme
+    tot['yoe'] += wind_yoe
+    tot['toe'] += wind_toe
+    tot['poe'] += wind_poe
+    tot['yen'] += wind_yen
+    tot['ten'] += wind_ten
+    tot['pen'] += wind_pen
+    tot['ann'] += wind_ann
 
 if pv_enable:
-    pv_inv = round(results[(pv_src, pv_bus)]["scalars"]["invest"])
-    pv_ten = round(results[(pv_src, pv_bus)]['sequences']['flow'].sum())
-    pv_ice = round(pv_inv * pv_sce)
-    pv_tme = round(pv_inv * pv_sme)
-    pv_toe = round(pv_ten * pv_soe)
-    pv_ann = round(pv_inv * pv_epc + pv_toe)
-    pv_tmpc = round(fcs.acc_discount(pv_tme, proj_ls, proj_wacc))  # Total maintenance present cost
+
+    pv_inv = results[(pv_src, pv_bus)]["scalars"]["invest"]
+    pv_ice = pv_inv * pv_sce
+    pv_tce = fcs.tce(pv_ice, pv_ice, pv_ls, proj_ls)
+    pv_pce = fcs.pce(pv_ice, pv_ice, pv_ls, proj_ls, proj_wacc)
+    pv_yen = results[(pv_src, pv_bus)]['sequences']['flow'].sum() / proj_yrrat
+    pv_ten = pv_yen * proj_ls
+    pv_pen = fcs.acc_discount(pv_yen, proj_ls, proj_wacc)
+    pv_yme = pv_inv * pv_sme
+    pv_tme = pv_yme * proj_ls
+    pv_pme = fcs.acc_discount(pv_yme, proj_ls, proj_wacc)
+    pv_yoe = pv_yen * pv_soe
+    pv_toe = pv_ten * pv_soe
+    pv_poe = fcs.acc_discount(pv_yoe, proj_ls, proj_wacc)
+    pv_ann = fcs.ann_recur(pv_ice, pv_ls, proj_ls, proj_wacc, pv_cdc) \
+                + fcs.ann_recur(pv_yme + pv_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Solar Power Results:")
-    print("Optimum Capacity: " + str(round(pv_inv/1000)) + " kW (peak)")
-    print("Capital Expenses: " + str(pv_ice) + " USD")
-    print("Maintenance Expenses: " + str(pv_tme) + " USD")
-    print("Operational Expenses: " + str(pv_toe) + " USD")
-    print("Total Energy: " + str(round(pv_ten/1e6)) + " MWh")
+    print("Optimum Capacity: " + str(round(pv_inv / 1e3)) + " kW (peak)")
+    print("Initial Capital Expenses: " + str(round(pv_ice)) + " USD")
+    print("Yearly Maintenance Expenses: " + str(round(pv_yme)) + " USD")
+    print("Yearly Operational Expenses: " + str(round(pv_yoe)) + " USD")
+    print("Total Present Cost: " + str(round(pv_pce + pv_pme + pv_poe)) + " USD")
+    print("Combined Annuity: " + str(round(pv_ann)) + " USD")
+    print("Yearly Produced Energy: " + str(round(pv_yen / 1e6)) + " MWh")
     print("#####")
 
-    total_en += pv_ten
-    total_ce += pv_ice
-    total_ann += pv_ann
-    total_me += pv_tme
-    total_oe += pv_toe
+    tot['ice'] += pv_ice
+    tot['tce'] += pv_tce
+    tot['pce'] += pv_pce
+    tot['yme'] += pv_yme
+    tot['tme'] += pv_tme
+    tot['pme'] += pv_pme
+    tot['yoe'] += pv_yoe
+    tot['toe'] += pv_toe
+    tot['poe'] += pv_poe
+    tot['yen'] += pv_yen
+    tot['ten'] += pv_ten
+    tot['pen'] += pv_pen
+    tot['ann'] += pv_ann
 
 if gen_enable:
-    gen_inv = round(results[(gen_src, ac_bus)]["scalars"]["invest"])
-    gen_ten = round(results[(gen_src, ac_bus)]['sequences']['flow'].sum())
-    gen_ice = round(gen_inv * gen_sce)
-    gen_tme = round(gen_inv * gen_sme)
-    gen_toe = round(gen_ten * gen_soe)
-    gen_ann = round(gen_inv * gen_epc + gen_toe)
-    gen_tmpc = round(fcs.acc_discount(gen_tme, proj_ls, proj_wacc))  # Total maintenance present cost
+
+    gen_inv = results[(gen_src, ac_bus)]["scalars"]["invest"]
+    gen_ice = gen_inv * gen_sce
+    gen_tce = fcs.tce(gen_ice, gen_ice, gen_ls, proj_ls)
+    gen_pce = fcs.pce(gen_ice, gen_ice, gen_ls, proj_ls, proj_wacc)
+    gen_yen = results[(gen_src, ac_bus)]['sequences']['flow'].sum() / proj_yrrat
+    gen_ten = gen_yen * proj_ls
+    gen_pen = fcs.acc_discount(gen_yen, proj_ls, proj_wacc)
+    gen_yme = gen_inv * gen_sme
+    gen_tme = gen_yme * proj_ls
+    gen_pme = fcs.acc_discount(gen_yme, proj_ls, proj_wacc)
+    gen_yoe = gen_yen * gen_soe
+    gen_toe = gen_ten * gen_soe
+    gen_poe = fcs.acc_discount(gen_yoe, proj_ls, proj_wacc)
+    gen_ann = fcs.ann_recur(gen_ice, gen_ls, proj_ls, proj_wacc, gen_cdc) \
+                + fcs.ann_recur(gen_yme + gen_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Diesel Power Results:")
-    print("Optimum Capacity: " + str(round(gen_inv/1000)) + " kW")
-    print("Capital Expenses: " + str(gen_ice) + " USD")
-    print("Maintenance Expenses: " + str(gen_tme) + " USD")
-    print("Operational Expenses: " + str(gen_toe) + " USD")
-    print("Total Energy: " + str(round(gen_ten/1e6)) + " MWh")
+    print("Optimum Capacity: " + str(round(gen_inv / 1e3)) + " kW")
+    print("Initial Capital Expenses: " + str(round(gen_ice)) + " USD")
+    print("Yearly Maintenance Expenses: " + str(round(gen_yme)) + " USD")
+    print("Yearly Operational Expenses: " + str(round(gen_yoe)) + " USD")
+    print("Total Present Cost: " + str(round(gen_pce + gen_pme + gen_poe)) + " USD")
+    print("Combined Annuity: " + str(round(gen_ann)) + " USD")
+    print("Yearly Produced Energy: " + str(round(gen_yen / 1e6)) + " MWh")
     print("#####")
 
-    total_en += gen_ten
-    total_ce += gen_ice
-    total_ann += gen_ann
-    total_me += gen_tme
-    total_oe += gen_toe
+    tot['ice'] += gen_ice
+    tot['tce'] += gen_tce
+    tot['pce'] += gen_pce
+    tot['yme'] += gen_yme
+    tot['tme'] += gen_tme
+    tot['pme'] += gen_pme
+    tot['yoe'] += gen_yoe
+    tot['toe'] += gen_toe
+    tot['poe'] += gen_poe
+    tot['yen'] += gen_yen
+    tot['ten'] += gen_ten
+    tot['pen'] += gen_pen
+    tot['ann'] += gen_ann
 
 if ess_enable:
-    ess_inv = round(results[(ess, None)]["scalars"]["invest"])
-    ess_ten = round(results[(ess, dc_bus)]['sequences']['flow'].sum())  # absolute sum needed in the future!!!
-    ess_ice = round(ess_inv * ess_sce)
-    ess_tme = round(ess_inv * ess_sme)
-    ess_toe = round(ess_ten * ess_soe)
-    ess_ann = round(ess_inv * ess_epc + ess_toe)
-    ess_tmpc = round(fcs.acc_discount(ess_tme, proj_ls, proj_wacc))  # Total maintenance present cost
+
+    ess_inv = results[(ess, None)]["scalars"]["invest"]
+    ess_ice = ess_inv * ess_sce
+    ess_tce = fcs.tce(ess_ice, ess_ice, ess_ls, proj_ls)
+    ess_pce = fcs.pce(ess_ice, ess_ice, ess_ls, proj_ls, proj_wacc)
+    ess_yen = results[(ess, dc_bus)]['sequences']['flow'].sum() / proj_yrrat
+    ess_ten = ess_yen * proj_ls
+    ess_pen = fcs.acc_discount(ess_yen, proj_ls, proj_wacc)
+    ess_yme = ess_inv * ess_sme
+    ess_tme = ess_yme * proj_ls
+    ess_pme = fcs.acc_discount(ess_yme, proj_ls, proj_wacc)
+    ess_yoe = ess_yen * ess_soe
+    ess_toe = ess_ten * ess_soe
+    ess_poe = fcs.acc_discount(ess_yoe, proj_ls, proj_wacc)
+    ess_ann = fcs.ann_recur(ess_ice, ess_ls, ess_ls, proj_wacc, ess_cdc) \
+               + fcs.ann_recur(ess_yme + ess_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Energy Storage Results:")
-    print("Optimum Capacity: " + str(round(ess_inv/1e3)) + " kWh")
-    print("Capital Expenses: " + str(ess_ice) + " USD")
-    print("Maintenance Expenses: " + str(ess_tme) + " USD")
-    print("Operational Expenses: " + str(ess_toe) + " USD")
-    print("Total Energy: " + str(ess_ten) + " Wh")
+    print("Optimum Capacity: " + str(round(ess_inv / 1e3)) + " kWh")
+    print("Initial Capital Expenses: " + str(round(ess_ice)) + " USD")
+    print("Yearly Maintenance Expenses: " + str(round(ess_yme)) + " USD")
+    print("Yearly Operational Expenses: " + str(round(ess_yoe)) + " USD")
+    print("Total Present Cost: " + str(round(ess_pce + ess_pme + ess_poe)) + " USD")
+    print("Combined Annuity: " + str(round(ess_ann)) + " USD")
+    print("Yearly Discharged Energy: " + str(round(ess_yen / 1e6)) + " MWh")
     print("#####")
 
-    total_ce += ess_ice
-    total_ann += ess_ann
-    total_me += ess_tme
-    total_oe += ess_toe
+    tot['ice'] += ess_ice
+    tot['tce'] += ess_tce
+    tot['pce'] += ess_pce
+    tot['yme'] += ess_yme
+    tot['tme'] += ess_tme
+    tot['pme'] += ess_pme
+    tot['yoe'] += ess_yoe
+    tot['toe'] += ess_toe
+    tot['poe'] += ess_poe
+    tot['ann'] += ess_ann
 
 if bev_enable:
-    total_bev_chg = round(results[(ac_bev, bev_bus)]['sequences']['flow'].sum())
-    total_bev_dis = round(results[(bev_bus, bev_ac)]['sequences']['flow'].sum())
+    total_bev_chg = results[(ac_bev, bev_bus)]['sequences']['flow'].sum()
+    total_bev_dis = results[(bev_bus, bev_ac)]['sequences']['flow'].sum()
     total_bev_dem = total_bev_chg - total_bev_dis
-    total_dem += total_bev_dem
+    tot['yde'] += total_bev_dem
 
     print("Electric Vehicle Results:")
-    print("Gross Charged Energy: " + str(total_bev_chg) + " Wh")
-    print("Net Charged Energy: " + str(total_bev_dem) + " Wh")
+    print("Gross charged energy: " + str(round(total_bev_chg / 1e6)) + " MWh")
+    print("Energy fed back (V2G): " + str(round(total_bev_dis / 1e6)) + " MWh")
+    print("Net charged energy: " + str(round(total_bev_dem / 1e6)) + " MWh")
     print("#####")
 
 ##########################################################################
 # LCOE and NPC calculation
 ##########################################################################
 
-total_npc = fcs.acc_discount(total_ce + total_me + total_oe, proj_ls, proj_wacc)  # update needed
-total_discdem = fcs.acc_discount(total_dem, proj_ls, proj_wacc)  # update needed
-total_lcoe = total_ann/total_discdem  # update needed
-total_eta = total_dem/total_en  # update needed
+tot['npc'] = tot['pce'] + tot['pme'] + tot['poe']
+tot['lcoe'] = tot['npc'] / tot['pen']
+tot['eta'] = tot['yde'] / tot['yen']
 
 print("Economic Results:")
-print("Total supplied energy: " + str(round(total_dem/1e6, 1)) + " MWh")
-print("Total generated energy: " + str(round(total_en/1e6, 1)) + " MWh")
-print("Overall electrical efficiency: " + str(round(total_eta, 3)))
-print("Initial Investment: " + str(round(total_ce/1e6, 2)) + " million USD")
-print("Net Present Cost: " + str(round(total_npc/1e6, 2)) + "  million USD")
-print("Annuity: " + str(round(total_ann/1e3, 1)) + " thousand USD")
-print("LCOE: " + str(round(1e4*total_lcoe, 1)) + " USct/kWh")
+print("Yearly supplied energy: " + str(round(tot['yde'] / 1e6)) + " MWh")
+print("Yearly generated energy: " + str(round(tot['yen'] / 1e6)) + " MWh")
+print("Overall electrical efficiency: " + str(round(tot['eta'] * 100, 1)) + " %")
+print("Total Initial Investment: " + str(round(tot['ice'] / 1e6, 2)) + " million USD")
+print("Total yearly maintenance expenses: " + str(round(tot['yme'])) + " USD")
+print("Total yearly operational expenses: " + str(round(tot['yoe'])) + " USD")
+print("Total cost: " + str(round((tot['tce'] + tot['tme'] + tot['toe']) / 1e6, 2)) + " million USD")
+print("Total present cost: " + str(round(tot['npc'] / 1e6, 2)) + " million USD")
+print("Total annuity: " + str(round(tot['ann'] / 1e3, 1)) + " thousand USD")
+print("LCOE: " + str(round(1e5 * tot['lcoe'], 2)) + " USct/kWh")
 print("#####")
 
 ##########################################################################
@@ -584,16 +650,12 @@ if sim_dump:
     es.results["meta"] = prcs.meta_results(om)
     es.dump(sim_resultpath, sim_tsname + ".oemof")
 
-# Create pandas dataframes from the results and dump it as a .csv file
+    # Create pandas dataframes from the results and dump it as a .csv file
     es_results = prcs.create_dataframe(om)
     es_results.to_csv(os.path.join(sim_resultpath, sim_tsname + "_res_df.csv"), sep=';')
     parameters = prcs.parameter_as_dict(es)
     parameters = pd.DataFrame.from_dict(parameters)
     parameters.to_csv(os.path.join(sim_resultpath, sim_tsname + "_res_dict.csv"), sep=';')
-
-
-
-
 
 # scalars_array = np.zeros([1, 15])
 # scalars_array[0][0] = wind_invest

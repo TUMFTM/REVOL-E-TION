@@ -68,3 +68,38 @@ def ann_recur(ce, ls, hor, discrate, cost_decr):
     """
     a = ann(ce, hor, discrate) * ((1 - ((1-cost_decr)/(1+discrate))**hor) / (1 - ((1-cost_decr)/(1+discrate))**ls))
     return a
+
+
+def repllist(ls, hor):
+    """
+        This function calculates a list of years to replace the component in, given its lifespan ls and the observation
+        horizon hor
+    """
+    year = 0
+    rul = ls
+    repyrs = []
+    while year < hor:
+        if rul == 0:
+            repyrs.append(year)
+            rul = ls
+        rul -= 1
+        year +=1
+    return repyrs
+
+
+def tce(ice, rce, ls, hor):
+    """
+        This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
+        every ls years during the observation horizon hor
+    """
+    tce = ice + rce * len(repllist(ls, hor))
+    return tce
+
+
+def pce(ice, rce, ls, hor, discrate):
+    """
+        This function calculates the present (discounted) capital expenses for a component that has to be replaced
+        every ls years during the observation horizon hor
+    """
+    pce = ice + sum([discount(rce, x, discrate) for x in repllist(ls, hor)])
+    return pce
