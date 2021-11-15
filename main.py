@@ -43,12 +43,13 @@ import oemof.outputlib.views as views
 import logging
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 import functions as fcs
-import vehicle as veh
+#import vehicle as veh
 
 ###############################################################################
 # Input
@@ -57,7 +58,7 @@ import vehicle as veh
 # Simulation options
 sim_name = "mg_ev_main"  # name of scenario
 sim_solver = "gurobi"  # solver selection. Options: "cbc", "gplk", "gurobi"
-sim_dump = True  # "True" activates oemof model and result saving
+sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
@@ -682,71 +683,37 @@ if sim_dump:
 # scalars_filename = os.path.join(os.getcwd(), file_name + "_scalars_" + now.strftime("%Y_%m_%d_%H_%M_%S") + ".csv")
 # #scalars_df.to_csv(scalars_filename, sep=';')
 #
-# #Saving selected sequences
-# sequences_df = pd.concat([solph.views.node(results, 'wind_bus')['sequences'][(('wind', 'wind_bus'), 'flow')],
-#                         solph.views.node(results, 'wind_bus')['sequences'][(('wind_bus', 'wind_ac'), 'flow')],
-#                         solph.views.node(results, 'pv_bus')['sequences'][(('pv', 'pv_bus'), 'flow')],
-#                         solph.views.node(results, 'pv_bus')['sequences'][(('pv_bus', 'pv_dc'), 'flow')],
-#                         solph.views.node(results, 'dc_bus')['sequences'][(('storage', 'dc_bus'), 'flow')],
-#                         solph.views.node(results, 'dc_bus')['sequences'][(('dc_bus', 'storage'), 'flow')],
-#                         solph.views.node(results, 'generator')['sequences'][(('generator', 'ac_bus'), 'flow')],
-#                         solph.views.node(results, 'ac_bus')['sequences'][(('ac_bus', 'ac_dc'), 'flow')],
-#                         solph.views.node(results, 'ac_bus')['sequences'][(('ac_bus', 'ac_bigbev'), 'flow')],
-#                         solph.views.node(results, 'ac_bus')['sequences'][(('dc_ac', 'ac_bus'), 'flow')]], axis=1)
-# sequences_filename = os.path.join(os.getcwd(), file_name + "_sequences_" + now.strftime("%Y_%m_%d_%H_%M_%S") + ".csv")
-# #sequences_df.to_csv(sequences_filename, sep=';')
+
 
 ##########################################################################
 # Plot the results
 ##########################################################################
+p300=(0/255,101/255,189/255,1)
+p540=(0/255,51/255,89/255,1)
+orng=(227/255,114/255,34/255,1)
+grn=(162/255,173/255,0/255,1)
 
-# #plot dc-bus balance
-# results_dc_bus = solph.views.node(results, "dc_bus")
-# results_dc_bus["sequences"].plot(
-#     kind="line", drawstyle="steps-post", title="DC bus balance"
-# )
-# plt.show()
-#
-# #plot ac-bus-balance
-# results_ac_bus = solph.views.node(results, "ac_bus")
-# results_ac_bus["sequences"].plot(
-#     kind="line", drawstyle="steps-post", title="AC bus balance"
-# )
-# plt.show()
-#
-# #plot wind-bus-balance
-# results_wind_bus = solph.views.node(results, "wind_bus")
-# results_wind_bus["sequences"].plot(
-#     kind="line", drawstyle="steps-post", title="Wind bus balance"
-# )
-# plt.show()
-#
-# #plot pv-bus-balance
-# results_pv_bus = solph.views.node(results, "pv_bus")
-# results_pv_bus["sequences"].plot(
-#     kind="line", drawstyle="steps-post", title="PV bus balance"
-# )
-# plt.show()
-#
-# #plot the storage balance
-# #column_name = (('storage', 'None'), 'storage_content')
-# results_storage = solph.views.node(results, "storage")
-# results_storage["sequences"].plot(
-#     kind="line", drawstyle="steps-post", title="Battery Balance"
-# )
-# plt.show()
-#
-# #Plot the bus-balance and battery data for all BEVs
-# for i in range(0, number_of_cars):
-#     bus_label = 'bev_bus_' + str(i + 1)
-#     results_ind_bev_bus = solph.views.node(results, bus_label)
-#     results_ind_bev_bus["sequences"].plot(
-#         kind="line", drawstyle="steps-post", title=bus_label + 'balance'
-#     )
-#
-#     storage_label = 'bev_storage_' + str(i + 1)
-#     results_ind_bev_bat = solph.views.node(results, storage_label)
-#     results_ind_bev_bat["sequences"].plot(
-#         kind="line", drawstyle="steps-post", title=storage_label + 'balance'
-#     )
-#     plt.show()
+print(results[(gen_src, ac_bus)]['sequences']['flow'].head())
+
+gen_flow = results[(gen_src, ac_bus)]['sequences']['flow']
+pv_flow = results[(pv_dc, dc_bus)]['sequences']['flow']
+storage_flow = results[(ess, dc_bus)]['sequences']['flow'].subtract(results[(dc_bus, ess)]['sequences']['flow'])
+bev_flow = results[(bev_ac, ac_bus)]['sequences']['flow'].subtract(results[(ac_bus, ac_bev)]['sequences']['flow'])
+dem_flow = -1 * (results[(ac_bus, dem)]['sequences']['flow'])
+
+plt.plot(gen_flow.index.to_pydatetime(), gen_flow, label='Diesel generator',color=p300, linewidth=4)
+plt.plot(pv_flow.index.to_pydatetime(), pv_flow, label='Photovoltaics',color=orng, linewidth=2)
+plt.plot(storage_flow.index.to_pydatetime(), storage_flow, label='Battery storage',color=orng, linestyle='dashed', linewidth=2)
+plt.plot(bev_flow.index.to_pydatetime(), bev_flow, label='BEV demand', color=grn, linewidth=2)
+plt.plot(dem_flow.index.to_pydatetime(), dem_flow, label='Stationary demand',color=grn,linestyle='dashed',linewidth=2)
+plt.axhline(y=0, linewidth=1, color='k')
+plt.legend(fontsize=20)
+plt.ylabel('Power in W', fontsize=20)
+plt.yticks(fontsize=20)
+plt.xlabel('Local Time', fontsize=20)
+plt.xticks(fontsize=20)
+#plt.xlim([datetime.date(2015, 4, 23), datetime.date(2015, 4, 26)])
+plt.grid(b=True, axis='y', which='major')
+plt.show()
+
+

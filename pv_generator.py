@@ -55,6 +55,7 @@ import pandas as pd
 import os
 import math
 
+from matplotlib import rcParams
 from datetime import datetime, date
 from scipy import integrate
 
@@ -164,23 +165,35 @@ print(watchweek.head())
 
 weekly_data.to_csv(path_or_buf=output_filepath)
 
-fig1 = plt.figure()
-plt.title('Photovoltaic power prediction')
-plt.xlabel('ISO calendar week')
-plt.ylabel('Daily normalized PV energy generation in kWh/kWp')
-plt.ylim((0,8))
-plt.plot(weekly_data['isoweek'], weekly_data['mean'], 'b+')
-plt.plot(weekly_data['isoweek'], weekly_data['median'], 'c+')
-plt.plot(weekly_data['isoweek'], weekly_data['mean'] + weekly_data['std'], 'g+')
-plt.plot(weekly_data['isoweek'], weekly_data['mean'] - weekly_data['std'], 'g+')
-plt.plot(weekly_data['isoweek'], weekly_data['max'], 'r+')
-plt.plot(weekly_data['isoweek'], weekly_data['min'], 'r+')
-plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'], 'b-')
-plt.plot(weekly_data['isoweek'], weekly_data['median_sm'], 'c-')
-plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] + weekly_data['std'], 'g-')
-plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] - weekly_data['std'], 'g-')
-plt.plot(weekly_data['isoweek'], weekly_data['max_sm'], 'r-')
-plt.plot(weekly_data['isoweek'], weekly_data['min_sm'], 'r-')
+p300=(0,101/255,189/255,1)
+orng=(227/255,114/255,34/255,1)
+p540=(0,51/255,89/255,1)
+grn=(162/255,173/255,0/255,1)
+blk=(0,0,0,1)
+gry=(0.5,0.5,0.5,1)
+
+plt.xlabel('ISO calendar week', fontsize=20)
+plt.xticks(fontsize=20)
+plt.xlim((0, 54))
+plt.ylabel('Daily normalized PV energy in h', fontsize=20, loc='top')
+plt.yticks(fontsize=20)
+plt.ylim((0, 8.5))
+plt.scatter(weekly_data['isoweek'], weekly_data['mean'], color=p540, marker='.')
+plt.scatter(weekly_data['isoweek'], weekly_data['median'], color=p300, marker='+')
+plt.scatter(weekly_data['isoweek'], weekly_data['mean'] + weekly_data['std'], color=grn, marker='.')
+plt.scatter(weekly_data['isoweek'], weekly_data['mean'] - weekly_data['std'], color=grn, marker='.')
+plt.scatter(weekly_data['isoweek'], weekly_data['max'], color=orng, marker='.')
+plt.scatter(weekly_data['isoweek'], weekly_data['min'], color=orng, marker='.')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'], color=p540, linewidth=2, label='Mean')
+plt.plot(weekly_data['isoweek'], weekly_data['median_sm'], color=p300, linestyle='dashed', linewidth=2, label='Median')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] + weekly_data['std'], color=grn, linewidth=2, label='Std. dev.')
+plt.plot(weekly_data['isoweek'], weekly_data['mean_sm'] - weekly_data['std'], color=grn, linewidth=2)
+plt.plot(weekly_data['isoweek'], weekly_data['max_sm'], color=orng, linewidth=2, label='Max/Min')
+plt.plot(weekly_data['isoweek'], weekly_data['min_sm'], color=orng, linewidth=2)
+plt.grid(b=True, axis='y', which='major')
+plt.legend(fontsize=16, loc='upper center',ncol=2)
+plt.tight_layout()
+rcParams.update({'figure.autolayout': True})
 plt.show()
 
 watchweek.drop(['mean', 'median', 'std'], axis=1).iloc[0:23].plot.line(x=None, y=None, color='yellow', legend=False)
