@@ -37,8 +37,8 @@ license:    GPLv3
 
 from oemof.tools import logger
 import oemof.solph as solph
-import oemof.outputlib.processing as prcs
-import oemof.outputlib.views as views
+import oemof.solph.processing as prcs
+import oemof.solph.views as views
 
 import logging
 import os
@@ -213,7 +213,7 @@ dc_ac = solph.Transformer(
     conversion_factors={ac_bus: dc_ac_eff})
 dem = solph.Sink(
     label='dem',
-    inputs={ac_bus: solph.Flow(actual_value=dem_data['P'], nominal_value=1, fixed=True)}
+    inputs={ac_bus: solph.Flow(fix=dem_data['P'], nominal_value=1)}
 )
 exc = solph.Sink(
     label="exc",
@@ -267,7 +267,7 @@ if pv_enable:
     pv_src = solph.Source(
         label="pv_src",
         outputs={
-            pv_bus: solph.Flow(actual_value=pv_data["P"], fixed=True, investment=solph.Investment(ep_costs=pv_epc))})
+            pv_bus: solph.Flow(fix=pv_data["P"], investment=solph.Investment(ep_costs=pv_epc))})
     pv_exc = solph.Sink(
         label="pv_exc",
         inputs={pv_bus: solph.Flow()})
@@ -409,7 +409,7 @@ if bev_enable:
                     minsoc_datalabel], )  # this ensures the vehicle is charged when it leaves the system
             bevx_snk = solph.Sink(
                 label=snk_label,
-                inputs={bevx_bus: solph.Flow(actual_value=bev_data[snk_datalabel], fixed=True, nominal_value=1)})
+                inputs={bevx_bus: solph.Flow(fix=bev_data[snk_datalabel], nominal_value=1)})
             es.add(bevx_bus, bevx_bev, bev_bevx, bevx_ess, bevx_snk)
 
 ##########################################################################
