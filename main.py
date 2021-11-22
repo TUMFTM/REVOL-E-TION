@@ -57,7 +57,7 @@ import functions as fcs
 
 # Simulation options
 sim_name = "mg_ev_main"  # name of scenario
-sim_solver = "gurobi"  # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_solver = "cbc"  # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
