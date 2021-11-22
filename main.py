@@ -43,7 +43,9 @@ import oemof.solph.views as views
 import logging
 import os
 import pandas as pd
+from pandas.plotting import register_matplotlib_converters
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -65,7 +67,7 @@ sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize 
 
 # Project data
 proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
-proj_sim = 365  # Simulation timeframe in days
+proj_sim = 10  # Simulation timeframe in days
 proj_ls = 25  # Project duration in years
 proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
@@ -688,10 +690,20 @@ if sim_dump:
 ##########################################################################
 # Plot the results
 ##########################################################################
-p300=(0/255,101/255,189/255,1)
-p540=(0/255,51/255,89/255,1)
-orng=(227/255,114/255,34/255,1)
-grn=(162/255,173/255,0/255,1)
+
+## Comment in for Matplotlib
+# register_matplotlib_converters()
+# p300=(0/255,101/255,189/255,1)
+# p540=(0/255,51/255,89/255,1)
+# orng=(227/255,114/255,34/255,1)
+# grn=(162/255,173/255,0/255,1)
+
+## Comment in for Plotly
+p300='rgb(0,101,189)'
+p540='rgb(0,51,89)'
+orng='rgb(227,114,34)'
+grn='rgb(162,173,0)'
+
 
 print(results[(gen_src, ac_bus)]['sequences']['flow'].head())
 
@@ -701,19 +713,29 @@ storage_flow = results[(ess, dc_bus)]['sequences']['flow'].subtract(results[(dc_
 bev_flow = results[(bev_ac, ac_bus)]['sequences']['flow'].subtract(results[(ac_bus, ac_bev)]['sequences']['flow'])
 dem_flow = -1 * (results[(ac_bus, dem)]['sequences']['flow'])
 
-plt.plot(gen_flow.index.to_pydatetime(), gen_flow, label='Diesel generator',color=p300, linewidth=4)
-plt.plot(pv_flow.index.to_pydatetime(), pv_flow, label='Photovoltaics',color=orng, linewidth=2)
-plt.plot(storage_flow.index.to_pydatetime(), storage_flow, label='Battery storage',color=orng, linestyle='dashed', linewidth=2)
-plt.plot(bev_flow.index.to_pydatetime(), bev_flow, label='BEV demand', color=grn, linewidth=2)
-plt.plot(dem_flow.index.to_pydatetime(), dem_flow, label='Stationary demand',color=grn,linestyle='dashed',linewidth=2)
-plt.axhline(y=0, linewidth=1, color='k')
-plt.legend(fontsize=20)
-plt.ylabel('Power in W', fontsize=20)
-plt.yticks(fontsize=20)
-plt.xlabel('Local Time', fontsize=20)
-plt.xticks(fontsize=20)
-#plt.xlim([datetime.date(2015, 4, 23), datetime.date(2015, 4, 26)])
-plt.grid(b=True, axis='y', which='major')
-plt.show()
+# plt.plot(gen_flow.index.to_pydatetime(), gen_flow, label='Diesel generator',color=p300, linewidth=4)
+# plt.plot(pv_flow.index.to_pydatetime(), pv_flow, label='Photovoltaics',color=orng, linewidth=2)
+# plt.plot(storage_flow.index.to_pydatetime(), storage_flow, label='Battery storage',color=orng, linestyle='dashed', linewidth=2)
+# plt.plot(bev_flow.index.to_pydatetime(), bev_flow, label='BEV demand', color=grn, linewidth=2)
+# plt.plot(dem_flow.index.to_pydatetime(), dem_flow, label='Stationary demand',color=grn,linestyle='dashed',linewidth=2)
+# plt.axhline(y=0, linewidth=1, color='k')
+# plt.legend(fontsize=20)
+# plt.ylabel('Power in W', fontsize=20)
+# plt.yticks(fontsize=20)
+# plt.xlabel('Local Time', fontsize=20)
+# plt.xticks(fontsize=20)
+# #plt.xlim([datetime.date(2015, 4, 23), datetime.date(2015, 4, 26)])
+# plt.grid(visible=True, axis='y', which='major')
+# plt.show()
 
-
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=gen_flow.index.to_pydatetime(), y=gen_flow, mode='lines', name='Diesel generator', line_color=p300, line_width= 4))
+fig.add_trace(go.Scatter(x=pv_flow.index.to_pydatetime(), y=pv_flow, mode='lines', name='Photovoltaics', line_color=orng, line_width= 2))
+fig.add_trace(go.Scatter(x=storage_flow.index.to_pydatetime(), y=storage_flow, mode='lines', name='Battery storage', line_color=orng, line_width= 2, line_dash='dash'))
+fig.add_trace(go.Scatter(x=bev_flow.index.to_pydatetime(), y=bev_flow, mode='lines', name='BEV demand', line_color=grn, line_width= 2))
+fig.add_trace(go.Scatter(x=dem_flow.index.to_pydatetime(), y=dem_flow, mode='lines', name='Stationary demand', line_color=grn, line_width= 2, line_dash='dash'))
+fig.update_layout(title='Simulation Results',
+                  xaxis=dict(title='Local Time',showgrid=True,linecolor='rgb(204, 204, 204)',gridcolor='rgb(204, 204, 204)'),
+                  yaxis=dict(title='Power in W',showgrid=True,linecolor='rgb(204, 204, 204)',gridcolor='rgb(204, 204, 204)'),
+                  plot_bgcolor='white')
+fig.show()

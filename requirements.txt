@@ -24,6 +24,7 @@ olefile
 pandas==0.25.3
 Pillow
 pipreqs==0.4.11
+plotly
 ply==3.11
 pyomo==5.7
 pyparsing
