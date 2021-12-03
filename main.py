@@ -64,7 +64,7 @@ sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-sim_cs = True  # "True" optimizes component sizing of wind, pv, gen and ESS
+sim_cs = [1, 1, 1, 1] # [Wind, PV, Gen, ESS], 1 --> component sizing active, 0 --> component sizing inactive
 
 # Project data
 proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
@@ -87,7 +87,7 @@ wind_sme = 0  # specific maintenance expenses of the component in $/(W*year)
 wind_soe = 0  # specific operational expenses of the component in $/Wh
 wind_ls = 20  # lifespan of the component in years
 wind_cdc = 1  # annual ratio of component cost decrease
-wind_cs = 1   # component size (peak) in kW
+wind_cs = 1   # component size (peak) in kW, only valid if sim_cs[0]==1
 
 # Photovoltaic array component data
 pv_enable = True
@@ -97,7 +97,7 @@ pv_sme = 0  # specific maintenance expenses of the component in $/(W*year)
 pv_soe = 0  # specific operational expenses of the component in $/Wh
 pv_ls = 25  # lifespan of the component in years
 pv_cdc = 1  # annual ratio of cost decrease
-pv_cs = 31  # component size (peak) in kW
+pv_cs = 31  # component size (peak) in kW, only valid if sim_cs[1]==1
 
 # Diesel generator component data
 gen_enable = True
@@ -106,7 +106,7 @@ gen_sme = 0  # specific maintenance expenses of the component in $/(W*year)
 gen_soe = 0.00065  # specific operational expenses of the component in $/Wh (original 0.00036)
 gen_ls = 10  # lifespan of the component in years
 gen_cdc = 1  # annual ratio of component cost decrease
-gen_cs = 112   # component size in kW
+gen_cs = 112  # component size in kW, only valid if sim_cs[2]==1
 
 # Stationary storage system component data
 ess_enable = True
@@ -121,7 +121,7 @@ ess_dis_crate = 0.5  # maximum discharging C-rate in 1/h
 ess_init_soc = 0.5  # initial state of charge
 ess_sd = 0  # self-discharge rate of the component in ???
 ess_cdc = 1  # annual ratio of component cost decrease
-ess_cs = 1  # component size in kWh
+ess_cs = 1  # component size in kWh, only valid if sim_cs[3]==1
 
 # BEV
 bev_enable = True
@@ -244,12 +244,12 @@ if wind_enable:
         inputs={wind_bus: solph.Flow(variable_costs=sim_eps)},
         outputs={ac_bus: solph.Flow()},
         conversion_factors={ac_bus: 1})
-    if sim_cs:
+    if sim_cs[0] == 1:
         wind_src = solph.Source(
             label="wind_src",
             outputs={wind_bus: solph.Flow(actual_value=wind_data['P'], fixed=True,
                                         investment=solph.Investment(ep_costs=wind_epc))})
-    else:
+    if sim_cs[0] == 0:
         wind_src = solph.Source(
             label="wind_src",
             outputs={wind_bus: solph.Flow(actual_value=wind_data['P'], fixed=True,
@@ -277,12 +277,12 @@ if pv_enable:
         inputs={pv_bus: solph.Flow(variable_costs=sim_eps)},
         outputs={dc_bus: solph.Flow()},
         conversion_factors={dc_bus: 1})
-    if sim_cs:
+    if sim_cs[1] == 1:
         pv_src = solph.Source(
             label="pv_src",
             outputs={
                 pv_bus: solph.Flow(fix=pv_data["P"], investment=solph.Investment(ep_costs=pv_epc))})
-    else:
+    if sim_cs[1] == 0:
         pv_src = solph.Source(
             label="pv_src",
             outputs={
@@ -302,11 +302,11 @@ if pv_enable:
 ##########################################################################
 
 if gen_enable:
-    if sim_cs:
+    if sim_cs[2] == 1:
         gen_src = solph.Source(
             label='gen_src',
             outputs={ac_bus: solph.Flow(investment=solph.Investment(ep_costs=gen_epc), variable_costs=gen_soe)})
-    else:
+    if sim_cs[2] == 0:
         gen_src = solph.Source(
             label='gen_src',
             outputs={ac_bus: solph.Flow(nominal_value= gen_cs*1000 , variable_costs=gen_soe)})
@@ -322,7 +322,7 @@ if gen_enable:
 ##########################################################################
 
 if ess_enable:
-    if sim_cs:
+    if sim_cs[3] == 1:
         ess = solph.components.GenericStorage(
             label="ess",
             inputs={dc_bus: solph.Flow()},
@@ -335,7 +335,7 @@ if ess_enable:
             inflow_conversion_factor=ess_chg_eff,
             outflow_conversion_factor=ess_dis_eff,
             investment=solph.Investment(ep_costs=ess_epc), )
-    else:
+    if sim_cs[3] == 0:
         ess = solph.components.GenericStorage(
             label="ess",
             inputs={dc_bus: solph.Flow()},
@@ -484,9 +484,9 @@ tot['yde'] += results[(ac_bus, dem)]['sequences']['flow'].sum() / proj_yrrat
 print("#####")
 
 if wind_enable:
-    if sim_cs:
+    if sim_cs[0] == 1:
         wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
-    else:
+    if sim_cs[0] == 0:
         wind_inv = wind_cs*1000
     wind_ice = wind_inv * wind_sce
     wind_tce = fcs.tce(wind_ice, wind_ice, wind_ls, proj_ls)
@@ -504,9 +504,9 @@ if wind_enable:
                 + fcs.ann_recur(wind_yme + wind_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Wind Power Results:")
-    if sim_cs:
+    if sim_cs[0] == 1:
         print("Optimum Capacity: " + str(round(wind_inv / 1e3)) + " kW")
-    else:
+    if sim_cs[0] == 0:
         print("Set Capacity: " + str(wind_cs) + " kW")
     print("Initial Capital Expenses: " + str(round(wind_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(wind_yme)) + " USD")
@@ -529,9 +529,9 @@ if wind_enable:
     tot['ann'] += wind_ann
 
 if pv_enable:
-    if sim_cs:
+    if sim_cs[1] == 1:
         pv_inv = results[(pv_src, pv_bus)]["scalars"]["invest"] #[W]
-    else:
+    if sim_cs[1] == 0:
         pv_inv = pv_cs*1000
     pv_ice = pv_inv * pv_sce
     pv_tce = fcs.tce(pv_ice, pv_ice, pv_ls, proj_ls)
@@ -549,9 +549,9 @@ if pv_enable:
                 + fcs.ann_recur(pv_yme + pv_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Solar Power Results:")
-    if sim_cs:
+    if sim_cs[1] == 1:
         print("Optimum Capacity: " + str(round(pv_inv / 1e3)) + " kW (peak)")
-    else:
+    if sim_cs[1] == 0:
         print("Set Capacity: " + str(pv_cs) + " kW (peak)")
     print("Initial Capital Expenses: " + str(round(pv_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(pv_yme)) + " USD")
@@ -576,9 +576,9 @@ if pv_enable:
     tot['ann'] += pv_ann
 
 if gen_enable:
-    if sim_cs:
+    if sim_cs[2] == 1:
         gen_inv = results[(gen_src, ac_bus)]["scalars"]["invest"]
-    else:
+    if sim_cs[2] == 0:
         gen_inv = gen_cs*1000
     gen_ice = gen_inv * gen_sce
     gen_tce = fcs.tce(gen_ice, gen_ice, gen_ls, proj_ls)
@@ -596,9 +596,9 @@ if gen_enable:
                 + fcs.ann_recur(gen_yme + gen_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Diesel Power Results:")
-    if sim_cs:
+    if sim_cs[2] == 1:
         print("Optimum Capacity: " + str(round(gen_inv / 1e3)) + " kW")
-    else:
+    if sim_cs[2] == 0:
         print("Set Capacity: " + str(gen_cs) + " kW")
     print("Initial Capital Expenses: " + str(round(gen_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(gen_yme)) + " USD")
@@ -623,9 +623,9 @@ if gen_enable:
     tot['ann'] += gen_ann
 
 if ess_enable:
-    if sim_cs:
+    if sim_cs[3] == 1:
         ess_inv = results[(ess, None)]["scalars"]["invest"]
-    else:
+    if sim_cs[3] == 0:
         ess_inv = ess_cs*1000
     ess_ice = ess_inv * ess_sce
     ess_tce = fcs.tce(ess_ice, ess_ice, ess_ls, proj_ls)
@@ -643,9 +643,9 @@ if ess_enable:
                + fcs.ann_recur(ess_yme + ess_yoe, 1, proj_ls, proj_wacc, 1)
 
     print("Energy Storage Results:")
-    if sim_cs:
+    if sim_cs[3] == 1:
         print("Optimum Capacity: " + str(round(ess_inv / 1e3)) + " kWh")
-    else:
+    if sim_cs[3] == 0:
         print("Set Capacity: " + str(ess_cs) + " kWh")
     print("Initial Capital Expenses: " + str(round(ess_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(ess_yme)) + " USD")
