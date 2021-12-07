@@ -8,20 +8,23 @@ Institute of Automotive Technology
 Technical University of Munich
 philipp.rosner@tum.de
 Created September 2nd, 2021
-
-Last update: September 19th, 2021
+Last update: December 7th, 2021
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
+Marcel Brödel, B.Sc. - Semester Thesis in progress
+Elhussein Ismail, B.Sc. - Master Thesis in progress
 
 --- Detailed Description ---
 This script is the main model generator and optimizer for the toolset.
 Its results are output to files and key ones printed to the terminal.
 Visualization is done via different scripts (to be done)
+For further information, see readme
 
 --- Input & Output ---
 The script requires input data in the code block "Input".
 Additionally, several .csv-files for timeseries data are required.
+For further information, see readme
 
 --- Requirements ---
 see readme
@@ -713,7 +716,7 @@ plt.yticks(fontsize=20)
 plt.xlabel('Local Time', fontsize=20)
 plt.xticks(fontsize=20)
 #plt.xlim([datetime.date(2015, 4, 23), datetime.date(2015, 4, 26)])
-plt.grid(b=True, axis='y', which='major')
+plt.grid(visible=True, axis='y', which='major')
 plt.show()
 
 
