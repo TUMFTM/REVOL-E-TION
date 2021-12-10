@@ -1,0 +1,109 @@
+'''
+--- Tool name ---
+Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
+
+--- Created by ---
+Philipp Rosner, M.Sc.
+Institute of Automotive Technology
+Technical University of Munich
+philipp.rosner@tum.de
+Created September 2nd, 2021
+
+--- Updated by ---
+Marcel Brödel, B.Sc.
+marcel.broedel@tum.de
+Last update: December 05th, 2021
+
+--- Detailed Description ---
+This script defines the global settings used by main.py and rolling_horizon.py
+
+--- Requirements ---
+None
+
+--- File Information ---
+coding:     utf-8
+license:    GPLv3
+'''
+
+###############################################################################
+# Input
+###############################################################################
+
+# Simulation options
+sim_name = "mg_ev_main"  # name of scenario
+sim_solver = "gurobi"  # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_dump = False  # "True" activates oemof model and result saving
+sim_debug = False  # "True" activates mathematical model saving and extended solver output
+sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
+sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
+sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
+sim_cs = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
+
+# Project data
+proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
+proj_sim = 365  # Simulation timeframe in days
+proj_ls = 25  # Project duration in years
+proj_wacc = 0.07  # unitless weighted average cost of capital for the project
+
+# Demand data file
+dem_filename = "dem_data.csv"  # input data file containing timeseries for electricity demand in W
+
+# Transformer component data
+ac_dc_eff = 0.95  # unitless conversion efficiency of ac-dc bus transformer component
+dc_ac_eff = 0.95  # unitless conversion efficiency of dc-ac bus transformer component
+
+# Wind component data
+wind_filename = "wind_data.csv"  # name of the normalized wind power profile csv file in ./scenarios to evaluate
+wind_sce = 1.355  # specific capital expenses of the component in $/W
+wind_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+wind_soe = 0  # specific operational expenses of the component in $/Wh
+wind_ls = 20  # lifespan of the component in years
+wind_cdc = 1  # annual ratio of component cost decrease
+wind_cs = 100e3  # component size (peak) in kW, only valid if sim_cs["wind"]==False
+
+# Photovoltaic array component data
+pv_filename = "Zatta_CI_1kWp.csv"  # name of the normalized pv power profile csv file in ./scenarios to evaluate
+pv_sce = 0.8  # specific capital expenses of the component in $/W
+pv_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+pv_soe = 0  # specific operational expenses of the component in $/Wh
+pv_ls = 25  # lifespan of the component in years
+pv_cdc = 1  # annual ratio of cost decrease
+pv_cs = 850e3  # component size (peak) in W, only valid if sim_cs["pv"]==False
+
+# Diesel generator component data
+gen_sce = 1.5  # specific capital expenses of the component in $/W (original 1.15)
+gen_sme = 0  # specific maintenance expenses of the component in $/(W*year)
+gen_soe = 0.00065  # specific operational expenses of the component in $/Wh (original 0.00036)
+gen_ls = 10  # lifespan of the component in years
+gen_cdc = 1  # annual ratio of component cost decrease
+gen_cs = 100e3  # component size in W, only valid if sim_cs["gen"]==False
+
+# Stationary storage system component data
+ess_sce = 0.8  # specific capital expenses of the component in $/Wh
+ess_sme = 0  # specific maintenance expenses of the component in $/(Wh*year)
+ess_soe = 0  # specific operational expenses of the component in $/Wh
+ess_ls = 10  # lifespan of the component in years
+ess_chg_eff = 0.95  # charging efficiency
+ess_dis_eff = 0.85  # discharge efficiency
+ess_chg_crate = 0.5  # maximum charging C-rate in 1/h
+ess_dis_crate = 0.5  # maximum discharging C-rate in 1/h
+ess_init_soc = 0.5  # initial state of charge
+ess_sd = 0  # self-discharge rate of the component in ???
+ess_cdc = 1  # annual ratio of component cost decrease
+ess_cs = 1e6  # component size in Wh, only valid if sim_cs["ess"]==False
+
+# BEV
+bev_filename = "ind_car_data.csv"
+bev_agr = False  # boolean triggering simplified simulation of BEVs as a single set of components when true
+bev_num = 10  # number of vehicles to be simulated
+bev_sce = 0.8  # specific capital expenses of the component in $/Wh
+bev_sme = 0  # specific maintenance expenses of the component in $/(Wh*year)
+bev_soe = 0  # specific operational expenses of the component in $/Wh
+bev_ls = 10  # lifespan of the component in years
+bev_chg_pwr = 3600  # maximum allowable charge power for each individual BEV
+bev_dis_pwr = 3600  # maximum allowable discharge power for each individual BEV
+bev_charge_eff = 0.95  # unitless charge efficiency
+bev_discharge_eff = 0.95  # unitless discharge efficiency
+bev_cdc = 1  # annual ratio of component cost decrease
+bev_cs = 30000  # battery size of vehicles in Wh, only valid if sim_cs["bev"]==False
+
