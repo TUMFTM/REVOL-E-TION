@@ -31,17 +31,17 @@ license:    GPLv3
 
 # Simulation options
 sim_name = "mg_ev_main"  # name of scenario
-sim_solver = "gurobi"  # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_solver = "cbc"  # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
+sim_enable = dict(wind=True, pv=True, gen=True, ess=True, bev=True)
 sim_cs = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
 
 # Project data
 proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
-proj_sim = 365  # Simulation timeframe in days
+proj_sim = 10  # Simulation timeframe in days
 proj_ls = 25  # Project duration in years
 proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
