@@ -1,29 +1,24 @@
-'''
+"""
 --- Tool name ---
 Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
 
 --- Created by ---
 Philipp Rosner, M.Sc.
 Institute of Automotive Technology
+Department of Mobility Systems Engineering
+School of Engineering and Design
 Technical University of Munich
 philipp.rosner@tum.de
-Created September 2nd, 2021
 
---- Updated by ---
-Marcel Brödel, B.Sc.
-marcel.broedel@tum.de
-Last update: December 05th, 2021
+--- Contributors ---
+David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
+Marcel Brödel, B.Sc. - Semester Thesis in progress
+Elhussein Ismail, B.Sc. - Master Thesis in progress
 
 --- Detailed Description ---
-This script defines the global settings used by main.py and rolling_horizon.py
+This script defines the global settings for the MGEVOpti project
 
---- Requirements ---
-None
-
---- File Information ---
-coding:     utf-8
-license:    GPLv3
-'''
+"""
 
 ###############################################################################
 # Input
@@ -36,12 +31,17 @@ sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-sim_enable = dict(wind=True, pv=True, gen=True, ess=True, bev=True)
-sim_cs = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
+sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
+sim_cs = dict(wind=False, pv=False, gen=False, ess=False, bev=False)
+sim_os = dict(opt=False, rh=True) # opt: global optimum (no operating strategy), rh: rolling horizon strategy
+
+# Options operation strategy "Rolling Horizon" (only needed if sim_os = True)
+os_ph = 48  # predicted horizon in h
+os_ch = 24  # overlap horizon in h
 
 # Project data
 proj_start = "1/1/2015"  # Project start date (DD/MM/YYYY)
-proj_sim = 10  # Simulation timeframe in days
+proj_sim = 10 # Simulation timeframe in days
 proj_ls = 25  # Project duration in years
 proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
@@ -87,10 +87,10 @@ ess_chg_eff = 0.95  # charging efficiency
 ess_dis_eff = 0.85  # discharge efficiency
 ess_chg_crate = 0.5  # maximum charging C-rate in 1/h
 ess_dis_crate = 0.5  # maximum discharging C-rate in 1/h
-ess_init_soc = 0.5  # initial state of charge
+ess_init_soc = 0.7  # initial state of charge
 ess_sd = 0  # self-discharge rate of the component in ???
 ess_cdc = 1  # annual ratio of component cost decrease
-ess_cs = 1e6  # component size in Wh, only valid if sim_cs["ess"]==False
+ess_cs = 100e3  # component size in Wh, only valid if sim_cs["ess"]==False
 
 # BEV
 bev_filename = "ind_car_data.csv"
@@ -105,5 +105,5 @@ bev_dis_pwr = 3600  # maximum allowable discharge power for each individual BEV
 bev_charge_eff = 0.95  # unitless charge efficiency
 bev_discharge_eff = 0.95  # unitless discharge efficiency
 bev_cdc = 1  # annual ratio of component cost decrease
-bev_cs = 30000  # battery size of vehicles in Wh, only valid if sim_cs["bev"]==False
+bev_cs = 30e3  # battery size of vehicles in Wh, only valid if sim_cs["bev"]==False
 

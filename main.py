@@ -44,376 +44,471 @@ license:    GPLv3
 from oemof.tools import logger
 import oemof.solph as solph
 import oemof.solph.processing as prcs
-# import oemof.solph.views as views
+from oemof.solph import views
 
 import logging
 import os
 import pandas as pd
+import numpy as np
 # from pandas.plotting import register_matplotlib_converters
 # import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 import functions as fcs
-import settings as glob
+#import parameters as param
+
+from global_optimum import *
+from rolling_horizon import *
 
 ###############################################################################
 # Input
 ###############################################################################
 
-# Defining global variables (glob.variable) in file "settings.py"
+# Defining settings in file "parameters.py"
+
 
 
 ##########################################################################
 # Process input data
 ##########################################################################
-
 sim_ts = datetime.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
-sim_tsname = sim_ts + "_" + glob.sim_name
+sim_tsname = sim_ts + "_" + param.sim_name
 sim_resultpath = os.path.join(os.getcwd(), "results")
 logger.define_logging(logfile=sim_tsname + ".log")
 logging.info('Processing inputs')
 
-proj_start = datetime.strptime(glob.proj_start, '%d/%m/%Y')
-proj_simend = proj_start + relativedelta(days=glob.proj_sim)
-proj_end = proj_start + relativedelta(years=glob.proj_ls)
+proj_start = datetime.strptime(param.proj_start, '%d/%m/%Y')
+proj_simend = proj_start + relativedelta(days=param.proj_sim)
+proj_end = proj_start + relativedelta(years=param.proj_ls)
 proj_dur = (proj_end - proj_start).days
-proj_simrat = glob.proj_sim / proj_dur
-proj_yrrat = glob.proj_sim / 365.25
-proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=glob.sim_step).delete(-1)
+proj_simrat = param.proj_sim / proj_dur
+proj_yrrat = param.proj_sim / 365.25
+proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=param.sim_step).delete(-1)
 
-dem_filepath = os.path.join(os.getcwd(), "scenarios", glob.dem_filename)
+dem_filepath = os.path.join(os.getcwd(), "scenarios", param.dem_filename)
 dem_data = pd.read_csv(dem_filepath, sep=",", skip_blank_lines=False)
+dem_data['time'] = pd.date_range(start=param.proj_start, periods=len(dem_data), freq='H')
 
-if glob.sim_enable["wind"]:
-    wind_filepath = os.path.join(os.getcwd(), "scenarios", glob.wind_filename)
+wind_data = wind_epc = None
+if param.sim_enable["wind"]:
+    wind_filepath = os.path.join(os.getcwd(), "scenarios", param.wind_filename)
     wind_data = pd.read_csv(wind_filepath, sep=",", skip_blank_lines=False)
-    wind_ace = fcs.adj_ce(glob.wind_sce, glob.wind_sme, glob.wind_ls,
-                          glob.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-    wind_epc = fcs.ann_recur(wind_ace, glob.wind_ls, glob.proj_ls, glob.proj_wacc, glob.wind_cdc)
+    wind_data['time'] = pd.date_range(start=param.proj_start, periods=len(wind_data), freq='H')
+    wind_ace = fcs.adj_ce(param.wind_sce, param.wind_sme, param.wind_ls,
+                          param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    wind_epc = fcs.ann_recur(wind_ace, param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc)
 
-if glob.sim_enable["pv"]:
-    pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", glob.pv_filename)
+pv_data = pv_epc = pv_dc = pv_bus = pv_src = None
+if param.sim_enable["pv"]:
+    pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", param.pv_filename)
     pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
     pv_data['time'] = pd.to_datetime(pv_data['time'], format='%Y%m%d:%H%M')
     pv_data["P"] = pv_data["P"] / 1e3
-    pv_ace = fcs.adj_ce(glob.pv_sce, glob.pv_soe, glob.pv_ls, glob.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-    pv_epc = fcs.ann_recur(pv_ace, glob.pv_ls, glob.proj_ls, glob.proj_wacc, glob.pv_cdc)
+    pv_ace = fcs.adj_ce(param.pv_sce, param.pv_soe, param.pv_ls, param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    pv_epc = fcs.ann_recur(pv_ace, param.pv_ls, param.proj_ls, param.proj_wacc, param.pv_cdc)
 
-if glob.sim_enable["gen"]:
-    gen_ace = fcs.adj_ce(glob.gen_sce, glob.gen_soe, glob.gen_ls,
-                         glob.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-    gen_epc = fcs.ann_recur(gen_ace, glob.gen_ls, glob.proj_ls, glob.proj_wacc, glob.gen_cdc)
+gen_epc = None
+if param.sim_enable["gen"]:
+    gen_ace = fcs.adj_ce(param.gen_sce, param.gen_soe, param.gen_ls,
+                         param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
+    gen_epc = fcs.ann_recur(gen_ace, param.gen_ls, param.proj_ls, param.proj_wacc, param.gen_cdc)
 
-if glob.sim_enable["ess"]:
-    ess_ace = fcs.adj_ce(glob.ess_sce, glob.ess_sme, glob.ess_ls,
-                         glob.proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
-    ess_epc = fcs.ann_recur(ess_ace, glob.ess_ls, glob.proj_ls, glob.proj_wacc, glob.ess_cdc)
+ess_epc = ess = None
+if param.sim_enable["ess"]:
+    ess_ace = fcs.adj_ce(param.ess_sce, param.ess_sme, param.ess_ls,
+                         param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
+    ess_epc = fcs.ann_recur(ess_ace, param.ess_ls, param.proj_ls, param.proj_wacc, param.ess_cdc)
 
-if glob.sim_enable["bev"]:
-    bev_filepath = os.path.join(os.getcwd(), "scenarios", glob.bev_filename)
+bev_data = bev_epc = bev_ac = ac_bev = bev_bus = None
+if param.sim_enable["bev"]:
+    bev_filepath = os.path.join(os.getcwd(), "scenarios", param.bev_filename)
     bev_data = pd.read_csv(bev_filepath, sep=";")
-    bev_ace = fcs.adj_ce(glob.bev_sce, glob.bev_sme, glob.bev_ls, glob.proj_wacc)
-    bev_epc = fcs.ann_recur(bev_ace, glob.bev_ls, glob.proj_ls, glob.proj_wacc, glob.bev_cdc)
+    bev_data['time'] = pd.date_range(start=param.proj_start, periods=len(bev_data), freq='H')
+    bev_ace = fcs.adj_ce(param.bev_sce, param.bev_sme, param.bev_ls, param.proj_wacc)
+    bev_epc = fcs.ann_recur(bev_ace, param.bev_ls, param.proj_ls, param.proj_wacc, param.bev_cdc)
+
+
+
 
 ##########################################################################
-# Initialize oemof energy system instance
+# Call simulation strategy
 ##########################################################################
+if param.sim_os["opt"]:
+    if param.sim_os["rh"]:
+        print('ATTENTION: Please enable just one optimization strategy sim_os in parameters.py')
+        exit()
+    logging.info("Initializing global optimum strategy")
+    iterations, dem_in, wind_in, pv_in, ess_balancing, bev_in, bev_soc_proj_start, ess_soc_proj_start \
+        = opt_strategy(proj_start, dem_data, wind_data, pv_data, bev_data)
 
-logging.info("Initializing the energy system")
-es = solph.EnergySystem(timeindex=proj_dti)
+if param.sim_os["rh"]:
+    if param.sim_os["opt"]:
+        print('ATTENTION: Please enable just one optimization strategy sim_os in parameters.py')
+        exit()
+    if param.sim_cs["wind"] or param.sim_cs["pv"] or param.sim_cs["gen"] or param.sim_cs["ess"] or param.sim_cs["bev"]:
+        print('ATTENTION: Rolling horizon strategy is not valid if component sizing is active!')
+        print('ATTENTION: Please disable sim_cs in parameters.py')
+        exit()
+    logging.info("Initializing rolling horizon strategy")
+    # Call data for first RH iteration
+    iterations, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
+    gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis, sc_bevx, sc_ess \
+        = rh_strategy_init(proj_start)
 
-logging.info("Creating oemof objects")
 
-src_components = []  # create empty component list to iterate over later when displaying results
 
-##########################################################################
-# Create basic two-bus structure
-#             dc_bus              ac_bus
-#               |                   |
-#               |---dc_ac---------->|-->dem
-#               |                   |
-#               |<----------ac_dc---|
-##########################################################################
-
-ac_bus = solph.Bus(
-    label="ac_bus")
-dc_bus = solph.Bus(
-    label="dc_bus")
-ac_dc = solph.Transformer(
-    label="ac_dc",
-    inputs={ac_bus: solph.Flow(variable_costs=glob.sim_eps)},  # variable cost to exclude circular flows
-    outputs={dc_bus: solph.Flow()},
-    conversion_factors={dc_bus: glob.ac_dc_eff})
-dc_ac = solph.Transformer(
-    label="dc_ac",
-    inputs={dc_bus: solph.Flow(variable_costs=glob.sim_eps)},
-    outputs={ac_bus: solph.Flow()},
-    conversion_factors={ac_bus: glob.dc_ac_eff})
-dem = solph.Sink(
-    label='dem',
-    inputs={ac_bus: solph.Flow(fix=dem_data['P'], nominal_value=1)}
-)
-es.add(ac_bus, dc_bus, ac_dc, dc_ac, dem)
 
 ##########################################################################
-# Create wind power objects and add them to the energy system
-#             ac_bus             wind_bus
-#               |                   |
-#               |<--------wind_ac---|<--wind_src
-#               |                   |
-#                                   |-->wind_exc
+# Iterate model (global optimum: 1 loop, rolling horizon: >1 loops
 ##########################################################################
+for it in range(iterations):
+    logging.info('Iteration '+str(it+1)+' of '+str(iterations))
+    #print('Iteration '+str(it+1)+' of '+str(iterations))
 
-if glob.sim_enable["wind"]:
-    wind_bus = solph.Bus(
-        label='wind_bus')
-    wind_ac = solph.Transformer(
-        label="wind_ac",
-        inputs={wind_bus: solph.Flow(variable_costs=glob.sim_eps)},
-        outputs={ac_bus: solph.Flow()},
-        conversion_factors={ac_bus: 1})
-    if glob.sim_cs["wind"]:
-        wind_src = solph.Source(
-            label="wind_src",
-            outputs={wind_bus: solph.Flow(fix=wind_data['P'], investment=solph.Investment(ep_costs=wind_epc))})
-    else:
-        wind_src = solph.Source(
-            label="wind_src",
-            outputs={wind_bus: solph.Flow(fix=wind_data['P'], nominal_value=glob.wind_cs)})
-    wind_exc = solph.Sink(
-        label="wind_exc",
-        inputs={wind_bus: solph.Flow()})
-    es.add(wind_bus, wind_ac, wind_src, wind_exc)
-    src_components.append('wind')
+    ##########################################################################
+    # Update input files to predicted horizon (only for RH strategy)
+    ##########################################################################
+    if param.sim_os["rh"]:
+        dem_in, wind_in, pv_in, bev_in = rh_strategy_dataupdate(proj_dti, dem_data, wind_data, pv_data, bev_data)
 
-##########################################################################
-# Create solar power objects and add them to the energy system
-#             dc_bus              pv_bus
-#               |                   |
-#               |<----------pv_dc---|<--pv_src
-#               |                   |
-#                                   |-->pv_exc
-##########################################################################
+    ##########################################################################
+    # Initialize oemof energy system instance
+    ##########################################################################
 
-if glob.sim_enable["pv"]:
-    pv_bus = solph.Bus(
-        label='pv_bus')
-    pv_dc = solph.Transformer(
-        label="pv_dc",
-        inputs={pv_bus: solph.Flow(variable_costs=glob.sim_eps)},
+    #logging.info("Initializing the energy system")
+    es = solph.EnergySystem(timeindex=proj_dti)
+
+    #logging.info("Creating oemof objects")
+
+    src_components = []  # create empty component list to iterate over later when displaying results
+
+    ##########################################################################
+    # Create basic two-bus structure
+    #             dc_bus              ac_bus
+    #               |                   |
+    #               |---dc_ac---------->|-->dem
+    #               |                   |
+    #               |<----------ac_dc---|
+    ##########################################################################
+
+    ac_bus = solph.Bus(
+        label="ac_bus")
+    dc_bus = solph.Bus(
+        label="dc_bus")
+    ac_dc = solph.Transformer(
+        label="ac_dc",
+        inputs={ac_bus: solph.Flow(variable_costs=param.sim_eps)},  # variable cost to exclude circular flows
         outputs={dc_bus: solph.Flow()},
-        conversion_factors={dc_bus: 1})
-    if glob.sim_cs["pv"]:
-        pv_src = solph.Source(
-            label="pv_src",
-            outputs={
-                pv_bus: solph.Flow(fix=pv_data["P"], investment=solph.Investment(ep_costs=pv_epc))})
-    else:
-        pv_src = solph.Source(
-            label="pv_src",
-            outputs={
-                pv_bus: solph.Flow(fix=pv_data["P"], nominal_value=glob.pv_cs)})
-    pv_exc = solph.Sink(
-        label="pv_exc",
-        inputs={pv_bus: solph.Flow()})
-    es.add(pv_bus, pv_dc, pv_src, pv_exc)
-    src_components.append('pv')
-
-##########################################################################
-# Create diesel generator object and add it to the energy system
-#             ac_bus
-#               |
-#               |<--gen
-#               |
-##########################################################################
-
-if glob.sim_enable["gen"]:
-    if glob.sim_cs["gen"]:
-        gen_src = solph.Source(
-            label='gen_src',
-            outputs={ac_bus: solph.Flow(investment=solph.Investment(ep_costs=gen_epc), variable_costs=glob.gen_soe)})
-    else:
-        gen_src = solph.Source(
-            label='gen_src',
-            outputs={ac_bus: solph.Flow(nominal_value=glob.gen_cs, variable_costs=glob.gen_soe)})
-    es.add(gen_src)
-    src_components.append('gen')
-
-##########################################################################
-# Create stationary battery storage object and add it to the energy system
-#             dc_bus
-#               |
-#               |<->ess
-#               |
-##########################################################################
-
-if glob.sim_enable["ess"]:
-    if glob.sim_cs["ess"]:
-        ess = solph.components.GenericStorage(
-            label="ess",
-            inputs={dc_bus: solph.Flow()},
-            outputs={dc_bus: solph.Flow()},
-            loss_rate=glob.ess_sd,
-            balanced=True,
-            initial_storage_level=glob.ess_init_soc,
-            invest_relation_input_capacity=glob.ess_chg_crate,
-            invest_relation_output_capacity=glob.ess_dis_crate,
-            inflow_conversion_factor=glob.ess_chg_eff,
-            outflow_conversion_factor=glob.ess_dis_eff,
-            investment=solph.Investment(ep_costs=ess_epc),
-        )
-    else:
-        ess = solph.components.GenericStorage(
-            label="ess",
-            inputs={dc_bus: solph.Flow()},
-            outputs={dc_bus: solph.Flow()},
-            loss_rate=glob.ess_sd,
-            balanced=True,
-            initial_storage_level=glob.ess_init_soc,
-            invest_relation_input_capacity=glob.ess_chg_crate,
-            invest_relation_output_capacity=glob.ess_dis_crate,
-            inflow_conversion_factor=glob.ess_chg_eff,
-            outflow_conversion_factor=glob.ess_dis_eff,
-            nominal_storage_capacity=glob.ess_cs,
-        )
-    es.add(ess)
-
-##########################################################################
-# Create EV objects and add them to the energy system
-#
-# Option 1: aggregated vehicles
-#             ac_bus             bev_bus
-#               |<---------bev_ac---|<--bev_src
-#               |                   |
-#               |---ac_bev--------->|<->bev_ess
-#               |                   |
-#                                   |-->bev_snk
-#
-# Option 2: individual vehicles with individual bevx (x=1,2,3,...bev_num) buses
-#             ac_bus             bev_bus             bev1_bus
-#               |<---------bev_ac---|<-------bev1_bev---|<->bev1_ess
-#               |                   |                   |
-#               |---ac_bev--------->|---bev_bev1------->|-->bev1_snk
-#                                   |
-#                                   |                bev2_bus
-#                                   |<-------bev2_bev---|<->bev2_ess
-#                                   |                   |
-#                                   |---bev_bev2------->|-->bev2_snk
-##########################################################################
-
-if glob.sim_enable["bev"]:
-    bev_bus = solph.Bus(
-        label='bev_bus')
-    ac_bev = solph.Transformer(
-        label="ac_bev",
-        inputs={ac_bus: solph.Flow(variable_costs=glob.sim_eps)},
-        outputs={bev_bus: solph.Flow()},
-        conversion_factors={bev_bus: 1})
-    bev_ac = solph.Transformer(
-        label="bev_ac",
-        inputs={bev_bus: solph.Flow(variable_costs=glob.sim_eps)},
+        conversion_factors={dc_bus: param.ac_dc_eff})
+    dc_ac = solph.Transformer(
+        label="dc_ac",
+        inputs={dc_bus: solph.Flow(variable_costs=param.sim_eps)},
         outputs={ac_bus: solph.Flow()},
-        conversion_factors={ac_bus: 1})
-    es.add(bev_bus, ac_bev, bev_ac)
-    if glob.bev_agr:  # When vehicles are aggregated into three basic components
-        bev_snk = solph.Sink(  # Aggregated sink component modelling leaving vehicles
-            label="bev_snk",
-            inputs={bev_bus: solph.Flow(actual_value=bev_data["sink_data"], fixed=True, nominal_value=1)})
-        bev_src = solph.Source(  # Aggregated source component modelling arriving vehicles
-            label='bev_src',
-            outputs={bev_bus: solph.Flow(actual_value=bev_data['source_data'], fixed=True, nominal_value=1)})
-        bev_ess = solph.components.GenericStorage(  # Aggregated storage modelling the connected vehicles' batteries
-            label="bev_ess",
-            inputs={bev_bus: solph.Flow()},
+        conversion_factors={ac_bus: param.dc_ac_eff})
+    dem = solph.Sink(
+        label='dem',
+        inputs={ac_bus: solph.Flow(fix=dem_in['P'], nominal_value=1)}
+    )
+    es.add(ac_bus, dc_bus, ac_dc, dc_ac, dem)
+
+
+    ##########################################################################
+    # Create wind power objects and add them to the energy system
+    #             ac_bus             wind_bus
+    #               |                   |
+    #               |<--------wind_ac---|<--wind_src
+    #               |                   |
+    #                                   |-->wind_exc
+    ##########################################################################
+    if param.sim_enable["wind"]:
+        wind_bus = solph.Bus(
+            label='wind_bus')
+        wind_ac = solph.Transformer(
+            label="wind_ac",
+            inputs={wind_bus: solph.Flow(variable_costs=param.sim_eps)},
+            outputs={ac_bus: solph.Flow()},
+            conversion_factors={ac_bus: 1})
+        if param.sim_cs["wind"]:
+            wind_src = solph.Source(
+                label="wind_src",
+                outputs={wind_bus: solph.Flow(fix=wind_in['P'], investment=solph.Investment(ep_costs=wind_epc), variable_cost=param.wind_soe)})
+        else:
+            wind_src = solph.Source(
+                label="wind_src",
+                outputs={wind_bus: solph.Flow(fix=wind_in['P'], nominal_value=param.wind_cs, variable_cost=param.wind_soe)})
+        wind_exc = solph.Sink(
+            label="wind_exc",
+            inputs={wind_bus: solph.Flow()})
+        es.add(wind_bus, wind_ac, wind_src, wind_exc)
+        src_components.append('wind')
+    else:
+        wind_bus = None
+        wind_src = None
+
+
+    ##########################################################################
+    # Create solar power objects and add them to the energy system
+    #             dc_bus              pv_bus
+    #               |                   |
+    #               |<----------pv_dc---|<--pv_src
+    #               |                   |
+    #                                   |-->pv_exc
+    ##########################################################################
+
+    if param.sim_enable["pv"]:
+        pv_bus = solph.Bus(
+            label='pv_bus')
+        pv_dc = solph.Transformer(
+            label="pv_dc",
+            inputs={pv_bus: solph.Flow(variable_costs=param.sim_eps)},
+            outputs={dc_bus: solph.Flow()},
+            conversion_factors={dc_bus: 1})
+        if param.sim_cs["pv"]:
+            pv_src = solph.Source(
+                label="pv_src",
+                outputs={
+                    pv_bus: solph.Flow(fix=pv_in['P'], investment=solph.Investment(ep_costs=pv_epc), variable_cost=param.pv_soe)})
+        else:
+            pv_src = solph.Source(
+                label="pv_src",
+                outputs={
+                    pv_bus: solph.Flow(fix=pv_in['P'], nominal_value=param.pv_cs, variable_cost=param.pv_soe)})
+        pv_exc = solph.Sink(
+            label="pv_exc",
+            inputs={pv_bus: solph.Flow()})
+        es.add(pv_bus, pv_dc, pv_src, pv_exc)
+        src_components.append('pv')
+        #TODO
+
+
+    ##########################################################################
+    # Create diesel generator object and add it to the energy system
+    #             ac_bus
+    #               |
+    #               |<--gen
+    #               |
+    ##########################################################################
+
+    if param.sim_enable["gen"]:
+        if param.sim_cs["gen"]:
+            gen_src = solph.Source(
+                label='gen_src',
+                outputs={ac_bus: solph.Flow(investment=solph.Investment(ep_costs=gen_epc), variable_costs=param.gen_soe)})
+        else:
+            gen_src = solph.Source(
+                label='gen_src',
+                outputs={ac_bus: solph.Flow(nominal_value=param.gen_cs, variable_costs=param.gen_soe)})
+        es.add(gen_src)
+        src_components.append('gen')
+        #TODO
+
+
+
+    ##########################################################################
+    # Create stationary battery storage object and add it to the energy system
+    #             dc_bus
+    #               |
+    #               |<->ess
+    #               |
+    ##########################################################################
+
+    if param.sim_enable["ess"]:
+        if param.sim_cs["ess"]:
+            ess = solph.components.GenericStorage(
+                label="ess",
+                inputs={dc_bus: solph.Flow()},
+                outputs={dc_bus: solph.Flow(variable_cost=param.ess_soe)},
+                loss_rate=param.ess_sd,
+                balanced=ess_balancing,
+                initial_storage_level=ess_soc_proj_start,
+                invest_relation_input_capacity=param.ess_chg_crate,
+                invest_relation_output_capacity=param.ess_dis_crate,
+                inflow_conversion_factor=param.ess_chg_eff,
+                outflow_conversion_factor=param.ess_dis_eff,
+                investment=solph.Investment(ep_costs=ess_epc),
+            )
+        else:
+            ess = solph.components.GenericStorage(
+                label="ess",
+                inputs={dc_bus: solph.Flow()},
+                outputs={dc_bus: solph.Flow(variable_cost=param.ess_soe)},
+                loss_rate=param.ess_sd,
+                balanced=ess_balancing,
+                initial_storage_level=ess_soc_proj_start,
+                invest_relation_input_capacity=param.ess_chg_crate,
+                invest_relation_output_capacity=param.ess_dis_crate,
+                inflow_conversion_factor=param.ess_chg_eff,
+                outflow_conversion_factor=param.ess_dis_eff,
+                nominal_storage_capacity=param.ess_cs,
+            )
+        es.add(ess)
+        #TODO
+
+
+
+    ##########################################################################
+    # Create EV objects and add them to the energy system
+    #
+    # Option 1: aggregated vehicles
+    #             ac_bus             bev_bus
+    #               |<---------bev_ac---|<--bev_src
+    #               |                   |
+    #               |---ac_bev--------->|<->bev_ess
+    #               |                   |
+    #                                   |-->bev_snk
+    #
+    # Option 2: individual vehicles with individual bevx (x=1,2,3,...bev_num) buses
+    #             ac_bus             bev_bus             bev1_bus
+    #               |<---------bev_ac---|<-------bev1_bev---|<->bev1_ess
+    #               |                   |                   |
+    #               |---ac_bev--------->|---bev_bev1------->|-->bev1_snk
+    #                                   |
+    #                                   |                bev2_bus
+    #                                   |<-------bev2_bev---|<->bev2_ess
+    #                                   |                   |
+    #                                   |---bev_bev2------->|-->bev2_snk
+    ##########################################################################
+
+    if param.sim_enable["bev"]:
+        bev_bus = solph.Bus(
+            label='bev_bus')
+        ac_bev = solph.Transformer(
+            label="ac_bev",
+            inputs={ac_bus: solph.Flow(variable_costs=param.sim_eps)},
             outputs={bev_bus: solph.Flow()},
-            nominal_storage_capacity=glob.bev_num * glob.bev_cs,  # Storage capacity is set to the maximum available,
-            # adaptation to different numbers of vehicles happens with the min/max storage levels
-            loss_rate=0,
-            balanced=False,
-            initial_storage_level=None,
-            inflow_conversion_factor=1,
-            outflow_conversion_factor=1,
-            min_storage_level=bev_data['min_charge'],  # This models the varying storage capacity with (dis)connects
-            max_storage_level=bev_data['max_charge'])  # This models the varying storage capacity with (dis)connects
-        es.add(bev_snk, bev_src, bev_ess)
-    else:  # When vehicles are modeled individually
-        for i in range(0, glob.bev_num):  # Create individual vehicles having a bus, a storage and a sink
-            bus_label = "bev" + str(i + 1) + "_bus"
-            snk_label = "bev" + str(i + 1) + "_snk"
-            ess_label = "bev" + str(i + 1) + "_ess"
-            chg_label = "bev_bev" + str(i + 1)
-            dis_label = "bev" + str(i + 1) + "_bev"
-            snk_datalabel = 'sink_data_' + str(i + 1)
-            chg_datalabel = 'at_charger_' + str(i + 1)
-            maxsoc_datalabel = 'max_charge_' + str(i + 1)
-            minsoc_datalabel = 'min_charge_' + str(i + 1)
-            bevx_bus = solph.Bus(  # bevx denominates an individual vehicle component
-                label=bus_label)
-            bev_bevx = solph.Transformer(
-                label=chg_label,
-                inputs={bev_bus: solph.Flow(nominal_value=glob.bev_chg_pwr, max=bev_data[chg_datalabel],
-                                            variable_costs=glob.sim_eps)},
-                outputs={bevx_bus: solph.Flow()},
-                conversion_factors={bevx_bus: glob.bev_charge_eff})
-            bevx_bev = solph.Transformer(
-                label=dis_label,
-                inputs={bevx_bus: solph.Flow(nominal_value=glob.bev_chg_pwr, max=0, variable_costs=0.000001)},
-                outputs={bev_bus: solph.Flow()},
-                conversion_factors={bev_bus: glob.bev_discharge_eff})
-            if glob.sim_cs["bev"]:
-                bevx_ess = solph.components.GenericStorage(
-                    label=ess_label,
-                    inputs={bevx_bus: solph.Flow()},
+            conversion_factors={bev_bus: 1})
+        bev_ac = solph.Transformer(
+            label="bev_ac",
+            inputs={bev_bus: solph.Flow(variable_costs=param.sim_eps)},
+            outputs={ac_bus: solph.Flow()},
+            conversion_factors={ac_bus: 1})
+        es.add(bev_bus, ac_bev, bev_ac)
+        if param.bev_agr:  # When vehicles are aggregated into three basic components
+            bev_snk = solph.Sink(  # Aggregated sink component modelling leaving vehicles
+                label="bev_snk",
+                inputs={bev_bus: solph.Flow(actual_value=bev_in["sink_data"], fixed=True, nominal_value=1)})
+            bev_src = solph.Source(  # Aggregated source component modelling arriving vehicles
+                label='bev_src',
+                outputs={bev_bus: solph.Flow(actual_value=bev_in['source_data'], fixed=True, nominal_value=1)})
+            bev_ess = solph.components.GenericStorage(  # Aggregated storage modelling the connected vehicles' batteries
+                label="bev_ess",
+                inputs={bev_bus: solph.Flow()},
+                outputs={bev_bus: solph.Flow(variable_cost=param.bev_soe)},
+                nominal_storage_capacity=param.bev_num * param.bev_cs,  # Storage capacity is set to the maximum available,
+                # adaptation to different numbers of vehicles happens with the min/max storage levels
+                loss_rate=0,
+                balanced=False,
+                initial_storage_level=None,
+                inflow_conversion_factor=1,
+                outflow_conversion_factor=1,
+                min_storage_level=bev_data['min_charge'],  # This models the varying storage capacity with (dis)connects
+                max_storage_level=bev_data['max_charge'])  # This models the varying storage capacity with (dis)connects
+            es.add(bev_snk, bev_src, bev_ess)
+        else:  # When vehicles are modeled individually
+            for i in range(0, param.bev_num):  # Create individual vehicles having a bus, a storage and a sink
+                bus_label = "bev" + str(i + 1) + "_bus"
+                snk_label = "bev" + str(i + 1) + "_snk"
+                ess_label = "bev" + str(i + 1) + "_ess"
+                chg_label = "bev_bev" + str(i + 1)
+                dis_label = "bev" + str(i + 1) + "_bev"
+                snk_datalabel = 'sink_data_' + str(i + 1)
+                chg_datalabel = 'at_charger_' + str(i + 1)
+                maxsoc_datalabel = 'max_charge_' + str(i + 1)
+                minsoc_datalabel = 'min_charge_' + str(i + 1)
+                bevx_bus = solph.Bus(  # bevx denominates an individual vehicle component
+                    label=bus_label)
+                bev_bevx = solph.Transformer(
+                    label=chg_label,
+                    inputs={bev_bus: solph.Flow(nominal_value=param.bev_chg_pwr, max=bev_in[chg_datalabel],
+                                                variable_costs=param.sim_eps)},
                     outputs={bevx_bus: solph.Flow()},
-                    loss_rate=0,
-                    balanced=False,
-                    initial_storage_level=None,
-                    inflow_conversion_factor=1,
-                    outflow_conversion_factor=1,
-                    max_storage_level=1,
-                    min_storage_level=bev_data[minsoc_datalabel],  # this ensures the vehicle is charged when leaving
-                    investment=solph.Investment(ep_costs=bev_epc),
-                )
-            else:
-                bevx_ess = solph.components.GenericStorage(
-                    label=ess_label,
-                    inputs={bevx_bus: solph.Flow()},
-                    outputs={bevx_bus: solph.Flow()},
-                    loss_rate=0,
-                    balanced=False,
-                    initial_storage_level=None,
-                    inflow_conversion_factor=1,
-                    outflow_conversion_factor=1,
-                    max_storage_level=1,
-                    min_storage_level=bev_data[minsoc_datalabel],  # this ensures the vehicle is charged when leaving
-                    nominal_storage_capacity=glob.bev_cs,
-                )
-            bevx_snk = solph.Sink(
-                label=snk_label,
-                inputs={bevx_bus: solph.Flow(fix=bev_data[snk_datalabel], nominal_value=1)})
-            es.add(bevx_bus, bevx_bev, bev_bevx, bevx_ess, bevx_snk)
+                    conversion_factors={bevx_bus: param.bev_charge_eff})
+                bevx_bev = solph.Transformer(
+                    label=dis_label,
+                    inputs={bevx_bus: solph.Flow(nominal_value=param.bev_chg_pwr, max=0, variable_costs=0.000001)},
+                    outputs={bev_bus: solph.Flow()},
+                    conversion_factors={bev_bus: param.bev_discharge_eff})
+                if param.sim_cs["bev"]:
+                    bevx_ess = solph.components.GenericStorage(
+                        label=ess_label,
+                        inputs={bevx_bus: solph.Flow()},
+                        outputs={bevx_bus: solph.Flow(variable_cost=param.bev_soe)},
+                        loss_rate=0,
+                        balanced=False,
+                        initial_storage_level=bev_soc_proj_start[i],
+                        inflow_conversion_factor=1,
+                        outflow_conversion_factor=1,
+                        max_storage_level=1,
+                        min_storage_level=bev_in[minsoc_datalabel],  # this ensures the vehicle is charged when leaving
+                        investment=solph.Investment(ep_costs=bev_epc),
+                    )
+                else:
+                    bevx_ess = solph.components.GenericStorage(
+                        label=ess_label,
+                        inputs={bevx_bus: solph.Flow()},
+                        outputs={bevx_bus: solph.Flow(variable_cost=param.bev_soe)},
+                        loss_rate=0,
+                        balanced=False,
+                        initial_storage_level=bev_soc_proj_start[i],
+                        inflow_conversion_factor=1,
+                        outflow_conversion_factor=1,
+                        max_storage_level=1,
+                        min_storage_level=bev_in[minsoc_datalabel],  # this ensures the vehicle is charged when leaving
+                        nominal_storage_capacity=param.bev_cs,
+                    )
+                bevx_snk = solph.Sink(
+                    label=snk_label,
+                    inputs={bevx_bus: solph.Flow(fix=bev_in[snk_datalabel], nominal_value=1)})
+                es.add(bevx_bus, bevx_bev, bev_bevx, bevx_ess, bevx_snk)
 
-##########################################################################
-# Optimize the energy system
-##########################################################################
 
-# Formulate the (MI)LP problem
-logging.info("Creating optimization model")
-om = solph.Model(es)
 
-if glob.sim_debug:
-    om.write("./lp_models/" + sim_ts + "_" + glob.sim_name + ".lp", io_options={'symbolic_solver_labels': True})  # write
-    # the lp file for debugging or other reasons
 
-# Solve the optimization problem
-logging.info("Solving the optimization problem")
-om.solve(solver=glob.sim_solver, solve_kwargs={"tee": glob.sim_debug})
+    ##########################################################################
+    # Optimize the energy system
+    ##########################################################################
 
-logging.info("Getting the results from the solver")
-results = prcs.results(om)
+    # Formulate the (MI)LP problem
+    # logging.info("Creating optimization model")
+    om = solph.Model(es)
+
+    if param.sim_debug:
+        om.write("./lp_models/" + sim_ts + "_" + param.sim_name + ".lp", io_options={'symbolic_solver_labels': True})  # write
+        # the lp file for debugging or other reasons
+        #TODO
+
+    # Solve the optimization problem
+    # logging.info("Solving the optimization problem")
+    om.solve(solver=param.sim_solver, solve_kwargs={"tee": param.sim_debug})
+
+    # logging.info("Getting the results from the solver")
+    results = prcs.results(om)
+
+
+    ##########################################################################
+    # Postprocess iteration data
+    ##########################################################################
+    if param.sim_os["opt"]:
+        gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess = \
+            opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev)
+
+    if param.sim_os["rh"]:
+        proj_start, proj_dti, \
+        dem_flow, pv_flow, gen_flow, ess_flow, bev_flow, \
+        wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis, \
+        ess_soc_proj_start, bev_soc_proj_start, sc_bevx, sc_ess = \
+        rh_strategy_postprocessing(proj_start, results, dem, ess,
+                                   dem_flow, pv_flow, gen_flow, ess_flow, bev_flow,
+                                   wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis,
+                                   ac_bus, dc_bus, wind_bus, pv_bus, bev_bus,
+                                   wind_src, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
+                                   ess_soc_proj_start, bev_soc_proj_start, sc_bevx, sc_ess)
+
+
 
 ##########################################################################
 # Display key results in text, add energies and costs
@@ -424,35 +519,40 @@ logging.info("Displaying key results")
 tot = dict()
 tot = dict.fromkeys(['ice', 'tce', 'pce', 'yme', 'tme', 'pme', 'yoe', 'toe', 'poe', 'yen', 'ten', 'pen',
                      'yde', 'tde', 'pde', 'ann', 'npc', 'lcoe', 'eta'], 0)
-tot['yde'] += results[(ac_bus, dem)]['sequences']['flow'].sum() / proj_yrrat
+tot['yde'] += dem_flow.sum() / proj_yrrat
 
 print("#####")
 
-if glob.sim_enable["wind"]:
-    if glob.sim_cs["wind"]:
+if param.sim_enable["wind"]:
+    if param.sim_cs["wind"]:
         wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
+        #TODO: existiert scalar vllt immer?
     else:
-        wind_inv = glob.wind_cs
-    wind_ice = wind_inv * glob.wind_sce
-    wind_tce = fcs.tce(wind_ice, wind_ice, glob.wind_ls, glob.proj_ls)
-    wind_pce = fcs.pce(wind_ice, wind_ice, glob.wind_ls, glob.proj_ls, glob.proj_wacc)
-    wind_yen = results[(wind_src, wind_bus)]['sequences']['flow'].sum() / proj_yrrat
-    wind_ten = wind_yen * glob.proj_ls
-    wind_pen = fcs.acc_discount(wind_yen, glob.proj_ls, glob.proj_wacc)
-    wind_yme = wind_inv * glob.wind_sme
-    wind_tme = wind_yme * glob.proj_ls
-    wind_pme = fcs.acc_discount(wind_yme, glob.proj_ls, glob.proj_wacc)
-    wind_yoe = wind_yen * glob.wind_soe
-    wind_toe = wind_ten * glob.wind_soe
-    wind_poe = fcs.acc_discount(wind_yoe, glob.proj_ls, glob.proj_wacc)
-    wind_ann = fcs.ann_recur(wind_ice, glob.wind_ls, glob.proj_ls, glob.proj_wacc, glob.wind_cdc) \
-               + fcs.ann_recur(wind_yme + wind_yoe, 1, glob.proj_ls, glob.proj_wacc, 1)
+        wind_inv = param.wind_cs
+    wind_ice = wind_inv * param.wind_sce
+    wind_tce = fcs.tce(wind_ice, wind_ice, param.wind_ls, param.proj_ls)
+    wind_pce = fcs.pce(wind_ice, wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc)
+    # TODO:
+    if param.sim_os["opt"]:
+        wind_yen = results[(wind_src, wind_bus)]['sequences']['flow'].sum() / proj_yrrat
+    if param.sim_os["rh"]:
+        wind_yen = wind_prod.sum() / proj_yrrat
+    wind_ten = wind_yen * param.proj_ls
+    wind_pen = fcs.acc_discount(wind_yen, param.proj_ls, param.proj_wacc)
+    wind_yme = wind_inv * param.wind_sme
+    wind_tme = wind_yme * param.proj_ls
+    wind_pme = fcs.acc_discount(wind_yme, param.proj_ls, param.proj_wacc)
+    wind_yoe = wind_yen * param.wind_soe
+    wind_toe = wind_ten * param.wind_soe
+    wind_poe = fcs.acc_discount(wind_yoe, param.proj_ls, param.proj_wacc)
+    wind_ann = fcs.ann_recur(wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc) \
+               + fcs.ann_recur(wind_yme + wind_yoe, 1, param.proj_ls, param.proj_wacc, 1)
 
     print("Wind Power Results:")
-    if glob.sim_cs["wind"]:
+    if param.sim_cs["wind"]:
         print("Optimum Capacity: " + str(round(wind_inv / 1e3)) + " kW")
     else:
-        print("Set Capacity: " + str(glob.wind_cs) + " kW")
+        print("Set Capacity: " + str(param.wind_cs) + " kW")
     print("Initial Capital Expenses: " + str(round(wind_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(wind_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(wind_yoe)) + " USD")
@@ -473,31 +573,34 @@ if glob.sim_enable["wind"]:
     tot['pen'] += wind_pen
     tot['ann'] += wind_ann
 
-if glob.sim_enable["pv"]:
-    if glob.sim_cs["pv"]:
+if param.sim_enable["pv"]:
+    if param.sim_cs["pv"]:
         pv_inv = results[(pv_src, pv_bus)]["scalars"]["invest"]  # [W]
     else:
-        pv_inv = glob.pv_cs
-    pv_ice = pv_inv * glob.pv_sce
-    pv_tce = fcs.tce(pv_ice, pv_ice, glob.pv_ls, glob.proj_ls)
-    pv_pce = fcs.pce(pv_ice, pv_ice, glob.pv_ls, glob.proj_ls, glob.proj_wacc)
-    pv_yen = results[(pv_src, pv_bus)]['sequences']['flow'].sum() / proj_yrrat
-    pv_ten = pv_yen * glob.proj_ls
-    pv_pen = fcs.acc_discount(pv_yen, glob.proj_ls, glob.proj_wacc)
-    pv_yme = pv_inv * glob.pv_sme
-    pv_tme = pv_yme * glob.proj_ls
-    pv_pme = fcs.acc_discount(pv_yme, glob.proj_ls, glob.proj_wacc)
-    pv_yoe = pv_yen * glob.pv_soe
-    pv_toe = pv_ten * glob.pv_soe
-    pv_poe = fcs.acc_discount(pv_yoe, glob.proj_ls, glob.proj_wacc)
-    pv_ann = fcs.ann_recur(pv_ice, glob.pv_ls, glob.proj_ls, glob.proj_wacc, glob.pv_cdc) \
-             + fcs.ann_recur(pv_yme + pv_yoe, 1, glob.proj_ls, glob.proj_wacc, 1)
+        pv_inv = param.pv_cs
+    pv_ice = pv_inv * param.pv_sce
+    pv_tce = fcs.tce(pv_ice, pv_ice, param.pv_ls, param.proj_ls)
+    pv_pce = fcs.pce(pv_ice, pv_ice, param.pv_ls, param.proj_ls, param.proj_wacc)
+    if param.sim_os["opt"]:
+        pv_yen = results[(pv_src, pv_bus)]['sequences']['flow'].sum() / proj_yrrat
+    if param.sim_os["rh"]:
+        pv_yen = pv_prod.sum() / proj_yrrat
+    pv_ten = pv_yen * param.proj_ls
+    pv_pen = fcs.acc_discount(pv_yen, param.proj_ls, param.proj_wacc)
+    pv_yme = pv_inv * param.pv_sme
+    pv_tme = pv_yme * param.proj_ls
+    pv_pme = fcs.acc_discount(pv_yme, param.proj_ls, param.proj_wacc)
+    pv_yoe = pv_yen * param.pv_soe
+    pv_toe = pv_ten * param.pv_soe
+    pv_poe = fcs.acc_discount(pv_yoe, param.proj_ls, param.proj_wacc)
+    pv_ann = fcs.ann_recur(pv_ice, param.pv_ls, param.proj_ls, param.proj_wacc, param.pv_cdc) \
+             + fcs.ann_recur(pv_yme + pv_yoe, 1, param.proj_ls, param.proj_wacc, 1)
 
     print("Solar Power Results:")
-    if glob.sim_cs["pv"]:
+    if param.sim_cs["pv"]:
         print("Optimum Capacity: " + str(round(pv_inv / 1e3)) + " kW (peak)")
     else:
-        print("Set Capacity: " + str(glob.pv_cs) + " kW (peak)")
+        print("Set Capacity: " + str(param.pv_cs) + " kW (peak)")
     print("Initial Capital Expenses: " + str(round(pv_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(pv_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(pv_yoe)) + " USD")
@@ -520,31 +623,34 @@ if glob.sim_enable["pv"]:
     tot['pen'] += pv_pen
     tot['ann'] += pv_ann
 
-if glob.sim_enable["gen"]:
-    if glob.sim_cs["gen"]:
+if param.sim_enable["gen"]:
+    if param.sim_cs["gen"]:
         gen_inv = results[(gen_src, ac_bus)]["scalars"]["invest"]
     else:
-        gen_inv = glob.gen_cs
-    gen_ice = gen_inv * glob.gen_sce
-    gen_tce = fcs.tce(gen_ice, gen_ice, glob.gen_ls, glob.proj_ls)
-    gen_pce = fcs.pce(gen_ice, gen_ice, glob.gen_ls, glob.proj_ls, glob.proj_wacc)
-    gen_yen = results[(gen_src, ac_bus)]['sequences']['flow'].sum() / proj_yrrat
-    gen_ten = gen_yen * glob.proj_ls
-    gen_pen = fcs.acc_discount(gen_yen, glob.proj_ls, glob.proj_wacc)
-    gen_yme = gen_inv * glob.gen_sme
-    gen_tme = gen_yme * glob.proj_ls
-    gen_pme = fcs.acc_discount(gen_yme, glob.proj_ls, glob.proj_wacc)
-    gen_yoe = gen_yen * glob.gen_soe
-    gen_toe = gen_ten * glob.gen_soe
-    gen_poe = fcs.acc_discount(gen_yoe, glob.proj_ls, glob.proj_wacc)
-    gen_ann = fcs.ann_recur(gen_ice, glob.gen_ls, glob.proj_ls, glob.proj_wacc, glob.gen_cdc) \
-                + fcs.ann_recur(gen_yme + gen_yoe, 1, glob.proj_ls, glob.proj_wacc, 1)
+        gen_inv = param.gen_cs
+    gen_ice = gen_inv * param.gen_sce
+    gen_tce = fcs.tce(gen_ice, gen_ice, param.gen_ls, param.proj_ls)
+    gen_pce = fcs.pce(gen_ice, gen_ice, param.gen_ls, param.proj_ls, param.proj_wacc)
+    if param.sim_os["opt"]:
+        gen_yen = results[(gen_src, ac_bus)]['sequences']['flow'].sum() / proj_yrrat
+    if param.sim_os["rh"]:
+        gen_yen = gen_prod.sum() / proj_yrrat
+    gen_ten = gen_yen * param.proj_ls
+    gen_pen = fcs.acc_discount(gen_yen, param.proj_ls, param.proj_wacc)
+    gen_yme = gen_inv * param.gen_sme
+    gen_tme = gen_yme * param.proj_ls
+    gen_pme = fcs.acc_discount(gen_yme, param.proj_ls, param.proj_wacc)
+    gen_yoe = gen_yen * param.gen_soe
+    gen_toe = gen_ten * param.gen_soe
+    gen_poe = fcs.acc_discount(gen_yoe, param.proj_ls, param.proj_wacc)
+    gen_ann = fcs.ann_recur(gen_ice, param.gen_ls, param.proj_ls, param.proj_wacc, param.gen_cdc) \
+                + fcs.ann_recur(gen_yme + gen_yoe, 1, param.proj_ls, param.proj_wacc, 1)
 
     print("Diesel Power Results:")
-    if glob.sim_cs["gen"]:
+    if param.sim_cs["gen"]:
         print("Optimum Capacity: " + str(round(gen_inv / 1e3)) + " kW")
     else:
-        print("Set Capacity: " + str(glob.gen_cs) + " kW")
+        print("Set Capacity: " + str(param.gen_cs) + " kW")
     print("Initial Capital Expenses: " + str(round(gen_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(gen_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(gen_yoe)) + " USD")
@@ -567,31 +673,34 @@ if glob.sim_enable["gen"]:
     tot['pen'] += gen_pen
     tot['ann'] += gen_ann
 
-if glob.sim_enable["ess"]:
-    if glob.sim_cs["ess"]:
+if param.sim_enable["ess"]:
+    if param.sim_cs["ess"]:
         ess_inv = results[(ess, None)]["scalars"]["invest"]
     else:
-        ess_inv = glob.ess_cs
-    ess_ice = ess_inv * glob.ess_sce
-    ess_tce = fcs.tce(ess_ice, ess_ice, glob.ess_ls, glob.proj_ls)
-    ess_pce = fcs.pce(ess_ice, ess_ice, glob.ess_ls, glob.proj_ls, glob.proj_wacc)
-    ess_yen = results[(ess, dc_bus)]['sequences']['flow'].sum() / proj_yrrat
-    ess_ten = ess_yen * glob.proj_ls
-    ess_pen = fcs.acc_discount(ess_yen, glob.proj_ls, glob.proj_wacc)
-    ess_yme = ess_inv * glob.ess_sme
-    ess_tme = ess_yme * glob.proj_ls
-    ess_pme = fcs.acc_discount(ess_yme, glob.proj_ls, glob.proj_wacc)
-    ess_yoe = ess_yen * glob.ess_soe
-    ess_toe = ess_ten * glob.ess_soe
-    ess_poe = fcs.acc_discount(ess_yoe, glob.proj_ls, glob.proj_wacc)
-    ess_ann = fcs.ann_recur(ess_ice, glob.ess_ls, glob.ess_ls, glob.proj_wacc, glob.ess_cdc) \
-              + fcs.ann_recur(ess_yme + ess_yoe, 1, glob.proj_ls, glob.proj_wacc, 1)
+        ess_inv = param.ess_cs
+    ess_ice = ess_inv * param.ess_sce
+    ess_tce = fcs.tce(ess_ice, ess_ice, param.ess_ls, param.proj_ls)
+    ess_pce = fcs.pce(ess_ice, ess_ice, param.ess_ls, param.proj_ls, param.proj_wacc)
+    if param.sim_os["opt"]:
+        ess_yen = results[(ess, dc_bus)]['sequences']['flow'].sum() / proj_yrrat
+    if param.sim_os["rh"]:
+        ess_yen = ess_prod.sum() / proj_yrrat
+    ess_ten = ess_yen * param.proj_ls
+    ess_pen = fcs.acc_discount(ess_yen, param.proj_ls, param.proj_wacc)
+    ess_yme = ess_inv * param.ess_sme
+    ess_tme = ess_yme * param.proj_ls
+    ess_pme = fcs.acc_discount(ess_yme, param.proj_ls, param.proj_wacc)
+    ess_yoe = ess_yen * param.ess_soe
+    ess_toe = ess_ten * param.ess_soe
+    ess_poe = fcs.acc_discount(ess_yoe, param.proj_ls, param.proj_wacc)
+    ess_ann = fcs.ann_recur(ess_ice, param.ess_ls, param.ess_ls, param.proj_wacc, param.ess_cdc) \
+              + fcs.ann_recur(ess_yme + ess_yoe, 1, param.proj_ls, param.proj_wacc, 1)
 
     print("Energy Storage Results:")
-    if glob.sim_cs["ess"]:
+    if param.sim_cs["ess"]:
         print("Optimum Capacity: " + str(round(ess_inv / 1e3)) + " kWh")
     else:
-        print("Set Capacity: " + str(glob.ess_cs / 1e3) + " kWh")
+        print("Set Capacity: " + str(param.ess_cs / 1e3) + " kWh")
     print("Initial Capital Expenses: " + str(round(ess_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(ess_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(ess_yoe)) + " USD")
@@ -611,18 +720,22 @@ if glob.sim_enable["ess"]:
     tot['poe'] += ess_poe
     tot['ann'] += ess_ann
 
-if glob.sim_enable["bev"]:
-    if glob.sim_cs["bev"]:
+if param.sim_enable["bev"]:
+    if param.sim_cs["bev"]:
         bev_inv = results[(bevx_ess, None)]["scalars"]["invest"]  # [Wh]
     else:
-        bev_inv = glob.bev_cs
-    total_bev_chg = results[(ac_bev, bev_bus)]['sequences']['flow'].sum()
-    total_bev_dis = results[(bev_bus, bev_ac)]['sequences']['flow'].sum()
+        bev_inv = param.bev_cs
+    if param.sim_os["opt"]:
+        total_bev_chg = results[(ac_bev, bev_bus)]['sequences']['flow'].sum()
+        total_bev_dis = results[(bev_bus, bev_ac)]['sequences']['flow'].sum()
+    if param.sim_os["rh"]:
+        total_bev_chg = bev_chg.sum()
+        total_bev_dis = bev_dis.sum()
     total_bev_dem = total_bev_chg - total_bev_dis
     tot['yde'] += total_bev_dem
 
     print("Electric Vehicle Results:")
-    if glob.sim_cs["bev"]:
+    if param.sim_cs["bev"]:
         print("Optimum battery capacity: " + str(round(bev_inv / 1e3)) + " kWh")
     else:
         print("Set battery capacity: " + str(round(bev_inv / 1e3)) + " kWh")
@@ -649,7 +762,7 @@ print("Total yearly operational expenses: " + str(round(tot['yoe'])) + " USD")
 print("Total cost: " + str(round((tot['tce'] + tot['tme'] + tot['toe']) / 1e6, 2)) + " million USD")
 print("Total present cost: " + str(round(tot['npc'] / 1e6, 2)) + " million USD")
 print("Total annuity: " + str(round(tot['ann'] / 1e3, 1)) + " thousand USD")
-print("LCOE: " + str(round(1e5 * tot['lcoe'], 2)) + " USct/kWh")
+print("LCOE: " + str(1e5 * tot['lcoe']) + " USct/kWh")
 print("#####")
 
 ##########################################################################
@@ -657,7 +770,7 @@ print("#####")
 ##########################################################################
 
 # Add the results to the energy system object and dump it as an .oemof file
-if glob.sim_dump:
+if param.sim_dump:
     logging.info("Save model and result data")
     es.results["main"] = prcs.results(om)
     es.results["meta"] = prcs.meta_results(om)
@@ -700,61 +813,83 @@ if glob.sim_dump:
 ##########################################################################
 # Plot the results
 ##########################################################################
-
-## Comment in for Matplotlib
-# register_matplotlib_converters()
-# p300=(0/255,101/255,189/255,1)
-# p540=(0/255,51/255,89/255,1)
-# orng=(227/255,114/255,34/255,1)
-# grn=(162/255,173/255,0/255,1)
-
-## Comment in for Plotly
 p300 = 'rgb(0,101,189)'
 p540 = 'rgb(0,51,89)'
 orng = 'rgb(227,114,34)'
 grn = 'rgb(162,173,0)'
 
-# print(results[(gen_src, ac_bus)]['sequences']['flow'].head())
-
-gen_flow = results[(gen_src, ac_bus)]['sequences']['flow']
-pv_flow = results[(pv_dc, dc_bus)]['sequences']['flow']
-storage_flow = results[(ess, dc_bus)]['sequences']['flow'].subtract(results[(dc_bus, ess)]['sequences']['flow'])
-bev_flow = results[(bev_ac, ac_bus)]['sequences']['flow'].subtract(results[(ac_bus, ac_bev)]['sequences']['flow'])
-dem_flow = -1 * (results[(ac_bus, dem)]['sequences']['flow'])
-
-# plt.plot(gen_flow.index.to_pydatetime(), gen_flow, label='Diesel generator',color=p300, linewidth=4)
-# plt.plot(pv_flow.index.to_pydatetime(), pv_flow, label='Photovoltaics',color=orng, linewidth=2)
-# plt.plot(storage_flow.index.to_pydatetime(), storage_flow, label='Battery storage',color=orng, linestyle='dashed', linewidth=2)
-# plt.plot(bev_flow.index.to_pydatetime(), bev_flow, label='BEV demand', color=grn, linewidth=2)
-# plt.plot(dem_flow.index.to_pydatetime(), dem_flow, label='Stationary demand',color=grn,linestyle='dashed',linewidth=2)
-# plt.axhline(y=0, linewidth=1, color='k')
-# plt.legend(fontsize=20)
-# plt.ylabel('Power in W', fontsize=20)
-# plt.yticks(fontsize=20)
-# plt.xlabel('Local Time', fontsize=20)
-# plt.xticks(fontsize=20)
-# #plt.xlim([datetime.date(2015, 4, 23), datetime.date(2015, 4, 26)])
-# plt.grid(visible=True, axis='y', which='major')
-# plt.show()
-
 fig = go.Figure()
-fig.add_trace(
+if param.sim_enable["gen"]:
+    fig.add_trace(
     go.Scatter(x=gen_flow.index.to_pydatetime(), y=gen_flow, mode='lines', name='Diesel generator', line_color=p300,
                line_width=4))
-fig.add_trace(
+if param.sim_enable["pv"]:
+    fig.add_trace(
     go.Scatter(x=pv_flow.index.to_pydatetime(), y=pv_flow, mode='lines', name='Photovoltaics', line_color=orng,
                line_width=2))
-fig.add_trace(go.Scatter(x=storage_flow.index.to_pydatetime(), y=storage_flow, mode='lines', name='Battery storage',
+if param.sim_enable["ess"]:
+    fig.add_trace(go.Scatter(x=ess_flow.index.to_pydatetime(), y=ess_flow, mode='lines', name='Battery storage',
                          line_color=orng, line_width=2, line_dash='dash'))
-fig.add_trace(go.Scatter(x=bev_flow.index.to_pydatetime(), y=bev_flow, mode='lines', name='BEV demand', line_color=grn,
+if param.sim_enable["bev"]:
+    fig.add_trace(go.Scatter(x=bev_flow.index.to_pydatetime(), y=bev_flow, mode='lines', name='BEV demand', line_color=grn,
                          line_width=2))
 fig.add_trace(
-    go.Scatter(x=dem_flow.index.to_pydatetime(), y=dem_flow, mode='lines', name='Stationary demand', line_color=grn,
+    go.Scatter(x=dem_flow.index.to_pydatetime(), y=-dem_flow, mode='lines', name='Stationary demand', line_color=grn,
                line_width=2, line_dash='dash'))
-fig.update_layout(title='Simulation Results',
-                  xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
-                             gridcolor='rgb(204, 204, 204)'),
+fig.update_layout(xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
+                             gridcolor='rgb(204, 204, 204)',),
+                             #range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))]),
                   yaxis=dict(title='Power in W', showgrid=True, linecolor='rgb(204, 204, 204)',
-                             gridcolor='rgb(204, 204, 204)'),
+                             gridcolor='rgb(204, 204, 204)',
+                             range=[-620000,620000]),
                   plot_bgcolor='white')
+if param.sim_os["opt"]:
+    fig.update_layout(title='Power Flow Results - Global Optimum')
+if param.sim_os["rh"]:
+    fig.update_layout(title='Power Flow Results - Rolling Horizon Strategy (PH: '+str(param.os_ph)+'h, CH: '+str(param.os_ch)+'h)')
 fig.show()
+
+
+
+##########################################################################
+# Monitor ESS SOC
+##########################################################################
+#print(sc_ess)
+#
+# fig = go.Figure()
+# fig.add_trace(go.Scatter(x=sc_ess.index.to_pydatetime(), y=sc_ess/ param.ess_cs * 100, mode='lines', name='SOC ESS', line_color=p300,
+#             line_width=4))
+# fig.update_layout(title='Global Optimum - State of Charge ESS', plot_bgcolor='white',
+#                 xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
+#                         gridcolor='rgb(204, 204, 204)',
+#                         range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))]),
+#                 yaxis=dict(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)',
+#                         gridcolor='rgb(204, 204, 204)',
+#                         ))
+#
+# fig.show()
+
+
+
+##########################################################################
+# Monitor BEVs SOC
+##########################################################################
+# sc_bevx = pd.DataFrame()
+# for i in range(param.bev_num):
+#     column_name = (("bev"+str(i+1)+"_ess", 'None'), 'storage_content')
+#     sc_bevx["bev_"+str(i+1)] = views.node(results, "bev"+str(i+1)+"_ess")['sequences'][column_name]
+#
+#
+# row = [1, 1, 1]
+# col = [1, 2, 3]
+# titles = ['BEV 1','BEV 2','BEV 3','BEV 4']
+# fig = make_subplots(rows=1, cols=3, subplot_titles=titles)
+# for i in range(len(row)):
+#     fig.add_trace(go.Scatter(x=sc_bevx["bev_"+str(i+1)].index, y=sc_bevx["bev_"+str(i+1)] / param.bev_cs * 100,
+#                              line=dict(color=p300), showlegend=False), row[i], col[i])
+# fig.update_layout(plot_bgcolor='white', title_text="Global Optimum - State of Charge BEVs")
+# fig.update_yaxes(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
+#                  range=[0,100])
+# fig.update_xaxes(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
+#                  range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))])
+# fig.show()
