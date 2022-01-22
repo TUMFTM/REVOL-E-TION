@@ -52,7 +52,7 @@ def rh_strategy_init(proj_start):
     # Variable initialization for first iteration
     ##########################################################################
     proj_simend = proj_start + relativedelta(hours=param.os_ph)
-    proj_dti = pd.date_range(start=param.proj_start, end=proj_simend, freq=param.sim_step).delete(-1)
+    proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=param.sim_step).delete(-1)
     ess_soc_proj_start = param.ess_init_soc
     bev_soc_proj_start = [None] * param.bev_num
 
@@ -62,10 +62,10 @@ def rh_strategy_init(proj_start):
     # Initialization of power flow results
     gen_flow = pv_flow = ess_flow = bev_flow = dem_flow = pd.Series([])
     wind_prod = pv_prod = gen_prod = ess_prod = bev_chg = bev_dis = pd.Series([])
-    sc_ess = pd.Series([])
+    sc_ess = pd.Series(data={proj_start: param.ess_cs*param.ess_init_soc})
     sc_bevx = {}
     for i in range(param.bev_num):
-        sc_bevx['bev_' + str(i + 1)] = pd.Series([])
+        sc_bevx['bev_' + str(i + 1)] = pd.Series()
 
     return iterations, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
            gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, \
@@ -152,10 +152,9 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
         column_name = (('ess', 'None'), 'storage_content')
         SC_ph = views.node(results, 'ess')['sequences'][column_name]                                                    # storage capacity during predict horizon
         ess_soc_proj_start = SC_ph[concat_end] / param.ess_cs                                                           # SOC at end of control horizon
-        sc_ess = pd.concat([sc_ess, SC_ph[concat_start:concat_end]])                                                    # storage capacity during control horizon
+        sc_ess = pd.concat([sc_ess, SC_ph[concat_start:concat_end].shift(1, freq='H')])                                 # storage capacity during control horizon
     else:
         ess_soc_proj_start = sc_ess = None
-        #TODO: Korrekte Übergabe?
 
     # BEVs
     if param.sim_enable['bev']:

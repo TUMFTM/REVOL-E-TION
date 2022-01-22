@@ -57,6 +57,7 @@ from plotly.subplots import make_subplots
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import time
 
 import functions as fcs
 #import parameters as param
@@ -70,7 +71,8 @@ from rolling_horizon import *
 
 # Defining settings in file "parameters.py"
 
-
+start = time.time()
+print("Start")
 
 ##########################################################################
 # Process input data
@@ -102,7 +104,7 @@ if param.sim_enable["wind"]:
                           param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
     wind_epc = fcs.ann_recur(wind_ace, param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc)
 
-pv_data = pv_epc = pv_dc = pv_bus = pv_src = None
+pv_data = pv_epc = None
 if param.sim_enable["pv"]:
     pv_filepath = os.path.join(os.getcwd(), "scenarios", "pvgis_data", param.pv_filename)
     pv_data = pd.read_csv(pv_filepath, sep=",", header=10, skip_blank_lines=False, skipfooter=13, engine='python')
@@ -117,13 +119,13 @@ if param.sim_enable["gen"]:
                          param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
     gen_epc = fcs.ann_recur(gen_ace, param.gen_ls, param.proj_ls, param.proj_wacc, param.gen_cdc)
 
-ess_epc = ess = None
+ess_epc = None
 if param.sim_enable["ess"]:
     ess_ace = fcs.adj_ce(param.ess_sce, param.ess_sme, param.ess_ls,
                          param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
     ess_epc = fcs.ann_recur(ess_ace, param.ess_ls, param.proj_ls, param.proj_wacc, param.ess_cdc)
 
-bev_data = bev_epc = bev_ac = ac_bev = bev_bus = None
+bev_data = bev_epc = None
 if param.sim_enable["bev"]:
     bev_filepath = os.path.join(os.getcwd(), "scenarios", param.bev_filename)
     bev_data = pd.read_csv(bev_filepath, sep=";")
@@ -246,8 +248,7 @@ for it in range(iterations):
         es.add(wind_bus, wind_ac, wind_src, wind_exc)
         src_components.append('wind')
     else:
-        wind_bus = None
-        wind_src = None
+        wind_bus = wind_src = None
 
 
     ##########################################################################
@@ -282,7 +283,8 @@ for it in range(iterations):
             inputs={pv_bus: solph.Flow()})
         es.add(pv_bus, pv_dc, pv_src, pv_exc)
         src_components.append('pv')
-        #TODO
+    else:
+        pv_dc = pv_bus = pv_src = None
 
 
     ##########################################################################
@@ -304,7 +306,8 @@ for it in range(iterations):
                 outputs={ac_bus: solph.Flow(nominal_value=param.gen_cs, variable_costs=param.gen_soe)})
         es.add(gen_src)
         src_components.append('gen')
-        #TODO
+    else:
+        gen_src = None
 
 
 
@@ -346,7 +349,8 @@ for it in range(iterations):
                 nominal_storage_capacity=param.ess_cs,
             )
         es.add(ess)
-        #TODO
+    else:
+        ess = None
 
 
 
@@ -464,11 +468,13 @@ for it in range(iterations):
                     label=snk_label,
                     inputs={bevx_bus: solph.Flow(fix=bev_in[snk_datalabel], nominal_value=1)})
                 es.add(bevx_bus, bevx_bev, bev_bevx, bevx_ess, bevx_snk)
+    else:
+        bev_ac = ac_bev = bev_bus = None
 
 
 
 
-    ##########################################################################
+        ##########################################################################
     # Optimize the energy system
     ##########################################################################
 
@@ -493,8 +499,10 @@ for it in range(iterations):
     # Postprocess iteration data
     ##########################################################################
     if param.sim_os["opt"]:
-        gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess = \
-            opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev)
+        gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess, \
+        wind_prod, gen_prod, pv_prod, ess_prod, bev_chg, bev_dis = \
+            opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev,
+                                wind_src, wind_bus, pv_src, pv_bus, bev_bus)
 
     if param.sim_os["rh"]:
         proj_start, proj_dti, \
@@ -526,17 +534,12 @@ print("#####")
 if param.sim_enable["wind"]:
     if param.sim_cs["wind"]:
         wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
-        #TODO: existiert scalar vllt immer?
     else:
         wind_inv = param.wind_cs
     wind_ice = wind_inv * param.wind_sce
     wind_tce = fcs.tce(wind_ice, wind_ice, param.wind_ls, param.proj_ls)
     wind_pce = fcs.pce(wind_ice, wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc)
-    # TODO:
-    if param.sim_os["opt"]:
-        wind_yen = results[(wind_src, wind_bus)]['sequences']['flow'].sum() / proj_yrrat
-    if param.sim_os["rh"]:
-        wind_yen = wind_prod.sum() / proj_yrrat
+    wind_yen = wind_prod.sum() / proj_yrrat
     wind_ten = wind_yen * param.proj_ls
     wind_pen = fcs.acc_discount(wind_yen, param.proj_ls, param.proj_wacc)
     wind_yme = wind_inv * param.wind_sme
@@ -581,10 +584,7 @@ if param.sim_enable["pv"]:
     pv_ice = pv_inv * param.pv_sce
     pv_tce = fcs.tce(pv_ice, pv_ice, param.pv_ls, param.proj_ls)
     pv_pce = fcs.pce(pv_ice, pv_ice, param.pv_ls, param.proj_ls, param.proj_wacc)
-    if param.sim_os["opt"]:
-        pv_yen = results[(pv_src, pv_bus)]['sequences']['flow'].sum() / proj_yrrat
-    if param.sim_os["rh"]:
-        pv_yen = pv_prod.sum() / proj_yrrat
+    pv_yen = pv_prod.sum() / proj_yrrat
     pv_ten = pv_yen * param.proj_ls
     pv_pen = fcs.acc_discount(pv_yen, param.proj_ls, param.proj_wacc)
     pv_yme = pv_inv * param.pv_sme
@@ -631,10 +631,7 @@ if param.sim_enable["gen"]:
     gen_ice = gen_inv * param.gen_sce
     gen_tce = fcs.tce(gen_ice, gen_ice, param.gen_ls, param.proj_ls)
     gen_pce = fcs.pce(gen_ice, gen_ice, param.gen_ls, param.proj_ls, param.proj_wacc)
-    if param.sim_os["opt"]:
-        gen_yen = results[(gen_src, ac_bus)]['sequences']['flow'].sum() / proj_yrrat
-    if param.sim_os["rh"]:
-        gen_yen = gen_prod.sum() / proj_yrrat
+    gen_yen = gen_prod.sum() / proj_yrrat
     gen_ten = gen_yen * param.proj_ls
     gen_pen = fcs.acc_discount(gen_yen, param.proj_ls, param.proj_wacc)
     gen_yme = gen_inv * param.gen_sme
@@ -681,10 +678,7 @@ if param.sim_enable["ess"]:
     ess_ice = ess_inv * param.ess_sce
     ess_tce = fcs.tce(ess_ice, ess_ice, param.ess_ls, param.proj_ls)
     ess_pce = fcs.pce(ess_ice, ess_ice, param.ess_ls, param.proj_ls, param.proj_wacc)
-    if param.sim_os["opt"]:
-        ess_yen = results[(ess, dc_bus)]['sequences']['flow'].sum() / proj_yrrat
-    if param.sim_os["rh"]:
-        ess_yen = ess_prod.sum() / proj_yrrat
+    ess_yen = ess_prod.sum() / proj_yrrat
     ess_ten = ess_yen * param.proj_ls
     ess_pen = fcs.acc_discount(ess_yen, param.proj_ls, param.proj_wacc)
     ess_yme = ess_inv * param.ess_sme
@@ -725,12 +719,8 @@ if param.sim_enable["bev"]:
         bev_inv = results[(bevx_ess, None)]["scalars"]["invest"]  # [Wh]
     else:
         bev_inv = param.bev_cs
-    if param.sim_os["opt"]:
-        total_bev_chg = results[(ac_bev, bev_bus)]['sequences']['flow'].sum()
-        total_bev_dis = results[(bev_bus, bev_ac)]['sequences']['flow'].sum()
-    if param.sim_os["rh"]:
-        total_bev_chg = bev_chg.sum()
-        total_bev_dis = bev_dis.sum()
+    total_bev_chg = bev_chg.sum()
+    total_bev_dis = bev_dis.sum()
     total_bev_dem = total_bev_chg - total_bev_dis
     tot['yde'] += total_bev_dem
 
@@ -809,6 +799,9 @@ if param.sim_dump:
 # #scalars_df.to_csv(scalars_filename, sep=';')
 #
 
+end = time.time()
+
+print(f"Runtime of the program is {end - start}")
 
 ##########################################################################
 # Plot the results
@@ -856,19 +849,18 @@ fig.show()
 ##########################################################################
 #print(sc_ess)
 #
-# fig = go.Figure()
-# fig.add_trace(go.Scatter(x=sc_ess.index.to_pydatetime(), y=sc_ess/ param.ess_cs * 100, mode='lines', name='SOC ESS', line_color=p300,
-#             line_width=4))
-# fig.update_layout(title='Global Optimum - State of Charge ESS', plot_bgcolor='white',
-#                 xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
-#                         gridcolor='rgb(204, 204, 204)',
-#                         range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))]),
-#                 yaxis=dict(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)',
-#                         gridcolor='rgb(204, 204, 204)',
-#                         ))
-#
-# fig.show()
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=sc_ess.index.to_pydatetime(), y=sc_ess/ param.ess_cs * 100, mode='lines', name='SOC ESS', line_color=p300,
+            line_width=4))
+fig.update_layout(title='Global Optimum - State of Charge ESS', plot_bgcolor='white',
+                xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
+                        gridcolor='rgb(204, 204, 204)',
+                        range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))]),
+                yaxis=dict(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)',
+                        gridcolor='rgb(204, 204, 204)',
+                        ))
 
+fig.show()
 
 
 ##########################################################################
@@ -893,3 +885,4 @@ fig.show()
 # fig.update_xaxes(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
 #                  range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))])
 # fig.show()
+

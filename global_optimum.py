@@ -61,25 +61,36 @@ def opt_strategy(proj_start, dem_data, wind_data, pv_data, bev_data):
 
 
 
-def opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev):
+def opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev,
+                                wind_src, wind_bus, pv_src, pv_bus, bev_bus):
 
-    gen_flow = pv_flow = ess_flow = bev_flow = sc_ess = None
+    dem_flow = results[(ac_bus, dem)]['sequences']['flow']
+
+    wind_flow = gen_flow = pv_flow = ess_flow = bev_flow = sc_ess = None
+    wind_prod = gen_prod = pv_prod = ess_prod = bev_chg = bev_dis = None
+
+    if param.sim_enable["wind"]:
+        wind_prod = results[(wind_src, wind_bus)]['sequences']['flow']
 
     if param.sim_enable["gen"]:
         gen_flow = results[(gen_src, ac_bus)]['sequences']['flow']
+        gen_prod = results[(gen_src, ac_bus)]['sequences']['flow']
 
     if param.sim_enable["pv"]:
         pv_flow = results[(pv_dc, dc_bus)]['sequences']['flow']
+        pv_prod = results[(pv_src, pv_bus)]['sequences']['flow']
 
     if param.sim_enable["ess"]:
         ess_flow = results[(ess, dc_bus)]['sequences']['flow'].subtract(results[(dc_bus, ess)]['sequences']['flow'])
         column_name = (('ess', 'None'), 'storage_content')
         sc_ess = views.node(results, 'ess')['sequences'][column_name]  # storage capacity during predict horizon
+        ess_prod = results[(ess, dc_bus)]['sequences']['flow']
 
     if param.sim_enable["bev"]:
         bev_flow = results[(bev_ac, ac_bus)]['sequences']['flow'].subtract(results[(ac_bus, ac_bev)]['sequences']['flow'])
+        bev_chg = results[(ac_bev, bev_bus)]['sequences']['flow']
+        bev_dis = results[(bev_bus, bev_ac)]['sequences']['flow']
 
-    dem_flow = results[(ac_bus, dem)]['sequences']['flow']
 
-    return gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess
+    return gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess, wind_prod, gen_prod, pv_prod, ess_prod, bev_chg, bev_dis
 

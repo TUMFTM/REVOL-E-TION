@@ -33,7 +33,7 @@ sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
 sim_cs = dict(wind=False, pv=False, gen=False, ess=False, bev=False)
-sim_os = dict(opt=False, rh=True) # opt: global optimum (no operating strategy), rh: rolling horizon strategy
+sim_os = dict(opt=True, rh=False) # opt: global optimum (no operating strategy), rh: rolling horizon strategy
 
 # Options operation strategy "Rolling Horizon" (only needed if sim_os = True)
 os_ph = 48  # predicted horizon in h
@@ -87,10 +87,10 @@ ess_chg_eff = 0.95  # charging efficiency
 ess_dis_eff = 0.85  # discharge efficiency
 ess_chg_crate = 0.5  # maximum charging C-rate in 1/h
 ess_dis_crate = 0.5  # maximum discharging C-rate in 1/h
-ess_init_soc = 0.7  # initial state of charge
+ess_init_soc = 0.0  # initial state of charge
 ess_sd = 0  # self-discharge rate of the component in ???
 ess_cdc = 1  # annual ratio of component cost decrease
-ess_cs = 100e3  # component size in Wh, only valid if sim_cs["ess"]==False
+ess_cs = 1000e3  # component size in Wh, only valid if sim_cs["ess"]==False
 
 # BEV
 bev_filename = "ind_car_data.csv"
