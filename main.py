@@ -11,7 +11,7 @@ Technical University of Munich
 philipp.rosner@tum.de
 
 Created:     September 2nd, 2021
-Last update: December 7th, 2021
+Last update: February 2nd, 2022
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
@@ -63,15 +63,14 @@ import functions as fcs
 
 from global_optimum import *
 from rolling_horizon import *
+start = time.time()
+print("Start")
 
 ###############################################################################
 # Input
 ###############################################################################
 
 # Defining settings in file "parameters.py"
-
-start = time.time()
-print("Start")
 
 ##########################################################################
 # Process input data
@@ -138,25 +137,19 @@ if param.sim_enable["bev"]:
 ##########################################################################
 # Call simulation strategy
 ##########################################################################
-if param.sim_os["opt"]:
-    if param.sim_os["rh"]:
-        print('ATTENTION: Please enable just one optimization strategy sim_os in parameters.py')
-        exit()
+if param.sim_os == 'go':
     logging.info("Initializing global optimum strategy")
-    iterations, dem_in, wind_in, pv_in, ess_balancing, bev_in, bev_soc_proj_start, ess_soc_proj_start \
+    opt_counter, dem_in, wind_in, pv_in, ess_balancing, bev_in, bev_soc_proj_start, ess_soc_proj_start \
         = opt_strategy(proj_start, dem_data, wind_data, pv_data, bev_data)
 
-if param.sim_os["rh"]:
-    if param.sim_os["opt"]:
-        print('ATTENTION: Please enable just one optimization strategy sim_os in parameters.py')
-        exit()
+if param.sim_os == 'rh':
     if param.sim_cs["wind"] or param.sim_cs["pv"] or param.sim_cs["gen"] or param.sim_cs["ess"] or param.sim_cs["bev"]:
         print('ATTENTION: Rolling horizon strategy is not valid if component sizing is active!')
         print('ATTENTION: Please disable sim_cs in parameters.py')
         exit()
     logging.info("Initializing rolling horizon strategy")
     # Call data for first RH iteration
-    iterations, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
+    opt_counter, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
     gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis, sc_bevx, sc_ess \
         = rh_strategy_init(proj_start)
 
@@ -165,25 +158,20 @@ if param.sim_os["rh"]:
 ##########################################################################
 # Iterate model (global optimum: 1 loop, rolling horizon: >1 loops
 ##########################################################################
-for it in range(iterations):
-    logging.info('Optimization '+str(it+1)+' of '+str(iterations))
-    #print('Iteration '+str(it+1)+' of '+str(iterations))
+for oc in range(opt_counter):
+    logging.info('Optimization '+str(oc+1)+' of '+str(opt_counter))
 
     ##########################################################################
     # Update input files to predicted horizon (only for RH strategy)
     ##########################################################################
-    if param.sim_os["rh"]:
+    if param.sim_os == 'rh':
         dem_in, wind_in, pv_in, bev_in = rh_strategy_dataupdate(proj_dti, dem_data, wind_data, pv_data, bev_data)
 
     ##########################################################################
     # Initialize oemof energy system instance
     ##########################################################################
 
-    #logging.info("Initializing the energy system")
     es = solph.EnergySystem(timeindex=proj_dti)
-
-    #logging.info("Creating oemof objects")
-
     src_components = []  # create empty component list to iterate over later when displaying results
 
     ##########################################################################
@@ -224,6 +212,7 @@ for it in range(iterations):
     #               |                   |
     #                                   |-->wind_exc
     ##########################################################################
+
     if param.sim_enable["wind"]:
         wind_bus = solph.Bus(
             label='wind_bus')
@@ -246,7 +235,7 @@ for it in range(iterations):
         es.add(wind_bus, wind_ac, wind_src, wind_exc)
         src_components.append('wind')
     else:
-        wind_bus = wind_src = None
+        wind_bus = wind_src = wind_ac = None
 
 
     ##########################################################################
@@ -479,16 +468,13 @@ for it in range(iterations):
     ##########################################################################
 
     # Formulate the (MI)LP problem
-    # logging.info("Creating optimization model")
     om = solph.Model(es)
 
+    # Write the lp file for debugging or other reasons
     if param.sim_debug:
-        om.write("./lp_models/" + sim_ts + "_" + param.sim_name + ".lp", io_options={'symbolic_solver_labels': True})  # write
-        # the lp file for debugging or other reasons
-        #TODO
+        om.write("./lp_models/" + sim_ts + "_" + param.sim_name + ".lp", io_options={'symbolic_solver_labels': True})
 
     # Solve the optimization problem
-    # logging.info("Solving the optimization problem")
     om.solve(solver=param.sim_solver, solve_kwargs={"tee": param.sim_debug})
 
     # logging.info("Getting the results from the solver")
@@ -498,13 +484,13 @@ for it in range(iterations):
     ##########################################################################
     # Postprocess iteration data
     ##########################################################################
-    if param.sim_os["opt"]:
+    if param.sim_os == 'go':
         gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, sc_ess, \
         wind_prod, gen_prod, pv_prod, ess_prod, bev_chg, bev_dis = \
             opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev,
                                 wind_src, wind_bus, pv_src, pv_bus, bev_bus)
 
-    if param.sim_os["rh"]:
+    if param.sim_os == 'rh':
         proj_start, proj_dti, \
         dem_flow, pv_flow, gen_flow, ess_flow, bev_flow, \
         wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis, \
@@ -525,7 +511,7 @@ for it in range(iterations):
 logging.info("Displaying key results")
 
 tot = dict()
-tot = dict.fromkeys(['ice', 'tce', 'pce', 'yme', 'tme', 'pme', 'yoe', 'toe', 'poe', 'yen', 'ten', 'pen',
+tot = dict.fromkeys(['ice', 'tce', 'pce', 'yme', 'tme', 'pme', 'yoe', 'toe', 'poe', 'ype', 'ten', 'pen',
                      'yde', 'tde', 'pde', 'ann', 'npc', 'lcoe', 'eta'], 0)
 tot['yde'] += dem_flow.sum() / proj_yrrat
 
@@ -539,13 +525,13 @@ if param.sim_enable["wind"]:
     wind_ice = wind_inv * param.wind_sce
     wind_tce = fcs.tce(wind_ice, wind_ice, param.wind_ls, param.proj_ls)
     wind_pce = fcs.pce(wind_ice, wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc)
-    wind_yen = wind_prod.sum() / proj_yrrat
-    wind_ten = wind_yen * param.proj_ls
-    wind_pen = fcs.acc_discount(wind_yen, param.proj_ls, param.proj_wacc)
+    wind_ype = wind_prod.sum() / proj_yrrat
+    wind_ten = wind_ype * param.proj_ls
+    wind_pen = fcs.acc_discount(wind_ype, param.proj_ls, param.proj_wacc)
     wind_yme = wind_inv * param.wind_sme
     wind_tme = wind_yme * param.proj_ls
     wind_pme = fcs.acc_discount(wind_yme, param.proj_ls, param.proj_wacc)
-    wind_yoe = wind_yen * param.wind_soe
+    wind_yoe = wind_ype * param.wind_soe
     wind_toe = wind_ten * param.wind_soe
     wind_poe = fcs.acc_discount(wind_yoe, param.proj_ls, param.proj_wacc)
     wind_ann = fcs.ann_recur(wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc) \
@@ -571,7 +557,7 @@ if param.sim_enable["wind"]:
     tot['yoe'] += wind_yoe
     tot['toe'] += wind_toe
     tot['poe'] += wind_poe
-    tot['yen'] += wind_yen
+    tot['ype'] += wind_ype
     tot['ten'] += wind_ten
     tot['pen'] += wind_pen
     tot['ann'] += wind_ann
@@ -584,13 +570,13 @@ if param.sim_enable["pv"]:
     pv_ice = pv_inv * param.pv_sce
     pv_tce = fcs.tce(pv_ice, pv_ice, param.pv_ls, param.proj_ls)
     pv_pce = fcs.pce(pv_ice, pv_ice, param.pv_ls, param.proj_ls, param.proj_wacc)
-    pv_yen = pv_prod.sum() / proj_yrrat
-    pv_ten = pv_yen * param.proj_ls
-    pv_pen = fcs.acc_discount(pv_yen, param.proj_ls, param.proj_wacc)
+    pv_ype = pv_prod.sum() / proj_yrrat
+    pv_ten = pv_ype * param.proj_ls
+    pv_pen = fcs.acc_discount(pv_ype, param.proj_ls, param.proj_wacc)
     pv_yme = pv_inv * param.pv_sme
     pv_tme = pv_yme * param.proj_ls
     pv_pme = fcs.acc_discount(pv_yme, param.proj_ls, param.proj_wacc)
-    pv_yoe = pv_yen * param.pv_soe
+    pv_yoe = pv_ype * param.pv_soe
     pv_toe = pv_ten * param.pv_soe
     pv_poe = fcs.acc_discount(pv_yoe, param.proj_ls, param.proj_wacc)
     pv_ann = fcs.ann_recur(pv_ice, param.pv_ls, param.proj_ls, param.proj_wacc, param.pv_cdc) \
@@ -606,7 +592,7 @@ if param.sim_enable["pv"]:
     print("Yearly Operational Expenses: " + str(round(pv_yoe)) + " USD")
     print("Total Present Cost: " + str(round(pv_pce + pv_pme + pv_poe)) + " USD")
     print("Combined Annuity: " + str(round(pv_ann)) + " USD")
-    print("Yearly Produced Energy: " + str(round(pv_yen / 1e6)) + " MWh")
+    print("Yearly Produced Energy: " + str(round(pv_ype / 1e6)) + " MWh")
     print("#####")
 
     tot['ice'] += pv_ice
@@ -618,7 +604,7 @@ if param.sim_enable["pv"]:
     tot['yoe'] += pv_yoe
     tot['toe'] += pv_toe
     tot['poe'] += pv_poe
-    tot['yen'] += pv_yen
+    tot['ype'] += pv_ype
     tot['ten'] += pv_ten
     tot['pen'] += pv_pen
     tot['ann'] += pv_ann
@@ -631,13 +617,13 @@ if param.sim_enable["gen"]:
     gen_ice = gen_inv * param.gen_sce
     gen_tce = fcs.tce(gen_ice, gen_ice, param.gen_ls, param.proj_ls)
     gen_pce = fcs.pce(gen_ice, gen_ice, param.gen_ls, param.proj_ls, param.proj_wacc)
-    gen_yen = gen_prod.sum() / proj_yrrat
-    gen_ten = gen_yen * param.proj_ls
-    gen_pen = fcs.acc_discount(gen_yen, param.proj_ls, param.proj_wacc)
+    gen_ype = gen_prod.sum() / proj_yrrat
+    gen_ten = gen_ype * param.proj_ls
+    gen_pen = fcs.acc_discount(gen_ype, param.proj_ls, param.proj_wacc)
     gen_yme = gen_inv * param.gen_sme
     gen_tme = gen_yme * param.proj_ls
     gen_pme = fcs.acc_discount(gen_yme, param.proj_ls, param.proj_wacc)
-    gen_yoe = gen_yen * param.gen_soe
+    gen_yoe = gen_ype * param.gen_soe
     gen_toe = gen_ten * param.gen_soe
     gen_poe = fcs.acc_discount(gen_yoe, param.proj_ls, param.proj_wacc)
     gen_ann = fcs.ann_recur(gen_ice, param.gen_ls, param.proj_ls, param.proj_wacc, param.gen_cdc) \
@@ -653,7 +639,7 @@ if param.sim_enable["gen"]:
     print("Yearly Operational Expenses: " + str(round(gen_yoe)) + " USD")
     print("Total Present Cost: " + str(round(gen_pce + gen_pme + gen_poe)) + " USD")
     print("Combined Annuity: " + str(round(gen_ann)) + " USD")
-    print("Yearly Produced Energy: " + str(round(gen_yen / 1e6)) + " MWh")
+    print("Yearly Produced Energy: " + str(round(gen_ype / 1e6)) + " MWh")
     print("#####")
 
     tot['ice'] += gen_ice
@@ -665,7 +651,7 @@ if param.sim_enable["gen"]:
     tot['yoe'] += gen_yoe
     tot['toe'] += gen_toe
     tot['poe'] += gen_poe
-    tot['yen'] += gen_yen
+    tot['ype'] += gen_ype
     tot['ten'] += gen_ten
     tot['pen'] += gen_pen
     tot['ann'] += gen_ann
@@ -678,13 +664,13 @@ if param.sim_enable["ess"]:
     ess_ice = ess_inv * param.ess_sce
     ess_tce = fcs.tce(ess_ice, ess_ice, param.ess_ls, param.proj_ls)
     ess_pce = fcs.pce(ess_ice, ess_ice, param.ess_ls, param.proj_ls, param.proj_wacc)
-    ess_yen = ess_prod.sum() / proj_yrrat
-    ess_ten = ess_yen * param.proj_ls
-    ess_pen = fcs.acc_discount(ess_yen, param.proj_ls, param.proj_wacc)
+    ess_ype = ess_prod.sum() / proj_yrrat
+    ess_ten = ess_ype * param.proj_ls
+    ess_pen = fcs.acc_discount(ess_ype, param.proj_ls, param.proj_wacc)
     ess_yme = ess_inv * param.ess_sme
     ess_tme = ess_yme * param.proj_ls
     ess_pme = fcs.acc_discount(ess_yme, param.proj_ls, param.proj_wacc)
-    ess_yoe = ess_yen * param.ess_soe
+    ess_yoe = ess_ype * param.ess_soe
     ess_toe = ess_ten * param.ess_soe
     ess_poe = fcs.acc_discount(ess_yoe, param.proj_ls, param.proj_wacc)
     ess_ann = fcs.ann_recur(ess_ice, param.ess_ls, param.ess_ls, param.proj_wacc, param.ess_cdc) \
@@ -700,7 +686,7 @@ if param.sim_enable["ess"]:
     print("Yearly Operational Expenses: " + str(round(ess_yoe)) + " USD")
     print("Total Present Cost: " + str(round(ess_pce + ess_pme + ess_poe)) + " USD")
     print("Combined Annuity: " + str(round(ess_ann)) + " USD")
-    print("Yearly Discharged Energy: " + str(round(ess_yen / 1e6)) + " MWh")
+    print("Yearly Discharged Energy: " + str(round(ess_ype / 1e6)) + " MWh")
     print("#####")
 
     tot['ice'] += ess_ice
@@ -734,18 +720,19 @@ if param.sim_enable["bev"]:
     print("Net charged energy: " + str(round(total_bev_dem / 1e6)) + " MWh")
     print("#####")
 
+
 ##########################################################################
 # LCOE and NPC calculation
 ##########################################################################
 tot['pde'] = fcs.acc_discount(tot['yde'], param.proj_ls, param.proj_wacc)
 tot['npc'] = tot['pce'] + tot['pme'] + tot['poe']
-tot['lcoe'] = tot['npc'] / tot['pde']   # pen oder ten?
-tot['eta'] = tot['yde'] / tot['yen']
+tot['lcoe'] = tot['npc'] / tot['pde'] 
+tot['eta'] = tot['yde'] / tot['ype']
 
 
 print("Economic Results:")
 print("Yearly supplied energy: " + str(round(tot['yde'] / 1e6,4)) + " MWh")
-print("Yearly generated energy: " + str(round(tot['yen'] / 1e6,4)) + " MWh")
+print("Yearly generated energy: " + str(round(tot['ype'] / 1e6,4)) + " MWh")
 print("Overall electrical efficiency: " + str(round(tot['eta'] * 100, 4)) + " %")
 print("Total Initial Investment: " + str(round(tot['ice'] / 1e6, 4)) + " million USD")
 print("Total yearly maintenance expenses: " + str(round(tot['yme'],4)) + " USD")
@@ -839,9 +826,9 @@ fig.update_layout(xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(2
                              gridcolor='rgb(204, 204, 204)',
                              range=[-620000,620000]),
                   plot_bgcolor='white')
-if param.sim_os["opt"]:
+if param.sim_os == 'go':
     fig.update_layout(title='Power Flow Results - Global Optimum')
-if param.sim_os["rh"]:
+if param.sim_os == 'rh':
     fig.update_layout(title='Power Flow Results - Rolling Horizon Strategy (PH: '+str(param.os_ph)+'h, CH: '+str(param.os_ch)+'h)')
 fig.show()
 

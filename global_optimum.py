@@ -15,7 +15,7 @@ David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 Marcel Brödel, B.Sc. - Semester Thesis in progress
 
 --- Detailed Description ---
-#TODO
+Script to parameterize model frame in main.py by global optimum strategy
 
 """
 
@@ -31,12 +31,11 @@ from oemof.solph import views
 
 
 ##########################################################################
-# Create functions for "global optimum" strategy
+# Set simulation setting for global optimum strategy
 ##########################################################################
 
-
 def opt_strategy(proj_start, dem_data, wind_data, pv_data, bev_data):
-    iterations = 1
+    opt_counter = 1
     dem_in = dem_data
     wind_in = pv_in = bev_in = None
 
@@ -56,9 +55,13 @@ def opt_strategy(proj_start, dem_data, wind_data, pv_data, bev_data):
         bev_in = bev_data.loc[(bev_data.time >= proj_start)]  # BEV data starting at proj_start
         bev_in.index = list(range(0, len(bev_in)))  # reset BEV data index
 
-    return iterations, dem_in, wind_in, pv_in, ess_balancing, bev_in, bev_soc_proj_start, ess_soc_proj_start
+    return opt_counter, dem_in, wind_in, pv_in, ess_balancing, bev_in, bev_soc_proj_start, ess_soc_proj_start
 
 
+
+##########################################################################
+# Postprocessing for "global optimum" strategy
+##########################################################################
 
 def opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, ess, bev_ac, ac_bev,
                                 wind_src, wind_bus, pv_src, pv_bus, bev_bus):

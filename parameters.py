@@ -32,7 +32,7 @@ sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
 sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
 sim_cs = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
-sim_os = dict(opt=True, rh=False) # opt: global optimum (no operating strategy), rh: rolling horizon strategy
+sim_os = 'go' # go: global optimum (no operating strategy), rh: rolling horizon strategy
 
 # Options operation strategy "Rolling Horizon" (only needed if sim_os = True)
 os_ph = 48  # predicted horizon in h
@@ -40,12 +40,12 @@ os_ch = 24  # overlap horizon in h
 
 # Project data
 proj_start = "1/1/2005"  # Project start date (MM/DD/YYYY)
-proj_sim = 365  # Simulation timeframe in days
+proj_sim = 10  # Simulation timeframe in days
 proj_ls = 25  # Project duration in years
 proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
 # Demand data file
-dem_filename = "dem_data_extended.csv"  # input data file containing timeseries for electricity demand in W
+dem_filename = "dem_data.csv"  # input data file containing timeseries for electricity demand in W
 
 # Transformer component data
 ac_dc_eff = 0.95  # unitless conversion efficiency of ac-dc bus transformer component
@@ -92,7 +92,7 @@ ess_cdc = 1  # annual ratio of component cost decrease
 ess_cs = 65e3  # component size in Wh, only valid if sim_cs["ess"]==False
 
 # BEV
-bev_filename = "ind_car_data_extended.csv"
+bev_filename = "ind_car_data.csv"
 bev_agr = False  # boolean triggering simplified simulation of BEVs as a single set of components when true
 bev_num = 10  # number of vehicles to be simulated
 bev_sce = 0.8  # specific capital expenses of the component in $/Wh

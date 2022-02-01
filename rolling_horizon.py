@@ -15,7 +15,7 @@ David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 Marcel Brödel, B.Sc. - Semester Thesis in progress
 
 --- Detailed Description ---
-#TODO
+Script to parameterize model frame in main.py by rolling horizon strategy
 
 """
 
@@ -34,31 +34,28 @@ from dateutil.relativedelta import relativedelta
 
 
 ##########################################################################
-# Create functions for "rolling horizon" strategy
+# Set initial simulation setting for first optimization iteration
 ##########################################################################
 
-# Set initial simulation settings
 def rh_strategy_init(proj_start):
-
-    os_ph_steps = {'H': 1, 'T': 60}[param.sim_step] * param.os_ph  # number of timesteps for predicted horizon
-    os_ch_steps = {'H': 1, 'T': 60}[param.sim_step] * param.os_ch  # number of timesteps for control horizon
+    # Calculation of necessary timesteps
+    os_ph_steps = {'H': 1, 'T': 60}[param.sim_step] * param.os_ph           # number of timesteps for predicted horizon
+    os_ch_steps = {'H': 1, 'T': 60}[param.sim_step] * param.os_ch           # number of timesteps for control horizon
 
     os_range_steps = {'H':24, 'T':24*60}[param.sim_step] * param.proj_sim   # number of timesteps in simulated date range
-    iterations = int(os_range_steps / os_ch_steps)           # number of timeslices for simulated date range (= counter end)
+    opt_counter = int(os_range_steps / os_ch_steps)                         # number of timeslices for simulated date range (= counter end)
 
 
-    ##########################################################################
     # Variable initialization for first iteration
-    ##########################################################################
     proj_simend = proj_start + relativedelta(hours=param.os_ph)
     proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=param.sim_step).delete(-1)
-    ess_soc_proj_start = param.ess_init_soc
-    bev_soc_proj_start = [None] * param.bev_num
 
-    #TODO: check ess_balancing
+    ess_soc_proj_start = param.ess_init_soc
     ess_balancing = False
 
-    # Initialization of power flow results
+    bev_soc_proj_start = [None] * param.bev_num
+
+    # Power flow results initialization
     gen_flow = pv_flow = ess_flow = bev_flow = dem_flow = pd.Series([])
     wind_prod = pv_prod = gen_prod = ess_prod = bev_chg = bev_dis = pd.Series([])
     sc_ess = pd.Series(data={proj_start: param.ess_cs*param.ess_init_soc})
@@ -66,38 +63,41 @@ def rh_strategy_init(proj_start):
     for i in range(param.bev_num):
         sc_bevx['bev_' + str(i + 1)] = pd.Series()
 
-    return iterations, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
+    return opt_counter, proj_start, proj_dti, ess_soc_proj_start, bev_soc_proj_start, ess_balancing, \
            gen_flow, pv_flow, ess_flow, bev_flow, dem_flow, \
            wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis, sc_bevx, sc_ess
 
 
-
+##########################################################################
 # Update input files to predicted horizon
+##########################################################################
+
 def rh_strategy_dataupdate(proj_dti, dem_data, wind_data, pv_data, bev_data):
 
-    dem_in = dem_data.loc[(dem_data.time >= proj_dti[0]) & (dem_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]  # Dem data starts at proj_start
-    dem_in.index = list(range(0, len(dem_in)))  # reset PV data index
+    dem_in = dem_data.loc[(dem_data.time >= proj_dti[0]) & (dem_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]            # Dem data starts at proj_start
+    dem_in.index = list(range(0, len(dem_in)))                                                                                  # reset PV data index
 
     wind_in = pv_in = bev_in = None
-
     if param.sim_enable["wind"]:
-        wind_in = wind_data.loc[(wind_data.time >= proj_dti[0] & (wind_data.time <= (proj_dti[-1]+relativedelta(hours=1))))]  # Wind data starts at proj_start
-        wind_in.index = list(range(0, len(wind_in)))  # reset wind data index
+        wind_in = wind_data.loc[(wind_data.time >= proj_dti[0] & (wind_data.time <= (proj_dti[-1]+relativedelta(hours=1))))]    # Wind data starts at proj_start
+        wind_in.index = list(range(0, len(wind_in)))                                                                            # reset wind data index
 
     if param.sim_enable["pv"]:
-        pv_in = pv_data.loc[(pv_data.time >= proj_dti[0]) & (pv_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]  # PV data starts at proj_start
-        pv_in.index = list(range(0, len(pv_in)))  # reset PV data index
+        pv_in = pv_data.loc[(pv_data.time >= proj_dti[0]) & (pv_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]            # PV data starts at proj_start
+        pv_in.index = list(range(0, len(pv_in)))                                                                                # reset PV data index
 
     if param.sim_enable["bev"]:
-        bev_in = bev_data.loc[(bev_data.time >= proj_dti[0]) & (bev_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]  # BEV data starting at proj_start
-        bev_in.index = list(range(0, len(bev_in)))  # reset BEV data index
+        bev_in = bev_data.loc[(bev_data.time >= proj_dti[0]) & (bev_data.time <= (proj_dti[-1]+relativedelta(hours=1)))]        # BEV data starting at proj_start
+        bev_in.index = list(range(0, len(bev_in)))                                                                              # reset BEV data index
 
     return dem_in, wind_in, pv_in, bev_in
 
 
 
-
+##########################################################################
 # Initialize simulation data for next iteration loop
+##########################################################################
+
 def rh_strategy_postprocessing(proj_start, results, dem, ess,
                                dem_flow, pv_flow, gen_flow, ess_flow, bev_flow,
                                wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis,
@@ -105,20 +105,17 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
                                wind_src, wind_ac, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
                                ess_soc_proj_start, bev_soc_proj_start, sc_bevx, sc_ess):
 
+    # Set time mask
     concat_start = proj_start                                                   # time mask start
     concat_end = proj_start + relativedelta(hours=param.os_ch - 1)              # time mask end
 
-
-    ##########################################################################
     # Collect results and concatenate CH timeframes
-    ##########################################################################
     # Demand
     dem_flow = pd.concat([dem_flow, results[(ac_bus, dem)]['sequences']['flow'][concat_start:concat_end]])
 
     # Wind
     if param.sim_enable["wind"]:
         wind_prod = pd.concat([wind_prod, results[(wind_bus, wind_ac)]['sequences']['flow'][concat_start:concat_end]])
-
 
     # PV
     if param.sim_enable["pv"]:
@@ -144,9 +141,7 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
         bev_dis = pd.concat([bev_dis, results[(bev_bus, bev_ac)]['sequences']['flow'][concat_start:concat_end]])
 
 
-    ##########################################################################
     # Initialize start SOCs
-    ##########################################################################
     # ESS
     if param.sim_enable['ess']:
         column_name = (('ess', 'None'), 'storage_content')
@@ -167,9 +162,7 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
         bev_soc_proj_start = sc_bevx = None
 
 
-    ##########################################################################
     # Initialize new time horizon
-    ##########################################################################
     proj_start = proj_start + relativedelta(hours=param.os_ch)
     proj_simend = proj_start + relativedelta(hours=param.os_ph)
     proj_dti = pd.date_range(start=proj_start, end=proj_simend, freq=param.sim_step).delete(-1)
