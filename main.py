@@ -16,7 +16,6 @@ Last update: December 7th, 2021
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 Marcel Brödel, B.Sc. - Semester Thesis in progress
-Elhussein Ismail, B.Sc. - Master Thesis in progress
 
 --- Detailed Description ---
 This script is the main model generator and optimizer for the toolset.
@@ -83,7 +82,7 @@ sim_resultpath = os.path.join(os.getcwd(), "results")
 logger.define_logging(logfile=sim_tsname + ".log")
 logging.info('Processing inputs')
 
-proj_start = datetime.strptime(param.proj_start, '%d/%m/%Y')
+proj_start = datetime.strptime(param.proj_start, '%m/%d/%Y')
 proj_simend = proj_start + relativedelta(days=param.proj_sim)
 proj_end = proj_start + relativedelta(years=param.proj_ls)
 proj_dur = (proj_end - proj_start).days
@@ -163,12 +162,11 @@ if param.sim_os["rh"]:
 
 
 
-
 ##########################################################################
 # Iterate model (global optimum: 1 loop, rolling horizon: >1 loops
 ##########################################################################
 for it in range(iterations):
-    logging.info('Iteration '+str(it+1)+' of '+str(iterations))
+    logging.info('Optimization '+str(it+1)+' of '+str(iterations))
     #print('Iteration '+str(it+1)+' of '+str(iterations))
 
     ##########################################################################
@@ -431,9 +429,10 @@ for it in range(iterations):
                                                 variable_costs=param.sim_eps)},
                     outputs={bevx_bus: solph.Flow()},
                     conversion_factors={bevx_bus: param.bev_charge_eff})
+                # TODO
                 bevx_bev = solph.Transformer(
                     label=dis_label,
-                    inputs={bevx_bus: solph.Flow(nominal_value=param.bev_chg_pwr, max=0, variable_costs=0.000001)},
+                    inputs={bevx_bus: solph.Flow(nominal_value=param.bev_dis_pwr, max=0, variable_costs=param.sim_eps)},
                     outputs={bev_bus: solph.Flow()},
                     conversion_factors={bev_bus: param.bev_discharge_eff})
                 if param.sim_cs["bev"]:
@@ -458,6 +457,7 @@ for it in range(iterations):
                         loss_rate=0,
                         balanced=False,
                         initial_storage_level=bev_soc_proj_start[i],
+                        #initial_storage_level=None,
                         inflow_conversion_factor=1,
                         outflow_conversion_factor=1,
                         max_storage_level=1,
@@ -474,7 +474,7 @@ for it in range(iterations):
 
 
 
-        ##########################################################################
+    ##########################################################################
     # Optimize the energy system
     ##########################################################################
 
@@ -513,7 +513,7 @@ for it in range(iterations):
                                    dem_flow, pv_flow, gen_flow, ess_flow, bev_flow,
                                    wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis,
                                    ac_bus, dc_bus, wind_bus, pv_bus, bev_bus,
-                                   wind_src, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
+                                   wind_src, wind_ac, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
                                    ess_soc_proj_start, bev_soc_proj_start, sc_bevx, sc_ess)
 
 
@@ -555,7 +555,7 @@ if param.sim_enable["wind"]:
     if param.sim_cs["wind"]:
         print("Optimum Capacity: " + str(round(wind_inv / 1e3)) + " kW")
     else:
-        print("Set Capacity: " + str(param.wind_cs) + " kW")
+        print("Set Capacity: " + str(param.wind_cs / 1e3) + " kW")
     print("Initial Capital Expenses: " + str(round(wind_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(wind_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(wind_yoe)) + " USD")
@@ -600,7 +600,7 @@ if param.sim_enable["pv"]:
     if param.sim_cs["pv"]:
         print("Optimum Capacity: " + str(round(pv_inv / 1e3)) + " kW (peak)")
     else:
-        print("Set Capacity: " + str(param.pv_cs) + " kW (peak)")
+        print("Set Capacity: " + str(param.pv_cs/ 1e3) + " kW (peak)")
     print("Initial Capital Expenses: " + str(round(pv_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(pv_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(pv_yoe)) + " USD")
@@ -647,7 +647,7 @@ if param.sim_enable["gen"]:
     if param.sim_cs["gen"]:
         print("Optimum Capacity: " + str(round(gen_inv / 1e3)) + " kW")
     else:
-        print("Set Capacity: " + str(param.gen_cs) + " kW")
+        print("Set Capacity: " + str(param.gen_cs/ 1e3) + " kW")
     print("Initial Capital Expenses: " + str(round(gen_ice)) + " USD")
     print("Yearly Maintenance Expenses: " + str(round(gen_yme)) + " USD")
     print("Yearly Operational Expenses: " + str(round(gen_yoe)) + " USD")
@@ -722,7 +722,7 @@ if param.sim_enable["bev"]:
     total_bev_chg = bev_chg.sum()
     total_bev_dis = bev_dis.sum()
     total_bev_dem = total_bev_chg - total_bev_dis
-    tot['yde'] += total_bev_dem
+    tot['yde'] += total_bev_dem / proj_yrrat
 
     print("Electric Vehicle Results:")
     if param.sim_cs["bev"]:
@@ -737,23 +737,26 @@ if param.sim_enable["bev"]:
 ##########################################################################
 # LCOE and NPC calculation
 ##########################################################################
-
+tot['pde'] = fcs.acc_discount(tot['yde'], param.proj_ls, param.proj_wacc)
 tot['npc'] = tot['pce'] + tot['pme'] + tot['poe']
-tot['lcoe'] = tot['npc'] / tot['pen']
+tot['lcoe'] = tot['npc'] / tot['pde']   # pen oder ten?
 tot['eta'] = tot['yde'] / tot['yen']
 
+
 print("Economic Results:")
-print("Yearly supplied energy: " + str(round(tot['yde'] / 1e6)) + " MWh")
-print("Yearly generated energy: " + str(round(tot['yen'] / 1e6)) + " MWh")
-print("Overall electrical efficiency: " + str(round(tot['eta'] * 100, 1)) + " %")
-print("Total Initial Investment: " + str(round(tot['ice'] / 1e6, 2)) + " million USD")
-print("Total yearly maintenance expenses: " + str(round(tot['yme'])) + " USD")
-print("Total yearly operational expenses: " + str(round(tot['yoe'])) + " USD")
-print("Total cost: " + str(round((tot['tce'] + tot['tme'] + tot['toe']) / 1e6, 2)) + " million USD")
-print("Total present cost: " + str(round(tot['npc'] / 1e6, 2)) + " million USD")
-print("Total annuity: " + str(round(tot['ann'] / 1e3, 1)) + " thousand USD")
+print("Yearly supplied energy: " + str(round(tot['yde'] / 1e6,4)) + " MWh")
+print("Yearly generated energy: " + str(round(tot['yen'] / 1e6,4)) + " MWh")
+print("Overall electrical efficiency: " + str(round(tot['eta'] * 100, 4)) + " %")
+print("Total Initial Investment: " + str(round(tot['ice'] / 1e6, 4)) + " million USD")
+print("Total yearly maintenance expenses: " + str(round(tot['yme'],4)) + " USD")
+print("Total yearly operational expenses: " + str(round(tot['yoe'],4)) + " USD")
+print("Total cost: " + str(round((tot['tce'] + tot['tme'] + tot['toe']) / 1e6, 4)) + " million USD")
+print("Total present cost: " + str(round(tot['npc'] / 1e6, 4)) + " million USD")
+print("Total annuity: " + str(round(tot['ann'] / 1e3, 4)) + " thousand USD")
 print("LCOE: " + str(1e5 * tot['lcoe']) + " USct/kWh")
 print("#####")
+
+
 
 ##########################################################################
 # Save the results
@@ -810,7 +813,7 @@ p300 = 'rgb(0,101,189)'
 p540 = 'rgb(0,51,89)'
 orng = 'rgb(227,114,34)'
 grn = 'rgb(162,173,0)'
-
+# TODO: Überschrift je nach Strategy
 fig = go.Figure()
 if param.sim_enable["gen"]:
     fig.add_trace(
@@ -849,40 +852,40 @@ fig.show()
 ##########################################################################
 #print(sc_ess)
 #
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=sc_ess.index.to_pydatetime(), y=sc_ess/ param.ess_cs * 100, mode='lines', name='SOC ESS', line_color=p300,
-            line_width=4))
-fig.update_layout(title='Global Optimum - State of Charge ESS', plot_bgcolor='white',
-                xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
-                        gridcolor='rgb(204, 204, 204)',
-                        range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))]),
-                yaxis=dict(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)',
-                        gridcolor='rgb(204, 204, 204)',
-                        ))
-
-fig.show()
-
-
-##########################################################################
-# Monitor BEVs SOC
-##########################################################################
-# sc_bevx = pd.DataFrame()
-# for i in range(param.bev_num):
-#     column_name = (("bev"+str(i+1)+"_ess", 'None'), 'storage_content')
-#     sc_bevx["bev_"+str(i+1)] = views.node(results, "bev"+str(i+1)+"_ess")['sequences'][column_name]
+# fig = go.Figure()
+# fig.add_trace(go.Scatter(x=sc_ess.index.to_pydatetime(), y=sc_ess/ param.ess_cs * 100, mode='lines', name='SOC ESS', line_color=p300,
+#             line_width=4))
+# fig.update_layout(title='Global Optimum - State of Charge ESS', plot_bgcolor='white',
+#                 xaxis=dict(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)',
+#                         gridcolor='rgb(204, 204, 204)',
+#                         range=[datetime.strptime(param.proj_start, '%m/%d/%Y'),(datetime.strptime(param.proj_start, '%m/%d/%Y')+relativedelta(days=3))]),
+#                 yaxis=dict(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)',
+#                         gridcolor='rgb(204, 204, 204)',
+#                         ))
 #
-#
-# row = [1, 1, 1]
-# col = [1, 2, 3]
-# titles = ['BEV 1','BEV 2','BEV 3','BEV 4']
-# fig = make_subplots(rows=1, cols=3, subplot_titles=titles)
-# for i in range(len(row)):
-#     fig.add_trace(go.Scatter(x=sc_bevx["bev_"+str(i+1)].index, y=sc_bevx["bev_"+str(i+1)] / param.bev_cs * 100,
-#                              line=dict(color=p300), showlegend=False), row[i], col[i])
-# fig.update_layout(plot_bgcolor='white', title_text="Global Optimum - State of Charge BEVs")
-# fig.update_yaxes(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
-#                  range=[0,100])
-# fig.update_xaxes(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
-#                  range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))])
 # fig.show()
 
+#
+# ##########################################################################
+# # Monitor BEVs SOC
+# ##########################################################################
+# # sc_bevx = pd.DataFrame()
+# # for i in range(param.bev_num):
+# #     column_name = (("bev"+str(i+1)+"_ess", 'None'), 'storage_content')
+# #     sc_bevx["bev_"+str(i+1)] = views.node(results, "bev"+str(i+1)+"_ess")['sequences'][column_name]
+# #
+# #
+# # row = [1, 1, 1]
+# # col = [1, 2, 3]
+# # titles = ['BEV 1','BEV 2','BEV 3','BEV 4']
+# # fig = make_subplots(rows=1, cols=3, subplot_titles=titles)
+# # for i in range(len(row)):
+# #     fig.add_trace(go.Scatter(x=sc_bevx["bev_"+str(i+1)].index, y=sc_bevx["bev_"+str(i+1)] / param.bev_cs * 100,
+# #                              line=dict(color=p300), showlegend=False), row[i], col[i])
+# # fig.update_layout(plot_bgcolor='white', title_text="Global Optimum - State of Charge BEVs")
+# # fig.update_yaxes(title='SOC in %', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
+# #                  range=[0,100])
+# # fig.update_xaxes(title='Local Time', showgrid=True, linecolor='rgb(204, 204, 204)', gridcolor='rgb(204, 204, 204)',
+# #                  range=[datetime.strptime(param.proj_start, '%d/%m/%Y'),(datetime.strptime(param.proj_start, '%d/%m/%Y')+relativedelta(days=3))])
+# # fig.show()
+#

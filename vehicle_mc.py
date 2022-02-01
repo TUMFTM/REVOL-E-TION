@@ -124,16 +124,16 @@ for i in range(0, car_number):
                                i*3 + 2: 'at_charger_' + str(i+1)
                                }, inplace=True)
 
-save_filename = os.path.join(os.getcwd(), "ind_car_data.csv")
+save_filename = os.path.join(os.getcwd(), "ind_car_data_extended.csv")
 ind_bev_df.to_csv(save_filename, sep=';')
 
 #Save aggregated car data in one csv
 agr_bev_df= pd.DataFrame(agr_array, columns=['max_charge', 'min_charge', 'source_data', 'sink_data'])
-save_filename = os.path.join(os.getcwd(), "agr_car_data.csv")
+save_filename = os.path.join(os.getcwd(), "agr_car_data_extended.csv")
 agr_bev_df.to_csv(save_filename, sep=';')
 
 #Save dumb car data in one csv
 dumb_bev_df= pd.DataFrame(dumb_array, columns=['bev_demand'])
-save_filename = os.path.join(os.getcwd(), "dumb_car_data.csv")
+save_filename = os.path.join(os.getcwd(), "dumb_car_data_extended.csv")
 dumb_bev_df.to_csv(save_filename, sep=';')
 

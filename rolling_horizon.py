@@ -13,7 +13,6 @@ philipp.rosner@tum.de
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 Marcel Brödel, B.Sc. - Semester Thesis in progress
-Elhussein Ismail, B.Sc. - Master Thesis in progress
 
 --- Detailed Description ---
 #TODO
@@ -103,7 +102,7 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
                                dem_flow, pv_flow, gen_flow, ess_flow, bev_flow,
                                wind_prod, pv_prod, gen_prod, ess_prod, bev_chg, bev_dis,
                                ac_bus, dc_bus, wind_bus, pv_bus, bev_bus,
-                               wind_src, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
+                               wind_src, wind_ac, pv_src, pv_dc, gen_src, bev_ac, ac_bev,
                                ess_soc_proj_start, bev_soc_proj_start, sc_bevx, sc_ess):
 
     concat_start = proj_start                                                   # time mask start
@@ -118,12 +117,13 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
 
     # Wind
     if param.sim_enable["wind"]:
-        wind_prod = pd.concat([wind_prod, results[(wind_src, wind_bus)]['sequences']['flow'][concat_start:concat_end]])
+        wind_prod = pd.concat([wind_prod, results[(wind_bus, wind_ac)]['sequences']['flow'][concat_start:concat_end]])
+
 
     # PV
     if param.sim_enable["pv"]:
         pv_flow = pd.concat([pv_flow, results[(pv_dc, dc_bus)]['sequences']['flow'][concat_start:concat_end]])
-        pv_prod = pd.concat([pv_prod, results[(pv_src, pv_bus)]['sequences']['flow'][concat_start:concat_end]])
+        pv_prod = pd.concat([pv_prod, results[(pv_bus, pv_dc)]['sequences']['flow'][concat_start:concat_end]])
 
     # Generator
     if param.sim_enable["gen"]:
@@ -162,7 +162,7 @@ def rh_strategy_postprocessing(proj_start, results, dem, ess,
             column_name = (("bev" + str(i + 1) + "_ess", 'None'), 'storage_content')
             SC_ph = views.node(results, "bev" + str(i + 1) + "_ess")['sequences'][column_name]                          # storage capacity during predict horizon
             bev_soc_proj_start[i] = SC_ph[concat_end] / param.bev_cs                                                    # SOC at end of control horizon
-            sc_bevx['bev_' + str(i + 1)] = pd.concat([sc_bevx['bev_' + str(i + 1)], SC_ph[concat_start:concat_end]])    # storage capacity during control horizon
+            sc_bevx['bev_' + str(i + 1)] = pd.concat([sc_bevx['bev_' + str(i + 1)], SC_ph[concat_start:concat_end].shift(1, freq='H')])    # storage capacity during control horizon
     else:
         bev_soc_proj_start = sc_bevx = None
 

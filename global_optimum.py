@@ -13,7 +13,6 @@ philipp.rosner@tum.de
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
 Marcel Brödel, B.Sc. - Semester Thesis in progress
-Elhussein Ismail, B.Sc. - Master Thesis in progress
 
 --- Detailed Description ---
 #TODO
@@ -78,12 +77,12 @@ def opt_strategy_postprocessing(results, ac_bus, dc_bus, dem, gen_src, pv_dc, es
 
     if param.sim_enable["pv"]:
         pv_flow = results[(pv_dc, dc_bus)]['sequences']['flow']
-        pv_prod = results[(pv_src, pv_bus)]['sequences']['flow']
+        pv_prod = results[(pv_bus, pv_dc)]['sequences']['flow']
 
     if param.sim_enable["ess"]:
         ess_flow = results[(ess, dc_bus)]['sequences']['flow'].subtract(results[(dc_bus, ess)]['sequences']['flow'])
         column_name = (('ess', 'None'), 'storage_content')
-        sc_ess = views.node(results, 'ess')['sequences'][column_name]  # storage capacity during predict horizon
+        sc_ess = views.node(results, 'ess')['sequences'][column_name].shift(1, freq='H')
         ess_prod = results[(ess, dc_bus)]['sequences']['flow']
 
     if param.sim_enable["bev"]:
