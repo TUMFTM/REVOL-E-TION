@@ -1,6 +1,7 @@
 results/*
 lp_models/*
 scenarios/*
+logfiles/*
 cbc.exe
 .idea/*
 

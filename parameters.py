@@ -29,14 +29,13 @@ sim_solver = "cbc"  # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
-sim_eps = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-sim_enable = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
-sim_cs = dict(wind=False, pv=True, gen=True, ess=True, bev=True)
-sim_os = 'go' # go: global optimum (no operating strategy), rh: rolling horizon strategy
+sim_enable = dict(wind=True, pv=True, gen=True, ess=True, bev=True)
+sim_cs = dict(wind=False, pv=False, gen=False, ess=False, bev=False)
+sim_os = 'go'  # go: global optimum (no operating strategy), rh: rolling horizon strategy
 
 # Options operation strategy "Rolling Horizon" (only needed if sim_os = True)
-os_ph = 48  # predicted horizon in h
-os_ch = 24  # overlap horizon in h
+rh_ph = 48  # predicted horizon in h
+rh_ch = 24  # overlap horizon in h
 
 # Project data
 proj_start = "1/1/2005"  # Project start date (MM/DD/YYYY)
@@ -99,6 +98,7 @@ bev_sce = 0.8  # specific capital expenses of the component in $/Wh
 bev_sme = 0  # specific maintenance expenses of the component in $/(Wh*year)
 bev_soe = 0  # specific operational expenses of the component in $/Wh
 bev_ls = 10  # lifespan of the component in years
+bev_init_soc = 0.5  # initial state of charge
 bev_chg_pwr = 3600  # maximum allowable charge power for each individual BEV
 bev_dis_pwr = 3600  # maximum allowable discharge power for each individual BEV
 bev_charge_eff = 0.95  # unitless charge efficiency
