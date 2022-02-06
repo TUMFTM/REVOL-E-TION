@@ -10,7 +10,7 @@ philipp.rosner@tum.de
 February 2nd, 2022
 
 --- Last Update ---
-February 3rd, 2022
+February 6th, 2022
 
 --- Contributors ---
 Marcel Brödel, B.Sc. - Semester Thesis in progress
@@ -52,19 +52,19 @@ import parameters as param
 def add_bev(sim, es, bev):
     '''
     Create EV objects and add them to the energy system
-    Option 1: aggregated vehicles
+    Option 1: aggregated vehicles (x denotes the flow measurement point)
     ac_bus             bev_bus
-      |<---------bev_ac---|<--bev_src
+      |<-x-------bev_ac---|<--bev_src
       |                   |
-      |---ac_bev--------->|<->bev_ess
+      |-x-ac_bev--------->|<->bev_ess
       |                   |
                           |-->bev_snk
 
-    Option 2: individual vehicles with individual bevx (x=1,2,3,...bev_num) buses
+    Option 2: individual vehicles with individual bevx (x=1,2,3,...bev_num) buses (x denotes the flow measurement point)
     ac_bus             bev_bus             bev1_bus
-      |<---------bev_ac---|<-------bev1_bev---|<->bev1_ess
+      |<-x-------bev_ac---|<-------bev1_bev---|<->bev1_ess
       |                   |                   |
-      |---ac_bev--------->|---bev_bev1------->|-->bev1_snk
+      |-x-ac_bev--------->|---bev_bev1------->|-->bev1_snk
                           |
                           |                bev2_bus
                           |<-------bev2_bev---|<->bev2_ess
@@ -118,17 +118,17 @@ def add_bev(sim, es, bev):
                sim['components']['bev_ess'])
 
     else:  # When vehicles are modeled individually
-        for i in range(0, param.bev_num):  # Create individual vehicles having a bus, a storage and a sink
-            bevx_label = "bev" + str(i + 1)
-            bus_label = bevx_label + "_bus"
-            snk_label = bevx_label + "_snk"
-            ess_label = bevx_label + "_ess"
-            chg_label = "bev_" + bevx_label
-            dis_label = bevx_label + "_bev"
-            snk_datalabel = 'sink_data_' + str(i + 1)
-            chg_datalabel = 'at_charger_' + str(i + 1)
-            maxsoc_datalabel = 'max_charge_' + str(i + 1)
-            minsoc_datalabel = 'min_charge_' + str(i + 1)
+        for x, bevx in enumerate(bev['bevx_list']):  # Create individual vehicles having a bus, a storage and a sink
+            num_bevx = x + 1
+            bus_label = bevx + "_bus"
+            snk_label = bevx + "_snk"
+            ess_label = bevx + "_ess"
+            chg_label = "bev_" + bevx
+            dis_label = bevx + "_bev"
+            snk_datalabel = 'sink_data_' + str(num_bevx)
+            chg_datalabel = 'at_charger_' + str(num_bevx)
+            # maxsoc_datalabel = 'max_charge_' + str(num_bevx)
+            minsoc_datalabel = 'min_charge_' + str(num_bevx)
 
             sim['components']['bevx_bus'] = solph.Bus(  # bevx denominates an individual vehicle component
                 label=bus_label)
@@ -153,7 +153,7 @@ def add_bev(sim, es, bev):
                     outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=param.bev_soe)},
                     loss_rate=0,
                     balanced=False,
-                    initial_storage_level=bev[bevx_label]['ph_init_soc'],
+                    initial_storage_level=bev[bevx]['ph_init_soc'],
                     inflow_conversion_factor=1,
                     outflow_conversion_factor=1,
                     max_storage_level=1,
@@ -167,7 +167,7 @@ def add_bev(sim, es, bev):
                     outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=param.bev_soe)},
                     loss_rate=0,
                     balanced=False,
-                    initial_storage_level=bev[bevx_label]['ph_init_soc'],
+                    initial_storage_level=bev[bevx]['ph_init_soc'],
                     inflow_conversion_factor=1,
                     outflow_conversion_factor=1,
                     max_storage_level=1,
@@ -186,46 +186,55 @@ def add_bev(sim, es, bev):
     return es
 
 
-def add_components(sim, es, dem, wind, pv, gen, ess, bev):
+def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev):
+
+    es = solph.EnergySystem(timeindex=sim['ph_dti'])  # Initialize oemof energy system instance for current PH
     es = add_core(sim, es, dem)
 
+    if param.sim_enable['dem']:
+        sim, es = add_dem(sim, es, wind)
+
     if param.sim_enable['wind']:
-        es = add_wind(sim, es, wind)
+        sim, es = add_wind(sim, es, wind)
     #    else:
     #        wind_bus = wind_src = wind_ac = None
 
     if param.sim_enable["pv"]:
-        es = add_pv(sim, es, pv)
+        sim, es = add_pv(sim, es, pv)
     #    else:
     #        pv_dc = pv_bus = pv_src = None
 
     if param.sim_enable["gen"]:
-        es = add_gen(sim, es, gen)
+        sim, es = add_gen(sim, es, gen)
     #    else:
     #        gen_src = None
 
     if param.sim_enable["ess"]:
-        es = add_ess(sim, es, ess)
+        sim, es = add_ess(sim, es, ess)
     #    else:
     #        ess = None
 
     if param.sim_enable["bev"]:
-        es = add_bev(sim, es, bev)
+        sim, es = add_bev(sim, es, bev)
     #    else:
     #        bev_ac = ac_bev = bev_bus = None
 
-    return es
+    om = solph.Model(es)  # Build the mathematical linear optimization model with pyomo
+
+    dump_modelfile(sim, om)
+
+    return sim, om
 
 
-def add_core(sim, es, dem):
-    '''
+def add_core(sim, es):
+    """
     Create basic two-bus structure
     dc_bus              ac_bus
       |                   |
-      |---dc_ac---------->|-->dem
+      |---dc_ac---------->|
       |                   |
       |<----------ac_dc---|
-   '''
+   """
     sim['components']['ac_bus'] = solph.Bus(
         label="ac_bus")
     sim['components']['dc_bus'] = solph.Bus(
@@ -240,24 +249,40 @@ def add_core(sim, es, dem):
         inputs={sim['components']['dc_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['ac_bus']: solph.Flow()},
         conversion_factors={sim['components']['ac_bus']: param.dc_ac_eff})
-    sim['components']['dem_snk'] = solph.Sink(
-        label='dem_snk',
-        inputs={sim['components']['ac_bus']: solph.Flow(fix=dem['ph_data']['P'], nominal_value=1)}
-    )
+
     es.add(sim['components']['ac_bus'],
            sim['components']['dc_bus'],
            sim['components']['ac_dc'],
-           sim['components']['dc_ac'],
-           sim['components']['dem_snk'])
-    return es
+           sim['components']['dc_ac'])
+
+    return sim, es
+
+
+def add_dem(sim, es, dem):
+
+    """
+    Add stationary demand  (x denotes the flow measurement point)
+    ac_bus
+      |
+      |-x->dem_snk
+      |
+    """
+
+    sim['components']['dem_snk'] = solph.Sink(
+        label='dem_snk',
+        inputs={sim['components']['ac_bus']: solph.Flow(fix=dem['ph_data']['P'], nominal_value=1)})
+
+    es.add(sim['components']['dem_snk'])
+
+    return sim, es
 
 
 def add_ess(sim, es, ess):
     '''
-    Create stationary battery storage object and add it to the energy system
+    Create stationary battery storage object and add it to the energy system (x denotes the flow measurement point)
     dc_bus
       |
-      |<->ess
+      |<-x->ess
       |
     '''
     if param.sim_cs["ess"]:
@@ -267,7 +292,7 @@ def add_ess(sim, es, ess):
             outputs={sim['components']['dc_bus']: solph.Flow(variable_cost=param.ess_soe)},
             loss_rate=param.ess_sd,
             balanced=ess['bal'],
-            initial_storage_level=ess['ph_ini_soc'],
+            initial_storage_level=ess['ph_init_soc'],
             invest_relation_input_capacity=param.ess_chg_crate,
             invest_relation_output_capacity=param.ess_dis_crate,
             inflow_conversion_factor=param.ess_chg_eff,
@@ -289,15 +314,15 @@ def add_ess(sim, es, ess):
             nominal_storage_capacity=param.ess_cs,
         )
     es.add(sim['components']['ess'])
-    return es
+    return sim, es
 
 
 def add_gen(sim, es, gen):
     '''
-    Create diesel generator object and add it to the energy system
+    Create diesel generator object and add it to the energy system (x denotes the flow measurement point)
     ac_bus
       |
-      |<--gen
+      |<-x-gen
       |
     '''
     if param.sim_cs["gen"]:
@@ -311,15 +336,15 @@ def add_gen(sim, es, gen):
             outputs={sim['components']['ac_bus']: solph.Flow(nominal_value=param.gen_cs,
                                                              variable_costs=param.gen_soe)})
     es.add(sim['components']['gen_src'])
-    return es
+    return sim, es
 
 
 def add_pv(sim, es, pv):
     '''
-    Create solar power objects and add them to the energy system
+    Create solar power objects and add them to the energy system (x denotes the flow measurement point)
     dc_bus              pv_bus
       |                   |
-      |<----------pv_dc---|<--pv_src
+      |<----------pv_dc-x-|<--pv_src
       |                   |
                           |-->pv_exc
     '''
@@ -355,15 +380,15 @@ def add_pv(sim, es, pv):
            sim['components']['pv_src'],
            sim['components']['pv_exc'])
 
-    return es
+    return sim, es
 
 
 def add_wind(sim, es, wind):
     '''
-    Create wind power objects and add them to the energy system
+    Create wind power objects and add them to the energy system (x denotes the flow measurement point)
     ac_bus             wind_bus
       |                   |
-      |<--------wind_ac---|<--wind_src
+      |<--------wind_ac-x-|<--wind_src
       |                   |
                           |-->wind_exc
     '''
@@ -393,40 +418,85 @@ def add_wind(sim, es, wind):
            sim['components']['wind_ac'],
            sim['components']['wind_src'],
            sim['components']['wind_exc'])
-    return es
+    return sim, es
 
 
-def define_bev():
+def define_bev(prj):
     """
     This function determines the electric vehicles' equivalent costs and adds them system to the energy system
     """
+
     bev = dict()
-    if param.sim_enable["bev"]:
-        bev['filepath'] = os.path.join(os.getcwd(), "scenarios", param.bev_filename)
-        bev['data'] = pd.read_csv(bev['filepath'], sep=";")
-        bev['data']['time'] = pd.date_range(start=param.proj_start, periods=len(bev['data']), freq='H')
-        bev['ace'] = eco.adj_ce(param.bev_sce, param.bev_sme, param.bev_ls, param.proj_wacc)
-        bev['epc'] = eco.ann_recur(bev['ace'], param.bev_ls, param.proj_ls, param.proj_wacc, param.bev_cdc)
-        for i in range(param.bev_num):
-            bevx_name = 'bev' + str(i + 1)
-            bev[bevx_name] = dict()
-    else:
-        bev['data'] = bev['epc'] = None
+
+    bev['filepath'] = os.path.join(os.getcwd(), "scenarios", param.bev_filename)
+    bev['data'] = pd.read_csv(bev['filepath'], sep=";")
+    bev['data']['time'] = pd.date_range(start=param.proj_start, periods=len(bev['data']), freq='H')
+
+    bev['spec_capex'] = param.bev_sce  # TODO: Marcel - read in excel data here
+    bev['spec_mntex'] = param.bev_sme
+    bev['spec_opex'] = param.bev_soe
+    bev['lifespan'] = param.bev_ls
+    bev['cost_decr'] = param.bev_cdc
+
+    bev['adj_capex'] = eco.adj_ce(bev['spc_capex'],  # adjusted ce (including maintenance) of the component in $/W
+                                  bev['spc_mntex'],
+                                  bev['lifespan'],
+                                  prj['wacc'])
+
+    bev['eq_pres_cost'] = eco.ann_recur(bev['ace'],
+                                        bev['lifespan'],
+                                        prj['duration'],
+                                        prj['wacc'],
+                                        bev['cost_decr'])
+
+    bev['bevx_list'] = []
+    for i in range(param.bev_num):
+        bevx_name = 'bev' + str(i + 1)
+        bev['bevx_list'] = bev['bevx_list'].append(bevx_name)
+        bev[bevx_name] = dict()
+        bev[bevx_name]['ph_init_soc'] = param.bev_init_soc  # TODO: Don't we want to define this at random?
+
     return bev
 
 
-def define_components(sim):
+def define_components(sim, prj):
     '''
     This function calls the defining functions of the individual components
     '''
-    dem = define_dem()
 
-    sim, wind = define_wind(sim)
-    sim, pv = define_pv(sim)
-    sim, gen = define_gen(sim)
+    if param.sim_enable['dem']:
+        dem = define_dem()
+    else:
+        dem = None
 
-    ess = define_ess()
-    bev = define_bev()
+    if param.sim_enable["wind"]:
+        wind = define_wind(prj)
+        sim['sources'].append('wind')
+    else:
+        wind = None
+
+    if param.sim_enable["pv"]:
+        pv = define_pv(prj)
+        sim['sources'].append('pv')
+    else:
+        pv = None
+
+    if param.sim_enable["gen"]:
+        gen = define_gen(prj)
+        sim['sources'].append('gen')
+    else:
+        gen = None
+
+    if param.sim_enable["ess"]:
+        ess = define_ess(prj)
+    else:
+        ess = None
+
+    if param.sim_enable["bev"]:
+        bev = define_bev(prj)
+    else:
+        bev = None
+
     return sim, dem, wind, pv, gen, ess, bev
 
 
@@ -435,42 +505,71 @@ def define_dem():
     This function reads in the stationary demand as a dataframe
     """
     dem = dict()
+
     dem['filepath'] = os.path.join(os.getcwd(), "scenarios", param.dem_filename)
     dem['data'] = pd.read_csv(dem['filepath'], sep=",", skip_blank_lines=False)
     dem['data']['time'] = pd.date_range(start=param.proj_start, periods=len(dem['data']), freq=param.sim_step)
+
     return dem
 
 
-def define_ess():
+def define_ess(prj):
     """
     This function determines storage equivalent costs and adds the energy storage system to the energy system
     """
     ess = dict()
-    if param.sim_enable["ess"]:
-        ess['ace'] = eco.adj_ce(param.ess_sce, param.ess_sme, param.ess_ls,
-                                param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/Wh
-        ess['epc'] = eco.ann_recur(ess['ace'], param.ess_ls, param.proj_ls, param.proj_wacc, param.ess_cdc)
-    else:
-        ess['epc'] = None
+
+    ess['spec_capex'] = param.ess_sce  # TODO: Marcel - read in excel data here
+    ess['spec_mntex'] = param.ess_sme
+    ess['spec_opex'] = param.ess_soe
+    ess['lifespan'] = param.ess_ls
+    ess['cost_decr'] = param.ess_cdc
+
+    ess['adj_capex'] = eco.adj_ce(ess['spc_capex'],  # adjusted ce (including maintenance) of the component in $/W
+                                  ess['spc_mntex'],
+                                  ess['lifespan'],
+                                  prj['wacc'])
+
+    ess['eq_pres_cost'] = eco.ann_recur(ess['ace'],
+                                        ess['lifespan'],
+                                        prj['duration'],
+                                        prj['wacc'],
+                                        ess['cost_decr'])
+
+    ess['ph_init_soc'] = param.ess_init_soc
+    ess['bal'] = False  # ESS SOC at end of prediction horizon must not be forced equal to initial SOC
+
+
     return ess
 
 
-def define_gen(sim):
+def define_gen(prj):
     """
     This function determines diesel generator equivalent costs and adds the generator to the energy system
     """
     gen = dict()
-    if param.sim_enable["gen"]:
-        gen['ace'] = eco.adj_ce(param.gen_sce, param.gen_soe, param.gen_ls,
-                                param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-        gen['epc'] = eco.ann_recur(gen['ace'], param.gen_ls, param.proj_ls, param.proj_wacc, param.gen_cdc)
-        sim['sources'].append('gen')
-    else:
-        gen['epc'] = None
-    return sim, gen
+
+    gen['spec_capex'] = param.gen_sce  # TODO: Marcel - read in excel data here
+    gen['spec_mntex'] = param.gen_sme
+    gen['spec_opex'] = param.gen_soe
+    gen['lifespan'] = param.gen_ls
+    gen['cost_decr'] = param.gen_cdc
+
+    gen['adj_capex'] = eco.adj_ce(gen['spc_capex'],  # adjusted ce (including maintenance) of the component in $/W
+                                  gen['spc_mntex'],
+                                  gen['lifespan'],
+                                  prj['wacc'])
+
+    gen['eq_pres_cost'] = eco.ann_recur(gen['ace'],
+                                        gen['lifespan'],
+                                        prj['duration'],
+                                        prj['wacc'],
+                                        gen['cost_decr'])
+
+    return gen
 
 
-def define_os(sim, dem, wind, pv, gen, ess, bev):
+def define_os(sim, wind, pv, gen, ess, bev):
     """
     Initialize simulation settings and initial states (SOCs) for first optimization iteration
     """
@@ -478,7 +577,7 @@ def define_os(sim, dem, wind, pv, gen, ess, bev):
         logging.error("No valid operating strategy selected - stopping execution")
         sys.exit()
 
-    if (True in param.sim_cs.values()):
+    if (True in param.sim_cs.values()):  # TODO: nur bei RH
         logging.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
         logging.error('Please disable sim_cs in parameters.py')
         sys.exit()
@@ -486,32 +585,49 @@ def define_os(sim, dem, wind, pv, gen, ess, bev):
     if param.sim_os == 'rh':
         sim['ph_len'] = {'H': 1, 'T': 60}[param.sim_step] * param.rh_ph  # number of timesteps for predicted horizon
         sim['ch_len'] = {'H': 1, 'T': 60}[param.sim_step] * param.rh_ch  # number of timesteps for control horizon
-        sim['opt_counter'] = int(len(sim['dti']) / sim['ch_num'])  # number of CH timeslices for simulated date range
+        sim['ch_num'] = int(len(sim['dti']) / sim['ch_num'])  # number of CH timeslices for simulated date range
     elif param.sim_os == 'go':
         sim['ph_len'] = None  # number of timesteps for predicted horizon
         sim['ch_len'] = None  # number of timesteps for control horizon
-        sim['opt_counter'] = 1  # number of CH timeslices for simulated date range
+        sim['ch_num'] = 1  # number of CH timeslices for simulated date range
 
-    if param.sim_enable['ess']:
-        ess['ph_init_soc'] = param.ess_init_soc
-        ess['bal'] = False  # ESS SOC at end of prediction horizon must not be forced equal to initial SOC
-        ess['soc'] = pd.Series(data={sim['start']: param.ess_cs * ess['ph_init_soc']})  # TODO: Still valid?
-
-    if param.sim_enable['bev']:
-        for i in range(param.bev_num):
-            bevx_name = 'bev' + str(i + 1)
-            bev[bevx_name]['ph_init_soc'] = param.bev_init_soc  # TODO: Check for validity!
-
-    return sim, dem, wind, pv, gen, ess, bev
+    return sim
 
 
-def define_out(dem, wind, pv, gen, ess, bev):
+def define_result_structure(prj, dem, wind, pv, gen, ess, bev):
     """
     Initialize empty dataframes for output concatenation
     """
 
-    cres = dict.fromkeys(['ice', 'tce', 'pce', 'yme', 'tme', 'pme', 'yoe', 'toe', 'poe', 'ype', 'ten', 'pen',
-                         'yde', 'tde', 'pde', 'ann', 'npc', 'lcoe', 'eta'], 0)
+    cres = dict.fromkeys(['e_sim_del',  # Cumulative result counting dict
+                          'e_yrl_del',
+                          'e_prj_del',
+                          'e_dis_del',
+                          'e_sim_pro',
+                          'e_yrl_pro',
+                          'e_prj_pro',
+                          'e_dis_pro',
+                          'e_eta',
+                          'c_init_capex',
+                          'c_prj_capex',
+                          'c_dis_capex',
+                          'c_ann_capex',
+                          'c_sim_mntex',
+                          'c_yrl_mntex',
+                          'c_prj_mntex',
+                          'c_dis_mntex',
+                          'c_ann_mntex'
+                          'c_sim_opex',
+                          'c_yrl_opex',
+                          'c_prj_opex',
+                          'c_dis_opex',
+                          'c_ann_opex',
+                          'c_sim_totex',
+                          'c_yrl_totex',
+                          'c_prj_totex',
+                          'c_dis_totex',
+                          'c_ann_totex'
+                          ], 0)
 
     dem['flow'] = pd.Series()
 
@@ -526,12 +642,12 @@ def define_out(dem, wind, pv, gen, ess, bev):
 
     if param.sim_enable['ess']:
         ess['flow_out'] = ess['flow_in'] = ess['soc'] = pd.Series()
+        ess['soc'] = pd.Series(data={prj['start']: param.ess_cs * ess['ph_init_soc']})
 
     if param.sim_enable['bev']:
         bev['flow_out'] = bev['flow_in'] = pd.Series()
-        for i in range(param.bev_num):
-            bevx_name = 'bev' + str(i + 1)
-            bev[bevx_name]['soc'] = pd.Series()  # Power flow results initialization
+        for bevx in bev['bevx_list']:
+            bev[bevx]['soc'] = pd.Series(data={prj['start']: param.ess_cs * ess['ph_init_soc']})
 
     return dem, wind, pv, gen, ess, bev, cres
 
@@ -540,79 +656,142 @@ def define_prj(sim):
     """
     This function initializes the most basic data of the project to be evaluated (which is longer than the simulated timespan
     """
+
     prj = dict()
     prj['start'] = sim['start']
-    prj['ydur'] = param.proj_ls
-    prj['end'] = proj['start'] + relativedelta(years=prj['ydur'])
-    prj['ddur'] = (proj['start'] - proj['end']).days
-    prj['simrat'] = param.proj_sim / proj['ddur']
-    return proj
+    prj['duration'] = param.proj_ls
+    prj['end'] = prj['start'] + relativedelta(years=prj['duration'])
+    prj['ddur'] = (prj['start'] - prj['end']).days
+    prj['simrat'] = param.proj_sim / prj['ddur']
+
+    prj['wacc'] = param.proj_wacc
+
+    return prj
 
 
-def define_pv(sim):
+def define_pv(prj):
     """
     This function imports PV power data as a dataframe, determines equivalent costs and adds PV power to the energy system
     """
     pv = dict()
-    if param.sim_enable["pv"]:
-        pv['filepath'] = os.path.join(os.getcwd(), "scenarios", "pvgis_data", param.pv_filename)
-        pv['data'] = pd.read_csv(pv['filepath'], sep=",", header=10, skip_blank_lines=False, skipfooter=13,
-                                 engine='python')
-        pv['data']['time'] = pd.to_datetime(pv['data']['time'], format='%Y%m%d:%H%M').dt.round('H')  # TODO: workaround
-        pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
-        pv['ace'] = eco.adj_ce(param.pv_sce, param.pv_soe, param.pv_ls,
-                               param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-        pv['epc'] = eco.ann_recur(pv['ace'], param.pv_ls, param.proj_ls, param.proj_wacc, param.pv_cdc)
-        sim['sources'].append('pv')
-    else:
-        pv['data'] = pv['epc'] = None
-    return sim, pv
+    pv['filepath'] = os.path.join(os.getcwd(),
+                                  "scenarios",
+                                  "pvgis_data",
+                                  param.pv_filename)
+    pv['data'] = pd.read_csv(pv['filepath'],
+                             sep=",",
+                             header=10,
+                             skip_blank_lines=False,
+                             skipfooter=13,
+                             engine='python')
+    pv['data']['time'] = pd.to_datetime(pv['data']['time'],
+                                        format='%Y%m%d:%H%M').dt.round('H')  # TODO: workaround
+    pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
+
+    pv['spec_capex'] = param.pv_sce  # TODO: Marcel - read in excel data here
+    pv['spec_mntex'] = param.pv_sme
+    pv['spec_opex'] = param.pv_soe
+    pv['lifespan'] = param.pv_ls
+    pv['cost_decr'] = param.pv_cdc
+
+    pv['adj_capex'] = eco.adj_ce(pv['spc_capex'],  # adjusted ce (including maintenance) of the component in $/W
+                           pv['spc_mntex'],
+                           pv['lifespan'],
+                           prj['wacc'])
+
+    pv['eq_pres_cost'] = eco.ann_recur(pv['ace'],
+                                       pv['lifespan'],
+                                       prj['duration'],
+                                       prj['wacc'],
+                                       pv['cost_decr'])
+
+    return pv
 
 
 def define_sim():
     """
     This function initializes the most basic simulation data for the timeframe to simulate (and optimize) over
     """
+
+    # TODO: Marcel - import excel structure here & replace param
+
     sim = dict()
     sim['runtimestart'] = time.time()
     sim['runtimestamp'] = datetime.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
     sim['name'] = sim['runtimestamp'] + "_" + param.sim_name
-    ###
+
     sim['start'] = datetime.strptime(param.proj_start, '%m/%d/%Y')
     sim['end'] = sim['start'] + relativedelta(days=param.proj_sim)
     sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=param.sim_step).delete(-1)
     sim['yrrat'] = param.proj_sim / 365.25
-    ###
+
+    sim['debugmode'] = param.sim_debug
     sim['datapath'] = os.path.join(os.getcwd(), "scenarios")
     sim['resultpath'] = os.path.join(os.getcwd(), "results")
     sim['modelpath'] = os.path.join(os.getcwd(), "lp_models")
     sim['logpath'] = os.path.join(os.getcwd(), "logfiles")
     sim['modelfile'] = sim['modelpath'] + ".lp"
     sim['logfile'] = os.path.join(sim['logpath'], sim['name']) + '.log'
-    ###
+
     sim['eps'] = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
-    ###
+
+    sim['op_strat'] = param.sim_os
+    sim['enable'] = param.sim_enable
+    sim['cs_opt'] = param.sim_cs
+
     sim['components'] = dict()  # empty dict as storage for individual buses, transformers, sources and sinks
     sim['sources'] = []  # create empty list of source modules to iterate over later
     return sim
 
 
-def define_wind(sim):
+def define_wind(prj):
     """
     This function imports wind power data as a dataframe, determines equivalent costs and adds wind power to the energy system
     """
+
     wind = dict()
-    if param.sim_enable["wind"]:
-        wind['filepath'] = os.path.join(os.getcwd(), "scenarios", param.wind_filename)
-        wind['data'] = pd.read_csv(wind['filepath'], sep=",", skip_blank_lines=False)
-        wind['data']['time'] = pd.date_range(start=param.proj_start, periods=len(wind['data']), freq='H')
-        wind['ace'] = eco.adj_ce(param.wind_sce, param.wind_sme, param.wind_ls,
-                                 param.proj_wacc)  # adjusted ce (including maintenance) of the component in $/W
-        wind['epc'] = eco.ann_recur(wind['ace'], param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc)
-        sim['sources'].append('wind')
-    else:
-        wind['data'] = wind['epc'] = None
-    return sim, wind
+
+    wind['filepath'] = os.path.join(os.getcwd(),
+                                    "scenarios",
+                                    param.wind_filename)
+    wind['data'] = pd.read_csv(wind['filepath'],
+                               sep=",",
+                               skip_blank_lines=False)
+    wind['data']['time'] = pd.date_range(start=param.proj_start,
+                                         periods=len(wind['data']),
+                                         freq='H')
+
+    wind['spec_capex'] = param.wind_sce  # TODO: Marcel - read in excel data here
+    wind['spec_mntex'] = param.wind_sme
+    wind['spec_opex'] = param.wind_soe
+    wind['lifespan'] = param.wind_ls
+    wind['cost_decr'] = param.wind_cdc
+
+    wind['adj_capex'] = eco.adj_ce(wind['spc_capex'],  # adjusted ce (including maintenance) of the component in $/W
+                             wind['spc_mntex'],
+                             wind['lifespan'],
+                             prj['wacc'])
+
+    wind['eq_pres_cost'] = eco.ann_recur(wind['ace'],
+                                         wind['lifespan'],
+                                         prj['duration'],
+                                         prj['wacc'],
+                                         wind['cost_decr'])
+
+    return wind
+
+
+def dump_modelfile(sim, model):
+    """
+    Dump model and result files to working directory for later usage
+    """
+    if sim['debugmode']:  # save the model description for solving externally
+        if sim['op_strat'] == 'rh':
+            logging.info('Debug mode not implemented for RH operating strategy - no model file dumped')
+        else:
+            model.write(sim['modelfile'], io_options={'symbolic_solver_labels': True})
+
+    return None
 
 
 def select_data(sim, dem, wind, pv, bev):
@@ -620,7 +799,8 @@ def select_data(sim, dem, wind, pv, bev):
     Update input data file slices to next prediction horizon
     '''
 
-    dem['ph_data'] = slice_data(dem['data'], sim['ph_dti'])  # select correct data slice
+    if param.sim_enable['dem']:
+        dem['ph_data'] = slice_data(dem['data'], sim['ph_dti'])  # select correct data slice
 
     if param.sim_enable["wind"]:
         wind['ph_data'] = slice_data(wind['data'], sim['ph_dti'])  # select correct data slice

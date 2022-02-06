@@ -11,7 +11,7 @@ Technical University of Munich
 philipp.rosner@tum.de
 
 Created:     September 2nd, 2021
-Last update: February 2nd, 2022
+Last update: February 4th, 2022
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
@@ -43,27 +43,27 @@ license:    GPLv3
 from oemof.tools import logger
 import oemof.solph as solph
 import oemof.solph.processing as prcs
-from oemof.solph import views
+# from oemof.solph import views
 
 import logging
-import os
-import pandas as pd
-import numpy as np
+# import os
+# import pandas as pd
+# import numpy as np
 # from pandas.plotting import register_matplotlib_converters
 # import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+# import plotly.graph_objects as go
+# from plotly.subplots import make_subplots
 
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-import time
-import sys
+# from datetime import datetime
+# from dateutil.relativedelta import relativedelta
+# import time
+# import sys
 
 import preprocessing as pre
 import postprocessing as post
-import economics as eco
+# import economics as eco
 import parameters as param
-# import load_following as lf
+# import load_following as lf  # Preparation for future setup
 
 ##########################################################################
 # Preprocessing
@@ -74,40 +74,34 @@ logger.define_logging(logfile=sim['logfile'])
 logging.info('Processing inputs')
 
 prj = pre.define_prj(sim)  # Initialize project data for later economic extrapolation on project lifespan
-sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim)  # Initialize component data
-sim, dem, wind, pv, gen, ess, bev = pre.define_os(sim, dem, wind, pv, gen, ess, bev)  # Initialize operational strategy
-dem, wind, pv, gen, ess, bev, cres = pre.define_out(dem, wind, pv, gen, ess, bev)  # defining output dataframes
+sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj)  # Initialize component data
+sim = pre.define_os(sim, dem, wind, pv, gen, ess, bev)  # Initialize operational strategy
+dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(dem, wind, pv, gen, ess, bev)
 
 ##########################################################################
 # Optimization Loop
 ##########################################################################
 
-for oc in range(sim['opt_counter']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
-    logging.info('Prediction Horizon ' + str(oc + 1) + ' of '+str(sim['opt_counter']))
+for ch in range(sim['opt_counter']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
+    logging.info('Prediction Horizon ' + str(oc + 1) + ' of ' + str(sim['opt_counter']))
 
-    sim = pre.set_dti(sim, oc)  # Update the datetimeindex to fit the current PH
-    dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for current PH
+    sim = pre.set_dti(sim, oc)  # set datetimeindices to fit the current prediction and control horizons
+    dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for datetimeindices
 
-    es = solph.EnergySystem(timeindex=sim['ph_dti'])  # Initialize oemof energy system instance for current PH
-    es = pre.add_components(sim, es, dem, wind, pv, gen, ess, bev)  # Add components to energy system instance
-    om = solph.Model(es)  # Build the mathematical linear optimization model with pyomo
+    sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev)
 
-    if param.sim_debug: # save the model description for solving externally
-        om.write(sim['modelfile'], io_options={'symbolic_solver_labels': True})
+    om.solve(solver=param.sim_solver, solve_kwargs={"tee": param.sim_debug})
 
-    om.solve(solver=param.sim_solver, solve_kwargs={"tee": param.sim_debug})  # Solve the optimization model
-
-    results = prcs.results(om)  # Get the results from the solver
-    dem, wind, pv, gen, ess, bev = post.append_outdfs(sim, dem, wind, pv, gen, ess, bev, results)  # write results to df
+    dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, oc)
 
 ##########################################################################
 # Postprocessing
 ##########################################################################
-logging.info("Calculating key results")
 
-# dem, wind, pv, gen, ess, bev = post.get_cs(sim, dem, wind, pv, gen, ess, bev)  # get optimized component sizes
+logging.info("Calculating key results")
+wind, pv, gen, ess, bev = post.get_cs(sim, wind, pv, gen, ess, bev, results)  # get (optimized) component sizes
 cres = post.acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres)  # calculate cumulative energy results
-# cres = post.acc_eco(dem, wind, pv, gen, ess, bev, cres)  # calculate cumulative economic results
+# cres = post.acc_eco(sim, prj, dem, wind, pv, gen, ess, bev, cres)  # calculate cumulative economic results
 
 logging.info("Displaying key results")
 # post.display_cres(cres)  # display cumulative results
@@ -123,24 +117,7 @@ sim = post.end_timing(sim)
 #
 #
 # print("#####")
-#
-# if param.sim_enable["wind"]:
-#     if param.sim_cs["wind"]:
-#         wind_inv = results[(wind_src, wind_bus)]["scalars"]["invest"]
-#     else:
-#         wind_inv = param.wind_cs
-#     wind_ice = wind_inv * param.wind_sce
-#     wind_tce = eco.tce(wind_ice, wind_ice, param.wind_ls, param.proj_ls)
-#     wind_pce = eco.pce(wind_ice, wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc)
-#
-#     wind_yme = wind_inv * param.wind_sme
-#     wind_tme = wind_yme * param.proj_ls
-#     wind_pme = eco.acc_discount(wind_yme, param.proj_ls, param.proj_wacc)
-#     wind_yoe = wind_ype * param.wind_soe
-#     wind_toe = wind_ten * param.wind_soe
-#     wind_poe = eco.acc_discount(wind_yoe, param.proj_ls, param.proj_wacc)
-#     wind_ann = eco.ann_recur(wind_ice, param.wind_ls, param.proj_ls, param.proj_wacc, param.wind_cdc) \
-#                + eco.ann_recur(wind_yme + wind_yoe, 1, param.proj_ls, param.proj_wacc, 1)
+
 #
 #     print("Wind Power Results:")
 #     if param.sim_cs["wind"]:
