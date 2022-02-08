@@ -24,8 +24,8 @@ This script defines the global settings for the MGEVOpti project
 ###############################################################################
 
 # Simulation options
-sim_name = "mg_ev_main"  # name of scenario
-sim_solver = "cbc"  # solver selection. Options: "cbc", "gplk", "gurobi"
+sim_name = 'mg_ev'  # name of scenario
+sim_solver = 'cbc'  # solver selection. Options: "cbc", "gplk", "gurobi"
 sim_dump = False  # "True" activates oemof model and result saving
 sim_debug = False  # "True" activates mathematical model saving and extended solver output
 sim_step = 'H'  # time step length ('H'=hourly, other lengths not tested yet!)
@@ -35,12 +35,12 @@ sim_enable = dict(dem=True,
                   gen=True,
                   ess=True,
                   bev=True)
-sim_cs = dict(wind=False,
-              pv=False,
-              gen=False,
-              ess=False,
+sim_cs = dict(wind=True,
+              pv=True,
+              gen=True,
+              ess=True,
               bev=False)
-sim_os = 'rh'  # go: global optimum (no operating strategy), rh: rolling horizon strategy
+sim_os = 'go'  # go: global optimum (no operating strategy), rh: rolling horizon strategy
 
 # Options operation strategy "Rolling Horizon" (only needed if sim_os = True)
 rh_ph = 48  # predicted horizon in h
@@ -48,7 +48,7 @@ rh_ch = 24  # overlap horizon in h
 
 # Project data
 proj_start = "1/1/2005"  # Project start date (MM/DD/YYYY) - Caution US date format
-proj_sim = 10  # Simulation timeframe in days
+proj_sim = 365  # Simulation timeframe in days
 proj_ls = 25  # Project duration in years
 proj_wacc = 0.07  # unitless weighted average cost of capital for the project
 
@@ -66,7 +66,7 @@ wind_sme = 0  # specific maintenance expenses of the component in $/(W*year)
 wind_soe = 0  # specific operational expenses of the component in $/Wh
 wind_ls = 20  # lifespan of the component in years
 wind_cdc = 1  # annual ratio of component cost decrease
-wind_cs = 100e3  # component size (peak) in kW, only valid if sim_cs["wind"]==False
+wind_cs = 100e3  # component size (peak) in W, only valid if sim_cs["wind"]==False
 
 # Photovoltaic array component data
 pv_filename = "Zatta_CI_1kWp.csv"  # name of the normalized pv power profile csv file in ./scenarios to evaluate
