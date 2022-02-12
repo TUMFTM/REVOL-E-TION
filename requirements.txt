@@ -26,6 +26,7 @@ Pillow
 pipreqs==0.4.11
 plotly
 ply==3.11
+pylightxl==1.58
 pyomo==5.7
 pyparsing
 python-dateutil
