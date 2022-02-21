@@ -265,7 +265,7 @@ def acc_energy_storage(sim, prj, comp, cres):
     return comp, cres
 
 
-def plot_results(sim, dem, wind, pv, gen, ess, bev):
+def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet):
     """
 
     """
@@ -351,9 +351,9 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                      secondary_y=True)
 
     if sim['op_strat'] == 'go':
-        fig.update_layout(title='Global Optimum Results (' + sim['name'] + ')')
+        fig.update_layout(title='Global Optimum Results (' + sim['name'] + '_' + sheet + ')')
     if sim['op_strat'] == 'rh':
-        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + sim['name'] + ')'
+        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + sim['name'] + '_' + sheet + ')'
         fig.update_layout(title=title)
 
     fig.show()
@@ -482,7 +482,7 @@ def print_results_overall(cres):
     print("#####")
 
 
-def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
+def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet):
     """
     Dump the simulation results as a file
     """
@@ -492,14 +492,18 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
 
         # create a blank db
         db = xl.Database()
-        filename = 'results/results_'+ sim['name'] + '.xlsx'
-        sheet = 'Sheet1'
+        filename = 'results/results_'+ sim['name'] + '_'+ sheet +'.xlsx'
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
 
         # header of ws
-        db.ws(ws=sheet).update_index(row=1, col=1, val='Simulation results ' + sim['name'])
+        if sim['op_strat'] == 'go':
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + sim['name'] + '_' + sheet + ')')
+        if sim['op_strat'] == 'rh':
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + sim[
+                'name'] + '_' + sheet + ')')
+
         name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
         for i, header in enumerate(name):
             db.ws(ws=sheet).update_index(row=3, col=1+i*4, val=header+' results')

@@ -48,49 +48,57 @@ import preprocessing as pre
 import postprocessing as post
 # import load_following as lf  # Preparation for future setup
 
-##########################################################################
-# Preprocessing
-##########################################################################
-sim = pre.define_sim()  # Initialize basic simulation data
-
-logger.define_logging(logfile=sim['logfile'])
-logging.info('Processing inputs')
-
-prj = pre.define_prj(sim)  # Initialize project data for later economic extrapolation on project lifespan
-sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj)  # Initialize component data
-sim = pre.define_os(sim)  # Initialize operational strategy
-dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
 ##########################################################################
-# Optimization Loop
+# Multi Simulation runs from excel file
 ##########################################################################
+runs = 2
+for r in range(runs):
+    sheet = 'Tabelle'+str(r+1)
 
-for ph in range(sim['ch_num']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
-    logging.info('Prediction Horizon ' + str(ph + 1) + ' of ' + str(sim['ch_num']))
+    ##########################################################################
+    # Preprocessing
+    ##########################################################################
+    sim = pre.define_sim(sheet)  # Initialize basic simulation data
 
-    sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
-    dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
+    logger.define_logging(logfile=sim['logfile'])
+    logging.info('Processing inputs')
 
-    sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev)
+    prj = pre.define_prj(sim, sheet)  # Initialize project data for later economic extrapolation on project lifespan
+    sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet)  # Initialize component data
+    sim = pre.define_os(sim, sheet)  # Initialize operational strategy
+    dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
-    logging.info('Solving optimization problem')
-    om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
+    ##########################################################################
+    # Optimization Loop
+    ##########################################################################
 
-    dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
+    for ph in range(sim['ch_num']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
+        logging.info('Prediction Horizon ' + str(ph + 1) + ' of ' + str(sim['ch_num']))
 
-##########################################################################
-# Postprocessing
-##########################################################################
+        sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
+        dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
 
-logging.info("Calculating key results")
-dem, wind, pv, gen, ess, bev, cres = post.acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres)
-wind, pv, gen, ess, bev, cres = post.acc_eco(sim, prj, wind, pv, gen, ess, bev, cres)
+        sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet)
 
-logging.info("Displaying key results")
-post.print_results(sim, wind, pv, gen, ess, bev, cres)
+        logging.info('Solving optimization problem')
+        om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
 
-sim = post.end_timing(sim)
+        dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
-post.plot_results(sim, dem, wind, pv, gen, ess, bev)
-post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
+    ##########################################################################
+    # Postprocessing
+    ##########################################################################
+
+    logging.info("Calculating key results")
+    dem, wind, pv, gen, ess, bev, cres = post.acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres)
+    wind, pv, gen, ess, bev, cres = post.acc_eco(sim, prj, wind, pv, gen, ess, bev, cres)
+
+    logging.info("Displaying key results")
+    post.print_results(sim, wind, pv, gen, ess, bev, cres)
+
+    sim = post.end_timing(sim)
+
+    post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet)
+    post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet)
 
