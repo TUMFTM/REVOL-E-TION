@@ -37,9 +37,9 @@ from dateutil.relativedelta import relativedelta
 import time
 import logging
 import sys
+import pylightxl as xl
 
 import economics as eco
-import parameters as param
 
 
 def add_bev(sim, es, bev):
@@ -79,7 +79,7 @@ def add_bev(sim, es, bev):
         conversion_factors={sim['components']['ac_bus']: 1})
     es.add(sim['components']['bev_bus'], sim['components']['ac_bev'], sim['components']['bev_ac'])
 
-    if param.bev_agr:  # When vehicles are aggregated into three basic components
+    if bev['agr']:  # When vehicles are aggregated into three basic components
         sim['components']['bev_snk'] = solph.Sink(  # Aggregated sink component modelling leaving vehicles
             label="bev_snk",
             inputs={sim['components']['bev_bus']: solph.Flow(actual_value=bev['ph_data']['sink_data'],
@@ -93,8 +93,8 @@ def add_bev(sim, es, bev):
         sim['components']['bev_ess'] = solph.components.GenericStorage(  # Aggregated storage models connected vehicles
             label="bev_ess",
             inputs={sim['components']['bev_bus']: solph.Flow()},
-            outputs={sim['components']['bev_bus']: solph.Flow(variable_cost=param.bev_soe)},
-            nominal_storage_capacity=param.bev_num * param.bev_cs,  # Storage capacity is set to the maximum available,
+            outputs={sim['components']['bev_bus']: solph.Flow(variable_cost=bev['spec_opex'])},
+            nominal_storage_capacity=bev['num'] * bev['cs'],  # Storage capacity is set to the maximum available,
             # adaptation to different numbers of vehicles happens with the min/max storage levels
             loss_rate=0,
             balanced=False,
@@ -127,23 +127,23 @@ def add_bev(sim, es, bev):
                 label=bus_label)
             sim['components']['bev_bevx'] = solph.Transformer(
                 label=chg_label,
-                inputs={sim['components']['bev_bus']: solph.Flow(nominal_value=param.bev_chg_pwr,
+                inputs={sim['components']['bev_bus']: solph.Flow(nominal_value=bev['chg_pwr'],
                                                                  max=bev['ph_data'][chg_datalabel],
                                                                  variable_costs=sim['eps'])},
                 outputs={sim['components']['bevx_bus']: solph.Flow()},
-                conversion_factors={sim['components']['bevx_bus']: param.bev_charge_eff})
+                conversion_factors={sim['components']['bevx_bus']: bev['charge_eff']})
             sim['components']['bevx_bev'] = solph.Transformer(
                 label=dis_label,
-                inputs={sim['components']['bevx_bus']: solph.Flow(nominal_value=param.bev_dis_pwr,
-                                                                  max=param.bev_dis_pwr,
+                inputs={sim['components']['bevx_bus']: solph.Flow(nominal_value=bev['dis_pwr'],
+                                                                  max=bev['dis_pwr'],
                                                                   variable_costs=sim['eps'])},
                 outputs={sim['components']['bev_bus']: solph.Flow()},
-                conversion_factors={sim['components']['bev_bus']: param.bev_discharge_eff})
-            if param.sim_cs["bev"]:
+                conversion_factors={sim['components']['bev_bus']: bev['discharge_eff']})
+            if sim['cs_opt']["bev"]:
                 sim['components']['bevx_ess'] = solph.components.GenericStorage(
                     label=ess_label,
                     inputs={sim['components']['bevx_bus']: solph.Flow()},
-                    outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=param.bev_soe)},
+                    outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=bev['spec_opex'])},
                     loss_rate=0,
                     balanced=False,
                     initial_storage_level=bev[bevx]['ph_init_soc'],
@@ -157,7 +157,7 @@ def add_bev(sim, es, bev):
                 sim['components']['bevx_ess'] = solph.components.GenericStorage(
                     label=ess_label,
                     inputs={sim['components']['bevx_bus']: solph.Flow()},
-                    outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=param.bev_soe)},
+                    outputs={sim['components']['bevx_bus']: solph.Flow(variable_cost=bev['spec_opex'])},
                     loss_rate=0,
                     balanced=False,
                     initial_storage_level=bev[bevx]['ph_init_soc'],
@@ -165,7 +165,7 @@ def add_bev(sim, es, bev):
                     outflow_conversion_factor=1,
                     max_storage_level=1,
                     min_storage_level=bev['ph_data'][minsoc_datalabel],  # ensures the vehicle is charged when leaving
-                    nominal_storage_capacity=param.bev_cs,
+                    nominal_storage_capacity=bev['cs'],
                 )
             sim['components']['bevx_snk'] = solph.Sink(
                 label=snk_label,
@@ -196,12 +196,12 @@ def add_core(sim, es):
         label="ac_dc",
         inputs={sim['components']['ac_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['dc_bus']: solph.Flow()},
-        conversion_factors={sim['components']['dc_bus']: param.ac_dc_eff})
+        conversion_factors={sim['components']['dc_bus']: xlsxread('ac_dc_eff')})
     sim['components']['dc_ac'] = solph.Transformer(
         label="dc_ac",
         inputs={sim['components']['dc_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['ac_bus']: solph.Flow()},
-        conversion_factors={sim['components']['ac_bus']: param.dc_ac_eff})
+        conversion_factors={sim['components']['ac_bus']: xlsxread('dc_ac_eff')})
 
     es.add(sim['components']['ac_bus'],
            sim['components']['dc_bus'],
@@ -239,33 +239,33 @@ def add_ess(sim, es, ess):
       |
     """
 
-    if param.sim_cs["ess"]:
+    if sim['cs_opt']["ess"]:
         sim['components']['ess'] = solph.components.GenericStorage(
             label="ess",
             inputs={sim['components']['dc_bus']: solph.Flow()},
-            outputs={sim['components']['dc_bus']: solph.Flow(variable_cost=param.ess_soe)},
-            loss_rate=param.ess_sd,
+            outputs={sim['components']['dc_bus']: solph.Flow(variable_cost=ess['spec_opex'])},
+            loss_rate=ess['cost_decr'],
             balanced=ess['bal'],
             initial_storage_level=ess['ph_init_soc'],
-            invest_relation_input_capacity=param.ess_chg_crate,
-            invest_relation_output_capacity=param.ess_dis_crate,
-            inflow_conversion_factor=param.ess_chg_eff,
-            outflow_conversion_factor=param.ess_dis_eff,
+            invest_relation_input_capacity=ess['chg_crate'],
+            invest_relation_output_capacity=ess['dis_crate'],
+            inflow_conversion_factor=ess['chg_eff'],
+            outflow_conversion_factor=ess['dis_eff'],
             investment=solph.Investment(ep_costs=ess['eq_pres_cost']),
         )
     else:
         sim['components']['ess'] = solph.components.GenericStorage(
             label="ess",
             inputs={sim['components']['dc_bus']: solph.Flow()},
-            outputs={sim['components']['dc_bus']: solph.Flow(variable_cost=param.ess_soe)},
-            loss_rate=param.ess_sd,
+            outputs={sim['components']['dc_bus']: solph.Flow(variable_cost=ess['spec_opex'])},
+            loss_rate=ess['cost_decr'],
             balanced=ess['bal'],
             initial_storage_level=ess['ph_init_soc'],
-            invest_relation_input_capacity=param.ess_chg_crate,
-            invest_relation_output_capacity=param.ess_dis_crate,
-            inflow_conversion_factor=param.ess_chg_eff,
-            outflow_conversion_factor=param.ess_dis_eff,
-            nominal_storage_capacity=param.ess_cs,
+            invest_relation_input_capacity=ess['chg_crate'],
+            invest_relation_output_capacity=ess['dis_crate'],
+            inflow_conversion_factor=ess['chg_eff'],
+            outflow_conversion_factor=ess['dis_eff'],
+            nominal_storage_capacity=ess['cs'],
         )
     es.add(sim['components']['ess'])
     return sim, es
@@ -280,16 +280,16 @@ def add_gen(sim, es, gen):
       |
     """
 
-    if param.sim_cs["gen"]:
+    if sim['cs_opt']["gen"]:
         sim['components']['gen_src'] = solph.Source(
             label='gen_src',
             outputs={sim['components']['ac_bus']: solph.Flow(investment=solph.Investment(ep_costs=gen['eq_pres_cost']),
-                                                             variable_costs=param.gen_soe)})
+                                                             variable_costs=gen['spec_opex'])})
     else:
         sim['components']['gen_src'] = solph.Source(
             label='gen_src',
-            outputs={sim['components']['ac_bus']: solph.Flow(nominal_value=param.gen_cs,
-                                                             variable_costs=param.gen_soe)})
+            outputs={sim['components']['ac_bus']: solph.Flow(nominal_value=gen['cs'],
+                                                             variable_costs=gen['spec_opex'])})
     es.add(sim['components']['gen_src'])
     return sim, es
 
@@ -313,20 +313,20 @@ def add_pv(sim, es, pv):
         outputs={sim['components']['dc_bus']: solph.Flow()},
         conversion_factors={sim['components']['pv_bus']: 1})
 
-    if param.sim_cs["pv"]:
+    if sim['cs_opt']["pv"]:
         sim['components']['pv_src'] = solph.Source(
             label="pv_src",
             outputs={
                 sim['components']['pv_bus']: solph.Flow(fix=pv['ph_data']['P'],
                                                         investment=solph.Investment(ep_costs=pv['eq_pres_cost']),
-                                                        variable_cost=param.pv_soe)})
+                                                        variable_cost=pv['spec_opex'])})
     else:
         sim['components']['pv_src'] = solph.Source(
             label="pv_src",
             outputs={
                 sim['components']['pv_bus']: solph.Flow(fix=pv['ph_data']['P'],
-                                                        nominal_value=param.pv_cs,
-                                                        variable_cost=param.pv_soe)})
+                                                        nominal_value=pv['cs'],
+                                                        variable_cost=pv['spec_opex'])})
     sim['components']['pv_exc'] = solph.Sink(
         label="pv_exc",
         inputs={sim['components']['pv_bus']: solph.Flow()})
@@ -356,18 +356,18 @@ def add_wind(sim, es, wind):
         inputs={sim['components']['wind_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['ac_bus']: solph.Flow()},
         conversion_factors={sim['components']['ac_bus']: 1})
-    if param.sim_cs['wind']:
+    if sim['cs_opt']['wind']:
         sim['components']['wind_src'] = solph.Source(
             label='wind_src',
             outputs={sim['components']['wind_bus']: solph.Flow(fix=wind['ph_data']['P'],
                                                                investment=solph.Investment(ep_costs=wind['eq_pres_cost']),
-                                                               variable_cost=param.wind_soe)})
+                                                               variable_cost=wind['spec_opex'])})
     else:
         sim['components']['wind_src'] = solph.Source(
             label="wind_src",
             outputs={sim['components']['wind_bus']: solph.Flow(fix=wind['ph_data']['P'],
-                                                               nominal_value=param.wind_cs,
-                                                               variable_cost=param.wind_soe)})
+                                                               nominal_value=wind['cs'],
+                                                               variable_cost=wind['spec_opex'])})
     sim['components']['wind_exc'] = solph.Sink(
         label="wind_exc",
         inputs={sim['components']['wind_bus']: solph.Flow()})
@@ -386,30 +386,30 @@ def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev):
 
     sim, es = add_core(sim, es)
 
-    if param.sim_enable['dem']:
+    if sim['enable']['dem']:
         sim, es = add_dem(sim, es, dem)
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         sim, es = add_wind(sim, es, wind)
     #    else:
     #        wind_bus = wind_src = wind_ac = None
 
-    if param.sim_enable["pv"]:
+    if sim['enable']["pv"]:
         sim, es = add_pv(sim, es, pv)
     #    else:
     #        pv_dc = pv_bus = pv_src = None
 
-    if param.sim_enable["gen"]:
+    if sim['enable']["gen"]:
         sim, es = add_gen(sim, es, gen)
     #    else:
     #        gen_src = None
 
-    if param.sim_enable["ess"]:
+    if sim['enable']["ess"]:
         sim, es = add_ess(sim, es, ess)
     #    else:
     #        ess = None
 
-    if param.sim_enable["bev"]:
+    if sim['enable']["bev"]:
         sim, es = add_bev(sim, es, bev)
     #    else:
     #        bev_ac = ac_bev = bev_bus = None
@@ -430,15 +430,22 @@ def define_bev(prj):
 
     bev['name'] = 'bev'
 
-    bev['filepath'] = os.path.join(os.getcwd(), "scenarios", param.bev_filename)
+    bev['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('bev_filename'))
     bev['data'] = pd.read_csv(bev['filepath'], sep=";")
-    bev['data']['time'] = pd.date_range(start=param.proj_start, periods=len(bev['data']), freq='H')
+    bev['data']['time'] = pd.date_range(start=prj['start'], periods=len(bev['data']), freq='H')
 
-    bev['spec_capex'] = param.bev_sce  # TODO: Marcel - read in excel data here
-    bev['spec_mntex'] = param.bev_sme
-    bev['spec_opex'] = param.bev_soe
-    bev['lifespan'] = param.bev_ls
-    bev['cost_decr'] = param.bev_cdc
+    bev['spec_capex'] = xlsxread('bev_sce')
+    bev['spec_mntex'] = xlsxread('bev_sme')
+    bev['spec_opex'] = xlsxread('bev_soe')
+    bev['lifespan'] = xlsxread('bev_ls')
+    bev['cost_decr'] = xlsxread('bev_cdc')
+    bev['cs'] = xlsxread('bev_cs')
+    bev['num'] = xlsxread('bev_num')
+    bev['agr'] = xlsxread('bev_agr')
+    bev['chg_pwr'] = xlsxread('bev_chg_pwr')
+    bev['dis_pwr'] = xlsxread('bev_dis_pwr')
+    bev['charge_eff'] = xlsxread('bev_charge_eff')
+    bev['discharge_eff'] = xlsxread('bev_discharge_eff')
 
     bev['adj_capex'] = eco.adj_ce(bev['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   bev['spec_mntex'],
@@ -452,11 +459,11 @@ def define_bev(prj):
                                         bev['cost_decr'])
 
     bev['bevx_list'] = []
-    for i in range(param.bev_num):
+    for i in range(bev['num']):
         bevx_name = 'bev' + str(i + 1)
         bev['bevx_list'].append(bevx_name)
         bev[bevx_name] = dict()
-        bev[bevx_name]['init_soc'] = param.bev_init_soc  # TODO: Don't we want to define this at random?
+        bev[bevx_name]['init_soc'] = xlsxread('bev_init_soc')  # TODO: Don't we want to define this at random?
         bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['init_soc']
 
     return bev
@@ -467,35 +474,35 @@ def define_components(sim, prj):
     This function calls the defining functions of the individual components
     """
 
-    if param.sim_enable['dem']:
-        dem = define_dem()
+    if sim['enable']['dem']:
+        dem = define_dem(sim, prj)
     else:
         dem = None
 
-    if param.sim_enable["wind"]:
+    if sim['enable']["wind"]:
         wind = define_wind(prj)
         sim['sources'].append('wind')
     else:
         wind = None
 
-    if param.sim_enable["pv"]:
+    if sim['enable']["pv"]:
         pv = define_pv(prj)
         sim['sources'].append('pv')
     else:
         pv = None
 
-    if param.sim_enable["gen"]:
+    if sim['enable']["gen"]:
         gen = define_gen(prj)
         sim['sources'].append('gen')
     else:
         gen = None
 
-    if param.sim_enable["ess"]:
+    if sim['enable']["ess"]:
         ess = define_ess(prj)
     else:
         ess = None
 
-    if param.sim_enable["bev"]:
+    if sim['enable']["bev"]:
         bev = define_bev(prj)
     else:
         bev = None
@@ -503,7 +510,7 @@ def define_components(sim, prj):
     return sim, dem, wind, pv, gen, ess, bev
 
 
-def define_dem():
+def define_dem(sim, prj):
     """
     This function reads in the stationary demand as a dataframe
     """
@@ -511,9 +518,9 @@ def define_dem():
 
     dem['name'] = 'name'
 
-    dem['filepath'] = os.path.join(os.getcwd(), "scenarios", param.dem_filename)
+    dem['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('dem_filename'))
     dem['data'] = pd.read_csv(dem['filepath'], sep=",", skip_blank_lines=False)
-    dem['data']['time'] = pd.date_range(start=param.proj_start, periods=len(dem['data']), freq=param.sim_step)
+    dem['data']['time'] = pd.date_range(start=prj['start'], periods=len(dem['data']), freq=sim['step'])
 
     return dem
 
@@ -526,11 +533,17 @@ def define_ess(prj):
 
     ess['name'] = 'ess'
 
-    ess['spec_capex'] = param.ess_sce  # TODO: Marcel - read in excel data here
-    ess['spec_mntex'] = param.ess_sme
-    ess['spec_opex'] = param.ess_soe
-    ess['lifespan'] = param.ess_ls
-    ess['cost_decr'] = param.ess_cdc
+    ess['spec_capex'] = xlsxread('ess_sce')
+    ess['spec_mntex'] = xlsxread('ess_sme')
+    ess['spec_opex'] = xlsxread('ess_soe')
+    ess['lifespan'] = xlsxread('ess_ls')
+    ess['cost_decr'] = xlsxread('ess_sd')
+    ess['cs'] = xlsxread('ess_cs')
+    ess['cdc'] = xlsxread('ess_cdc')
+    ess['chg_eff'] = xlsxread('ess_chg_eff')
+    ess['dis_eff'] = xlsxread('ess_dis_eff')
+    ess['chg_crate'] = xlsxread('ess_chg_crate')
+    ess['dis_crate'] = xlsxread('ess_dis_crate')
 
     ess['adj_capex'] = eco.adj_ce(ess['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   ess['spec_mntex'],
@@ -543,7 +556,7 @@ def define_ess(prj):
                                         prj['wacc'],
                                         ess['cost_decr'])
 
-    ess['init_soc'] = param.ess_init_soc
+    ess['init_soc'] = xlsxread('ess_init_soc')
     ess['ph_init_soc'] = ess['init_soc']
     ess['bal'] = False  # ESS SOC at end of prediction horizon must not be forced equal to initial SOC
 
@@ -558,11 +571,12 @@ def define_gen(prj):
 
     gen['name'] = 'gen'
 
-    gen['spec_capex'] = param.gen_sce  # TODO: Marcel - read in excel data here
-    gen['spec_mntex'] = param.gen_sme
-    gen['spec_opex'] = param.gen_soe
-    gen['lifespan'] = param.gen_ls
-    gen['cost_decr'] = param.gen_cdc
+    gen['spec_capex'] = xlsxread('gen_sce')
+    gen['spec_mntex'] = xlsxread('gen_sme')
+    gen['spec_opex'] = xlsxread('gen_soe')
+    gen['lifespan'] = xlsxread('gen_ls')
+    gen['cost_decr'] = xlsxread('gen_cdc')
+    gen['cs'] = xlsxread('gen_cs')
 
     gen['adj_capex'] = eco.adj_ce(gen['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   gen['spec_mntex'],
@@ -582,21 +596,23 @@ def define_os(sim):
     """
     Initialize simulation settings and initial states (SOCs) for first optimization iteration
     """
-    if param.sim_os != 'rh' and param.sim_os != 'go':
+    if sim['op_strat'] != 'rh' and sim['op_strat'] != 'go':
         logging.error("No valid operating strategy selected - stopping execution")
         sys.exit()
 
-    if True in param.sim_cs.values() and param.sim_os != 'go':
+    if True in sim['cs_opt'].values() and sim['op_strat'] != 'go':
         logging.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
         logging.error('Please disable sim_cs in parameters.py')
         sys.exit()
 
-    if param.sim_os == 'rh':
+    if sim['op_strat'] == 'rh':
         logging.info('Rolling horizon operational strategy initiated')
-        sim['ph_len'] = {'H': 1, 'T': 60}[param.sim_step] * param.rh_ph  # number of timesteps for predicted horizon
-        sim['ch_len'] = {'H': 1, 'T': 60}[param.sim_step] * param.rh_ch  # number of timesteps for control horizon
+        sim['rh_ph'] = xlsxread('rh_ph')
+        sim['rh_ch'] = xlsxread('rh_ch')
+        sim['ph_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ph']  # number of timesteps for predicted horizon
+        sim['ch_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ch']  # number of timesteps for control horizon
         sim['ch_num'] = int(len(sim['dti']) / sim['ch_len'])  # number of CH timeslices for simulated date range
-    elif param.sim_os == 'go':
+    elif sim['op_strat'] == 'go':
         logging.info('Global optimum operational strategy initiated')
         sim['ph_len'] = None  # number of timesteps for predicted horizon
         sim['ch_len'] = None  # number of timesteps for control horizon
@@ -605,7 +621,7 @@ def define_os(sim):
     return sim
 
 
-def define_result_structure(prj, dem, wind, pv, gen, ess, bev):
+def define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev):
     """
     Initialize empty dataframes for output concatenation
     """
@@ -641,20 +657,20 @@ def define_result_structure(prj, dem, wind, pv, gen, ess, bev):
 
     dem['flow'] = pd.Series()
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         wind['flow'] = pd.Series()
 
-    if param.sim_enable['pv']:
+    if sim['enable']['pv']:
         pv['flow'] = pd.Series()
 
-    if param.sim_enable['gen']:
+    if sim['enable']['gen']:
         gen['flow'] = pd.Series()
 
-    if param.sim_enable['ess']:
+    if sim['enable']['ess']:
         ess['flow_out'] = ess['flow_in'] = ess['soc'] = ess['flow_bal'] = pd.Series()
         ess['soc'] = pd.Series(data={prj['start']: ess['init_soc']})
 
-    if param.sim_enable['bev']:
+    if sim['enable']['bev']:
         bev['flow_out'] = bev['flow_in'] = bev['flow_bal'] = pd.Series()
         for bevx in bev['bevx_list']:
             bev[bevx]['soc'] = pd.Series(data={prj['start']: bev[bevx]['init_soc']})
@@ -670,12 +686,12 @@ def define_prj(sim):
 
     prj = dict()
     prj['start'] = sim['start']
-    prj['duration'] = param.proj_ls
+    prj['duration'] = xlsxread('proj_ls')
     prj['end'] = prj['start'] + relativedelta(years=prj['duration'])
     prj['ddur'] = (prj['start'] - prj['end']).days
-    prj['simrat'] = param.proj_sim / prj['ddur']
+    prj['simrat'] = sim['proj'] / prj['ddur']
 
-    prj['wacc'] = param.proj_wacc
+    prj['wacc'] = xlsxread('proj_wacc')
 
     return prj
 
@@ -692,7 +708,7 @@ def define_pv(prj):
     pv['filepath'] = os.path.join(os.getcwd(),
                                   "scenarios",
                                   "pvgis_data",
-                                  param.pv_filename)
+                                  xlsxread('pv_filename'))
     pv['data'] = pd.read_csv(pv['filepath'],
                              sep=",",
                              header=10,
@@ -703,11 +719,12 @@ def define_pv(prj):
                                         format='%Y%m%d:%H%M').dt.round('H')  # TODO: workaround
     pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
 
-    pv['spec_capex'] = param.pv_sce  # TODO: Marcel - read in excel data here
-    pv['spec_mntex'] = param.pv_sme
-    pv['spec_opex'] = param.pv_soe
-    pv['lifespan'] = param.pv_ls
-    pv['cost_decr'] = param.pv_cdc
+    pv['spec_capex'] = xlsxread('pv_sce')
+    pv['spec_mntex'] = xlsxread('pv_sme')
+    pv['spec_opex'] = xlsxread('pv_soe')
+    pv['lifespan'] = xlsxread('pv_ls')
+    pv['cost_decr'] = xlsxread('pv_cdc')
+    pv['cs'] = xlsxread('pv_cs')
 
     pv['adj_capex'] = eco.adj_ce(pv['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                  pv['spec_mntex'],
@@ -728,19 +745,21 @@ def define_sim():
     This function initializes the most basic simulation data for the timeframe to simulate (and optimize) over
     """
 
-    # TODO: Marcel - import excel structure here & replace param
+    var = ['sim_name', 'sim_solver', 'sim_dump', 'sim_debug', 'sim_step', 'sim_eps', 'sim_enable', ]
 
     sim = dict()
     sim['runtimestart'] = time.time()
     sim['runtimestamp'] = datetime.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
-    sim['name'] = sim['runtimestamp'] + "_" + param.sim_name
+    sim['name'] = sim['runtimestamp'] + "_" + xlsxread('sim_name')
 
-    sim['start'] = datetime.strptime(param.proj_start, '%m/%d/%Y')
-    sim['end'] = sim['start'] + relativedelta(days=param.proj_sim)
-    sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=param.sim_step).delete(-1)
-    sim['yrrat'] = param.proj_sim / 365.25
+    sim['start'] = datetime.strptime(xlsxread('proj_start'), '%Y/%m/%d')
+    sim['proj'] = xlsxread('proj_sim')
+    sim['end'] = sim['start'] + relativedelta(days=sim['proj'])
+    sim['step'] = xlsxread('sim_step')
+    sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=sim['step']).delete(-1)
+    sim['yrrat'] = sim['proj'] / 365.25
 
-    sim['debugmode'] = param.sim_debug
+    sim['debugmode'] = xlsxread('sim_debug')
     sim['datapath'] = os.path.join(os.getcwd(), "scenarios")
     sim['resultpath'] = os.path.join(os.getcwd(), "results")
     sim['modelpath'] = os.path.join(os.getcwd(), "lp_models")
@@ -750,12 +769,19 @@ def define_sim():
 
     sim['eps'] = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 
-    sim['op_strat'] = param.sim_os
-    sim['enable'] = param.sim_enable
-    sim['cs_opt'] = param.sim_cs
+    sim['op_strat'] = xlsxread('sim_os')
+    sim['enable'] = dict(dem=xlsxread('dem_enable'), wind=xlsxread('wind_enable'), pv=xlsxread('pv_enable'),
+                         gen=xlsxread('gen_enable'), ess=xlsxread('ess_enable'), bev=xlsxread('bev_enable'))
+    sim['cs_opt'] = dict(wind=xlsxread('wind_enable_cs'), pv=xlsxread('pv_enable_cs'), gen=xlsxread('gen_enable_cs'),
+                         ess=xlsxread('ess_enable_cs'), bev=xlsxread('bev_enable_cs'))
 
     sim['components'] = dict()  # empty dict as storage for individual buses, transformers, sources and sinks
     sim['sources'] = []  # create empty list of source modules to iterate over later
+
+    sim['solver'] = xlsxread('sim_solver')
+    sim['dump'] = xlsxread('sim_dump')
+    sim['eps'] = xlsxread('sim_eps')
+
     return sim
 
 
@@ -771,19 +797,20 @@ def define_wind(prj):
 
     wind['filepath'] = os.path.join(os.getcwd(),
                                     "scenarios",
-                                    param.wind_filename)
+                                    xlsxread('wind_filename'))
     wind['data'] = pd.read_csv(wind['filepath'],
                                sep=",",
                                skip_blank_lines=False)
-    wind['data']['time'] = pd.date_range(start=param.proj_start,
+    wind['data']['time'] = pd.date_range(start=prj['start'],
                                          periods=len(wind['data']),
                                          freq='H')
 
-    wind['spec_capex'] = param.wind_sce  # TODO: Marcel - read in excel data here
-    wind['spec_mntex'] = param.wind_sme
-    wind['spec_opex'] = param.wind_soe
-    wind['lifespan'] = param.wind_ls
-    wind['cost_decr'] = param.wind_cdc
+    wind['spec_capex'] = xlsxread('wind_sce')
+    wind['spec_mntex'] = xlsxread('wind_sme')
+    wind['spec_opex'] = xlsxread('wind_soe')
+    wind['lifespan'] = xlsxread('wind_ls')
+    wind['cost_decr'] = xlsxread('wind_cdc')
+    wind['cs'] = xlsxread('wind_cs')
 
     wind['adj_capex'] = eco.adj_ce(wind['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                    wind['spec_mntex'],
@@ -817,16 +844,16 @@ def select_data(sim, dem, wind, pv, bev):
     Update input data file slices to next prediction horizon
     '''
 
-    if param.sim_enable['dem']:
+    if sim['enable']['dem']:
         dem['ph_data'] = slice_data(dem['data'], sim['ph_dti'])  # select correct data slice
 
-    if param.sim_enable["wind"]:
+    if sim['enable']["wind"]:
         wind['ph_data'] = slice_data(wind['data'], sim['ph_dti'])  # select correct data slice
 
-    if param.sim_enable["pv"]:
+    if sim['enable']["pv"]:
         pv['ph_data'] = slice_data(pv['data'], sim['ph_dti'])  # select correct data slice
 
-    if param.sim_enable["bev"]:
+    if sim['enable']["bev"]:
         bev['ph_data'] = slice_data(bev['data'], sim['ph_dti'])  # select correct data slice
 
     return dem, wind, pv, bev
@@ -840,18 +867,18 @@ def set_dti(sim, oc):
         sim['ph_start'] = sim['start']  # set first prediction horizon start
         sim['ch_start'] = sim['ph_start']  # set first control horizon start
     else:
-        sim['ph_start'] = sim['ph_start'] + relativedelta(hours=param.rh_ch)  # advance to next prediction horizon
+        sim['ph_start'] = sim['ph_start'] + relativedelta(hours=sim['rh_ch'])  # advance to next prediction horizon
         sim['ch_start'] = sim['ph_start']  # advance to next control horizon
 
-    if param.sim_os == 'rh':
-        sim['ph_end'] = sim['ph_start'] + relativedelta(hours=param.rh_ph)
-        sim['ch_end'] = sim['ch_start'] + relativedelta(hours=param.rh_ch)
-    elif param.sim_os == 'go':
+    if sim['op_strat'] == 'rh':
+        sim['ph_end'] = sim['ph_start'] + relativedelta(hours=sim['rh_ph'])
+        sim['ch_end'] = sim['ch_start'] + relativedelta(hours=sim['rh_ch'])
+    elif sim['op_strat'] == 'go':
         sim['ph_end'] = sim['end']
         sim['ch_end'] = sim['end']
 
-    sim['ph_dti'] = pd.date_range(start=sim['ph_start'], end=sim['ph_end'], freq=param.sim_step).delete(-1)
-    sim['ch_dti'] = pd.date_range(start=sim['ch_start'], end=sim['ch_end'], freq=param.sim_step).delete(-1)
+    sim['ph_dti'] = pd.date_range(start=sim['ph_start'], end=sim['ph_end'], freq=sim['step']).delete(-1)
+    sim['ch_dti'] = pd.date_range(start=sim['ch_start'], end=sim['ch_end'], freq=sim['step']).delete(-1)
 
     return sim
 
@@ -866,3 +893,17 @@ def slice_data(data, dti):
     sliced_data = sliced_data.reset_index(drop=True)  # reset data index to start from 0
 
     return sliced_data
+
+
+def xlsxread(param):
+    """
+    Reading parameters from external excel file "settings.xlsx"
+    """
+
+    sheet = 'Tabelle1'
+    file = 'settings.xlsx'
+    db = xl.readxl(fn=file, ws=sheet)
+
+    var = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
+    return var
+

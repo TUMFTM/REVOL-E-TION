@@ -37,9 +37,11 @@ import pprint as pp
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import time
+import pylightxl as xl
+import numpy as np
+
 
 import economics as eco
-import parameters as param
 import colordef as col
 
 
@@ -48,19 +50,19 @@ def acc_eco(sim, prj, wind, pv, gen, ess, bev, cres):
     Accumulate cost results to get economic values for a all enabled components
     """
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         wind, cres = acc_eco_comp(sim, prj, wind, cres)
 
-    if param.sim_enable['pv']:
+    if sim['enable']['pv']:
         pv, cres = acc_eco_comp(sim, prj, pv, cres)
 
-    if param.sim_enable['gen']:
+    if sim['enable']['gen']:
         gen, cres = acc_eco_comp(sim, prj, gen, cres)
 
-    if param.sim_enable['ess']:
+    if sim['enable']['ess']:
         ess, cres = acc_eco_comp(sim, prj, ess, cres)
 
-    if param.sim_enable['bev']:
+    if sim['enable']['bev']:
         bev, cres = acc_eco_comp(sim, prj, bev, cres)
 
     cres['lcoe'] = cres['dis_totex'] / cres['e_dis_del']  # NPC divided by discounted energy
@@ -156,22 +158,22 @@ def acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres):
     Accumulate power results to get energy values from all components
     """
 
-    if param.sim_enable['dem']:
+    if sim['enable']['dem']:
         dem, cres = acc_energy_sink(sim, prj, dem, cres)
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         wind, cres = acc_energy_source(sim, prj, wind, cres)
 
-    if param.sim_enable['pv']:
+    if sim['enable']['pv']:
         pv, cres = acc_energy_source(sim, prj, pv, cres)
 
-    if param.sim_enable['gen']:
+    if sim['enable']['gen']:
         gen, cres = acc_energy_source(sim, prj, gen, cres)
 
-    if param.sim_enable['ess']:
+    if sim['enable']['ess']:
         ess, cres = acc_energy_storage(sim, prj, ess, cres)
 
-    if param.sim_enable['bev']:
+    if sim['enable']['bev']:
         bev, cres = acc_energy_bev(sim, prj, bev, cres)
 
     cres['e_eta'] = cres['e_sim_del'] / cres['e_sim_pro']
@@ -187,17 +189,17 @@ def acc_energy_bev(sim, prj, comp, cres):
     comp['e_sim_in'] = comp['flow_in'].sum()
     comp['e_yrl_in'] = comp['e_sim_in'] / sim['yrrat']
     comp['e_prj_in'] = comp['e_yrl_in'] * prj['duration']
-    comp['e_dis_in'] = eco.acc_discount(comp['e_yrl_in'], param.proj_ls, prj['wacc'])
+    comp['e_dis_in'] = eco.acc_discount(comp['e_yrl_in'], prj['duration'], prj['wacc'])
 
     comp['e_sim_out'] = comp['flow_out'].sum()
     comp['e_yrl_out'] = comp['e_sim_out'] / sim['yrrat']
     comp['e_prj_out'] = comp['e_yrl_out'] * prj['duration']
-    comp['e_dis_out'] = eco.acc_discount(comp['e_yrl_out'], param.proj_ls, prj['wacc'])
+    comp['e_dis_out'] = eco.acc_discount(comp['e_yrl_out'], prj['duration'], prj['wacc'])
 
     comp['e_sim_bal'] = comp['e_sim_in'] - comp['e_sim_out']
     comp['e_yrl_bal'] = comp['e_sim_bal'] / sim['yrrat']
     comp['e_prj_bal'] = comp['e_yrl_bal'] * prj['duration']
-    comp['e_dis_bal'] = eco.acc_discount(comp['e_yrl_bal'], param.proj_ls, prj['wacc'])
+    comp['e_dis_bal'] = eco.acc_discount(comp['e_yrl_bal'], prj['duration'], prj['wacc'])
 
     cres['e_sim_del'] += comp['e_sim_bal']
     cres['e_yrl_del'] += comp['e_yrl_bal']
@@ -215,7 +217,7 @@ def acc_energy_sink(sim, prj, comp, cres):
     comp['e_sim_del'] = comp['flow'].sum()
     comp['e_yrl_del'] = comp['e_sim_del'] / sim['yrrat']
     comp['e_prj_del'] = comp['e_yrl_del'] * prj['duration']
-    comp['e_dis_del'] = eco.acc_discount(comp['e_yrl_del'], param.proj_ls, prj['wacc'])
+    comp['e_dis_del'] = eco.acc_discount(comp['e_yrl_del'], prj['duration'], prj['wacc'])
 
     cres['e_sim_del'] += comp['e_sim_del']
     cres['e_yrl_del'] += comp['e_yrl_del']
@@ -232,7 +234,7 @@ def acc_energy_source(sim, prj,  comp, cres):
     comp['e_sim_pro'] = comp['flow'].sum()
     comp['e_yrl_pro'] = comp['e_sim_pro'] / sim['yrrat']
     comp['e_prj_pro'] = comp['e_yrl_pro'] * prj['duration']
-    comp['e_dis_pro'] = eco.acc_discount(comp['e_yrl_pro'], param.proj_ls, prj['wacc'])
+    comp['e_dis_pro'] = eco.acc_discount(comp['e_yrl_pro'], prj['duration'], prj['wacc'])
 
     cres['e_sim_pro'] += comp['e_sim_pro']
     cres['e_yrl_pro'] += comp['e_yrl_pro']
@@ -269,7 +271,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
     """
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    if param.sim_enable['dem']:
+    if sim['enable']['dem']:
         fig.add_trace(go.Scatter(x=dem['flow'].index.to_pydatetime(),
                                  y=-dem['flow'],
                                  mode='lines',
@@ -277,7 +279,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                                  line=dict(color=col.tum_p301_50, width=2, dash=None)),
                       secondary_y=False)
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         fig.add_trace(go.Scatter(x=wind['flow'].index.to_pydatetime(),
                                  y=wind['flow'],
                                  mode='lines',
@@ -285,7 +287,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                                  line=dict(color=col.tum_p300, width=2, dash='dash')),
                       secondary_y=False)
 
-    if param.sim_enable["pv"]:
+    if sim['enable']["pv"]:
         fig.add_trace(go.Scatter(x=pv['flow'].index.to_pydatetime(),
                                  y=pv['flow'],
                                  mode='lines',
@@ -293,7 +295,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                                  line=dict(color=col.tum_p300, width=2, dash=None)),
                       secondary_y=False)
 
-    if param.sim_enable["gen"]:
+    if sim['enable']["gen"]:
         fig.add_trace(go.Scatter(x=gen['flow'].index.to_pydatetime(),
                                  y=gen['flow'],
                                  mode='lines',
@@ -301,7 +303,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                                  line=dict(color=col.tum_black, width=2, dash=None)),
                       secondary_y=False)
 
-    if param.sim_enable["ess"]:
+    if sim['enable']["ess"]:
         fig.add_trace(go.Scatter(x=ess['flow_bal'].index.to_pydatetime(),
                                  y=ess['flow_bal'],
                                  mode='lines',
@@ -317,7 +319,7 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                                  visible='legendonly'),
                       secondary_y=True)
 
-    if param.sim_enable["bev"]:
+    if sim['enable']["bev"]:
         fig.add_trace(go.Scatter(x=bev['flow_bal'].index.to_pydatetime(),
                                  y=bev['flow_bal'],
                                  mode='lines',
@@ -348,10 +350,10 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
                      showgrid=False,
                      secondary_y=True)
 
-    if param.sim_os == 'go':
+    if sim['op_strat'] == 'go':
         fig.update_layout(title='Global Optimum Results (' + sim['name'] + ')')
-    if param.sim_os == 'rh':
-        title = 'Rolling Horizon Results (PH: '+str(param.rh_ph)+'h, CH: '+str(param.rh_ch)+'h), (' + sim['name'] + ')'
+    if sim['op_strat'] == 'rh':
+        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + sim['name'] + ')'
         fig.update_layout(title=title)
 
     fig.show()
@@ -360,23 +362,24 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev):
 def print_results(sim, wind, pv, gen, ess, bev, cres):
 
     print('#####')
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         print('Wind power results:')
         print_results_source(sim, wind)
 
-    if param.sim_enable['pv']:
+    if sim['enable']['pv']:
         print('PV power results:')
+        print(pv)
         print_results_source(sim, pv)
 
-    if param.sim_enable['gen']:
+    if sim['enable']['gen']:
         print('Diesel power results:')
         print_results_source(sim, gen)
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         print('Stationary storage results:')
         print_results_storage(sim, ess)
 
-    if param.sim_enable['wind']:
+    if sim['enable']['wind']:
         print('Electric vehicle results:')
         print_results_storage(sim, bev)
 
@@ -484,55 +487,88 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
     Dump the simulation results as a file
     """
 
-    # if param.sim_dump:
-    #     logging.info("Save model and result data")
-    #     es.results["main"] = prcs.results(om)
-    #     es.results["meta"] = prcs.meta_results(om)
-    #     es.dump(sim_resultpath, sim_tsname + ".oemof")
-    #
-    #     # Create pandas dataframes from the results and dump it as a .csv file
-    #     es_results = prcs.create_dataframe(om)
-    #     es_results.to_csv(os.path.join(sim_resultpath, sim_tsname + "_res_df.csv"), sep=';')
-    #     parameters = prcs.parameter_as_dict(es)
-    #     parameters = pd.DataFrame.from_dict(parameters)
-    #     parameters.to_csv(os.path.join(sim_resultpath, sim_tsname + "_res_dict.csv"), sep=';')
+    if sim['dump']:
+        logging.info("Save model and result data")
+
+        # create a blank db
+        db = xl.Database()
+        filename = 'results/results_'+ sim['name'] + '.xlsx'
+        sheet = 'Sheet1'
+
+        # add a blank worksheet to the db
+        db.add_ws(ws=sheet)
+
+        # header of ws
+        db.ws(ws=sheet).update_index(row=1, col=1, val='Simulation results ' + sim['name'])
+        name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
+        for i, header in enumerate(name):
+            db.ws(ws=sheet).update_index(row=3, col=1+i*4, val=header+' results')
+
+        # function to add component data to the worksheet
+        def add_ws(comp, col):
+            keys = list(comp.keys())
+            vals = list(comp.values())
+            row_id = 4
+            for i in range(len(vals)):
+                if type(vals[i]) == np.float64 or type(vals[i]) == np.float or type(vals[i]) == np.int:
+                    db.ws(ws=sheet).update_index(row=row_id, col=col, val=keys[i])
+                    db.ws(ws=sheet).update_index(row=row_id, col=col+1, val=vals[i])
+                    row_id += 1
+            return None
+
+        add_ws(cres,1)
+        if sim['enable']['dem']:
+            add_ws(dem, 5)
+        if sim['enable']['wind']:
+            add_ws(wind, 9)
+        if sim['enable']['pv']:
+            add_ws(pv, 13)
+        if sim['enable']['gen']:
+            add_ws(gen, 17)
+        if sim['enable']['ess']:
+            add_ws(ess, 21)
+        if sim['enable']['bev']:
+            add_ws(bev, 25)
+
+        # write out the db
+        xl.writexl(db=db, fn=filename)
 
     return None
 
 
 def get_sizes(sim, wind, pv, gen, ess, bev, results):
 
-    if param.sim_enable['wind']:
-        if param.sim_cs['wind']:
+    if sim['enable']['wind']:
+        if sim['cs_opt']['wind']:
             wind['size'] = results[(sim['components']['wind_src'], sim['components']['wind_bus'])]["scalars"]["invest"]
         else:
-            wind['size'] = param.wind_cs
+            wind['size'] = wind['cs']
 
-    if param.sim_enable['pv']:
-        if param.sim_cs['pv']:
+    if sim['enable']['pv']:
+        if sim['cs_opt']['pv']:
             pv['size'] = results[(sim['components']['pv_src'], sim['components']['pv_bus'])]["scalars"]["invest"]
         else:
-            pv['size'] = param.pv_cs
+            pv['size'] = pv['cs']
 
-    if param.sim_enable['gen']:
-        if param.sim_cs['gen']:
+    if sim['enable']['gen']:
+        if sim['cs_opt']['gen']:
             gen['size'] = results[(sim['components']['gen_src'], sim['components']['ac_bus'])]["scalars"]["invest"]
         else:
-            gen['size'] = param.gen_cs
+            gen['size'] = gen['cs']
 
-    if param.sim_enable['ess']:
-        if param.sim_cs['ess']:
+    if sim['enable']['ess']:
+        if sim['cs_opt']['ess']:
             ess['size'] = results[(sim['components']['ess'], None)]["scalars"]["invest"]
         else:
-            ess['size'] = param.ess_cs
+            ess['size'] = ess['cs']
 
-    if param.sim_enable['bev']:
-        if param.sim_cs['bev']:
+    if sim['enable']['bev']:
+        if sim['cs_opt']['bev']:
             # All bev(x) component sizes are identical
             # there is only one sim['component'] representing the last bevx as it is repeatedly overwritten
             bev['size'] = results[(sim['components']['bevx_ess'], None)]["scalars"]["invest"]
         else:
-            bev['size'] = param.bev_cs
+            bev['size'] = bev['cs']
 
     return wind, pv, gen, ess, bev
 
@@ -553,27 +589,27 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
     if optnum == 0:  # first iteration
         wind, pv, gen, ess, bev = get_sizes(sim, wind, pv, gen, ess, bev, results)
 
-    if param.sim_enable['dem']:
+    if sim['enable']['dem']:
         dem_flow_ch = results[(sim['components']['ac_bus'],
                                sim['components']['dem_snk'])]['sequences']['flow'][sim['ch_dti']]
         dem['flow'] = dem['flow'].append(dem_flow_ch)
 
-    if param.sim_enable["wind"]:
+    if sim['enable']["wind"]:
         wind_flow_ch = results[(sim['components']['wind_bus'],
                                 sim['components']['wind_ac'])]['sequences']['flow'][sim['ch_dti']]
         wind['flow'] = wind['flow'].append(wind_flow_ch)
 
-    if param.sim_enable["pv"]:
+    if sim['enable']["pv"]:
         pv_flow_ch = results[(sim['components']['pv_bus'],
                               sim['components']['pv_dc'])]['sequences']['flow'][sim['ch_dti']]
         pv['flow'] = pv['flow'].append(pv_flow_ch)
 
-    if param.sim_enable["gen"]:
+    if sim['enable']["gen"]:
         gen_flow_ch = results[(sim['components']['gen_src'],
                                sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
         gen['flow'] = gen['flow'].append(gen_flow_ch)
 
-    if param.sim_enable["ess"]:
+    if sim['enable']["ess"]:
         ess_flow_out_ch = results[(sim['components']['ess'],
                                    sim['components']['dc_bus'])]['sequences']['flow'][sim['ch_dti']]
         ess['flow_out'] = ess['flow_out'].append(ess_flow_out_ch)
@@ -586,13 +622,13 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         ess['flow_bal'] = ess['flow_bal'].append(ess_flow_bal_ch)
 
         ess_sc_ch = views.node(results, 'ess')['sequences'][(('ess', 'None'), 'storage_content')][
-            sim['ch_dti']].shift(periods=1, freq=param.sim_step)  # shift is needed as sc/soc is at end of timestep
-        ess_soc_ch = ess_sc_ch / param.ess_cs
+            sim['ch_dti']].shift(periods=1, freq=sim['step'])  # shift is needed as sc/soc is at end of timestep
+        ess_soc_ch = ess_sc_ch / ess['cs']
 
         ess['soc'] = ess['soc'].append(ess_soc_ch)  # tracking state of charge
         ess['ph_init_soc'] = ess['soc'].iloc[-1]
 
-    if param.sim_enable["bev"]:
+    if sim['enable']["bev"]:
 
         # ac_bev and bev_ac have an efficiency of 1, so these energies are the ones actually transmitted to the BEVs
         bev_flow_out_ch = results[(sim['components']['bev_ac'],
@@ -606,14 +642,14 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         bev_flow_bal_ch = bev_flow_in_ch - bev_flow_out_ch
         bev['flow_bal'] = bev['flow_bal'].append(bev_flow_bal_ch)
 
-        for i in range(param.bev_num):
+        for i in range(bev['num']):
             bevx_ess_name = "bev" + str(i + 1) + "_ess"
             bevx_name = "bev" + str(i + 1)
             bevx_sc_ch = views.node(results,
                                     bevx_ess_name)['sequences'][((bevx_ess_name,
                                                                   'None'),
                                                                  'storage_content')][sim['ch_dti']]
-            bevx_soc_ch = bevx_sc_ch / param.bev_cs
+            bevx_soc_ch = bevx_sc_ch / bev['cs']
             bev[bevx_name]['soc'] = bev[bevx_name]['soc'].append(bevx_soc_ch)  # TODO Check for completeness of series
             bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
 

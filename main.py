@@ -46,7 +46,6 @@ import logging
 
 import preprocessing as pre
 import postprocessing as post
-import parameters as param
 # import load_following as lf  # Preparation for future setup
 
 ##########################################################################
@@ -60,7 +59,7 @@ logging.info('Processing inputs')
 prj = pre.define_prj(sim)  # Initialize project data for later economic extrapolation on project lifespan
 sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj)  # Initialize component data
 sim = pre.define_os(sim)  # Initialize operational strategy
-dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(prj, dem, wind, pv, gen, ess, bev)
+dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
 ##########################################################################
 # Optimization Loop
@@ -75,7 +74,7 @@ for ph in range(sim['ch_num']):  # Iterate over number of prediction horizons (1
     sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev)
 
     logging.info('Solving optimization problem')
-    om.solve(solver=param.sim_solver, solve_kwargs={"tee": sim['debugmode']})
+    om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
 
     dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
@@ -93,4 +92,5 @@ post.print_results(sim, wind, pv, gen, ess, bev, cres)
 sim = post.end_timing(sim)
 
 post.plot_results(sim, dem, wind, pv, gen, ess, bev)
-# post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
+post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
+
