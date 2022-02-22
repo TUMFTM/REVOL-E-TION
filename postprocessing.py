@@ -549,6 +549,41 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
     return None
 
 
+def save_results_err(sim, sheet, file):
+    """
+    Dump error message in result excel file if optimization did not succeed
+    """
+
+    if sim['dump']:
+        logging.info("Save model and result data")
+
+        while '/' in file:
+            file = re.sub(r'^.*?/', '', file)
+
+        if sheet == 'Tabelle1':
+            # create a blank db
+            db = xl.Database()
+        else:
+            db = xl.readxl(fn='results/Results_' + file)
+        filename = 'results/Results_' + file
+
+        # add a blank worksheet to the db
+        db.add_ws(ws=sheet)
+
+        # header of ws
+        if sim['op_strat'] == 'go':
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + file + ')')
+        if sim['op_strat'] == 'rh':
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
+
+        # write error message
+        db.ws(ws=sheet).update_index(row=3, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
+
+        # write out the db
+        xl.writexl(db=db, fn=filename)
+
+    return None
+
 def get_sizes(sim, wind, pv, gen, ess, bev, results):
 
     if sim['enable']['wind']:

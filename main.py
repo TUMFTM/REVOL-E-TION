@@ -43,6 +43,7 @@ license:    GPLv3
 from oemof.tools import logger
 
 import logging
+import sys
 
 import preprocessing as pre
 import postprocessing as post
@@ -60,51 +61,55 @@ file = pre.input_gui()
 runs = pre.get_runs(file)
 
 for r in range(runs):
-    sheet = 'Tabelle'+str(r+1)
+    try:
+        sheet = 'Tabelle'+str(r+1)
 
-    ##########################################################################
-    # Preprocessing
-    ##########################################################################
-    sim = pre.define_sim(sheet, file)  # Initialize basic simulation data
+        ##########################################################################
+        # Preprocessing
+        ##########################################################################
+        sim = pre.define_sim(sheet, file)  # Initialize basic simulation data
 
-    logger.define_logging(logfile=sim['logfile'])
-    logging.info('Processing inputs')
+        logger.define_logging(logfile=sim['logfile'])
+        logging.info('Processing inputs')
 
-    prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later economic extrapolation on project lifespan
-    sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet, file)  # Initialize component data
-    sim = pre.define_os(sim, sheet, file)  # Initialize operational strategy
-    dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
+        prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later economic extrapolation on project lifespan
+        sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet, file)  # Initialize component data
+        sim = pre.define_os(sim, sheet, file)  # Initialize operational strategy
+        dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
-    ##########################################################################
-    # Optimization Loop
-    ##########################################################################
+        ##########################################################################
+        # Optimization Loop
+        ##########################################################################
 
-    for ph in range(sim['ch_num']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
-        logging.info('Prediction Horizon ' + str(ph + 1) + ' of ' + str(sim['ch_num']))
+        for ph in range(sim['ch_num']):  # Iterate over number of prediction horizons (1 for GO, more for RH)
+            logging.info('Prediction Horizon ' + str(ph + 1) + ' of ' + str(sim['ch_num']))
 
-        sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
-        dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
+            sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
+            dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
 
-        sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file)
+            sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file)
 
-        logging.info('Solving optimization problem')
-        om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
+            logging.info('Solving optimization problem')
+            om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
+            dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
-        dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
-    ##########################################################################
-    # Postprocessing
-    ##########################################################################
+        ##########################################################################
+        # Postprocessing
+        ##########################################################################
 
-    logging.info("Calculating key results")
-    dem, wind, pv, gen, ess, bev, cres = post.acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres)
-    wind, pv, gen, ess, bev, cres = post.acc_eco(sim, prj, wind, pv, gen, ess, bev, cres)
+        logging.info("Calculating key results")
+        dem, wind, pv, gen, ess, bev, cres = post.acc_energy(sim, prj, dem, wind, pv, gen, ess, bev, cres)
+        wind, pv, gen, ess, bev, cres = post.acc_eco(sim, prj, wind, pv, gen, ess, bev, cres)
 
-    logging.info("Displaying key results")
-    post.print_results(sim, wind, pv, gen, ess, bev, cres)
+        logging.info("Displaying key results")
+        post.print_results(sim, wind, pv, gen, ess, bev, cres)
 
-    sim = post.end_timing(sim)
+        sim = post.end_timing(sim)
 
-    post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
-    post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file)
+        post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
+        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file)
 
+    except:
+        post.save_results_err(sim, sheet, file)
+        continue
