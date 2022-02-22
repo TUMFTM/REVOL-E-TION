@@ -39,6 +39,7 @@ from plotly.subplots import make_subplots
 import time
 import pylightxl as xl
 import numpy as np
+import re
 
 
 import economics as eco
@@ -265,7 +266,7 @@ def acc_energy_storage(sim, prj, comp, cres):
     return comp, cres
 
 
-def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet):
+def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file):
     """
 
     """
@@ -350,10 +351,13 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet):
                      showgrid=False,
                      secondary_y=True)
 
+    while '/' in file:
+        file = re.sub(r'^.*?/', '', file)
+
     if sim['op_strat'] == 'go':
-        fig.update_layout(title='Global Optimum Results (' + sim['name'] + '_' + sheet + ')')
+        fig.update_layout(title='Global Optimum Results (' + file + '_' + sheet + ')')
     if sim['op_strat'] == 'rh':
-        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + sim['name'] + '_' + sheet + ')'
+        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + file + '_' + sheet + ')'
         fig.update_layout(title=title)
 
     fig.show()
@@ -482,7 +486,7 @@ def print_results_overall(cres):
     print("#####")
 
 
-def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet):
+def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
     """
     Dump the simulation results as a file
     """
@@ -490,19 +494,24 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet):
     if sim['dump']:
         logging.info("Save model and result data")
 
-        # create a blank db
-        db = xl.Database()
-        filename = 'results/results_'+ sim['name'] + '_'+ sheet +'.xlsx'
+        while '/' in file:
+            file = re.sub(r'^.*?/', '', file)
+
+        if sheet == 'Tabelle1':
+            # create a blank db
+            db = xl.Database()
+        else:
+            db = xl.readxl(fn='results/Results_' + file)
+        filename = 'results/Results_' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
 
         # header of ws
         if sim['op_strat'] == 'go':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + sim['name'] + '_' + sheet + ')')
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + file + ')')
         if sim['op_strat'] == 'rh':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + sim[
-                'name'] + '_' + sheet + ')')
+            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
 
         name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
         for i, header in enumerate(name):

@@ -50,23 +50,29 @@ import postprocessing as post
 
 
 ##########################################################################
+# Choose Settings Excel File
+##########################################################################
+file = pre.input_gui()
+
+##########################################################################
 # Multi Simulation runs from excel file
 ##########################################################################
-runs = 2
+runs = pre.get_runs(file)
+
 for r in range(runs):
     sheet = 'Tabelle'+str(r+1)
 
     ##########################################################################
     # Preprocessing
     ##########################################################################
-    sim = pre.define_sim(sheet)  # Initialize basic simulation data
+    sim = pre.define_sim(sheet, file)  # Initialize basic simulation data
 
     logger.define_logging(logfile=sim['logfile'])
     logging.info('Processing inputs')
 
-    prj = pre.define_prj(sim, sheet)  # Initialize project data for later economic extrapolation on project lifespan
-    sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet)  # Initialize component data
-    sim = pre.define_os(sim, sheet)  # Initialize operational strategy
+    prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later economic extrapolation on project lifespan
+    sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet, file)  # Initialize component data
+    sim = pre.define_os(sim, sheet, file)  # Initialize operational strategy
     dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
     ##########################################################################
@@ -79,7 +85,7 @@ for r in range(runs):
         sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
         dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
 
-        sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet)
+        sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file)
 
         logging.info('Solving optimization problem')
         om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
@@ -99,6 +105,6 @@ for r in range(runs):
 
     sim = post.end_timing(sim)
 
-    post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet)
-    post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet)
+    post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
+    post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file)
 

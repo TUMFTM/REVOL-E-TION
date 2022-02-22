@@ -31,6 +31,7 @@ license:    GPLv3
 
 import oemof.solph as solph
 import os
+
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -38,6 +39,8 @@ import time
 import logging
 import sys
 import pylightxl as xl
+import PySimpleGUI as sg
+import os.path
 
 import economics as eco
 
@@ -179,7 +182,7 @@ def add_bev(sim, es, bev):
     return sim, es
 
 
-def add_core(sim, es, sheet):
+def add_core(sim, es, sheet, file):
     """
     Create basic two-bus structure
     dc_bus              ac_bus
@@ -196,12 +199,12 @@ def add_core(sim, es, sheet):
         label="ac_dc",
         inputs={sim['components']['ac_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['dc_bus']: solph.Flow()},
-        conversion_factors={sim['components']['dc_bus']: xlsxread('ac_dc_eff', sheet)})
+        conversion_factors={sim['components']['dc_bus']: xlsxread('ac_dc_eff', sheet, file)})
     sim['components']['dc_ac'] = solph.Transformer(
         label="dc_ac",
         inputs={sim['components']['dc_bus']: solph.Flow(variable_costs=sim['eps'])},
         outputs={sim['components']['ac_bus']: solph.Flow()},
-        conversion_factors={sim['components']['ac_bus']: xlsxread('dc_ac_eff', sheet)})
+        conversion_factors={sim['components']['ac_bus']: xlsxread('dc_ac_eff', sheet, file)})
 
     es.add(sim['components']['ac_bus'],
            sim['components']['dc_bus'],
@@ -378,13 +381,13 @@ def add_wind(sim, es, wind):
     return sim, es
 
 
-def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet):
+def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file):
 
     logging.info('Building energy system model')
 
     es = solph.EnergySystem(timeindex=sim['ph_dti'])  # Initialize oemof energy system instance for current PH
 
-    sim, es = add_core(sim, es, sheet)
+    sim, es = add_core(sim, es, sheet, file)
 
     if sim['enable']['dem']:
         sim, es = add_dem(sim, es, dem)
@@ -421,7 +424,7 @@ def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet):
     return sim, om
 
 
-def define_bev(prj, sheet):
+def define_bev(prj, sheet, file):
     """
     This function determines the electric vehicles' equivalent costs and adds them system to the energy system
     """
@@ -430,22 +433,22 @@ def define_bev(prj, sheet):
 
     bev['name'] = 'bev'
 
-    bev['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('bev_filename', sheet))
+    bev['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('bev_filename', sheet, file))
     bev['data'] = pd.read_csv(bev['filepath'], sep=";")
     bev['data']['time'] = pd.date_range(start=prj['start'], periods=len(bev['data']), freq='H')
 
-    bev['spec_capex'] = xlsxread('bev_sce', sheet)
-    bev['spec_mntex'] = xlsxread('bev_sme', sheet)
-    bev['spec_opex'] = xlsxread('bev_soe', sheet)
-    bev['lifespan'] = xlsxread('bev_ls', sheet)
-    bev['cost_decr'] = xlsxread('bev_cdc', sheet)
-    bev['cs'] = xlsxread('bev_cs', sheet)
-    bev['num'] = xlsxread('bev_num', sheet)
-    bev['agr'] = xlsxread('bev_agr', sheet)
-    bev['chg_pwr'] = xlsxread('bev_chg_pwr', sheet)
-    bev['dis_pwr'] = xlsxread('bev_dis_pwr', sheet)
-    bev['charge_eff'] = xlsxread('bev_charge_eff', sheet)
-    bev['discharge_eff'] = xlsxread('bev_discharge_eff', sheet)
+    bev['spec_capex'] = xlsxread('bev_sce', sheet, file)
+    bev['spec_mntex'] = xlsxread('bev_sme', sheet, file)
+    bev['spec_opex'] = xlsxread('bev_soe', sheet, file)
+    bev['lifespan'] = xlsxread('bev_ls', sheet, file)
+    bev['cost_decr'] = xlsxread('bev_cdc', sheet, file)
+    bev['cs'] = xlsxread('bev_cs', sheet, file)
+    bev['num'] = xlsxread('bev_num', sheet, file)
+    bev['agr'] = xlsxread('bev_agr', sheet, file)
+    bev['chg_pwr'] = xlsxread('bev_chg_pwr', sheet, file)
+    bev['dis_pwr'] = xlsxread('bev_dis_pwr', sheet, file)
+    bev['charge_eff'] = xlsxread('bev_charge_eff', sheet, file)
+    bev['discharge_eff'] = xlsxread('bev_discharge_eff', sheet, file)
 
     bev['adj_capex'] = eco.adj_ce(bev['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   bev['spec_mntex'],
@@ -463,54 +466,54 @@ def define_bev(prj, sheet):
         bevx_name = 'bev' + str(i + 1)
         bev['bevx_list'].append(bevx_name)
         bev[bevx_name] = dict()
-        bev[bevx_name]['init_soc'] = xlsxread('bev_init_soc', sheet)  # TODO: Don't we want to define this at random?
+        bev[bevx_name]['init_soc'] = xlsxread('bev_init_soc', sheet, file)  # TODO: Don't we want to define this at random?
         bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['init_soc']
 
     return bev
 
 
-def define_components(sim, prj, sheet):
+def define_components(sim, prj, sheet, file):
     """
     This function calls the defining functions of the individual components
     """
 
     if sim['enable']['dem']:
-        dem = define_dem(sim, prj, sheet)
+        dem = define_dem(sim, prj, sheet, file)
     else:
         dem = None
 
     if sim['enable']["wind"]:
-        wind = define_wind(prj, sheet)
+        wind = define_wind(prj, sheet, file)
         sim['sources'].append('wind')
     else:
         wind = None
 
     if sim['enable']["pv"]:
-        pv = define_pv(prj, sheet)
+        pv = define_pv(prj, sheet, file)
         sim['sources'].append('pv')
     else:
         pv = None
 
     if sim['enable']["gen"]:
-        gen = define_gen(prj, sheet)
+        gen = define_gen(prj, sheet, file)
         sim['sources'].append('gen')
     else:
         gen = None
 
     if sim['enable']["ess"]:
-        ess = define_ess(prj, sheet)
+        ess = define_ess(prj, sheet, file)
     else:
         ess = None
 
     if sim['enable']["bev"]:
-        bev = define_bev(prj, sheet)
+        bev = define_bev(prj, sheet, file)
     else:
         bev = None
 
     return sim, dem, wind, pv, gen, ess, bev
 
 
-def define_dem(sim, prj, sheet):
+def define_dem(sim, prj, sheet, file):
     """
     This function reads in the stationary demand as a dataframe
     """
@@ -518,14 +521,14 @@ def define_dem(sim, prj, sheet):
 
     dem['name'] = 'name'
 
-    dem['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('dem_filename', sheet))
+    dem['filepath'] = os.path.join(os.getcwd(), "scenarios", xlsxread('dem_filename', sheet, file))
     dem['data'] = pd.read_csv(dem['filepath'], sep=",", skip_blank_lines=False)
     dem['data']['time'] = pd.date_range(start=prj['start'], periods=len(dem['data']), freq=sim['step'])
 
     return dem
 
 
-def define_ess(prj, sheet):
+def define_ess(prj, sheet, file):
     """
     This function determines storage equivalent costs and adds the energy storage system to the energy system
     """
@@ -533,17 +536,17 @@ def define_ess(prj, sheet):
 
     ess['name'] = 'ess'
 
-    ess['spec_capex'] = xlsxread('ess_sce', sheet)
-    ess['spec_mntex'] = xlsxread('ess_sme', sheet)
-    ess['spec_opex'] = xlsxread('ess_soe', sheet)
-    ess['lifespan'] = xlsxread('ess_ls', sheet)
-    ess['cost_decr'] = xlsxread('ess_sd', sheet)
-    ess['cs'] = xlsxread('ess_cs', sheet)
-    ess['cdc'] = xlsxread('ess_cdc', sheet)
-    ess['chg_eff'] = xlsxread('ess_chg_eff', sheet)
-    ess['dis_eff'] = xlsxread('ess_dis_eff', sheet)
-    ess['chg_crate'] = xlsxread('ess_chg_crate', sheet)
-    ess['dis_crate'] = xlsxread('ess_dis_crate', sheet)
+    ess['spec_capex'] = xlsxread('ess_sce', sheet, file)
+    ess['spec_mntex'] = xlsxread('ess_sme', sheet, file)
+    ess['spec_opex'] = xlsxread('ess_soe', sheet, file)
+    ess['lifespan'] = xlsxread('ess_ls', sheet, file)
+    ess['cost_decr'] = xlsxread('ess_sd', sheet, file)
+    ess['cs'] = xlsxread('ess_cs', sheet, file)
+    ess['cdc'] = xlsxread('ess_cdc', sheet, file)
+    ess['chg_eff'] = xlsxread('ess_chg_eff', sheet, file)
+    ess['dis_eff'] = xlsxread('ess_dis_eff', sheet, file)
+    ess['chg_crate'] = xlsxread('ess_chg_crate', sheet, file)
+    ess['dis_crate'] = xlsxread('ess_dis_crate', sheet, file)
 
     ess['adj_capex'] = eco.adj_ce(ess['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   ess['spec_mntex'],
@@ -556,14 +559,14 @@ def define_ess(prj, sheet):
                                         prj['wacc'],
                                         ess['cost_decr'])
 
-    ess['init_soc'] = xlsxread('ess_init_soc', sheet)
+    ess['init_soc'] = xlsxread('ess_init_soc', sheet, file)
     ess['ph_init_soc'] = ess['init_soc']
     ess['bal'] = False  # ESS SOC at end of prediction horizon must not be forced equal to initial SOC
 
     return ess
 
 
-def define_gen(prj, sheet):
+def define_gen(prj, sheet, file):
     """
     This function determines diesel generator equivalent costs and adds the generator to the energy system
     """
@@ -571,12 +574,12 @@ def define_gen(prj, sheet):
 
     gen['name'] = 'gen'
 
-    gen['spec_capex'] = xlsxread('gen_sce', sheet)
-    gen['spec_mntex'] = xlsxread('gen_sme', sheet)
-    gen['spec_opex'] = xlsxread('gen_soe', sheet)
-    gen['lifespan'] = xlsxread('gen_ls', sheet)
-    gen['cost_decr'] = xlsxread('gen_cdc', sheet)
-    gen['cs'] = xlsxread('gen_cs', sheet)
+    gen['spec_capex'] = xlsxread('gen_sce', sheet, file)
+    gen['spec_mntex'] = xlsxread('gen_sme', sheet, file)
+    gen['spec_opex'] = xlsxread('gen_soe', sheet, file)
+    gen['lifespan'] = xlsxread('gen_ls', sheet, file)
+    gen['cost_decr'] = xlsxread('gen_cdc', sheet, file)
+    gen['cs'] = xlsxread('gen_cs', sheet, file)
 
     gen['adj_capex'] = eco.adj_ce(gen['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                   gen['spec_mntex'],
@@ -592,7 +595,7 @@ def define_gen(prj, sheet):
     return gen
 
 
-def define_os(sim, sheet):
+def define_os(sim, sheet, file):
     """
     Initialize simulation settings and initial states (SOCs) for first optimization iteration
     """
@@ -607,8 +610,8 @@ def define_os(sim, sheet):
 
     if sim['op_strat'] == 'rh':
         logging.info('Rolling horizon operational strategy initiated')
-        sim['rh_ph'] = xlsxread('rh_ph', sheet)
-        sim['rh_ch'] = xlsxread('rh_ch', sheet)
+        sim['rh_ph'] = xlsxread('rh_ph', sheet, file)
+        sim['rh_ch'] = xlsxread('rh_ch', sheet, file)
         sim['ph_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ph']  # number of timesteps for predicted horizon
         sim['ch_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ch']  # number of timesteps for control horizon
         sim['ch_num'] = int(len(sim['dti']) / sim['ch_len'])  # number of CH timeslices for simulated date range
@@ -678,7 +681,7 @@ def define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev):
     return dem, wind, pv, gen, ess, bev, cres
 
 
-def define_prj(sim, sheet):
+def define_prj(sim, sheet, file):
     """
     This function initializes the most basic data of the project
     to be evaluated (which is longer than the simulated timespan
@@ -686,17 +689,17 @@ def define_prj(sim, sheet):
 
     prj = dict()
     prj['start'] = sim['start']
-    prj['duration'] = xlsxread('proj_ls', sheet)
+    prj['duration'] = xlsxread('proj_ls', sheet, file)
     prj['end'] = prj['start'] + relativedelta(years=prj['duration'])
     prj['ddur'] = (prj['start'] - prj['end']).days
     prj['simrat'] = sim['proj'] / prj['ddur']
 
-    prj['wacc'] = xlsxread('proj_wacc', sheet)
+    prj['wacc'] = xlsxread('proj_wacc', sheet, file)
 
     return prj
 
 
-def define_pv(prj, sheet):
+def define_pv(prj, sheet, file):
     """
     This function imports PV power data as a dataframe,
     determines equivalent costs and adds PV power to the energy system
@@ -708,7 +711,7 @@ def define_pv(prj, sheet):
     pv['filepath'] = os.path.join(os.getcwd(),
                                   "scenarios",
                                   "pvgis_data",
-                                  xlsxread('pv_filename', sheet))
+                                  xlsxread('pv_filename', sheet, file))
     pv['data'] = pd.read_csv(pv['filepath'],
                              sep=",",
                              header=10,
@@ -719,12 +722,12 @@ def define_pv(prj, sheet):
                                         format='%Y%m%d:%H%M').dt.round('H')  # TODO: workaround
     pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
 
-    pv['spec_capex'] = xlsxread('pv_sce', sheet)
-    pv['spec_mntex'] = xlsxread('pv_sme', sheet)
-    pv['spec_opex'] = xlsxread('pv_soe', sheet)
-    pv['lifespan'] = xlsxread('pv_ls', sheet)
-    pv['cost_decr'] = xlsxread('pv_cdc', sheet)
-    pv['cs'] = xlsxread('pv_cs', sheet)
+    pv['spec_capex'] = xlsxread('pv_sce', sheet, file)
+    pv['spec_mntex'] = xlsxread('pv_sme', sheet, file)
+    pv['spec_opex'] = xlsxread('pv_soe', sheet, file)
+    pv['lifespan'] = xlsxread('pv_ls', sheet, file)
+    pv['cost_decr'] = xlsxread('pv_cdc', sheet, file)
+    pv['cs'] = xlsxread('pv_cs', sheet, file)
 
     pv['adj_capex'] = eco.adj_ce(pv['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                  pv['spec_mntex'],
@@ -740,7 +743,7 @@ def define_pv(prj, sheet):
     return pv
 
 
-def define_sim(sheet):
+def define_sim(sheet, file):
     """
     This function initializes the most basic simulation data for the timeframe to simulate (and optimize) over
     """
@@ -750,16 +753,16 @@ def define_sim(sheet):
     sim = dict()
     sim['runtimestart'] = time.time()
     sim['runtimestamp'] = datetime.now().strftime("%y%m%d%H%M%S")  # create simulation timestamp
-    sim['name'] = sim['runtimestamp'] + "_" + xlsxread('sim_name', sheet)
+    sim['name'] = sim['runtimestamp'] + "_" + xlsxread('sim_name', sheet, file)
 
-    sim['start'] = datetime.strptime(xlsxread('proj_start', sheet), '%Y/%m/%d')
-    sim['proj'] = xlsxread('proj_sim', sheet)
+    sim['start'] = datetime.strptime(xlsxread('proj_start', sheet, file), '%Y/%m/%d')
+    sim['proj'] = xlsxread('proj_sim', sheet, file)
     sim['end'] = sim['start'] + relativedelta(days=sim['proj'])
-    sim['step'] = xlsxread('sim_step', sheet)
+    sim['step'] = xlsxread('sim_step', sheet, file)
     sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=sim['step']).delete(-1)
     sim['yrrat'] = sim['proj'] / 365.25
 
-    sim['debugmode'] = xlsxread('sim_debug', sheet)
+    sim['debugmode'] = xlsxread('sim_debug', sheet, file)
     sim['datapath'] = os.path.join(os.getcwd(), "scenarios")
     sim['resultpath'] = os.path.join(os.getcwd(), "results")
     sim['modelpath'] = os.path.join(os.getcwd(), "lp_models")
@@ -769,23 +772,23 @@ def define_sim(sheet):
 
     sim['eps'] = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 
-    sim['op_strat'] = xlsxread('sim_os', sheet)
-    sim['enable'] = dict(dem=xlsxread('dem_enable', sheet), wind=xlsxread('wind_enable', sheet), pv=xlsxread('pv_enable', sheet),
-                         gen=xlsxread('gen_enable', sheet), ess=xlsxread('ess_enable', sheet), bev=xlsxread('bev_enable', sheet))
-    sim['cs_opt'] = dict(wind=xlsxread('wind_enable_cs', sheet), pv=xlsxread('pv_enable_cs', sheet), gen=xlsxread('gen_enable_cs', sheet),
-                         ess=xlsxread('ess_enable_cs', sheet), bev=xlsxread('bev_enable_cs', sheet))
+    sim['op_strat'] = xlsxread('sim_os', sheet, file)
+    sim['enable'] = dict(dem=xlsxread('dem_enable', sheet, file), wind=xlsxread('wind_enable', sheet, file), pv=xlsxread('pv_enable', sheet, file),
+                         gen=xlsxread('gen_enable', sheet, file), ess=xlsxread('ess_enable', sheet, file), bev=xlsxread('bev_enable', sheet, file))
+    sim['cs_opt'] = dict(wind=xlsxread('wind_enable_cs', sheet, file), pv=xlsxread('pv_enable_cs', sheet, file), gen=xlsxread('gen_enable_cs', sheet, file),
+                         ess=xlsxread('ess_enable_cs', sheet, file), bev=xlsxread('bev_enable_cs', sheet, file))
 
     sim['components'] = dict()  # empty dict as storage for individual buses, transformers, sources and sinks
     sim['sources'] = []  # create empty list of source modules to iterate over later
 
-    sim['solver'] = xlsxread('sim_solver', sheet)
-    sim['dump'] = xlsxread('sim_dump', sheet)
-    sim['eps'] = xlsxread('sim_eps', sheet)
+    sim['solver'] = xlsxread('sim_solver', sheet, file)
+    sim['dump'] = xlsxread('sim_dump', sheet, file)
+    sim['eps'] = xlsxread('sim_eps', sheet, file)
 
     return sim
 
 
-def define_wind(prj, sheet):
+def define_wind(prj, sheet, file):
     """
     This function imports wind power data as a dataframe,
     determines equivalent costs and adds wind power to the energy system
@@ -797,7 +800,7 @@ def define_wind(prj, sheet):
 
     wind['filepath'] = os.path.join(os.getcwd(),
                                     "scenarios",
-                                    xlsxread('wind_filename', sheet))
+                                    xlsxread('wind_filename', sheet, file))
     wind['data'] = pd.read_csv(wind['filepath'],
                                sep=",",
                                skip_blank_lines=False)
@@ -805,12 +808,12 @@ def define_wind(prj, sheet):
                                          periods=len(wind['data']),
                                          freq='H')
 
-    wind['spec_capex'] = xlsxread('wind_sce', sheet)
-    wind['spec_mntex'] = xlsxread('wind_sme', sheet)
-    wind['spec_opex'] = xlsxread('wind_soe', sheet)
-    wind['lifespan'] = xlsxread('wind_ls', sheet)
-    wind['cost_decr'] = xlsxread('wind_cdc', sheet)
-    wind['cs'] = xlsxread('wind_cs', sheet)
+    wind['spec_capex'] = xlsxread('wind_sce', sheet, file)
+    wind['spec_mntex'] = xlsxread('wind_sme', sheet, file)
+    wind['spec_opex'] = xlsxread('wind_soe', sheet, file)
+    wind['lifespan'] = xlsxread('wind_ls', sheet, file)
+    wind['cost_decr'] = xlsxread('wind_cdc', sheet, file)
+    wind['cs'] = xlsxread('wind_cs', sheet, file)
 
     wind['adj_capex'] = eco.adj_ce(wind['spec_capex'],  # adjusted ce (including maintenance) of the component in $/W
                                    wind['spec_mntex'],
@@ -895,14 +898,37 @@ def slice_data(data, dti):
     return sliced_data
 
 
-def xlsxread(param, sheet):
+def xlsxread(param, sheet, file):
     """
     Reading parameters from external excel file "settings.xlsx"
     """
 
-    file = 'settings.xlsx'
     db = xl.readxl(fn=file, ws=sheet)
 
     var = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     return var
 
+def get_runs(file):
+    """
+    Reading number of sheets from external excel file "settings.xlsx"
+    """
+
+    xl = pd.ExcelFile(file)
+    runs = len(xl.sheet_names)
+
+    return runs
+
+
+def input_gui():
+    """
+    GUI to choose excel settings file from Browser
+    """
+
+    event, values = sg.Window('Get settings file',
+                              [[sg.Text('Filename')],
+                               [sg.Input(), sg.FileBrowse()],
+                               [sg.OK(), sg.Cancel()]
+                               ]).read(close=True)
+    filename = values['Browse']
+
+    return filename
