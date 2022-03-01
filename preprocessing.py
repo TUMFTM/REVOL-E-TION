@@ -762,7 +762,7 @@ def define_sim(sheet, file):
     sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=sim['step']).delete(-1)
     sim['yrrat'] = sim['proj'] / 365.25
 
-    sim['debugmode'] = xlsxread('sim_debug', sheet, file)
+    sim['debugmode'] = 1 if xlsxread('sim_debug', sheet, file) == 'True' else 0
     sim['datapath'] = os.path.join(os.getcwd(), "scenarios")
     sim['resultpath'] = os.path.join(os.getcwd(), "results")
     sim['modelpath'] = os.path.join(os.getcwd(), "lp_models")
@@ -773,16 +773,24 @@ def define_sim(sheet, file):
     sim['eps'] = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
 
     sim['op_strat'] = xlsxread('sim_os', sheet, file)
-    sim['enable'] = dict(dem=xlsxread('dem_enable', sheet, file), wind=xlsxread('wind_enable', sheet, file), pv=xlsxread('pv_enable', sheet, file),
-                         gen=xlsxread('gen_enable', sheet, file), ess=xlsxread('ess_enable', sheet, file), bev=xlsxread('bev_enable', sheet, file))
-    sim['cs_opt'] = dict(wind=xlsxread('wind_enable_cs', sheet, file), pv=xlsxread('pv_enable_cs', sheet, file), gen=xlsxread('gen_enable_cs', sheet, file),
-                         ess=xlsxread('ess_enable_cs', sheet, file), bev=xlsxread('bev_enable_cs', sheet, file))
+    sim['enable'] = dict(dem=1 if xlsxread('dem_enable', sheet, file) == 'True' else 0,
+                         wind=1 if xlsxread('wind_enable', sheet, file) == 'True' else 0,
+                         pv=1 if xlsxread('pv_enable', sheet, file) == 'True' else 0,
+                         gen=1 if xlsxread('gen_enable', sheet, file) == 'True' else 0,
+                         ess=1 if xlsxread('ess_enable', sheet, file) == 'True' else 0,
+                         bev=1 if xlsxread('bev_enable', sheet, file) == 'True' else 0)
+
+    sim['cs_opt'] = dict(wind=1 if xlsxread('wind_enable_cs', sheet, file) == 'True' else 0,
+                         pv=1 if xlsxread('pv_enable_cs', sheet, file) == 'True' else 0,
+                         gen=1 if xlsxread('gen_enable_cs', sheet, file) == 'True' else 0,
+                         ess=1 if xlsxread('ess_enable_cs', sheet, file) == 'True' else 0,
+                         bev=1 if xlsxread('bev_enable_cs', sheet, file) == 'True' else 0)
 
     sim['components'] = dict()  # empty dict as storage for individual buses, transformers, sources and sinks
     sim['sources'] = []  # create empty list of source modules to iterate over later
 
     sim['solver'] = xlsxread('sim_solver', sheet, file)
-    sim['dump'] = xlsxread('sim_dump', sheet, file)
+    sim['dump'] = 1 if xlsxread('sim_dump', sheet, file) == 'True' else 0
     sim['eps'] = xlsxread('sim_eps', sheet, file)
 
     return sim
@@ -915,8 +923,9 @@ def get_runs(file):
 
     xl = pd.ExcelFile(file)
     runs = len(xl.sheet_names)
+    sheets = xl.sheet_names
 
-    return runs
+    return runs, sheets
 
 
 def input_gui():

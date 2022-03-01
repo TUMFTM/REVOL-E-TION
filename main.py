@@ -43,7 +43,6 @@ license:    GPLv3
 from oemof.tools import logger
 
 import logging
-import sys
 
 import preprocessing as pre
 import postprocessing as post
@@ -58,11 +57,12 @@ file = pre.input_gui()
 ##########################################################################
 # Multi Simulation runs from excel file
 ##########################################################################
-runs = pre.get_runs(file)
+# Get number of Excel sheets and sheet names
+runs, sheets = pre.get_runs(file)
 
 for r in range(runs):
     try:
-        sheet = 'Tabelle'+str(r+1)
+        sheet = sheets[r]
 
         ##########################################################################
         # Preprocessing
@@ -108,8 +108,8 @@ for r in range(runs):
         sim = post.end_timing(sim)
 
         post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
-        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file)
+        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r)
 
     except:
-        post.save_results_err(sim, sheet, file)
+        post.save_results_err(sim, sheet, file, r)
         continue

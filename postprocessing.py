@@ -486,7 +486,7 @@ def print_results_overall(cres):
     print("#####")
 
 
-def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
+def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
     """
     Dump the simulation results as a file
     """
@@ -497,7 +497,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
         while '/' in file:
             file = re.sub(r'^.*?/', '', file)
 
-        if sheet == 'Tabelle1':
+        if r == 0:
             # create a blank db
             db = xl.Database()
         else:
@@ -513,15 +513,19 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
         if sim['op_strat'] == 'rh':
             db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
 
+        # add runtime
+        db.ws(ws=sheet).update_index(row=2, col=1, val='Runtime')
+        db.ws(ws=sheet).update_index(row=2, col=2, val=sim['runtime'])
+
         name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
         for i, header in enumerate(name):
-            db.ws(ws=sheet).update_index(row=3, col=1+i*4, val=header+' results')
+            db.ws(ws=sheet).update_index(row=4, col=1+i*4, val=header+' results')
 
         # function to add component data to the worksheet
         def add_ws(comp, col):
             keys = list(comp.keys())
             vals = list(comp.values())
-            row_id = 4
+            row_id = 5
             for i in range(len(vals)):
                 if type(vals[i]) == np.float64 or type(vals[i]) == np.float or type(vals[i]) == np.int:
                     db.ws(ws=sheet).update_index(row=row_id, col=col, val=keys[i])
@@ -549,7 +553,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file):
     return None
 
 
-def save_results_err(sim, sheet, file):
+def save_results_err(sim, sheet, file, r):
     """
     Dump error message in result excel file if optimization did not succeed
     """
@@ -560,7 +564,7 @@ def save_results_err(sim, sheet, file):
         while '/' in file:
             file = re.sub(r'^.*?/', '', file)
 
-        if sheet == 'Tabelle1':
+        if r == 0:
             # create a blank db
             db = xl.Database()
         else:
