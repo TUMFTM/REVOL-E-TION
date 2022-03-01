@@ -4,6 +4,7 @@ scenarios/*
 logfiles/*
 cbc.exe
 .idea/*
+settings/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
