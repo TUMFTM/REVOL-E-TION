@@ -658,23 +658,23 @@ def define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev):
                           'ann_totex'
                           ], 0)
 
-    dem['flow'] = pd.Series()
+    dem['flow'] = pd.Series(dtype='float64')
 
     if sim['enable']['wind']:
-        wind['flow'] = pd.Series()
+        wind['flow'] = pd.Series(dtype='float64')
 
     if sim['enable']['pv']:
-        pv['flow'] = pd.Series()
+        pv['flow'] = pd.Series(dtype='float64')
 
     if sim['enable']['gen']:
-        gen['flow'] = pd.Series()
+        gen['flow'] = pd.Series(dtype='float64')
 
     if sim['enable']['ess']:
-        ess['flow_out'] = ess['flow_in'] = ess['soc'] = ess['flow_bal'] = pd.Series()
+        ess['flow_out'] = ess['flow_in'] = ess['soc'] = ess['flow_bal'] = pd.Series(dtype='float64')
         ess['soc'] = pd.Series(data={prj['start']: ess['init_soc']})
 
     if sim['enable']['bev']:
-        bev['flow_out'] = bev['flow_in'] = bev['flow_bal'] = pd.Series()
+        bev['flow_out'] = bev['flow_in'] = bev['flow_bal'] = pd.Series(dtype='float64')
         for bevx in bev['bevx_list']:
             bev[bevx]['soc'] = pd.Series(data={prj['start']: bev[bevx]['init_soc']})
 

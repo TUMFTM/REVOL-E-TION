@@ -40,6 +40,7 @@ import time
 import pylightxl as xl
 import numpy as np
 import re
+import pandas as pd
 
 
 import economics as eco
@@ -501,8 +502,8 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn='results/Results_' + file)
-        filename = 'results/Results_' + file
+            db = xl.readxl(fn='H:/results/Results_' + file)
+        filename = 'H:/results/Results_' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
@@ -547,6 +548,8 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
         if sim['enable']['bev']:
             add_ws(bev, 25)
 
+        print(filename)
+        print(db)
         # write out the db
         xl.writexl(db=db, fn=filename)
 
@@ -568,8 +571,8 @@ def save_results_err(sim, sheet, file, r):
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn='results/Results_' + file)
-        filename = 'results/Results_' + file
+            db = xl.readxl(fn='H:/results/Results_' + file)
+        filename = 'H:/results/Results_' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
@@ -583,6 +586,8 @@ def save_results_err(sim, sheet, file, r):
         # write error message
         db.ws(ws=sheet).update_index(row=3, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
 
+        print(filename)
+        print(db)
         # write out the db
         xl.writexl(db=db, fn=filename)
 
@@ -644,40 +649,40 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
     if sim['enable']['dem']:
         dem_flow_ch = results[(sim['components']['ac_bus'],
                                sim['components']['dem_snk'])]['sequences']['flow'][sim['ch_dti']]
-        dem['flow'] = dem['flow'].append(dem_flow_ch)
+        dem['flow'] = pd.concat([dem['flow'], dem_flow_ch])
 
     if sim['enable']["wind"]:
         wind_flow_ch = results[(sim['components']['wind_bus'],
                                 sim['components']['wind_ac'])]['sequences']['flow'][sim['ch_dti']]
-        wind['flow'] = wind['flow'].append(wind_flow_ch)
+        wind['flow'] = pd.concat([wind['flow'], wind_flow_ch])
 
     if sim['enable']["pv"]:
         pv_flow_ch = results[(sim['components']['pv_bus'],
                               sim['components']['pv_dc'])]['sequences']['flow'][sim['ch_dti']]
-        pv['flow'] = pv['flow'].append(pv_flow_ch)
+        pv['flow'] = pd.concat([pv['flow'], pv_flow_ch])
 
     if sim['enable']["gen"]:
         gen_flow_ch = results[(sim['components']['gen_src'],
                                sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
-        gen['flow'] = gen['flow'].append(gen_flow_ch)
+        gen['flow'] = pd.concat([gen['flow'], gen_flow_ch])
 
     if sim['enable']["ess"]:
         ess_flow_out_ch = results[(sim['components']['ess'],
                                    sim['components']['dc_bus'])]['sequences']['flow'][sim['ch_dti']]
-        ess['flow_out'] = ess['flow_out'].append(ess_flow_out_ch)
+        ess['flow_out'] = pd.concat([ess['flow_out'], ess_flow_out_ch])
 
         ess_flow_in_ch = results[(sim['components']['dc_bus'],
                                   sim['components']['ess'])]['sequences']['flow'][sim['ch_dti']]
-        ess['flow_in'] = ess['flow_in'].append(ess_flow_in_ch)
+        ess['flow_in'] = pd.concat([ess['flow_in'], ess_flow_in_ch])
 
         ess_flow_bal_ch = ess_flow_in_ch - ess_flow_out_ch
-        ess['flow_bal'] = ess['flow_bal'].append(ess_flow_bal_ch)
+        ess['flow_bal'] = pd.concat([ess['flow_bal'], ess_flow_bal_ch])
 
         ess_sc_ch = views.node(results, 'ess')['sequences'][(('ess', 'None'), 'storage_content')][
             sim['ch_dti']].shift(periods=1, freq=sim['step'])  # shift is needed as sc/soc is at end of timestep
         ess_soc_ch = ess_sc_ch / ess['cs']
 
-        ess['soc'] = ess['soc'].append(ess_soc_ch)  # tracking state of charge
+        ess['soc'] = pd.concat([ess['soc'], ess_soc_ch])  # tracking state of charge
         ess['ph_init_soc'] = ess['soc'].iloc[-1]
 
     if sim['enable']["bev"]:
@@ -685,14 +690,14 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         # ac_bev and bev_ac have an efficiency of 1, so these energies are the ones actually transmitted to the BEVs
         bev_flow_out_ch = results[(sim['components']['bev_ac'],
                                    sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
-        bev['flow_out'] = bev['flow_out'].append(bev_flow_out_ch)
+        bev['flow_out'] = pd.concat([bev['flow_out'], bev_flow_out_ch])
 
         bev_flow_in_ch = results[(sim['components']['ac_bus'],
                                   sim['components']['ac_bev'])]['sequences']['flow'][sim['ch_dti']]
-        bev['flow_in'] = bev['flow_in'].append(bev_flow_in_ch)
+        bev['flow_in'] = pd.concat([bev['flow_in'], bev_flow_in_ch])
 
         bev_flow_bal_ch = bev_flow_in_ch - bev_flow_out_ch
-        bev['flow_bal'] = bev['flow_bal'].append(bev_flow_bal_ch)
+        bev['flow_bal'] = pd.concat([bev['flow_bal'], bev_flow_bal_ch])
 
         for i in range(bev['num']):
             bevx_ess_name = "bev" + str(i + 1) + "_ess"
@@ -702,7 +707,7 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
                                                                   'None'),
                                                                  'storage_content')][sim['ch_dti']]
             bevx_soc_ch = bevx_sc_ch / bev['cs']
-            bev[bevx_name]['soc'] = bev[bevx_name]['soc'].append(bevx_soc_ch)  # TODO Check for completeness of series
+            bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])  # TODO Check for completeness of series
             bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
 
     return dem, wind, pv, gen, ess, bev
