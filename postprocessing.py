@@ -502,8 +502,8 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn=folder + '/' + file)
-        filename = folder + '/' + file
+            db = xl.readxl(fn=folder + '/Results_' + file)
+        filename = folder + '/Results_' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
@@ -571,8 +571,8 @@ def save_results_err(sim, sheet, file, r, folder):
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn=folder + '/' + file)
-        filename = folder + '/' + file
+            db = xl.readxl(fn=folder + '/Results_' + file)
+        filename = folder + '/Results_' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
