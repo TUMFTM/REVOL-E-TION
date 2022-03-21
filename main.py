@@ -52,7 +52,7 @@ import postprocessing as post
 ##########################################################################
 # Choose Settings Excel File
 ##########################################################################
-file = pre.input_gui()
+file, folder = pre.input_gui()
 
 ##########################################################################
 # Multi Simulation runs from excel file
@@ -108,8 +108,8 @@ for r in range(runs):
         sim = post.end_timing(sim)
 
         post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
-        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r)
+        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder)
 
     except:
-        post.save_results_err(sim, sheet, file, r)
+        post.save_results_err(sim, sheet, file, r, folder)
         continue

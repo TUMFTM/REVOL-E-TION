@@ -921,9 +921,13 @@ def get_runs(file):
     Reading number of sheets from external excel file "settings.xlsx"
     """
 
-    xl = pd.ExcelFile(file)
-    runs = len(xl.sheet_names)
-    sheets = xl.sheet_names
+    #xl = pd.ExcelFile(file)
+    #runs = len(xl.sheet_names)
+    #sheets = xl.sheet_names
+
+    xl = pd.read_excel(file, sheet_name=None)
+    runs = len(xl.keys())
+    sheets = list(xl.keys())
 
     return runs, sheets
 
@@ -933,11 +937,27 @@ def input_gui():
     GUI to choose excel settings file from Browser
     """
 
-    event, values = sg.Window('Get settings file',
-                              [[sg.Text('Filename')],
-                               [sg.Input(), sg.FileBrowse()],
-                               [sg.OK(), sg.Cancel()]
-                               ]).read(close=True)
-    filename = values['Browse']
+    input_file = [[sg.Text('Choose input excel-file')],
+                    [sg.Input(), sg.FileBrowse()],
+                    ]
 
-    return filename
+    result_folder = [[sg.Text("Choose folder for result storage")],
+                     [sg.Input(), sg.FolderBrowse()],
+                     ]
+
+    layout = [
+        [sg.Column(input_file)],
+        [sg.HSeparator()],
+        [sg.Column(result_folder)],
+        [sg.HSeparator()],
+        [sg.OK(),sg.Cancel()],
+    ]
+
+    event, values = sg.Window('Get settings file',
+                              layout
+                              ).read(close=True)
+
+    filename = values['Browse']
+    foldername = values['Browse0']
+
+    return filename, foldername

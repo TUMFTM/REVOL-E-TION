@@ -487,7 +487,7 @@ def print_results_overall(cres):
     print("#####")
 
 
-def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
+def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder):
     """
     Dump the simulation results as a file
     """
@@ -502,8 +502,8 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn='H:/results/Results_' + file)
-        filename = 'H:/results/Results_' + file
+            db = xl.readxl(fn=folder + '/' + file)
+        filename = folder + '/' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
@@ -556,7 +556,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r):
     return None
 
 
-def save_results_err(sim, sheet, file, r):
+def save_results_err(sim, sheet, file, r, folder):
     """
     Dump error message in result excel file if optimization did not succeed
     """
@@ -571,8 +571,8 @@ def save_results_err(sim, sheet, file, r):
             # create a blank db
             db = xl.Database()
         else:
-            db = xl.readxl(fn='H:/results/Results_' + file)
-        filename = 'H:/results/Results_' + file
+            db = xl.readxl(fn=folder + '/' + file)
+        filename = folder + '/' + file
 
         # add a blank worksheet to the db
         db.add_ws(ws=sheet)
@@ -586,8 +586,6 @@ def save_results_err(sim, sheet, file, r):
         # write error message
         db.ws(ws=sheet).update_index(row=3, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
 
-        print(filename)
-        print(db)
         # write out the db
         xl.writexl(db=db, fn=filename)
 
