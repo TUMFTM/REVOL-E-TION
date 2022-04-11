@@ -77,7 +77,8 @@ def add_bev(sim, es, bev):
         conversion_factors={sim['components']['bev_bus']: 1})
     sim['components']['bev_ac'] = solph.Transformer(
         label="bev_ac",
-        inputs={sim['components']['bev_bus']: solph.Flow(variable_costs=sim['eps'])},
+        inputs={sim['components']['bev_bus']: solph.Flow(nominal_value = {'uc': 0, 'cc': 0, 'tc': 0, 'v2v': 0, 'v2g': None}[bev['chg_lvl']],
+                                                         variable_costs=sim['eps'])},
         outputs={sim['components']['ac_bus']: solph.Flow()},
         conversion_factors={sim['components']['ac_bus']: 1})
     es.add(sim['components']['bev_bus'], sim['components']['ac_bev'], sim['components']['bev_ac'])
@@ -137,8 +138,8 @@ def add_bev(sim, es, bev):
                 conversion_factors={sim['components']['bevx_bus']: bev['charge_eff']})
             sim['components']['bevx_bev'] = solph.Transformer(
                 label=dis_label,
-                inputs={sim['components']['bevx_bus']: solph.Flow(nominal_value=bev['dis_pwr'],
-                                                                  max=bev['dis_pwr'],
+                inputs={sim['components']['bevx_bus']: solph.Flow(nominal_value={'uc': 0, 'cc': 0, 'tc': 0, 'v2v': 1, 'v2g': 1}[bev['chg_lvl']] * bev['dis_pwr'],
+                                                                  max=bev['ph_data'][chg_datalabel],
                                                                   variable_costs=sim['eps'])},
                 outputs={sim['components']['bev_bus']: solph.Flow()},
                 conversion_factors={sim['components']['bev_bus']: bev['discharge_eff']})
@@ -469,6 +470,8 @@ def define_bev(prj, sheet, file):
         bev[bevx_name]['init_soc'] = xlsxread('bev_init_soc', sheet, file)  # TODO: Don't we want to define this at random?
         bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['init_soc']
 
+    bev['chg_lvl'] = 'v2g' #'uc', 'cc', 'tc', 'v2v', 'v2g',
+
     return bev
 
 
@@ -615,6 +618,7 @@ def define_os(sim, sheet, file):
         sim['ph_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ph']  # number of timesteps for predicted horizon
         sim['ch_len'] = {'H': 1, 'T': 60}[sim['step']] * sim['rh_ch']  # number of timesteps for control horizon
         sim['ch_num'] = int(len(sim['dti']) / sim['ch_len'])  # number of CH timeslices for simulated date range
+
     elif sim['op_strat'] == 'go':
         logging.info('Global optimum operational strategy initiated')
         sim['ph_len'] = None  # number of timesteps for predicted horizon
