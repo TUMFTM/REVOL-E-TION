@@ -705,19 +705,20 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         bev_flow_bal_ch = bev_flow_in_ch - bev_flow_out_ch
         bev['flow_bal'] = pd.concat([bev['flow_bal'], bev_flow_bal_ch])
 
-        for i in range(bev['num']):
-            bevx_ess_name = "bev" + str(i + 1) + "_ess"
-            bevx_name = "bev" + str(i + 1)
-            bevx_sc_ch = views.node(results,
-                                    bevx_ess_name)['sequences'][((bevx_ess_name,
-                                                                  'None'),
-                                                                 'storage_content')][sim['ch_dti']]
-            bevx_soc_ch = bevx_sc_ch / bev['cs']
-            bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])
-            bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
-            if bev[bevx_name]['ph_init_soc'] < 0:
-                logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
-                bev[bevx_name]['ph_init_soc'] = 0
+        if bev['chg_lvl'] != 'uc':
+            for i in range(bev['num']):
+                bevx_ess_name = "bev" + str(i + 1) + "_ess"
+                bevx_name = "bev" + str(i + 1)
+                bevx_sc_ch = views.node(results,
+                                        bevx_ess_name)['sequences'][((bevx_ess_name,
+                                                                      'None'),
+                                                                     'storage_content')][sim['ch_dti']]
+                bevx_soc_ch = bevx_sc_ch / bev['cs']
+                bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])
+                bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
+                if bev[bevx_name]['ph_init_soc'] < 0:
+                    logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
+                    bev[bevx_name]['ph_init_soc'] = 0
 
     return dem, wind, pv, gen, ess, bev
 
