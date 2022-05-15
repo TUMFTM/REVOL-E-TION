@@ -591,6 +591,7 @@ def save_results_err(sim, sheet, file, r, folder):
 
     return None
 
+
 def get_sizes(sim, wind, pv, gen, ess, bev, results):
 
     if sim['enable']['wind']:
