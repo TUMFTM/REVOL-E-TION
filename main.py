@@ -85,12 +85,14 @@ for r in range(runs):
             logging.info('Prediction Horizon ' + str(ph + 1) + ' of ' + str(sim['ch_num']))
 
             sim = pre.set_dti(sim, ph)  # set datetimeindices to fit the current prediction and control horizons
-            dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for dti
+
+            dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
 
             sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file)
 
             logging.info('Solving optimization problem')
             om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
+
             dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
 

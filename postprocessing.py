@@ -514,19 +514,23 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
         if sim['op_strat'] == 'rh':
             db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
 
+        # add sim name
+        db.ws(ws=sheet).update_index(row=2, col=1, val='Logfile')
+        db.ws(ws=sheet).update_index(row=2, col=2, val=sim['name'])
+
         # add runtime
-        db.ws(ws=sheet).update_index(row=2, col=1, val='Runtime')
-        db.ws(ws=sheet).update_index(row=2, col=2, val=sim['runtime'])
+        db.ws(ws=sheet).update_index(row=3, col=1, val='Runtime')
+        db.ws(ws=sheet).update_index(row=3, col=2, val=sim['runtime'])
 
         name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
         for i, header in enumerate(name):
-            db.ws(ws=sheet).update_index(row=4, col=1+i*4, val=header+' results')
+            db.ws(ws=sheet).update_index(row=5, col=1+i*4, val=header+' results')
 
         # function to add component data to the worksheet
         def add_ws(comp, col):
             keys = list(comp.keys())
             vals = list(comp.values())
-            row_id = 5
+            row_id = 6
             for i in range(len(vals)):
                 if type(vals[i]) == np.float64 or type(vals[i]) == np.float or type(vals[i]) == np.int:
                     db.ws(ws=sheet).update_index(row=row_id, col=col, val=keys[i])
@@ -548,8 +552,6 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
         if sim['enable']['bev']:
             add_ws(bev, 25)
 
-        print(filename)
-        print(db)
         # write out the db
         xl.writexl(db=db, fn=filename)
 
@@ -583,8 +585,12 @@ def save_results_err(sim, sheet, file, r, folder):
         if sim['op_strat'] == 'rh':
             db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
 
+        # add sim name
+        db.ws(ws=sheet).update_index(row=3, col=1, val='Logfile:')
+        db.ws(ws=sheet).update_index(row=3, col=2, val=sim['name'])
+
         # write error message
-        db.ws(ws=sheet).update_index(row=3, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
+        db.ws(ws=sheet).update_index(row=5, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
 
         # write out the db
         xl.writexl(db=db, fn=filename)
@@ -683,9 +689,11 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
 
         ess['soc'] = pd.concat([ess['soc'], ess_soc_ch])  # tracking state of charge
         ess['ph_init_soc'] = ess['soc'].iloc[-1]
+        if ess['ph_init_soc'] < 0:
+            logging.info('ESS init SOC < 0: '+ str(ess['ph_init_soc']))
+            ess['ph_init_soc'] = 0
 
     if sim['enable']["bev"]:
-
         # ac_bev and bev_ac have an efficiency of 1, so these energies are the ones actually transmitted to the BEVs
         bev_flow_out_ch = results[(sim['components']['bev_ac'],
                                    sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
@@ -698,16 +706,20 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         bev_flow_bal_ch = bev_flow_in_ch - bev_flow_out_ch
         bev['flow_bal'] = pd.concat([bev['flow_bal'], bev_flow_bal_ch])
 
-        for i in range(bev['num']):
-            bevx_ess_name = "bev" + str(i + 1) + "_ess"
-            bevx_name = "bev" + str(i + 1)
-            bevx_sc_ch = views.node(results,
-                                    bevx_ess_name)['sequences'][((bevx_ess_name,
-                                                                  'None'),
-                                                                 'storage_content')][sim['ch_dti']]
-            bevx_soc_ch = bevx_sc_ch / bev['cs']
-            bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])  # TODO Check for completeness of series
-            bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
+        if bev['chg_lvl'] != 'uc':
+            for i in range(bev['num']):
+                bevx_ess_name = "bev" + str(i + 1) + "_ess"
+                bevx_name = "bev" + str(i + 1)
+                bevx_sc_ch = views.node(results,
+                                        bevx_ess_name)['sequences'][((bevx_ess_name,
+                                                                      'None'),
+                                                                     'storage_content')][sim['ch_dti']]
+                bevx_soc_ch = bevx_sc_ch / bev['cs']
+                bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])
+                bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
+                if bev[bevx_name]['ph_init_soc'] < 0:
+                    logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
+                    bev[bevx_name]['ph_init_soc'] = 0
 
     return dem, wind, pv, gen, ess, bev
 

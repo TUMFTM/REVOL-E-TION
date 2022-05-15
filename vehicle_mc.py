@@ -21,14 +21,14 @@ import pprint as pp
 ###############################################################################
 
 # Input parameters
-number_timesteps = 8760
+number_timesteps = 8760 #* 24 # 24 years for GO baseline simulation
 steps_per_day = 24
 
 if number_timesteps % steps_per_day != 0:
     raise ValueError('Please simulate full days')
 
 battery_size = 30000
-max_charging_power = 5000
+max_charging_power = 3600
 
 avg_leaving_SOC = 1
 leaving_SOC_std = 0
@@ -46,12 +46,14 @@ car_number = 10
 increment = 1/car_number
 
 # Data creation
-ind_array = np.zeros([number_timesteps, 3*car_number]) # Data for individual mobility
+ind_array = np.zeros([number_timesteps, 3*car_number]) # Data for individual mobility + Data for dumb e-mobility
 agr_array = np.zeros([number_timesteps, 4]) # Data for aggregated mobility
 dumb_array = np.zeros([number_timesteps, 1]) # Data for dumb e-mobility (charge full power when connected)
 
 k=0
-while k < car_number:
+cn = car_number
+
+while k < cn:
     i = 0
     while i < number_timesteps/steps_per_day:
         departure_time = np.random.normal(departure_average, departure_std)
@@ -95,10 +97,12 @@ while k < car_number:
                     if missing_capacity > max_charging_power/(steps_per_day/24):
                         if timestep + n < number_timesteps:
                             dumb_array[timestep + n] += max_charging_power
+                            #ind_array[timestep + n][cn*3] += max_charging_power
                             missing_capacity -= max_charging_power
 
                     else:
                         dumb_array[timestep + n] += missing_capacity
+                        #ind_array[timestep + n][cn*3] += missing_capacity
                         missing_capacity = 0
 
                     n += 1
@@ -114,26 +118,30 @@ while k < car_number:
 
     k += 1
 
+# Merge ind car data and dumb data
+ind_array = np.c_[ind_array,dumb_array]
 
 #Save indiviudal car data in one csv
 ind_bev_df = pd.DataFrame(ind_array)
 
+ind_bev_df.rename(columns={cn*3: 'uc_power'}, inplace=True)
 for i in range(0, car_number):
     ind_bev_df.rename(columns={i*3 + 0: 'min_charge_' + str(i+1),
                                i*3 + 1: 'sink_data_' + str(i+1),
                                i*3 + 2: 'at_charger_' + str(i+1)
                                }, inplace=True)
 
+#ind_bev_df.rename(columns={31: 'uc_power'}, inplace=True)
 save_filename = os.path.join(os.getcwd(), "ind_car_data_extended.csv")
 ind_bev_df.to_csv(save_filename, sep=';')
 
 #Save aggregated car data in one csv
-agr_bev_df= pd.DataFrame(agr_array, columns=['max_charge', 'min_charge', 'source_data', 'sink_data'])
-save_filename = os.path.join(os.getcwd(), "agr_car_data_extended.csv")
-agr_bev_df.to_csv(save_filename, sep=';')
+#agr_bev_df= pd.DataFrame(agr_array, columns=['max_charge', 'min_charge', 'source_data', 'sink_data'])
+#save_filename = os.path.join(os.getcwd(), "agr_car_data_extended.csv")
+#agr_bev_df.to_csv(save_filename, sep=';')
 
 #Save dumb car data in one csv
-dumb_bev_df= pd.DataFrame(dumb_array, columns=['bev_demand'])
-save_filename = os.path.join(os.getcwd(), "dumb_car_data_extended.csv")
-dumb_bev_df.to_csv(save_filename, sep=';')
+#dumb_bev_df= pd.DataFrame(dumb_array, columns=['bev_demand'])
+#save_filename = os.path.join(os.getcwd(), "dumb_car_data_extended.csv")
+#dumb_bev_df.to_csv(save_filename, sep=';')
 
