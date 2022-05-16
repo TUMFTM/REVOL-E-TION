@@ -13,7 +13,7 @@ February 2nd, 2022
 February 6th, 2022
 
 --- Contributors ---
-Marcel Brödel, B.Sc. - Semester Thesis in progress
+Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
 
 --- Detailed Description ---
 This script defines various functions used by main.py for preprocessing of input data and during the optimization loop
@@ -84,8 +84,6 @@ def add_bev(sim, es, bev):
     es.add(sim['components']['bev_bus'], sim['components']['ac_bev'], sim['components']['bev_ac'])
 
     if bev['agr'] and bev['chg_lvl']!='uc':  # When vehicles are aggregated into three basic components
-        print('test1')
-
         sim['components']['bev_snk'] = solph.Sink(  # Aggregated sink component modelling leaving vehicles
             label="bev_snk",
             inputs={sim['components']['bev_bus']: solph.Flow(actual_value=bev['ph_data']['sink_data'],
@@ -736,7 +734,8 @@ def define_pv(prj, sheet, file):
                              skipfooter=13,
                              engine='python')
     pv['data']['time'] = pd.to_datetime(pv['data']['time'],
-                                        format='%Y%m%d:%H%M').dt.round('H')  # TODO: workaround
+                                        format='%Y%m%d:%H%M').dt.round('H')
+
     pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
 
     pv['spec_capex'] = xlsxread('pv_sce', sheet, file)
@@ -777,7 +776,7 @@ def define_sim(sheet, file):
     sim['end'] = sim['start'] + relativedelta(days=sim['proj'])
     sim['step'] = xlsxread('sim_step', sheet, file)
     sim['dti'] = pd.date_range(start=sim['start'], end=sim['end'], freq=sim['step']).delete(-1)
-    sim['yrrat'] = sim['proj'] / 365.25
+    sim['yrrat'] = sim['proj'] / 365#365.25
 
     sim['debugmode'] = 1 if xlsxread('sim_debug', sheet, file) == 'True' else 0
     sim['datapath'] = os.path.join(os.getcwd(), "scenarios")
@@ -937,10 +936,6 @@ def get_runs(file):
     """
     Reading number of sheets from external excel file "settings.xlsx"
     """
-
-    #xl = pd.ExcelFile(file)
-    #runs = len(xl.sheet_names)
-    #sheets = xl.sheet_names
 
     xl = pd.read_excel(file, sheet_name=None)
     runs = len(xl.keys())

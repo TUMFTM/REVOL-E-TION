@@ -13,7 +13,7 @@ February 3rd, 2022
 February 8th, 2022
 
 --- Contributors ---
-Marcel Brödel, B.Sc. - Semester Thesis in progress
+Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
 
 --- Detailed Description ---
 This script defines various functions used by main.py for orderly getting results from the different operating strats
@@ -64,7 +64,11 @@ def acc_eco(sim, prj, wind, pv, gen, ess, bev, cres):
     if sim['enable']['ess']:
         ess, cres = acc_eco_comp(sim, prj, ess, cres)
 
+    # TODO: Ohne eine for-Schleife werden hier nur die Kosten von einem BEV berechnet. Mit einer for-Schleife passen die Capital expenses,
+    #  jedoch nicht die operational und maintenance expenses (weil dann auch Energiemenge multipliziert würde, die schon für alle EVs berechnet ist)
+    #  --> Änderung nötig
     if sim['enable']['bev']:
+        #for i in range(bev['num']):
         bev, cres = acc_eco_comp(sim, prj, bev, cres)
 
     cres['lcoe'] = cres['dis_totex'] / cres['e_dis_del']  # NPC divided by discounted energy
@@ -384,7 +388,7 @@ def print_results(sim, wind, pv, gen, ess, bev, cres):
         print('Stationary storage results:')
         print_results_storage(sim, ess)
 
-    if sim['enable']['wind']:
+    if sim['enable']['bev']:
         print('Electric vehicle results:')
         print_results_storage(sim, bev)
 
@@ -522,7 +526,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
         db.ws(ws=sheet).update_index(row=3, col=1, val='Runtime')
         db.ws(ws=sheet).update_index(row=3, col=2, val=sim['runtime'])
 
-        name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component']
+        name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component (single)']
         for i, header in enumerate(name):
             db.ws(ws=sheet).update_index(row=5, col=1+i*4, val=header+' results')
 
@@ -719,6 +723,8 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
                 if bev[bevx_name]['ph_init_soc'] < 0:
                     logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
                     bev[bevx_name]['ph_init_soc'] = 0
+
+
 
     return dem, wind, pv, gen, ess, bev
 

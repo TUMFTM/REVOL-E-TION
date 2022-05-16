@@ -15,7 +15,7 @@ Last update: February 8th, 2022
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
-Marcel Brödel, B.Sc. - Semester Thesis in progress
+Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
 
 --- Detailed Description ---
 This script is the main model generator and optimizer for the toolset.
@@ -46,7 +46,6 @@ import logging
 
 import preprocessing as pre
 import postprocessing as post
-# import load_following as lf  # Preparation for future setup
 
 
 ##########################################################################
@@ -96,6 +95,7 @@ for r in range(runs):
             dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
 
 
+
         ##########################################################################
         # Postprocessing
         ##########################################################################
@@ -115,3 +115,5 @@ for r in range(runs):
     except:
         post.save_results_err(sim, sheet, file, r, folder)
         continue
+
+
