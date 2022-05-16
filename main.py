@@ -71,7 +71,7 @@ for r in range(runs):
         logger.define_logging(logfile=sim['logfile'])
         logging.info('Processing inputs')
 
-        prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later economic extrapolation on project lifespan
+        prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later extrapolation on project lifespan
         sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet, file)  # Initialize component data
         sim = pre.define_os(sim, sheet, file)  # Initialize operational strategy
         dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)

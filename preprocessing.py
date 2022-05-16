@@ -950,8 +950,8 @@ def input_gui():
     """
 
     input_file = [[sg.Text('Choose input excel-file')],
-                    [sg.Input(), sg.FileBrowse()],
-                    ]
+                  [sg.Input(), sg.FileBrowse()],
+                  ]
 
     result_folder = [[sg.Text("Choose folder for result storage")],
                      [sg.Input(), sg.FolderBrowse()],
