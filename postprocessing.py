@@ -41,7 +41,7 @@ import pylightxl as xl
 import numpy as np
 import re
 import pandas as pd
-
+import os
 
 import economics as eco
 import colordef as col
@@ -68,7 +68,7 @@ def acc_eco(sim, prj, wind, pv, gen, ess, bev, cres):
     #  jedoch nicht die operational und maintenance expenses (weil dann auch Energiemenge multipliziert würde, die schon für alle EVs berechnet ist)
     #  --> Änderung nötig
     if sim['enable']['bev']:
-        #for i in range(bev['num']):
+        # for i in range(bev['num']):
         bev, cres = acc_eco_comp(sim, prj, bev, cres)
 
     cres['lcoe'] = cres['dis_totex'] / cres['e_dis_del']  # NPC divided by discounted energy
@@ -233,7 +233,7 @@ def acc_energy_sink(sim, prj, comp, cres):
     return comp, cres
 
 
-def acc_energy_source(sim, prj,  comp, cres):
+def acc_energy_source(sim, prj, comp, cres):
     """
     Calculate cumulative energy results for pure source component sets
     """
@@ -271,7 +271,7 @@ def acc_energy_storage(sim, prj, comp, cres):
     return comp, cres
 
 
-def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file):
+def plot_results(sim, dem, wind, pv, gen, ess, bev):
     """
 
     """
@@ -346,30 +346,34 @@ def plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file):
     fig.update_xaxes(title='Local Time',
                      showgrid=True,
                      linecolor=col.tum_grey_20,
-                     gridcolor=col.tum_grey_20,)
+                     gridcolor=col.tum_grey_20, )
     fig.update_yaxes(title='Power in W',
                      showgrid=True,
                      linecolor=col.tum_grey_20,
                      gridcolor=col.tum_grey_20,
-                     secondary_y=False,)
+                     secondary_y=False, )
     fig.update_yaxes(title='State of Charge',
                      showgrid=False,
                      secondary_y=True)
 
-    while '/' in file:
-        file = re.sub(r'^.*?/', '', file)
+    # while '/' in file:
+    #    file = re.sub(r'^.*?/', '', file)
 
     if sim['op_strat'] == 'go':
-        fig.update_layout(title='Global Optimum Results (' + file + '_' + sheet + ')')
+        fig_title='Global Optimum Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ')'
     if sim['op_strat'] == 'rh':
-        title = 'Rolling Horizon Results (PH: '+str(sim['rh_ph'])+'h, CH: '+str(sim['rh_ch'])+'h), (' + file + '_' + sheet + ')'
-        fig.update_layout(title=title)
+        fig_title='Rolling Horizon Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ', ' + str(
+            sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h)'
+
+    fig.update_layout(title=fig_title)
 
     fig.show()
 
+    plot_filepath = os.path.join(sim['resultpath'], sim['name'] + '.html')
+    fig.write_html(plot_filepath)
+
 
 def print_results(sim, wind, pv, gen, ess, bev, cres):
-
     print('#####')
     if sim['enable']['wind']:
         print('Wind power results:')
@@ -377,7 +381,6 @@ def print_results(sim, wind, pv, gen, ess, bev, cres):
 
     if sim['enable']['pv']:
         print('PV power results:')
-        print(pv)
         print_results_source(sim, pv)
 
     if sim['enable']['gen']:
@@ -456,7 +459,6 @@ def print_results_source(sim, comp):
 
 
 def print_results_overall(cres):
-
     print("Overall Results:")
     print()
     print("Yearly produced energy: " + str(round(cres['e_yrl_pro'] / 1e6)) + " MWh")
@@ -491,7 +493,7 @@ def print_results_overall(cres):
     print("#####")
 
 
-def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder):
+def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
     """
     Dump the simulation results as a file
     """
@@ -499,36 +501,40 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
     if sim['dump']:
         logging.info("Save model and result data")
 
-        while '/' in file:
-            file = re.sub(r'^.*?/', '', file)
+        # while '/' in file:
+        #    file = re.sub(r'^.*?/', '', file)
 
-        if r == 0:
-            # create a blank db
-            db = xl.Database()
+        results_filepath = os.path.join(sim['resultpath'], 'results_' + os.path.basename(sim['settings_file']))
+
+        if sim['run'] == 0:
+            db = xl.Database()  # create a blank db
         else:
-            db = xl.readxl(fn=folder + '/Results_' + file)
-        filename = folder + '/Results_' + file
+            db = xl.readxl(fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx')  #TODO Change back to result_filepath
 
         # add a blank worksheet to the db
-        db.add_ws(ws=sheet)
+        db.add_ws(ws=sim['sheet'])
 
         # header of ws
         if sim['op_strat'] == 'go':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + file + ')')
+            ws_title = 'Global Optimum Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ')'
         if sim['op_strat'] == 'rh':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
+            ws_title = 'Rolling Horizon Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ', ' + str(
+                sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h)'
+
+        db.ws(ws=sim['sheet']).update_index(row=1, col=1, val=ws_title)
 
         # add sim name
-        db.ws(ws=sheet).update_index(row=2, col=1, val='Logfile')
-        db.ws(ws=sheet).update_index(row=2, col=2, val=sim['name'])
+        db.ws(ws=sim['sheet']).update_index(row=2, col=1, val='Logfile')
+        db.ws(ws=sim['sheet']).update_index(row=2, col=2, val=sim['name'])
 
         # add runtime
-        db.ws(ws=sheet).update_index(row=3, col=1, val='Runtime')
-        db.ws(ws=sheet).update_index(row=3, col=2, val=sim['runtime'])
+        db.ws(ws=sim['sheet']).update_index(row=3, col=1, val='Runtime')
+        db.ws(ws=sim['sheet']).update_index(row=3, col=2, val=sim['runtime'])
 
-        name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component', 'BEV component (single)']
+        name = ['Accumulated cost', 'Demand', 'Wind component', 'PV component', 'Diesel component', 'ESS component',
+                'BEV component (single)']
         for i, header in enumerate(name):
-            db.ws(ws=sheet).update_index(row=5, col=1+i*4, val=header+' results')
+            db.ws(ws=sim['sheet']).update_index(row=5, col=1 + i * 4, val=header + ' results')
 
         # function to add component data to the worksheet
         def add_ws(comp, col):
@@ -537,12 +543,12 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
             row_id = 6
             for i in range(len(vals)):
                 if type(vals[i]) == np.float64 or type(vals[i]) == np.float or type(vals[i]) == np.int:
-                    db.ws(ws=sheet).update_index(row=row_id, col=col, val=keys[i])
-                    db.ws(ws=sheet).update_index(row=row_id, col=col+1, val=vals[i])
+                    db.ws(ws=sim['sheet']).update_index(row=row_id, col=col, val=keys[i])
+                    db.ws(ws=sim['sheet']).update_index(row=row_id, col=col + 1, val=vals[i])
                     row_id += 1
             return None
 
-        add_ws(cres,1)
+        add_ws(cres, 1)
         if sim['enable']['dem']:
             add_ws(dem, 5)
         if sim['enable']['wind']:
@@ -557,53 +563,56 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder
             add_ws(bev, 25)
 
         # write out the db
-        xl.writexl(db=db, fn=filename)
+        xl.writexl(db=db, fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx') #TODO Change back to result_filepath
 
     return None
 
 
-def save_results_err(sim, sheet, file, r, folder):
+def save_results_err(sim):
     """
     Dump error message in result excel file if optimization did not succeed
     """
 
     if sim['dump']:
-        logging.info("Save model and result data")
+        logging.warning("Error occurred, save model data")
 
-        while '/' in file:
-            file = re.sub(r'^.*?/', '', file)
+    #    while '/' in file:
+    #        file = re.sub(r'^.*?/', '', file)
 
-        if r == 0:
-            # create a blank db
-            db = xl.Database()
+        results_filepath = os.path.join(sim['resultpath'], 'results_' + os.path.basename(sim['settings_file']))
+
+        if sim['run'] == 0:
+            db = xl.Database()  # create a blank db
         else:
-            db = xl.readxl(fn=folder + '/Results_' + file)
-        filename = folder + '/Results_' + file
+            db = xl.readxl(fn=results_filepath)
 
         # add a blank worksheet to the db
-        db.add_ws(ws=sheet)
+        db.add_ws(ws=sim['sheet'])
 
         # header of ws
         if sim['op_strat'] == 'go':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Global Optimum Results (' + file + ')')
+            ws_title = 'Global Optimum Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ')'
         if sim['op_strat'] == 'rh':
-            db.ws(ws=sheet).update_index(row=1, col=1, val='Rolling Horizon Results (PH: ' + str(sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h), (' + file + ')')
+            ws_title = 'Rolling Horizon Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ', ' + str(
+                sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h)'
+
+        db.ws(ws=sim['sheet']).update_index(row=1, col=1, val=ws_title)
 
         # add sim name
-        db.ws(ws=sheet).update_index(row=3, col=1, val='Logfile:')
-        db.ws(ws=sheet).update_index(row=3, col=2, val=sim['name'])
+        db.ws(ws=sim['sheet']).update_index(row=3, col=1, val='Logfile:')
+        db.ws(ws=sim['sheet']).update_index(row=3, col=2, val=sim['name'])
 
         # write error message
-        db.ws(ws=sheet).update_index(row=5, col=1, val='ERROR - Optimization could NOT succeed for these simulation settings')
+        db.ws(ws=sim['sheet']).update_index(row=5, col=1,
+                                     val='ERROR - Optimization could NOT succeed for these simulation settings')
 
         # write out the db
-        xl.writexl(db=db, fn=filename)
+        xl.writexl(db=db, fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx')  #TODO Change back to result_filepath
 
     return None
 
 
 def get_sizes(sim, wind, pv, gen, ess, bev, results):
-
     if sim['enable']['wind']:
         if sim['cs_opt']['wind']:
             wind['size'] = results[(sim['components']['wind_src'], sim['components']['wind_bus'])]["scalars"]["invest"]
@@ -694,7 +703,7 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
         ess['soc'] = pd.concat([ess['soc'], ess_soc_ch])  # tracking state of charge
         ess['ph_init_soc'] = ess['soc'].iloc[-1]
         if ess['ph_init_soc'] < 0:
-            logging.info('ESS init SOC < 0: '+ str(ess['ph_init_soc']))
+            logging.info('ESS init SOC < 0: ' + str(ess['ph_init_soc']))
             ess['ph_init_soc'] = 0
 
     if sim['enable']["bev"]:
@@ -724,8 +733,6 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
                 if bev[bevx_name]['ph_init_soc'] < 0:
                     logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
                     bev[bevx_name]['ph_init_soc'] = 0
-
-
 
     return dem, wind, pv, gen, ess, bev
 

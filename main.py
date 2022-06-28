@@ -11,7 +11,7 @@ Technical University of Munich
 philipp.rosner@tum.de
 
 Created:     September 2nd, 2021
-Last update: February 8th, 2022
+Last update: June 27th, 2022
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
@@ -49,31 +49,22 @@ import postprocessing as post
 
 
 ##########################################################################
-# Choose Settings Excel File
+# Input Settings Excel File
 ##########################################################################
-file, folder = pre.input_gui()
+settings_file, result_path = pre.input_gui()  # choose input file and result path
+runs, sheets = pre.get_runs(settings_file)  # Get number of Excel sheets and sheet names
 
-##########################################################################
-# Multi Simulation runs from excel file
-##########################################################################
-# Get number of Excel sheets and sheet names
-runs, sheets = pre.get_runs(file)
-
-for r in range(runs):
+for run in range(runs):
     try:
-        sheet = sheets[r]
-
         ##########################################################################
         # Preprocessing
         ##########################################################################
-        sim = pre.define_sim(sheet, file)  # Initialize basic simulation data
+        sim = pre.define_sim(run, runs, sheets, settings_file, result_path)  # Initialize basic simulation data
+        pre.start_logging(sim)
 
-        logger.define_logging(logfile=sim['logfile'])
-        logging.info('Processing inputs')
-
-        prj = pre.define_prj(sim, sheet, file)  # Initialize project data for later extrapolation on project lifespan
-        sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj, sheet, file)  # Initialize component data
-        sim = pre.define_os(sim, sheet, file)  # Initialize operational strategy
+        prj = pre.define_prj(sim)  # Initialize project data for later extrapolation on project lifespan
+        sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj)  # Initialize component data
+        sim = pre.define_os(sim)  # Initialize operational strategy
         dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
 
         ##########################################################################
@@ -87,13 +78,12 @@ for r in range(runs):
 
             dem, wind, pv, bev = pre.select_data(sim, dem, wind, pv, bev)  # select correct input data slices for selected dti
 
-            sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev, sheet, file)
+            sim, om = pre.build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev)
 
             logging.info('Solving optimization problem')
             om.solve(solver=sim['solver'], solve_kwargs={"tee": sim['debugmode']})
 
             dem, wind, pv, gen, ess, bev = post.get_results(sim, dem, wind, pv, gen, ess, bev, om, ph)
-
 
 
         ##########################################################################
@@ -109,11 +99,11 @@ for r in range(runs):
 
         sim = post.end_timing(sim)
 
-        post.plot_results(sim, dem, wind, pv, gen, ess, bev, sheet, file)
-        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres, sheet, file, r, folder)
+        post.plot_results(sim, dem, wind, pv, gen, ess, bev)
+        post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
 
-    except:
-        post.save_results_err(sim, sheet, file, r, folder)
+    except ZeroDivisionError:
+        post.save_results_err(sim)
         continue
 
 
