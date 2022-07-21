@@ -9,9 +9,7 @@ Department of Mobility Systems Engineering
 School of Engineering and Design
 Technical University of Munich
 philipp.rosner@tum.de
-
-Created:     September 2nd, 2021
-Last update: June 27th, 2022
+September 2nd, 2021
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
@@ -40,8 +38,6 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-from oemof.tools import logger
-
 import logging
 
 import preprocessing as pre
@@ -66,6 +62,7 @@ for run in range(runs):
         sim, dem, wind, pv, gen, ess, bev = pre.define_components(sim, prj)  # Initialize component data
         sim = pre.define_os(sim)  # Initialize operational strategy
         dem, wind, pv, gen, ess, bev, cres = pre.define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev)
+
 
         ##########################################################################
         # Optimization Loop
@@ -103,6 +100,7 @@ for run in range(runs):
         post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
 
     except ZeroDivisionError:
+        logging.warning('Model optimization infeasible - continuing on next worksheet')
         post.save_results_err(sim)
         continue
 

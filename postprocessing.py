@@ -9,9 +9,6 @@ Technical University of Munich
 philipp.rosner@tum.de
 February 3rd, 2022
 
---- Last Update ---
-February 8th, 2022
-
 --- Contributors ---
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
 
@@ -39,7 +36,6 @@ from plotly.subplots import make_subplots
 import time
 import pylightxl as xl
 import numpy as np
-import re
 import pandas as pd
 import os
 
@@ -509,7 +505,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
         if sim['run'] == 0:
             db = xl.Database()  # create a blank db
         else:
-            db = xl.readxl(fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx')  #TODO Change back to result_filepath
+            db = xl.readxl(fn=results_filepath)
 
         # add a blank worksheet to the db
         db.add_ws(ws=sim['sheet'])
@@ -563,7 +559,7 @@ def save_results(sim, dem, wind, pv, gen, ess, bev, cres):
             add_ws(bev, 25)
 
         # write out the db
-        xl.writexl(db=db, fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx') #TODO Change back to result_filepath
+        xl.writexl(db=db, fn=results_filepath)
 
     return None
 
@@ -607,7 +603,7 @@ def save_results_err(sim):
                                      val='ERROR - Optimization could NOT succeed for these simulation settings')
 
         # write out the db
-        xl.writexl(db=db, fn='C:\\Users\\ga35vuk\\Desktop\\mg_ev_opti\\results\\test.xlsx')  #TODO Change back to result_filepath
+        xl.writexl(db=db, fn=results_filepath)  #TODO Change back to result_filepath
 
     return None
 
@@ -659,7 +655,6 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
     if sim['debugmode']:
         meta_results = prcs.meta_results(model)
         pp.pprint(meta_results)
-        # dump_resultfile(sim, results)
 
     if optnum == 0:  # first iteration
         wind, pv, gen, ess, bev = get_sizes(sim, wind, pv, gen, ess, bev, results)

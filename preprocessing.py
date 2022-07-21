@@ -9,9 +9,6 @@ Technical University of Munich
 philipp.rosner@tum.de
 February 2nd, 2022
 
---- Last Update ---
-February 6th, 2022
-
 --- Contributors ---
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
 
@@ -430,7 +427,8 @@ def build_energysystemmodel(sim, dem, wind, pv, gen, ess, bev):
 
     om = solph.Model(es)  # Build the mathematical linear optimization model with pyomo
 
-    dump_modelfile(sim, om)
+    if sim['debugmode']:
+        dump_modelfile(sim, om)
 
     return sim, om
 
@@ -621,7 +619,7 @@ def define_os(sim):
 
     if True in sim['cs_opt'].values() and sim['op_strat'] != 'go':
         logging.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
-        logging.error('Please disable sim_cs in parameters.py')
+        logging.error('Please disable sim_cs in settings file')
         sys.exit()
 
     if sim['op_strat'] == 'rh':
@@ -736,7 +734,10 @@ def define_pv(sim, prj):
                              skipfooter=13,
                              engine='python')
     pv['data']['time'] = pd.to_datetime(pv['data']['time'],
-                                        format='%Y%m%d:%H%M').dt.round('H')
+                                        format='%Y%m%d:%H%M').dt.round('H')  # for direct PVGIS input
+
+    # pv['data']['time'] = pd.to_datetime(pv['data']['time'],
+    #                                     format='%Y-%m-%d %H:%M:%S').dt.round('H')  # for averager solution
 
     pv['data']['P'] = pv['data']['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
 
@@ -791,7 +792,7 @@ def define_sim(run, runs, sheets, settings_file, result_path):
     sim['resultpath'] = result_path
     sim['modelpath'] = os.path.join(os.getcwd(), "lp_models")
     sim['logpath'] = os.path.join(os.getcwd(), "logfiles")
-    sim['modelfile'] = sim['modelpath'] + ".lp"
+    sim['modelfile'] = sim['modelpath'] + sim['name'] + ".lp"
     sim['logfile'] = os.path.join(sim['logpath'], sim['name']) + '.log'
 
     sim['eps'] = 1e-6  # minimum variable cost in $/Wh for transformers to incentivize minimum flow
@@ -865,11 +866,10 @@ def dump_modelfile(sim, model):
     """
     Dump model and result files to working directory for later usage
     """
-    if sim['debugmode']:  # save the model description for solving externally
-        if sim['op_strat'] == 'rh':
-            logging.info('Debug mode not implemented for RH operating strategy - no model file dumped')
-        else:
-            model.write(sim['modelfile'], io_options={'symbolic_solver_labels': True})
+    if sim['op_strat'] == 'rh':
+        logging.info('Debug mode not implemented for RH operating strategy - no model file dumped')
+    else:
+        model.write(sim['modelfile'], io_options={'symbolic_solver_labels': True})
 
     return None
 
