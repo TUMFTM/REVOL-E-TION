@@ -603,8 +603,7 @@ def save_results_err(sim):
                                      val='ERROR - Optimization could NOT succeed for these simulation settings')
 
         # write out the db
-        xl.writexl(db=db, fn=results_filepath)  #TODO Change back to result_filepath
-
+        xl.writexl(db=db, fn=results_filepath)
     return None
 
 
