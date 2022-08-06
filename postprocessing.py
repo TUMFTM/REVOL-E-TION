@@ -26,11 +26,8 @@ coding:     utf-8
 license:    GPLv3
 """
 
-from oemof.solph import views
-import oemof.solph.processing as prcs
 
 import logging
-import pprint as pp
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import time
@@ -642,93 +639,6 @@ def get_sizes(sim, wind, pv, gen, ess, bev, results):
 
     return wind, pv, gen, ess, bev
 
-
-def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
-    """
-    Get result data slice for current CH from results and save in result dataframes for later analysis
-    Get (possibly optimized) component sizes from results to handle outputs more easily
-    """
-
-    results = prcs.results(model)  # Get the results from the solver
-
-    if sim['debugmode']:
-        meta_results = prcs.meta_results(model)
-        pp.pprint(meta_results)
-
-    if optnum == 0:  # first iteration
-        wind, pv, gen, ess, bev = get_sizes(sim, wind, pv, gen, ess, bev, results)
-
-    if sim['enable']['dem']:
-        dem_flow_ch = results[(sim['components']['ac_bus'],
-                               sim['components']['dem_snk'])]['sequences']['flow'][sim['ch_dti']]
-        dem['flow'] = pd.concat([dem['flow'], dem_flow_ch])
-
-    if sim['enable']["wind"]:
-        wind_flow_ch = results[(sim['components']['wind_bus'],
-                                sim['components']['wind_ac'])]['sequences']['flow'][sim['ch_dti']]
-        wind['flow'] = pd.concat([wind['flow'], wind_flow_ch])
-
-    if sim['enable']["pv"]:
-        pv_flow_ch = results[(sim['components']['pv_bus'],
-                              sim['components']['pv_dc'])]['sequences']['flow'][sim['ch_dti']]
-        pv['flow'] = pd.concat([pv['flow'], pv_flow_ch])
-
-    if sim['enable']["gen"]:
-        gen_flow_ch = results[(sim['components']['gen_src'],
-                               sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
-        gen['flow'] = pd.concat([gen['flow'], gen_flow_ch])
-
-    if sim['enable']["ess"]:
-        ess_flow_out_ch = results[(sim['components']['ess'],
-                                   sim['components']['dc_bus'])]['sequences']['flow'][sim['ch_dti']]
-        ess['flow_out'] = pd.concat([ess['flow_out'], ess_flow_out_ch])
-
-        ess_flow_in_ch = results[(sim['components']['dc_bus'],
-                                  sim['components']['ess'])]['sequences']['flow'][sim['ch_dti']]
-        ess['flow_in'] = pd.concat([ess['flow_in'], ess_flow_in_ch])
-
-        ess_flow_bal_ch = ess_flow_in_ch - ess_flow_out_ch
-        ess['flow_bal'] = pd.concat([ess['flow_bal'], ess_flow_bal_ch])
-
-        ess_sc_ch = views.node(results, 'ess')['sequences'][(('ess', 'None'), 'storage_content')][
-            sim['ch_dti']].shift(periods=1, freq=sim['step'])  # shift is needed as sc/soc is at end of timestep
-        ess_soc_ch = ess_sc_ch / ess['cs']
-
-        ess['soc'] = pd.concat([ess['soc'], ess_soc_ch])  # tracking state of charge
-        ess['ph_init_soc'] = ess['soc'].iloc[-1]
-        if ess['ph_init_soc'] < 0:
-            logging.info('ESS init SOC < 0: ' + str(ess['ph_init_soc']))
-            ess['ph_init_soc'] = 0
-
-    if sim['enable']["bev"]:
-        # ac_bev and bev_ac have an efficiency of 1, so these energies are the ones actually transmitted to the BEVs
-        bev_flow_out_ch = results[(sim['components']['bev_ac'],
-                                   sim['components']['ac_bus'])]['sequences']['flow'][sim['ch_dti']]
-        bev['flow_out'] = pd.concat([bev['flow_out'], bev_flow_out_ch])
-
-        bev_flow_in_ch = results[(sim['components']['ac_bus'],
-                                  sim['components']['ac_bev'])]['sequences']['flow'][sim['ch_dti']]
-        bev['flow_in'] = pd.concat([bev['flow_in'], bev_flow_in_ch])
-
-        bev_flow_bal_ch = bev_flow_in_ch - bev_flow_out_ch
-        bev['flow_bal'] = pd.concat([bev['flow_bal'], bev_flow_bal_ch])
-
-        if bev['chg_lvl'] != 'uc':
-            for i in range(bev['num']):
-                bevx_ess_name = "bev" + str(i + 1) + "_ess"
-                bevx_name = "bev" + str(i + 1)
-                bevx_sc_ch = views.node(results,
-                                        bevx_ess_name)['sequences'][((bevx_ess_name,
-                                                                      'None'),
-                                                                     'storage_content')][sim['ch_dti']]
-                bevx_soc_ch = bevx_sc_ch / bev['cs']
-                bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])
-                bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
-                if bev[bevx_name]['ph_init_soc'] < 0:
-                    logging.info(bevx_name + 'init SOC < 0: ' + str(bev[bevx_name]['ph_init_soc']))
-                    bev[bevx_name]['ph_init_soc'] = 0
-
-    return dem, wind, pv, gen, ess, bev
 
 
 def end_timing(sim):
