@@ -1,47 +1,20 @@
 #!/usr/bin/env python3
 
 """
---- Tool name ---
-Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
-
---- Created by ---
-Philipp Rosner, M.Sc.
-Institute of Automotive Technology
-Department of Mobility Systems Engineering
-School of Engineering and Design
-Technical University of Munich
-philipp.rosner@tum.de
-Created September 2nd, 2021
-
---- Contributors ---
-David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
-Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
-Hannes Henglein, B.Sc. - Semester Thesis in progress
-Marc Alsina Planelles, B.Sc. - Master Thesís in progress
-
---- Detailed Description ---
+--- Description ---
 This script is the main model generator and optimizer for the toolset.
 Its results are output to files and key ones printed to the terminal.
 
 For further information, see readme
 
---- Input & Output ---
-The model requires a specific folder structure containing
-    - a Microsoft Excel input file controlling general parameters
-    - several .csv files containing timeseries data as referenced by the input file
-
-For further information, see readme.
-
---- Requirements ---
-
-For package requirements, see requirements.txt
-
-For further information, see readme.
-
 --- File Information ---
 coding:     utf-8
 license:    GPLv3
 """
+
+###############################################################################
+# Module imports
+###############################################################################
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta

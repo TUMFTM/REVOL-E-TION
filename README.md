@@ -7,11 +7,18 @@ Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
 --- Created by ---
 Philipp Rosner, M.Sc.
 Institute of Automotive Technology
+Department of Mobility Systems Engineering
+School of Engineering and Design
 Technical University of Munich
 philipp.rosner@tum.de
+Created September 2nd, 2021
 
 --- Contributors ---
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021
+Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022
+Hannes Henglein, B.Sc. - Semester Thesis in progress
+Marc Alsina Planelles, B.Sc. - Master Thesís in progress
+
 
 --- Detailed Description ---
 This is a toolset to simulate electric vehicles operating in minigrids for rural electrification in emerging economies such as sub-saharan
@@ -42,6 +49,7 @@ All input data files need to be located in ./scenarios
 		./results
 		./scenarios
 		./scenarios/pvgis_data
+		./logfiles
 4.	Get pvgis data from https://re.jrc.ec.europa.eu/pvg_tools/en/#HR or the repository holder
 5.	Get exemplary vehicle and demand data from the repository holder
 6.	Run main.py	

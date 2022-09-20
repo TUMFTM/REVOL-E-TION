@@ -21,6 +21,7 @@ oemof.network==0.4.0rc0
 oemof.solph==0.4.4
 oemof.tools==0.4.1
 olefile
+openpyxl
 pandas==0.25.3
 Pillow
 pipreqs==0.4.11
