@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
 """
+main.py
+
 --- Description ---
-This script is the main model generator and optimizer for the toolset.
-Its results are output to files and key ones printed to the terminal.
+This script is the main runnable one for the oemof mg_ev toolset.
 
 For further information, see readme
+
+--- Created by ---
+Philipp Rosner
 
 --- File Information ---
 coding:     utf-8
@@ -26,11 +30,13 @@ from oemof.tools import logger
 import oemof.solph as solph
 import os
 import pandas as pd
+import plotly
 import pprint
 import pylightxl as xl
 import PySimpleGUI as psg
 import time
 
+import colordef as col
 import economics as eco
 
 
@@ -84,7 +90,7 @@ class InvestComponent:
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = None
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = None
 
-    def accumulate_invest_results(self, scenario):
+    def accumulate_invest_results(self, scenario):  # TODO check whether CommoditySystems accumulate all commodity costs correctly
 
         self.e_sim = self.flow.sum()
         self.e_yrl = self.e_sim / scenario.sim_prj_rat
@@ -253,10 +259,10 @@ class CommoditySystem(InvestComponent):
         for commodity in self.commodities:
             commodity.accumulate_results()
 
-    def get_ch_results(self, scenario):
+    def get_ch_results(self, horizon, scenario):
 
         for commodity in self.commodities:
-            commodity.get_ch_results(scenario)
+            commodity.get_ch_results(horizon, scenario)
         # TODO get system level flows, not only individual ones
 
     def update_input_components(self):
@@ -675,6 +681,10 @@ class Scenario:
 
         self.wacc = xread('wacc', self.name, run.input_xdb)
 
+        self.plot_file_path = os.path.join(run.result_path, f"{run.runtimestamp}_"
+                                                            f"{run.scenarios_file_name}_"
+                                                            f"{self.name}.html")
+
         # Operational strategy --------------------------------
 
         self.strategy = xread('sim_os', self.name, run.input_xdb)
@@ -723,6 +733,8 @@ class Scenario:
                 mb = CommoditySystem('mb', self, run)
                 self.component_sets.append(mb)
 
+        self.figure = None  # figure placeholder for result plotting
+
         # Result variables --------------------------------
 
         self.e_sim_del = 0
@@ -735,7 +747,7 @@ class Scenario:
         self.e_prj_pro = 0
         self.e_dis_pro = 0
 
-        self.e_eta = 0
+        self.e_eta = None
 
         self.capex_init = 0
         self.capex_prj = 0
@@ -757,6 +769,9 @@ class Scenario:
         self.totex_prj = 0
         self.totex_dis = 0
         self.totex_ann = 0
+
+        self.lcoe = None
+        self.lcoe_dis = None
 
         # Creation of static core energy system components --------------------------------
 
@@ -786,6 +801,15 @@ class Scenario:
                                        conversion_factors={self.ac_bus: xread('dc_ac_eff', self.name, run.input_xdb)})
         self.solph_components.append(self.dc_ac)
 
+    def accumulate_results(self):
+
+        for component in self.component_sets:
+            component.accumulate_results(self)
+
+        self.e_eta = self.e_sim_del / self.e_sim_pro
+        self.lcoe = self.totex_dis / self.e_prj_del
+        self.lcoe_dis = self.totex_dis / self.e_dis_del
+
     def end_timing(self):
 
         self.feasible = True  # model optimization or simulation seems to have been successful
@@ -794,21 +818,63 @@ class Scenario:
         self.runtime_len = self.runtime_end - self.runtime_start
         logging.info(f'Scenario {self.index} ({self.name}) finished - runtime {self.runtime_len}')
 
-    def generate_plots(self):
-        pass
+    def generate_plots(self, run):
 
-    def accumulate_results(self):
+        self.figure = plotly.make_subplots(specs=[[{"secondary_y": True}]])
 
-        for component in self.component_sets:
-            component.accumulate_results(self)
+        for component_set in self.component_sets:
+            self.figure.add_trace(plotly.graph_objs.Scatter(x=component_set.flow.index.to_pydatetime(),
+                                                            y=component_set.flow,  # TODO invert for sink components
+                                                            mode='lines',
+                                                            name=component_set.name,
+                                                            line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                  secondary_y=False)
 
-        self.e_eta = self.e_sim_del / self.e_sim_pro
+            if isinstance(component_set, StationaryEnergyStorage):
+                self.figure.add_trace(plotly.graph_objs.Scatter(x=component_set.soc.index.to_pydatetime(),
+                                                                y=component_set.soc,
+                                                                mode='lines',
+                                                                name=component_set.name,
+                                                                line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                      secondary_y=True)
+
+            if isinstance(component_set, CommoditySystem):
+                for commodity in component_set.commodities:
+                    self.figure.add_trace(plotly.graph_objs.Scatter(x=commodity.soc.index.to_pydatetime(),
+                                                                    y=commodity.soc,
+                                                                    mode='lines',
+                                                                    name=commodity.name,
+                                                                    line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                          secondary_y=True)
+
+        self.figure.update_layout(plot_bgcolor=col.tum_white)
+        self.figure.update_xaxes(title='Local Time',
+                                 showgrid=True,
+                                 linecolor=col.tum_grey_20,
+                                 gridcolor=col.tum_grey_20, )
+        self.figure.update_yaxes(title='Power in W',
+                                 showgrid=True,
+                                 linecolor=col.tum_grey_20,
+                                 gridcolor=col.tum_grey_20,
+                                 secondary_y=False, )
+        self.figure.update_yaxes(title='State of Charge',
+                                 showgrid=False,
+                                 secondary_y=True)
+
+        if self.strategy == 'go':
+            self.figure.update_layout(title=f'Global Optimum Results ({run.scenarios_file_name} - Sheet: {self.name})')
+        if self.strategy == 'rh':
+            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Sheet: {self.name}'
+                                            f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
     def print_results(self):
-        pass
+        print("#####Results#####")
+        print(f"Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD")
+        print(f"Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 3))} USct/kWh")
+        print("#################")
 
     def save_plots(self):
-        pass
+        self.figure.write_html(self.plot_file_path)
 
     def save_results(self, run):
 
@@ -830,51 +896,22 @@ class Scenario:
         run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
         run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
 
-        column_names = ['Cumulative results',  # TODO make fit for arbitrary component set combinations
-                        'Demand results',
-                        'Wind power results',
-                        'PV power results',
-                        'Fossil power results',
-                        'Energy storage results',
-                        'CommoditySystem results']
-        for i, header in enumerate(column_names):
-            run.result_xdbdb.ws(ws=self.name).update_index(row=5, col=1 + i * 4, val=header)
+        header_row = 5
+        for index, component_set in enumerate(self.component_sets):  # TODO scenario integration
+            col_id = 1 + index * 4
+            row_id = header_row + 1
+            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=component_set.name)
+            component_set_dict = component_set.__dict__
+            component_set_dict.pop('name')
+            for key in component_set_dict.keys():
+                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=key)
+                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=component_set_dict[key])
+                row_id += 1
 
-        # # function to add component data to the worksheet  # TODO working point marker
-        # def add_ws(comp, col):
-        #     keys = list(comp.keys())
-        #     vals = list(comp.values())
-        #     row_id = 6
-        #     for i in range(len(vals)):
-        #         if type(vals[i]) == np.float64 or type(vals[i]) == np.float or type(vals[i]) == np.int:
-        #             db.ws(ws=sim['sheet']).update_index(row=row_id, col=col, val=keys[i])
-        #             db.ws(ws=sim['sheet']).update_index(row=row_id, col=col + 1, val=vals[i])
-        #             row_id += 1
-        #     return None
-        #
-        # add_ws(cres, 1)
-        # if sim['enable']['dem']:
-        #     add_ws(dem, 5)
-        # if sim['enable']['wind']:
-        #     add_ws(wind, 9)
-        # if sim['enable']['pv']:
-        #     add_ws(pv, 13)
-        # if sim['enable']['gen']:
-        #     add_ws(gen, 17)
-        # if sim['enable']['ess']:
-        #     add_ws(ess, 21)
-        # if sim['enable']['bev']:
-        #     add_ws(bev, 25)
-        #
-        # # write out the db
-        # xl.writexl(db=db, fn=results_filepath)  # TODO check to now write for every scenario, just once!
-
-
-
-
+        xl.writexl(db=run.result_xdb, fn=run.result_file_path)  # TODO check to not write for every scenario, just once!
 
     def show_plots(self):
-        pass
+        self.figure.show()
 
 
 class SimulationRun:
@@ -891,8 +928,10 @@ class SimulationRun:
             print("Excel File does not include global settings - exiting")
             exit()
 
-        self.runtimestart = time.time()  # TODO better timing method
-        self.runtimestamp = datetime.now().strftime("%y%m%d_%H%M%S")  # create str of runtimestart
+        self.runtime_start = time.time()  # TODO better timing method
+        self.runtime_end = None  # placeholder
+        self.runtime_len = None  # placeholder
+        self.runtimestamp = datetime.now().strftime("%y%m%d_%H%M%S")  # create str of runtime_start
 
         self.global_sheet = 'global_settings'
         self.solver = xread('solver', self.global_sheet, self.input_xdb)
@@ -913,6 +952,11 @@ class SimulationRun:
 
         logger.define_logging(logfile=self.log_file_path)
         logging.info("Global settings read - initializing scenarios")
+
+    def end_timing(self):
+        self.runtime_end = time.time()
+        self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
+        logging.info(f'Total runtime {str(self.runtime_len)} s')
 
     def input_gui(self):
         '''
@@ -1089,10 +1133,7 @@ def handle_scenario_error():
     pass
 
 
-def simulate_scenario():
-    '''
-    Main function optimizing and simulating a single scenario as defined by a scenarios excel sheet
-    '''
+def simulate_scenario(run):
 
     try:
         scenario = Scenario(run, scenario_index, scenario_name)  # Create scenario instance & read data from excel sheet.
@@ -1112,7 +1153,7 @@ def simulate_scenario():
                 scenario.print_results()
 
         if run.save_plots or run.show_plots:
-            scenario.generate_plots()
+            scenario.generate_plots(run)
             if run.save_plots:
                 scenario.save_plots()
             if run.show_plots:
@@ -1145,15 +1186,4 @@ if __name__ == '__main__':
     for scenario_index, scenario_name in enumerate(run.scenario_names):
         simulate_scenario(run)  # TODO integrate multiprocessing
 
-
-        #post.print_results(sim, wind, pv, gen, ess, bev, cres)  # TODO OO
-
-        #sim = post.end_timing(sim)  # TODO OO
-
-        #post.plot_results(sim, dem, wind, pv, gen, ess, bev)  # TODO OO
-        #post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)  # TODO OO
-
-
-
-
-
+    run.end_timing()
