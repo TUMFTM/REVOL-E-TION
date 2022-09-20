@@ -99,7 +99,7 @@ for run in range(runs):
         post.plot_results(sim, dem, wind, pv, gen, ess, bev)
         post.save_results(sim, dem, wind, pv, gen, ess, bev, cres)
 
-    except:
+    except ValueError:
         logging.warning('Model optimization infeasible - continuing on next worksheet')
         post.save_results_err(sim)
         continue

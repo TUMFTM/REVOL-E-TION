@@ -673,7 +673,8 @@ def define_result_structure(sim, prj, dem, wind, pv, gen, ess, bev):
                           'ann_totex'
                           ], 0)
 
-    dem['flow'] = pd.Series(dtype='float64')
+    if sim['enable']['dem']:
+        dem['flow'] = pd.Series(dtype='float64')
 
     if sim['enable']['wind']:
         wind['flow'] = pd.Series(dtype='float64')
