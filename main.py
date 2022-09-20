@@ -23,6 +23,7 @@ license:    GPLv3
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
+from plotly.subplots import make_subplots
 
 import logging
 # import multiprocessing as multi  # TODO parallelize scenario loop
@@ -30,7 +31,7 @@ from oemof.tools import logger
 import oemof.solph as solph
 import os
 import pandas as pd
-import plotly
+import plotly.graph_objects as go
 import pprint
 import pylightxl as xl
 import PySimpleGUI as psg
@@ -541,8 +542,6 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        logging.info('Building energy system model')
-
         self.es = solph.EnergySystem(timeindex=self.ph_dti)  # initialize energy system model instance
 
         for component_set in scenario.component_sets:
@@ -665,6 +664,8 @@ class Scenario:
         self.runtime_start = time.time()
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
+
+        logging.info(f'Scenario {self.index} ({self.name}) initialized')  # TODO state process number
 
         self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
         self.prj_duration = relativedelta(years=xread('prj_duration', self.name, run.input_xdb))
@@ -806,45 +807,53 @@ class Scenario:
         for component in self.component_sets:
             component.accumulate_results(self)
 
-        self.e_eta = self.e_sim_del / self.e_sim_pro
-        self.lcoe = self.totex_dis / self.e_prj_del
-        self.lcoe_dis = self.totex_dis / self.e_dis_del
+        try:
+            self.e_eta = self.e_sim_del / self.e_sim_pro
+        except ZeroDivisionError:
+            self.e_eta = -1
+
+        try:
+            self.lcoe = self.totex_dis / self.e_prj_del
+            self.lcoe_dis = self.totex_dis / self.e_dis_del
+        except ZeroDivisionError:
+            self.lcoe = -1
+            self.lcoe_dis = -1
 
     def end_timing(self):
 
         self.feasible = True  # model optimization or simulation seems to have been successful
 
         self.runtime_end = time.time()
-        self.runtime_len = self.runtime_end - self.runtime_start
+        self.runtime_len = round(self.runtime_end - self.runtime_start,2)
         logging.info(f'Scenario {self.index} ({self.name}) finished - runtime {self.runtime_len}')
 
     def generate_plots(self, run):
 
-        self.figure = plotly.make_subplots(specs=[[{"secondary_y": True}]])
+        self.figure = make_subplots(specs=[[{"secondary_y": True}]])
 
         for component_set in self.component_sets:
-            self.figure.add_trace(plotly.graph_objs.Scatter(x=component_set.flow.index.to_pydatetime(),
-                                                            y=component_set.flow,  # TODO invert for sink components
-                                                            mode='lines',
-                                                            name=component_set.name,
-                                                            line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+            self.figure.add_trace(go.Scatter(x=component_set.flow.index.to_pydatetime(),
+                                             y=component_set.flow,  # TODO invert for sink components
+                                            mode='lines',
+                                            name=component_set.name,
+                                            line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                   secondary_y=False)
 
             if isinstance(component_set, StationaryEnergyStorage):
-                self.figure.add_trace(plotly.graph_objs.Scatter(x=component_set.soc.index.to_pydatetime(),
-                                                                y=component_set.soc,
-                                                                mode='lines',
-                                                                name=component_set.name,
-                                                                line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                self.figure.add_trace(go.Scatter(x=component_set.soc.index.to_pydatetime(),
+                                                 y=component_set.soc,
+                                                 mode='lines',
+                                                 name=component_set.name,
+                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                       secondary_y=True)
 
             if isinstance(component_set, CommoditySystem):
                 for commodity in component_set.commodities:
-                    self.figure.add_trace(plotly.graph_objs.Scatter(x=commodity.soc.index.to_pydatetime(),
-                                                                    y=commodity.soc,
-                                                                    mode='lines',
-                                                                    name=commodity.name,
-                                                                    line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                    self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
+                                                     y=commodity.soc,
+                                                     mode='lines',
+                                                     name=commodity.name,
+                                                     line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                           secondary_y=True)
 
         self.figure.update_layout(plot_bgcolor=col.tum_white)
@@ -877,8 +886,6 @@ class Scenario:
         self.figure.write_html(self.plot_file_path)
 
     def save_results(self, run):
-
-        logging.info(f'Saving results for scenario "{self.name}" with index {self.index}')
 
         run.result_xdb.add_ws(ws=self.name)
 
@@ -945,9 +952,9 @@ class SimulationRun:
 
         self.cwd = os.getcwd()
         self.input_data_path = os.path.join(self.cwd, "input_data")
-        self.dump_file_path = os.path.join(self.cwd, "lp_models", self.runtimestamp + "_model.lp")
-        self.log_file_path = os.path.join(self.cwd, "logfiles", self.runtimestamp + ".log")
-        self.result_file_path = os.path.join(self.result_path, self.scenarios_file_name, ".xlsx")
+        self.dump_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.lp")
+        self.log_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.log")
+        self.result_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.xlsx")
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
         logger.define_logging(logfile=self.log_file_path)
