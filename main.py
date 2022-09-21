@@ -702,7 +702,37 @@ class Scenario:
             self.ch_len = self.sim_duration
             self.horizon_num = 1
 
-        # Components --------------------------------
+        # Creation of static core energy system components --------------------------------
+
+        """
+        dc_bus              ac_bus
+          |                   |
+          |---dc_ac---------->|
+          |                   |
+          |<----------ac_dc---|
+        """
+
+        self.solph_components = []
+
+        self.ac_bus = solph.Bus(label="ac_bus")
+        self.solph_components.append(self.ac_bus)
+
+        self.dc_bus = solph.Bus(label="dc_bus")
+        self.solph_components.append(self.dc_bus)
+
+        self.ac_dc = solph.Transformer(label="ac_dc",
+                                       inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
+                                       outputs={self.dc_bus: solph.Flow()},
+                                       conversion_factors={self.dc_bus: xread('ac_dc_eff', self.name, run.input_xdb)})
+        self.solph_components.append(self.ac_dc)
+
+        self.dc_ac = solph.Transformer(label="dc_ac",
+                                       inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost)},
+                                       outputs={self.ac_bus: solph.Flow()},
+                                       conversion_factors={self.ac_bus: xread('dc_ac_eff', self.name, run.input_xdb)})
+        self.solph_components.append(self.dc_ac)
+
+        # Other Component Sets --------------------------------
 
         self.components_enable = dict(dem=(xread('dem_enable', self.name, run.input_xdb) == 'True'),
                                       wind=(xread('wind_enable', self.name, run.input_xdb) == 'True'),
@@ -712,25 +742,24 @@ class Scenario:
                                       bev=(xread('bev_enable', self.name, run.input_xdb) == 'True'))
 
         self.component_sets = []
-        self.solph_components = []
 
-        for component in [[name for name, enable in self.components_enable.items() if enable]]:
-            if component == 'dem':
+        for component_name in [name for name, enable in self.components_enable.items() if enable]:
+            if component_name == 'dem':
                 dem = StatSink('dem', self, run)
                 self.component_sets.append(dem)
-            elif component == 'wind':
+            elif component_name == 'wind':
                 wind = WindSource('wind', self, run)
                 self.component_sets.append(wind)
-            elif component == 'pv':
+            elif component_name == 'pv':
                 pv = PVSource('pv', self, run)
                 self.component_sets.append(pv)
-            elif component == 'gen':
+            elif component_name == 'gen':
                 gen = ControllableSource('gen', self, run)
                 self.component_sets.append(gen)
-            elif component == 'bev':
+            elif component_name == 'bev':
                 bev = CommoditySystem('bev', self, run)
                 self.component_sets.append(bev)
-            elif component == 'mb':
+            elif component_name == 'mb':
                 mb = CommoditySystem('mb', self, run)
                 self.component_sets.append(mb)
 
@@ -773,34 +802,6 @@ class Scenario:
 
         self.lcoe = None
         self.lcoe_dis = None
-
-        # Creation of static core energy system components --------------------------------
-
-        """
-        dc_bus              ac_bus
-          |                   |
-          |---dc_ac---------->|
-          |                   |
-          |<----------ac_dc---|
-        """
-
-        self.ac_bus = solph.Bus(label="ac_bus")
-        self.solph_components.append(self.ac_bus)
-
-        self.dc_bus = solph.Bus(label="dc_bus")
-        self.solph_components.append(self.dc_bus)
-
-        self.ac_dc = solph.Transformer(label="ac_dc",
-                                       inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
-                                       outputs={self.dc_bus: solph.Flow()},
-                                       conversion_factors={self.dc_bus: xread('ac_dc_eff', self.name, run.input_xdb)})
-        self.solph_components.append(self.ac_dc)
-
-        self.dc_ac = solph.Transformer(label="dc_ac",
-                                       inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost)},
-                                       outputs={self.ac_bus: solph.Flow()},
-                                       conversion_factors={self.ac_bus: xread('dc_ac_eff', self.name, run.input_xdb)})
-        self.solph_components.append(self.dc_ac)
 
     def accumulate_results(self):
 
@@ -1010,7 +1011,7 @@ class StatSink:
 
         self.name = name
         self.input_file_name = xread('dem_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.input_data_path, "load_profile_data", self.input_file_name + ".csv")
+        self.input_file_path = os.path.join(run.input_data_path, "load_profile_data", self.input_file_name)
         self.data = pd.read_csv(self.input_file_path,
                                 sep=",",
                                 skip_blank_lines=False)
@@ -1038,8 +1039,8 @@ class StatSink:
         """
 
         self.snk = solph.Sink(label='dem_snk',
-                              inputs={scenario.ac_bus:solph.Flow(fix=self.ph_data["P"],
-                                                                 nominal_value=1)})
+                              inputs={scenario.ac_bus: solph.Flow(fix=self.ph_data["P"],  # TODO definition without fix possible? - fix is added in update_input components...
+                                                                  nominal_value=1)})
         scenario.solph_components.append(self.snk)
 
     def accumulate_results(self, scenario):
@@ -1060,6 +1061,8 @@ class StatSink:
         self.flow_ch = horizon.results[(scenario.ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
 
     def update_input_components(self, scenario):
+
+        # TODO ph data needs to be created here
         self.snk.inputs[scenario.ac_bus].fix = self.ph_data["P"]
 
 
