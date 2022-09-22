@@ -1,6 +1,5 @@
 # MG_EV_Opti
 
-"""
 --- Toolset name ---
 Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
 
@@ -53,4 +52,3 @@ All input data files need to be located in ./scenarios
 4.	Get pvgis data from https://re.jrc.ec.europa.eu/pvg_tools/en/#HR or the repository holder
 5.	Get exemplary vehicle and demand data from the repository holder
 6.	Run main.py	
-"""
