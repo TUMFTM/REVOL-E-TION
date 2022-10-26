@@ -37,7 +37,7 @@ import pylightxl as xl
 import PySimpleGUI as psg
 import time
 
-import colordef as col
+import tum_colors as col
 import economics as eco
 
 
@@ -90,6 +90,7 @@ class InvestComponent:
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = None
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = None
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = None
+        self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = None
 
     def accumulate_invest_results(self, scenario):  # TODO check whether CommoditySystems accumulate all commodity costs correctly
 
@@ -196,9 +197,9 @@ class CommoditySystem(InvestComponent):
         super().__init__(name, scenario, run)
 
         self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.result_path, self.input_file_name + ".csv")
+        self.input_file_path = os.path.join(run.result_path, self.input_file_name + '.csv')
         self.data = pd.read_csv(self.input_file_path,
-                                sep=";",
+                                sep=';',
                                 skip_blank_lines=False)
         self.data['time'] = pd.date_range(start=scenario.sim_starttime,
                                           periods=len(self.data),
@@ -229,16 +230,16 @@ class CommoditySystem(InvestComponent):
                               |---(CommoditySystem Instance)
         """
 
-        self.bus = solph.Bus(label=f"{self.name}_bus")
+        self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.solph_components.append(self.bus)
 
-        self.inflow = solph.Transformer(label=f"ac_{self.name}",
+        self.inflow = solph.Transformer(label=f'ac_{self.name}',
                                         inputs={scenario.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
                                         outputs={self.bus: solph.Flow()},
                                         conversion_factors={self.bus: 1})
         scenario.solph_components.append(self.inflow)
 
-        self.outflow = solph.Transformer(label=f"ac_{self.name}",
+        self.outflow = solph.Transformer(label=f'ac_{self.name}',
                                          inputs={self.bus: solph.Flow(
                                              nominal_value={'uc': 0,
                                                             'cc': 0,
@@ -299,7 +300,7 @@ class StationaryEnergyStorage(InvestComponent):
         """
 
         if self.opt:
-            self.ess = solph.components.GenericStorage(label="ess",
+            self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.dc_bus: solph.Flow()},
                                                        outputs={
                                                            scenario.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
@@ -312,7 +313,7 @@ class StationaryEnergyStorage(InvestComponent):
                                                        outflow_conversion_factor=self.dis_eff,
                                                        investment=solph.Investment(ep_costs=self.eq_pres_cost))
         else:
-            self.ess = solph.components.GenericStorage(label="ess",
+            self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.dc_bus: solph.Flow()},
                                                        outputs={
                                                            scenario.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
@@ -421,33 +422,33 @@ class MobileCommodity:
           |---mc_mc2--------->|-->mc2_snk
         """
 
-        self.bus = solph.Bus(label=f"{self.name}_bus")
+        self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.solph_components.append(self.bus)
 
-        self.inflow = solph.Transformer(label=f"mc_{self.name}",
+        self.inflow = solph.Transformer(label=f'mc_{self.name}',
                                         inputs={self.parent.bus: solph.Flow(nominal_value=self.parent.chg_pwr,
                                                                             max=self.ph_data[
-                                                                                f"at_charger_{self.name}"],
+                                                                                f'at_charger_{self.name}'],
                                                                             variable_costs=run.eps_cost)},
                                         outputs={self.bus: solph.Flow()},
                                         conversion_factors={self.bus: self.parent.chg_eff})
         scenario.solph_components.append(self.inflow)
 
-        self.outflow = solph.Transformer(label=f"{self.name}_mc",
+        self.outflow = solph.Transformer(label=f'{self.name}_mc',
                                          inputs={self.bus: solph.Flow(nominal_value={'uc': 0,
                                                                                      'cc': 0,
                                                                                      'tc': 0,
                                                                                      'v2v': 1,
                                                                                      'v2g': 1}[
                                                                                         self.parent.int_lvl] * self.parent.dis_pwr,
-                                                                      max=self.ph_data[f"at_charger_{self.name}"],
+                                                                      max=self.ph_data[f'at_charger_{self.name}'],
                                                                       variable_costs=run.eps_cost)},
                                          outputs={self.parent.mc_bus: solph.Flow()},
                                          conversion_factors={self.parent.mc_bus: self.parent.dis_eff})
         scenario.solph_components.append(self.outflow)
 
         if self.parent.opt:
-            self.ess = solph.components.GenericStorage(label=f"{self.name}_ess",
+            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
                                                            variable_cost=self.parent.spec_opex)},
@@ -459,12 +460,12 @@ class MobileCommodity:
                                                        outflow_conversion_factor=1,
                                                        # efficiency already modeled in transformers
                                                        max_storage_level=1,
-                                                       min_storage_level=self.ph_data[f"min_soc_{self.name}"],
+                                                       min_storage_level=self.ph_data[f'min_soc_{self.name}'],
                                                        # TODO is commodity ph_data actually created?
                                                        investment=solph.Investment(
                                                            ep_costs=self.parent.eq_pres_cost))
         else:
-            self.ess = solph.components.GenericStorage(label=f"{self.name}_ess",
+            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
                                                            variable_cost=self.parent.spec_opex)},
@@ -476,13 +477,13 @@ class MobileCommodity:
                                                        outflow_conversion_factor=1,
                                                        # efficiency already modeled in transformers
                                                        max_storage_level=1,
-                                                       min_storage_level=self.ph_data[f"min_soc_{self.name}"],
+                                                       min_storage_level=self.ph_data[f'min_soc_{self.name}'],
                                                        # TODO is commodity ph_data actually created?
                                                        nominal_storage_capacity=self.parent.size, )  # TODO does size exist?
         scenario.solph_components.append(self.ess)
 
-        self.snk = solph.Sink(label=f"{self.name}_snk",
-                              inputs={self.bus: solph.Flow(fix=self.ph_data[f"sink_data_{self.name}"],
+        self.snk = solph.Sink(label=f'{self.name}_snk',
+                              inputs={self.bus: solph.Flow(fix=self.ph_data[f'sink_data_{self.name}'],
                                                            nominal_value=1)})
         scenario.solph_components.append(self.snk)
 
@@ -498,7 +499,7 @@ class MobileCommodity:
         self.flow = pd.concat(self.flow, self.flow_ch)
 
         self.sc_ch = solph.views.node(
-            horizon.results, f"{self.name}_ess")['sequences'][((f"{self.name}_ess", 'None'), 'storage_content')][
+            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
             horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
         # shift is needed as sc/soc is stored for end of timestep
         self.soc_ch = self.sc_ch / self.parent.size
@@ -509,11 +510,11 @@ class MobileCommodity:
     def update_input_components(self):
 
         # enable/disable transformers to mcx_bus depending on whether the commodity is at base
-        self.inflow.inputs[self.parent.mc_bus].max = self.ph_data[f"{self.name}_at_base"]
-        self.outflow.inputs[self.bus].max = self.ph_data[f"{self.name}_at_base"]
+        self.inflow.inputs[self.parent.mc_bus].max = self.ph_data[f'{self.name}_at_base']
+        self.outflow.inputs[self.bus].max = self.ph_data[f'{self.name}_at_base']
 
         # define consumption data for sink (only enabled when detached from base
-        self.snk.inputs[self.bus].fix = self.ph_data[f"{self.name}_consumption"]
+        self.snk.inputs[self.bus].fix = self.ph_data[f'{self.name}_consumption']
 
         # set initial storage level for coming prediction horizon
         self.ess.initial_storage_level = self.ph_init_soc
@@ -573,10 +574,20 @@ class PredictionHorizon:
         for component_set in scenario.component_sets:
 
             if component_set.opt:
-                component_set.size = self.results[(component_set.src, component_set.bus)]["scalars"]["invest"]
+                component_set.size = self.results[(component_set.src, component_set.bus)]['scalars']['invest']
                 # TODO check whether this definition fits all component sets
 
             component_set.get_ch_results(self, horizon, scenario)
+
+    def run_optimization(self, scenario, run):
+        try:
+            self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
+        except KeyError:  # TODO raise own or find proper exception
+            logging.warning(f'Scenario {scenario_name} failed or infeasible - continue on next scenario')
+            scenario.feasible = False
+        finally:
+            scenario.handle_infeasibility()
+
 
 
 class PVSource(InvestComponent):  # TODO combine to RenewableSource?
@@ -589,9 +600,9 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
             pass  # TODO: API input goes here
         else:  # data input from fixed csv file
             self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-            self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + ".csv")
+            self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + '.csv')
             self.data = pd.read_csv(self.input_file_path,
-                                    sep=",",
+                                    sep=',',
                                     header=10,
                                     skip_blank_lines=False,
                                     skipfooter=13,
@@ -613,29 +624,29 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
                               |-->pv_exc
         """
 
-        self.bus = solph.Bus(label=f"{self.name}_bus")
+        self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.solph_components.append(self.bus)
 
-        self.outflow = solph.Transformer(label=f"{self.name}_dc",
+        self.outflow = solph.Transformer(label=f'{self.name}_dc',
                                          inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
                                          outputs={scenario.dc_bus: solph.Flow()},
                                          conversion_factors={self.bus: 1})  # TODO proper efficiency
         scenario.solph_components.append(self.outflow)
 
         if self.opt:
-            self.src = solph.Source(label=f"{self.name}_src",
+            self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
                                                                   investment=solph.Investment(
                                                                       ep_costs=self.eq_pres_cost),
                                                                   variable_cost=self.spec_opex)})
         else:
-            self.src = solph.Source(label=f"{self.name}_src",
+            self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
                                                                   nominal_value=self.size,
                                                                   variable_cost=self.spec_opex)})
         scenario.solph_components.append(self.src)
 
-        self.exc = solph.Sink(label=f"{self.name}_exc",
+        self.exc = solph.Sink(label=f'{self.name}_exc',
                               inputs={self.bus: solph.Flow()})
         scenario.solph_components.append(self.exc)
 
@@ -661,7 +672,7 @@ class Scenario:
 
         self.index = index
         self.name = name
-        self.runtime_start = time.time()
+        self.runtime_start = time.time()  #TODO use perfcounter
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
 
@@ -682,9 +693,9 @@ class Scenario:
 
         self.wacc = xread('wacc', self.name, run.input_xdb)
 
-        self.plot_file_path = os.path.join(run.result_path, f"{run.runtimestamp}_"
-                                                            f"{run.scenarios_file_name}_"
-                                                            f"{self.name}.html")
+        self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
+                                                            f'{run.scenarios_file_name}_'
+                                                            f'{self.name}.html')
 
         # Operational strategy --------------------------------
 
@@ -714,19 +725,19 @@ class Scenario:
 
         self.solph_components = []
 
-        self.ac_bus = solph.Bus(label="ac_bus")
+        self.ac_bus = solph.Bus(label='ac_bus')
         self.solph_components.append(self.ac_bus)
 
-        self.dc_bus = solph.Bus(label="dc_bus")
+        self.dc_bus = solph.Bus(label='dc_bus')
         self.solph_components.append(self.dc_bus)
 
-        self.ac_dc = solph.Transformer(label="ac_dc",
+        self.ac_dc = solph.Transformer(label='ac_dc',
                                        inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
                                        outputs={self.dc_bus: solph.Flow()},
                                        conversion_factors={self.dc_bus: xread('ac_dc_eff', self.name, run.input_xdb)})
         self.solph_components.append(self.ac_dc)
 
-        self.dc_ac = solph.Transformer(label="dc_ac",
+        self.dc_ac = solph.Transformer(label='dc_ac',
                                        inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost)},
                                        outputs={self.ac_bus: solph.Flow()},
                                        conversion_factors={self.ac_bus: xread('dc_ac_eff', self.name, run.input_xdb)})
@@ -808,6 +819,8 @@ class Scenario:
         for component in self.component_sets:
             component.accumulate_results(self)
 
+        #  TODO find a metric for curtailed energy and calculate
+
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
         except ZeroDivisionError:
@@ -825,26 +838,26 @@ class Scenario:
         self.feasible = True  # model optimization or simulation seems to have been successful
 
         self.runtime_end = time.time()
-        self.runtime_len = round(self.runtime_end - self.runtime_start,2)
+        self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
         logging.info(f'Scenario {self.index} ({self.name}) finished - runtime {self.runtime_len}')
 
     def generate_plots(self, run):
 
-        self.figure = make_subplots(specs=[[{"secondary_y": True}]])
+        self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
         for component_set in self.component_sets:
             self.figure.add_trace(go.Scatter(x=component_set.flow.index.to_pydatetime(),
                                              y=component_set.flow,  # TODO invert for sink components
-                                            mode='lines',
-                                            name=component_set.name,
-                                            line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                             mode='lines',
+                                             name=component_set.name,   # TODO print sizing in plot
+                                             line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                   secondary_y=False)
 
             if isinstance(component_set, StationaryEnergyStorage):
                 self.figure.add_trace(go.Scatter(x=component_set.soc.index.to_pydatetime(),
                                                  y=component_set.soc,
                                                  mode='lines',
-                                                 name=component_set.name,
+                                                 name=component_set.name,  # TODO print sizing in plot
                                                  line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                       secondary_y=True)
 
@@ -853,7 +866,7 @@ class Scenario:
                     self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
                                                      y=commodity.soc,
                                                      mode='lines',
-                                                     name=commodity.name,
+                                                     name=commodity.name,    # TODO print sizing in plot, denote whether single or combined value
                                                      line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                           secondary_y=True)
 
@@ -877,11 +890,14 @@ class Scenario:
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Sheet: {self.name}'
                                             f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
+    def handle_infeasibility(self):
+        pass  # TODO write to excel and continue with next in scenario for loop
+
     def print_results(self):
-        print("#####Results#####")
-        print(f"Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD")
-        print(f"Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 3))} USct/kWh")
-        print("#################")
+        print('#####Results#####')
+        print(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
+        print(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 3))} USct/kWh')
+        print('#################')
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
@@ -933,13 +949,13 @@ class SimulationRun:
         try:
             self.scenario_names.remove('global_settings')
         except ValueError:
-            print("Excel File does not include global settings - exiting")
+            print('Excel File does not include global settings - exiting')
             exit()
 
         self.runtime_start = time.time()  # TODO better timing method
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
-        self.runtimestamp = datetime.now().strftime("%y%m%d_%H%M%S")  # create str of runtime_start
+        self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
         self.global_sheet = 'global_settings'
         self.solver = xread('solver', self.global_sheet, self.input_xdb)
@@ -952,14 +968,14 @@ class SimulationRun:
         self.eps_cost = float(xread('eps_cost', self.global_sheet, self.input_xdb))
 
         self.cwd = os.getcwd()
-        self.input_data_path = os.path.join(self.cwd, "input_data")
-        self.dump_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.lp")
-        self.log_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.log")
-        self.result_file_path = os.path.join(self.result_path, f"{self.runtimestamp}_{self.scenarios_file_name}.xlsx")
+        self.input_data_path = os.path.join(self.cwd, 'input_data')
+        self.dump_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.lp')
+        self.log_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.log')
+        self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
         logger.define_logging(logfile=self.log_file_path)
-        logging.info("Global settings read - initializing scenarios")
+        logging.info('Global settings read - initializing scenarios')
 
     def end_timing(self):
         self.runtime_end = time.time()
@@ -967,19 +983,19 @@ class SimulationRun:
         logging.info(f'Total runtime {str(self.runtime_len)} s')
 
     def input_gui(self):
-        '''
+        """
         GUI to choosr input excel file
         :return:
-        '''
+        """
 
-        scenarios_default = os.path.join(os.getcwd(), "settings")
-        results_default = os.path.join(os.getcwd(), "results")
+        scenarios_default = os.path.join(os.getcwd(), 'settings')
+        results_default = os.path.join(os.getcwd(), 'results')
 
         input_file = [[psg.Text('Choose input settings file')],
                       [psg.Input(), psg.FileBrowse(initial_folder=scenarios_default)],
                       ]
 
-        result_folder = [[psg.Text("Choose result storage folder")],
+        result_folder = [[psg.Text('Choose result storage folder')],
                          [psg.Input(), psg.FolderBrowse(initial_folder=results_default), ],
                          ]
 
@@ -996,12 +1012,12 @@ class SimulationRun:
         try:
             scenarios_filename = os.path.normpath(values['Browse'])
             results_foldername = os.path.normpath(values['Browse0'])
-            if scenarios_filename == "." or results_foldername == ".":
-                print("WARNING: not all required paths entered - exiting")
+            if scenarios_filename == '.' or results_foldername == '.':
+                print('WARNING: not all required paths entered - exiting')
                 exit()
             return scenarios_filename, results_foldername
         except TypeError:
-            print("WARNING: GUI window closed manually - exiting")
+            print('WARNING: GUI window closed manually - exiting')
             exit()
 
 
@@ -1011,9 +1027,9 @@ class StatSink:
 
         self.name = name
         self.input_file_name = xread('dem_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.input_data_path, "load_profile_data", self.input_file_name)
+        self.input_file_path = os.path.join(run.input_data_path, 'load_profile_data', self.input_file_name)
         self.data = pd.read_csv(self.input_file_path,
-                                sep=",",
+                                sep=',',
                                 skip_blank_lines=False)
         self.data['time'] = pd.date_range(start=scenario.sim_starttime,
                                           periods=len(self.data),
@@ -1039,7 +1055,7 @@ class StatSink:
         """
 
         self.snk = solph.Sink(label='dem_snk',
-                              inputs={scenario.ac_bus: solph.Flow(fix=self.ph_data["P"],  # TODO definition without fix possible? - fix is added in update_input components...
+                              inputs={scenario.ac_bus: solph.Flow(fix=self.ph_data['P'],  # TODO definition without fix possible? - fix is added in update_input components...
                                                                   nominal_value=1)})
         scenario.solph_components.append(self.snk)
 
@@ -1063,7 +1079,7 @@ class StatSink:
     def update_input_components(self, scenario):
 
         # TODO ph data needs to be created here
-        self.snk.inputs[scenario.ac_bus].fix = self.ph_data["P"]
+        self.snk.inputs[scenario.ac_bus].fix = self.ph_data['P']
 
 
 class WindSource(InvestComponent):  # TODO combine to RenewableSource?
@@ -1073,9 +1089,9 @@ class WindSource(InvestComponent):  # TODO combine to RenewableSource?
         super().__init__(name, scenario, run)
 
         self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + ".csv")
+        self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + '.csv')
         self.data = pd.read_csv(self.input_file_path,
-                                sep=",",
+                                sep=',',
                                 skip_blank_lines=False)
         self.data['time'] = pd.date_range(start=scenario.sim_starttime,
                                           periods=len(self.data),
@@ -1095,27 +1111,27 @@ class WindSource(InvestComponent):  # TODO combine to RenewableSource?
                               |-->wind_exc
         """
 
-        self.bus = solph.Bus(label=f"{self.name}_bus")
+        self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.solph_components.append(self.bus)
 
-        self.outflow = solph.Transformer(label=f"{self.name}_ac",
+        self.outflow = solph.Transformer(label=f'{self.name}_ac',
                                          inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
                                          outputs={scenario.ac_bus: solph.Flow()},
                                          conversion_factors={scenario.ac_bus: 1})  # TODO proper efficiency
         scenario.solph_components.append(self.outflow)
 
-        self.exc = solph.Sink(label=f"{self.name}_exc",
+        self.exc = solph.Sink(label=f'{self.name}_exc',
                               inputs={self.bus: solph.Flow()})
         scenario.solph_components.append(self.exc)
 
         if self.opt:
-            self.src = solph.Source(label=f"{self.name}_src",
-                                    outputs={self.bus: solph.Flow(fix=self.ph_data["P"],
+            self.src = solph.Source(label=f'{self.name}_src',
+                                    outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
                                                                   investment=solph.Investment(ep_costs=run.eps_cost,
                                                                                               variable_cost=self.spec_opex))})
         else:
-            self.src = solph.Source(label=f"{self.name}_src",
-                                    outputs={scenario.solph_components.wind_bus: solph.Flow(fix=self.ph_data["P"],
+            self.src = solph.Source(label=f'{self.name}_src',
+                                    outputs={scenario.solph_components.wind_bus: solph.Flow(fix=self.ph_data['P'],
                                                                                             nominal_value=self.size,
                                                                                             variable_cost=self.spec_opex)})
         scenario.solph_components.append(self.src)
@@ -1131,7 +1147,7 @@ class WindSource(InvestComponent):  # TODO combine to RenewableSource?
 
     def update_input_components(self):
 
-        self.src.outputs[self.bus].fix = self.ph_data["P"]
+        self.src.outputs[self.bus].fix = self.ph_data['P']
 
 
 ###############################################################################
@@ -1145,36 +1161,29 @@ def handle_scenario_error():
 
 def simulate_scenario(run):
 
-    try:
-        scenario = Scenario(run, scenario_index, scenario_name)  # Create scenario instance & read data from excel sheet.
+    scenario = Scenario(run, scenario_index, scenario_name)  # Create scenario instance & read data from excel sheet.
 
-        for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
-            horizon = PredictionHorizon(horizon_index, scenario, run)
-            horizon.model.solve(solver=run.solver, solve_kwargs={"tee": run.solver_debugmode})
-            horizon.get_results(scenario, horizon, run)
+    for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
+        horizon = PredictionHorizon(horizon_index, scenario, run)
+        horizon.run_optimization(scenario, run)
+        horizon.get_results(scenario, horizon, run)
 
-        scenario.end_timing()
+    scenario.end_timing()
 
-        if run.save_results or run.print_results:
-            scenario.accumulate_results()
-            if run.save_results:
-                scenario.save_results(run)
-            if run.print_results:
-                scenario.print_results()
+    if run.save_results or run.print_results:
+        scenario.accumulate_results()
+        if run.save_results:
+            scenario.save_results(run)
+        if run.print_results:
+            scenario.print_results()
 
-        if run.save_plots or run.show_plots:
-            scenario.generate_plots(run)
-            if run.save_plots:
-                scenario.save_plots()
-            if run.show_plots:
-                scenario.show_plots()
+    if run.save_plots or run.show_plots:
+        scenario.generate_plots(run)
+        if run.save_plots:
+            scenario.save_plots()
+        if run.show_plots:
+            scenario.show_plots()
 
-    except KeyError:  # TODO proper error handle to only catch infeasible conditions - current one is only a dummy
-        logging.warning(f"Scenario {scenario_name} failed or infeasible - continue on next scenario")
-        try:
-            scenario.feasible = False
-        finally:
-            handle_scenario_error()
 
 
 def xread(param_name, sheet, db):
