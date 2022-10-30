@@ -1,0 +1,12 @@
+datetime
+multiprocessing
+numpy
+oemof.solph>=0.4.4
+oemof.tools
+openpyxl
+pandas
+plotly
+pylightxl
+pyomo
+pysimplegui
+python-dateutil
