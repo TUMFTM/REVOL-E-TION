@@ -20,6 +20,8 @@ license:    GPLv3
 ###############################################################################
 
 import logging
+import multiprocessing
+
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -31,7 +33,7 @@ import time
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-#from multiprocessing import Pool
+from itertools import repeat
 from oemof.tools import logger
 from pathlib import Path
 from plotly.subplots import make_subplots
@@ -104,11 +106,11 @@ class PredictionHorizon:
 
             component_set.get_ch_results(self, horizon, scenario)
 
-    def run_optimization(self, scenario, run):
+    def run_optimization(self, scenario):
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
         except KeyError:  # TODO raise own or find proper exception
-            logging.warning(f'Scenario {scenario_name} failed or infeasible - continue on next scenario')
+            logging.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.feasible = False
         finally:
             scenario.handle_error()
@@ -116,17 +118,16 @@ class PredictionHorizon:
 
 class Scenario:
 
-    def __init__(self, run, index, name):
+    def __init__(self, name, run):
 
         # General Information --------------------------------
 
-        self.index = index
         self.name = name
         self.runtime_start = time.time()  #TODO use perfcounter
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
 
-        logging.info(f'Scenario {self.index} ({self.name}) initialized')  # TODO state process number
+        logging.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
 
         self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
         self.prj_duration = relativedelta(years=xread('prj_duration', self.name, run.input_xdb))
@@ -289,7 +290,7 @@ class Scenario:
 
         self.runtime_end = time.time()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        logging.info(f'Scenario {self.index} ({self.name}) finished - runtime {self.runtime_len}')
+        logging.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len}')
 
     def generate_plots(self, run):
 
@@ -429,7 +430,9 @@ class Scenario:
 class SimulationRun:
 
     def __init__(self):
-        self.scenarios_file_path, self.result_path = self.input_gui()
+
+        self.cwd = os.getcwd()
+        self.scenarios_file_path, self.result_path = input_gui(self.cwd)
         self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
         self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
@@ -447,6 +450,7 @@ class SimulationRun:
 
         self.global_sheet = 'global_settings'
         self.solver = xread('solver', self.global_sheet, self.input_xdb)
+        self.parallel = (xread('parallel', self.global_sheet, self.input_xdb) == 'True')
         self.save_results = (xread('save_results', self.global_sheet, self.input_xdb) == 'True')
         self.print_results = (xread('print_results', self.global_sheet, self.input_xdb) == 'True')
         self.save_plots = (xread('save_plots', self.global_sheet, self.input_xdb) == 'True')
@@ -465,48 +469,10 @@ class SimulationRun:
         logger.define_logging(logfile=self.log_file_path)
         logging.info('Global settings read - initializing scenarios')
 
-    def end_timing(self):
+    def end_run(self):
         self.runtime_end = time.time()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         logging.info(f'Total runtime {str(self.runtime_len)} s')
-
-    def input_gui(self):
-        """
-        GUI to choosr input excel file
-        :return:
-        """
-
-        scenarios_default = os.path.join(os.getcwd(), 'settings')
-        results_default = os.path.join(os.getcwd(), 'results')
-
-        input_file = [[psg.Text('Choose input settings file')],
-                      [psg.Input(), psg.FileBrowse(initial_folder=scenarios_default)],
-                      ]
-
-        result_folder = [[psg.Text('Choose result storage folder')],
-                         [psg.Input(), psg.FolderBrowse(initial_folder=results_default), ],
-                         ]
-
-        layout = [
-            [psg.Column(input_file)],
-            [psg.HSeparator()],
-            [psg.Column(result_folder)],
-            [psg.HSeparator()],
-            [psg.OK(), psg.Cancel()],
-        ]
-
-        event, values = psg.Window('Get settings file', layout).read(close=True)
-
-        try:
-            scenarios_filename = os.path.normpath(values['Browse'])
-            results_foldername = os.path.normpath(values['Browse0'])
-            if scenarios_filename == '.' or results_foldername == '.':
-                print('WARNING: not all required paths entered - exiting')
-                exit()
-            return scenarios_filename, results_foldername
-        except TypeError:
-            print('WARNING: GUI window closed manually - exiting')
-            exit()
 
 
 ###############################################################################
@@ -514,13 +480,61 @@ class SimulationRun:
 ###############################################################################
 
 
-def simulate_scenario(run):
+def input_gui(directory):
+    """
+    GUI to choose input excel file
+    :return:
+    """
 
-    scenario = Scenario(run, scenario_index, scenario_name)  # Create scenario instance & read data from excel sheet.
+    input_default = os.path.join(directory, 'input', '_excel')
+    input_default_file = os.path.join(input_default, 'example.xlsx')
+    input_default_file_show = os.path.relpath(input_default_file, directory)
+    results_default = os.path.join(directory, 'results')
+    results_default_show = os.path.relpath(results_default, directory)
+
+    input_file = [[psg.Text('Choose input settings file')],
+                  [psg.Input(key='file',
+                             default_text=input_default_file_show),
+                   psg.FileBrowse(initial_folder=input_default,
+                                  file_types=(('Excel worksheets',
+                                               '.xlsx'),))],
+                  ]
+
+    result_folder = [[psg.Text('Choose result storage folder')],
+                     [psg.Input(key='folder',
+                                default_text=results_default_show),
+                      psg.FolderBrowse(initial_folder=results_default), ],
+                     ]
+
+    layout = [
+        [psg.Column(input_file)],
+        [psg.HSeparator()],
+        [psg.Column(result_folder)],
+        [psg.HSeparator()],
+        [psg.OK(), psg.Cancel()],
+    ]
+
+    event, values = psg.Window('MGEV toolset - select input file and result path', layout).read(close=True)
+
+    try:
+        scenarios_filename = os.path.abspath(values['file'])
+        results_foldername = os.path.abspath(values['folder'])
+        if scenarios_filename == '.' or results_foldername == '.':
+            logging.warning('not all required paths entered - exiting')
+            exit()
+        return scenarios_filename, results_foldername
+    except TypeError:
+        logging.warning('GUI window closed manually - exiting')
+        exit()
+
+
+def simulate_scenario(name: str, run: SimulationRun):
+
+    scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
-        horizon.run_optimization(scenario, run)
+        horizon.run_optimization(scenario)
         horizon.get_results(scenario, horizon, run)
 
     scenario.end_timing()
@@ -540,11 +554,11 @@ def simulate_scenario(run):
             scenario.show_plots()
 
 
-def xread(param_name, sheet, db):
+def xread(param, sheet, db):
     """
     Reading parameters from external excel file
     """
-    value = db.ws(ws=sheet).keyrow(key=param_name, keyindex=1)[1]
+    value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     return value
 
 
@@ -557,7 +571,11 @@ if __name__ == '__main__':
 
     run = SimulationRun()  # get all global information about the run
 
-    for scenario_index, scenario_name in enumerate(run.scenario_names):
-        simulate_scenario(run)  # TODO integrate multiprocessing
+    if run.parallel:
+        with multiprocessing.Pool() as pool:
+            pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run)))
+    else:
+        for scenario_name in run.scenario_names:
+            simulate_scenario(scenario_name, run)
 
-    run.end_timing()
+    run.end_run()

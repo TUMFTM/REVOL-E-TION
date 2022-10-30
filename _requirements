@@ -6,6 +6,7 @@ oemof.tools
 openpyxl
 pandas
 plotly
+pvlib
 pylightxl
 pyomo
 pysimplegui

@@ -22,6 +22,8 @@ import logging
 import oemof.solph as solph
 import os
 import pandas as pd
+import pvlib
+# TODO integrate PVlib
 
 import economics as eco
 
@@ -516,7 +518,7 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
             pass  # TODO: API input goes here
         else:  # data input from fixed csv file
             self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-            self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + '.csv')
+            self.input_file_path = os.path.join(run.input_data_path, 'pv', self.input_file_name + '.csv')
             self.data = pd.read_csv(self.input_file_path,
                                     sep=',',
                                     header=10,
@@ -571,6 +573,9 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
         self.accumulate_invest_results(scenario)
         self.accumulate_energy_results_source(scenario)
 
+    def get_data(self):
+        pass  # Todo integrate api call
+
     def get_ch_results(self, horizon, scenario):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.dc_bus)]['sequences']['flow'][horizon.ch_dti]
@@ -586,7 +591,7 @@ class StatSink:
 
         self.name = name
         self.input_file_name = xread('dem_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.input_data_path, 'load_profile_data', self.input_file_name)
+        self.input_file_path = os.path.join(run.input_data_path, 'dem', self.input_file_name)
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
                                 skip_blank_lines=False)
@@ -648,7 +653,7 @@ class WindSource(InvestComponent):  # TODO combine to RenewableSource?
         super().__init__(name, scenario, run)
 
         self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.input_data_path, self.input_file_name + '.csv')
+        self.input_file_path = os.path.join(run.input_data_path, 'wind', self.input_file_name + '.csv')
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
                                 skip_blank_lines=False)
