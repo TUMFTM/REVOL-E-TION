@@ -693,7 +693,7 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
 
         ess_sc_ch = views.node(results, 'ess')['sequences'][(('ess', 'None'), 'storage_content')][
             sim['ch_dti']].shift(periods=1, freq=sim['step'])  # shift is needed as sc/soc is at end of timestep
-        ess_soc_ch = ess_sc_ch / ess['cs']
+        ess_soc_ch = ess_sc_ch / ess['size']
 
         ess['soc'] = pd.concat([ess['soc'], ess_soc_ch])  # tracking state of charge
         ess['ph_init_soc'] = ess['soc'].iloc[-1]
@@ -722,7 +722,7 @@ def get_results(sim, dem, wind, pv, gen, ess, bev, model, optnum):
                                         bevx_ess_name)['sequences'][((bevx_ess_name,
                                                                       'None'),
                                                                      'storage_content')][sim['ch_dti']]
-                bevx_soc_ch = bevx_sc_ch / bev['cs']
+                bevx_soc_ch = bevx_sc_ch / bev['size']
                 bev[bevx_name]['soc'] = pd.concat([bev[bevx_name]['soc'], bevx_soc_ch])
                 bev[bevx_name]['ph_init_soc'] = bev[bevx_name]['soc'].iloc[-1]
                 if bev[bevx_name]['ph_init_soc'] < 0:
