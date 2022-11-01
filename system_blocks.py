@@ -36,9 +36,7 @@ from main import xread
 
 class InvestComponent:
 
-    def __init__(self, name, scenario, run):
-
-        self.name = name  # to be set in child class
+    def __init__(self, scenario, run):
 
         self.opt = xread(f'{self.name}_opt', scenario.name, run.input_xdb)
 
@@ -58,7 +56,7 @@ class InvestComponent:
 
         self.lifespan = xread(self.name + '_ls', scenario.name, run.input_xdb)
         self.cost_decr = xread(self.name + '_cdc', scenario.name, run.input_xdb)
-        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)
+        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)  # TODO make sure eff is used
 
         self.adj_capex = eco.adj_ce(self.spec_capex,  # TODO rename capex_adj
                                     self.spec_mntex,
@@ -67,7 +65,7 @@ class InvestComponent:
 
         self.eq_pres_cost = eco.ann_recur(self.adj_capex,
                                           self.lifespan,
-                                          scenario.prj_duration,
+                                          scenario.prj_duration.years,
                                           scenario.wacc,
                                           self.cost_decr)
 
@@ -182,10 +180,14 @@ class CommoditySystem(InvestComponent):
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
+        self.name = name
+
+        super().__init__(scenario, run)
+
+        # todo integrate Monte Carlo sim here
 
         self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
-        self.input_file_path = os.path.join(run.result_path, self.input_file_name + '.csv')
+        self.input_file_path = os.path.join(run.input_data_path, self.name, self.input_file_name + '.csv')
         self.data = pd.read_csv(self.input_file_path,
                                 sep=';',
                                 skip_blank_lines=False)
@@ -265,7 +267,9 @@ class StationaryEnergyStorage(InvestComponent):
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
+        self.name = name
+
+        super().__init__(scenario, run)
 
         self.chg_eff = xread(self.name + '_chg_eff', scenario.name, run.input_xdb)
         self.dis_eff = xread(self.name + '_dis_eff', scenario.name, run.input_xdb)
@@ -345,7 +349,9 @@ class ControllableSource(InvestComponent):
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
+        self.name = name
+
+        super().__init__(scenario, run)
 
         # Creation of static energy system components --------------------------------
 
@@ -512,10 +518,14 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
+        self.name = name
 
-        if run.pv_source == 'api':  # API input selected
-            pass  # TODO: API input goes here
+        super().__init__(scenario, run)
+
+        self.use_api = (xread(self.name + '_use_api', scenario.name, run.input_xdb) == 'True')
+
+        if self.use_api:  # API input selected
+            self.get_api_data()
         else:  # data input from fixed csv file
             self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
             self.input_file_path = os.path.join(run.input_data_path, 'pv', self.input_file_name + '.csv')
@@ -528,6 +538,7 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
 
         self.data['time'] = pd.to_datetime(self.data['time'],
                                            format='%Y%m%d:%H%M').dt.round('H')  # for direct PVGIS input
+
         self.data['P'] = self.data['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
 
         # Creation of static energy system components --------------------------------
@@ -553,13 +564,13 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
 
         if self.opt:
             self.src = solph.Source(label=f'{self.name}_src',
-                                    outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
+                                    outputs={self.bus: solph.Flow(#fix=self.ph_data['P'],  # TODO remove if this works
                                                                   investment=solph.Investment(
                                                                       ep_costs=self.eq_pres_cost),
                                                                   variable_cost=self.spec_opex)})
         else:
             self.src = solph.Source(label=f'{self.name}_src',
-                                    outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
+                                    outputs={self.bus: solph.Flow(#fix=self.ph_data['P'],  # TODO remove if this works
                                                                   nominal_value=self.size,
                                                                   variable_cost=self.spec_opex)})
         scenario.solph_components.append(self.src)
@@ -573,7 +584,7 @@ class PVSource(InvestComponent):  # TODO combine to RenewableSource?
         self.accumulate_invest_results(scenario)
         self.accumulate_energy_results_source(scenario)
 
-    def get_data(self):
+    def get_api_data(self):
         pass  # Todo integrate api call
 
     def get_ch_results(self, horizon, scenario):
@@ -590,6 +601,7 @@ class StatSink:
     def __init__(self, name, scenario, run):
 
         self.name = name
+
         self.input_file_name = xread('dem_filename', scenario.name, run.input_xdb)
         self.input_file_path = os.path.join(run.input_data_path, 'dem', self.input_file_name)
         self.data = pd.read_csv(self.input_file_path,
@@ -598,6 +610,7 @@ class StatSink:
         self.data['time'] = pd.date_range(start=scenario.sim_starttime,
                                           periods=len(self.data),
                                           freq=scenario.sim_timestep)
+        self.ph_data = None # placeholder
 
         self.flow_ch = pd.Series(dtype='float64')  # empty dataframe for result concatenation
         self.flow = pd.Series(dtype='float64')  # empty dataframe for result concatenation
@@ -619,7 +632,7 @@ class StatSink:
         """
 
         self.snk = solph.Sink(label='dem_snk',
-                              inputs={scenario.ac_bus: solph.Flow(fix=self.ph_data['P'],  # TODO definition without fix possible? - fix is added in update_input components...
+                              inputs={scenario.ac_bus: solph.Flow(#fix=self.ph_data['P'],  # TODO definition without fix possible? - fix is added in update_input components...
                                                                   nominal_value=1)})
         scenario.solph_components.append(self.snk)
 
@@ -641,8 +654,7 @@ class StatSink:
         self.flow_ch = horizon.results[(scenario.ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
 
     def update_input_components(self, scenario):
-
-        # TODO ph data needs to be created here
+        # new ph data slice is created during initialization of the PredictionHorizon
         self.snk.inputs[scenario.ac_bus].fix = self.ph_data['P']
 
 
@@ -650,9 +662,11 @@ class WindSource(InvestComponent):  # TODO combine to RenewableSource?
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
+        self.name = name
 
-        self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
+        super().__init__(scenario, run)
+
+        self.input_file_name = xread(self.name + '_filename', scenario. run.input_xdb)
         self.input_file_path = os.path.join(run.input_data_path, 'wind', self.input_file_name + '.csv')
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
