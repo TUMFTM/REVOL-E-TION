@@ -21,7 +21,6 @@ license:    GPLv3
 
 import logging
 import multiprocessing
-
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -65,6 +64,9 @@ class PredictionHorizon:
         for component in [component for component in scenario.component_sets if hasattr(component, 'data')]:
             component.ph_data = component.data.loc(component.data['time'].isin(self.ph_dti)).reset_index(drop=True)
 
+        for component_set in scenario.component_sets:
+            component_set.update_input_components(scenario, self)  # (re)define solph components that need input slices
+
         self.results = None
         self.meta_results = None
 
@@ -72,8 +74,7 @@ class PredictionHorizon:
 
         self.es = solph.EnergySystem(timeindex=self.ph_dti)  # initialize energy system model instance
 
-        for component_set in scenario.component_sets:
-            component_set.update_input_components(scenario, self)  # (re)define solph components that need input slices
+
 
         for solph_component in scenario.solph_components:
             self.es.add(solph_component)  # add components to this horizon's energy system
@@ -118,11 +119,12 @@ class PredictionHorizon:
 
 class Scenario:
 
-    def __init__(self, name, run):
+    def __init__(self, scenario_name, run):
+
+        self.name = scenario_name
 
         # General Information --------------------------------
 
-        self.name = name
         self.runtime_start = time.time()  #TODO use perfcounter
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
@@ -146,7 +148,7 @@ class Scenario:
 
         self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
                                                             f'{run.scenarios_file_name}_'
-                                                            f'{self.name}.html')
+                                                            f'{self.name}.html')  # todo consistent result file naming (log, excel, html, lp)
 
         # Operational strategy --------------------------------
 
@@ -222,8 +224,8 @@ class Scenario:
                 bev = blocks.CommoditySystem('bev', self, run)
                 self.component_sets.append(bev)
             elif component_name == 'mb':
-                mb = blocks.CommoditySystem('mb', self, run)
-                self.component_sets.append(mb)
+                baas = blocks.CommoditySystem('baas', self, run)
+                self.component_sets.append(baas)
 
         self.figure = None  # figure placeholder for result plotting
 
@@ -300,7 +302,7 @@ class Scenario:
             self.figure.add_trace(go.Scatter(x=component_set.flow.index.to_pydatetime(),
                                              y=component_set.flow,  # TODO invert for sink components
                                              mode='lines',
-                                             name=component_set.name,   # TODO print sizing in plot
+                                             name=component_set.__name__,   # TODO print sizing in plot
                                              line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                   secondary_y=False)
 
@@ -308,7 +310,7 @@ class Scenario:
                 self.figure.add_trace(go.Scatter(x=component_set.soc.index.to_pydatetime(),
                                                  y=component_set.soc,
                                                  mode='lines',
-                                                 name=component_set.name,  # TODO print sizing in plot
+                                                 name=component_set.__name__,  # TODO print sizing in plot
                                                  line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                       secondary_y=True)
 
@@ -317,7 +319,7 @@ class Scenario:
                     self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
                                                      y=commodity.soc,
                                                      mode='lines',
-                                                     name=commodity.name,    # TODO print sizing in plot, denote whether single or combined value
+                                                     name=commodity.__name__,    # TODO print sizing in plot, denote whether single or combined value
                                                      line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                           secondary_y=True)
 
@@ -413,9 +415,9 @@ class Scenario:
         for index, component_set in enumerate(self.component_sets):  # TODO scenario integration
             col_id = 1 + index * 4
             row_id = header_row + 1
-            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=component_set.name)
+            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=component_set.__name__)
             component_set_dict = component_set.__dict__
-            component_set_dict.pop('name')
+            component_set_dict.pop('__name__')
             for key in component_set_dict.keys():
                 run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=key)
                 run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=component_set_dict[key])
@@ -511,7 +513,7 @@ def input_gui(directory):
         [psg.HSeparator()],
         [psg.Column(result_folder)],
         [psg.HSeparator()],
-        [psg.OK(), psg.Cancel()],
+        [psg.OK(bind_return_key=True), psg.Cancel()],
     ]
 
     event, values = psg.Window('MGEV toolset - select input file and result path', layout).read(close=True)
@@ -558,7 +560,11 @@ def xread(param, sheet, db):
     """
     Reading parameters from external excel file
     """
-    value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
+    try:
+        value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
+    except IndexError:
+        logging.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
+        exit()  # TODO enable jump to next scenario
     return value
 
 
