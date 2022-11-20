@@ -128,7 +128,7 @@ class InvestBlock:
     def accumulate_invest_results(self, scenario):  # TODO check whether CommoditySystems accumulate all commodity costs correctly
 
         self.e_sim = self.flow.sum()
-        self.e_yrl = self.e_sim / scenario.sim_prj_rat
+        self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration.years
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration.years, scenario.wacc)
 
@@ -465,7 +465,7 @@ class MobileCommodity:
         self.inflow = solph.Transformer(label=f'mc_{self.name}',
                                         inputs={self.parent.bus: solph.Flow(nominal_value=self.parent.chg_pwr,
                                                                             max=self.ph_data[
-                                                                                f'at_charger_{self.name}'],
+                                                                                f'at_charger_{self.name}'],  # TODO "AttributeError: 'MobileCommodity' object has no attribute 'ph_data'" - already solved for other input components
                                                                             variable_costs=run.eps_cost)},
                                         outputs={self.bus: solph.Flow()},
                                         conversion_factors={self.bus: self.parent.chg_eff})
@@ -693,10 +693,10 @@ class FixedDemand:
 
     def accumulate_results(self, scenario):
 
-        # No super function as StatSink is not an InvestBlock child (where accumulate_invest_results lives)
+        # No super function as FixedDemand is not an InvestBlock child (where accumulate_invest_results lives)
 
         self.e_sim = self.flow.sum()
-        self.e_yrl = self.e_sim / scenario.sim_prj_rat
+        self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration.years
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration.years, scenario.wacc)
 

@@ -202,7 +202,7 @@ class Scenario:
 
         self.figure = None  # placeholder for plotting
 
-        self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0  # todo pointers
+        self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_eta = None
 
@@ -242,13 +242,24 @@ class Scenario:
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
+        demand_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
+
         for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
-            self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
-                                             y=block.flow,  # TODO invert for sink components
-                                             mode='lines',
-                                             name=f"{block.name} Power",   # TODO print sizing in plot
-                                             line=dict(width=2, dash=None)),  # TODO introduce TUM colors
-                                  secondary_y=False)
+
+            if isinstance(block, demand_types):
+                self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
+                                                 y=block.flow * -1,
+                                                 mode='lines',
+                                                 name=f"{block.name} Power",  # TODO print sizing in plot
+                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                      secondary_y=False)
+            else:
+                self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
+                                                 y=block.flow,
+                                                 mode='lines',
+                                                 name=f"{block.name} Power",   # TODO print sizing in plot
+                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                      secondary_y=False)
 
             if isinstance(block, blocks.StationaryEnergyStorage):
                 self.figure.add_trace(go.Scatter(x=block.soc.index,  # .to_pydatetime(),
@@ -414,7 +425,7 @@ class SimulationRun:
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
         logger.define_logging(logfile=self.log_file_path)
-        logging.info('Global settings read - initializing scenarios')
+        logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios')
 
     def end_run(self):
 
