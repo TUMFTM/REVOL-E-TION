@@ -8,13 +8,15 @@ Department of Mobility Systems Engineering
 School of Engineering and Design  
 Technical University of Munich  
 philipp.rosner@tum.de  
-Created September 2nd, 2021
+September 2nd, 2021
 
 #### Contributors  
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
 Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022  
-Marc Alsina Planelles, B.Sc. - Master Thesis submitted 10/2022
+Marc Alsina Planelles, B.Sc. - Master's Thesis submitted 10/2022  
+Juan Forero Yacaman - Bachelor's Thesis ongoing  
+Hannes Henglein, B.Sc. - Master's Thesis ongoing
 
 ## Detailed Description  
 This is a toolset to simulate electric vehicles operating in minigrids for rural electrification in emerging economies such as sub-saharan
