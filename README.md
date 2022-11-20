@@ -21,6 +21,18 @@ This is a toolset to simulate electric vehicles operating in minigrids for rural
 Africa and optimize component sizes to show least-cost and/or least-emission options. It models a stand-alone minigrid using graph-based
 representation, generates a pyomo model and hands it to a solver. Results are summarized in the
 
+![System diagram](./images/system_diagram.png)
+
+#### Definitions
+| Term      | Description |
+|-----------|-------------|
+| Run       | Definition  |
+| Scenario  | Definition  |
+| Horizon   | Def         |
+| Block     |             |
+| Component |             |
+
+
 #### Input data
 enter description here
 
@@ -32,8 +44,9 @@ This tool was designed to run under Windows 10. While portability was built in, 
 
 #### Environment
 The tool was developed using Python 3.10.6, which is recommended to use with a clean virtual environment to start with.
-All required packages are listed in the ```.requirements``` file and can be installed by entering ```pip install -r
-_requirements``` into a terminal for the correct environment.
+All required packages are listed in ```requirements.txt``` and can be installed by entering  
+```pip install -r requirements.txt```  
+into a terminal for the correct environment.
 
 #### MILP Solver
 The toolset is distributed with the open-source CBC solver for mixed integer linear programming (MILP) problems by 

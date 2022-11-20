@@ -30,14 +30,14 @@ import pylightxl as xl
 import PySimpleGUI as psg
 import time
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from itertools import repeat
 from oemof.tools import logger
 from pathlib import Path
 from plotly.subplots import make_subplots
 
-import system_blocks as blocks
+import blocks
 import tum_colors as col
 
 
@@ -53,19 +53,20 @@ class PredictionHorizon:
         self.index = index
 
         # Time and data slicing --------------------------------
-        self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc all start times
+        self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc both start times
         self.ch_endtime = self.starttime + scenario.ch_len
-        self.ph_endtime = self.starttime + scenario.ph_len
+        self.ph_endtime = self.starttime + scenario.ph_len  # TODO make time values timezone aware
         self.timestep = scenario.sim_timestep
 
         self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.sim_timestep).delete(-1)
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
 
-        for component in [component for component in scenario.component_sets if hasattr(component, 'data')]:
-            component.ph_data = component.data.loc(component.data['time'].isin(self.ph_dti)).reset_index(drop=True)
+        for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
+            # block.ph_data = block.data.loc[block.data.index.isin(self.ph_dti)]#.reset_index(drop=True)
+            block.ph_data = block.data[self.starttime:self.ph_endtime][:-1]  # todo fix workaround, prefer above
 
-        for component_set in scenario.component_sets:
-            component_set.update_input_components(scenario, self)  # (re)define solph components that need input slices
+        for block in scenario.blocks:
+            block.update_input_components(scenario)  # (re)define solph components that need input slices
 
         self.results = None
         self.meta_results = None
@@ -74,10 +75,8 @@ class PredictionHorizon:
 
         self.es = solph.EnergySystem(timeindex=self.ph_dti)  # initialize energy system model instance
 
-
-
-        for solph_component in scenario.solph_components:
-            self.es.add(solph_component)  # add components to this horizon's energy system
+        for component in scenario.components:
+            self.es.add(component)  # add components to this horizon's energy system
 
         self.model = solph.Model(self.es)  # Build the mathematical linear optimization model with pyomo
 
@@ -87,7 +86,7 @@ class PredictionHorizon:
             elif scenario.strategy == 'rh':
                 logging.warning('Model file dump not implemented for RH operating strategy - no file created')
 
-    def get_results(self, scenario, horizon, run):
+    def get_results(self, scenario, run):
         """
         Get result data slice for current CH from results and save in result dataframes for later analysis
         Get (possibly optimized) component sizes from results to handle outputs more easily
@@ -99,21 +98,22 @@ class PredictionHorizon:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
-        for component_set in scenario.component_sets:
+        storage_types = (blocks.MobileCommodity, blocks.StationaryEnergyStorage)
+        source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
 
-            if component_set.opt:
-                component_set.size = self.results[(component_set.src, component_set.bus)]['scalars']['invest']
-                # TODO check whether this definition fits all component sets
+        for block in scenario.blocks:
+            if isinstance(block, storage_types) and block.opt:  # TODO will this work for MobileCommodity?
+                block.size = self.results[(block.ess, None)]["scalars"]["invest"]
+            elif isinstance(block, source_types) and block.opt:
+                block.size = self.results[(block.src, block.bus)]['scalars']['invest']
+            block.get_ch_results(self, scenario)
 
-            component_set.get_ch_results(self, horizon, scenario)
-
-    def run_optimization(self, scenario):
+    def run_optimization(self, scenario, run):
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
         except KeyError:  # TODO raise own or find proper exception
             logging.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.feasible = False
-        finally:
             scenario.handle_error()
 
 
@@ -134,6 +134,7 @@ class Scenario:
         self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
         self.prj_duration = relativedelta(years=xread('prj_duration', self.name, run.input_xdb))
         self.prj_endtime = self.prj_starttime + self.prj_duration
+        self.prj_duration_days = (self.prj_endtime.date() - self.prj_starttime.date()).days
 
         self.sim_starttime = self.prj_starttime  # simulation timeframe is at beginning of project timeframe
         self.sim_timestep = xread('sim_timestep', self.name, run.input_xdb)
@@ -142,13 +143,14 @@ class Scenario:
         self.sim_dti = pd.date_range(start=self.sim_starttime, end=self.sim_endtime, freq=self.sim_timestep).delete(-1)
 
         self.sim_yr_rat = self.sim_duration.days / 365.25
-        # self.sim_prj_rat = self.sim_duration / self.prj_duration  # TODO convert to datetime timedeltas to be divisible
-
+        self.sim_prj_rat = self.sim_duration.days / self.prj_duration_days
         self.wacc = xread('wacc', self.name, run.input_xdb)
 
         self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
                                                             f'{run.scenarios_file_name}_'
                                                             f'{self.name}.html')  # todo consistent result file naming (log, excel, html, lp)
+
+
 
         # Operational strategy --------------------------------
 
@@ -157,7 +159,7 @@ class Scenario:
 
         if self.strategy == 'rh':
             self.ph_len = relativedelta(hours=xread('rh_ph', self.name, run.input_xdb))
-            self.ch_len = relativedelta(days=xread('rh_ch', self.name, run.input_xdb))
+            self.ch_len = relativedelta(hours=xread('rh_ch', self.name, run.input_xdb))
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
             self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration.hours / self.ch_len.hours)  # number of timeslices to run
@@ -166,125 +168,67 @@ class Scenario:
             self.ch_len = self.sim_duration
             self.horizon_num = 1
 
-        # Creation of static core energy system components --------------------------------
+        # Energy System Blocks --------------------------------
 
-        """
-        dc_bus              ac_bus
-          |                   |
-          |---dc_ac---------->|
-          |                   |
-          |<----------ac_dc---|
-        """
+        self.blocks = []
+        self.components = []
+        self.blocks_enable = dict(dem=(xread('dem_enable', self.name, run.input_xdb) == 'True'),
+                                  wind=(xread('wind_enable', self.name, run.input_xdb) == 'True'),
+                                  pv=(xread('pv_enable', self.name, run.input_xdb) == 'True'),
+                                  gen=(xread('gen_enable', self.name, run.input_xdb) == 'True'),
+                                  ess=(xread('ess_enable', self.name, run.input_xdb) == 'True'),
+                                  bev=(xread('bev_enable', self.name, run.input_xdb) == 'True'),
+                                  brs=(xread('brs_enable', self.name, run.input_xdb) == 'True'))
 
-        self.solph_components = []
+        self.core = blocks.SystemCore('core', self, run)
 
-        self.ac_bus = solph.Bus(label='ac_bus')
-        self.solph_components.append(self.ac_bus)
-
-        self.dc_bus = solph.Bus(label='dc_bus')
-        self.solph_components.append(self.dc_bus)
-
-        self.ac_dc = solph.Transformer(label='ac_dc',
-                                       inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
-                                       outputs={self.dc_bus: solph.Flow()},
-                                       conversion_factors={self.dc_bus: xread('ac_dc_eff', self.name, run.input_xdb)})
-        self.solph_components.append(self.ac_dc)
-
-        self.dc_ac = solph.Transformer(label='dc_ac',
-                                       inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost)},
-                                       outputs={self.ac_bus: solph.Flow()},
-                                       conversion_factors={self.ac_bus: xread('dc_ac_eff', self.name, run.input_xdb)})
-        self.solph_components.append(self.dc_ac)
-
-        # Other Component Sets --------------------------------
-
-        self.components_enable = dict(dem=(xread('dem_enable', self.name, run.input_xdb) == 'True'),
-                                      wind=(xread('wind_enable', self.name, run.input_xdb) == 'True'),
-                                      pv=(xread('pv_enable', self.name, run.input_xdb) == 'True'),
-                                      gen=(xread('gen_enable', self.name, run.input_xdb) == 'True'),
-                                      ess=(xread('ess_enable', self.name, run.input_xdb) == 'True'),
-                                      bev=(xread('bev_enable', self.name, run.input_xdb) == 'True'))
-
-        self.component_sets = []  # Todo rename to blocks
-
-        for component_name in [name for name, enable in self.components_enable.items() if enable]:
-            if component_name == 'dem':
-                dem = blocks.StatSink('dem', self, run)
-                self.component_sets.append(dem)
-            elif component_name == 'wind':
-                wind = blocks.WindSource('wind', self, run)
-                self.component_sets.append(wind)
-            elif component_name == 'pv':
-                pv = blocks.PVSource('pv', self, run)
-                self.component_sets.append(pv)
-            elif component_name == 'gen':
-                gen = blocks.ControllableSource('gen', self, run)
-                self.component_sets.append(gen)
-            elif component_name == 'bev':
-                bev = blocks.CommoditySystem('bev', self, run)
-                self.component_sets.append(bev)
-            elif component_name == 'mb':
-                baas = blocks.CommoditySystem('baas', self, run)
-                self.component_sets.append(baas)
-
-        self.figure = None  # figure placeholder for result plotting
+        for name in [name for name, enable in self.blocks_enable.items() if enable]:
+            if name == 'dem':
+                self.dem = blocks.FixedDemand('dem', self, run)
+            elif name == 'wind':
+                self.wind = blocks.WindSource('wind', self, run)
+            elif name == 'pv':
+                self.pv = blocks.PVSource('pv', self, run)
+            elif name == 'gen':
+                self.gen = blocks.ControllableSource('gen', self, run)
+            elif name == 'ess':
+                self.ess = blocks.StationaryEnergyStorage('ess', self, run)
+            elif name == 'bev':
+                self.bev = blocks.CommoditySystem('bev', self, run)
+            elif name == 'brs':
+                self.brs = blocks.CommoditySystem('brs', self, run)
 
         # Result variables --------------------------------
 
-        self.e_sim_del = 0
-        self.e_yrl_del = 0
-        self.e_prj_del = 0
-        self.e_dis_del = 0
+        self.figure = None  # placeholder for plotting
 
-        self.e_sim_pro = 0
-        self.e_yrl_pro = 0
-        self.e_prj_pro = 0
-        self.e_dis_pro = 0
-
+        self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0  # todo pointers
+        self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_eta = None
 
-        self.capex_init = 0
-        self.capex_prj = 0
-        self.capex_dis = 0
-        self.capex_ann = 0
-
-        self.mntex_yrl = 0
-        self.mntex_prj = 0
-        self.mntex_dis = 0
-        self.mntex_ann = 0
-
-        self.opex_sim = 0
-        self.opex_yrl = 0
-        self.opex_prj = 0
-        self.opex_dis = 0
-        self.opex_ann = 0
-
-        self.totex_sim = 0
-        self.totex_prj = 0
-        self.totex_dis = 0
-        self.totex_ann = 0
-
-        self.lcoe = None
-        self.lcoe_dis = None
+        self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
+        self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
+        self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
+        self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
+        self.lcoe = self.lcoe_dis = None
 
     def accumulate_results(self):
 
-        for component in self.component_sets:
-            component.accumulate_results(self)
+        for block in self.blocks:
+            block.accumulate_results(self)
 
         #  TODO find a metric for curtailed energy and calculate
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
         except ZeroDivisionError:
-            self.e_eta = -1
+            logging.warning("Efficiency calculation: division by zero")
 
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError:
-            self.lcoe = -1
-            self.lcoe_dis = -1
+            logging.warning("LCOE calculation: division by zero")
 
     def end_timing(self):
 
@@ -298,28 +242,28 @@ class Scenario:
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
-        for component_set in self.component_sets:
-            self.figure.add_trace(go.Scatter(x=component_set.flow.index.to_pydatetime(),
-                                             y=component_set.flow,  # TODO invert for sink components
+        for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
+            self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
+                                             y=block.flow,  # TODO invert for sink components
                                              mode='lines',
-                                             name=component_set.__name__,   # TODO print sizing in plot
+                                             name=f"{block.name} Power",   # TODO print sizing in plot
                                              line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                   secondary_y=False)
 
-            if isinstance(component_set, blocks.StationaryEnergyStorage):
-                self.figure.add_trace(go.Scatter(x=component_set.soc.index.to_pydatetime(),
-                                                 y=component_set.soc,
+            if isinstance(block, blocks.StationaryEnergyStorage):
+                self.figure.add_trace(go.Scatter(x=block.soc.index,  # .to_pydatetime(),
+                                                 y=block.soc,
                                                  mode='lines',
-                                                 name=component_set.__name__,  # TODO print sizing in plot
+                                                 name=f"{block.name} SOC",  # TODO print sizing in plot
                                                  line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                       secondary_y=True)
 
-            if isinstance(component_set, blocks.CommoditySystem):
-                for commodity in component_set.commodities:
+            if isinstance(block, blocks.CommoditySystem):
+                for commodity in block.commodities:
                     self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
                                                      y=commodity.soc,
                                                      mode='lines',
-                                                     name=commodity.__name__,    # TODO print sizing in plot, denote whether single or combined value
+                                                     name=f"{commodity.name} SOC",    # TODO print sizing in plot, denote whether single or combined value
                                                      line=dict(width=2, dash=None)),  # TODO introduce TUM colors
                                           secondary_y=True)
 
@@ -343,7 +287,7 @@ class Scenario:
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Sheet: {self.name}'
                                             f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
-    def handle_error(self, run):
+    def handle_error(self):
 
         """
         Dump error message in result excel file if optimization did not succeed
@@ -387,7 +331,7 @@ class Scenario:
     def print_results(self):
         print('#####Results#####')
         print(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
-        print(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 3))} USct/kWh')
+        print(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
 
     def save_plots(self):
@@ -412,18 +356,17 @@ class Scenario:
         run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
 
         header_row = 5
-        for index, component_set in enumerate(self.component_sets):  # TODO scenario integration
+        excel_types = (int, float, str)
+        excel_objects = [run, self] + self.blocks
+
+        for index, obj in enumerate(excel_objects):
             col_id = 1 + index * 4
             row_id = header_row + 1
-            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=component_set.__name__)
-            component_set_dict = component_set.__dict__
-            component_set_dict.pop('__name__')
-            for key in component_set_dict.keys():
+            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=f"{obj.name} data")
+            for key in [key for key, value in obj.__dict__.items() if isinstance(value, excel_types)]:
                 run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=key)
-                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=component_set_dict[key])
+                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=obj.__dict__[key])
                 row_id += 1
-
-        xl.writexl(db=run.result_xdb, fn=run.result_file_path)  # TODO check to not write for every scenario, just once!
 
     def show_plots(self):
         self.figure.show()
@@ -432,6 +375,8 @@ class Scenario:
 class SimulationRun:
 
     def __init__(self):
+
+        self.name = 'run'
 
         self.cwd = os.getcwd()
         self.scenarios_file_path, self.result_path = input_gui(self.cwd)
@@ -472,9 +417,14 @@ class SimulationRun:
         logging.info('Global settings read - initializing scenarios')
 
     def end_run(self):
+
+        if self.save_results:
+            xl.writexl(db=self.result_xdb, fn=self.result_file_path)
+            logging.info("Excel output file created")
+
         self.runtime_end = time.time()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
-        logging.info(f'Total runtime {str(self.runtime_len)} s')
+        logging.info(f'Total runtime: {str(self.runtime_len)} s')
 
 
 ###############################################################################
@@ -536,8 +486,8 @@ def simulate_scenario(name: str, run: SimulationRun):
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
-        horizon.run_optimization(scenario)
-        horizon.get_results(scenario, horizon, run)
+        horizon.run_optimization(scenario, run)
+        horizon.get_results(scenario, run)
 
     scenario.end_timing()
 
