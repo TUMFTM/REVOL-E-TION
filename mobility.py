@@ -89,7 +89,7 @@ ind_array = np.zeros([number_timesteps, 3*car_number]) # Data for individual mob
 #agr_array = np.zeros([number_timesteps, 4]) # Data for aggregated mobility
 #dumb_array = np.zeros([number_timesteps, 1]) # Data for dumb e-mobility (charge full power when connected)
 
-k=0
+k = 0
 cn = car_number
 
 while k < cn:

@@ -94,7 +94,7 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if run.print_results:  # TODO does this need an individual trigger?
+        if run.print_results:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
@@ -102,19 +102,20 @@ class PredictionHorizon:
         source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
 
         for block in scenario.blocks:
-            if isinstance(block, storage_types) and block.opt:  # TODO will this work for MobileCommodity?
+            if isinstance(block, blocks.StationaryEnergyStorage) and block.opt:
                 block.size = self.results[(block.ess, None)]["scalars"]["invest"]
             elif isinstance(block, source_types) and block.opt:
                 block.size = self.results[(block.src, block.bus)]['scalars']['invest']
+            elif isinstance(block, blocks.CommoditySystem) and block.opt:
+                pass  # TODO get sizes for optimized commodities
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
-        except KeyError:  # TODO raise own or find proper exception
+        except UserWarning:
             logging.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.feasible = False
-            scenario.handle_error()
 
 
 class Scenario:
@@ -155,7 +156,7 @@ class Scenario:
         # Operational strategy --------------------------------
 
         self.strategy = xread('sim_os', self.name, run.input_xdb)
-        self.feasible = None  # trigger for infeasible conditions
+        self.feasible = True  # trigger for infeasible conditions
 
         if self.strategy == 'rh':
             self.ph_len = relativedelta(hours=xread('rh_ph', self.name, run.input_xdb))
@@ -425,7 +426,10 @@ class SimulationRun:
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
         logger.define_logging(logfile=self.log_file_path)
-        logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios')
+        if self.parallel:
+            logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
+        else:
+            logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
 
     def end_run(self):
 
@@ -498,29 +502,35 @@ def simulate_scenario(name: str, run: SimulationRun):
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
-        horizon.get_results(scenario, run)
+        if scenario.feasible:
+            horizon.get_results(scenario, run)
+        else:
+            scenario.handle_error()
+            break
 
     scenario.end_timing()
 
-    if run.save_results or run.print_results:
-        scenario.accumulate_results()
-        if run.save_results:
-            scenario.save_results(run)
-        if run.print_results:
-            scenario.print_results()
+    if scenario.feasible:
+        if run.save_results or run.print_results:
+            scenario.accumulate_results()
+            if run.save_results:
+                scenario.save_results(run)
+            if run.print_results:
+                scenario.print_results()
 
-    if run.save_plots or run.show_plots:
-        scenario.generate_plots(run)
-        if run.save_plots:
-            scenario.save_plots()
-        if run.show_plots:
-            scenario.show_plots()
+        if run.save_plots or run.show_plots:
+            scenario.generate_plots(run)
+            if run.save_plots:
+                scenario.save_plots()
+            if run.show_plots:
+                scenario.show_plots()
 
 
 def xread(param, sheet, db):
     """
     Reading parameters from external excel file
     """
+    value = None
     try:
         value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     except IndexError:

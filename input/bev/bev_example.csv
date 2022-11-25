@@ -1,4 +1,4 @@
-;min_charge_1;sink_data_1;at_charger_1;min_charge_2;sink_data_2;at_charger_2;min_charge_3;sink_data_3;at_charger_3;min_charge_4;sink_data_4;at_charger_4;min_charge_5;sink_data_5;at_charger_5;min_charge_6;sink_data_6;at_charger_6;min_charge_7;sink_data_7;at_charger_7;min_charge_8;sink_data_8;at_charger_8;min_charge_9;sink_data_9;at_charger_9;min_charge_10;sink_data_10;at_charger_10
+;bev0_minsoc;bev0_consumption;bev0_atbase;min_charge_2;sink_data_2;at_charger_2;min_charge_3;sink_data_3;at_charger_3;min_charge_4;sink_data_4;at_charger_4;min_charge_5;sink_data_5;at_charger_5;min_charge_6;sink_data_6;at_charger_6;min_charge_7;sink_data_7;at_charger_7;min_charge_8;sink_data_8;at_charger_8;min_charge_9;sink_data_9;at_charger_9;min_charge_10;sink_data_10;at_charger_10
 0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0
 1;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0
 2;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0;0.0;0.0;1.0

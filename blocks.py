@@ -83,7 +83,7 @@ class InvestBlock:
 
         self.name = name
 
-        self.opt = xread(f'{self.name}_opt', scenario.name, run.input_xdb)
+        self.opt = (xread(f'{self.name}_opt', scenario.name, run.input_xdb) == 'True')
 
         if self.opt and scenario.strategy != 'go':
             logging.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
@@ -303,7 +303,6 @@ class CommoditySystem(InvestBlock):
         # TODO get system level flows, not only individual ones
 
     def update_input_components(self, *_):
-
         for commodity in self.commodities:
             commodity.update_input_components()
 
@@ -439,6 +438,7 @@ class MobileCommodity:
         self.name = name
         self.parent = parent
         self.data = self.parent.data
+        self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
         self.ph_init_soc = self.init_soc  # set first PH's initial state variables (only SOC)
@@ -510,7 +510,7 @@ class MobileCommodity:
                                                        outflow_conversion_factor=1,
                                                        # efficiency already modeled in transformers
                                                        max_storage_level=1,
-                                                       nominal_storage_capacity=self.parent.size, )  # TODO does size exist?
+                                                       nominal_storage_capacity=self.parent.size)
         scenario.components.append(self.ess)
 
         self.snk = solph.Sink(label=f'{self.name}_snk',
@@ -545,15 +545,15 @@ class MobileCommodity:
         self.inflow.inputs[self.parent.bus].max = self.ph_data[f'{self.name}_atbase']
         self.outflow.inputs[self.bus].max = self.ph_data[f'{self.name}_atbase']
 
-        # define consumption data for sink (only enabled when detached from base
+        # define consumption data for sink (only enabled when detached from base)
         self.snk.inputs[self.bus].fix = self.ph_data[f'{self.name}_consumption']
 
-        # set initial storage level for coming prediction horizon
+        # set initial and minimum storage levels for coming prediction horizon
         self.ess.initial_storage_level = self.ph_init_soc
-        self.ess.min_storage_level = self.ph_data[f'{self.name}_minsoc'],
+        self.ess.min_storage_level = self.ph_data[f'{self.name}_minsoc']
 
 
-class PVSource(InvestBlock):  # TODO combine to RenewableSource?
+class PVSource(InvestBlock):
 
     def __init__(self, name, scenario, run):
 
