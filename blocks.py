@@ -707,7 +707,7 @@ class FixedDemand:
         self.snk.inputs[scenario.core.ac_bus].fix = self.ph_data['Power']
 
 
-class WindSource(InvestBlock):  # TODO combine to RenewableSource?
+class WindSource(InvestBlock):
 
     def __init__(self, name, scenario, run):
 
