@@ -29,6 +29,8 @@ import pprint
 import pylightxl as xl
 import PySimpleGUI as psg
 import time
+import warnings
+warnings.filterwarnings("error")
 
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -98,7 +100,6 @@ class PredictionHorizon:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
-        storage_types = (blocks.MobileCommodity, blocks.StationaryEnergyStorage)
         source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
 
         for block in scenario.blocks:
@@ -108,14 +109,15 @@ class PredictionHorizon:
                 block.size = self.results[(block.src, block.bus)]['scalars']['invest']
             elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 pass  # TODO get sizes for optimized commodities
+
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
-        except UserWarning:
+        except UserWarning as exc:
             logging.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
-            scenario.feasible = False
+            scenario.exception = str(exc)
 
 
 class Scenario:
@@ -126,7 +128,7 @@ class Scenario:
 
         # General Information --------------------------------
 
-        self.runtime_start = time.time()  #TODO use perfcounter
+        self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
 
@@ -156,7 +158,7 @@ class Scenario:
         # Operational strategy --------------------------------
 
         self.strategy = xread('sim_os', self.name, run.input_xdb)
-        self.feasible = True  # trigger for infeasible conditions
+        self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
             self.ph_len = relativedelta(hours=xread('rh_ph', self.name, run.input_xdb))
@@ -232,10 +234,7 @@ class Scenario:
             logging.warning("LCOE calculation: division by zero")
 
     def end_timing(self):
-
-        self.feasible = True  # model optimization or simulation seems to have been successful
-
-        self.runtime_end = time.time()
+        self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
         logging.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len}')
 
@@ -267,7 +266,8 @@ class Scenario:
                                                  y=block.soc,
                                                  mode='lines',
                                                  name=f"{block.name} SOC",  # TODO print sizing in plot
-                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                                 line=dict(width=2, dash=None),
+                                                 visible=None),  # TODO introduce TUM colors
                                       secondary_y=True)
 
             if isinstance(block, blocks.CommoditySystem):
@@ -276,7 +276,8 @@ class Scenario:
                                                      y=commodity.soc,
                                                      mode='lines',
                                                      name=f"{commodity.name} SOC",    # TODO print sizing in plot, denote whether single or combined value
-                                                     line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                                     line=dict(width=2, dash=None),
+                                                     visible=None),  # TODO introduce TUM colors
                                           secondary_y=True)
 
         self.figure.update_layout(plot_bgcolor=col.tum_white)
@@ -299,52 +300,31 @@ class Scenario:
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Sheet: {self.name}'
                                             f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
-    def handle_error(self):
+    def print_results(self):
+        print('#################')
+        logging.info(f'Results for Scenario {self.name}:')
+        for block in [block for block in self.blocks if hasattr(block, 'opt') and block.opt]:
+            logging.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
+        logging.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
+        logging.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
+        print('#################')
 
+    def save_exception(self, run):
         """
         Dump error message in result excel file if optimization did not succeed
         """
-
         if run.save_results:
-            # logging.warning("Error occurred, save scenario data")
-            #
-            # results_filepath = os.path.join(sim['resultpath'], 'results_' + os.path.basename(sim['settings_file']))
-            #
-            # if sim['run'] == 0:
-            #     db = xl.Database()  # create a blank db
-            # else:
-            #     db = xl.readxl(fn=results_filepath)
-            #
-            # # add a blank worksheet to the db
-            # db.add_ws(ws=sim['sheet'])
-            #
-            # # header of ws
-            # if sim['op_strat'] == 'go':
-            #     ws_title = 'Global Optimum Results (' + sim['settings_file'] + ' - Sheet: ' + sim['sheet'] + ')'
-            # if sim['op_strat'] == 'rh':
-            #     ws_title = 'Rolling Horizon Results (' + sim['settings_file'] + ' - Sheet: ' + sim[
-            #         'sheet'] + ', ' + str(
-            #         sim['rh_ph']) + 'h, CH: ' + str(sim['rh_ch']) + 'h)'
-            #
-            # db.ws(ws=sim['sheet']).update_index(row=1, col=1, val=ws_title)
-            #
-            # # add sim name
-            # db.ws(ws=sim['sheet']).update_index(row=3, col=1, val='Logfile:')
-            # db.ws(ws=sim['sheet']).update_index(row=3, col=2, val=sim['name'])
-            #
-            # # write error message
-            # db.ws(ws=sim['sheet']).update_index(row=5, col=1,
-            #                                     val='ERROR - Optimization could NOT succeed for these simulation settings')
-            #
-            # # write out the db
-            # xl.writexl(db=db, fn=results_filepath)
-            pass  # TODO write to excel and continue with next in scenario for loop
+            run.result_xdb.add_ws(ws=self.name)
+            ws_title = f'Results ({run.result_path} - Sheet: {self.name})'
+            run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
+            run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
+            run.result_xdb.ws(ws=self.name).update_index(row=2, col=2, val=run.runtimestamp)
+            run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
+            run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
 
-    def print_results(self):
-        print('#####Results#####')
-        print(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
-        print(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
-        print('#################')
+            run.result_xdb.ws(ws=self.name).update_index(row=4, col=1, val='Optimization unsuccessful!')
+            run.result_xdb.ws(ws=self.name).update_index(row=5, col=1, val='Message')
+            run.result_xdb.ws(ws=self.name).update_index(row=5, col=2, val=self.exception)
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
@@ -495,35 +475,31 @@ def input_gui(directory):
         exit()
 
 
-def simulate_scenario(name: str, run: SimulationRun):
+def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function for starpool - multiprocessing
 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
-        if scenario.feasible:
-            horizon.get_results(scenario, run)
-        else:
-            scenario.handle_error()
+        if scenario.exception:
+            scenario.save_exception(run)
             break
-
+        else:
+            horizon.get_results(scenario, run)
+            if run.save_results or run.print_results:
+                scenario.accumulate_results()
+                if run.save_results:
+                    scenario.save_results(run)
+                if run.print_results:
+                    scenario.print_results()
+            if run.save_plots or run.show_plots:
+                scenario.generate_plots(run)
+                if run.save_plots:
+                    scenario.save_plots()
+                if run.show_plots:
+                    scenario.show_plots()
     scenario.end_timing()
-
-    if scenario.feasible:
-        if run.save_results or run.print_results:
-            scenario.accumulate_results()
-            if run.save_results:
-                scenario.save_results(run)
-            if run.print_results:
-                scenario.print_results()
-
-        if run.save_plots or run.show_plots:
-            scenario.generate_plots(run)
-            if run.save_plots:
-                scenario.save_plots()
-            if run.show_plots:
-                scenario.show_plots()
 
 
 def xread(param, sheet, db):
