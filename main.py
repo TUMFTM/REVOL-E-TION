@@ -54,6 +54,8 @@ class PredictionHorizon:
 
         self.index = index
 
+        logging.info(f'Horizon {index+1} of {scenario.horizon_num} in scenario \"{scenario.name}\" initialized')
+
         # Time and data slicing --------------------------------
         self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc both start times
         self.ch_endtime = self.starttime + scenario.ch_len
@@ -113,6 +115,7 @@ class PredictionHorizon:
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
+        logging.info(f'Optimization for horizon {self.index+1} initialized')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
         except UserWarning as exc:
@@ -236,7 +239,7 @@ class Scenario:
     def end_timing(self):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        logging.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len}')
+        logging.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
 
     def generate_plots(self, run):
 
@@ -338,8 +341,6 @@ class Scenario:
         elif self.strategy == 'rh':
             ws_title = f'Rolling Horizon Results ({run.result_path} - Sheet: {self.name} - PH: {self.ph_len}' \
                        f' - CH: {self.ch_len})'
-        else:
-            ws_title = None
 
         run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
         run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
@@ -349,15 +350,23 @@ class Scenario:
 
         header_row = 5
         excel_types = (int, float, str)
-        excel_objects = [run, self] + self.blocks
+        excel_blocks = [run, self] + self.blocks
 
-        for index, obj in enumerate(excel_objects):
+        for index, obj in enumerate(excel_blocks):
             col_id = 1 + index * 4
             row_id = header_row + 1
-            run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=f"{obj.name} data")
-            for key in [key for key, value in obj.__dict__.items() if isinstance(value, excel_types)]:
-                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=key)
-                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=obj.__dict__[key])
+
+            if isinstance(obj, Scenario):
+                run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val='scenario data')
+            else:
+                run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=f'{obj.name} data')
+
+            for item in [item for item in obj.__dict__.items() if isinstance(item[1], excel_types)]:
+                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=item[0])
+                if isinstance(item[1], int):
+                    run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=float(item[1]))
+                else:
+                    run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=item[1])
                 row_id += 1
 
     def show_plots(self):
@@ -382,7 +391,7 @@ class SimulationRun:
             print('Excel File does not include global settings - exiting')
             exit()
 
-        self.runtime_start = time.time()  # TODO better timing method
+        self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
         self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
@@ -417,9 +426,9 @@ class SimulationRun:
             xl.writexl(db=self.result_xdb, fn=self.result_file_path)
             logging.info("Excel output file created")
 
-        self.runtime_end = time.time()
+        self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
-        logging.info(f'Total runtime: {str(self.runtime_len)} s')
+        logging.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
 
 ###############################################################################
@@ -482,6 +491,8 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
+        scenario.end_timing()
+
         if scenario.exception:
             scenario.save_exception(run)
             break
@@ -499,7 +510,7 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
                     scenario.save_plots()
                 if run.show_plots:
                     scenario.show_plots()
-    scenario.end_timing()
+
 
 
 def xread(param, sheet, db):
@@ -531,11 +542,4 @@ if __name__ == '__main__':
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run)
 
-<<<<<<< HEAD
-    except ValueError:
-        logging.warning('Model optimization infeasible - continuing on next worksheet')
-        post.save_results_err(sim)
-        continue
-=======
     run.end_run()
->>>>>>> object_orientation_multiprocessing
