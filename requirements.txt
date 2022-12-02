@@ -1,9 +1,24 @@
+<<<<<<< HEAD
 oemof.solph>=0.4.4
 oemof.tools
 pandas
 plotly
+=======
+datetime
+multiprocessing
+numpy
+oemof.solph>=0.4.4
+oemof.tools
+openpyxl
+pandas
+plotly
+pvlib
+>>>>>>> object_orientation_multiprocessing
 pylightxl
 pyomo
 pysimplegui
 python-dateutil
+<<<<<<< HEAD
 
+=======
+>>>>>>> object_orientation_multiprocessing

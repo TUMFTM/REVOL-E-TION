@@ -1,10 +1,15 @@
-results/*
-lp_models/*
-scenarios/*
-logfiles/*
-cbc.exe
 .idea/*
-settings/*
+results/*
+input/_excel/*
+!input/_excel/example.xlsx
+input/bev/*
+!input/bev/bev_example.csv
+input/dem/*
+!input/dem/dem_example.csv
+input/pv/*
+!input/pv/pv_example.csv
+input/wind/*
+!input/wind/wind_example.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

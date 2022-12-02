@@ -36,7 +36,7 @@ def discount(value, deltat, discrate):
 
 def acc_discount(value, ts, discrate):
     """
-    This function calculates the accumulated present cost of a yearly cost in the future (from now to ls years ahead)
+    This function calculates the accumulated present cost of a yearly cost in the future (from now to ts years ahead)
     """
     apc = 0
     for year in range(0, ts):
