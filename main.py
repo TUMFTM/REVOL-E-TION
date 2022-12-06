@@ -36,7 +36,6 @@ import warnings
 warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
 
 from datetime import datetime, timedelta
-#from dateutil.relativedelta import relativedelta
 from itertools import repeat
 from pathlib import Path
 from plotly.subplots import make_subplots
@@ -61,7 +60,7 @@ class PredictionHorizon:
         # Time and data slicing --------------------------------
         self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc both start times
         self.ch_endtime = self.starttime + scenario.ch_len
-        self.ph_endtime = self.starttime + scenario.ph_len  # TODO make time values timezone aware
+        self.ph_endtime = self.starttime + scenario.ph_len
         self.timestep = scenario.sim_timestep
 
         self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.sim_timestep).delete(-1)
@@ -157,9 +156,7 @@ class Scenario:
 
         self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
                                                             f'{run.scenarios_file_name}_'
-                                                            f'{self.name}.html')  # todo consistent result file naming (log, excel, html, lp)
-
-
+                                                            f'{self.name}.html')
 
         # Operational strategy --------------------------------
 
@@ -239,7 +236,7 @@ class Scenario:
         except ZeroDivisionError:
             run.logger.warning("LCOE calculation: division by zero")
 
-    def end_timing(self):
+    def end_timing(self, run):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
         run.logger.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
@@ -419,21 +416,28 @@ class SimulationRun:
         self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
+        formatter = logging.Formatter(logging.BASIC_FORMAT)
+
         if self.parallel:
             self.logger = multiprocessing.get_logger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+            self.log_stream_handler = logging.StreamHandler(sys.stdout)
+            self.log_stream_handler.setLevel(logging.WARNING)
+            self.log_stream_handler.setFormatter(formatter)
+            self.logger.addHandler(self.log_stream_handler)
             self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
         else:
             self.logger = logging.getLogger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            self.logger.addHandler(logging.StreamHandler(sys.stdout))
+            self.log_stream_handler = logging.StreamHandler(sys.stdout)
+            self.log_stream_handler.setLevel(logging.DEBUG)
+            self.log_stream_handler.setFormatter(formatter)
+            self.logger.addHandler(self.log_stream_handler)
             self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
 
         handler = logging.handlers.WatchedFileHandler(os.environ.get("LOGFILE", self.log_file_path))
-        formatter = logging.Formatter(logging.BASIC_FORMAT)
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
-
 
     def end_run(self):
 
@@ -525,7 +529,7 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
                 if run.show_plots:
                     scenario.show_plots()
 
-    scenario.end_timing()
+    scenario.end_timing(run)
 
 
 def xread(param, sheet, db):
