@@ -33,10 +33,10 @@ import pylightxl as xl
 import PySimpleGUI as psg
 import time
 import warnings
-warnings.filterwarnings("error")
+warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
 
 from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
+#from dateutil.relativedelta import relativedelta
 from itertools import repeat
 from pathlib import Path
 from plotly.subplots import make_subplots
@@ -140,13 +140,14 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
 
         self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
-        self.prj_duration = relativedelta(years=xread('prj_duration', self.name, run.input_xdb))
+        self.prj_duration_yrs = xread('prj_duration', self.name, run.input_xdb)
+        self.prj_duration = timedelta(days=self.prj_duration_yrs * 365)  # no leap years
         self.prj_endtime = self.prj_starttime + self.prj_duration
         self.prj_duration_days = (self.prj_endtime.date() - self.prj_starttime.date()).days
 
         self.sim_starttime = self.prj_starttime  # simulation timeframe is at beginning of project timeframe
         self.sim_timestep = xread('sim_timestep', self.name, run.input_xdb)
-        self.sim_duration = relativedelta(days=xread('sim_duration', self.name, run.input_xdb))
+        self.sim_duration = timedelta(days=xread('sim_duration', self.name, run.input_xdb))
         self.sim_endtime = self.sim_starttime + self.sim_duration
         self.sim_dti = pd.date_range(start=self.sim_starttime, end=self.sim_endtime, freq=self.sim_timestep).delete(-1)
 
@@ -166,11 +167,11 @@ class Scenario:
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len = relativedelta(hours=xread('rh_ph', self.name, run.input_xdb))
-            self.ch_len = relativedelta(hours=xread('rh_ch', self.name, run.input_xdb))
+            self.ph_len = timedelta(hours=xread('rh_ph', self.name, run.input_xdb))
+            self.ch_len = timedelta(hours=xread('rh_ch', self.name, run.input_xdb))
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
             self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
-            self.horizon_num = int(self.sim_duration.hours / self.ch_len.hours)  # number of timeslices to run
+            self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
         elif self.strategy == 'go':
             self.ph_len = self.sim_duration
             self.ch_len = self.sim_duration
@@ -343,6 +344,8 @@ class Scenario:
         elif self.strategy == 'rh':
             ws_title = f'Rolling Horizon Results ({run.result_path} - Sheet: {self.name} - PH: {self.ph_len}' \
                        f' - CH: {self.ch_len})'
+        else:
+            ws_title = f'Unknown Strategy Results ({run.result_path} - Sheet: {self.name})'
 
         run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
         run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
@@ -503,7 +506,6 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
-        scenario.end_timing()
 
         if scenario.exception:
             scenario.save_exception(run)
@@ -523,6 +525,7 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
                 if run.show_plots:
                     scenario.show_plots()
 
+    scenario.end_timing()
 
 
 def xread(param, sheet, db):
@@ -533,7 +536,7 @@ def xread(param, sheet, db):
     try:
         value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     except IndexError:
-        logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
+        run.logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
         exit()  # TODO enable jump to next scenario
     return value
 

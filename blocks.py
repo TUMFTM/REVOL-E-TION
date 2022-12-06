@@ -109,7 +109,7 @@ class InvestBlock:
 
         self.eq_pres_cost = eco.ann_recur(self.adj_capex,
                                           self.lifespan,
-                                          scenario.prj_duration.years,
+                                          scenario.prj_duration_yrs,
                                           scenario.wacc,
                                           self.cost_decr)
 
@@ -128,22 +128,22 @@ class InvestBlock:
 
         self.e_sim = self.flow.sum()
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
-        self.e_prj = self.e_yrl * scenario.prj_duration.years
-        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration.years, scenario.wacc)
+        self.e_prj = self.e_yrl * scenario.prj_duration_yrs
+        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
         self.capex_init = self.size * self.spec_capex
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
                                  self.lifespan,
-                                 scenario.prj_duration.years)
+                                 scenario.prj_duration_yrs)
         self.capex_dis = eco.pce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
                                  self.lifespan,
-                                 scenario.prj_duration.years,
+                                 scenario.prj_duration_yrs,
                                  scenario.wacc)
         self.capex_ann = eco.ann_recur(self.capex_init,
                                        self.lifespan,
-                                       scenario.prj_duration.years,
+                                       scenario.prj_duration_yrs,
                                        scenario.wacc,
                                        self.cost_decr)
         scenario.capex_init += self.capex_init
@@ -153,13 +153,13 @@ class InvestBlock:
 
         self.mntex_yrl = self.size * self.spec_mntex  # time-based maintenance
         self.mntex_sim = self.mntex_yrl * scenario.sim_yr_rat
-        self.mntex_prj = self.mntex_yrl * scenario.prj_duration.years
+        self.mntex_prj = self.mntex_yrl * scenario.prj_duration_yrs
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
-                                          scenario.prj_duration.years,
+                                          scenario.prj_duration_yrs,
                                           scenario.wacc)
         self.mntex_ann = eco.ann_recur(self.mntex_yrl,
                                        1,  # lifespan of 1 yr -> mntex happening yearly
-                                       scenario.prj_duration.years,
+                                       scenario.prj_duration_yrs,
                                        scenario.wacc,
                                        1)  # no cost decrease in mntex
         scenario.mntex_yrl += self.mntex_yrl
@@ -169,13 +169,13 @@ class InvestBlock:
 
         self.opex_sim = self.e_sim * self.spec_opex
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
-        self.opex_prj = self.opex_yrl * scenario.prj_duration.years
+        self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
         self.opex_dis = eco.acc_discount(self.opex_yrl,
-                                         scenario.prj_duration.years,
+                                         scenario.prj_duration_yrs,
                                          scenario.wacc)
         self.opex_ann = eco.ann_recur(self.opex_yrl,
                                       1,  # lifespan of 1 yr -> opex happening yearly
-                                      scenario.prj_duration.years,
+                                      scenario.prj_duration_yrs,
                                       scenario.wacc,
                                       1)  # no cost decrease in opex
         scenario.opex_sim += self.opex_sim
@@ -689,8 +689,8 @@ class FixedDemand:
 
         self.e_sim = self.flow.sum()
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
-        self.e_prj = self.e_yrl * scenario.prj_duration.years
-        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration.years, scenario.wacc)
+        self.e_prj = self.e_yrl * scenario.prj_duration_yrs
+        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
         scenario.e_sim_del += self.e_sim
         scenario.e_yrl_del += self.e_yrl
