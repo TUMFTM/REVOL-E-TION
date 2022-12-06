@@ -20,7 +20,10 @@ license:    GPLv3
 ###############################################################################
 
 import logging
+import logging.handlers
 import multiprocessing
+import sys
+
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -35,7 +38,6 @@ warnings.filterwarnings("error")
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from itertools import repeat
-from oemof.tools import logger
 from pathlib import Path
 from plotly.subplots import make_subplots
 
@@ -54,7 +56,7 @@ class PredictionHorizon:
 
         self.index = index
 
-        logging.info(f'Horizon {index+1} of {scenario.horizon_num} in scenario \"{scenario.name}\" initialized')
+        run.logger.info(f'Horizon {index+1} of {scenario.horizon_num} in scenario \"{scenario.name}\" initialized')
 
         # Time and data slicing --------------------------------
         self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc both start times
@@ -88,7 +90,7 @@ class PredictionHorizon:
             if scenario.strategy == 'go':
                 self.model.write(run.dump_file_path, io_options={'symbolic_solver_labels': True})
             elif scenario.strategy == 'rh':
-                logging.warning('Model file dump not implemented for RH operating strategy - no file created')
+                run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
     def get_results(self, scenario, run):
         """
@@ -115,11 +117,11 @@ class PredictionHorizon:
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
-        logging.info(f'Optimization for horizon {self.index+1} initialized')
+        run.logger.info(f'Optimization for horizon {self.index+1} initialized')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
         except UserWarning as exc:
-            logging.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
+            run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
 
@@ -135,7 +137,7 @@ class Scenario:
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
 
-        logging.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
+        run.logger.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
 
         self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
         self.prj_duration = relativedelta(years=xread('prj_duration', self.name, run.input_xdb))
@@ -228,18 +230,18 @@ class Scenario:
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
         except ZeroDivisionError:
-            logging.warning("Efficiency calculation: division by zero")
+            run.logger.warning("Efficiency calculation: division by zero")
 
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError:
-            logging.warning("LCOE calculation: division by zero")
+            run.logger.warning("LCOE calculation: division by zero")
 
     def end_timing(self):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        logging.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
+        run.logger.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
 
     def generate_plots(self, run):
 
@@ -305,11 +307,11 @@ class Scenario:
 
     def print_results(self):
         print('#################')
-        logging.info(f'Results for Scenario {self.name}:')
+        run.logger.info(f'Results for Scenario {self.name}:')
         for block in [block for block in self.blocks if hasattr(block, 'opt') and block.opt]:
-            logging.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
-        logging.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
-        logging.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
+            run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
+        run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
+        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
 
     def save_exception(self, run):
@@ -414,21 +416,31 @@ class SimulationRun:
         self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
-        logger.define_logging(logfile=self.log_file_path)
         if self.parallel:
-            logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
+            self.logger = multiprocessing.get_logger()
+            self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+            self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
         else:
-            logging.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
+            self.logger = logging.getLogger()
+            self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+            self.logger.addHandler(logging.StreamHandler(sys.stdout))
+            self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
+
+        handler = logging.handlers.WatchedFileHandler(os.environ.get("LOGFILE", self.log_file_path))
+        formatter = logging.Formatter(logging.BASIC_FORMAT)
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+
 
     def end_run(self):
 
         if self.save_results:
             xl.writexl(db=self.result_xdb, fn=self.result_file_path)
-            logging.info("Excel output file created")
+            self.logger.info("Excel output file created")
 
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
-        logging.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
+        self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
 
 ###############################################################################
@@ -476,11 +488,11 @@ def input_gui(directory):
         scenarios_filename = os.path.abspath(values['file'])
         results_foldername = os.path.abspath(values['folder'])
         if scenarios_filename == '.' or results_foldername == '.':
-            logging.warning('not all required paths entered - exiting')
+            print('not all required paths entered - exiting')
             exit()
         return scenarios_filename, results_foldername
     except TypeError:
-        logging.warning('GUI window closed manually - exiting')
+        print('GUI window closed manually - exiting')
         exit()
 
 
@@ -521,7 +533,7 @@ def xread(param, sheet, db):
     try:
         value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     except IndexError:
-        logging.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
+        logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
         exit()  # TODO enable jump to next scenario
     return value
 

@@ -18,7 +18,6 @@ license:    GPLv3
 # Module imports
 ###############################################################################
 
-import logging
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -86,8 +85,8 @@ class InvestBlock:
         self.opt = (xread(f'{self.name}_opt', scenario.name, run.input_xdb) == 'True')
 
         if self.opt and scenario.strategy != 'go':
-            logging.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
-            logging.error('Please disable sim_cs in settings file')
+            run.logger.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
+            run.logger.error('Please disable sim_cs in settings file')
             exit()  # TODO switch to next scenario instead of exiting
 
         if self.opt:
