@@ -416,22 +416,21 @@ class SimulationRun:
         self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
         self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
 
-        formatter = logging.Formatter(logging.BASIC_FORMAT)
+        self.log_formatter = logging.Formatter(logging.BASIC_FORMAT)
+        self.log_stream_handler = logging.StreamHandler(sys.stdout)
+        self.log_stream_handler.setFormatter(formatter)
+        handler = logging.handlers.WatchedFileHandler(os.environ.get("LOGFILE", self.log_file_path))
 
         if self.parallel:
             self.logger = multiprocessing.get_logger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            self.log_stream_handler = logging.StreamHandler(sys.stdout)
             self.log_stream_handler.setLevel(logging.WARNING)
-            self.log_stream_handler.setFormatter(formatter)
             self.logger.addHandler(self.log_stream_handler)
             self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
         else:
             self.logger = logging.getLogger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            self.log_stream_handler = logging.StreamHandler(sys.stdout)
             self.log_stream_handler.setLevel(logging.DEBUG)
-            self.log_stream_handler.setFormatter(formatter)
             self.logger.addHandler(self.log_stream_handler)
             self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
 
