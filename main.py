@@ -22,10 +22,13 @@ license:    GPLv3
 import logging
 import logging.handlers
 import multiprocessing
+import pickle
+import shutil
 import sys
 
 import oemof.solph as solph
 import os
+
 import pandas as pd
 import plotly.graph_objects as go
 import pprint
@@ -37,6 +40,7 @@ warnings.filterwarnings("error")  # needed for catching UserWarning during infea
 
 from datetime import datetime, timedelta
 from itertools import repeat
+from multiprocessing import managers
 from pathlib import Path
 from plotly.subplots import make_subplots
 
@@ -158,14 +162,20 @@ class Scenario:
                                                             f'{run.scenarios_file_name}_'
                                                             f'{self.name}.html')
 
+        self.results = dict()  # for cumulative result saving as pickle later on
+        self.results['scenario_name'] = self.name  # saving scenario name for pickle
+        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pickle')
+
         # Operational strategy --------------------------------
 
         self.strategy = xread('sim_os', self.name, run.input_xdb)
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len = timedelta(hours=xread('rh_ph', self.name, run.input_xdb))
-            self.ch_len = timedelta(hours=xread('rh_ch', self.name, run.input_xdb))
+            self.ph_len_hrs = xread('rh_ph', self.name, run.input_xdb)
+            self.ch_len_hrs = xread('rh_ch', self.name, run.input_xdb)
+            self.ph_len = timedelta(hours=self.ph_len_hrs)
+            self.ch_len = timedelta(hours=self.ph_len_hrs)
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
             self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
@@ -227,13 +237,13 @@ class Scenario:
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
-        except ZeroDivisionError:
+        except ZeroDivisionError or RuntimeWarning:
             run.logger.warning("Efficiency calculation: division by zero")
 
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except ZeroDivisionError:
+        except ZeroDivisionError or RuntimeWarning:
             run.logger.warning("LCOE calculation: division by zero")
 
     def end_timing(self, run):
@@ -312,64 +322,69 @@ class Scenario:
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
 
+    # def save_exception(self, run):
+    #     """
+    #     Dump error message in result excel file if optimization did not succeed
+    #     """
+    #     if run.save_results:
+    #         run.result_xdb.add_ws(ws=self.name)
+    #         ws_title = f'Results ({run.result_path} - Sheet: {self.name})'
+    #         run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
+    #         run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
+    #         run.result_xdb.ws(ws=self.name).update_index(row=2, col=2, val=run.runtimestamp)
+    #         run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
+    #         run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
+    #
+    #         run.result_xdb.ws(ws=self.name).update_index(row=4, col=1, val='Optimization unsuccessful!')
+    #         run.result_xdb.ws(ws=self.name).update_index(row=5, col=1, val='Message')
+    #         run.result_xdb.ws(ws=self.name).update_index(row=5, col=2, val=self.exception)
+
     def save_exception(self, run):
         """
         Dump error message in result excel file if optimization did not succeed
         """
         if run.save_results:
-            run.result_xdb.add_ws(ws=self.name)
-            ws_title = f'Results ({run.result_path} - Sheet: {self.name})'
-            run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
-            run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
-            run.result_xdb.ws(ws=self.name).update_index(row=2, col=2, val=run.runtimestamp)
-            run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
-            run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
+            self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
+                                    f'- Sheet: {self.name})'
+            self.results['runtimestamp'] = run.runtimestamp
+            self.results['runtime_len'] = self.runtime_len
+            self.results['exception'] = self.exception
 
-            run.result_xdb.ws(ws=self.name).update_index(row=4, col=1, val='Optimization unsuccessful!')
-            run.result_xdb.ws(ws=self.name).update_index(row=5, col=1, val='Message')
-            run.result_xdb.ws(ws=self.name).update_index(row=5, col=2, val=self.exception)
+            with open(self.result_file_path, 'wb') as file:
+                pickle.dump(self.results, file)
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
-
+                
     def save_results(self, run):
 
-        run.result_xdb.add_ws(ws=self.name)
-
         if self.strategy == 'go':
-            ws_title = f'Global Optimum Results ({run.result_path} - Sheet: {self.name})'
+            self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
+                                    f'- Sheet: {self.name})'
         elif self.strategy == 'rh':
-            ws_title = f'Rolling Horizon Results ({run.result_path} - Sheet: {self.name} - PH: {self.ph_len}' \
-                       f' - CH: {self.ch_len})'
-        else:
-            ws_title = f'Unknown Strategy Results ({run.result_path} - Sheet: {self.name})'
+            self.results['title'] = f'Rolling Horizon Results ({run.result_path} ' \
+                                    f'- Sheet: {self.name} ' \
+                                    f'- PH: {self.ph_len_hrs} ' \
+                                    f'- CH: {self.ch_len_hrs})'
 
-        run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
-        run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
-        run.result_xdb.ws(ws=self.name).update_index(row=2, col=2, val=run.runtimestamp)
-        run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
-        run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
+        self.results['runtimestamp'] = run.runtimestamp
+        self.results['runtime'] = self.runtime_len
 
-        header_row = 5
-        excel_types = (int, float, str)
-        excel_blocks = [run, self] + self.blocks
+        result_types = (int, float, str)
+        result_blocks = [run, self] + self.blocks
 
-        for index, obj in enumerate(excel_blocks):
-            col_id = 1 + index * 4
-            row_id = header_row + 1
+        for index, obj in enumerate(result_blocks):
 
-            if isinstance(obj, Scenario):
-                run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val='scenario data')
-            else:
-                run.result_xdb.ws(ws=self.name).update_index(row=header_row, col=col_id, val=f'{obj.name} data')
+            self.results[obj.name] = dict()
 
-            for item in [item for item in obj.__dict__.items() if isinstance(item[1], excel_types)]:
-                run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id, val=item[0])
+            for item in [item for item in obj.__dict__.items() if isinstance(item[1], result_types)]:
                 if isinstance(item[1], int):
-                    run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=float(item[1]))
+                    self.results[obj.name][item[0]] = float(item[1])
                 else:
-                    run.result_xdb.ws(ws=self.name).update_index(row=row_id, col=col_id + 1, val=item[1])
-                row_id += 1
+                    self.results[obj.name][item[0]] = item[1]
+
+        with open(self.result_file_path, 'wb') as file:
+            pickle.dump(self.results, file)
 
     def show_plots(self):
         self.figure.show()
@@ -384,7 +399,9 @@ class SimulationRun:
         self.cwd = os.getcwd()
         self.scenarios_file_path, self.result_path = input_gui(self.cwd)
         self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
+        # self.input_xdb = openpyxl.load_workbook(self.scenarios_file_path)
         self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
+        # self.scenario_names = self.input_xdb.sheetnames
         self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
 
         try:
@@ -392,6 +409,8 @@ class SimulationRun:
         except ValueError:
             print('Excel File does not include global settings - exiting')
             exit()
+
+        self.scenario_num = len(self.scenario_names)
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
@@ -413,40 +432,100 @@ class SimulationRun:
         self.input_data_path = os.path.join(self.cwd, 'input')
         self.dump_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.lp')
         self.log_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.log')
+        self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}')
         self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
-        self.result_xdb = xl.Database()  # blank excel database for cumulative result saving
+        self.result_xdb = xl.Database()  # blank excel database for result saving
 
-        self.log_formatter = logging.Formatter(logging.BASIC_FORMAT)
-        self.log_stream_handler = logging.StreamHandler(sys.stdout)
-        self.log_stream_handler.setFormatter(formatter)
-        handler = logging.handlers.WatchedFileHandler(os.environ.get("LOGFILE", self.log_file_path))
+        os.mkdir(self.result_folder_path)
+
+        log_formatter = logging.Formatter(logging.BASIC_FORMAT)
+        log_stream_handler = logging.StreamHandler(sys.stdout)
+        log_stream_handler.setFormatter(log_formatter)
+        log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.log_file_path))
+        log_file_handler.setFormatter(log_formatter)
 
         if self.parallel:
+            self.process_num = min(self.scenario_num, os.cpu_count())
             self.logger = multiprocessing.get_logger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            self.log_stream_handler.setLevel(logging.WARNING)
-            self.logger.addHandler(self.log_stream_handler)
-            self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in parallel mode')
+            log_stream_handler.setLevel(logging.INFO)
+            self.logger.addHandler(log_stream_handler)
+            self.logger.addHandler(log_file_handler)
+            self.logger.info(f'Global settings read - '
+                             f'simulating {self.scenario_num} scenario(s)'
+                             f' in parallel mode with {self.process_num} process(es)')
         else:
             self.logger = logging.getLogger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            self.log_stream_handler.setLevel(logging.DEBUG)
-            self.logger.addHandler(self.log_stream_handler)
-            self.logger.info(f'Global settings read - simulating {len(self.scenario_names)} scenarios in sequential mode')
+            log_stream_handler.setLevel(logging.DEBUG)
+            self.logger.addHandler(log_stream_handler)
+            self.logger.addHandler(log_file_handler)
+            self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
 
-        handler = logging.handlers.WatchedFileHandler(os.environ.get("LOGFILE", self.log_file_path))
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+    def end_timing(self):
 
-    def end_run(self):
+        self.runtime_end = time.perf_counter()
+        self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
+        self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
+
+    def join_results(self):
+
+        path = self.result_folder_path
+        files = os.listdir(path)
+
+        for file in files:
+            file_path = os.path.join(path, file)
+            with open(file_path, 'rb') as pickle_file:
+                results = pickle.load(pickle_file)
+            if 'exception' in results.keys():  # scenario infeasible
+                pass
+            else:  # scenario feasible
+                self.save_pickle_results(results)
+
+        try:
+            shutil.rmtree(path)  # delete folder with pickles inside
+        except OSError as e:
+            logging.warning(f'Directory {path} could not be deleted: {e}')
 
         if self.save_results:
             xl.writexl(db=self.result_xdb, fn=self.result_file_path)
             self.logger.info("Excel output file created")
 
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
-        self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
+    def save_pickle_exception(self, res: dict):
+        pass
+
+    def save_pickle_results(self, res: dict):
+
+        ws = res['scenario_name']
+        run.result_xdb.add_ws(ws=ws)
+
+        run.result_xdb.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
+        run.result_xdb.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
+        run.result_xdb.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
+        run.result_xdb.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
+        run.result_xdb.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
+
+        header_row = 5
+
+        for index, obj in enumerate([value for key, value in res.items() if isinstance(value, dict)]):
+            col_id = 1 + index * 4
+            row_id = header_row + 1
+
+            obj_name = obj['name']
+
+            if obj_name == res['scenario_name']:  # if object is scenario
+                run.result_xdb.ws(ws=ws).update_index(row=header_row, col=col_id, val='scenario data')
+            else:
+
+                run.result_xdb.ws(ws=ws).update_index(row=header_row, col=col_id, val=f'{obj_name} data')
+
+            for key, value in obj.items():
+                run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id, val=key)
+                if isinstance(value, int):
+                    run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=float(value))
+                else:
+                    run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=value)
+                row_id += 1
 
 
 ###############################################################################
@@ -509,26 +588,30 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
-
         if scenario.exception:
             scenario.save_exception(run)
             break
         else:
             horizon.get_results(scenario, run)
-            if run.save_results or run.print_results:
-                scenario.accumulate_results()
-                if run.save_results:
-                    scenario.save_results(run)
-                if run.print_results:
-                    scenario.print_results()
-            if run.save_plots or run.show_plots:
-                scenario.generate_plots(run)
-                if run.save_plots:
-                    scenario.save_plots()
-                if run.show_plots:
-                    scenario.show_plots()
+
+    if not scenario.exception:
+        if run.save_results or run.print_results:
+            scenario.accumulate_results()
+            if run.save_results:
+                scenario.save_results(run)
+            if run.print_results:
+                scenario.print_results()
+
+        if run.save_plots or run.show_plots:
+            scenario.generate_plots(run)
+            if run.save_plots:
+                scenario.save_plots()
+            if run.show_plots:
+                scenario.show_plots()
 
     scenario.end_timing(run)
+
+    # return scenario  # TODO needed for result joiner? - if so, what happens if multiple scenarios are named so?
 
 
 def xread(param, sheet, db):
@@ -551,13 +634,24 @@ def xread(param, sheet, db):
 
 if __name__ == '__main__':
 
+    # managers.BaseManager.register('SimulationRun', SimulationRun)
+    # par_manager = managers.BaseManager()
+    # par_manager.start()
+    # run = par_manager.SimulationRun()
+
     run = SimulationRun()  # get all global information about the run
 
     if run.parallel:
-        with multiprocessing.Pool() as pool:
+        with multiprocessing.Pool(processes=run.process_num) as pool:
             pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run)))
+        pool.join()  # TODO necessary?
     else:
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run)
 
-    run.end_run()
+    if run.save_results:  # TODO integrate result joiner - irrespective of parallel operation
+        run.join_results()
+
+    run.end_timing()
+
+
