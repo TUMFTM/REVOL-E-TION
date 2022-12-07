@@ -36,17 +36,16 @@ import pylightxl as xl
 import PySimpleGUI as psg
 import time
 import warnings
-warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
 
 from datetime import datetime, timedelta
 from itertools import repeat
-from multiprocessing import managers
 from pathlib import Path
 from plotly.subplots import make_subplots
 
 import blocks
 import tum_colors as col
 
+warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
 
 ###############################################################################
 # Class definitions
@@ -154,7 +153,7 @@ class Scenario:
         self.sim_endtime = self.sim_starttime + self.sim_duration
         self.sim_dti = pd.date_range(start=self.sim_starttime, end=self.sim_endtime, freq=self.sim_timestep).delete(-1)
 
-        self.sim_yr_rat = self.sim_duration.days / 365.25
+        self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration_days
         self.wacc = xread('wacc', self.name, run.input_xdb)
 
@@ -175,7 +174,7 @@ class Scenario:
             self.ph_len_hrs = xread('rh_ph', self.name, run.input_xdb)
             self.ch_len_hrs = xread('rh_ch', self.name, run.input_xdb)
             self.ph_len = timedelta(hours=self.ph_len_hrs)
-            self.ch_len = timedelta(hours=self.ph_len_hrs)
+            self.ch_len = timedelta(hours=self.ch_len_hrs)
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
             self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
@@ -322,42 +321,26 @@ class Scenario:
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
 
-    # def save_exception(self, run):
-    #     """
-    #     Dump error message in result excel file if optimization did not succeed
-    #     """
-    #     if run.save_results:
-    #         run.result_xdb.add_ws(ws=self.name)
-    #         ws_title = f'Results ({run.result_path} - Sheet: {self.name})'
-    #         run.result_xdb.ws(ws=self.name).update_index(row=1, col=1, val=ws_title)
-    #         run.result_xdb.ws(ws=self.name).update_index(row=2, col=1, val='Timestamp')
-    #         run.result_xdb.ws(ws=self.name).update_index(row=2, col=2, val=run.runtimestamp)
-    #         run.result_xdb.ws(ws=self.name).update_index(row=3, col=1, val='Runtime')
-    #         run.result_xdb.ws(ws=self.name).update_index(row=3, col=2, val=self.runtime_len)
-    #
-    #         run.result_xdb.ws(ws=self.name).update_index(row=4, col=1, val='Optimization unsuccessful!')
-    #         run.result_xdb.ws(ws=self.name).update_index(row=5, col=1, val='Message')
-    #         run.result_xdb.ws(ws=self.name).update_index(row=5, col=2, val=self.exception)
-
     def save_exception(self, run):
         """
         Dump error message in result excel file if optimization did not succeed
         """
-        if run.save_results:
-            self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
-                                    f'- Sheet: {self.name})'
-            self.results['runtimestamp'] = run.runtimestamp
-            self.results['runtime_len'] = self.runtime_len
-            self.results['exception'] = self.exception
+        # scenario_name is already added in __init__
+        self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
+                                f'- Sheet: {self.name})'
+        self.results['runtimestamp'] = run.runtimestamp
+        self.results['runtime'] = self.runtime_len
+        self.results['exception'] = self.exception
 
-            with open(self.result_file_path, 'wb') as file:
-                pickle.dump(self.results, file)
+        with open(self.result_file_path, 'wb') as file:
+            pickle.dump(self.results, file)
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
                 
     def save_results(self, run):
 
+        # scenario_name is already added in __init__
         if self.strategy == 'go':
             self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
                                     f'- Sheet: {self.name})'
@@ -399,9 +382,7 @@ class SimulationRun:
         self.cwd = os.getcwd()
         self.scenarios_file_path, self.result_path = input_gui(self.cwd)
         self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
-        # self.input_xdb = openpyxl.load_workbook(self.scenarios_file_path)
         self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
-        # self.scenario_names = self.input_xdb.sheetnames
         self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
 
         try:
@@ -436,7 +417,8 @@ class SimulationRun:
         self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
         self.result_xdb = xl.Database()  # blank excel database for result saving
 
-        os.mkdir(self.result_folder_path)
+        if self.save_results:
+            os.mkdir(self.result_folder_path)
 
         log_formatter = logging.Formatter(logging.BASIC_FORMAT)
         log_stream_handler = logging.StreamHandler(sys.stdout)
@@ -478,7 +460,7 @@ class SimulationRun:
             with open(file_path, 'rb') as pickle_file:
                 results = pickle.load(pickle_file)
             if 'exception' in results.keys():  # scenario infeasible
-                pass
+                self.save_pickle_exception(results)
             else:  # scenario feasible
                 self.save_pickle_results(results)
 
@@ -491,10 +473,26 @@ class SimulationRun:
             xl.writexl(db=self.result_xdb, fn=self.result_file_path)
             self.logger.info("Excel output file created")
 
-    def save_pickle_exception(self, res: dict):
-        pass
+    @staticmethod
+    def save_pickle_exception(res: dict):
 
-    def save_pickle_results(self, res: dict):
+        """
+        Dump error message in result excel file if optimization did not succeed
+        """
+        ws = res['scenario_name']
+        run.result_xdb.add_ws(ws=ws)
+
+        run.result_xdb.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
+        run.result_xdb.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
+        run.result_xdb.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
+        run.result_xdb.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
+        run.result_xdb.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
+        run.result_xdb.ws(ws=ws).update_index(row=4, col=1, val='Optimization unsuccessful!')
+        run.result_xdb.ws(ws=ws).update_index(row=5, col=1, val='Message')
+        run.result_xdb.ws(ws=ws).update_index(row=5, col=2, val=res['exception'])
+
+    @staticmethod
+    def save_pickle_results(res: dict):
 
         ws = res['scenario_name']
         run.result_xdb.add_ws(ws=ws)
@@ -589,10 +587,14 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
         if scenario.exception:
-            scenario.save_exception(run)
+            scenario.end_timing(run)
+            if run.save_results:
+                scenario.save_exception(run)
             break
         else:
             horizon.get_results(scenario, run)
+
+    scenario.end_timing(run)
 
     if not scenario.exception:
         if run.save_results or run.print_results:
@@ -608,10 +610,6 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
                 scenario.save_plots()
             if run.show_plots:
                 scenario.show_plots()
-
-    scenario.end_timing(run)
-
-    # return scenario  # TODO needed for result joiner? - if so, what happens if multiple scenarios are named so?
 
 
 def xread(param, sheet, db):
@@ -634,22 +632,16 @@ def xread(param, sheet, db):
 
 if __name__ == '__main__':
 
-    # managers.BaseManager.register('SimulationRun', SimulationRun)
-    # par_manager = managers.BaseManager()
-    # par_manager.start()
-    # run = par_manager.SimulationRun()
-
     run = SimulationRun()  # get all global information about the run
 
     if run.parallel:
         with multiprocessing.Pool(processes=run.process_num) as pool:
             pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run)))
-        pool.join()  # TODO necessary?
     else:
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run)
 
-    if run.save_results:  # TODO integrate result joiner - irrespective of parallel operation
+    if run.save_results:
         run.join_results()
 
     run.end_timing()
