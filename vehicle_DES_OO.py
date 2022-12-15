@@ -14,6 +14,9 @@ from numpy.random import default_rng
 from scipy.integrate import quad, simps
 import scipy.stats as ss
 
+from simpy.core import BoundClass
+from simpy.resources import base
+
 ###############################################################################
 # generate "2 hügel pdf der Abfahrtswahrscheinlichkeit"
 ###############################################################################
@@ -59,11 +62,11 @@ pdf = departure_pdf.pdf(x=x, const=norm_constant)
 departure_time = round(departure_pdf.rvs(const=norm_constant))
 
 # plt.hist(samples, 10, density=True)
-#plt.plot(x, pdf, linewidth=2, color='r')
+# plt.plot(x, pdf, linewidth=2, color='r')
 # plt.plot(x, cdf, linewidth=2, color='r')
-#plt.show()
+# plt.show()
 
-#print(departure_time)
+# print(departure_time)
 
 # Trip_Distance ist log_normalverteilt
 
@@ -77,48 +80,93 @@ trip_extra_time = rng.lognormal(1, 1)
 v_mean = 20  # km/h
 
 # Available Cars in the Fleet
-available_Cars = 10
+capacity = 10
 
 # Daily trip demand :
-daily_trip_demand= 20
+daily_trip_demand = 20
 
 # Simulated Days
-simulated_days= 10
+simulated_days = 2
 
 # total count for all uscase appearances during simulation
 total_count = 0
 
+###############################################################################
+# Subclasses from base for "multiple store get"
+###############################################################################
+# class MyStoreGet(base.Get):
+#     def __init__(self, store, amount):
+#         if amount <= 0:
+#             raise ValueError('amount(=%s) must be > 0.' % amount)
+#         self.amount = amount
+#         """The amount of matter to be taken out of the store."""
+#
+#         super(MyStoreGet, self).__init__(store)
+#
+#
+# class MyStorePut(base.Put):
+#     def __init__(self, store, items):
+#         self.items = items
+#         super(MyStorePut, self).__init__(store)
+#
+#
+# class MyStore(base.BaseResource):
+#     def __init__(self, env, capacity=float('inf')):
+#         if capacity <= 0:
+#             raise ValueError('"capacity" must be > 0.')
+#
+#         super(MyStore, self).__init__(env, capacity)
+#
+#         self.items = []
+#
+#     put = BoundClass(MyStorePut)
+#     get = BoundClass(MyStoreGet)
+#
+#     def _do_put(self, event):
+#         if len(self.items) + len(event.items) <= self._capacity:
+#             self.items.extend(event.items)
+#             event.succeed()
+#
+#     def _do_get(self, event):
+#         if self.items and event.amount <= len(self.items):
+#             elements = self.items[(len(self.items) - event.amount - 0):]
+#             self.items = self.items[:(len(self.items) - event.amount - 0)]
+#             event.succeed(elements)
+#
 
 
-
+################################################
 class CarRentalSystem(object):
     # This Class represents the Car rental system, its store and how to get and put cars
     def __init__(self, env, capacity):
         self.env = env
         self.CarFleet = simpy.Store(env, capacity=capacity)
 
-        # fill the store with elements = Cars
-        i = 0
-        for i in range(available_Cars):
-            self.CarFleet.put({i})
-            i += 1
-
-    #def driving(self, value):
-       #yield self.env.timeout(self.delay)
-        #self.CarFleet.put(value)
+    # def driving(self, value):
+    # yield self.env.timeout(self.delay)
+    # self.CarFleet.put(value)
 
     def put(self, item):
-       # self.env.process(self.driving(value))
+        # self.env.process(self.driving(value))
         self.CarFleet.put(item)
 
     def get(self):
-        return self.CarFleet.get()
+        car = self.CarFleet.get()
+        return car
 
 
+class Logging:
 
+    def __init__(self, rows, columns):
+        self.rows = rows  # Rows of the logging array
+        self.columns = columns  # Columns of the logging Array
+        self.car_log = np.zeros([rows, columns], dtype=object)
 
+    def log_to_csv(self):
+        pass
 
-
+    def save_csv(self):
+        pass
 
 
 ###############################################################################
@@ -128,7 +176,7 @@ class CarRentalSystem(object):
 #  create an array that can store abitrary objects for internal logging purposes
 
 # TO-DO: Dynamically adjust car_log array size depending on sum of all trips
-car_log = np.zeros([2000, 9], dtype=object)
+#car_log = np.zeros([2000, 9], dtype=object)
 
 
 ###############################################################################
@@ -140,21 +188,18 @@ def trip_gen(env):
     # start the process generator with one instance of the process function called "job()"
     day = 0
     for d in range(simulated_days):
-        inter_day_count=0
+        inter_day_count = 0
         for t in range(daily_trip_demand):
-
             # make global count globally accessible
             global total_count
 
-            #print(env.now)
-            env.process(trip(env,day, total_count, inter_day_count))
+            env.process(trip(env, day, total_count, inter_day_count))
             total_count += 1
-            inter_day_count +=1
+            inter_day_count += 1
 
         day += 1
         # make sure that a day has 24h
         yield env.timeout(24)
-
 
 
 ###############################################################################
@@ -162,10 +207,10 @@ def trip_gen(env):
 ###############################################################################
 
 def trip(env, day, total_count, inter_day_count):
-
-    #yield env.timeout(round(departure_pdf.rvs(const=norm_constant)))
+    # yield env.timeout(round(departure_pdf.rvs(const=norm_constant)))
     yield env.timeout(2)
-    print('On day {} at Time {} the Trip {} needs a Car -- Total Trip Count: {}' .format(day, env.now, inter_day_count, total_count))
+    print('On day {} at Time {} the Trip {} needs a Car -- Total Trip Count: {}'.format(day, env.now, inter_day_count,
+                                                                                        total_count))
     arrive = env.now
 
     with CRS.get() as req:
@@ -177,30 +222,45 @@ def trip(env, day, total_count, inter_day_count):
 
         if req in results:
             # We got to the counter
+            departure_timestep = env.now
             print('On day {} at Time {} the Trip {} got a Car '.format(day, env.now, inter_day_count))
             yield env.timeout(4)
-            yield CRS.put(req)
+            CRS.put(req)
+            return_timestep = env.now
             print('On day {} at Time {} the Trip {} returned a Car '.format(day, env.now, inter_day_count))
+
+            logger.car_log[total_count,]=[day,departure_timestep,return_timestep,wait,req]
 
         else:
             # We quit
+            fail_timestep = env.now
             print('On day {} at Time {} the Trip {} failed Waited {}'.format(day, env.now, inter_day_count, wait))
-
-
+            logger.car_log[total_count,] = [day,"FAIL", fail_timestep, wait, req]
 
 
 ###############################################################################
 # Simpy simulation setup
 ###############################################################################
 
+# create Logging instance
+logger = Logging(41, 5)
+
 # define an environment where the processes live in
 env = simpy.Environment()
 
 # instantiate the Car Rental System Object including the CarFleet Store with its methods get and put
-CRS = CarRentalSystem(env, available_Cars)
+CRS = CarRentalSystem(env, capacity)
+
+# fill the store with elements = Cars
+i = 0
+for i in range(capacity):
+    CRS.CarFleet.put({i})
+    i += 1
 
 # call the function that generates the individual rental processes
 env.process(trip_gen(env))
 
 # start the simulation
-env.run()#until=200)
+env.run()  # until=200)
+
+print(logger.car_log)
