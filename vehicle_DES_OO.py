@@ -141,13 +141,17 @@ class CarRentalSystem(object):
     def __init__(self, env, capacity):
         self.env = env
         self.CarFleet = simpy.Store(env, capacity=capacity)
-
+        # fill the store with elements = Cars
+        i = 0
+        for i in range(capacity):
+            self.CarFleet.put({i})
+            i += 1
     # def driving(self, value):
     # yield self.env.timeout(self.delay)
     # self.CarFleet.put(value)
 
     def put(self, item):
-        # self.env.process(self.driving(value))
+        #self.env.process(self.driving(value))
         self.CarFleet.put(item)
 
     def get(self):
@@ -225,17 +229,17 @@ def trip(env, day, total_count, inter_day_count):
             departure_timestep = env.now
             print('On day {} at Time {} the Trip {} got a Car '.format(day, env.now, inter_day_count))
             yield env.timeout(4)
-            CRS.put(req)
+            CRS.put(results[req])
             return_timestep = env.now
             print('On day {} at Time {} the Trip {} returned a Car '.format(day, env.now, inter_day_count))
 
-            logger.car_log[total_count,]=[day,departure_timestep,return_timestep,wait,req]
+            logger.car_log[total_count,]=[day,departure_timestep,return_timestep,wait,results[req]]
 
         else:
             # We quit
             fail_timestep = env.now
             print('On day {} at Time {} the Trip {} failed Waited {}'.format(day, env.now, inter_day_count, wait))
-            logger.car_log[total_count,] = [day,"FAIL", fail_timestep, wait, req]
+            logger.car_log[total_count,] = [day,"FAIL", fail_timestep, wait, "FAIL"]
 
 
 ###############################################################################
@@ -243,19 +247,13 @@ def trip(env, day, total_count, inter_day_count):
 ###############################################################################
 
 # create Logging instance
-logger = Logging(41, 5)
+logger = Logging(40, 5)
 
 # define an environment where the processes live in
 env = simpy.Environment()
 
 # instantiate the Car Rental System Object including the CarFleet Store with its methods get and put
 CRS = CarRentalSystem(env, capacity)
-
-# fill the store with elements = Cars
-i = 0
-for i in range(capacity):
-    CRS.CarFleet.put({i})
-    i += 1
 
 # call the function that generates the individual rental processes
 env.process(trip_gen(env))

@@ -77,13 +77,13 @@ trip_extra_time = rng.lognormal(1, 1)
 v_mean = 20  # km/h
 
 # Available Cars in the Fleet
-available_Cars = 10
+available_Cars = 1
 
 # Daily trip demand :
-daily_trip_demand= 20
+daily_trip_demand= 1
 
 # Simulated Days
-simulated_days= 10
+simulated_days= 2
 
 # total count for all uscase appearances during simulation
 total_count = 0
@@ -135,6 +135,10 @@ def trip(env, day, total_count, inter_day_count):
     print('On day {} at Time {} the Trip {} needs a Car -- Total Trip Count: {}' .format(day, env.now, inter_day_count, total_count))
     arrive = env.now
 
+    # hinter car steckt direkt das verwendete Auto {0}-{9}
+    # car_id = yield car_Fleet.get()
+    # print(car_id)
+
     with car_Fleet.get() as req:
         patience = 2
         # Wait for the counter or abort at the end of our tether
@@ -142,15 +146,22 @@ def trip(env, day, total_count, inter_day_count):
 
         wait = env.now - arrive
 
+
         if req in results:
             # We got to the counter
+
             print('On day {} at Time {} the Trip {} got a Car '.format(day, env.now, inter_day_count))
+            # print('##################')
+            print((results[req]))
+            # print('##################')
             yield env.timeout(4)
-            yield car_Fleet.put(req)
+            car_Fleet.put(results[req])
+
             print('On day {} at Time {} the Trip {} returned a Car '.format(day, env.now, inter_day_count))
 
         else:
             # We quit
+
             print('On day {} at Time {} the Trip {} failed Waited {}'.format(day, env.now, inter_day_count, wait))
 
 
@@ -164,7 +175,7 @@ def trip(env, day, total_count, inter_day_count):
 env = simpy.Environment()
 
 # define the store where the aCar-Fleet is defined with "capacity" cars
-car_Fleet = simpy.Store(env, capacity=10)
+car_Fleet = simpy.Store(env, capacity=available_Cars)
 
 # fill the store with elements = Cars
 i = 0
