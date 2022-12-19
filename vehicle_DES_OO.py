@@ -13,9 +13,8 @@ from numpy.random import default_rng
 
 from scipy.integrate import quad, simps
 import scipy.stats as ss
-
-from simpy.core import BoundClass
-from simpy.resources import base
+import pandas as pd
+import os
 
 ###############################################################################
 # generate "2 hügel pdf der Abfahrtswahrscheinlichkeit"
@@ -80,59 +79,24 @@ trip_extra_time = rng.lognormal(1, 1)
 v_mean = 20  # km/h
 
 # Available Cars in the Fleet
-capacity = 10
+capacity = 1
 
 # Daily trip demand :
-daily_trip_demand = 20
+daily_trip_demand = 2
 
-# Simulated Days
+# simulation duration and temporal resolution
 simulated_days = 2
+number_of_steps_per_day = 24
+number_timesteps = simulated_days * number_of_steps_per_day
+
+# total expected trips:
+expected_trips = simulated_days * daily_trip_demand
 
 # total count for all uscase appearances during simulation
 total_count = 0
 
-###############################################################################
-# Subclasses from base for "multiple store get"
-###############################################################################
-# class MyStoreGet(base.Get):
-#     def __init__(self, store, amount):
-#         if amount <= 0:
-#             raise ValueError('amount(=%s) must be > 0.' % amount)
-#         self.amount = amount
-#         """The amount of matter to be taken out of the store."""
-#
-#         super(MyStoreGet, self).__init__(store)
-#
-#
-# class MyStorePut(base.Put):
-#     def __init__(self, store, items):
-#         self.items = items
-#         super(MyStorePut, self).__init__(store)
-#
-#
-# class MyStore(base.BaseResource):
-#     def __init__(self, env, capacity=float('inf')):
-#         if capacity <= 0:
-#             raise ValueError('"capacity" must be > 0.')
-#
-#         super(MyStore, self).__init__(env, capacity)
-#
-#         self.items = []
-#
-#     put = BoundClass(MyStorePut)
-#     get = BoundClass(MyStoreGet)
-#
-#     def _do_put(self, event):
-#         if len(self.items) + len(event.items) <= self._capacity:
-#             self.items.extend(event.items)
-#             event.succeed()
-#
-#     def _do_get(self, event):
-#         if self.items and event.amount <= len(self.items):
-#             elements = self.items[(len(self.items) - event.amount - 0):]
-#             self.items = self.items[:(len(self.items) - event.amount - 0)]
-#             event.succeed(elements)
-#
+leaving_SOC = 1
+used_charge = 10
 
 
 ################################################
@@ -142,16 +106,16 @@ class CarRentalSystem(object):
         self.env = env
         self.CarFleet = simpy.Store(env, capacity=capacity)
         # fill the store with elements = Cars
-        i = 0
         for i in range(capacity):
             self.CarFleet.put({i})
             i += 1
+
     # def driving(self, value):
     # yield self.env.timeout(self.delay)
     # self.CarFleet.put(value)
 
     def put(self, item):
-        #self.env.process(self.driving(value))
+        # self.env.process(self.driving(value))
         self.CarFleet.put(item)
 
     def get(self):
@@ -159,6 +123,9 @@ class CarRentalSystem(object):
         return car
 
 
+###############################################################################
+# Creation of numpy-arrays for logging purposes
+###############################################################################
 class Logging:
 
     def __init__(self, rows, columns):
@@ -166,21 +133,75 @@ class Logging:
         self.columns = columns  # Columns of the logging Array
         self.car_log = np.zeros([rows, columns], dtype=object)
 
-    def log_to_csv(self):
-        pass
+        self.ind_array = np.zeros([number_timesteps, (3 * capacity)])
+        # fill "at_charger" columns with ones for cleaner code
+        for car in range(capacity):
+            self.ind_array[:, 2 + car * 3] = 1
 
-    def save_csv(self):
-        pass
+    def to_csv(self):
+        ###############################################################################
+        # Logging part: Simulation-Log is transformed to csv that oemof can handle
+        ###############################################################################
+        print('eins')
+        h = 0
+        while h < total_count:
 
+            departure_timestep_log = self.car_log[h][3]
+            leaving_SOC_log = self.car_log[h][4]
+            used_charge_log = self.car_log[h][5]
+            return_timestep_log = self.car_log[h][6]
+            used_MB_log = self.car_log[h][8]
 
-###############################################################################
-# Creation of numpy-arrays for logging purposes
-###############################################################################
+            if self.car_log[h][8] != 0:  # check if log is empty because we have reached end of sim time
 
-#  create an array that can store abitrary objects for internal logging purposes
+                for k in used_MB_log:
 
-# TO-DO: Dynamically adjust car_log array size depending on sum of all trips
-#car_log = np.zeros([2000, 9], dtype=object)
+                    j = (departure_timestep_log - 1)
+                    while (departure_timestep_log - 1) <= j <= (return_timestep_log + 1):
+
+                        # one timestep before rental set SoC
+                        if j == departure_timestep_log - 1:
+                            self.ind_array[j][0 + k * 3] += leaving_SOC_log
+
+                        # timestep of rental: remove battery capacity from minigrid
+                        if j == departure_timestep_log:
+                            self.ind_array[j][1 + k * 3] += used_charge_log
+                            self.ind_array[j][2 + k * 3] = 0.0
+
+                        # during rental: set availability to 0
+                        if departure_timestep_log < j <= return_timestep_log:
+                            self.ind_array[j][2 + k * 3] = 0.0
+
+                        j += 1
+
+            h += 1
+
+    def save(self):
+        ###############################################################################
+        # .csv File creation: save results to hard-drive, in the current working dir.
+        ###############################################################################
+
+        # Save aggregated car data in one csv
+        Simulation_Log = pd.DataFrame(self.car_log,
+                                      columns=['Day', 'Uscase', 'Day_Count', 'departure_timestep', 'leaving_SOC',
+                                               'used_charge',
+                                               'return_timestep', 'chargetime', 'used_MBs'])
+        save_filename = os.path.join(os.getcwd(), "simulation_log_60MB_30UC_360Days.csv")
+        # print(Simulation_Log.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
+        Simulation_Log.to_csv(save_filename, sep=';')
+
+        # Save indiviudal car data in one csv
+        ind_bev_df = pd.DataFrame(self.ind_array)
+
+        for i in range(0, capacity):
+            ind_bev_df.rename(columns={i * 3 + 0: 'min_charge_' + str(i + 1),
+                                       i * 3 + 1: 'sink_data_' + str(i + 1),
+                                       i * 3 + 2: 'at_charger_' + str(i + 1)
+                                       }, inplace=True)
+
+        save_filename = os.path.join(os.getcwd(), "ind_mb_data_extended_60MB_30UC_360Days.csv")
+        # print(ind_bev_df.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
+        ind_bev_df.to_csv(save_filename, sep=';')
 
 
 ###############################################################################
@@ -211,6 +232,7 @@ def trip_gen(env):
 ###############################################################################
 
 def trip(env, day, total_count, inter_day_count):
+
     # yield env.timeout(round(departure_pdf.rvs(const=norm_constant)))
     yield env.timeout(2)
     print('On day {} at Time {} the Trip {} needs a Car -- Total Trip Count: {}'.format(day, env.now, inter_day_count,
@@ -229,17 +251,28 @@ def trip(env, day, total_count, inter_day_count):
             departure_timestep = env.now
             print('On day {} at Time {} the Trip {} got a Car '.format(day, env.now, inter_day_count))
             yield env.timeout(4)
-            CRS.put(results[req])
+            print('####################')
+            print(env.now)
+            # this is the return timestep that is used by oemof simulation csv
             return_timestep = env.now
-            print('On day {} at Time {} the Trip {} returned a Car '.format(day, env.now, inter_day_count))
 
-            logger.car_log[total_count,]=[day,departure_timestep,return_timestep,wait,results[req]]
+            # this timeout allows oemof to recharge the MBs
+            yield env.timeout(6)
+
+            CRS.put(results[req])
+            charge_timestep = env.now
+            print('On day {} at Time {} the Trip {} returned a Car '.format(day, return_timestep, inter_day_count))
+
+            logger.car_log[total_count,] = [day, results[req], total_count, departure_timestep, leaving_SOC,
+                                            used_charge, return_timestep, charge_timestep, results[req]]
+
 
         else:
             # We quit
             fail_timestep = env.now
-            print('On day {} at Time {} the Trip {} failed Waited {}'.format(day, env.now, inter_day_count, wait))
-            logger.car_log[total_count,] = [day,"FAIL", fail_timestep, wait, "FAIL"]
+            print('On day {} at Time {} the Trip {} failed bacause it waited {}'.format(day, env.now, inter_day_count,
+                                                                                        wait))
+            # logger.car_log[total_count, ] = [day, "FAIL", fail_timestep, wait, "FAIL", "FAIL", "FAIL", "FAIL", "FAIL"]
 
 
 ###############################################################################
@@ -247,7 +280,7 @@ def trip(env, day, total_count, inter_day_count):
 ###############################################################################
 
 # create Logging instance
-logger = Logging(40, 5)
+logger = Logging(expected_trips, 9)
 
 # define an environment where the processes live in
 env = simpy.Environment()
@@ -261,4 +294,10 @@ env.process(trip_gen(env))
 # start the simulation
 env.run()  # until=200)
 
-print(logger.car_log)
+# print(logger.car_log)
+
+logger.to_csv()
+
+print(logger.ind_array)
+
+logger.save()
