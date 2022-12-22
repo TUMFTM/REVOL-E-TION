@@ -22,6 +22,7 @@ import oemof.solph as solph
 import os
 import pandas as pd
 import pvlib
+import timezonefinder
 
 import economics as eco
 
@@ -85,9 +86,9 @@ class InvestBlock:
         self.opt = (xread(f'{self.name}_opt', scenario.name, run.input_xdb) == 'True')
 
         if self.opt and scenario.strategy != 'go':
-            run.logger.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
-            run.logger.error('Please disable sim_cs in settings file')
-            exit()  # TODO switch to next scenario instead of exiting
+            run.logger.warning(f'{self.name} component size optimization not implemented for any'
+                               f' other strategy than \"GO\" - disabling size optimization')
+            self.opt = False
 
         if self.opt:
             self.size = None
@@ -587,9 +588,17 @@ class PVSource(InvestBlock):
         else:  # data input from fixed csv file
             self.data, self.meta, self.inputs = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
                                                                                 map_variables=True)
-        self.data.index = self.data.index.round('H')  # PVGIS gives time slots as XX:06 - round to full hour
+            self.latitude = self.meta['latitude']
+            self.longitude = self.meta['longitude']
 
-        self.data['P'] = self.data['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
+        tf = timezonefinder.TimezoneFinder()
+        self.timezone = tf.certain_timezone_at(lat=self.latitude, lng=self.longitude)
+        # convert to local time and remove timezone-awareness (model is only in one timezone)
+        self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
+        # PVGIS gives time slots as XX:06 - round to full hour
+        self.data.index = self.data.index.round('H')
+        # data is in W for a 1kWp PV array -> convert to specific power
+        self.data['P'] = self.data['P'] / 1e3
 
         # Creation of static energy system components --------------------------------
 
