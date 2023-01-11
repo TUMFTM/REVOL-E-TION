@@ -21,21 +21,21 @@ license:    GPLv3
 
 import logging
 import logging.handlers
-import multiprocessing
+import os
 import pickle
+import pprint
 import shutil
 import sys
+import time
+import threading
+import warnings
 
+import multiprocessing as mp
 import oemof.solph as solph
-import os
-
 import pandas as pd
 import plotly.graph_objects as go
-import pprint
 import pylightxl as xl
 import PySimpleGUI as psg
-import time
-import warnings
 
 from datetime import datetime, timedelta
 from itertools import repeat
@@ -436,23 +436,18 @@ class SimulationRun:
         log_stream_handler.setFormatter(log_formatter)
         log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.log_file_path))
         log_file_handler.setFormatter(log_formatter)
+        self.logger = logging.getLogger()
+        self.logger.addHandler(log_stream_handler)
+        self.logger.addHandler(log_file_handler)
 
         if self.parallel:
             self.process_num = min(self.scenario_num, os.cpu_count())
-            self.logger = multiprocessing.get_logger()
-            self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            log_stream_handler.setLevel(logging.INFO)
-            self.logger.addHandler(log_stream_handler)
-            self.logger.addHandler(log_file_handler)
             self.logger.info(f'Global settings read - '
                              f'simulating {self.scenario_num} scenario(s)'
                              f' in parallel mode with {self.process_num} process(es)')
         else:
-            self.logger = logging.getLogger()
             self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
             log_stream_handler.setLevel(logging.DEBUG)
-            self.logger.addHandler(log_stream_handler)
-            self.logger.addHandler(log_file_handler)
             self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
 
     def end_timing(self):
@@ -590,7 +585,22 @@ def input_gui(directory):
         exit()
 
 
-def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function for starpool - multiprocessing
+def read_mplogger_queue(queue, run):
+    while True:
+        record = queue.get()
+        if record is None:
+            break
+        run.logger.handle(record)
+
+
+def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
+
+    if run.parallel:
+        run.process = mp.current_process()
+        run.queue_handler = logging.handlers.QueueHandler(log_queue)
+        run.logger = logging.getLogger()
+        run.logger.setLevel(logging.DEBUG)
+        run.logger.addHandler(run.queue_handler)
 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
@@ -647,15 +657,22 @@ if __name__ == '__main__':
     run = SimulationRun()  # get all global information about the run
 
     if run.parallel:
-        with multiprocessing.Pool(processes=run.process_num) as pool:
-            pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run)))
+        with mp.Manager() as manager:
+            log_queue = manager.Queue()
+            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue, run,))
+            log_thread.start()
+            with mp.Pool(processes=run.process_num) as pool:
+                pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
+            log_queue.put(None)
+            log_thread.join()
     else:
         for scenario_name in run.scenario_names:
-            simulate_scenario(scenario_name, run)
+            simulate_scenario(scenario_name, run, None)  # no loger queue
 
     if run.save_results:
         run.join_results()
 
     run.end_timing()
+
 
 
