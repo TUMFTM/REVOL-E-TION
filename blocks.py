@@ -96,20 +96,20 @@ class InvestBlock:
         else:
             self.size = xread(self.name + '_cs', scenario.name, run.input_xdb)
 
-        self.spec_capex = xread(self.name + '_sce', scenario.name, run.input_xdb)  # TODO rename capex_spec
-        self.spec_mntex = xread(self.name + '_sme', scenario.name, run.input_xdb)  # TODO rename mntex_spec
-        self.spec_opex = xread(self.name + '_soe', scenario.name, run.input_xdb)  # TODO rename opex_spec
+        self.capex_spec = xread(self.name + '_sce', scenario.name, run.input_xdb)
+        self.mntex_spec = xread(self.name + '_sme', scenario.name, run.input_xdb)
+        self.opex_spec = xread(self.name + '_soe', scenario.name, run.input_xdb)
 
         self.lifespan = xread(self.name + '_ls', scenario.name, run.input_xdb)
         self.cost_decr = xread(self.name + '_cdc', scenario.name, run.input_xdb)
-        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)  # TODO make sure eff is used
+        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)
 
-        self.adj_capex = eco.adj_ce(self.spec_capex,  # TODO rename capex_adj
-                                    self.spec_mntex,
+        self.capex_adj = eco.adj_ce(self.capex_spec,
+                                    self.mntex_spec,
                                     self.lifespan,
                                     scenario.wacc)  # adjusted ce (including maintenance) of the component in $/W
 
-        self.eq_pres_cost = eco.ann_recur(self.adj_capex,
+        self.eq_pres_cost = eco.ann_recur(self.capex_adj,
                                           self.lifespan,
                                           scenario.prj_duration_yrs,
                                           scenario.wacc,
@@ -133,7 +133,7 @@ class InvestBlock:
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        self.capex_init = self.size * self.spec_capex
+        self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
                                  self.lifespan,
@@ -153,7 +153,7 @@ class InvestBlock:
         scenario.capex_dis += self.capex_dis
         scenario.capex_ann += self.capex_ann
 
-        self.mntex_yrl = self.size * self.spec_mntex  # time-based maintenance
+        self.mntex_yrl = self.size * self.mntex_spec  # time-based maintenance
         self.mntex_sim = self.mntex_yrl * scenario.sim_yr_rat
         self.mntex_prj = self.mntex_yrl * scenario.prj_duration_yrs
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
@@ -169,7 +169,7 @@ class InvestBlock:
         scenario.mntex_dis += self.mntex_dis
         scenario.mntex_ann += self.mntex_ann
 
-        self.opex_sim = self.e_sim * self.spec_opex
+        self.opex_sim = self.e_sim * self.opex_spec
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
         self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
         self.opex_dis = eco.acc_discount(self.opex_yrl,
@@ -339,7 +339,7 @@ class StationaryEnergyStorage(InvestBlock):
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.core.dc_bus: solph.Flow()},
                                                        outputs={
-                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
+                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.opex_spec)},
                                                        loss_rate=0,  # TODO proper self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -352,7 +352,7 @@ class StationaryEnergyStorage(InvestBlock):
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.core.dc_bus: solph.Flow()},
                                                        outputs={
-                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
+                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.opex_spec)},
                                                        loss_rate=0,  # TODO proper self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -412,11 +412,11 @@ class ControllableSource(InvestBlock):
             self.src = solph.Source(label='gen_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(
                                         investment=solph.Investment(ep_costs=self.eq_pres_cost),
-                                        variable_costs=self.spec_opex)})
+                                        variable_costs=self.opex_spec)})
         else:
             self.src = solph.Source(label='gen_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(nominal_value=self.size,
-                                                                         variable_costs=self.spec_opex)})
+                                                                              variable_costs=self.opex_spec)})
         scenario.components.append(self.src)
 
     def accumulate_results(self, scenario):
@@ -488,7 +488,7 @@ class MobileCommodity:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
-                                                           variable_cost=self.parent.spec_opex)},
+                                                           variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -503,7 +503,7 @@ class MobileCommodity:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
-                                                           variable_cost=self.parent.spec_opex)},
+                                                           variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -637,11 +637,11 @@ class PVSource(InvestBlock):
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(investment=solph.Investment(
                                         ep_costs=self.eq_pres_cost),
-                                        variable_cost=self.spec_opex)})
+                                        variable_cost=self.opex_spec)})
         else:
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(nominal_value=self.size,
-                                                                  variable_cost=self.spec_opex)})
+                                                                  variable_cost=self.opex_spec)})
         scenario.components.append(self.src)
 
         self.exc = solph.Sink(label=f'{self.name}_exc',
@@ -775,12 +775,12 @@ class WindSource(InvestBlock):
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
                                                                   investment=solph.Investment(ep_costs=run.eps_cost,
-                                                                                              variable_cost=self.spec_opex))})
+                                                                                              variable_cost=self.opex_spec))})
         else:
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={scenario.components.wind_bus: solph.Flow(fix=self.ph_data['P'],
-                                                                                            nominal_value=self.size,
-                                                                                            variable_cost=self.spec_opex)})
+                                                                                      nominal_value=self.size,
+                                                                                      variable_cost=self.opex_spec)})
         scenario.components.append(self.src)
 
     def accumulate_results(self, scenario):
