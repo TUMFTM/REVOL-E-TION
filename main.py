@@ -383,7 +383,15 @@ class SimulationRun:
         self.name = 'run'
 
         self.cwd = os.getcwd()
-        self.scenarios_file_path, self.result_path = input_gui(self.cwd)
+        if len(sys.argv) == 1:  # if no arguments have been passed
+            self.scenarios_file_path, self.result_path = input_gui(self.cwd)
+        elif len(sys.argv) == 2:  # only one argument, default result storage
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
+            self.result_path = os.path.join(self.cwd, 'results')
+        else:
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
+            self.result_path = sys.argv[2]
+
         self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
         self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario

@@ -6,4 +6,5 @@ pvlib
 pylightxl
 pyomo
 pysimplegui
+pytz
 timezonefinder
