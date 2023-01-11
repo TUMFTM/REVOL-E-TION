@@ -438,7 +438,7 @@ class SimulationRun:
         log_file_handler.setFormatter(log_formatter)
         self.logger = logging.getLogger()
         self.logger.addHandler(log_stream_handler)
-        self.logger.addHandler(log_file_handler)
+        self.logger.addHandler(log_file_handler)  # TODO global messages not getting through to logs in parallel mode
 
         if self.parallel:
             self.process_num = min(self.scenario_num, os.cpu_count())
@@ -585,7 +585,7 @@ def input_gui(directory):
         exit()
 
 
-def read_mplogger_queue(queue, run):
+def read_mplogger_queue(queue):
     while True:
         record = queue.get()
         if record is None:
@@ -659,7 +659,7 @@ if __name__ == '__main__':
     if run.parallel:
         with mp.Manager() as manager:
             log_queue = manager.Queue()
-            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue, run,))
+            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
