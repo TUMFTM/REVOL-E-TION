@@ -22,6 +22,8 @@ import oemof.solph as solph
 import os
 import pandas as pd
 import pvlib
+import pytz
+import timezonefinder
 
 import economics as eco
 
@@ -85,29 +87,29 @@ class InvestBlock:
         self.opt = (xread(f'{self.name}_opt', scenario.name, run.input_xdb) == 'True')
 
         if self.opt and scenario.strategy != 'go':
-            run.logger.error('Error: Rolling horizon strategy is not feasible if component sizing is active')
-            run.logger.error('Please disable sim_cs in settings file')
-            exit()  # TODO switch to next scenario instead of exiting
+            run.logger.warning(f'{self.name} component size optimization not implemented for any'
+                               f' other strategy than \"GO\" - disabling size optimization')
+            self.opt = False
 
         if self.opt:
             self.size = None
         else:
             self.size = xread(self.name + '_cs', scenario.name, run.input_xdb)
 
-        self.spec_capex = xread(self.name + '_sce', scenario.name, run.input_xdb)  # TODO rename capex_spec
-        self.spec_mntex = xread(self.name + '_sme', scenario.name, run.input_xdb)  # TODO rename mntex_spec
-        self.spec_opex = xread(self.name + '_soe', scenario.name, run.input_xdb)  # TODO rename opex_spec
+        self.capex_spec = xread(self.name + '_sce', scenario.name, run.input_xdb)
+        self.mntex_spec = xread(self.name + '_sme', scenario.name, run.input_xdb)
+        self.opex_spec = xread(self.name + '_soe', scenario.name, run.input_xdb)
 
         self.lifespan = xread(self.name + '_ls', scenario.name, run.input_xdb)
         self.cost_decr = xread(self.name + '_cdc', scenario.name, run.input_xdb)
-        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)  # TODO make sure eff is used
+        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)
 
-        self.adj_capex = eco.adj_ce(self.spec_capex,  # TODO rename capex_adj
-                                    self.spec_mntex,
+        self.capex_adj = eco.adj_ce(self.capex_spec,
+                                    self.mntex_spec,
                                     self.lifespan,
                                     scenario.wacc)  # adjusted ce (including maintenance) of the component in $/W
 
-        self.eq_pres_cost = eco.ann_recur(self.adj_capex,
+        self.eq_pres_cost = eco.ann_recur(self.capex_adj,
                                           self.lifespan,
                                           scenario.prj_duration_yrs,
                                           scenario.wacc,
@@ -131,7 +133,7 @@ class InvestBlock:
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        self.capex_init = self.size * self.spec_capex
+        self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
                                  self.lifespan,
@@ -151,7 +153,7 @@ class InvestBlock:
         scenario.capex_dis += self.capex_dis
         scenario.capex_ann += self.capex_ann
 
-        self.mntex_yrl = self.size * self.spec_mntex  # time-based maintenance
+        self.mntex_yrl = self.size * self.mntex_spec  # time-based maintenance
         self.mntex_sim = self.mntex_yrl * scenario.sim_yr_rat
         self.mntex_prj = self.mntex_yrl * scenario.prj_duration_yrs
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
@@ -167,7 +169,7 @@ class InvestBlock:
         scenario.mntex_dis += self.mntex_dis
         scenario.mntex_ann += self.mntex_ann
 
-        self.opex_sim = self.e_sim * self.spec_opex
+        self.opex_sim = self.e_sim * self.opex_spec
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
         self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
         self.opex_dis = eco.acc_discount(self.opex_yrl,
@@ -238,6 +240,7 @@ class CommoditySystem(InvestBlock):
         self.data.index = pd.date_range(start=scenario.sim_starttime,
                                           periods=len(self.data),
                                           freq=scenario.sim_timestep)
+        self.ph_data = None  # placeholder, is filled in "update_input_components"
 
         self.commodity_num = xread(self.name + '_num', scenario.name, run.input_xdb)
         self.commodity_agr = xread(self.name + '_agr', scenario.name, run.input_xdb)  # TODO enable aggregated simulation
@@ -336,7 +339,7 @@ class StationaryEnergyStorage(InvestBlock):
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.core.dc_bus: solph.Flow()},
                                                        outputs={
-                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
+                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.opex_spec)},
                                                        loss_rate=0,  # TODO proper self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -349,7 +352,7 @@ class StationaryEnergyStorage(InvestBlock):
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={scenario.core.dc_bus: solph.Flow()},
                                                        outputs={
-                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.spec_opex)},
+                                                           scenario.core.dc_bus: solph.Flow(variable_cost=self.opex_spec)},
                                                        loss_rate=0,  # TODO proper self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -409,11 +412,11 @@ class ControllableSource(InvestBlock):
             self.src = solph.Source(label='gen_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(
                                         investment=solph.Investment(ep_costs=self.eq_pres_cost),
-                                        variable_costs=self.spec_opex)})
+                                        variable_costs=self.opex_spec)})
         else:
             self.src = solph.Source(label='gen_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(nominal_value=self.size,
-                                                                         variable_costs=self.spec_opex)})
+                                                                              variable_costs=self.opex_spec)})
         scenario.components.append(self.src)
 
     def accumulate_results(self, scenario):
@@ -485,7 +488,7 @@ class MobileCommodity:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
-                                                           variable_cost=self.parent.spec_opex)},
+                                                           variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -500,7 +503,7 @@ class MobileCommodity:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
                                                        outputs={self.bus: solph.Flow(
-                                                           variable_cost=self.parent.spec_opex)},
+                                                           variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
@@ -563,16 +566,23 @@ class PVSource(InvestBlock):
         self.input_file_name = xread(self.name + '_filename', scenario.name, run.input_xdb)
         self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.input_file_name}.csv')
 
+        self.ph_data = None  # placeholder, is filled in "update_input_components"
+
+        tf = timezonefinder.TimezoneFinder()
+        self.utc = pytz.timezone('UTC')
+
         if self.use_api:  # API input selected
             self.latitude = xread(self.name + '_latitude', scenario.name, run.input_xdb)
             self.longitude = xread(self.name + '_longitude', scenario.name, run.input_xdb)
-            self.api_file_path = os.path.join(run.input_data_path, 'pv', f'pv_{scenario.name}_{run.runtimestamp}.csv')
+            self.timezone = pytz.timezone(tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+            self.api_startyear = self.timezone.localize(scenario.sim_starttime).astimezone(self.utc).year
+            self.api_endyear = self.timezone.localize(scenario.sim_endtime).astimezone(self.utc).year
             self.data, self.meta, self.inputs = pvlib.iotools.get_pvgis_hourly(self.latitude,
                                                                                self.longitude,
-                                                                               start=scenario.sim_starttime,
-                                                                               end=scenario.sim_endtime,
-                                                                               url='https://re.jrc.ec.europa.eu/api/v5_2/',
-                                                                               raddatabase='PVGIS-SARAH2',
+                                                                               start=self.api_startyear,
+                                                                               end=self.api_endyear,
+                                                                               #url='https://re.jrc.ec.europa.eu/api/v5_2/',
+                                                                               #raddatabase='PVGIS-SARAH2',  # TODO reinstate version and db for data post 2016
                                                                                components=False,
                                                                                outputformat='json',
                                                                                pvcalculation=True,
@@ -582,14 +592,24 @@ class PVSource(InvestBlock):
                                                                                loss=0,
                                                                                optimalangles=True,
                                                                                map_variables=True)
-            self.data.to_csv(sep=',', path_or_buf=self.api_file_path)
+            # self.api_file_path = os.path.join(run.input_data_path, 'pv', f'pv_{scenario.name}_{run.runtimestamp}.csv')
+            # self.data.to_csv(sep=',', path_or_buf=self.api_file_path)
 
         else:  # data input from fixed csv file
             self.data, self.meta, self.inputs = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
                                                                                 map_variables=True)
-        self.data.index = self.data.index.round('H')  # PVGIS gives time slots as XX:06 - round to full hour
+            self.latitude = self.meta['latitude']
+            self.longitude = self.meta['longitude']
+            self.timezone = pytz.timezone(tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
 
-        self.data['P'] = self.data['P'] / 1e3  # data is in W for a 1kWp PV array -> convert to specific power
+        # convert to local time and remove timezone-awareness (model is only in one timezone)
+        self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
+        # PVGIS gives time slots as XX:06 - round to full hour
+        self.data.index = self.data.index.round('H')
+        # data is in W for a 1kWp PV array -> convert to specific power
+        self.data['p_spec'] = self.data['P'] / 1e3
+
+        self.data = self.data[['p_spec', 'wind_speed']]
 
         # Creation of static energy system components --------------------------------
 
@@ -609,18 +629,19 @@ class PVSource(InvestBlock):
         self.outflow = solph.Transformer(label=f'{self.name}_dc',
                                          inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
                                          outputs={scenario.core.dc_bus: solph.Flow()},
-                                         conversion_factors={self.bus: 1})  # TODO proper efficiency
+                                         conversion_factors={self.bus: self.transformer_eff})
         scenario.components.append(self.outflow)
 
+        # input data from PVGIS is added in function "update_input_components"
         if self.opt:
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(investment=solph.Investment(
                                         ep_costs=self.eq_pres_cost),
-                                        variable_cost=self.spec_opex)})
+                                        variable_cost=self.opex_spec)})
         else:
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(nominal_value=self.size,
-                                                                  variable_cost=self.spec_opex)})
+                                                                  variable_cost=self.opex_spec)})
         scenario.components.append(self.src)
 
         self.exc = solph.Sink(label=f'{self.name}_exc',
@@ -639,7 +660,7 @@ class PVSource(InvestBlock):
 
     def update_input_components(self, *_):
 
-        self.src.outputs[self.bus].fix = self.ph_data['P']
+        self.src.outputs[self.bus].fix = self.ph_data['p_spec']
 
 
 class FixedDemand:
@@ -721,7 +742,9 @@ class WindSource(InvestBlock):
                                           periods=len(self.data),
                                           freq=scenario.sim_timestep)
 
-        self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)
+        self.ph_data = None  # placeholder, is filled in "update_input_components"
+
+        # self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)  # TODO check if this can be omitted
 
         # Creation of static energy system components --------------------------------
 
@@ -752,12 +775,12 @@ class WindSource(InvestBlock):
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={self.bus: solph.Flow(fix=self.ph_data['P'],
                                                                   investment=solph.Investment(ep_costs=run.eps_cost,
-                                                                                              variable_cost=self.spec_opex))})
+                                                                                              variable_cost=self.opex_spec))})
         else:
             self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={scenario.components.wind_bus: solph.Flow(fix=self.ph_data['P'],
-                                                                                            nominal_value=self.size,
-                                                                                            variable_cost=self.spec_opex)})
+                                                                                      nominal_value=self.size,
+                                                                                      variable_cost=self.opex_spec)})
         scenario.components.append(self.src)
 
     def accumulate_results(self, scenario):

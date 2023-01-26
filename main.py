@@ -70,8 +70,11 @@ class PredictionHorizon:
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
 
         for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
-            # block.ph_data = block.data.loc[block.data.index.isin(self.ph_dti)]#.reset_index(drop=True)
-            block.ph_data = block.data[self.starttime:self.ph_endtime][:-1]  # todo fix workaround, prefer above
+            if self.ph_endtime == scenario.sim_endtime:  # only on last horizon
+                block.ph_data = block.data[self.starttime:self.ph_endtime]
+            else:
+                # deleting last elements prevents spillover into next PH as endtime is included in indexing
+                block.ph_data = block.data[self.starttime:self.ph_endtime][:-1]
 
         for block in scenario.blocks:
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -380,7 +383,15 @@ class SimulationRun:
         self.name = 'run'
 
         self.cwd = os.getcwd()
-        self.scenarios_file_path, self.result_path = input_gui(self.cwd)
+        if len(sys.argv) == 1:  # if no arguments have been passed
+            self.scenarios_file_path, self.result_path = input_gui(self.cwd)
+        elif len(sys.argv) == 2:  # only one argument, default result storage
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
+            self.result_path = os.path.join(self.cwd, 'results')
+        else:
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
+            self.result_path = sys.argv[2]
+
         self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
         self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
@@ -586,6 +597,7 @@ def simulate_scenario(name: str, run: SimulationRun):  # needs to be a function 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
         horizon.run_optimization(scenario, run)
+
         if scenario.exception:
             scenario.end_timing(run)
             if run.save_results:
