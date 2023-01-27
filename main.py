@@ -70,7 +70,7 @@ class PredictionHorizon:
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
 
         for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
-            if self.ph_endtime == scenario.sim_endtime:  # only on last horizon
+            if self.ch_endtime >= scenario.sim_endtime:  # only on last horizon
                 block.ph_data = block.data[self.starttime:self.ph_endtime]
             else:
                 # deleting last elements prevents spillover into next PH as endtime is included in indexing
@@ -181,7 +181,7 @@ class Scenario:
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
             self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
-        elif self.strategy == 'go':
+        elif self.strategy in ['go', 'lfs']:
             self.ph_len = self.sim_duration
             self.ch_len = self.sim_duration
             self.horizon_num = 1
@@ -261,7 +261,7 @@ class Scenario:
 
         for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
 
-            if isinstance(block, demand_types):
+            if isinstance(block, demand_types):  # TODO show as stacked plot
                 self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
                                                  y=block.flow * -1,
                                                  mode='lines',
@@ -605,13 +605,24 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
-        horizon = PredictionHorizon(horizon_index, scenario, run)
-        horizon.run_optimization(scenario, run)
+        try:
+            horizon = PredictionHorizon(horizon_index, scenario, run)
+        except IndexError:
+            scenario.exception = 'Input data not sufficiently long'
+            logging.warning(f'Input data in scenario \"{scenario.name}\" not sufficiently long'
+                            f' - continuing on next scenario')
+            scenario.save_exception(run)
+            break
 
-        if scenario.exception:
-            scenario.end_timing(run)
-            if run.save_results:
-                scenario.save_exception(run)
+        if scenario.strategy == 'lfs':
+            pass  # rule_based.lfs(horizon)
+        elif scenario.strategy == 'ccs':
+            pass  # rule_based.ccs(horizon)
+        elif scenario.strategy in ['go', 'rh']:
+            horizon.run_optimization(scenario, run)
+
+        if scenario.exception and run.save_results:
+            scenario.save_exception(run)
             break
         else:
             horizon.get_results(scenario, run)
@@ -667,7 +678,7 @@ if __name__ == '__main__':
             log_thread.join()
     else:
         for scenario_name in run.scenario_names:
-            simulate_scenario(scenario_name, run, None)  # no loger queue
+            simulate_scenario(scenario_name, run, None)  # no logger queue
 
     if run.save_results:
         run.join_results()
