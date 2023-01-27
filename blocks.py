@@ -439,7 +439,8 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
-        self.data = self.parent.data  # TODO filter for specific commodity's columns
+        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        self.data = self.parent.data[colnames]
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
