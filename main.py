@@ -122,7 +122,7 @@ class PredictionHorizon:
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
-        run.logger.info(f'Optimization for horizon {self.index+1} initialized')
+        run.logger.info(f'Optimization for horizon {self.index+1} in scenario \"{scenario.name}\" initialized')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
         except UserWarning as exc:
@@ -282,7 +282,7 @@ class Scenario:
                                                  mode='lines',
                                                  name=f"{block.name} SOC",  # TODO print sizing in plot
                                                  line=dict(width=2, dash=None),
-                                                 visible=None),  # TODO introduce TUM colors
+                                                 visible='legendonly'),  # TODO introduce TUM colors
                                       secondary_y=True)
 
             if isinstance(block, blocks.CommoditySystem):
@@ -292,7 +292,7 @@ class Scenario:
                                                      mode='lines',
                                                      name=f"{commodity.name} SOC",    # TODO print sizing in plot, denote whether single or combined value
                                                      line=dict(width=2, dash=None),
-                                                     visible=None),  # TODO introduce TUM colors
+                                                     visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=True)
 
         self.figure.update_layout(plot_bgcolor=col.tum_white)
