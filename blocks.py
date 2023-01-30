@@ -260,11 +260,11 @@ class CommoditySystem(InvestBlock):
         x denotes the flow measurement point in results
 
         ac_bus               bus
-          |<-x--------mc_ac---|---(CommoditySystem Instance)
+          |<-x--------mc_ac---|---(MobileCommodity Instance)
           |                   |
-          |-x-ac_mc---------->|---(CommoditySystem Instance)
+          |-x-ac_mc---------->|---(MobileCommodity Instance)
                               |
-                              |---(CommoditySystem Instance)
+                              |---(MobileCommodity Instance)
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
@@ -439,7 +439,8 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
-        self.data = self.parent.data
+        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        self.data = self.parent.data[colnames]
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
@@ -474,8 +475,8 @@ class MobileCommodity:
 
         self.outflow = solph.Transformer(label=f'{self.name}_mc',
                                          inputs={self.bus: solph.Flow(nominal_value={'uc': 0,
-                                                                                     'cc': 0,
                                                                                      'tc': 0,
+                                                                                     'cc': 0,
                                                                                      'v2v': 1,
                                                                                      'v2g': 1}[
                                                                                         self.parent.int_lvl] * self.parent.dis_pwr,
@@ -490,7 +491,7 @@ class MobileCommodity:
                                                        outputs={self.bus: solph.Flow(
                                                            variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
-                                                       balanced={'go': True, 'rh': False}[scenario.strategy],
+                                                       balanced=False,
                                                        initial_storage_level=self.ph_init_soc,
                                                        inflow_conversion_factor=1,
                                                        # efficiency already modeled in transformers
@@ -505,7 +506,7 @@ class MobileCommodity:
                                                        outputs={self.bus: solph.Flow(
                                                            variable_cost=self.parent.opex_spec)},
                                                        loss_rate=0,  # TODO integrate self discharge
-                                                       balanced={'go': True, 'rh': False}[scenario.strategy],
+                                                       balanced=False,
                                                        initial_storage_level=self.ph_init_soc,
                                                        inflow_conversion_factor=1,
                                                        # efficiency already modeled in transformers
