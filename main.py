@@ -194,6 +194,7 @@ class Scenario:
                                   wind=(xread('wind_enable', self.name, run.input_xdb) == 'True'),
                                   pv=(xread('pv_enable', self.name, run.input_xdb) == 'True'),
                                   gen=(xread('gen_enable', self.name, run.input_xdb) == 'True'),
+                                  grid=(xread('grid_enable', self.name, run.input_xdb) == 'True'),
                                   ess=(xread('ess_enable', self.name, run.input_xdb) == 'True'),
                                   bev=(xread('bev_enable', self.name, run.input_xdb) == 'True'),
                                   brs=(xread('brs_enable', self.name, run.input_xdb) == 'True'))
@@ -209,6 +210,8 @@ class Scenario:
                 self.pv = blocks.PVSource('pv', self, run)
             elif name == 'gen':
                 self.gen = blocks.ControllableSource('gen', self, run)
+            elif name == 'grid':
+                self.grid = blocks.ControllableSource('grid', self, run)
             elif name == 'ess':
                 self.ess = blocks.StationaryEnergyStorage('ess', self, run)
             elif name == 'bev':
@@ -230,7 +233,7 @@ class Scenario:
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.lcoe = self.lcoe_dis = None
 
-    def accumulate_results(self):
+    def accumulate_results(self, run):
 
         for block in self.blocks:
             block.accumulate_results(self)
@@ -247,6 +250,11 @@ class Scenario:
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError or RuntimeWarning:
             run.logger.warning("LCOE calculation: division by zero")
+
+
+        lcoe_display = round(self.lcoe_dis * 1e5, 1)
+        npc_display = round(self.totex_dis)
+        run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
 
     def end_timing(self, run):
         self.runtime_end = time.perf_counter()
@@ -381,7 +389,6 @@ class SimulationRun:
     def __init__(self):
 
         self.name = 'run'
-
         self.cwd = os.getcwd()
         if len(sys.argv) == 1:  # if no arguments have been passed
             self.scenarios_file_path, self.result_path = input_gui(self.cwd)
@@ -631,7 +638,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
 
     if not scenario.exception:
         if run.save_results or run.print_results:
-            scenario.accumulate_results()
+            scenario.accumulate_results(run)
             if run.save_results:
                 scenario.save_results(run)
             if run.print_results:
