@@ -86,6 +86,8 @@ class InvestBlock:
 
         self.opt = (xread(f'{self.name}_opt', scenario.name, run.input_xdb) == 'True')
 
+        # TODO add "existing" block for grid connection
+
         if self.opt and scenario.strategy != 'go':
             run.logger.warning(f'{self.name} component size optimization not implemented for any'
                                f' other strategy than \"GO\" - disabling size optimization')
@@ -126,14 +128,17 @@ class InvestBlock:
 
         scenario.blocks.append(self)
 
-    def accumulate_invest_results(self, scenario):  # TODO check whether CommoditySystems accumulate all commodity costs correctly
+    def accumulate_invest_results(self, scenario):
 
         self.e_sim = self.flow.sum()
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        self.capex_init = self.size * self.capex_spec
+        if isinstance(self, CommoditySystem):
+            self.capex_init = self.size * self.capex_spec * self.commodity_num
+        else:
+            self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
                                  self.lifespan,
@@ -153,7 +158,10 @@ class InvestBlock:
         scenario.capex_dis += self.capex_dis
         scenario.capex_ann += self.capex_ann
 
-        self.mntex_yrl = self.size * self.mntex_spec  # time-based maintenance
+        if isinstance(self, CommoditySystem):
+            self.mntex_yrl = self.size * self.mntex_spec * self.commodity_num  # time-based maintenance
+        else:
+            self.mntex_yrl = self.size * self.mntex_spec  # time-based maintenance
         self.mntex_sim = self.mntex_yrl * scenario.sim_yr_rat
         self.mntex_prj = self.mntex_yrl * scenario.prj_duration_yrs
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
@@ -292,17 +300,23 @@ class CommoditySystem(InvestBlock):
 
     def accumulate_results(self, scenario):
 
-        self.accumulate_invest_results(scenario)  # TODO check for validity - multiple resources included!
+        self.accumulate_invest_results(scenario)
         self.accumulate_energy_results_sink(scenario)  # CommoditySystem is a sink as positive power/energy exits the core
 
         for commodity in self.commodities:
-            commodity.accumulate_results()
+            commodity.accumulate_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
 
+        self.flow_out_ch = horizon.results[(self.outflow, scenario.core.ac_bus)]['sequences']['flow'][horizon.ch_dti]
+        self.flow_in_ch = horizon.results[(scenario.core.ac_bus, self.inflow)]['sequences']['flow'][horizon.ch_dti]
+        self.flow_ch = self.flow_in_ch - self.flow_out_ch  # inflow is positive
+
+        self.flow = pd.concat([self.flow, self.flow_ch])
+
         for commodity in self.commodities:
             commodity.get_ch_results(horizon, scenario)
-        # TODO get system level flows, not only individual ones
+
 
     def update_input_components(self, *_):
         for commodity in self.commodities:
@@ -409,12 +423,12 @@ class ControllableSource(InvestBlock):
         self.bus = scenario.core.ac_bus
 
         if self.opt:
-            self.src = solph.Source(label='gen_src',
+            self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(
                                         investment=solph.Investment(ep_costs=self.eq_pres_cost),
                                         variable_costs=self.opex_spec)})
         else:
-            self.src = solph.Source(label='gen_src',
+            self.src = solph.Source(label=f'{self.name}_src',
                                     outputs={scenario.core.ac_bus: solph.Flow(nominal_value=self.size,
                                                                               variable_costs=self.opex_spec)})
         scenario.components.append(self.src)
@@ -446,6 +460,7 @@ class MobileCommodity:
         self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
         self.ph_init_soc = self.init_soc  # set first PH's initial state variables (only SOC)
 
+        self.e_sim = self.e_yrl = self.e_prj = self.e_dis = None  # empty placeholders for cumulative results
         self.flow_in_ch = self.flow_out_ch = self.flow_ch = self.flow = pd.Series(dtype='float64')  # result data
         self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')  # result data
 
@@ -520,8 +535,11 @@ class MobileCommodity:
                               inputs={self.bus: solph.Flow(nominal_value=1)})
         scenario.components.append(self.snk)
 
-    def accumulate_results(self):
-        pass  # TODO individual commodity result accumulation
+    def accumulate_results(self, scenario):
+        self.e_sim = self.flow.sum()
+        self.e_yrl = self.e_sim / scenario.sim_yr_rat
+        self.e_prj = self.e_yrl * scenario.prj_duration_yrs
+        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
     def get_ch_results(self, horizon, scenario):
 
