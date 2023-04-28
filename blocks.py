@@ -18,6 +18,7 @@ license:    GPLv3
 # Module imports
 ###############################################################################
 
+import numpy as np
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -317,7 +318,6 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities:
             commodity.get_ch_results(horizon, scenario)
 
-
     def update_input_components(self, *_):
         for commodity in self.commodities:
             commodity.update_input_components()
@@ -453,8 +453,12 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
+        self.size = self.parent.size
+
         colnames = [coln for coln in self.parent.data.columns if self.name in coln]
         self.data = self.parent.data[colnames]
+        # remove CommoditySystem name and Commodity numbers in column headers
+        self.data.columns = self.data.columns.str.split('_').str[1]
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
@@ -515,6 +519,8 @@ class MobileCommodity:
                                                        max_storage_level=1,
                                                        investment=solph.Investment(
                                                            ep_costs=self.parent.eq_pres_cost))
+        elif self.parent.int_lvl == 'uc':
+            self.get_uc_power()
         else:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
@@ -558,6 +564,40 @@ class MobileCommodity:
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
+    def get_uc_power(self):
+        '''Converting availability and consumption data of commodities into a power timeseries for uncoordinated
+         (i.e. unoptimized and starting at full power after return) charging of commodity'''
+
+        power = []
+        soc = [self.init_soc]
+
+        minsoc_inz, = self.data['minsoc'].to_numpy().nonzero()
+
+        for dtindex, row in self.data.iterrows():
+            intindex = self.data.index.get_loc(dtindex)
+            if row['minsoc'] == 0: # if current minsoc is 0 - vehicle is not leaving
+                dep_inxt = min(minsoc_inz[minsoc_inz >= intindex])  # find next index with nonzero minsoc
+                #dep_tnxt =
+                dep_soc = self.data.iloc[dep_inxt]['minsoc']
+                t_delta = (dep_inxt - index)  # * timestepsize  # TODO make fit for non-hour timestepsizes
+                e_req = (dep_soc - soc[-1]) * self.size
+                p_req = e_req / t_delta
+            else:  # current minsoc is nonzero - commodity is leaving
+                pass
+
+            # then find next minsoc and calculate required energy to that minsoc
+            # else (minsoc is not 0)
+            # check whether minsoc has been reached and give warning if that is not the case
+
+            # if required energy is bigger/equal than max charge * timestep size
+            # then charge at max power
+            # elif required energy is positive and smaller than max charge * timestep size
+            # then charge at required energy / timestep size
+            # else (required energy is equal or smaller than zero)
+            # then do nothing
+
+        #self.data['uc_power'] =
+
     def update_input_components(self, *_):
 
         self.ph_data = self.parent.ph_data
@@ -600,8 +640,8 @@ class PVSource(InvestBlock):
                                                                                self.longitude,
                                                                                start=self.api_startyear,
                                                                                end=self.api_endyear,
-                                                                               #url='https://re.jrc.ec.europa.eu/api/v5_2/',
-                                                                               #raddatabase='PVGIS-SARAH2',  # TODO reinstate version and db for data post 2016
+                                                                               url='https://re.jrc.ec.europa.eu/api/v5_2/',
+                                                                               raddatabase='PVGIS-SARAH2',
                                                                                components=False,
                                                                                outputformat='json',
                                                                                pvcalculation=True,
@@ -763,8 +803,6 @@ class WindSource(InvestBlock):
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
-        # self.transformer_eff = xread(self.name + '_eff', scenario.name, run.input_xdb)  # TODO check if this can be omitted
-
         # Creation of static energy system components --------------------------------
 
         """
@@ -783,7 +821,7 @@ class WindSource(InvestBlock):
         self.outflow = solph.Transformer(label=f'{self.name}_ac',
                                          inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
                                          outputs={scenario.core.ac_bus: solph.Flow()},
-                                         conversion_factors={scenario.core.ac_bus: 1})  # TODO proper efficiency
+                                         conversion_factors={scenario.core.ac_bus: self.transformer_eff})
         scenario.components.append(self.outflow)
 
         self.exc = solph.Sink(label=f'{self.name}_exc',

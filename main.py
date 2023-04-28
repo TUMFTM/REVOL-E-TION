@@ -265,40 +265,51 @@ class Scenario:
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
-        demand_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
+        # types for which positive flow values are power taken out of the core
+        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
 
         for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
 
-            if isinstance(block, demand_types):  # TODO show as stacked plot
-                self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
-                                                 y=block.flow * -1,
-                                                 mode='lines',
-                                                 name=f"{block.name} Power",  # TODO print sizing in plot
-                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
-                                      secondary_y=False)
+            if hasattr(block, 'size'):
+                display_size = round(block.size / 1e3, 1)
+                if isinstance(block, blocks.CommoditySystem):
+                    legentry_p = f"{block.name} total power"
+                else:
+                    legentry_p = f"{block.name} power ({display_size} kW)"
             else:
-                self.figure.add_trace(go.Scatter(x=block.flow.index,  # .to_pydatetime(),
-                                                 y=block.flow,
-                                                 mode='lines',
-                                                 name=f"{block.name} Power",   # TODO print sizing in plot
-                                                 line=dict(width=2, dash=None)),  # TODO introduce TUM colors
-                                      secondary_y=False)
+                legentry_p = f"{block.name} power"
+
+            invert_power = isinstance(block, invert_types)  # TODO show as stacked plot
+            self.figure.add_trace(go.Scatter(x=block.flow.index,
+                                             y=block.flow * {True: -1,
+                                                             False: 1}[invert_power],
+                                             mode='lines',
+                                             name=legentry_p,
+                                             line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+                                  secondary_y=False)
 
             if isinstance(block, blocks.StationaryEnergyStorage):
-                self.figure.add_trace(go.Scatter(x=block.soc.index,  # .to_pydatetime(),
+                legentry_soc = f"{block.name} SOC ({display_size} kWh)"
+                self.figure.add_trace(go.Scatter(x=block.soc.index,
                                                  y=block.soc,
                                                  mode='lines',
-                                                 name=f"{block.name} SOC",  # TODO print sizing in plot
+                                                 name=legentry_soc,
                                                  line=dict(width=2, dash=None),
                                                  visible='legendonly'),  # TODO introduce TUM colors
                                       secondary_y=True)
-
-            if isinstance(block, blocks.CommoditySystem):
+            elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities:
+                    self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
+                                                     y=commodity.flow * -1,
+                                                     mode='lines',
+                                                     name=f"{commodity.name} power",
+                                                     line=dict(width=2, dash=None),
+                                                     visible='legendonly'),  # TODO introduce TUM colors
+                                          secondary_y=False)
                     self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
                                                      y=commodity.soc,
                                                      mode='lines',
-                                                     name=f"{commodity.name} SOC",    # TODO print sizing in plot, denote whether single or combined value
+                                                     name=f"{commodity.name} SOC ({display_size} kWh)",
                                                      line=dict(width=2, dash=None),
                                                      visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=True)

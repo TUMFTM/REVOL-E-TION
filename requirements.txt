@@ -1,5 +1,5 @@
 datetime
-oemof.solph>=0.4.4
+oemof.solph==0.4.4
 pandas
 plotly
 pvlib
