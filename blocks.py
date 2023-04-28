@@ -254,6 +254,8 @@ class CommoditySystem(InvestBlock):
         self.commodity_num = xread(self.name + '_num', scenario.name, run.input_xdb)
         self.commodity_agr = xread(self.name + '_agr', scenario.name, run.input_xdb)  # TODO enable aggregated simulation
 
+        self.init_soc = xread(self.name + '_init_soc', scenario.name, run.input_xdb)
+
         self.chg_pwr = xread(self.name + '_chg_pwr', scenario.name, run.input_xdb)
         self.dis_pwr = xread(self.name + '_dis_pwr', scenario.name, run.input_xdb)
         self.chg_eff = xread(self.name + '_charge_eff', scenario.name, run.input_xdb)
@@ -338,7 +340,11 @@ class StationaryEnergyStorage(InvestBlock):
         self.ph_init_soc = self.init_soc  # TODO actually necessary?
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
-        self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')  # result data
+        self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
+        self.soc = pd.Series(data=self.init_soc,
+                             index=scenario.sim_dti[0:1],
+                             dtype='float64')
+        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
         """
         x denotes the flow measurement point in results
@@ -393,6 +399,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
         # shift is needed as sc/soc is stored for end of timestep
+
         self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
@@ -456,17 +463,23 @@ class MobileCommodity:
         self.size = self.parent.size
 
         colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        # only select this commodity's columns
         self.data = self.parent.data[colnames]
         # remove CommoditySystem name and Commodity numbers in column headers
-        self.data.columns = self.data.columns.str.split('_').str[1]
+        self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
         self.ph_data = None  # placeholder, is filled in update_input_components
 
-        self.init_soc = xread(self.parent.name + '_init_soc', scenario.name, run.input_xdb)
+        self.init_soc = self.parent.init_soc
         self.ph_init_soc = self.init_soc  # set first PH's initial state variables (only SOC)
 
         self.e_sim = self.e_yrl = self.e_prj = self.e_dis = None  # empty placeholders for cumulative results
         self.flow_in_ch = self.flow_out_ch = self.flow_ch = self.flow = pd.Series(dtype='float64')  # result data
-        self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')  # result data
+
+        self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
+        self.soc = pd.Series(data=self.init_soc,
+                             index=scenario.sim_dti[0:1],
+                             dtype='float64')
+        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
         # Creation of permanent energy system components --------------------------------
 
@@ -520,7 +533,8 @@ class MobileCommodity:
                                                        investment=solph.Investment(
                                                            ep_costs=self.parent.eq_pres_cost))
         elif self.parent.int_lvl == 'uc':
-            self.get_uc_power()
+            self.calc_uc_power()
+            # continue with fixed demand
         else:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
@@ -559,29 +573,32 @@ class MobileCommodity:
             horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
             horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
         # shift is needed as sc/soc is stored for end of timestep
+
         self.soc_ch = self.sc_ch / self.parent.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
-    def get_uc_power(self):
+    def calc_uc_power(self):
         '''Converting availability and consumption data of commodities into a power timeseries for uncoordinated
          (i.e. unoptimized and starting at full power after return) charging of commodity'''
 
-        power = []
+        uc_power = []
         soc = [self.init_soc]
 
         minsoc_inz, = self.data['minsoc'].to_numpy().nonzero()
+        # get the integer indices of all leaving (nonzero) minsoc rows in the data
 
         for dtindex, row in self.data.iterrows():
-            intindex = self.data.index.get_loc(dtindex)
-            if row['minsoc'] == 0: # if current minsoc is 0 - vehicle is not leaving
+            intindex = self.data.index.get_loc(dtindex)  # get row number
+
+            if row['minsoc'] == 0:  # if current minsoc is 0 - commodity is not leaving
                 dep_inxt = min(minsoc_inz[minsoc_inz >= intindex])  # find next index with nonzero minsoc
-                #dep_tnxt =
+                dep_tnxt = self.data.index.iloc[dep_inxt]
                 dep_soc = self.data.iloc[dep_inxt]['minsoc']
-                t_delta = (dep_inxt - index)  # * timestepsize  # TODO make fit for non-hour timestepsizes
-                e_req = (dep_soc - soc[-1]) * self.size
-                p_req = e_req / t_delta
+                t_delta = dep_tnxt - dtindex  # TODO make fit for non-hour timestepsizes
+                e_delta = (dep_soc - soc[-1]) * self.size
+                p_min = e_delta / t_delta
             else:  # current minsoc is nonzero - commodity is leaving
                 pass
 

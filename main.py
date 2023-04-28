@@ -129,6 +129,15 @@ class PredictionHorizon:
             run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
+    def run_lfs(selfself, scenario, run):
+        pass
+
+    def run_ccs(self, scenario, run):
+        pass
+
+    def run_pss(self, scenario, run):
+        pass
+
 
 class Scenario:
 
