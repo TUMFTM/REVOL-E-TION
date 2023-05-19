@@ -70,11 +70,7 @@ class PredictionHorizon:
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
 
         for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
-            if self.ch_endtime >= scenario.sim_endtime:  # only on last horizon
-                block.ph_data = block.data[self.starttime:self.ph_endtime]
-            else:
-                # deleting last elements prevents spillover into next PH as endtime is included in indexing
-                block.ph_data = block.data[self.starttime:self.ph_endtime][:-1]
+            block.ph_data = block.data[self.starttime:self.ph_endtime]
 
         for block in scenario.blocks:
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -84,12 +80,16 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        self.es = solph.EnergySystem(timeindex=self.ph_dti)  # initialize energy system model instance
+        self.es = solph.EnergySystem(timeindex=self.ph_dti,
+                                     infer_last_interval=True)  # initialize energy system model instance
 
         for component in scenario.components:
             self.es.add(component)  # add components to this horizon's energy system
 
-        self.model = solph.Model(self.es)  # Build the mathematical linear optimization model with pyomo
+        if run.solver_debugmode:# Build the mathematical linear optimization model with pyomo
+            self.model = solph.Model(self.es, debug=True)
+        else:
+            self.model = solph.Model(self.es, debug=False)
 
         if run.dump_model:
             if scenario.strategy == 'go':
@@ -140,6 +140,7 @@ class PredictionHorizon:
 
     def run_pss(self, scenario, run):
         pass
+
 
 class Scenario:
 
@@ -286,6 +287,7 @@ class Scenario:
                 if isinstance(block, blocks.CommoditySystem):
                     legentry_p = f"{block.name} total power"
                 if isinstance(block, blocks.StationaryEnergyStorage):
+                    display_size = round(block.size / 1e3, 1)
                     display_dpwr = round(block.dis_crate * block.size / 1e3, 1)
                     legentry_p = f"{block.name} power ({display_dpwr} kW)"
                 else:
@@ -407,7 +409,7 @@ class Scenario:
             pickle.dump(self.results, file)
 
     def show_plots(self):
-        self.figure.show()
+        self.figure.show(renderer='browser')
 
 
 class SimulationRun:
@@ -475,12 +477,13 @@ class SimulationRun:
 
         if self.parallel:
             self.process_num = min(self.scenario_num, os.cpu_count())
+            log_stream_handler.setLevel(logging.INFO)
             self.logger.info(f'Global settings read - '
                              f'simulating {self.scenario_num} scenario(s)'
                              f' in parallel mode with {self.process_num} process(es)')
         else:
-            self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
-            log_stream_handler.setLevel(logging.DEBUG)
+            self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
+            log_stream_handler.setLevel(logging.INFO)
             self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
 
     def end_timing(self):
@@ -632,7 +635,10 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         run.process = mp.current_process()
         run.queue_handler = logging.handlers.QueueHandler(log_queue)
         run.logger = logging.getLogger()
-        run.logger.setLevel(logging.DEBUG)
+        if run.solver_debugmode:
+            run.logger.setLevel(logging.DEBUG)
+        else:
+            run.logger.setLevel(logging.INFO)
         run.logger.addHandler(run.queue_handler)
 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
