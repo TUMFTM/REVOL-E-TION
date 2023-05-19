@@ -473,13 +473,9 @@ class MobileCommodity:
                                                    conversion_factors={self.bus: self.parent.chg_eff})
         scenario.components.append(self.inflow)
 
+        self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2g'] else False
         self.outflow = solph.components.Transformer(label=f'{self.name}_mc',
-                                                    inputs={self.bus: solph.Flow(nominal_value={'uc': 0,
-                                                                                                'tc': 0,
-                                                                                                'cc': 0,
-                                                                                                'v2v': 1,
-                                                                                                'v2g': 1}
-                                                                                               [self.parent.int_lvl]
+                                                    inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable
                                                                                                * self.parent.dis_pwr,
                                                                                  variable_costs=run.eps_cost)},
                                                     outputs={self.parent.bus: solph.Flow()},
@@ -488,43 +484,40 @@ class MobileCommodity:
 
         if self.parent.int_lvl in self.parent.apriori_lvls:  # dispatch is known a priori --> simple sink is sufficient
             self.calc_uc_power(scenario)
-
-        if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
-            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                       inputs={self.bus: solph.Flow()},
-                                                       outputs={self.bus: solph.Flow(
-                                                           variable_costs=self.parent.opex_spec)},
-                                                       loss_rate=0,  # TODO integrate self discharge
-                                                       balanced=False,
-                                                       initial_storage_level=self.ph_init_soc,
-                                                       inflow_conversion_factor=1,
-                                                       # efficiency already modeled in transformers
-                                                       outflow_conversion_factor=1,
-                                                       # efficiency already modeled in transformers
-                                                       max_storage_level=1,
-                                                       investment=solph.Investment(
-                                                           ep_costs=self.parent.eq_pres_cost))
-        elif self.parent.int_lvl == 'uc':
-            self.calc_uc_power(scenario)
-            # continue with fixed demand
-        else:
-            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                       inputs={self.bus: solph.Flow()},
-                                                       outputs={self.bus: solph.Flow(
-                                                           variable_costs=self.parent.opex_spec)},
-                                                       loss_rate=0,  # TODO integrate self discharge
-                                                       balanced=False,
-                                                       initial_storage_level=self.ph_init_soc,
-                                                       inflow_conversion_factor=1,
-                                                       # efficiency already modeled in transformers
-                                                       outflow_conversion_factor=1,
-                                                       # efficiency already modeled in transformers
-                                                       max_storage_level=1,
-                                                       nominal_storage_capacity=self.parent.size)
-        scenario.components.append(self.ess)
+        else:  # Storage is only added if MCs have flexibility potential
+            if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
+                self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
+                                                           inputs={self.bus: solph.Flow()},
+                                                           outputs={self.bus: solph.Flow(
+                                                               variable_costs=self.parent.opex_spec)},
+                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           balanced=False,
+                                                           initial_storage_level=self.ph_init_soc,
+                                                           inflow_conversion_factor=1,
+                                                           # efficiency already modeled in transformers
+                                                           outflow_conversion_factor=1,
+                                                           # efficiency already modeled in transformers
+                                                           max_storage_level=1,
+                                                           investment=solph.Investment(
+                                                               ep_costs=self.parent.eq_pres_cost))
+            else:
+                self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
+                                                           inputs={self.bus: solph.Flow()},
+                                                           outputs={self.bus: solph.Flow(
+                                                               variable_costs=self.parent.opex_spec)},
+                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           balanced=False,
+                                                           initial_storage_level=self.ph_init_soc,
+                                                           inflow_conversion_factor=1,
+                                                           # efficiency already modeled in transformers
+                                                           outflow_conversion_factor=1,
+                                                           # efficiency already modeled in transformers
+                                                           max_storage_level=1,
+                                                           nominal_storage_capacity=self.parent.size)
+            scenario.components.append(self.ess)
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                         inputs={self.bus: solph.Flow(nominal_value=1)})
+                                         inputs={self.bus: solph.Flow()})
         # actual values are set later in update_input_components for each prediction horizon
         scenario.components.append(self.snk)
 
@@ -563,9 +556,6 @@ class MobileCommodity:
         # get the integer indices of all leaving (nonzero) minsoc rows in the data
 
         for dtindex, row in self.data.iterrows():
-
-            intindex = self.data.index.get_loc(dtindex)  # get row number
-
             intindex = self.data.index.get_loc(dtindex)  # get row number
             if row['atbase'] == 1:  # commodity is chargeable
                 try:
@@ -577,51 +567,39 @@ class MobileCommodity:
                 e_tominsoc = (dep_soc - soc[-1]) * self.size  # energy to be recharged to departure SOC in Wh
                 p_tominsoc = e_tominsoc / scenario.sim_timestep_hours  # power to recharge to departure SOC in one step
                 p_maxchg = self.chg_pwr * self.parent.chg_eff  # max rechargeable energy in one timestep in Wh
-                p_act = min(p_maxchg, p_tominsoc)  # reduce chg power in final step to just reach departure SOC#
+                p_act = min(p_maxchg, p_tominsoc)  # reduce chg power in final step to just reach departure SOC
+                p_uc = p_act / self.parent.chg_eff # convert back to grid side power
             else:  # commodity is not chargeable, but might be discharged
                 e_dis = -1 * row['consumption']
                 p_act = e_dis / scenario.sim_timestep_hours
+                p_uc = 0  # discharged energy does not directly affect UC power
 
-            # then find next minsoc and calculate required energy to that minsoc
-            # else (minsoc is not 0)
-            # check whether minsoc has been reached and give warning if that is not the case
+            uc_power.append(p_uc)
+            soc_delta = p_act * scenario.sim_timestep_hours / self.size
+            soc.append(soc[-1] + soc_delta)
 
-            # if required energy is bigger/equal than max charge * timestep size
-            # then charge at max power
-            # elif required energy is positive and smaller than max charge * timestep size
-            # then charge at required energy / timestep size
-            # else (required energy is equal or smaller than zero)
-            # then do nothing
-
-            # self.data['uc_power'] =
-
-            soc_new = ((self.size * soc[-1]) + (p_act * scenario.sim_timestep_hours)) / self.size
-            uc_power.append(p_act)
-            soc.append(soc_new)
-
-        self.data.loc[:, 'uc_power'] = uc_power
-        self.data['soc'] = soc[1:]  # TODO check whether SOC indexing (here at end of step fits optimization output)
-
+        self.data['uc_power'] = uc_power
+        self.data['soc'] = soc[:-1]  # TODO check whether SOC indexing fits optimization output
         pass
 
     def update_input_components(self, *_):
 
-        self.ph_data = self.parent.ph_data  # TODO is this updated? Cannot find it currently...
-
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define consumption data for sink (as per uc power calculation)
-            self.snk.inputs[self.bus].fix = self.ph_data[f'{self.name}_chgpwr']
+            self.snk.inputs[self.bus].fix = self.ph_data['uc_power']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.ph_data[f'{self.name}_atbase']
-            self.outflow.inputs[self.bus].max = self.ph_data[f'{self.name}_atbase']
+            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase']
+            self.outflow.inputs[self.bus].max = self.ph_data['atbase']
 
             # define consumption data for sink (only enabled when detached from base)
-            self.snk.inputs[self.bus].fix = self.ph_data[f'{self.name}_consumption']
+            self.snk.inputs[self.bus].fix = self.ph_data['consumption']
 
             # set initial and minimum storage levels for coming prediction horizon
             self.ess.initial_storage_level = self.ph_init_soc
-            self.ess.min_storage_level = self.ph_data[f'{self.name}_minsoc']
+            self.ess.min_storage_level = self.ph_data['minsoc']
+
+        # TODO something is still not right with these settings - EVs stay at high SOC and never consume...
 
 
 class PVSource(InvestBlock):

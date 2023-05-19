@@ -71,6 +71,9 @@ class PredictionHorizon:
 
         for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
             block.ph_data = block.data[self.starttime:self.ph_endtime]
+            if isinstance(block, blocks.CommoditySystem):
+                for commodity in block.commodities:
+                    commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
 
         for block in scenario.blocks:
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -131,6 +134,7 @@ class PredictionHorizon:
         except UserWarning as exc:
             run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
+            # TODO does not jump to next scenario properly (at least in parallel mode)
 
     def run_lfs(self, scenario, run):
         pass
