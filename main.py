@@ -132,8 +132,6 @@ class PredictionHorizon:
             run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
-<<<<<<< Updated upstream
-=======
     def run_lfs(self, scenario, run):
         pass
 
@@ -142,8 +140,6 @@ class PredictionHorizon:
 
     def run_pss(self, scenario, run):
         pass
-
->>>>>>> Stashed changes
 
 class Scenario:
 
@@ -287,10 +283,13 @@ class Scenario:
         for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
 
             if hasattr(block, 'size'):
-                display_size = round(block.size / 1e3, 1)
                 if isinstance(block, blocks.CommoditySystem):
                     legentry_p = f"{block.name} total power"
+                if isinstance(block, blocks.StationaryEnergyStorage):
+                    display_dpwr = round(block.dis_crate * block.size / 1e3, 1)
+                    legentry_p = f"{block.name} power ({display_dpwr} kW)"
                 else:
+                    display_size = round(block.size / 1e3, 1)
                     legentry_p = f"{block.name} power ({display_size} kW)"
             else:
                 legentry_p = f"{block.name} power"
@@ -318,7 +317,7 @@ class Scenario:
                     self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
                                                      y=commodity.flow * -1,
                                                      mode='lines',
-                                                     name=f"{commodity.name} power",
+                                                     name=legentry_p,
                                                      line=dict(width=2, dash=None),
                                                      visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=False)

@@ -221,22 +221,10 @@ class CommoditySystem(InvestBlock):
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
-        self.init_soc = xread(self.name + '_init_soc', scenario.name, run.input_xdb)
-
->>>>>>> rule_based_os
-        self.chg_pwr = xread(self.name + '_chg_pwr', scenario.name, run.input_xdb)
-        self.dis_pwr = xread(self.name + '_dis_pwr', scenario.name, run.input_xdb)
-        self.chg_eff = xread(self.name + '_charge_eff', scenario.name, run.input_xdb)
-        self.dis_eff = xread(self.name + '_discharge_eff', scenario.name, run.input_xdb)
-=======
         self.commodity_num = xread(self.name + '_num', scenario.name, run)
         self.commodity_agr = xread(self.name + '_agr', scenario.name, run)  # TODO enable aggregated simulation
 
         self.init_soc = xread(self.name + '_init_soc', scenario.name, run)
->>>>>>> Stashed changes
 
         self.chg_pwr = xread(self.name + '_chg_pwr', scenario.name, run)
         self.dis_pwr = xread(self.name + '_dis_pwr', scenario.name, run)
@@ -316,29 +304,6 @@ class ControllableSource(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-<<<<<<< Updated upstream
-        self.chg_eff = xread(self.name + '_chg_eff', scenario.name, run.input_xdb)
-        self.dis_eff = xread(self.name + '_dis_eff', scenario.name, run.input_xdb)
-        self.chg_crate = xread(self.name + '_chg_crate', scenario.name, run.input_xdb)
-        self.dis_crate = xread(self.name + '_dis_crate', scenario.name, run.input_xdb)
-
-        self.init_soc = xread(self.name + '_init_soc', scenario.name, run.input_xdb)
-        self.ph_init_soc = self.init_soc  # TODO actually necessary?
-
-        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
-<<<<<<< HEAD
-        self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')  # result data
-=======
-        # Creation of static energy system components --------------------------------
->>>>>>> Stashed changes
-=======
-        self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
-        self.soc = pd.Series(data=self.init_soc,
-                             index=scenario.sim_dti[0:1],
-                             dtype='float64')
-        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
->>>>>>> rule_based_os
-
         """
         x denotes the flow measurement point in results
 
@@ -371,17 +336,9 @@ class ControllableSource(InvestBlock):
         self.flow_ch = horizon.results[(self.src, scenario.core.ac_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
 
-<<<<<<< Updated upstream
-        self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
-            ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
-        # shift is needed as sc/soc is stored for end of timestep
-
-        self.soc_ch = self.sc_ch / self.size
-=======
     def update_input_components(self, *_):
         pass  # no sliced input data needed for controllable source, but function needs to be callable
 
->>>>>>> Stashed changes
 
 class FixedDemand:
 
@@ -457,16 +414,9 @@ class MobileCommodity:
         self.chg_pwr = self.parent.chg_pwr
 
         colnames = [coln for coln in self.parent.data.columns if self.name in coln]
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
-        # only select this commodity's columns
->>>>>>> rule_based_os
-        self.data = self.parent.data[colnames]
-=======
-        # only select this commodity's columns
+
         self.data = self.parent.data.loc[:, colnames]
->>>>>>> Stashed changes
+
         # remove CommoditySystem name and Commodity numbers in column headers
         self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
         self.ph_data = None  # placeholder, is filled in update_input_components
@@ -549,16 +499,9 @@ class MobileCommodity:
                                                        max_storage_level=1,
                                                        investment=solph.Investment(
                                                            ep_costs=self.parent.eq_pres_cost))
-<<<<<<< Updated upstream
         elif self.parent.int_lvl == 'uc':
-<<<<<<< HEAD
-            self.get_uc_power()
-=======
->>>>>>> Stashed changes
-=======
-            self.calc_uc_power()
+            self.calc_uc_power(scenario)
             # continue with fixed demand
->>>>>>> rule_based_os
         else:
             self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                        inputs={self.bus: solph.Flow()},
@@ -604,15 +547,7 @@ class MobileCommodity:
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-    def get_uc_power(self):
-=======
     def calc_uc_power(self, scenario):
->>>>>>> Stashed changes
-=======
-    def calc_uc_power(self):
->>>>>>> rule_based_os
         '''Converting availability and consumption data of commodities into a power timeseries for uncoordinated
          (i.e. unoptimized and starting at full power after return) charging of commodity'''
 
@@ -623,37 +558,9 @@ class MobileCommodity:
         # get the integer indices of all leaving (nonzero) minsoc rows in the data
 
         for dtindex, row in self.data.iterrows():
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-            intindex = self.data.index.get_loc(dtindex)
-            if row['minsoc'] == 0: # if current minsoc is 0 - vehicle is not leaving
-=======
+
             intindex = self.data.index.get_loc(dtindex)  # get row number
 
-            if row['minsoc'] == 0:  # if current minsoc is 0 - commodity is not leaving
->>>>>>> rule_based_os
-                dep_inxt = min(minsoc_inz[minsoc_inz >= intindex])  # find next index with nonzero minsoc
-                dep_tnxt = self.data.index.iloc[dep_inxt]
-                dep_soc = self.data.iloc[dep_inxt]['minsoc']
-                t_delta = dep_tnxt - dtindex  # TODO make fit for non-hour timestepsizes
-                e_delta = (dep_soc - soc[-1]) * self.size
-                p_min = e_delta / t_delta
-            else:  # current minsoc is nonzero - commodity is leaving
-                pass
-
-            # then find next minsoc and calculate required energy to that minsoc
-            # else (minsoc is not 0)
-            # check whether minsoc has been reached and give warning if that is not the case
-
-            # if required energy is bigger/equal than max charge * timestep size
-            # then charge at max power
-            # elif required energy is positive and smaller than max charge * timestep size
-            # then charge at required energy / timestep size
-            # else (required energy is equal or smaller than zero)
-            # then do nothing
-
-        #self.data['uc_power'] =
-=======
             intindex = self.data.index.get_loc(dtindex)  # get row number
             if row['atbase'] == 1:  # commodity is chargeable
                 try:
@@ -670,6 +577,19 @@ class MobileCommodity:
                 e_dis = -1 * row['consumption']
                 p_act = e_dis / scenario.sim_timestep_hours
 
+            # then find next minsoc and calculate required energy to that minsoc
+            # else (minsoc is not 0)
+            # check whether minsoc has been reached and give warning if that is not the case
+
+            # if required energy is bigger/equal than max charge * timestep size
+            # then charge at max power
+            # elif required energy is positive and smaller than max charge * timestep size
+            # then charge at required energy / timestep size
+            # else (required energy is equal or smaller than zero)
+            # then do nothing
+
+        #self.data['uc_power'] =
+
             soc_new = ((self.size * soc[-1]) + (p_act * scenario.sim_timestep_hours)) / self.size
             uc_power.append(p_act)
             soc.append(soc_new)
@@ -678,7 +598,6 @@ class MobileCommodity:
         self.data['soc'] = soc[1:]  # TODO check whether SOC indexing (here at end of step fits optimization output)
 
         pass
->>>>>>> Stashed changes
 
     def update_input_components(self, *_):
 
