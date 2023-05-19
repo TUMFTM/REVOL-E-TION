@@ -323,7 +323,7 @@ class Scenario:
                     self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
                                                      y=commodity.flow * -1,
                                                      mode='lines',
-                                                     name=legentry_p,
+                                                     name=f"{commodity.name} power",
                                                      line=dict(width=2, dash=None),
                                                      visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=False)

@@ -481,6 +481,11 @@ class MobileCommodity:
                                                     outputs={self.parent.bus: solph.Flow()},
                                                     conversion_factors={self.parent.bus: self.parent.dis_eff})
         scenario.components.append(self.outflow)
+        
+        self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                         inputs={self.bus: solph.Flow(nominal_value=1)})
+        # actual values are set later in update_input_components for each prediction horizon
+        scenario.components.append(self.snk)
 
         if self.parent.int_lvl in self.parent.apriori_lvls:  # dispatch is known a priori --> simple sink is sufficient
             self.calc_uc_power(scenario)
@@ -516,11 +521,6 @@ class MobileCommodity:
                                                            nominal_storage_capacity=self.parent.size)
             scenario.components.append(self.ess)
 
-        self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                         inputs={self.bus: solph.Flow()})
-        # actual values are set later in update_input_components for each prediction horizon
-        scenario.components.append(self.snk)
-
     def accumulate_results(self, scenario):
         self.e_sim = self.flow.sum()
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
@@ -535,12 +535,14 @@ class MobileCommodity:
 
         self.flow = pd.concat([self.flow, self.flow_ch])
 
-        self.sc_ch = solph.views.node(
-            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
-            horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
-        # shift is needed as sc/soc is stored for end of timestep
-
-        self.soc_ch = self.sc_ch / self.parent.size
+        if self.parent.int_lvl in self.parent.apriori_lvls:
+            self.soc_ch = self.ph_data.loc[horizon.ch_dti, 'soc']
+        else:
+            self.sc_ch = solph.views.node(
+                horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
+                horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
+            # shift is needed as sc/soc is stored for end of timestep
+            self.soc_ch = self.sc_ch / self.parent.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
@@ -568,7 +570,7 @@ class MobileCommodity:
                 p_tominsoc = e_tominsoc / scenario.sim_timestep_hours  # power to recharge to departure SOC in one step
                 p_maxchg = self.chg_pwr * self.parent.chg_eff  # max rechargeable energy in one timestep in Wh
                 p_act = min(p_maxchg, p_tominsoc)  # reduce chg power in final step to just reach departure SOC
-                p_uc = p_act / self.parent.chg_eff # convert back to grid side power
+                p_uc = p_act  # no need to convert back to grid side power, efficiency is handled in transformers
             else:  # commodity is not chargeable, but might be discharged
                 e_dis = -1 * row['consumption']
                 p_act = e_dis / scenario.sim_timestep_hours
@@ -582,7 +584,7 @@ class MobileCommodity:
         self.data['soc'] = soc[:-1]  # TODO check whether SOC indexing fits optimization output
         pass
 
-    def update_input_components(self, *_):
+    def update_input_components(self):
 
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define consumption data for sink (as per uc power calculation)
@@ -598,8 +600,6 @@ class MobileCommodity:
             # set initial and minimum storage levels for coming prediction horizon
             self.ess.initial_storage_level = self.ph_init_soc
             self.ess.min_storage_level = self.ph_data['minsoc']
-
-        # TODO something is still not right with these settings - EVs stay at high SOC and never consume...
 
 
 class PVSource(InvestBlock):
