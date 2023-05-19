@@ -118,6 +118,9 @@ class PredictionHorizon:
                 block.size = self.results[(block.src, block.bus)]['scalars']['invest']
             elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 pass  # TODO get sizes for optimized commodities
+            elif isinstance(block, blocks.SystemCore) and block.opt:
+                block.acdc_size = self.results[(block.ac_bus, block.ac_dc)]['scalars']['invest']
+                block.dcac_size = self.results[(block.dc_bus, block.dc_ac)]['scalars']['invest']
 
             block.get_ch_results(self, scenario)
 
@@ -129,6 +132,18 @@ class PredictionHorizon:
             run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
+<<<<<<< Updated upstream
+=======
+    def run_lfs(self, scenario, run):
+        pass
+
+    def run_ccs(self, scenario, run):
+        pass
+
+    def run_pss(self, scenario, run):
+        pass
+
+>>>>>>> Stashed changes
 
 class Scenario:
 
@@ -144,21 +159,22 @@ class Scenario:
 
         run.logger.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
 
-        self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run.input_xdb), '%Y/%m/%d')
-        self.prj_duration_yrs = xread('prj_duration', self.name, run.input_xdb)
+        self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run), '%Y/%m/%d')
+        self.prj_duration_yrs = xread('prj_duration', self.name, run)
         self.prj_duration = timedelta(days=self.prj_duration_yrs * 365)  # no leap years
         self.prj_endtime = self.prj_starttime + self.prj_duration
         self.prj_duration_days = (self.prj_endtime.date() - self.prj_starttime.date()).days
 
         self.sim_starttime = self.prj_starttime  # simulation timeframe is at beginning of project timeframe
-        self.sim_timestep = xread('sim_timestep', self.name, run.input_xdb)
-        self.sim_duration = timedelta(days=xread('sim_duration', self.name, run.input_xdb))
+        self.sim_timestep = xread('sim_timestep', self.name, run)
+        self.sim_duration = timedelta(days=xread('sim_duration', self.name, run))
         self.sim_endtime = self.sim_starttime + self.sim_duration
         self.sim_dti = pd.date_range(start=self.sim_starttime, end=self.sim_endtime, freq=self.sim_timestep).delete(-1)
+        self.sim_timestep_hours = self.sim_dti.freq.nanos / 1e9 / 3600
 
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration_days
-        self.wacc = xread('wacc', self.name, run.input_xdb)
+        self.wacc = xread('wacc', self.name, run)
 
         self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
                                                             f'{run.scenarios_file_name}_'
@@ -170,12 +186,12 @@ class Scenario:
 
         # Operational strategy --------------------------------
 
-        self.strategy = xread('sim_os', self.name, run.input_xdb)
+        self.strategy = xread('sim_os', self.name, run)
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len_hrs = xread('rh_ph', self.name, run.input_xdb)
-            self.ch_len_hrs = xread('rh_ch', self.name, run.input_xdb)
+            self.ph_len_hrs = xread('rh_ph', self.name, run)
+            self.ch_len_hrs = xread('rh_ch', self.name, run)
             self.ph_len = timedelta(hours=self.ph_len_hrs)
             self.ch_len = timedelta(hours=self.ch_len_hrs)
             self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
@@ -190,16 +206,16 @@ class Scenario:
 
         self.blocks = []
         self.components = []
-        self.blocks_enable = dict(dem=(xread('dem_enable', self.name, run.input_xdb) == 'True'),
-                                  wind=(xread('wind_enable', self.name, run.input_xdb) == 'True'),
-                                  pv=(xread('pv_enable', self.name, run.input_xdb) == 'True'),
-                                  gen=(xread('gen_enable', self.name, run.input_xdb) == 'True'),
-                                  grid=(xread('grid_enable', self.name, run.input_xdb) == 'True'),
-                                  ess=(xread('ess_enable', self.name, run.input_xdb) == 'True'),
-                                  bev=(xread('bev_enable', self.name, run.input_xdb) == 'True'),
-                                  brs=(xread('brs_enable', self.name, run.input_xdb) == 'True'))
+        self.blocks_enable = dict(dem=(xread('dem_enable', self.name, run) == 'True'),
+                                  wind=(xread('wind_enable', self.name, run) == 'True'),
+                                  pv=(xread('pv_enable', self.name, run) == 'True'),
+                                  gen=(xread('gen_enable', self.name, run) == 'True'),
+                                  grid=(xread('grid_enable', self.name, run) == 'True'),
+                                  ess=(xread('ess_enable', self.name, run) == 'True'),
+                                  bev=(xread('bev_enable', self.name, run) == 'True'),
+                                  brs=(xread('brs_enable', self.name, run) == 'True'))
 
-        self.core = blocks.SystemCore('core', self, run)
+        self.core = blocks.SystemCore('core', self, run)  # always enabled
 
         for name in [name for name, enable in self.blocks_enable.items() if enable]:
             if name == 'dem':
@@ -329,9 +345,9 @@ class Scenario:
                                  secondary_y=True)
 
         if self.strategy == 'go':
-            self.figure.update_layout(title=f'Global Optimum Results ({run.scenarios_file_name} - Sheet: {self.name})')
+            self.figure.update_layout(title=f'Global Optimum Results ({run.scenarios_file_name} - Scenario: {self.name})')
         if self.strategy == 'rh':
-            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Sheet: {self.name}'
+            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Scenario: {self.name}'
                                             f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
     def print_results(self):
@@ -428,15 +444,15 @@ class SimulationRun:
         self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
         self.global_sheet = 'global_settings'
-        self.solver = xread('solver', self.global_sheet, self.input_xdb)
-        self.parallel = (xread('parallel', self.global_sheet, self.input_xdb) == 'True')
-        self.save_results = (xread('save_results', self.global_sheet, self.input_xdb) == 'True')
-        self.print_results = (xread('print_results', self.global_sheet, self.input_xdb) == 'True')
-        self.save_plots = (xread('save_plots', self.global_sheet, self.input_xdb) == 'True')
-        self.show_plots = (xread('show_plots', self.global_sheet, self.input_xdb) == 'True')
-        self.dump_model = (xread('dump_model', self.global_sheet, self.input_xdb) == 'True')
-        self.solver_debugmode = (xread('solver_debugmode', self.global_sheet, self.input_xdb) == 'True')
-        self.eps_cost = float(xread('eps_cost', self.global_sheet, self.input_xdb))
+        self.solver = xread('solver', self.global_sheet, self)
+        self.parallel = (xread('parallel', self.global_sheet, self) == 'True')
+        self.save_results = (xread('save_results', self.global_sheet, self) == 'True')
+        self.print_results = (xread('print_results', self.global_sheet, self) == 'True')
+        self.save_plots = (xread('save_plots', self.global_sheet, self) == 'True')
+        self.show_plots = (xread('show_plots', self.global_sheet, self) == 'True')
+        self.dump_model = (xread('dump_model', self.global_sheet, self) == 'True')
+        self.solver_debugmode = (xread('solver_debugmode', self.global_sheet, self) == 'True')
+        self.eps_cost = float(xread('eps_cost', self.global_sheet, self))
 
         self.cwd = os.getcwd()
         self.input_data_path = os.path.join(self.cwd, 'input')
@@ -663,13 +679,13 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
                 scenario.show_plots()
 
 
-def xread(param, sheet, db):
+def xread(param, sheet, run):
     """
     Reading parameters from external excel file
     """
     value = None
     try:
-        value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
+        value = run.input_xdb.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
     except IndexError:
         run.logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
         exit()  # TODO enable jump to next scenario
