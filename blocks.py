@@ -18,6 +18,7 @@ license:    GPLv3
 # Module imports
 ###############################################################################
 
+import numpy as np
 import oemof.solph as solph
 import os
 import pandas as pd
@@ -355,9 +356,11 @@ class FixedDemand:
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
                                 skip_blank_lines=False)
-        self.data.index = pd.date_range(start=scenario.sim_starttime,
-                                        periods=len(self.data),
-                                        freq=scenario.sim_timestep)
+        self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
+        self.data.set_index('Timestamp', drop=True, inplace=True)
+        self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
+        # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
+        self.data = self.data.resample(scenario.sim_timestep, axis=0).mean().ffill().bfill()
         self.ph_data = None  # placeholder
 
         self.flow_ch = pd.Series(dtype='float64')  # empty dataframe for result concatenation
@@ -608,53 +611,16 @@ class PVSource(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.use_api = (xread(self.name + '_use_api', scenario.name, run) == 'True')
+        self.data_source = xread(self.name + '_data_source', scenario.name, run)
 
-        self.input_file_name = xread(self.name + '_filename', scenario.name, run)
-        self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.input_file_name}.csv')
+        self.ph_data = self.input_file_name = self.input_file_path = None  # placeholders, are filled later
+        self.api_startyear = self.api_endyear = self.latitude = self.longitude = None
+        self.timezone = self.data = self.meta = None
 
-        self.ph_data = None  # placeholder, is filled in "update_input_components"
-
-        tf = timezonefinder.TimezoneFinder()
+        self.tf = timezonefinder.TimezoneFinder()
         self.utc = pytz.timezone('UTC')
 
-        if self.use_api:  # API input selected
-            self.latitude = xread(self.name + '_latitude', scenario.name, run)
-            self.longitude = xread(self.name + '_longitude', scenario.name, run)
-            self.timezone = pytz.timezone(tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
-            self.api_startyear = self.timezone.localize(scenario.sim_starttime).astimezone(self.utc).year
-            self.api_endyear = self.timezone.localize(scenario.sim_endtime).astimezone(self.utc).year
-            self.data, self.meta, self.inputs = pvlib.iotools.get_pvgis_hourly(self.latitude,
-                                                                               self.longitude,
-                                                                               start=self.api_startyear,
-                                                                               end=self.api_endyear,
-                                                                               url='https://re.jrc.ec.europa.eu/api/v5_2/',
-                                                                               raddatabase='PVGIS-SARAH2',
-                                                                               components=False,
-                                                                               outputformat='json',
-                                                                               pvcalculation=True,
-                                                                               peakpower=1,
-                                                                               pvtechchoice='crystSi',
-                                                                               mountingplace='free',
-                                                                               loss=0,
-                                                                               optimalangles=True,
-                                                                               map_variables=True)
-
-        else:  # data input from fixed csv file
-            self.data, self.meta, self.inputs = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
-                                                                                map_variables=True)
-            self.latitude = self.meta['latitude']
-            self.longitude = self.meta['longitude']
-            self.timezone = pytz.timezone(tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
-
-        # convert to local time and remove timezone-awareness (model is only in one timezone)
-        self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
-        # PVGIS gives time slots as XX:06 - round to full hour
-        self.data.index = self.data.index.round('H')
-        # data is in W for a 1kWp PV array -> convert to specific power
-        self.data['p_spec'] = self.data['P'] / 1e3
-
-        self.data = self.data[['p_spec', 'wind_speed']]
+        self.get_timeseries_data(scenario, run)
 
         # Creation of static energy system components --------------------------------
 
@@ -698,10 +664,102 @@ class PVSource(InvestBlock):
         self.accumulate_invest_results(scenario)
         self.accumulate_energy_results_source(scenario)
 
+    def calc_power_solcast(self):
+
+        u0 = 26.9  # W/(˚C.m2) - cSi Free standing
+        u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
+        mod_temp = self.data['AirTemp'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
+
+        # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
+        # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
+        # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
+        k1 = -0.017237
+        k2 = -0.040465
+        k3 = -0.004702
+        k4 = 0.000149
+        k5 = 0.000170
+        k6 = 0.000005
+        g = self.data['GtiFixedTilt'] / 1000
+        t = mod_temp - 25
+        lng = np.zeros_like(g)
+        lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
+
+        # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
+        # Prog. Photovolt. Res. Appl.2008, 16, 307–315
+        eff_rel = 1 + \
+                  (k1 * lng) + \
+                  (k2 * (lng ** 2)) + \
+                  (k3 * t) + \
+                  (k4 * t * lng) + \
+                  (k5 * t * (lng ** 2)) + \
+                  (k6 * (t ** 2))
+        eff_rel = eff_rel.fillna(0)
+
+        self.data['P'] = eff_rel * self.data['GtiFixedTilt']  # Power of a 1kWp array
+
     def get_ch_results(self, horizon, scenario):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.core.dc_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
+
+    def get_timeseries_data(self, scenario, run):
+
+        if self.data_source == 'PVGIS API':  # API input selected
+            self.latitude = xread(self.name + '_latitude', scenario.name, run)
+            self.longitude = xread(self.name + '_longitude', scenario.name, run)
+            self.timezone = pytz.timezone(self.tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+            self.api_startyear = self.timezone.localize(scenario.sim_starttime).astimezone(self.utc).year
+            self.api_endyear = self.timezone.localize(scenario.sim_endtime).astimezone(self.utc).year
+            self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(self.latitude,
+                                                                     self.longitude,
+                                                                     start=self.api_startyear,
+                                                                     end=self.api_endyear,
+                                                                     url='https://re.jrc.ec.europa.eu/api/v5_2/',
+                                                                     raddatabase='PVGIS-SARAH2',
+                                                                     components=False,
+                                                                     outputformat='json',
+                                                                     pvcalculation=True,
+                                                                     peakpower=1,
+                                                                     pvtechchoice='crystSi',
+                                                                     mountingplace='free',
+                                                                     loss=0,
+                                                                     optimalangles=True,
+                                                                     map_variables=True)
+
+        else:
+            self.input_file_name = xread(self.name + '_filename', scenario.name, run)
+            self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.input_file_name}.csv')
+
+            if self.data_source == 'PVGIS File':  # data input from fixed PVGIS csv file
+                self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
+                                                                                    map_variables=True)
+                self.latitude = self.meta['latitude']
+                self.longitude = self.meta['longitude']
+            elif self.data_source == 'Solcast File':  # data input from fixed Solcast csv file
+                self.data = pd.read_csv(self.input_file_path)
+                self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
+                self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
+                self.data.set_index(pd.DatetimeIndex(self.data['PeriodStart']), inplace=True)
+                self.data['wind_speed'] = self.data['WindSpeed10m']
+                self.calc_power_solcast()
+                self.latitude = xread(self.name + '_latitude', scenario.name, run)  # data is not contained
+                self.longitude = xread(self.name + '_longitude', scenario.name, run)
+            else:
+                run.logger.warning('No PV input file type specified - exiting')
+                exit()  # TODO exit scenario instead of entire execution
+
+            self.timezone = pytz.timezone(self.tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+
+        # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
+        self.data = self.data.resample(scenario.sim_timestep, axis=0).mean().ffill().bfill()
+        # convert to local time and remove timezone-awareness (model is only in one timezone)
+        self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
+        # PVGIS gives time slots as XX:06 - round to full hour
+        self.data.index = self.data.index.round('H')
+        # data is in W for a 1kWp PV array -> convert to specific power
+        self.data['p_spec'] = self.data['P'] / 1e3
+
+        self.data = self.data[['p_spec', 'wind_speed']]
 
     def update_input_components(self, *_):
 

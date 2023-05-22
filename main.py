@@ -21,6 +21,7 @@ license:    GPLv3
 
 import logging
 import logging.handlers
+import math
 import os
 import pickle
 import pprint
@@ -195,8 +196,8 @@ class Scenario:
             self.ch_len_hrs = xread('rh_ch', self.name, run)
             self.ph_len = timedelta(hours=self.ph_len_hrs)
             self.ch_len = timedelta(hours=self.ch_len_hrs)
-            self.ph_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ph_len  # number of timesteps for PH
-            self.ch_steps = {'H': 1, 'T': 60}[self.sim_timestep] * self.ch_len  # number of timesteps for CH
+            self.ph_steps = math.ceil(self.ph_len / self.sim_timestep_hours)  # number of timesteps for PH
+            self.ch_steps = math.ceil(self.ch_len / self.sim_timestep_hours)  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.ph_len = self.sim_duration
@@ -651,8 +652,8 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         try:
             horizon = PredictionHorizon(horizon_index, scenario, run)
         except IndexError:
-            scenario.exception = 'Input data not sufficiently long'
-            logging.warning(f'Input data in scenario \"{scenario.name}\" not sufficiently long'
+            scenario.exception = 'Input data does not cover full sim timespan'
+            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
                             f' - continuing on next scenario')
             scenario.save_exception(run)
             break
