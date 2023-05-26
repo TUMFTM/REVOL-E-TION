@@ -92,10 +92,11 @@ class InvestBlock:
 
     def accumulate_invest_results(self, scenario):
 
-        if hasattr(self, 'flow_sum'):
-            self.e_sim = self.flow_sum.sum()  # for all bidirectional components
+        if hasattr(self, 'flow_sum'):  # for all bidirectional components
+            self.e_sim = self.flow_sum.sum() * scenario.sim_timestep_hours  # flow values are powers --> Wh
         else:
-            self.e_sim = self.flow.sum()
+            self.e_sim = self.flow.sum() * scenario.sim_timestep_hours
+
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
@@ -391,7 +392,7 @@ class FixedDemand:
     def accumulate_results(self, scenario):
         # No super function as FixedDemand is not an InvestBlock child (where accumulate_invest_results lives)
 
-        self.e_sim = self.flow.sum()
+        self.e_sim = self.flow.sum() * scenario.sim_timestep_hours  # flow values are powers --> Wh
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
@@ -525,7 +526,7 @@ class MobileCommodity:
             scenario.components.append(self.ess)
 
     def accumulate_results(self, scenario):
-        self.e_sim = self.flow.sum()
+        self.e_sim = self.flow.sum() * scenario.sim_timestep_hours  # flow values are powers --> Wh
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
