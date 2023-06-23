@@ -178,13 +178,13 @@ class Scenario:
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration_days
         self.wacc = xread('wacc', self.name, run)
 
-        self.plot_file_path = os.path.join(run.result_path, f'{run.runtimestamp}_'
-                                                            f'{run.scenarios_file_name}_'
-                                                            f'{self.name}.html')
+        self.plot_file_path = os.path.join(run.result_folder_path, f'{run.runtimestamp}_'
+                                                                   f'{run.scenarios_file_name}_'
+                                                                   f'{self.name}.html')
 
         self.results = dict()  # for cumulative result saving as pickle later on
         self.results['scenario_name'] = self.name  # saving scenario name for pickle
-        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pickle')
+        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
 
         # Operational strategy --------------------------------
 
@@ -196,8 +196,8 @@ class Scenario:
             self.ch_len_hrs = xread('rh_ch', self.name, run)
             self.ph_len = timedelta(hours=self.ph_len_hrs)
             self.ch_len = timedelta(hours=self.ch_len_hrs)
-            self.ph_steps = math.ceil(self.ph_len / self.sim_timestep_hours)  # number of timesteps for PH
-            self.ch_steps = math.ceil(self.ch_len / self.sim_timestep_hours)  # number of timesteps for CH
+            self.ph_steps = math.ceil(self.ph_len.total_seconds() / 3600 / self.sim_timestep_hours)  # number of timesteps for PH
+            self.ch_steps = math.ceil(self.ch_len.total_seconds() / 3600 / self.sim_timestep_hours)  # number of timesteps for CH
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.ph_len = self.sim_duration
@@ -462,10 +462,10 @@ class SimulationRun:
 
         self.cwd = os.getcwd()
         self.input_data_path = os.path.join(self.cwd, 'input')
-        self.dump_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.lp')
-        self.log_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.log')
         self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}')
-        self.result_file_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
+        self.result_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
+        self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.lp')
+        self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.log')
         self.result_xdb = xl.Database()  # blank excel database for result saving
 
         if self.save_results:

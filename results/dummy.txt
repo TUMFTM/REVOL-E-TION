@@ -1,0 +1,4 @@
+"""
+This file exists in order to distribute the folder "results" via git
+Please do not delete it
+"""

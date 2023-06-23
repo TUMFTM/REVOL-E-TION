@@ -357,11 +357,20 @@ class FixedDemand:
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
                                 skip_blank_lines=False)
-        self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-        self.data.set_index('Timestamp', drop=True, inplace=True)
-        self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
-        # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
-        self.data = self.data.resample(scenario.sim_timestep, axis=0).mean().ffill().bfill()
+        if 'Timestamp' in self.data:
+            self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
+            self.data.set_index('Timestamp', drop=True, inplace=True)
+            self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
+            # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
+            self.data = self.data.resample(scenario.sim_timestep, axis=0).mean().ffill().bfill()
+        else:  # In this case, there is no check whether the frequency of inputs actually matches the simulation!
+            self.date_range = pd.date_range(start=scenario.sim_starttime,
+                                            end=scenario.sim_endtime,
+                                            freq=scenario.sim_timestep)[:-1]
+            self.data = self.data.iloc[:len(self.date_range)]
+            self.data['Timestamp'] = self.date_range
+            self.data.set_index('Timestamp', drop=True, inplace=True)
+
         self.ph_data = None  # placeholder
 
         self.flow_ch = pd.Series(dtype='float64')  # empty dataframe for result concatenation
@@ -731,12 +740,12 @@ class PVSource(InvestBlock):
             self.input_file_name = xread(self.name + '_filename', scenario.name, run)
             self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.input_file_name}.csv')
 
-            if self.data_source == 'PVGIS File':  # data input from fixed PVGIS csv file
+            if self.data_source == 'PVGIS file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
                                                                                     map_variables=True)
                 self.latitude = self.meta['latitude']
                 self.longitude = self.meta['longitude']
-            elif self.data_source == 'Solcast File':  # data input from fixed Solcast csv file
+            elif self.data_source == 'Solcast file':  # data input from fixed Solcast csv file
                 self.data = pd.read_csv(self.input_file_path)
                 self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
                 self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
