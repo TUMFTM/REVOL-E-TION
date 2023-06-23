@@ -217,9 +217,14 @@ class CommoditySystem(InvestBlock):
         self.data = pd.read_csv(self.input_file_path,
                                 sep=';',
                                 skip_blank_lines=False)
-        self.data.index = pd.date_range(start=scenario.sim_starttime,
-                                        periods=len(self.data),
-                                        freq=scenario.sim_timestep)
+
+        if 'Timestamp' in self.data:
+            self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
+            self.data.set_index('Timestamp', drop=True, inplace=True)
+        else:
+            self.data.index = pd.date_range(start=scenario.sim_starttime,
+                                            periods=len(self.data),
+                                            freq=scenario.sim_timestep)
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
@@ -364,11 +369,9 @@ class FixedDemand:
             # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
             self.data = self.data.resample(scenario.sim_timestep, axis=0).mean().ffill().bfill()
         else:  # In this case, there is no check whether the frequency of inputs actually matches the simulation!
-            self.date_range = pd.date_range(start=scenario.sim_starttime,
-                                            end=scenario.sim_endtime,
-                                            freq=scenario.sim_timestep)[:-1]
-            self.data = self.data.iloc[:len(self.date_range)]
-            self.data['Timestamp'] = self.date_range
+            self.data['Timestamp'] = pd.date_range(start=scenario.sim_starttime,
+                                                   periods=len(self.data),
+                                                   freq=scenario.sim_timestep)
             self.data.set_index('Timestamp', drop=True, inplace=True)
 
         self.ph_data = None  # placeholder
@@ -554,7 +557,7 @@ class MobileCommodity:
             self.sc_ch = solph.views.node(
                 horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
                 horizon.ch_dti].shift(periods=1, freq=scenario.sim_timestep)
-            # shift is needed as sc/soc is stored for end of timestep
+            # shift is needed as sc/soc is stored for end of timestep by oemof
             self.soc_ch = self.sc_ch / self.parent.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge

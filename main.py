@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 """
 main.py
 
@@ -25,7 +24,6 @@ import math
 import os
 import pickle
 import pprint
-import shutil
 import sys
 import time
 import threading
@@ -67,6 +65,9 @@ class PredictionHorizon:
         self.ph_endtime = self.starttime + scenario.ph_len
         self.timestep = scenario.sim_timestep
 
+        if self.ph_endtime > scenario.sim_endtime:
+            self.ph_endtime = scenario.sim_endtime
+
         self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.sim_timestep).delete(-1)
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
 
@@ -90,7 +91,7 @@ class PredictionHorizon:
         for component in scenario.components:
             self.es.add(component)  # add components to this horizon's energy system
 
-        if run.solver_debugmode:# Build the mathematical linear optimization model with pyomo
+        if run.solver_debugmode:  # Build the mathematical linear optimization model with pyomo
             self.model = solph.Model(self.es, debug=True)
         else:
             self.model = solph.Model(self.es, debug=False)
@@ -196,8 +197,10 @@ class Scenario:
             self.ch_len_hrs = xread('rh_ch', self.name, run)
             self.ph_len = timedelta(hours=self.ph_len_hrs)
             self.ch_len = timedelta(hours=self.ch_len_hrs)
-            self.ph_steps = math.ceil(self.ph_len.total_seconds() / 3600 / self.sim_timestep_hours)  # number of timesteps for PH
-            self.ch_steps = math.ceil(self.ch_len.total_seconds() / 3600 / self.sim_timestep_hours)  # number of timesteps for CH
+            # number of timesteps for PH
+            self.ph_steps = math.ceil(self.ph_len.total_seconds() / 3600 / self.sim_timestep_hours)
+            # number of timesteps for CH
+            self.ch_steps = math.ceil(self.ch_len.total_seconds() / 3600 / self.sim_timestep_hours)
             self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.ph_len = self.sim_duration
@@ -443,6 +446,7 @@ class SimulationRun:
             exit()
 
         self.scenario_num = len(self.scenario_names)
+        self.process_num = min(self.scenario_num, os.cpu_count())
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
@@ -481,7 +485,6 @@ class SimulationRun:
         self.logger.addHandler(log_file_handler)  # TODO global messages not getting through to logs in parallel mode
 
         if self.parallel:
-            self.process_num = min(self.scenario_num, os.cpu_count())
             log_stream_handler.setLevel(logging.INFO)
             self.logger.info(f'Global settings read - '
                              f'simulating {self.scenario_num} scenario(s)'
@@ -500,7 +503,7 @@ class SimulationRun:
     def join_results(self):
 
         path = self.result_folder_path
-        files = os.listdir(path)
+        files = [filename for filename in os.listdir(path) if filename.endswith('.pkl')]
 
         for file in files:
             file_path = os.path.join(path, file)
@@ -510,11 +513,7 @@ class SimulationRun:
                 self.save_pickle_exception(results)
             else:  # scenario feasible
                 self.save_pickle_results(results)
-
-        try:
-            shutil.rmtree(path)  # delete folder with pickles inside
-        except OSError as e:
-            logging.warning(f'Directory {path} could not be deleted: {e}')
+            os.remove(file_path)
 
         if self.save_results:
             xl.writexl(db=self.result_xdb, fn=self.result_file_path)
@@ -522,7 +521,6 @@ class SimulationRun:
 
     @staticmethod
     def save_pickle_exception(res: dict):
-
         """
         Dump error message in result excel file if optimization did not succeed
         """
@@ -631,7 +629,7 @@ def read_mplogger_queue(queue):
         record = queue.get()
         if record is None:
             break
-        run.logger.handle(record)
+        # run.logger.handle(record)  # This line causes double logger outputs on Linux
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
@@ -649,14 +647,14 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
-        try:
-            horizon = PredictionHorizon(horizon_index, scenario, run)
-        except IndexError:
-            scenario.exception = 'Input data does not cover full sim timespan'
-            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
-                            f' - continuing on next scenario')
-            scenario.save_exception(run)
-            break
+        #try:
+        horizon = PredictionHorizon(horizon_index, scenario, run)
+#        except IndexError:
+#            scenario.exception = 'Input data does not cover full sim timespan'
+#            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
+#                            f' - continuing on next scenario')
+#            scenario.save_exception(run)
+#            break
 
         if scenario.strategy == 'lfs':
             pass  # rule_based.lfs(horizon)
@@ -728,6 +726,3 @@ if __name__ == '__main__':
         run.join_results()
 
     run.end_timing()
-
-
-

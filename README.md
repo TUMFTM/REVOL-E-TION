@@ -8,15 +8,17 @@ Department of Mobility Systems Engineering
 School of Engineering and Design  
 Technical University of Munich  
 philipp.rosner@tum.de  
-September 2nd, 2021
+Created September 2nd, 2021
 
 #### Contributors  
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
 Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022  
 Marc Alsina Planelles, B.Sc. - Master's Thesis submitted 10/2022  
-Juan Forero Yacaman - Bachelor's Thesis submitted 04/2023
-Hannes Henglein, B.Sc. - Master's Thesis ongoing
+Juan Forero Yacaman - Bachelor's Thesis submitted 04/2023  
+Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023  
+Hannes Henglein, B.Sc. - Master's Thesis ongoing  
+Alejandro Hernando Armengol, B.Sc. - Master's Thesis ongoing
 
 ## Detailed Description  
 This is a toolset to simulate electric vehicles operating in minigrids for rural electrification in emerging economies such as sub-saharan
@@ -36,7 +38,7 @@ representation, generates a pyomo model and hands it to a solver. Results are su
 
 
 #### Input data
-enter description here
+- Mobile commodity system data: csv file containing columns "X_misoc", "X_consumption" and "X_atbase" with X being the name of the commodity.
 
 #### Model output
 enter description here
