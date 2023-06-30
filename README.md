@@ -28,16 +28,19 @@ representation, generates a pyomo model and hands it to a solver. Results are su
 ![System diagram](./images/system_diagram.png)
 
 #### Definitions
-| Term      | Description                                                                                                                                                                                                                                                      |
-|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Run       | A run is defined by a single excel file, containing one sheet with run-wide information ("global_settings") such as solver and parallel mode as well as one sheet per scenario to be executed with actual energy system parameters and links to timeseries files |
-| Scenario  | A scenario is defined by a single excel worksheet and some timeseries inputs. It models an energy system, that is then sized and dispatched using the sim_os selected                                                                                            |
-| Horizon   | A scenario can be dispatched in multiple operating strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, each                                                                                                  |
-| Block     |                                                                                                                                                                                                                                                                  |
-| Component |                                                                                                                                                                                                                                                                  |
+| Term      | Description                                                                                                                                                                                                                                                                |
+|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Run       | A run is defined by a single Microsoft Excel file, containing one sheet with run-wide information ("global_settings") such as solver and parallel mode as well as one sheet per scenario to be executed with actual energy system parameters and links to timeseries files |
+| Scenario  | A scenario is defined by a single Excel worksheet and some timeseries inputs. It models an energy system, that is then sized and dispatched using the sim_os selected                                                                                                      |
+| Horizon   | A scenario can be dispatched in multiple operating strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, each                                                                                                            |
+| Block     | A block is a set of components representing a real-world system (e.g. a PV array in combination with its controller and converter). These can be toggled on or off, except for the core block containing the AC and DC buses as well as the converter(s) inbetween them.   |
+| Component | A component is an oemof building block that is either a source, a sink, a bus, a transformer or a storage.                                                                                                                                                                 |
 
 
 #### Input data
+The toolset requires multiply types of input data, more specifically parameters and timeseries data. The former is 
+directly defined in a Microsoft Excel file serving as the main input, while the latter are referenced from the Excel 
+file by name and have to be located in the appropriate folder within /inputs.
 - Mobile commodity system data: csv file containing columns "X_misoc", "X_consumption" and "X_atbase" with X being the name of the commodity.
 
 #### Model output

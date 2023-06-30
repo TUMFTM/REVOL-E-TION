@@ -190,20 +190,6 @@ class InvestBlock:
         scenario.e_prj_del += self.e_prj
         scenario.e_dis_del += self.e_dis
 
-
-class AggregateCommoditySystem(InvestBlock):
-    """
-    Option 1: aggregated vehicles (x denotes the flow measurement point)
-    ac_bus             bev_bus
-      |<-x-------bev_ac---|<--bev_src
-      |                   |
-      |-x-ac_bev--------->|<->bev_ess
-      |                   |
-                          |-->bev_snk
-    """
-    pass  # Feature not included anymore, but theoretically possible
-
-
 class CommoditySystem(InvestBlock):
 
     def __init__(self, name, scenario, run):
@@ -229,8 +215,12 @@ class CommoditySystem(InvestBlock):
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
 
-        self.commodity_num = xread(self.name + '_num', scenario.name, run)
-        self.commodity_agr = xread(self.name + '_agr', scenario.name, run)  # TODO enable aggregated simulation
+        self.commodity_num = xread(self.name + '_num', scenario.name, run
+
+        self.sys_chg_soe = xread(self.name + '_sys_chg_soe', scenario.name, run)
+        self.sys_chg_soe = run.eps_cost if self.sys_chg_soe == 0 else self.sys_chg_soe
+        self.sys_dis_soe = xread(self.name + '_sys_dis_soe', scenario.name, run)
+        self.sys_dis_soe = run.eps_cost if self.sys_dis_soe == 0 else self.sys_dis_soe
 
         self.init_soc = xread(self.name + '_init_soc', scenario.name, run)
 
@@ -262,7 +252,7 @@ class CommoditySystem(InvestBlock):
 
         self.inflow = solph.components.Transformer(label=f'ac_{self.name}',
                                                    inputs={scenario.core.ac_bus: solph.Flow(
-                                                       variable_costs=run.eps_cost)},
+                                                       variable_costs=self.sys_chg_soe)},
                                                    outputs={self.bus: solph.Flow()},
                                                    conversion_factors={self.bus: 1})
         scenario.components.append(self.inflow)
@@ -274,7 +264,7 @@ class CommoditySystem(InvestBlock):
                                                                        'tc': 0,
                                                                        'v2v': 0,
                                                                        'v2g': None}[self.int_lvl],
-                                                        variable_costs=run.eps_cost)},
+                                                        variable_costs=self.sys_dis_soe)},
                                                     outputs={scenario.core.ac_bus: solph.Flow()},
                                                     conversion_factors={scenario.core.ac_bus: 1})
         scenario.components.append(self.outflow)

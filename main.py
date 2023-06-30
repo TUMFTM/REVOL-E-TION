@@ -647,14 +647,14 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
 
     for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
-        #try:
-        horizon = PredictionHorizon(horizon_index, scenario, run)
-#        except IndexError:
-#            scenario.exception = 'Input data does not cover full sim timespan'
-#            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
-#                            f' - continuing on next scenario')
-#            scenario.save_exception(run)
-#            break
+        try:
+            horizon = PredictionHorizon(horizon_index, scenario, run)
+        except IndexError:
+            scenario.exception = 'Input data does not cover full sim timespan'
+            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
+                           f' - continuing on next scenario')
+            scenario.save_exception(run)
+            break
 
         if scenario.strategy == 'lfs':
             pass  # rule_based.lfs(horizon)
@@ -697,7 +697,7 @@ def xread(param, sheet, run):
     except IndexError:
         run.logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
         exit()  # TODO enable jump to next scenario
-    return value
+         return value
 
 
 ###############################################################################
