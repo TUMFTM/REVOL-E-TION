@@ -652,7 +652,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         except IndexError:
             scenario.exception = 'Input data does not cover full sim timespan'
             logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
-                           f' - continuing on next scenario')
+                            f' - continuing on next scenario')
             scenario.save_exception(run)
             break
 
@@ -697,7 +697,7 @@ def xread(param, sheet, run):
     except IndexError:
         run.logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
         exit()  # TODO enable jump to next scenario
-         return value
+    return value
 
 
 ###############################################################################

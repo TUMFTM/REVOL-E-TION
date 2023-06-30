@@ -215,7 +215,7 @@ class CommoditySystem(InvestBlock):
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
 
-        self.commodity_num = xread(self.name + '_num', scenario.name, run
+        self.commodity_num = xread(self.name + '_num', scenario.name, run)
 
         self.sys_chg_soe = xread(self.name + '_sys_chg_soe', scenario.name, run)
         self.sys_chg_soe = run.eps_cost if self.sys_chg_soe == 0 else self.sys_chg_soe
