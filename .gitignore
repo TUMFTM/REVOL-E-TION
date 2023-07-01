@@ -1,7 +1,8 @@
 .idea/*
 results/*
-input/_excel/*
-!input/_excel/example.xlsx
+input/scenarios/*
+!input/scenarios/example.json
+!input/scenarios/scenario_generator.py
 input/bev/*
 !input/bev/bev_example.csv
 input/dem/*

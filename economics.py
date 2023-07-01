@@ -44,7 +44,7 @@ def acc_discount(value, ts, discrate):
     return apc
 
 
-def adj_ce(ce, me, ls, discrate):
+def adj_ce(ce: float, me: float, ls: int, discrate: float) -> float:
     """
     This function adjusts a component's capex (ce) to include discounted present cost for time based maintenance (pme)
     """
@@ -66,6 +66,7 @@ def ann_recur(ce, ls, hor, discrate, cost_decr):
         This function calculates the annuity of a recurring (every ls years) and cheapening (annual ratio cost_decr <1)
         investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
     """
+    hor = hor.days / 365  # convert days to years
     a = ann(ce, hor, discrate) * ((1 - ((1-cost_decr)/(1+discrate))**hor) / (1 - ((1-cost_decr)/(1+discrate))**ls))
     return a
 
@@ -75,6 +76,7 @@ def repllist(ls, hor):
         This function calculates a list of years to replace the component in, given its lifespan ls and the observation
         horizon hor
     """
+    hor = hor.days / 365  # convert days to years
     year = 0
     rul = ls
     repyrs = []
@@ -92,6 +94,7 @@ def tce(ice, rce, ls, hor):
         This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
         every ls years during the observation horizon hor
     """
+    hor = hor.days / 365  # convert days to years
     tce = ice + rce * len(repllist(ls, hor))
     return tce
 
@@ -101,5 +104,6 @@ def pce(ice, rce, ls, hor, discrate):
         This function calculates the present (discounted) capital expenses for a component that has to be replaced
         every ls years during the observation horizon hor
     """
+    hor = hor.days / 365  # convert days to years
     pce = ice + sum([discount(rce, x, discrate) for x in repllist(ls, hor)])
     return pce

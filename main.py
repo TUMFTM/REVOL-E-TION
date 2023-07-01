@@ -18,6 +18,7 @@ license:    GPLv3
 # Module imports
 ###############################################################################
 
+import json
 import logging
 import logging.handlers
 import math
@@ -57,27 +58,27 @@ class PredictionHorizon:
 
         self.index = index
 
-        run.logger.info(f'Horizon {index+1} of {scenario.horizon_num} in scenario \"{scenario.name}\" initialized')
+        run.logger.info(f'Horizon {index+1} of {scenario.nhorizons} in scenario \"{scenario.name}\" initialized')
 
         # Time and data slicing --------------------------------
-        self.starttime = scenario.sim_starttime + (index * scenario.ch_len)  # calc both start times
+        self.starttime = scenario.starttime + (index * scenario.ch_len)  # calc both start times
         self.ch_endtime = self.starttime + scenario.ch_len
         self.ph_endtime = self.starttime + scenario.ph_len
-        self.timestep = scenario.sim_timestep
+        self.timestep = scenario.timestep
 
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
 
-        self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.sim_timestep).delete(-1)
-        self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.sim_timestep).delete(-1)
+        self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep).delete(-1)
+        self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep).delete(-1)
 
-        for block in [block for block in scenario.blocks if hasattr(block, 'data')]:
+        for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.ph_data = block.data[self.starttime:self.ph_endtime]
             if isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities:
                     commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
 
-        for block in scenario.blocks:
+        for block in scenario.blocks.values():
             block.update_input_components(scenario)  # (re)define solph components that need input slices
 
         self.results = None
@@ -91,7 +92,7 @@ class PredictionHorizon:
         for component in scenario.components:
             self.es.add(component)  # add components to this horizon's energy system
 
-        if run.solver_debugmode:  # Build the mathematical linear optimization model with pyomo
+        if run.debugmode:  # Build the mathematical linear optimization model with pyomo
             self.model = solph.Model(self.es, debug=True)
         else:
             self.model = solph.Model(self.es, debug=False)
@@ -116,7 +117,7 @@ class PredictionHorizon:
 
         source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
 
-        for block in scenario.blocks:
+        for block in scenario.blocks.values():
             if isinstance(block, blocks.StationaryEnergyStorage) and block.opt:
                 block.size = self.results[(block.ess, None)]["scalars"]["invest"]
             elif isinstance(block, source_types) and block.opt:
@@ -132,7 +133,7 @@ class PredictionHorizon:
     def run_optimization(self, scenario, run):
         run.logger.info(f'Optimization for horizon {self.index+1} in scenario \"{scenario.name}\" initialized')
         try:
-            self.model.solve(solver=run.solver, solve_kwargs={'tee': run.solver_debugmode})
+            self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
         except UserWarning as exc:
             run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
@@ -160,85 +161,58 @@ class Scenario:
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
 
-        run.logger.info(f'Scenario \"{self.name}\" initialized')  # TODO state process number
+        self.worker = mp.current_process()
 
-        self.prj_starttime = datetime.strptime(xread('prj_start', self.name, run), '%Y/%m/%d')
-        self.prj_duration_yrs = xread('prj_duration', self.name, run)
-        self.prj_duration = timedelta(days=self.prj_duration_yrs * 365)  # no leap years
-        self.prj_endtime = self.prj_starttime + self.prj_duration
-        self.prj_duration_days = (self.prj_endtime.date() - self.prj_starttime.date()).days
+        run.logger.info(f'Scenario \"{self.name}\" initialized on {self.worker}')
 
-        self.sim_starttime = self.prj_starttime  # simulation timeframe is at beginning of project timeframe
-        self.sim_timestep = xread('sim_timestep', self.name, run)
-        self.sim_duration = timedelta(days=xread('sim_duration', self.name, run))
-        self.sim_endtime = self.sim_starttime + self.sim_duration
-        self.sim_dti = pd.date_range(start=self.sim_starttime, end=self.sim_endtime, freq=self.sim_timestep).delete(-1)
-        self.sim_timestep_hours = self.sim_dti.freq.nanos / 1e9 / 3600
+        self.parameters = run.scenario_data[self.name]
+        for key, value in self.parameters.loc['scenario', :].items():
+            setattr(self, key, value)  # this sets all the parameters defined in the json file
 
+        # convert to datetime and calculate time(delta) values
+        self.starttime = datetime.strptime(self.starttime, '%d/%m/%Y')  # simulation and project timeframe start simultaneously
+        self.sim_duration = timedelta(days=self.sim_duration)
+        self.sim_endtime = self.starttime + self.sim_duration
+        self.prj_duration = timedelta(days=self.prj_duration * 365)  # no leap years
+        self.prj_endtime = self.starttime + self.prj_duration
+
+        # generate a datetimeindex for the energy system model to run on
+        self.sim_dti = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep).delete(-1)
+
+        # generate variables for calculations
+        self.timestep_hours = self.sim_dti.freq.nanos / 1e9 / 3600
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
-        self.sim_prj_rat = self.sim_duration.days / self.prj_duration_days
-        self.wacc = xread('wacc', self.name, run)
+        self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
 
         self.plot_file_path = os.path.join(run.result_folder_path, f'{run.runtimestamp}_'
-                                                                   f'{run.scenarios_file_name}_'
+                                                                   f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
         self.results = dict()  # for cumulative result saving as pickle later on
         self.results['scenario_name'] = self.name  # saving scenario name for pickle
         self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
 
-        # Operational strategy --------------------------------
-
-        self.strategy = xread('sim_os', self.name, run)
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len_hrs = xread('rh_ph', self.name, run)
-            self.ch_len_hrs = xread('rh_ch', self.name, run)
-            self.ph_len = timedelta(hours=self.ph_len_hrs)
-            self.ch_len = timedelta(hours=self.ch_len_hrs)
+            self.ph_len = timedelta(hours=self.ph_len)
+            self.ch_len = timedelta(hours=self.ch_len)
             # number of timesteps for PH
-            self.ph_steps = math.ceil(self.ph_len.total_seconds() / 3600 / self.sim_timestep_hours)
+            self.ph_nsteps = math.ceil(self.ph_len.total_seconds() / 3600 / self.timestep_hours)
             # number of timesteps for CH
-            self.ch_steps = math.ceil(self.ch_len.total_seconds() / 3600 / self.sim_timestep_hours)
-            self.horizon_num = int(self.sim_duration // self.ch_len)  # number of timeslices to run
+            self.ch_nsteps = math.ceil(self.ch_len.total_seconds() / 3600 / self.timestep_hours)
+            self.nhorizons = int(self.sim_duration // self.ch_len)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.ph_len = self.sim_duration
             self.ch_len = self.sim_duration
-            self.horizon_num = 1
+            self.nhorizons = 1
 
         # Energy System Blocks --------------------------------
 
-        self.blocks = []
-        self.components = []
-        self.blocks_enable = dict(dem=(xread('dem_enable', self.name, run) == 'True'),
-                                  wind=(xread('wind_enable', self.name, run) == 'True'),
-                                  pv=(xread('pv_enable', self.name, run) == 'True'),
-                                  gen=(xread('gen_enable', self.name, run) == 'True'),
-                                  grid=(xread('grid_enable', self.name, run) == 'True'),
-                                  ess=(xread('ess_enable', self.name, run) == 'True'),
-                                  bev=(xread('bev_enable', self.name, run) == 'True'),
-                                  brs=(xread('brs_enable', self.name, run) == 'True'))
+        self.components = []  # placeholder
 
-        self.core = blocks.SystemCore('core', self, run)  # always enabled
-
-        for name in [name for name, enable in self.blocks_enable.items() if enable]:
-            if name == 'dem':
-                self.dem = blocks.FixedDemand('dem', self, run)
-            elif name == 'wind':
-                self.wind = blocks.WindSource('wind', self, run)
-            elif name == 'pv':
-                self.pv = blocks.PVSource('pv', self, run)
-            elif name == 'gen':
-                self.gen = blocks.ControllableSource('gen', self, run)
-            elif name == 'grid':
-                self.grid = blocks.ControllableSource('grid', self, run)
-            elif name == 'ess':
-                self.ess = blocks.StationaryEnergyStorage('ess', self, run)
-            elif name == 'bev':
-                self.bev = blocks.CommoditySystem('bev', self, run)
-            elif name == 'brs':
-                self.brs = blocks.CommoditySystem('brs', self, run)
+        # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
+        self.blocks = self.create_block_objects(self.blocks, run)
 
         # Result variables --------------------------------
 
@@ -256,7 +230,7 @@ class Scenario:
 
     def accumulate_results(self, run):
 
-        for block in self.blocks:
+        for block in self.blocks.values():
             block.accumulate_results(self)
 
         #  TODO find a metric for curtailed energy and calculate
@@ -277,6 +251,16 @@ class Scenario:
         npc_display = round(self.totex_dis)
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
 
+    def create_block_objects(self, class_dict, run):
+        objects = {}
+        for name, class_name in class_dict.items():
+            class_obj = getattr(blocks, class_name, None)
+            if class_obj is not None and isinstance(class_obj, type):
+                objects[name] = class_obj(name, self, run)
+            else:
+                raise ValueError(f"Class '{class_name}' not found in blocks.py file - Check for typos or add class.")
+        return objects
+
     def end_timing(self, run):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
@@ -289,7 +273,7 @@ class Scenario:
         # types for which positive flow values are power taken out of the core
         invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
 
-        for block in [block for block in self.blocks if not isinstance(block, blocks.SystemCore)]:
+        for block in [block for block in self.blocks.values() if not isinstance(block, blocks.SystemCore)]:
 
             if hasattr(block, 'size'):
                 if isinstance(block, blocks.CommoditySystem):
@@ -362,7 +346,7 @@ class Scenario:
     def print_results(self):
         print('#################')
         run.logger.info(f'Results for Scenario {self.name}:')
-        for block in [block for block in self.blocks if hasattr(block, 'opt') and block.opt]:
+        for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
@@ -427,24 +411,25 @@ class SimulationRun:
         self.name = 'run'
         self.cwd = os.getcwd()
         if len(sys.argv) == 1:  # if no arguments have been passed
-            self.scenarios_file_path, self.result_path = input_gui(self.cwd)
+            self.scenarios_file_path, self.settings_file_path, self.result_path = input_gui(self.cwd)
         elif len(sys.argv) == 2:  # only one argument, default result storage
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
+            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', 'default.json')
+            self.result_path = os.path.join(self.cwd, 'results')
+        elif len(sys.argv) == 3:
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
+            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
             self.result_path = os.path.join(self.cwd, 'results')
         else:
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', '_excel', sys.argv[1])
-            self.result_path = sys.argv[2]
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
+            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
+            self.result_path = sys.argv[3]
 
-        self.scenarios_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
-        self.input_xdb = xl.readxl(fn=self.scenarios_file_path)  # Excel database of selected file
-        self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
-
-        try:
-            self.scenario_names.remove('global_settings')
-        except ValueError:
-            print('Excel File does not include global settings - exiting')
-            exit()
-
+        self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
+        self.scenario_data = pd.read_json(self.scenarios_file_path, orient='records', lines=True)
+        self.scenario_data.set_index(['block', 'key'], inplace=True)
+        self.scenario_data = self.scenario_data.apply(json_parse_bool, axis=1)
+        self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
         self.process_num = min(self.scenario_num, os.cpu_count())
 
@@ -453,24 +438,30 @@ class SimulationRun:
         self.runtime_len = None  # placeholder
         self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
-        self.global_sheet = 'global_settings'
-        self.solver = xread('solver', self.global_sheet, self)
-        self.parallel = (xread('parallel', self.global_sheet, self) == 'True')
-        self.save_results = (xread('save_results', self.global_sheet, self) == 'True')
-        self.print_results = (xread('print_results', self.global_sheet, self) == 'True')
-        self.save_plots = (xread('save_plots', self.global_sheet, self) == 'True')
-        self.show_plots = (xread('show_plots', self.global_sheet, self) == 'True')
-        self.dump_model = (xread('dump_model', self.global_sheet, self) == 'True')
-        self.solver_debugmode = (xread('solver_debugmode', self.global_sheet, self) == 'True')
-        self.eps_cost = float(xread('eps_cost', self.global_sheet, self))
+        with open(self.settings_file_path) as file:
+            settings = json.load(file, object_hook=json_parse_bool)
 
-        self.cwd = os.getcwd()
+        # check if the settings dict contains all necessary items
+        if not all(item in settings.keys() for item in ["solver",
+                                                        "parallel",
+                                                        "save_results",
+                                                        "print_results",
+                                                        "save_plots",
+                                                        "show_plots",
+                                                        "dump_model",
+                                                        "debugmode",
+                                                        "eps_cost"]):
+            raise Exception('incomplete settings file')
+
+        for key, value in settings.items():  # TODO convert True/False strings to bool
+            setattr(self, key, value)  # this sets all the parameters defined in the json file
+
         self.input_data_path = os.path.join(self.cwd, 'input')
-        self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenarios_file_name}')
-        self.result_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.xlsx')
-        self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.lp')
-        self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenarios_file_name}.log')
-        self.result_xdb = xl.Database()  # blank excel database for result saving
+        self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
+        self.result_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.pkl')
+        self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
+        self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
+        self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 
         if self.save_results:
             os.mkdir(self.result_folder_path)
@@ -516,7 +507,7 @@ class SimulationRun:
             os.remove(file_path)
 
         if self.save_results:
-            xl.writexl(db=self.result_xdb, fn=self.result_file_path)
+            xl.writexl(db=self.result_df, fn=self.result_file_path)
             self.logger.info("Excel output file created")
 
     @staticmethod
@@ -525,28 +516,28 @@ class SimulationRun:
         Dump error message in result excel file if optimization did not succeed
         """
         ws = res['scenario_name']
-        run.result_xdb.add_ws(ws=ws)
+        run.result_df.add_ws(ws=ws)
 
-        run.result_xdb.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
-        run.result_xdb.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
-        run.result_xdb.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
-        run.result_xdb.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
-        run.result_xdb.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
-        run.result_xdb.ws(ws=ws).update_index(row=4, col=1, val='Optimization unsuccessful!')
-        run.result_xdb.ws(ws=ws).update_index(row=5, col=1, val='Message')
-        run.result_xdb.ws(ws=ws).update_index(row=5, col=2, val=res['exception'])
+        run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
+        run.result_df.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
+        run.result_df.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
+        run.result_df.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
+        run.result_df.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
+        run.result_df.ws(ws=ws).update_index(row=4, col=1, val='Optimization unsuccessful!')
+        run.result_df.ws(ws=ws).update_index(row=5, col=1, val='Message')
+        run.result_df.ws(ws=ws).update_index(row=5, col=2, val=res['exception'])
 
     @staticmethod
     def save_pickle_results(res: dict):
 
         ws = res['scenario_name']
-        run.result_xdb.add_ws(ws=ws)
+        run.result_df.add_ws(ws=ws)
 
-        run.result_xdb.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
-        run.result_xdb.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
-        run.result_xdb.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
-        run.result_xdb.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
-        run.result_xdb.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
+        run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
+        run.result_df.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
+        run.result_df.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
+        run.result_df.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
+        run.result_df.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
 
         header_row = 5
 
@@ -557,17 +548,17 @@ class SimulationRun:
             obj_name = obj['name']
 
             if obj_name == res['scenario_name']:  # if object is scenario
-                run.result_xdb.ws(ws=ws).update_index(row=header_row, col=col_id, val='scenario data')
+                run.result_df.ws(ws=ws).update_index(row=header_row, col=col_id, val='scenario data')
             else:
 
-                run.result_xdb.ws(ws=ws).update_index(row=header_row, col=col_id, val=f'{obj_name} data')
+                run.result_df.ws(ws=ws).update_index(row=header_row, col=col_id, val=f'{obj_name} data')
 
             for key, value in obj.items():
-                run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id, val=key)
+                run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id, val=key)
                 if isinstance(value, int):
-                    run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=float(value))
+                    run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=float(value))
                 else:
-                    run.result_xdb.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=value)
+                    run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=value)
                 row_id += 1
 
 
@@ -575,25 +566,24 @@ class SimulationRun:
 # Function definitions
 ###############################################################################
 
-
 def input_gui(directory):
     """
-    GUI to choose input excel file
+    GUI to choose input pickle file containing scenario definition DataFrame
     :return:
     """
 
-    input_default = os.path.join(directory, 'input', '_excel')
-    input_default_file = os.path.join(input_default, 'example.xlsx')
+    input_default = os.path.join(directory, 'input', 'scenarios')
+    input_default_file = os.path.join(input_default, 'example.json')
     input_default_file_show = os.path.relpath(input_default_file, directory)
     results_default = os.path.join(directory, 'results')
     results_default_show = os.path.relpath(results_default, directory)
 
-    input_file = [[psg.Text('Choose input settings file')],
+    input_file = [[psg.Text('Choose scenario definition file')],
                   [psg.Input(key='file',
                              default_text=input_default_file_show),
                    psg.FileBrowse(initial_folder=input_default,
-                                  file_types=(('Excel worksheets',
-                                               '.xlsx'),))],
+                                  file_types=(('.json files',
+                                               '.json'),))],
                   ]
 
     result_folder = [[psg.Text('Choose result storage folder')],
@@ -610,7 +600,7 @@ def input_gui(directory):
         [psg.OK(bind_return_key=True), psg.Cancel()],
     ]
 
-    event, values = psg.Window('MGEV toolset - select input file and result path', layout).read(close=True)
+    event, values = psg.Window('EV_ESM toolset - select input file and result path', layout).read(close=True)
 
     try:
         scenarios_filename = os.path.abspath(values['file'])
@@ -622,6 +612,15 @@ def input_gui(directory):
     except TypeError:
         print('GUI window closed manually - exiting')
         exit()
+
+def json_parse_bool(dct: dict) -> dict:
+    for key, value in dct.items():
+        if isinstance(value, str):
+            if value.lower() == 'true':
+                dct[key] = True
+            elif value.lower() == 'false':
+                dct[key] = False
+    return dct
 
 
 def read_mplogger_queue(queue):
@@ -638,15 +637,15 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         run.process = mp.current_process()
         run.queue_handler = logging.handlers.QueueHandler(log_queue)
         run.logger = logging.getLogger()
-        if run.solver_debugmode:
+        if run.debugmode:
             run.logger.setLevel(logging.DEBUG)
         else:
             run.logger.setLevel(logging.INFO)
         run.logger.addHandler(run.queue_handler)
 
-    scenario = Scenario(name, run)  # Create scenario instance & read data from Excel sheet.
+    scenario = Scenario(name, run)  # Create scenario instance
 
-    for horizon_index in range(scenario.horizon_num):  # Inner optimization loop over all prediction horizons
+    for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         try:
             horizon = PredictionHorizon(horizon_index, scenario, run)
         except IndexError:
@@ -685,20 +684,6 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
                 scenario.save_plots()
             if run.show_plots:
                 scenario.show_plots()
-
-
-def xread(param, sheet, run):
-    """
-    Reading parameters from external excel file
-    """
-    value = None
-    try:
-        value = run.input_xdb.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
-    except IndexError:
-        run.logger.warning(f'Key \"{param}\" not found in Excel worksheet - exiting')
-        exit()  # TODO enable jump to next scenario
-    return value
-
 
 ###############################################################################
 # Execution code
