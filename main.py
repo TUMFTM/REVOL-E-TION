@@ -173,7 +173,8 @@ class Scenario:
         self.starttime = datetime.strptime(self.starttime, '%d/%m/%Y')  # simulation and project timeframe start simultaneously
         self.sim_duration = timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
-        self.prj_duration = timedelta(days=self.prj_duration * 365)  # no leap years
+        self.prj_duration = timedelta(days=self.prj_duration * 365)  # no leap years accounted for
+        self.prj_duration_yrs = self.prj_duration.days / 365
         self.prj_endtime = self.starttime + self.prj_duration
 
         # generate a datetimeindex for the energy system model to run on
@@ -188,8 +189,7 @@ class Scenario:
                                                                    f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
-        self.results = dict()  # for cumulative result saving as pickle later on
-        self.results['scenario_name'] = self.name  # saving scenario name for pickle
+        self.results = pd.DataFrame()  # for cumulative result saving as pickle later on
         self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
 
         self.exception = None  # placeholder for possible infeasibility
@@ -338,9 +338,9 @@ class Scenario:
                                  secondary_y=True)
 
         if self.strategy == 'go':
-            self.figure.update_layout(title=f'Global Optimum Results ({run.scenarios_file_name} - Scenario: {self.name})')
+            self.figure.update_layout(title=f'Global Optimum Results ({run.scenario_file_name} - Scenario: {self.name})')
         if self.strategy == 'rh':
-            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenarios_file_name} - Scenario: {self.name}'
+            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenario_file_name} - Scenario: {self.name}'
                                             f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
 
     def print_results(self):
@@ -371,31 +371,22 @@ class Scenario:
                 
     def save_results(self, run):
 
-        # scenario_name is already added in __init__
-        if self.strategy == 'go':
-            self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
-                                    f'- Sheet: {self.name})'
-        elif self.strategy == 'rh':
-            self.results['title'] = f'Rolling Horizon Results ({run.result_path} ' \
-                                    f'- Sheet: {self.name} ' \
-                                    f'- PH: {self.ph_len_hrs} ' \
-                                    f'- CH: {self.ch_len_hrs})'
-
-        self.results['runtimestamp'] = run.runtimestamp
-        self.results['runtime'] = self.runtime_len
-
         result_types = (int, float, str)
-        result_blocks = [run, self] + self.blocks
+        result_blocks = {'run': run, 'scenario': self}
+        result_blocks.update(self.blocks)
 
-        for index, obj in enumerate(result_blocks):
-
-            self.results[obj.name] = dict()
-
-            for item in [item for item in obj.__dict__.items() if isinstance(item[1], result_types)]:
-                if isinstance(item[1], int):
-                    self.results[obj.name][item[0]] = float(item[1])
+        for name, block in result_blocks.items():
+            for name, block in result_blocks.items():
+                for key, value in [key,
+                                   value for key, value in block.__dict__.items() if isinstance(value, result_types)]:
+                    if isinstance(value, int):
+                        self.results[block.name][key] = float(value)
+                    else:
+                        self.results[block.name][key] = value
+                if isinstance(value, int):
+                    self.results[block.name][key] = float(value)
                 else:
-                    self.results[obj.name][item[0]] = item[1]
+                    self.results[block.name][key] = value
 
         with open(self.result_file_path, 'wb') as file:
             pickle.dump(self.results, file)
@@ -515,8 +506,7 @@ class SimulationRun:
         """
         Dump error message in result excel file if optimization did not succeed
         """
-        ws = res['scenario_name']
-        run.result_df.add_ws(ws=ws)
+        scenario_name = res['scenario_name']
 
         run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
         run.result_df.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
@@ -530,7 +520,6 @@ class SimulationRun:
     @staticmethod
     def save_pickle_results(res: dict):
 
-        ws = res['scenario_name']
         run.result_df.add_ws(ws=ws)
 
         run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])

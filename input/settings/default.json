@@ -1,9 +1,9 @@
 { "solver":         "gurobi",
-  "parallel":	    "False",
+  "parallel":	    "True",
   "save_results": 	"True",
   "print_results":  "False",
   "save_plots": 	"True",
   "show_plots": 	"False",
-  "dump_model": 	"True",
+  "dump_model": 	"False",
   "debugmode":  	"False",
   "eps_cost":   	1.00E-08}

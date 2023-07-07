@@ -2,7 +2,7 @@
 results/*
 input/scenarios/*
 !input/scenarios/example.json
-!input/scenarios/scenario_generator.py
+!input/scenarios/sgen.py
 input/bev/*
 !input/bev/bev_example.csv
 input/dem/*
