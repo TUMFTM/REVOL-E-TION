@@ -2,7 +2,7 @@
 results/*
 input/scenarios/*
 !input/scenarios/example.json
-!input/scenarios/sgen.py
+!input/scenarios/sgen_example.py
 input/bev/*
 !input/bev/bev_example.csv
 input/dem/*
