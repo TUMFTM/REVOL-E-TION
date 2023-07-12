@@ -115,19 +115,12 @@ class PredictionHorizon:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
-        source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
+        # get optimum component sizes for optimized blocks
+        for block in [block for block in scenario.blocks.values()
+                      if isinstance(block, blocks.InvestBlock) and block.opt]:
+            block.get_opt_size(self)
 
         for block in scenario.blocks.values():
-            if isinstance(block, blocks.StationaryEnergyStorage) and block.opt:
-                block.size = self.results[(block.ess, None)]["scalars"]["invest"]
-            elif isinstance(block, source_types) and block.opt:
-                block.size = self.results[(block.src, block.bus)]['scalars']['invest']
-            elif isinstance(block, blocks.CommoditySystem) and block.opt:
-                pass  # TODO get sizes for optimized commodities
-            elif isinstance(block, blocks.SystemCore) and block.opt:
-                block.acdc_size = self.results[(block.ac_bus, block.ac_dc)]['scalars']['invest']
-                block.dcac_size = self.results[(block.dc_bus, block.dc_ac)]['scalars']['invest']
-
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
@@ -140,12 +133,11 @@ class PredictionHorizon:
             # TODO does not jump to next scenario properly (at least in parallel mode)
 
     def run_lfs(self, scenario, run):
+        # TODO implement load following rule based dispatch strategy
         pass
 
     def run_ccs(self, scenario, run):
-        pass
-
-    def run_pss(self, scenario, run):
+        # TODO implement cycle charging rule based dispatch strategy
         pass
 
 
@@ -189,7 +181,8 @@ class Scenario:
                                                                    f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
-        self.results = pd.DataFrame()  # for cumulative result saving as pickle later on
+        self.results = pd.DataFrame(columns=['Block', 'Key', self.name])  # for cumulative result saving later on
+        self.results = self.results.set_index(['Block', 'Key'])
         self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
 
         self.exception = None  # placeholder for possible infeasibility
@@ -376,17 +369,12 @@ class Scenario:
         result_blocks.update(self.blocks)
 
         for name, block in result_blocks.items():
-            for name, block in result_blocks.items():
-                for key, value in [key,
-                                   value for key, value in block.__dict__.items() if isinstance(value, result_types)]:
-                    if isinstance(value, int):
-                        self.results[block.name][key] = float(value)
-                    else:
-                        self.results[block.name][key] = value
+            for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
+                value = block.__dict__[key]
                 if isinstance(value, int):
-                    self.results[block.name][key] = float(value)
+                    self.results.loc[(name, key), self.name] = float(value)
                 else:
-                    self.results[block.name][key] = value
+                    self.results.loc[(name, key), self.name] = value
 
         with open(self.result_file_path, 'wb') as file:
             pickle.dump(self.results, file)
@@ -449,7 +437,7 @@ class SimulationRun:
 
         self.input_data_path = os.path.join(self.cwd, 'input')
         self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
-        self.result_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.pkl')
+        self.result_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.json')
         self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
@@ -484,71 +472,22 @@ class SimulationRun:
 
     def join_results(self):
 
-        path = self.result_folder_path
-        files = [filename for filename in os.listdir(path) if filename.endswith('.pkl')]
+        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.pkl')]
+        joined_results = pd.DataFrame()
 
         for file in files:
-            file_path = os.path.join(path, file)
+            file_path = os.path.join(self.result_folder_path, file)
             with open(file_path, 'rb') as pickle_file:
-                results = pickle.load(pickle_file)
-            if 'exception' in results.keys():  # scenario infeasible
-                self.save_pickle_exception(results)
-            else:  # scenario feasible
-                self.save_pickle_results(results)
+                file_results = pickle.load(pickle_file)
+            # add all scenario results horizontally to the dataframe
+            joined_results = pd.concat([joined_results, file_results], axis=1)
             os.remove(file_path)
 
         if self.save_results:
-            xl.writexl(db=self.result_df, fn=self.result_file_path)
-            self.logger.info("Excel output file created")
-
-    @staticmethod
-    def save_pickle_exception(res: dict):
-        """
-        Dump error message in result excel file if optimization did not succeed
-        """
-        scenario_name = res['scenario_name']
-
-        run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
-        run.result_df.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
-        run.result_df.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
-        run.result_df.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
-        run.result_df.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
-        run.result_df.ws(ws=ws).update_index(row=4, col=1, val='Optimization unsuccessful!')
-        run.result_df.ws(ws=ws).update_index(row=5, col=1, val='Message')
-        run.result_df.ws(ws=ws).update_index(row=5, col=2, val=res['exception'])
-
-    @staticmethod
-    def save_pickle_results(res: dict):
-
-        run.result_df.add_ws(ws=ws)
-
-        run.result_df.ws(ws=ws).update_index(row=1, col=1, val=res['title'])
-        run.result_df.ws(ws=ws).update_index(row=2, col=1, val='Timestamp')
-        run.result_df.ws(ws=ws).update_index(row=2, col=2, val=res['runtimestamp'])
-        run.result_df.ws(ws=ws).update_index(row=3, col=1, val='Runtime')
-        run.result_df.ws(ws=ws).update_index(row=3, col=2, val=res['runtime'])
-
-        header_row = 5
-
-        for index, obj in enumerate([value for key, value in res.items() if isinstance(value, dict)]):
-            col_id = 1 + index * 4
-            row_id = header_row + 1
-
-            obj_name = obj['name']
-
-            if obj_name == res['scenario_name']:  # if object is scenario
-                run.result_df.ws(ws=ws).update_index(row=header_row, col=col_id, val='scenario data')
-            else:
-
-                run.result_df.ws(ws=ws).update_index(row=header_row, col=col_id, val=f'{obj_name} data')
-
-            for key, value in obj.items():
-                run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id, val=key)
-                if isinstance(value, int):
-                    run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=float(value))
-                else:
-                    run.result_df.ws(ws=ws).update_index(row=row_id, col=col_id + 1, val=value)
-                row_id += 1
+            # saving the multiindex into a column to make the index unique for json
+            joined_results.reset_index(inplace=True, names=['block', 'key'])
+            joined_results.to_json(self.result_file_path, orient='records', lines=True)
+            self.logger.info("Technoeconomic output file created")
 
 
 ###############################################################################
@@ -564,6 +503,9 @@ def input_gui(directory):
     input_default = os.path.join(directory, 'input', 'scenarios')
     input_default_file = os.path.join(input_default, 'example.json')
     input_default_file_show = os.path.relpath(input_default_file, directory)
+    settings_default = os.path.join(directory, 'input', 'settings')
+    settings_default_file = os.path.join(settings_default, 'default.json')
+    settings_default_file_show = os.path.relpath(settings_default_file, directory)
     results_default = os.path.join(directory, 'results')
     results_default_show = os.path.relpath(results_default, directory)
 
@@ -571,6 +513,14 @@ def input_gui(directory):
                   [psg.Input(key='file',
                              default_text=input_default_file_show),
                    psg.FileBrowse(initial_folder=input_default,
+                                  file_types=(('.json files',
+                                               '.json'),))],
+                  ]
+
+    settings_file = [[psg.Text('Choose settings file')],
+                  [psg.Input(key='file2',
+                             default_text=settings_default_file_show),
+                   psg.FileBrowse(initial_folder=settings_default,
                                   file_types=(('.json files',
                                                '.json'),))],
                   ]
@@ -584,23 +534,27 @@ def input_gui(directory):
     layout = [
         [psg.Column(input_file)],
         [psg.HSeparator()],
+        [psg.Column(settings_file)],
+        [psg.HSeparator()],
         [psg.Column(result_folder)],
         [psg.HSeparator()],
         [psg.OK(bind_return_key=True), psg.Cancel()],
     ]
 
-    event, values = psg.Window('EV_ESM toolset - select input file and result path', layout).read(close=True)
+    event, values = psg.Window('EV_ESM toolset - select scenario file, settings file and result path', layout).read(close=True)
 
     try:
         scenarios_filename = os.path.abspath(values['file'])
+        settings_filename =  os.path.abspath(values['file2'])
         results_foldername = os.path.abspath(values['folder'])
-        if scenarios_filename == '.' or results_foldername == '.':
+        if scenarios_filename == '.' or settings_filename == '.' or results_foldername == '.':
             print('not all required paths entered - exiting')
             exit()
-        return scenarios_filename, results_foldername
+        return scenarios_filename, settings_filename, results_foldername
     except TypeError:
         print('GUI window closed manually - exiting')
         exit()
+
 
 def json_parse_bool(dct: dict) -> dict:
     for key, value in dct.items():

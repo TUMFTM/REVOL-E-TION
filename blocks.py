@@ -26,6 +26,7 @@ import pvlib
 import pytz
 import timezonefinder
 
+import blocks
 import economics as eco
 
 ###############################################################################
@@ -58,9 +59,12 @@ class InvestBlock:
                 self.opt = False
         elif self.size == 'opt':
             self.opt = True
+            # size will now be set when getting results
             self.size = None
         elif isinstance(self.size, float) or self.size is None:
             self.opt = False
+            if isinstance(self, blocks.CommoditySystem):
+                self.size = self.size * self.num
         else:
             run.logger.warning(f'Scenario {scenario.name}: \"{self.name}_size\" variable in scenario definition'
                                f' needs to be either a number or \"opt\" - exiting')
@@ -104,9 +108,7 @@ class InvestBlock:
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        if isinstance(self, CommoditySystem):
-            self.capex_init = self.size * self.capex_spec * self.num
-        elif isinstance(self, SystemCore):
+        if isinstance(self, SystemCore):
             self.capex_init = (self.acdc_size + self.dcac_size) * self.capex_spec
         else:
             self.capex_init = self.size * self.capex_spec
@@ -130,9 +132,7 @@ class InvestBlock:
         scenario.capex_dis += self.capex_dis
         scenario.capex_ann += self.capex_ann
 
-        if isinstance(self, CommoditySystem):
-            self.mntex_yrl = self.size * self.mntex_spec * self.num  # time-based maintenance
-        elif isinstance(self, SystemCore):
+        if isinstance(self, SystemCore):
             self.mntex_yrl = (self.acdc_size + self.dcac_size) * self.mntex_spec
         else:
             self.mntex_yrl = self.size * self.mntex_spec  # time-based maintenance
@@ -192,6 +192,30 @@ class InvestBlock:
         scenario.e_yrl_del += self.e_yrl
         scenario.e_prj_del += self.e_prj
         scenario.e_dis_del += self.e_dis
+
+    def get_opt_size(self, horizon):
+
+        """
+        Get back the optimal size from solver results. Can only be reached in GO strategy, as only there,
+        size opt is feasible. Before, size variables to be optimized are none.
+        :param horizon: recently optimized PredictionHorizon
+        :return: none, saves self.size value
+        """
+
+        source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
+
+        if isinstance(self, blocks.StationaryEnergyStorage):
+            self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
+        elif isinstance(self, source_types):
+            self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
+        elif isinstance(self, blocks.CommoditySystem):
+            for commodity in self.commodities:
+                commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
+            self.size = sum([commodity.size for commodity in self.commodities])
+        elif isinstance(self, blocks.SystemCore):
+            self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
+            self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
+
 
 class CommoditySystem(InvestBlock):
 
@@ -415,7 +439,7 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
-        self.size = self.parent.size
+        self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.chg_pwr = self.parent.chg_pwr
 
         colnames = [coln for coln in self.parent.data.columns if self.name in coln]
@@ -544,7 +568,7 @@ class MobileCommodity:
                 horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
                 horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
             # shift is needed as sc/soc is stored for end of timestep by oemof
-            self.soc_ch = self.sc_ch / self.parent.size
+            self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
