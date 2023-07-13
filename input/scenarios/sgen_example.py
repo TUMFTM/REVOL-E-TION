@@ -221,8 +221,25 @@ data = {'0_mg_go': ['1/1/2005', 'H', 365, 25, 'go', 48, 24, 0.09, {'core': 'Syst
                        'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                        'opt', 'cc', 'AC', 'bev_example', 5, 0.25, 0.0075, 0, 0, 0, 10, 0.5, 11000, 11000, 1, 0.95, 0.95,
                        1,  # bev
-                       'opt', 'cc', 'AC', 'brs_example', 10, 0.45, 0.01, 0, 0, 0, 10, 0.5, 3600, 3600, 1, 0.95, 0.95, 1]
-        # brs
+                       'opt', 'cc', 'AC', 'brs_example', 10, 0.45, 0.01, 0, 0, 0, 10, 0.5, 3600, 3600, 1, 0.95, 0.95, 1],# brs
+        '5_mgev_inf': ['1/1/2005', 'H', 365, 25, 'go', 48, 24, 0.09, {'core': 'SystemCore',
+                                                                      'dem': 'FixedDemand',
+                                                                      'wind': 'WindSource',
+                                                                      'pv': 'PVSource',
+                                                                      'ess': 'StationaryEnergyStorage',
+                                                                      'gen': 'ControllableSource',
+                                                                      'grid': 'ControllableSource',
+                                                                      'bev': 'CommoditySystem'},  # scenario
+                                1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                                'AC', 'dem_example',  # dem
+                                5.00E+04, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                                1.00E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                                2.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                                2.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                                1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                                3.00E+04, 'cc', 'AC', 'bev_example', 5, 0.25, 0.0075, 0, 0, 0, 10, 0.5, 11000, 11000, 1, 0.95,
+                                0.95, 1,  # bev
+                                3.00E+03, 'cc', 'AC', 'brs_example', 10, 0.45, 0.01, 0, 0, 0, 10, 0.5, 3600, 3600, 1, 0.95, 0.95, 1]  # brs
         }
 
 df = pd.DataFrame.from_dict(data)

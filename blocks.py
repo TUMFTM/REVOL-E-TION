@@ -57,12 +57,13 @@ class InvestBlock:
                     self.dcac_size = None
             else:
                 self.opt = False
-        elif self.size == 'opt':
+        elif self.size == 'opt': # all non-SystemCore blocks that are to be optimzed
             self.opt = True
             # size will now be set when getting results
             self.size = None
-        elif isinstance(self.size, float) or self.size is None:
+        elif isinstance(self.size, float) or self.size is None:  # all non-SystemCore blocks that are not to be optimzed
             self.opt = False
+            # size is given per commodity in scenario data
             if isinstance(self, blocks.CommoditySystem):
                 self.size = self.size * self.num
         else:
@@ -544,7 +545,7 @@ class MobileCommodity:
                                                            outflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
                                                            max_storage_level=1,
-                                                           nominal_storage_capacity=self.parent.size)
+                                                           nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
 
     def accumulate_results(self, scenario):

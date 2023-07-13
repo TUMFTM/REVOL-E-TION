@@ -271,6 +271,7 @@ class Scenario:
             if hasattr(block, 'size'):
                 if isinstance(block, blocks.CommoditySystem):
                     legentry_p = f"{block.name} total power"
+                    display_size = round(block.size / 1e3, 1)
                 if isinstance(block, blocks.StationaryEnergyStorage):
                     display_size = round(block.size / 1e3, 1)
                     display_dpwr = round(block.dis_crate * block.size / 1e3, 1)
@@ -308,10 +309,11 @@ class Scenario:
                                                      line=dict(width=2, dash=None),
                                                      visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=False)
+                    commodity_display_size = round(commodity.size / 1e3, 1)
                     self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
                                                      y=commodity.soc,
                                                      mode='lines',
-                                                     name=f"{commodity.name} SOC ({display_size} kWh)",
+                                                     name=f"{commodity.name} SOC ({commodity_display_size} kWh)",
                                                      line=dict(width=2, dash=None),
                                                      visible='legendonly'),  # TODO introduce TUM colors
                                           secondary_y=True)
@@ -345,24 +347,16 @@ class Scenario:
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
 
-    def save_exception(self, run):
-        """
-        Dump error message in result excel file if optimization did not succeed
-        """
-        # scenario_name is already added in __init__
-        self.results['title'] = f'Global Optimum Results ({run.result_path} ' \
-                                f'- Sheet: {self.name})'
-        self.results['runtimestamp'] = run.runtimestamp
-        self.results['runtime'] = self.runtime_len
-        self.results['exception'] = self.exception
-
-        with open(self.result_file_path, 'wb') as file:
-            pickle.dump(self.results, file)
-
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
                 
     def save_results(self, run):
+        """
+        Saves all int, float and str attributes of run, scenario (incl. technoeconomic KPIs) and all blocks to the
+        results dataframe
+        :param run: SimulationRun
+        :return: none
+        """
 
         result_types = (int, float, str)
         result_blocks = {'run': run, 'scenario': self}
@@ -595,7 +589,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             scenario.exception = 'Input data does not cover full sim timespan'
             logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
                             f' - continuing on next scenario')
-            scenario.save_exception(run)
+            scenario.save_results(run)
             break
 
         if scenario.strategy == 'lfs':
@@ -606,7 +600,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             horizon.run_optimization(scenario, run)
 
         if scenario.exception and run.save_results:
-            scenario.save_exception(run)
+            scenario.save_results(run)
             break
         else:
             horizon.get_results(scenario, run)
