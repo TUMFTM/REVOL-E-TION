@@ -5,6 +5,8 @@ input/scenarios/*
 !input/scenarios/sgen_example.py
 input/bev/*
 !input/bev/bev_example.csv
+input/brs/*
+!input/brs/brs_example.csv
 input/dem/*
 !input/dem/dem_example.csv
 input/pv/*

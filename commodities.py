@@ -1,6 +1,23 @@
+#!/usr/bin/env python3
+"""
+commodities.py
+
+--- Description ---
+This file contains the Discrete Event Simulation to generate behavioral data of mobile commodity systems in the
+energy system model framework. For more info, see readme.
+
+--- Created by ---
+Hannes Henglein
+
+--- File Information ---
+coding:     utf-8
+license:    GPLv3
+"""
+
 ###############################################################################
 # Imports
 ###############################################################################
+
 import os
 import math
 import simpy
@@ -387,7 +404,7 @@ class Logging():
                                       columns=['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC',
                                                'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}'])
 
-        save_filename = os.path.join(os.getcwd(), f'{name}_process_log.csv')
+        save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_process_log.csv')
 
         # print(Simulation_Log.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
         Simulation_Log.to_csv(save_filename, sep=';')
@@ -401,7 +418,7 @@ class Logging():
                                        i * 3 + 1: f'{name}{i}_consumption',
                                        i * 3 + 2: f'{name}{i}_atbase'}, inplace=True)
 
-        save_filename = os.path.join(os.getcwd(), f'{name}_log.csv')
+        save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_log.csv')
         # print(ind_bev_df.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
         ind_bev_df.to_csv(save_filename, sep=';')
 
