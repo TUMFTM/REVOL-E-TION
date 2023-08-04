@@ -34,33 +34,33 @@ import pylightxl as xl
 ###############################################################################
 
 
-class MyStoreGet(simpy.resources.base.Get):
+class MultiStoreGet(simpy.resources.base.Get):
     def __init__(self, store, amount):
         if amount <= 0:
             raise ValueError('amount(=%s) must be > 0.' % amount)
         self.amount = amount
         """The amount of matter to be taken out of the store."""
 
-        super(MyStoreGet, self).__init__(store)
+        super(MultiStoreGet, self).__init__(store)
 
 
-class MyStorePut(simpy.resources.base.Put):
+class MultiStorePut(simpy.resources.base.Put):
     def __init__(self, store, items):
         self.items = items
-        super(MyStorePut, self).__init__(store)
+        super(MultiStorePut, self).__init__(store)
 
 
-class MyStore(simpy.resources.base.BaseResource):
+class MultiStore(simpy.resources.base.BaseResource):
     def __init__(self, env, capacity=float('inf')):
         if capacity <= 0:
             raise ValueError('"capacity" must be > 0.')
 
-        super(MyStore, self).__init__(env, capacity)
+        super(MultiStore, self).__init__(env, capacity)
 
         self.items = []
 
-    put = simpy.core.BoundClass(MyStorePut)
-    get = simpy.core.BoundClass(MyStoreGet)
+    put = simpy.core.BoundClass(MultiStorePut)
+    get = simpy.core.BoundClass(MultiStoreGet)
 
     def _do_put(self, event):
         if len(self.items) + len(event.items) <= self._capacity:
@@ -261,7 +261,7 @@ class InputDataManager():
         self.list_of_customers = self.excel_to_dictlist('MB_Usecases')
 
         # Store Setup:
-        self.MBFleet = MyStore(env, capacity=self.BRS_capacity)
+        self.MBFleet = MultiStore(env, capacity=self.BRS_capacity)
         # fill the store with elements = MB
         for i in range(self.BRS_capacity):
             self.MBFleet.put([i])
