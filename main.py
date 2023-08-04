@@ -43,6 +43,7 @@ from pathlib import Path
 from plotly.subplots import make_subplots
 
 import blocks
+import commodities
 import tum_colors as col
 
 warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
