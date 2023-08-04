@@ -14,9 +14,11 @@ coding:     utf-8
 license:    GPLv3
 """
 
+
 ###############################################################################
 # Imports
 ###############################################################################
+
 
 import os
 import math
@@ -25,21 +27,14 @@ import random
 import numpy as np
 import pandas as pd
 import pylightxl as xl
-from random import choices
-from simpy.core import BoundClass
-from simpy.resources import base
-from numpy.random import default_rng
-
-###############################################################################
-# initial setup for rng and count variables
-###############################################################################
-
 
 
 ###############################################################################
-# custom subclasses from simpy.resources for "multiple store get"
+# Custom subclasses from simpy.resources for stores, from which multiple resources can be taken at once
 ###############################################################################
-class MyStoreGet(base.Get):
+
+
+class MyStoreGet(simpy.resources.base.Get):
     def __init__(self, store, amount):
         if amount <= 0:
             raise ValueError('amount(=%s) must be > 0.' % amount)
@@ -49,13 +44,13 @@ class MyStoreGet(base.Get):
         super(MyStoreGet, self).__init__(store)
 
 
-class MyStorePut(base.Put):
+class MyStorePut(simpy.resources.base.Put):
     def __init__(self, store, items):
         self.items = items
         super(MyStorePut, self).__init__(store)
 
 
-class MyStore(base.BaseResource):
+class MyStore(simpy.resources.base.BaseResource):
     def __init__(self, env, capacity=float('inf')):
         if capacity <= 0:
             raise ValueError('"capacity" must be > 0.')
@@ -64,8 +59,8 @@ class MyStore(base.BaseResource):
 
         self.items = []
 
-    put = BoundClass(MyStorePut)
-    get = BoundClass(MyStoreGet)
+    put = simpy.core.BoundClass(MyStorePut)
+    get = simpy.core.BoundClass(MyStoreGet)
 
     def _do_put(self, event):
         if len(self.items) + len(event.items) <= self._capacity:
@@ -610,7 +605,7 @@ def car_process_func(env, day, inter_day_count, CRS_global_count, ID, rng):
 
     # choose a start time from all hours of a day 0-23, but differently weighted with custom probability function
     # (viertelstunde)
-    start_time = choices(ID.dep_time_values, ID.dep_time_weights)
+    start_time = random.choices(ID.dep_time_values, ID.dep_time_weights)
     yield env.timeout(int(start_time[0]))
 
     # logic to print correct info depending on selected simulation
@@ -940,8 +935,9 @@ def car_process_func(env, day, inter_day_count, CRS_global_count, ID, rng):
 
 
 def execute_des():
+
     # generate numpy random object
-    rng = default_rng()
+    rng = np.random.default_rng()
 
     # global count for all usecase appearances during simulation
     global global_BRS_count
