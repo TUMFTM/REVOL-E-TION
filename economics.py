@@ -39,12 +39,12 @@ def acc_discount(value, ts, discrate):
     This function calculates the accumulated present cost of a yearly cost in the future (from now to ts years ahead)
     """
     apc = 0
-    for year in range(0, ts):
+    for year in range(0, int(ts)):
         apc += discount(value, year, discrate)
     return apc
 
 
-def adj_ce(ce, me, ls, discrate):
+def adj_ce(ce: float, me: float, ls: int, discrate: float) -> float:
     """
     This function adjusts a component's capex (ce) to include discounted present cost for time based maintenance (pme)
     """

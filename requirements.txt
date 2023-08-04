@@ -1,5 +1,7 @@
 datetime
-oemof.solph>=0.4.4
+gurobipy
+numpy
+oemof.solph>=0.5.0
 pandas
 plotly
 pvlib
@@ -7,4 +9,5 @@ pylightxl
 pyomo
 pysimplegui
 pytz
+simpy
 timezonefinder
