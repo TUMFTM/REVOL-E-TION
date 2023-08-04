@@ -34,17 +34,7 @@ from numpy.random import default_rng
 # initial setup for rng and count variables
 ###############################################################################
 
-# generate numpy random object
-rng = default_rng()
 
-# global count for all uscase appearances during simulation
-global_BRS_count = 0
-global_CRS_count = 0
-failed_BRS_count = 0
-failed_CRS_count = 0
-
-# bug fix: calculated charge time not sufficient, extra time is introduced
-extra_charge_time = 2
 
 ###############################################################################
 # custom subclasses from simpy.resources for "multiple store get"
@@ -157,7 +147,7 @@ class InputDataManager():
         if xread('CRS', sheet_name, self.input_xdb) == 'True':
             self.CRS = True
             # call method to initialize all input data for CRS
-            self.setup_CRS('CRS_DES')
+            self.setup_CRS(env, 'CRS_DES')
         else:
             self.CRS = False
 
@@ -165,7 +155,7 @@ class InputDataManager():
         if xread('BRS', sheet_name, self.input_xdb) == 'True':
             self.BRS = True
             # call method to initialize all input data for BRS
-            self.setup_BRS('BRS_DES')
+            self.setup_BRS(env, 'BRS_DES')
         else:
             self.BRS = False
 
@@ -176,11 +166,11 @@ class InputDataManager():
 
             # If REX is activated, but basic BRS is NOT simulated: initialize BRS only for REX usage
             if not self.BRS:
-                self.setup_BRS('BRS_DES')
+                self.setup_BRS(env, 'BRS_DES')
         else:
             self.REX = False
 
-    def setup_CRS(self, sheet_name):
+    def setup_CRS(self,env, sheet_name):
         # Available Cars in the Fleet
         self.CRS_capacity = xread('CRS_capacity', sheet_name, self.input_xdb)
 
@@ -257,7 +247,7 @@ class InputDataManager():
         self.mu_idle_time = xread('mu_idle_time', sheet_name, self.input_xdb)
         self.sigma_idle_time = xread('sigma_idle_time', sheet_name, self.input_xdb)
 
-    def setup_BRS(self, sheet_name):
+    def setup_BRS(self, env, sheet_name):
         # Available MB in the Fleet
         self.BRS_capacity = xread('BRS_capacity', sheet_name, self.input_xdb)
 
@@ -324,7 +314,7 @@ def xread(param, sheet, db):
 
 class Logging():
 
-    def __init__(self):
+    def __init__(self, ID):
 
         # also activate BRS logging when REX is active
         if ID.BRS or ID.REX:
@@ -425,7 +415,7 @@ class Logging():
 ###############################################################################
 # process generator function: creates BRS rentals and or CRS trips
 ###############################################################################
-def usecase_gen(env):
+def usecase_gen(env, ID, rng):
 
     # Check input.xlsx for consistency, and input errors
     if not ID.CRS and not ID.BRS:
@@ -460,7 +450,7 @@ def usecase_gen(env):
             for t in range(daily_CRS_trip_demand):  # for the number of usecases per day day do:
 
                 # start the CRS process generator with one instance of the process function called "car_process_func()"
-                env.process(car_process_func(env, day, CRS_inter_day_count, global_CRS_count))
+                env.process(car_process_func(env, day, CRS_inter_day_count, global_CRS_count, ID, rng))
                 global_CRS_count += 1
                 CRS_inter_day_count += 1
 
@@ -481,7 +471,7 @@ def usecase_gen(env):
                 n = random.choice(ID.list_of_customers)
 
                 # start the BRS process generator with one instance of the process function called "battery_process_func()"
-                env.process(battery_process_func(env, day, BRS_inter_day_count, n["num_batteries"], n, global_BRS_count))
+                env.process(battery_process_func(env, day, BRS_inter_day_count, n["num_batteries"], n, global_BRS_count, ID, rng))
                 global_BRS_count += 1
                 BRS_inter_day_count += 1
 
@@ -496,7 +486,7 @@ def usecase_gen(env):
 # Battery process function = description of rental process for Batteries
 ###############################################################################
 
-def battery_process_func(env, day_count, inter_day_count, resources_required, n, BRS_global_count):
+def battery_process_func(env, day_count, inter_day_count, resources_required, n, BRS_global_count, ID, rng):
 
     # draw starting time of usecase from normal distribution
     # via "yield" wait until starting point is reached
@@ -556,6 +546,9 @@ def battery_process_func(env, day_count, inter_day_count, resources_required, n,
             return_timestep = env.now
             leaving_SOC = 1
 
+            # bug fix: calculated charge time not sufficient, extra time is introduced
+            extra_charge_time = 2
+
             # this internal timeout gives oemof a time window to recharge the MBs
             BRS_charging_time = math.ceil(used_charge/ID.BRS_charge_power)
             yield env.timeout(BRS_charging_time+ extra_charge_time)
@@ -613,7 +606,7 @@ def battery_process_func(env, day_count, inter_day_count, resources_required, n,
 # Car process function
 ###############################################################################
 
-def car_process_func(env, day, inter_day_count, CRS_global_count):
+def car_process_func(env, day, inter_day_count, CRS_global_count, ID, rng):
 
     # choose a start time from all hours of a day 0-23, but differently weighted with custom probability function
     # (viertelstunde)
@@ -721,9 +714,12 @@ def car_process_func(env, day, inter_day_count, CRS_global_count):
 
                             return_timestep = env.now
 
+                            # bug fix: calculated charge time not sufficient, extra time is introduced
+                            extra_charge_time = 2
+
                             # this represents the usage time that is valid for the Car and the Batteries
                             CRS_charge_time = math.ceil(total_energy_consumed/ID.CRS_charge_power)
-                            yield env.timeout(CRS_charge_time+ extra_charge_time)
+                            yield env.timeout(CRS_charge_time + extra_charge_time)
 
                             # after the usage return the MB = "MB_req" to the store.
                             yield ID.MBFleet.put(MB_results[MB_req])
@@ -814,6 +810,9 @@ def car_process_func(env, day, inter_day_count, CRS_global_count):
 
                     # IF REX but MB not necessary, used charge is travel distance * consumption
                     used_charge_car = round(distance_travelled * ID.energy_consumption,1)
+
+                    # bug fix: calculated charge time not sufficient, extra time is introduced
+                    extra_charge_time = 2
 
                     # this represents the usage time that is valid for the Car
                     CRS_charge_time = math.ceil(used_charge_car / ID.CRS_charge_power)
@@ -940,34 +939,55 @@ def car_process_func(env, day, inter_day_count, CRS_global_count):
                   .format(day, env.now, CRS_global_count, wait_for_car))
 
 
+def execute_des():
+    # generate numpy random object
+    rng = default_rng()
+
+    # global count for all usecase appearances during simulation
+    global global_BRS_count
+    global_BRS_count = 0
+    global global_CRS_count
+    global_CRS_count = 0
+    global failed_BRS_count
+    failed_BRS_count = 0
+    global failed_CRS_count
+    failed_CRS_count = 0
+
+    # define an environment where the processes live in
+    env = simpy.Environment()
+
+    # set up IDM
+    ID = InputDataManager(env, 'general_settings')
+
+    # set up logging tables (csv)
+    global logger
+    logger = Logging(ID)
+
+    # call the function that generates the individual rental processes
+    env.process(usecase_gen(env, ID, rng))
+
+    # start the simulation
+    env.run()
+
+    # save logging results
+    if ID.BRS or ID.REX:
+        logger.convert_to_csv(logger.BRS_process_log, logger.BRS_ind_array, global_BRS_count)
+        logger.save(logger.BRS_process_log, logger.BRS_ind_array, ID.BRS_capacity, 'brs')
+
+    if ID.CRS:
+        logger.convert_to_csv(logger.CRS_process_log, logger.CRS_ind_array, global_CRS_count)
+        logger.save(logger.CRS_process_log, logger.CRS_ind_array, ID.CRS_capacity, 'bev')
+
+    # print statistic on ratio of successful vs failed trips/rentals
+    print('Total BRS: {}, Failed BRS: {}, Total CRS: {}, Failed CRS: {}'
+          .format(global_BRS_count, failed_BRS_count, global_CRS_count, failed_CRS_count))
+
+
 ###############################################################################
-# Simpy simulation setup
+# Execution (only if run as standalone file)
 ###############################################################################
 
-# define an environment where the processes live in
-env = simpy.Environment()
+if __name__ == '__main__':
+    execute_des()
 
-# set up IDM
-ID = InputDataManager(env, 'general_settings')
 
-# set up logging tables (csv)
-logger = Logging()
-
-# call the function that generates the individual rental processes
-env.process(usecase_gen(env))
-
-# start the simulation
-env.run()
-
-# save logging results
-if ID.BRS or ID.REX:
-    logger.convert_to_csv(logger.BRS_process_log, logger.BRS_ind_array, global_BRS_count)
-    logger.save(logger.BRS_process_log, logger.BRS_ind_array, ID.BRS_capacity, 'brs')
-
-if ID.CRS:
-    logger.convert_to_csv(logger.CRS_process_log, logger.CRS_ind_array, global_CRS_count)
-    logger.save(logger.CRS_process_log, logger.CRS_ind_array, ID.CRS_capacity, 'bev')
-
-# print statistic on ratio of successful vs failed trips/rentals
-print('Total BRS: {}, Failed BRS: {}, Total CRS: {}, Failed CRS: {}'
-                  .format(global_BRS_count, failed_BRS_count, global_CRS_count, failed_CRS_count))
