@@ -19,14 +19,16 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-
+import datetime as dt
 import os
 import math
 import simpy
 import random
 import numpy as np
 import pandas as pd
-import pylightxl as xl
+
+import blocks
+import main
 
 
 ###############################################################################
@@ -75,232 +77,521 @@ class MultiStore(simpy.resources.base.BaseResource):
 
 
 ###############################################################################
-# input data handling class
+# RentalSystem classes
 ###############################################################################
 
-class InputDataManager():
+class RentalSystem:
 
-    def __init__(self, env, sheet_name):
+    def __init__(self, cs: blocks.CommoditySystem):
 
-        # access to excel input file
-        self.cwd = os.getcwd()
-        self.input_file = os.path.join(self.cwd, 'input.xlsx')
-        self.input_xdb = xl.readxl(fn=self.input_file)  # Excel database of selected file
-        self.scenario_names = self.input_xdb.ws_names  # Get list of sheet names, 1 sheet is 1 scenario
+        self.name = cs.name
+        self.cs = cs  # making cs callable from other RentalSystems
+        # all other values are accessible through the commodity system
 
-        # debug boolean trigger:
-        self.debug = xread('debug', sheet_name, self.input_xdb)
-        if xread('debug', sheet_name, self.input_xdb) == 'True':
-            self.debug = True
+        self.rng = np.random.default_rng()
+        self.processes = pd.DataFrame(columns=[''])
+
+
+class VehicleRentalSystem(RentalSystem):
+
+    def __init__(self, env: simpy.Environment, sc: main.Scenario, cs: blocks.CommoditySystem):
+
+        super().__init__(cs)
+
+        self.mu_daily_demand = 15
+        self.sig_daily_demand = 0
+
+        self.store = simpy.Store(env, capacity=cs.num)
+        for commodity in cs.commodities:
+            self.store.put({commodity.name})  # todo why the curly brackets?
+
+
+    def departure_pdf(self, cs: blocks.CommoditySystem, x):
+
+        y = 0.6 * (1 / (cs.dep_sig1 * np.sqrt(2 * np.pi)) * np.exp(- (x - cs.dep_mu1) ** 2 / (2 * cs.dep_sig1 ** 2))) + \
+            0.4 * (1 / (cs.dep_sig2 * np.sqrt(2 * np.pi)) * np.exp(- (x - cs.dep_mu2) ** 2 / (2 * cs.dep_sig2 ** 2)))
+
+        return y
+
+    def get_departure_time(self, process, env):
+
+        # choose a start time from all hours of a day 0-23, but differently weighted with custom probability function
+        # (viertelstunde)
+        process.start_time = random.choices(self.dep_time_values, self.dep_time_weights)
+        yield env.timeout(int(process.start_time[0]))
+
+    def start_process(env, day, inter_day_count, CRS_global_count, ID, rng):
+
+
+        # logic to print correct info depending on selected simulation
+        if ID.REX:
+            print('CRS + REX: On day {} at Time {} the Trip {} is born -- Total Trip Count: {}'
+                  .format(day, env.now, CRS_global_count, CRS_global_count))
         else:
-            self.debug = False
-
-        # simulation duration and temporal resolution
-        self.simulated_days = xread('simulated_days', sheet_name, self.input_xdb)
-        self.number_of_steps_per_day = xread('number_of_steps_per_day', sheet_name, self.input_xdb)
-
-        # number of timesteps used to determine the length of the ind_array
-        self.number_timesteps = self.simulated_days * self.number_of_steps_per_day
-
-        # Placeholders for CRS
-        self.CRS_capacity = None
-        self.mu_daily_CRS_trip_demand = None
-        self.sigma_daily_CRS_trip_demand = None
-        self.CRS_patience = None
-        self.REX_patience = None
-        self.expected_trips = None
-        self.CRS_leaving_soc = None
-        self.used_charge = None
-        self.name = None
-        self.CarFleet = None
-        self.dep_time_values = None
-        self.dep_time_weights = None
-        self.fix_bat_size = None
-        self.avg_velocity = None
-        self.energy_consumption = None
-        self.CRS_charge_power = None
-        self.min_return_soc = None
-        self.mu_trip_length = None
-        self.sigma_trip_length = None
-        self.mu_idle_time = None
-        self.sigma_idle_time = None
-
-        # Placeholders for BRS
-        self.BRS_capacity = None
-        self.mu_daily_BRS_rental_demand = None
-        self.sigma_daily_BRS_rental_demand = None
-        self.BRS_patience = None
-        self.BRS_energycontent = None
-        self.BRS_charge_power = None
-        self.list_of_customers = None
-        self.MBFleet = None
-
-        # Trigger variable functionality:
-        # depending on the desired simulation, the following setup functions are called
-
-        # CRS Setup
-        if xread('CRS', sheet_name, self.input_xdb) == 'True':
-            self.CRS = True
-            # call method to initialize all input data for CRS
-            self.setup_CRS(env, 'CRS_DES')
-        else:
-            self.CRS = False
-
-        # BRS Setup
-        if xread('BRS', sheet_name, self.input_xdb) == 'True':
-            self.BRS = True
-            # call method to initialize all input data for BRS
-            self.setup_BRS(env, 'BRS_DES')
-        else:
-            self.BRS = False
-
-        # REX Setup
-        if xread('REX', sheet_name, self.input_xdb) == 'True':
-            # trigger to enable REX functionality: Cars can also rent MB
-            self.REX = True
-
-            # If REX is activated, but basic BRS is NOT simulated: initialize BRS only for REX usage
-            if not self.BRS:
-                self.setup_BRS(env, 'BRS_DES')
-        else:
-            self.REX = False
-
-    def setup_CRS(self,env, sheet_name):
-        # Available Cars in the Fleet
-        self.CRS_capacity = xread('CRS_capacity', sheet_name, self.input_xdb)
-
-        self.mu_daily_CRS_trip_demand = xread('mu_daily_CRS_trip_demand', sheet_name, self.input_xdb)
-        self.sigma_daily_CRS_trip_demand = xread('sigma_daily_CRS_trip_demand', sheet_name, self.input_xdb)
-
-        # total expected trips: used to determine the car_log length
-        self.expected_trips = self.simulated_days * self.mu_daily_CRS_trip_demand
-
-        # starting SOC of a car, required of oemof, before a trip starts
-        self.CRS_leaving_soc = xread('CRS_leaving_soc', sheet_name, self.input_xdb)
-
-        # used to name and identify columns in csv file
-        self.name = 'bev'
-
-        # patience of a trip to wait for a car
-        self.CRS_patience = xread('CRS_patience', sheet_name, self.input_xdb)
-
-        # patience of a trip to wait for MB for REX
-        self.REX_patience = xread('REX_patience', sheet_name, self.input_xdb)
-
-        # Store setup:
-        self.CarFleet = simpy.Store(env, capacity=self.CRS_capacity)
-        # fill the store with elements = Cars
-        for i in range(self.CRS_capacity):
-            self.CarFleet.put({i})
-            i += 1
-
-        #################################################################################
-        # CRS Departure probability setup
-        #################################################################################
-
-        # Erstelle pdf-der globalen Abfahrts-Wahrscheinlichkeit der aCar Flotte
-        # Zusammengesetze normalverteilung wurde normiert
-
-        # mean and standard deviation morning departure
-        mu_1, sigma_1 = xread('mu_1', sheet_name, self.input_xdb), xread('sigma_1', sheet_name, self.input_xdb)
-
-        # mean and standard deviation evening departure
-        mu_2, sigma_2 = xread('mu_2', sheet_name, self.input_xdb), xread('sigma_2', sheet_name, self.input_xdb)
-
-        def global_departure_pdf(x):
-            # Funktion aus 2 normalverteilungs pdf zusammengesetzt (morgens, abends Abfahrt)
-
-            y = 0.6 * (1 / (sigma_1 * np.sqrt(2 * np.pi)) * np.exp(- (x - mu_1) ** 2 / (2 * sigma_1 ** 2))) + \
-                0.4 * (1 / (sigma_2 * np.sqrt(2 * np.pi)) * np.exp(- (x - mu_2) ** 2 / (2 * sigma_2 ** 2)))
-            return y
-
-        # use random choices to sample the global_departure_pdf for every hour of a day
-        # dep_time_values contains the assumption that 1h is the step unit  (viertelstunde)
-        self.dep_time_values = np.linspace(0, 23, num=24)  # [0,1, 2, 3, 4, 5, 6--23]
-        self.dep_time_weights = global_departure_pdf(self.dep_time_values)  # [3,3,3,3,3,3]
-
-        # energy content of the fixed battery of the car
-        self.fix_bat_size = xread('fix_bat_size', sheet_name, self.input_xdb)
-
-        # average velocity of the car used to calculate trip length
-        self.avg_velocity = xread('avg_velocity', sheet_name, self.input_xdb)
-
-        # energy consumption of the car used to calculate remaining SOC and for REX the number of MB
-        self.energy_consumption = xread('energy_consumption', sheet_name, self.input_xdb)
-
-        # charging power used to calculated charging time of cars
-        self.CRS_charge_power = xread('CRS_charge_power', sheet_name, self.input_xdb)
-
-        # min SOC of a car when returning home, used to calculate range and number of MB
-        self.min_return_soc = xread('min_return_soc', sheet_name, self.input_xdb)
-
-        # parameters for the log-normal distribution used to generate each trip-length in [km]
-        self.mu_trip_length = xread('mu_trip_length', sheet_name, self.input_xdb)
-        self.sigma_trip_length = xread('sigma_trip_length', sheet_name, self.input_xdb)
-
-        # parameters for the log-normal distribution used to generate each idle time in [h]
-        self.mu_idle_time = xread('mu_idle_time', sheet_name, self.input_xdb)
-        self.sigma_idle_time = xread('sigma_idle_time', sheet_name, self.input_xdb)
-
-    def setup_BRS(self, env, sheet_name):
-        # Available MB in the Fleet
-        self.BRS_capacity = xread('BRS_capacity', sheet_name, self.input_xdb)
-
-        # daily demand for BRS
-        self.mu_daily_BRS_rental_demand = xread('mu_daily_BRS_rental_demand', sheet_name, self.input_xdb)
-        self.sigma_daily_BRS_rental_demand = xread('sigma_daily_BRS_rental_demand', sheet_name, self.input_xdb)
-
-        # patience to wait for a MB
-        self.BRS_patience = xread('BRS_patience', sheet_name, self.input_xdb)
-
-        # energycontent of one MB in Wh
-        self.BRS_energycontent = xread('BRS_energycontent', sheet_name, self.input_xdb)
-
-        self.BRS_charge_power = xread('BRS_charge_power', sheet_name, self.input_xdb)
-
-        self.list_of_customers = self.excel_to_dictlist('MB_Usecases')
-
-        # Store Setup:
-        self.MBFleet = MultiStore(env, capacity=self.BRS_capacity)
-        # fill the store with elements = MB
-        for i in range(self.BRS_capacity):
-            self.MBFleet.put([i])
-            i += 1
-
-    # compatibility function: take excel input and create list of dictionaries for the usecase data
-    def excel_to_dictlist(self, sheetname):
-
-        workbook = xl.readxl(fn=self.input_file)
-        sheet = workbook.ws(ws=sheetname)
-
-        headers = sheet.row(row=1)
-        data = []
-
-        for row_idx in range(2, sheet.maxrow + 1):
-            row = sheet.row(row=row_idx)
-            data_dict = {}
-            for col_idx, header in enumerate(headers):
-                data_dict[header.lower()] = row[col_idx]
-            data.append(data_dict)
-
-        return data
+            print('CRS: On day {} at Time {} the Trip {} is born -- Total Trip Count: {}'
+                  .format(day, env.now, CRS_global_count, CRS_global_count))
 
 
-###############################################################################
-# function for reading Excel files taken from mg_ev_opti
-###############################################################################
 
-def xread(param, sheet, db):
-    """
-    Reading parameters from external excel file
-    """
-    value = None
-    try:
-        value = db.ws(ws=sheet).keyrow(key=param, keyindex=1)[1]
-    except IndexError:
-        print(f'Key \"{param}\" not found in Excel worksheet - exiting')
-        exit()
-    return value
+        if ID.debug:
+            print('DEBUG: 'f'cars available: {ID.CarFleet.items}')
+            print('DEBUG: 'f'MB available: {ID.MBFleet.items}')
+            print('')
+
+        # request a car from the CarFleet
+        with ID.CarFleet.get() as CAR_req:
+
+            # Wait for the car or abort by a timeout
+            CAR_results = yield CAR_req | env.timeout(ID.CRS_patience)
+
+            # waiting time
+            wait_for_car = env.now - arrive
+
+            if CAR_req in CAR_results:  # we got a car, now draw trip distance and duration
+
+                # travel distance of each trip follows log-normal:
+                distance_travelled = rng.lognormal(ID.mu_trip_length, ID.sigma_trip_length)
+
+                # calculate the driving duration of a trip based on distance travelled and avg. velocity
+                time_travelled = round(distance_travelled / ID.avg_velocity)
+
+                # consider car state that is not driving and not charging -> parking/ waiting
+                # idle_time in [h] based on a log-normal distribution, value rounded to int
+                # Attention: if time step is changed, idle time has to be adapted (viertelstunde)
+                idle_time = round(rng.lognormal(ID.mu_idle_time, ID.sigma_idle_time))
+
+                # threshold value in [km] used to determine:
+                # 1) if trip is feasible with intrinsic range 2) IF MB are necessary for a trip
+                range_threshold = ((1 - ID.min_return_soc) * ID.fix_bat_size) / ID.energy_consumption
+
+                #######################################_BEGIN_REX_MB_Rental_#########################################
+
+                if ID.REX:  # if REX is active, trips requiring MB can now request MB, if needed
+
+                    if distance_travelled > range_threshold:  # if MB is needed for the trip:
+
+                        # calculate the distance that has to be covered by MB
+                        distance_to_cover_with_MB = distance_travelled - range_threshold
+
+                        # calculate total MB energy required for the trip
+                        required_MB_energy = distance_to_cover_with_MB * ID.energy_consumption
+
+                        # calculate the number of MB needed for the trip
+                        # number of MBs can only be an integer, thus value is rounded to the next full int
+                        required_number_of_MB = math.ceil(required_MB_energy / ID.BRS_energycontent)
+
+                        # total energy consumed
+                        total_energy_consumed = distance_travelled * ID.energy_consumption
+
+                        # sum of fixed_battery and total MB energy available
+                        total_energy_available = ID.fix_bat_size + required_number_of_MB * ID.BRS_energycontent
+
+                        # fraction of SOC used for trip driving distance
+                        used_SOC = total_energy_consumed / total_energy_available
+
+                        # used charge of fixed battery of a car per trip
+                        used_charge_car = round(used_SOC * ID.fix_bat_size, 1)
+
+                        # used charge per battery:
+                        used_charge_per_MB = used_SOC * ID.BRS_energycontent
+
+                        # we determined number of MB necessary, now request them from the store
+                        with ID.MBFleet.get(required_number_of_MB) as MB_req:
+
+                            MB_results = yield MB_req | env.timeout(ID.REX_patience)
+
+                            wait_for_MB = env.now - arrive
+
+                            if MB_req in MB_results:  # we got necessary MB:
+
+                                # departure timestep for logging
+                                departure_timestep = env.now
+
+                                print(
+                                    'CRS + REX: On day {} at Time {} the Trip {} got the Car {} and the Batteries ({}), Distance {} '
+                                    .format(day, env.now, CRS_global_count, CAR_results[CAR_req], MB_results[MB_req],
+                                            distance_travelled))
+
+                                if ID.debug:
+                                    print(
+                                        'DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
+                                        .format(CRS_global_count, CAR_results[CAR_req], distance_travelled,
+                                                time_travelled, idle_time, range_threshold))
+                                    print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
+                                    print('DEBUG: 'f'MB remaining: {ID.MBFleet.items}')
+                                    print('')
+
+                                # trip duration:, sum of travel time and idle time, valid for the Car and MB
+                                # MB can't return before the car
+                                yield env.timeout(time_travelled + idle_time)
+
+                                return_timestep = env.now
+
+                                # bug fix: calculated charge time not sufficient, extra time is introduced
+                                extra_charge_time = 2
+
+                                # this represents the usage time that is valid for the Car and the Batteries
+                                CRS_charge_time = math.ceil(total_energy_consumed / ID.CRS_charge_power)
+                                yield env.timeout(CRS_charge_time + extra_charge_time)
+
+                                # after the usage return the MB = "MB_req" to the store.
+                                yield ID.MBFleet.put(MB_results[MB_req])
+
+                                # after the usage return the car = "CAR_req" to the store.
+                                ID.CarFleet.put(CAR_results[CAR_req])
+
+                                charge_timestep = env.now
+
+                                # use the global BRS log variables for the MB in REX usage
+                                global global_BRS_count
+                                global BRS_inter_day_count
+
+                                # Logging for the MB the CRS+REX is using
+                                logger.BRS_process_log[global_BRS_count,] = [day, f'REX_MB_{CRS_global_count}',
+                                                                             BRS_inter_day_count, departure_timestep,
+                                                                             ID.CRS_leaving_soc, used_charge_per_MB,
+                                                                             return_timestep, charge_timestep,
+                                                                             MB_results[MB_req]]
+
+                                global_BRS_count += 1
+                                BRS_inter_day_count += 1
+
+                                print(
+                                    'CRS + REX: On day {} at Time {} the Trip {} with the Car {} returned the Batteries ({}) '
+                                    .format(day, env.now, CRS_global_count, CAR_results[CAR_req], MB_results[MB_req]))
+
+                                if ID.debug:
+                                    print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
+                                          .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
+                                    print('')
+
+                                # logging for the CRS processes when REX is active
+                                logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
+                                                                             inter_day_count,
+                                                                             departure_timestep, ID.CRS_leaving_soc,
+                                                                             used_charge_car,
+                                                                             return_timestep, charge_timestep,
+                                                                             CAR_results[CAR_req]]
+
+                            else:  # REX: patience triggered, no MB received
+                                # ->>> the trip is aborted
+
+                                # bugfix rental and timeout problem:
+                                if MB_req.triggered:
+                                    print('--- request triggered after time out ----')
+                                    MB = yield MB_req
+                                    ID.MBFleet.put(MB)
+
+                                # return car to the store
+                                ID.CarFleet.put(CAR_results[CAR_req])
+
+                                global failed_CRS_count
+                                failed_CRS_count += 1
+
+                                print('----------------ALARM----------------------------------')
+                                print('CRS + REX: On day {} at Time {} the Trip {} failed after waiting {} for REX '
+                                      .format(day, env.now, CRS_global_count, wait_for_MB))
+                                print('-------------------------------------------------------')
+
+                                if ID.debug:
+                                    print('DEBUG: After Trip {} Failed, it returned Car {}, Cars in the Store {} '
+                                          .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
+                                    print('')
+
+                                # logging for the CRS processes when REX is active but req for MB failed
+                                logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
+                                                                             inter_day_count,
+                                                                             "failed", "failed", "failed",
+                                                                             "failed", "failed", "failed"]
+
+                    else:  # REX: distance travelled is not greater than threshold -> no MB needed:
+
+                        departure_timestep = env.now
+
+                        print('CRS + REX: On day {} at Time {} the Trip {} got the Car {}, no REX needed, distance {} '
+                              .format(day, env.now, CRS_global_count, CAR_results[CAR_req], distance_travelled))
+
+                        if ID.debug:
+                            print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
+                            print(
+                                'DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
+                                .format(CRS_global_count, CAR_results[CAR_req], distance_travelled, time_travelled,
+                                        idle_time, range_threshold))
+                            print('')
+
+                        # trip duration:, sum of travel time and idle time, valid for the Car and MB
+                        yield env.timeout(time_travelled + idle_time)
+
+                        return_timestep = env.now
+
+                        # IF REX but MB not necessary, used charge is travel distance * consumption
+                        used_charge_car = round(distance_travelled * ID.energy_consumption, 1)
+
+                        # bug fix: calculated charge time not sufficient, extra time is introduced
+                        extra_charge_time = 2
+
+                        # this represents the usage time that is valid for the Car
+                        CRS_charge_time = math.ceil(used_charge_car / ID.CRS_charge_power)
+                        yield env.timeout(CRS_charge_time + extra_charge_time)
+
+                        # return car to the store
+                        ID.CarFleet.put(CAR_results[CAR_req])
+
+                        print('CRS + REX: On day {} at Time {} the Trip {} returned the Car {}  '
+                              .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
+
+                        if ID.debug:
+                            print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
+                                  .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
+                            print('')
+
+                        charge_timestep = env.now
+
+                        # logging for the CRS processes when REX is active, but not needed
+                        logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
+                                                                     inter_day_count,
+                                                                     departure_timestep, ID.CRS_leaving_soc,
+                                                                     used_charge_car,
+                                                                     return_timestep, charge_timestep,
+                                                                     CAR_results[CAR_req]]
+
+                #######################################_END_REX_MB_Rental_#########################################
+
+                if not ID.REX:
+
+                    if distance_travelled <= range_threshold:  # check if we can cover the distance with fixed battery
+
+                        # departure timestep for logging
+                        departure_timestep = env.now
+
+                        print('CRS: On day {} at Time {} the Trip {} got the Car {} '
+                              .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
+
+                        if ID.debug:
+                            print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
+                            print(
+                                'DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
+                                .format(CRS_global_count, CAR_results[CAR_req], distance_travelled, time_travelled,
+                                        idle_time, range_threshold))
+                            print('')
+
+                        # trip duration:, sum of travel time and idle time, valid for the Car and MB
+                        yield env.timeout(time_travelled + idle_time)
+
+                        # this is the return timestep that is used by oemof simulation csv
+                        return_timestep = env.now
+
+                        # IF no REX, used charge is travel distance * consumption
+                        used_charge_car = round(distance_travelled * ID.energy_consumption, 1)
+
+                        # this timeout allows oemof to recharge the MBs
+                        CRS_charge_time = math.ceil(used_charge_car / ID.CRS_charge_power)
+                        yield env.timeout(CRS_charge_time + extra_charge_time)
+
+                        charge_timestep = env.now
+
+                        # return car to store
+                        ID.CarFleet.put(CAR_results[CAR_req])
+
+                        print('CRS: On day {} at Time {} the Trip {} returned the Car {}  '
+                              .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
+
+                        if ID.debug:
+                            print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
+                                  .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
+                            print('')
+
+                        # logging for the CRS processes when REX is deactivated
+                        logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
+                                                                     departure_timestep, ID.CRS_leaving_soc,
+                                                                     used_charge_car,
+                                                                     return_timestep, charge_timestep,
+                                                                     CAR_results[CAR_req]]
+
+                    else:  # REX is deactivated, thus distances greater than range_threshold can't be covered
+                        # trip is cancelled, as intrinsic car range is not sufficient
+
+                        # return car immediately
+                        ID.CarFleet.put(CAR_results[CAR_req])
+
+                        failed_CRS_count += 1
+
+                        print('-----------ALARM------------------------------')
+                        print('CRS: On day {} at Time {} the Trip {} failed because intrinsic range not sufficient'
+                              .format(day, env.now, CRS_global_count))
+
+                        if ID.debug:
+                            print('DEBUG: Trip length was {}, max intrinsic range was {} '
+                                  .format(distance_travelled, range_threshold))
+                            print('DEBUG: After Trip {} failed, it returned Car {}, Cars in the Store {} '
+                                  .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
+                            print('')
+
+                        logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
+                                                                     "failed",
+                                                                     "failed", "failed",
+                                                                     "failed", "failed",
+                                                                     "failed"]
+
+            else:  # patience for CAR_req triggered, trip is canceled
+
+                # bugfix rental and timeout problem:
+                if CAR_req.triggered:
+                    print('--- request triggered after time out ----')
+                    car = yield CAR_req
+                    ID.CarFleet.put(car)
+
+                # We quit
+                fail_timestep = env.now
+                failed_CRS_count += 1
+
+                # logging for the CRS processes when REX is deactivated
+                logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
+                                                             "failed",
+                                                             "failed", "failed",
+                                                             "failed", "failed",
+                                                             "failed"]
+
+                print('-----------ALARM------------------------------')
+                print('CRS: On day {} at Time {} the Trip {} failed bacause it waited {} for a car'
+                      .format(day, env.now, CRS_global_count, wait_for_car))
+
+
+class BatteryRentalSystem(RentalSystem):
+
+    def __init__(self, env: simpy.Environment, sc: main.Scenario, cs: blocks.CommoditySystem):
+
+        super().__init__(cs)
+
+        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.json')
+        self.usecases = pd.read_json(self.usecase_file_path, orient='records')
+
+        self.store = MultiStore(env, capacity=cs.num)
+        for commodity in cs.commodities:
+            self.store.put([commodity.name])
+
+
+    def generate_demand(self, cs: blocks.CommoditySystem, sc: main.Scenario):
+
+        #get df of all days and draw total demand of usecases
+        self.demand = pd.DataFrame(index=sc.sim_dti.date.unique())
+        self.demand['num_total'] = round(self.rng.lognormal(cs.departure_mu,
+                                                            cs.departure_sig,
+                                                            self.demand.shape[0]))
+        self.demand['usecases'] = np.random.choice(self.usecases['name'],
+                                                         (self.demand.shape[0],self.demand['num_total']),
+                                                         replace=True,
+                                                         p=self.usecases['rel_prob'])
+
+    def start_process(self):
+
+
+
+
+
+class RentalProcess:
+
+    def __init__(self,
+                 rs: RentalSystem,
+                 cs: blocks.CommoditySystem,
+                 env: simpy.Environment,
+                 rex_rs: BatteryRentalSystem = None,
+                 usecase = None):
+
+        self.time_request = env.now
+
+        self.time_idle = dt.timedelta(hours=rs.rng.lognormal(cs.idle_mu, cs.idle_sig))
+
+        if isinstance(rs, VehicleRentalSystem):
+            self.distance = rs.rng.lognormal(cs.trip_mu, cs.trip_sig)
+            self.time_active = dt.timedelta(hours=self.distance / cs.speed_avg)
+            self.energy_req = self.distance * cs.consumption
+        else:  # battery rental
+
+            self.time_active = rs.usecases.loc[self.]
+            self.energy_req =
+
+        self.duration =  self.time_active + self.time_idle
+
+
+        # calculate range down to minimum SOC threshold
+        self.range = (1 - cs.min_return_soc)(cs.size / cs.consumption)
+
+        with rs.store.get() as self.request:
+            # Wait for commodity or abort by a timeout
+            self.result = yield self.request | env.timeout(cs.patience)
+
+            if self.request in self.result:  # request granted
+
+                if cs.rex and self.distance > self.range:  # range extension required & available
+                    self.request_rex_commodities(rs, cs, env, rex_rs)
+                    if self.rex_sucess:
+                        self.execute_trip(rex=True)
+                    else:
+                        # log failure
+                        pass
+                elif self.distance <= self.range:  # range extension not required
+                    self.execute_trip(rex=False)
+                else:  # range extension required, but not available
+                    # log failure
+                    # return vehicle to store
+                    pass
+
+            else:  # request not granted, patience is triggered
+
+                if self.request.triggered:
+                    # make sure that resource is placed back in store
+                    resource = yield self.request
+                    rex_rs.store.put(resource)  # todo why can we not just put the car back every time (like finally)?
+
+                # log failure
+
+            rs.store.put(self.result[self.request])  # todo this would be my approach
+
+    def execute_rental(self,
+                       cs: blocks.CommoditySystem,
+                       env: simpy.Environment,
+                       rex=False):
+
+        if not rex:  # if rex is active, departure time has already been set as there might be further delay
+            self.time_departure = env.now
+
+        yield env.timeout(self.duration.hours)  # todo hours doesnt exist
+        self.time_return = env.now
+        self.time_recharge = dt.timedelta(hours=self.energy_req / cs.chg_pwr)
+        self.time_buffer = dt.timedelta(hours=2)
+
+    def request_rex_commodities(self,
+                            rs: RentalSystem,
+                            cs: blocks.CommoditySystem,
+                            env: simpy.Environment,
+                            rex_rs: BatteryRentalSystem):
+
+        self.rex_distance = self.distance - self.range
+        self.rex_energy = self.rex_distance * cs.consumption
+        self.rex_num = math.ceil(self.rex_energy / rex_rs.cs.size)
+        self.energy_avail = (cs.size * cs.departure_soc) + (self.rex_num * rex_rs.cs.size * rex_rs.cs.departure_soc)
+        self.soc_return = self.energy_req / self.energy_avail
+
+        with rex_rs.store.get(self.rex_num) as self.rex_request:
+            self.rex_result = yield self.rex_request | env.timeout(rex_rs.cs.patience)
+            # todo distiguish between self patience (for vehicles) and rex patience (for rex batteries)
+
+            self.rex_waittime = env.now - self.request_time
+
+            if self.rex_request in self.rex_result:  # request was granted
+                self.rex_time_departure = env.now
+                yield env.timeout(self.duration.hours)  # todo hours doesnt exist
+                self.rex_time_return = env.now
+                self.rex_time_recharge = dt.timedelta(hours=self.energy_req / cs.chg_pwr)
+                self.rex_time_buffer = dt.timedelta(hours=2)
+                yield env.timeout(self.time_recharge.hours + self.time_buffer)  # todo hours doesnt exist
+                self.rex_time_reavail = env.now
+                yield rex_rs.store.put(self.rex_result[self.rex_request])  # put batteries back
+                self.rex_sucess = True
+            else:  # request for rex batteries not granted  -> abort trip
+
+                self.rex_sucess = False
 
 
 ###############################################################################
@@ -442,7 +733,7 @@ def usecase_gen(env, ID, rng):
 
             print('Day: 'f'{d}'' Daily CRS Trip demand: 'f'{daily_CRS_trip_demand}')
 
-            for t in range(daily_CRS_trip_demand):  # for the number of usecases per day day do:
+            for t in range(daily_CRS_trip_demand):  # for the number of usecases per day do:
 
                 # start the CRS process generator with one instance of the process function called "car_process_func()"
                 env.process(car_process_func(env, day, CRS_inter_day_count, global_CRS_count, ID, rng))
@@ -600,338 +891,6 @@ def battery_process_func(env, day_count, inter_day_count, resources_required, n,
 ###############################################################################
 # Car process function
 ###############################################################################
-
-def car_process_func(env, day, inter_day_count, CRS_global_count, ID, rng):
-
-    # choose a start time from all hours of a day 0-23, but differently weighted with custom probability function
-    # (viertelstunde)
-    start_time = random.choices(ID.dep_time_values, ID.dep_time_weights)
-    yield env.timeout(int(start_time[0]))
-
-    # logic to print correct info depending on selected simulation
-    if ID.REX:
-        print('CRS + REX: On day {} at Time {} the Trip {} is born -- Total Trip Count: {}'
-              .format(day, env.now, CRS_global_count, CRS_global_count))
-    else:
-        print('CRS: On day {} at Time {} the Trip {} is born -- Total Trip Count: {}'
-              .format(day, env.now, CRS_global_count, CRS_global_count))
-
-    # arrival time of request
-    arrive = env.now
-
-    if ID.debug:
-        print('DEBUG: 'f'cars available: {ID.CarFleet.items}')
-        print('DEBUG: 'f'MB available: {ID.MBFleet.items}')
-        print('')
-
-    # request a car from the CarFleet
-    with ID.CarFleet.get() as CAR_req:
-
-        # Wait for the car or abort by a timeout
-        CAR_results = yield CAR_req | env.timeout(ID.CRS_patience)
-
-        # waiting time
-        wait_for_car = env.now - arrive
-
-        if CAR_req in CAR_results:  # we got a car, now draw trip distance and duration
-
-            # travel distance of each trip follows log-normal:
-            distance_travelled = rng.lognormal(ID.mu_trip_length, ID.sigma_trip_length)
-
-            # calculate the driving duration of a trip based on distance travelled and avg. velocity
-            time_travelled = round(distance_travelled / ID.avg_velocity)
-
-            # consider car state that is not driving and not charging -> parking/ waiting
-            # idle_time in [h] based on a log-normal distribution, value rounded to int
-            # Attention: if time step is changed, idle time has to be adapted (viertelstunde)
-            idle_time = round(rng.lognormal(ID.mu_idle_time, ID.sigma_idle_time))
-
-            # threshold value in [km] used to determine:
-            # 1) if trip is feasible with intrinsic range 2) IF MB are necessary for a trip
-            range_threshold = ((1 - ID.min_return_soc) * ID.fix_bat_size) / ID.energy_consumption
-
-            #######################################_BEGIN_REX_MB_Rental_#########################################
-
-            if ID.REX:  # if REX is active, trips requiring MB can now request MB, if needed
-
-                if distance_travelled > range_threshold:  # if MB is needed for the trip:
-
-                    # calculate the distance that has to be covered by MB
-                    distance_to_cover_with_MB = distance_travelled - range_threshold
-
-                    # calculate total MB energy required for the trip
-                    required_MB_energy = distance_to_cover_with_MB * ID.energy_consumption
-
-                    # calculate the number of MB needed for the trip
-                    # number of MBs can only be an integer, thus value is rounded to the next full int
-                    required_number_of_MB = math.ceil(required_MB_energy / ID.BRS_energycontent)
-
-                    # total energy consumed
-                    total_energy_consumed = distance_travelled * ID.energy_consumption
-
-                    # sum of fixed_battery and total MB energy available
-                    total_energy_available = ID.fix_bat_size + required_number_of_MB * ID.BRS_energycontent
-
-                    # fraction of SOC used for trip driving distance
-                    used_SOC = total_energy_consumed/total_energy_available
-
-                    # used charge of fixed battery of a car per trip
-                    used_charge_car = round(used_SOC * ID.fix_bat_size, 1)
-
-                    # used charge per battery:
-                    used_charge_per_MB = used_SOC * ID.BRS_energycontent
-
-                    # we determined number of MB necessary, now request them from the store
-                    with ID.MBFleet.get(required_number_of_MB) as MB_req:
-
-                        MB_results = yield MB_req | env.timeout(ID.REX_patience)
-
-                        wait_for_MB = env.now - arrive
-
-                        if MB_req in MB_results:  # we got necessary MB:
-
-                            # departure timestep for logging
-                            departure_timestep = env.now
-
-                            print('CRS + REX: On day {} at Time {} the Trip {} got the Car {} and the Batteries ({}), Distance {} '
-                                    .format(day, env.now, CRS_global_count, CAR_results[CAR_req], MB_results[MB_req], distance_travelled))
-
-                            if ID.debug:
-                                print('DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
-                                        .format(CRS_global_count, CAR_results[CAR_req], distance_travelled, time_travelled, idle_time, range_threshold))
-                                print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
-                                print('DEBUG: 'f'MB remaining: {ID.MBFleet.items}')
-                                print('')
-
-                            # trip duration:, sum of travel time and idle time, valid for the Car and MB
-                            # MB can't return before the car
-                            yield env.timeout(time_travelled + idle_time)
-
-                            return_timestep = env.now
-
-                            # bug fix: calculated charge time not sufficient, extra time is introduced
-                            extra_charge_time = 2
-
-                            # this represents the usage time that is valid for the Car and the Batteries
-                            CRS_charge_time = math.ceil(total_energy_consumed/ID.CRS_charge_power)
-                            yield env.timeout(CRS_charge_time + extra_charge_time)
-
-                            # after the usage return the MB = "MB_req" to the store.
-                            yield ID.MBFleet.put(MB_results[MB_req])
-
-                            # after the usage return the car = "CAR_req" to the store.
-                            ID.CarFleet.put(CAR_results[CAR_req])
-
-                            charge_timestep = env.now
-
-                            # use the global BRS log variables for the MB in REX usage
-                            global global_BRS_count
-                            global BRS_inter_day_count
-
-                            # Logging for the MB the CRS+REX is using
-                            logger.BRS_process_log[global_BRS_count,] = [day, f'REX_MB_{CRS_global_count}',
-                                                                         BRS_inter_day_count, departure_timestep,
-                                                                         ID.CRS_leaving_soc, used_charge_per_MB,
-                                                                         return_timestep, charge_timestep,
-                                                                         MB_results[MB_req]]
-
-                            global_BRS_count += 1
-                            BRS_inter_day_count += 1
-
-                            print('CRS + REX: On day {} at Time {} the Trip {} with the Car {} returned the Batteries ({}) '
-                                    .format(day, env.now, CRS_global_count, CAR_results[CAR_req], MB_results[MB_req]))
-
-                            if ID.debug:
-                                print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
-                                      .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
-                                print('')
-
-                            # logging for the CRS processes when REX is active
-                            logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
-                                                                         inter_day_count,
-                                                                         departure_timestep, ID.CRS_leaving_soc,
-                                                                         used_charge_car,
-                                                                         return_timestep, charge_timestep,
-                                                                         CAR_results[CAR_req]]
-
-                        else:  # REX: patience triggered, no MB received
-                            # ->>> the trip is aborted
-
-                            # bugfix rental and timeout problem:
-                            if MB_req.triggered:
-                                print('--- request triggered after time out ----')
-                                MB = yield MB_req
-                                ID.MBFleet.put(MB)
-
-                            # return car to the store
-                            ID.CarFleet.put(CAR_results[CAR_req])
-
-                            global failed_CRS_count
-                            failed_CRS_count += 1
-
-                            print('----------------ALARM----------------------------------')
-                            print('CRS + REX: On day {} at Time {} the Trip {} failed after waiting {} for REX '
-                                  .format(day, env.now, CRS_global_count, wait_for_MB))
-                            print('-------------------------------------------------------')
-
-                            if ID.debug:
-                                print('DEBUG: After Trip {} Failed, it returned Car {}, Cars in the Store {} '
-                                      .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
-                                print('')
-
-                            # logging for the CRS processes when REX is active but req for MB failed
-                            logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
-                                                                         inter_day_count,
-                                                                         "failed", "failed", "failed",
-                                                                         "failed", "failed", "failed"]
-
-                else:  # REX: distance travelled is not greater than threshold -> no MB needed:
-
-                    departure_timestep = env.now
-
-                    print('CRS + REX: On day {} at Time {} the Trip {} got the Car {}, no REX needed, distance {} '
-                          .format(day, env.now, CRS_global_count, CAR_results[CAR_req], distance_travelled))
-
-                    if ID.debug:
-                        print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
-                        print('DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
-                                .format(CRS_global_count, CAR_results[CAR_req], distance_travelled, time_travelled, idle_time, range_threshold))
-                        print('')
-
-                    # trip duration:, sum of travel time and idle time, valid for the Car and MB
-                    yield env.timeout(time_travelled + idle_time)
-
-                    return_timestep = env.now
-
-                    # IF REX but MB not necessary, used charge is travel distance * consumption
-                    used_charge_car = round(distance_travelled * ID.energy_consumption,1)
-
-                    # bug fix: calculated charge time not sufficient, extra time is introduced
-                    extra_charge_time = 2
-
-                    # this represents the usage time that is valid for the Car
-                    CRS_charge_time = math.ceil(used_charge_car / ID.CRS_charge_power)
-                    yield env.timeout(CRS_charge_time + extra_charge_time)
-
-                    # return car to the store
-                    ID.CarFleet.put(CAR_results[CAR_req])
-
-                    print('CRS + REX: On day {} at Time {} the Trip {} returned the Car {}  '
-                          .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
-
-                    if ID.debug:
-                        print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
-                              .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
-                        print('')
-
-                    charge_timestep = env.now
-
-
-                    # logging for the CRS processes when REX is active, but not needed
-                    logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}',
-                                                                 inter_day_count,
-                                                                 departure_timestep, ID.CRS_leaving_soc,
-                                                                 used_charge_car,
-                                                                 return_timestep, charge_timestep,
-                                                                 CAR_results[CAR_req]]
-
-            #######################################_END_REX_MB_Rental_#########################################
-
-            if not ID.REX:
-
-                if distance_travelled <= range_threshold:  # check if we can cover the distance with fixed battery
-
-                    # departure timestep for logging
-                    departure_timestep = env.now
-
-                    print('CRS: On day {} at Time {} the Trip {} got the Car {} '
-                          .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
-
-                    if ID.debug:
-                        print('DEBUG: 'f'cars remaining: {ID.CarFleet.items}')
-                        print('DEBUG: Parameters for Trip {} with car {} Distance {}, time_travelled {}, idle_time {}, range_threshold {}'
-                              .format(CRS_global_count, CAR_results[CAR_req], distance_travelled, time_travelled, idle_time, range_threshold))
-                        print('')
-
-                    # trip duration:, sum of travel time and idle time, valid for the Car and MB
-                    yield env.timeout(time_travelled + idle_time)
-
-                    # this is the return timestep that is used by oemof simulation csv
-                    return_timestep = env.now
-
-                    # IF no REX, used charge is travel distance * consumption
-                    used_charge_car = round(distance_travelled * ID.energy_consumption,1)
-
-                    # this timeout allows oemof to recharge the MBs
-                    CRS_charge_time = math.ceil(used_charge_car / ID.CRS_charge_power)
-                    yield env.timeout(CRS_charge_time+ extra_charge_time)
-
-                    charge_timestep = env.now
-
-                    # return car to store
-                    ID.CarFleet.put(CAR_results[CAR_req])
-
-                    print('CRS: On day {} at Time {} the Trip {} returned the Car {}  '
-                          .format(day, env.now, CRS_global_count, CAR_results[CAR_req]))
-
-                    if ID.debug:
-                        print('DEBUG: After Trip {} returned Car {}, Cars in the Store {} '
-                              .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
-                        print('')
-
-                    # logging for the CRS processes when REX is deactivated
-                    logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
-                                                                 departure_timestep, ID.CRS_leaving_soc,
-                                                                 used_charge_car,
-                                                                 return_timestep, charge_timestep, CAR_results[CAR_req]]
-
-                else:  # REX is deactivated, thus distances greater than range_threshold can't be covered
-                    # trip is cancelled, as intrinsic car range is not sufficient
-
-                    # return car immediately
-                    ID.CarFleet.put(CAR_results[CAR_req])
-
-                    failed_CRS_count += 1
-
-                    print('-----------ALARM------------------------------')
-                    print('CRS: On day {} at Time {} the Trip {} failed because intrinsic range not sufficient'
-                          .format(day, env.now, CRS_global_count))
-
-                    if ID.debug:
-                        print('DEBUG: Trip length was {}, max intrinsic range was {} '
-                              .format(distance_travelled, range_threshold))
-                        print('DEBUG: After Trip {} failed, it returned Car {}, Cars in the Store {} '
-                              .format(CRS_global_count, CAR_results[CAR_req], ID.CarFleet.items))
-                        print('')
-
-                    logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
-                                                                 "failed",
-                                                                 "failed", "failed",
-                                                                 "failed", "failed",
-                                                                 "failed"]
-
-        else:  # patience for CAR_req triggered, trip is canceled
-
-            # bugfix rental and timeout problem:
-            if CAR_req.triggered:
-                print('--- request triggered after time out ----')
-                car = yield CAR_req
-                ID.CarFleet.put(car)
-
-            # We quit
-            fail_timestep = env.now
-            failed_CRS_count += 1
-
-            # logging for the CRS processes when REX is deactivated
-            logger.CRS_process_log[CRS_global_count,] = [day, f'CRS_{CRS_global_count}', inter_day_count,
-                                                         "failed",
-                                                         "failed", "failed",
-                                                         "failed", "failed",
-                                                         "failed"]
-
-            print('-----------ALARM------------------------------')
-            print('CRS: On day {} at Time {} the Trip {} failed bacause it waited {} for a car'
-                  .format(day, env.now, CRS_global_count, wait_for_car))
 
 
 def execute_des():
