@@ -30,11 +30,9 @@ import pandas as pd
 import blocks
 import main
 
-
 ###############################################################################
-# Custom subclasses from simpy.resources for stores, from which multiple resources can be taken at once
+# Simpy MultiStore Subclass Definitions
 ###############################################################################
-
 
 class MultiStoreGet(simpy.resources.base.Get):
     def __init__(self, store, amount):
@@ -91,14 +89,9 @@ class RentalSystem:
 
         self.rng = np.random.default_rng()
 
-        self.demand = pd.DataFrame(index=self.sc.sim_dti.date.unique())
+        self.daily_demand = pd.DataFrame(index=self.sc.sim_dti.date.unique())
+        self.processes = pd.DataFrame()
         self.generate_demand()  # child function, see subclasses
-
-        # preallocate process log coluimns
-        # todo FYI columns from original np.ndarray: ['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC', 'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}']
-        self.processes = pd.DataFrame(columns=['id',
-                                               'time_dep'])
-
 
     def convert_process_log(self):
         """
@@ -186,9 +179,11 @@ class VehicleRentalSystem(RentalSystem):
     def __init__(self, env: simpy.Environment, sc: main.Scenario, cs: blocks.CommoditySystem):
 
         super().__init__(cs, sc)
+        self.range = (1 - self.cs.min_return_soc)(self.cs.size / self.cs.consumption)
 
-        self.mu_daily_demand = 15
-        self.sig_daily_demand = 0
+        # create empty columns to be filled elementwise later on
+        self.processes['time_dep'] = np.nan()
+        self.processes['time_return'] = np.nan()
 
         self.store = simpy.Store(env, capacity=self.cs.num)  # does not need to be a MultiStore
         for commodity in self.cs.commodities:
@@ -236,42 +231,38 @@ class VehicleRentalSystem(RentalSystem):
         requests for each day in the simulation timeframe.
         :return: None
         """
-        self.demand['num_total'] = round(self.rng.lognormal(self.cs.num_mu,
-                                                            self.cs.num_sig,
-                                                            self.demand.shape[0]))
+        self.daily_demand['num_total'] = round(self.rng.lognormal(self.cs.daily_mu,
+                                                                  self.cs.daily_sig,
+                                                                  self.daily_demand.shape[0]))
 
-        # draw departure time values (come as floats of full hours)
-        self.demand['time_dep'] = self.draw_departure_samples(self.demand['num_total'])
 
-        self.distance['distance'] = self.rng.lognormal(self.cs.trip_mu, self.cs.trip_sig)
 
-        self. = dt.timedelta(hours=rs.rng.lognormal(cs.idle_mu, cs.idle_sig))
+        process_num = self.daily_demand['num_total'].sum(axis=0)
+        self.processes['time_req'] = self.draw_departure_samples(process_num)
+        # todo time_req is a float - translate to timestep
+        self.processes['distance'] = self.rng.lognormal(self.cs.trip_mu,
+                                                        self.cs.trip_sig,
+                                                        process_num)
+        self.processes['time_active'] = dt.timedelta(hours=self.processes['distance'] / self.cs.speed_avg)
+        self.processes['time_idle'] = dt.timedelta(hours=self.rng.lognormal(self.cs.idle_mu,
+                                                                            self.cs.idle_sig,
+                                                                            process_num))
+        self.processes['duration'] = self.processes['time_active'] + self.processes['time_idle']
+        self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
-        if isinstance(rs, VehicleRentalSystem):
-            self.distance = rs.rng.lognormal(cs.trip_mu, cs.trip_sig)
-            self.time_active = dt.timedelta(hours=self.distance / cs.speed_avg)
-            self.energy_req = self.distance * cs.consumption
-        else:  # battery rental
+        if self.rex:
+            self.processes['rex_distance'] = np.max(0, self.processes['distance'] - self.range)
+            self.processes['rex_energy'] = self.rex_distance * self.cs.consumption
+            self.processes['rex_num'] = math.ceil(self.rex_energy / self.rex_rs.cs.size)
+            # todo link to self.rex_rs not introduced yet
+            self.processes['energy_avail'] = ((self.cs.size * self.cs.dep_soc) +
+                                              (self.processes['rex_num'] * self.rex_rs.cs.size * self.rex_rs.cs.dep_soc))
+        else:
+            self.processes['energy_avail'] = self.cs.size * self.cs.dep_soc
 
-            self.time_active = rs.usecases.loc[self.]
-            self.energy_req =
+        self.processes['soc_return'] = self.processes['energy_req'] / self.processes['energy_avail']
 
-        self.duration = self.time_active + self.time_idle
-
-        # calculate range down to minimum SOC threshold
-        self.range = (1 - cs.min_return_soc)(cs.size / cs.consumption)
-        # todo choose departure times and save to df
-        # todo choose trip lengths and save to df
-        # todo read in rental powers from usecases df
-        # todo calculate total used energies
-        # todo choose idle times
-
-    def get_departure_time(self, process, env):
-
-        # choose a start time from all hours of a day 0-23, but differently weighted with custom probability function
-        # (viertelstunde)
-        process.start_time = random.choices(self.dep_time_values, self.dep_time_weights)
-        yield env.timeout(int(process.start_time[0]))
+        self.processes['vehicle_sucess'] = self.processes['rex_sucess'] =
 
     def start_process(env, day, inter_day_count, CRS_global_count, ID, rng):
 
@@ -631,25 +622,147 @@ class BatteryRentalSystem(RentalSystem):
         :return: None
         """
 
-        self.demand['num_total'] = round(self.rng.lognormal(self.cs.num_mu,
-                                                            self.cs.num_sig,
-                                                            self.demand.shape[0]))
-        self.demand['usecases'] = np.random.choice(self.usecases['name'],
-                                                         (self.demand.shape[0],self.demand['num_total']),
-                                                         replace=True,
-                                                         p=self.usecases['rel_prob'])
-        # todo choose departure times and save to df
-        # todo read in rental lengths from usecases df
-        # todo read in rental powers from usecases df
-        # todo calculate total used energies
-        # todo choose idle times
+        self.daily_demand['num_total'] = round(self.rng.lognormal(self.cs.num_mu,
+                                                                  self.cs.num_sig,
+                                                                  self.daily_demand.shape[0]))
+
+        process_num = self.daily_demand['num_total'].sum(axis=0)
+        self.processes['usecase'] = np.random.choice(self.usecases.index.values,
+                                                     process_num,
+                                                     replace=True,
+                                                     p=self.usecases['rel_prob'])
+        self.processes['usecase_name'] = self.usecases.loc[self.processes['usecase'], 'name']
+
+        self.processes['time_req'] = np.random.normal(self.usecases.loc[self.processes['usecase'], 'dep_mu'],
+                                                      self.usecases.loc[self.processes['usecase'], 'dep_sig'])
+        self.processes['time_active'] = np.random.lognormal(8, 1, process_num)  # todo implement proper distributions per usecase
+        self.processes['time_idle'] = np.random.lognormal(2, 1, process_num) # todo implement proper distributions per usecase
+        self.processes['duration'] = self.processes['time_active'] + self.processes['time_idle']
+
+        self.processes['num_bat'] = self.usecases.loc[self.processes['usecase'], 'num_bat']
+        self.processes['energy_req'] = self.processes['time_active'] * self.usecases.loc[self.processes['usecase'], 'power']
+        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.size
+        self.processes['soc_return'] = self.processes['energy_req'] / self.processes['energy_avail']
+
 
 
     def start_process(self):
+        # from battery_process_func
+        # todo adapt to new structure
+
+
+        # # draw starting time of usecase from normal distribution
+        # # via "yield" wait until starting point is reached
+        # yield env.timeout(round(rng.normal(n["dep_mean"], n["dep_std"])))
+        #
+        # print('-------------------------------------------------------------------------------')
+        # print('BRS: On day {} Uscase {}_{} requires: {} Batteries at time: {}'.format(day_count, n["usecase"],
+        #                                                                               inter_day_count,
+        #                                                                               resources_required, env.now))
+        # if ID.debug:
+        #     print('DEBUG: 'f'MB available: {ID.MBFleet.items}')
+        #     print('')
+        #
+        # # arrival time of request
+        # arrival = env.now
+        #
+        # with ID.MBFleet.get(resources_required) as BRS_req:
+        #
+        #     # Wait for the MBs or abort at the end of patience time
+        #     BRS_results = yield BRS_req | env.timeout(ID.BRS_patience)
+        #
+        #     # waiting time of request
+        #     wait = env.now - arrival
+        #
+        #     if BRS_req in BRS_results:  # if we got the necessary number of MB in time:
+        #
+        #         # departure timestep for logging
+        #         departure_timestep = env.now
+        #
+        #         print('BRS: On day {} Uscase {}_{} rented the Batteries {} at time: {}'
+        #               .format(day_count, n["usecase"], inter_day_count, BRS_results[BRS_req], departure_timestep))
+        #
+        #         if ID.debug:
+        #             print('DEBUG: 'f'MB remaining: {ID.MBFleet.items}')
+        #             print('')
+        #
+        #         # draw the return SOC from a lognormal distribution
+        #         return_soc = rng.lognormal(1, 1)
+        #
+        #         # exclude the unlikely case that return_soc >= 100
+        #         while return_soc >= 100:
+        #             return_soc = rng.lognormal(1, 1)
+        #
+        #         # remaining charge is calculated as percentual share of return_soc and energycontent
+        #         remaining_charge = round(ID.BRS_energycontent * (return_soc / 100))
+        #
+        #         # calculate used charge
+        #         used_charge = ID.BRS_energycontent - remaining_charge
+        #
+        #         # usagetime is calculated based on the used energy and power demand
+        #         usagetime = math.floor((n["num_batteries"] * ID.BRS_energycontent) / n["power"])
+        #
+        #         # this yield timeout represents the usage time
+        #         yield env.timeout(usagetime)
+        #
+        #         # this is the return timestep that is used by oemof simulation csv
+        #         return_timestep = env.now
+        #         leaving_SOC = 1
+        #
+        #         # bug fix: calculated charge time not sufficient, extra time is introduced
+        #         extra_charge_time = 2
+        #
+        #         # this internal timeout gives oemof a time window to recharge the MBs
+        #         BRS_charging_time = math.ceil(used_charge / ID.BRS_charge_power)
+        #         yield env.timeout(BRS_charging_time + extra_charge_time)
+        #
+        #         # after the usage return the ressources to the store.
+        #         yield ID.MBFleet.put(BRS_results[BRS_req])
+        #         charge_timestep = env.now
+        #
+        #         print('-------------------------------------------------------------------------------')
+        #         print('BRS: UseCase {}_{} that rented on day {} at {} used the Batteries {} for: {} hours'
+        #               .format(n["usecase"], inter_day_count, day_count, departure_timestep, BRS_results[BRS_req],
+        #                       usagetime))
+        #
+        #         print('BRS: UseCase {}_{} that rented on day {} returned the Batteries {} at time: {}'
+        #               .format(n["usecase"], inter_day_count, day_count, BRS_results[BRS_req], return_timestep))
+        #
+        #         if ID.debug:
+        #             print('DEBUG: After usecase {} returned Car {}, Cars in the Store {} '
+        #                   .format(n["usecase"], BRS_results[BRS_req], ID.MBFleet.items))
+        #             print('')
+        #
+        #         # fill simpy process log:
+        #         logger.BRS_process_log[BRS_global_count,] = [day_count, n["usecase"], inter_day_count,
+        #                                                      departure_timestep,
+        #                                                      leaving_SOC, used_charge,
+        #                                                      return_timestep, charge_timestep, BRS_results[BRS_req]]
+        #
+        #     else:  # if we didn't get MB in time: we quit the rental
+        #
+        #         # bug fix: if we land in else but brs_req is triggered, return the mb instantly
+        #         if BRS_req.triggered:
+        #             print('--- request triggered after time out ----')
+        #             mb = yield BRS_req
+        #             ID.MBFleet.put(mb)
+        #
+        #         print('-----------ALARM------------------------------')
+        #         print('BRS: On day {} at Time {} the UseCase {}_{}  failed bacause it waited {}'
+        #               .format(day_count, env.now, n["usecase"], inter_day_count, wait))
+        #
+        #         # so far unused fail timestep
+        #         fail_timestep = env.now
+        #
+        #         # failed rental statistic
+        #         global failed_BRS_count
+        #         failed_BRS_count += 1
+        #
+        #         # fill simpy process log:
+        #         logger.BRS_process_log[BRS_global_count,] = [day_count, n["usecase"], inter_day_count, "failed",
+        #                                                      "failed", "failed",
+        #                                                      "failed", "failed", "failed"]
         pass
-
-
-
 
 
 class RentalProcess:
@@ -740,52 +853,9 @@ class RentalProcess:
                 self.rex_sucess = False
 
 
-###############################################################################
-# logging and saving results class
-###############################################################################
-
-class Logging():
-
-    def __init__(self, ID):
-
-        # also activate BRS logging when REX is active
-        if ID.BRS or ID.REX:
-            # create empty array of zeros for logging all BRS rental processes
-            self.BRS_process_log = np.zeros([round((ID.simulated_days * ID.mu_daily_BRS_rental_demand)*2), 9], dtype=object)
-
-            # create empty array of zeros for oemof compatible description of BRS usage
-            self.BRS_ind_array = np.zeros([ID.number_timesteps+500, (3 * ID.BRS_capacity)])
-
-            # fill "at_charger" columns with "1"
-            for mb in range(ID.BRS_capacity):
-                self.BRS_ind_array[:, 2 + mb * 3] = 1
-
-        # activate CRS logging
-        if ID.CRS:
-            # create empty array of zeros for logging all CRS rental processes
-            self.CRS_process_log = np.zeros([round((ID.simulated_days * ID.mu_daily_CRS_trip_demand)*2), 9], dtype=object)
-
-            # create empty array of zeros for oemof compatible description of BRS usage
-            self.CRS_ind_array = np.zeros([ID.number_timesteps+500, (3 * ID.CRS_capacity)])
-
-            # fill "at_charger" columns with "1"
-            for car in range(ID.CRS_capacity):
-                self.CRS_ind_array[:, 2 + car * 3] = 1
-
-
-
-###############################################################################
-# process generator function: creates BRS rentals and or CRS trips
-###############################################################################
 def usecase_gen(env, ID, rng):
 
-    # Check input.xlsx for consistency, and input errors
-    if not ID.CRS and not ID.BRS:
-        print('ACHTUNG: Sowohl BRS als auch CRS ausgeschaltet, Trigger in csv überprüfen')
-    if ID.BRS and ID.mu_daily_BRS_rental_demand <= 0:
-        print('Achtung: BRS ist aktiviert aber "mean rental demand" ist 0! (input.xlsx überprüfen)')
-    if ID.CRS and ID.mu_daily_CRS_trip_demand <= 0:
-        print('Achtung: CRS ist aktiviert aber "mean trip demand" ist 0! (input.xlsx überprüfen)')
+
 
     global global_BRS_count
     global global_CRS_count
@@ -845,148 +915,32 @@ def usecase_gen(env, ID, rng):
 
 
 ###############################################################################
-# Battery process function = description of rental process for Batteries
+# global functions
 ###############################################################################
-
-def battery_process_func(env, day_count, inter_day_count, resources_required, n, BRS_global_count, ID, rng):
-
-    # draw starting time of usecase from normal distribution
-    # via "yield" wait until starting point is reached
-    yield env.timeout(round(rng.normal(n["dep_mean"], n["dep_std"])))
-
-    print('-------------------------------------------------------------------------------')
-    print('BRS: On day {} Uscase {}_{} requires: {} Batteries at time: {}'.format(day_count, n["usecase"], inter_day_count,
-                                                                             resources_required, env.now))
-    if ID.debug:
-        print('DEBUG: 'f'MB available: {ID.MBFleet.items}')
-        print('')
-
-    # arrival time of request
-    arrival = env.now
-
-    with ID.MBFleet.get(resources_required) as BRS_req:
-
-        # Wait for the MBs or abort at the end of patience time
-        BRS_results = yield BRS_req | env.timeout(ID.BRS_patience)
-
-        # waiting time of request
-        wait = env.now - arrival
-
-        if BRS_req in BRS_results:  # if we got the necessary number of MB in time:
-
-            # departure timestep for logging
-            departure_timestep = env.now
-
-            print('BRS: On day {} Uscase {}_{} rented the Batteries {} at time: {}'
-                  .format(day_count, n["usecase"], inter_day_count, BRS_results[BRS_req], departure_timestep))
-
-            if ID.debug:
-                print('DEBUG: 'f'MB remaining: {ID.MBFleet.items}')
-                print('')
-
-
-            # draw the return SOC from a lognormal distribution
-            return_soc = rng.lognormal(1, 1)
-
-            # exclude the unlikely case that return_soc >= 100
-            while return_soc >= 100:
-                return_soc = rng.lognormal(1, 1)
-
-            # remaining charge is calculated as percentual share of return_soc and energycontent
-            remaining_charge = round(ID.BRS_energycontent * (return_soc / 100))
-
-            # calculate used charge
-            used_charge = ID.BRS_energycontent - remaining_charge
-
-            # usagetime is calculated based on the used energy and power demand
-            usagetime = math.floor((n["num_batteries"] * ID.BRS_energycontent) / n["power"])
-
-            # this yield timeout represents the usage time
-            yield env.timeout(usagetime)
-
-            # this is the return timestep that is used by oemof simulation csv
-            return_timestep = env.now
-            leaving_SOC = 1
-
-            # bug fix: calculated charge time not sufficient, extra time is introduced
-            extra_charge_time = 2
-
-            # this internal timeout gives oemof a time window to recharge the MBs
-            BRS_charging_time = math.ceil(used_charge/ID.BRS_charge_power)
-            yield env.timeout(BRS_charging_time+ extra_charge_time)
-
-            # after the usage return the ressources to the store.
-            yield ID.MBFleet.put(BRS_results[BRS_req])
-            charge_timestep = env.now
-
-            print('-------------------------------------------------------------------------------')
-            print('BRS: UseCase {}_{} that rented on day {} at {} used the Batteries {} for: {} hours'
-                  .format(n["usecase"], inter_day_count, day_count,departure_timestep, BRS_results[BRS_req], usagetime))
-
-            print('BRS: UseCase {}_{} that rented on day {} returned the Batteries {} at time: {}'
-                  .format(n["usecase"], inter_day_count, day_count, BRS_results[BRS_req], return_timestep))
-
-
-            if ID.debug:
-                print('DEBUG: After usecase {} returned Car {}, Cars in the Store {} '
-                      .format(n["usecase"],BRS_results[BRS_req], ID.MBFleet.items))
-                print('')
-
-            # fill simpy process log:
-            logger.BRS_process_log[BRS_global_count,] = [day_count, n["usecase"], inter_day_count, departure_timestep,
-                                                         leaving_SOC, used_charge,
-                                                         return_timestep, charge_timestep, BRS_results[BRS_req]]
-
-        else:  # if we didn't get MB in time: we quit the rental
-
-            # bug fix: if we land in else but brs_req is triggered, return the mb instantly
-            if BRS_req.triggered:
-                print('--- request triggered after time out ----')
-                mb = yield BRS_req
-                ID.MBFleet.put(mb)
-
-            print('-----------ALARM------------------------------')
-            print('BRS: On day {} at Time {} the UseCase {}_{}  failed bacause it waited {}'
-                  .format(day_count, env.now, n["usecase"], inter_day_count, wait))
-
-            # so far unused fail timestep
-            fail_timestep = env.now
-
-            # failed rental statistic
-            global failed_BRS_count
-            failed_BRS_count += 1
-
-            # fill simpy process log:
-            logger.BRS_process_log[BRS_global_count,] = [day_count, n["usecase"], inter_day_count, "failed",
-                                                         "failed", "failed",
-                                                         "failed", "failed", "failed"]
-
-
-
-
-###############################################################################
-# Car process function
-###############################################################################
-
 
 def execute_des(sc: main.Scenario):
+
+    # # Check input.xlsx for consistency, and input errors
+    # if not ID.CRS and not ID.BRS:
+    #     print('ACHTUNG: Sowohl BRS als auch CRS ausgeschaltet, Trigger in csv überprüfen')
+    # if ID.BRS and ID.mu_daily_BRS_rental_demand <= 0:
+    #     print('Achtung: BRS ist aktiviert aber "mean rental demand" ist 0! (input.xlsx überprüfen)')
+    # if ID.CRS and ID.mu_daily_CRS_trip_demand <= 0:
+    #     print('Achtung: CRS ist aktiviert aber "mean trip demand" ist 0! (input.xlsx überprüfen)')
+    # todo implement similar consistency check
 
     # define a DES environment
     sc.env = simpy.Environment()
 
     sc.rental_systems = []
     for commodity_system in [block for block in sc.blocks if isinstance(block, blocks.CommoditySystem)]:
-        rs_name = commodity_system.name
         # todo make a decision which commodity systems to initiate as VehicleRentalSystems and which as BatteryRentalSystems
-        rs_name = VehicleRentalSystem(sc.env, sc, commodity_system)
-        sc.rental_systems.append(rs_name)
-
-    # set up logging tables (csv)
-    global logger
-    logger = Logging(ID)
+        rs = VehicleRentalSystem(sc.env, sc, commodity_system)
+        sc.rental_systems.append(rs)
 
     # call the function that generates the individual rental processes
     sc.env.process(usecase_gen(env, ID, rng))
+    # todo (Philipp) I still don't understand what this line exactly does with the output of usecase_gen)
 
     # start the simulation
     sc.env.run()
@@ -995,18 +949,6 @@ def execute_des(sc: main.Scenario):
     for rental_system in sc.rental_systems:
         rental_system.convert_process_log()
         rental_system.save_logs()
-
-    if ID.BRS or ID.REX:
-        logger.convert_to_csv(logger.BRS_process_log, logger.BRS_ind_array, global_BRS_count)
-        logger.save(logger.BRS_process_log, logger.BRS_ind_array, ID.BRS_capacity, 'brs')
-
-    if ID.CRS:
-        logger.convert_to_csv(logger.CRS_process_log, logger.CRS_ind_array, global_CRS_count)
-        logger.save(logger.CRS_process_log, logger.CRS_ind_array, ID.CRS_capacity, 'bev')
-
-    # print statistic on ratio of successful vs failed trips/rentals
-    print('Total BRS: {}, Failed BRS: {}, Total CRS: {}, Failed CRS: {}'
-          .format(global_BRS_count, failed_BRS_count, global_CRS_count, failed_CRS_count))
 
 
 ###############################################################################
