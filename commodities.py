@@ -82,36 +82,189 @@ class MultiStore(simpy.resources.base.BaseResource):
 
 class RentalSystem:
 
-    def __init__(self, cs: blocks.CommoditySystem):
+    def __init__(self, cs: blocks.CommoditySystem, sc: main.Scenario):
 
         self.name = cs.name
-        self.cs = cs  # making cs callable from other RentalSystems
+        self.cs = cs  # making cs callable through RentalSystem
+        self.sc = sc  # making scenario callable through RentalSystem
         # all other values are accessible through the commodity system
 
         self.rng = np.random.default_rng()
-        self.processes = pd.DataFrame(columns=[''])
+
+        self.demand = pd.DataFrame(index=self.sc.sim_dti.date.unique())
+        self.generate_demand()  # child function, see subclasses
+
+        # preallocate process log coluimns
+        # todo FYI columns from original np.ndarray: ['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC', 'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}']
+        self.processes = pd.DataFrame(columns=['id',
+                                               'time_dep'])
+
+
+    def convert_process_log(self):
+        """
+        This function converts the process based log from DES execution into a time based log as required by the
+        energy system model as an input
+        :return: None
+        """
+        # taken from Logging.convert_to_csv:
+        #
+        # h = 0
+        # while h < global_count:
+        #
+        #     # filter out failed trips for the ind_array
+        #     if process_log[h][3] != "failed":
+        #
+        #         # which column of process log contains which info
+        #         departure_timestep_log = process_log[h][3]
+        #         leaving_SOC_log = process_log[h][4]
+        #         used_charge_log = process_log[h][5]
+        #         return_timestep_log = process_log[h][6]
+        #         used_Car_log = process_log[h][8]
+        #
+        #         if process_log[h][8] != 0:  # check if  used car log is empty
+        #
+        #             for k in used_Car_log:  # for every car that was used by a trip:
+        #
+        #                 j = (departure_timestep_log - 1)
+        #                 while (departure_timestep_log - 1) <= j <= (return_timestep_log + 1):
+        #
+        #                     # one timestep before rental set SoC
+        #                     if j == departure_timestep_log - 1:
+        #                         ind_array[j][0 + k * 3] += leaving_SOC_log
+        #
+        #                     # timestep of rental: remove battery capacity from minigrid
+        #                     if j == departure_timestep_log:
+        #                         ind_array[j][1 + k * 3] += used_charge_log
+        #                         ind_array[j][2 + k * 3] = 0  # .0
+        #
+        #                     # during rental: set availability to 0
+        #                     if departure_timestep_log < j <= return_timestep_log:
+        #                         ind_array[j][2 + k * 3] = 0  # .0
+        #
+        #                     j += 1
+        #
+        #     h += 1
+        pass
+
+    def save_logs(self):
+        """
+        This function saves the converted log dataframe as a suitable input csv file for the energy system model.
+        The resulting dataframe can also be returned to the energy system model directly in addition for faster
+        delivery through execute_des.
+        :return: None
+        """
+        # todo save dataframes directly after conversion
+
+        # Taken from Logging.save():
+
+        # # Save process log
+        # Simulation_Log = pd.DataFrame(process_log,
+        #                               columns=['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC',
+        #                                        'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}'])
+        #
+        # save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_process_log.csv')
+        #
+        # # print(Simulation_Log.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
+        # Simulation_Log.to_csv(save_filename, sep=';')
+        #
+        # # Save oemof compatible csv file
+        # ind_bev_df = pd.DataFrame(ind_array)
+        #
+        # for i in range(0, fleet_capacity):
+        #     ind_bev_df.rename(columns={i * 3: f'{name}{i}_minsoc',
+        #                                i * 3 + 1: f'{name}{i}_consumption',
+        #                                i * 3 + 2: f'{name}{i}_atbase'}, inplace=True)
+        #
+        # save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_log.csv')
+        # # print(ind_bev_df.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
+        # ind_bev_df.to_csv(save_filename, sep=';')
+        pass
 
 
 class VehicleRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc: main.Scenario, cs: blocks.CommoditySystem):
 
-        super().__init__(cs)
+        super().__init__(cs, sc)
 
         self.mu_daily_demand = 15
         self.sig_daily_demand = 0
 
-        self.store = simpy.Store(env, capacity=cs.num)
-        for commodity in cs.commodities:
+        self.store = simpy.Store(env, capacity=self.cs.num)  # does not need to be a MultiStore
+        for commodity in self.cs.commodities:
             self.store.put({commodity.name})  # todo why the curly brackets?
 
-
-    def departure_pdf(self, cs: blocks.CommoditySystem, x):
-
-        y = 0.6 * (1 / (cs.dep_sig1 * np.sqrt(2 * np.pi)) * np.exp(- (x - cs.dep_mu1) ** 2 / (2 * cs.dep_sig1 ** 2))) + \
-            0.4 * (1 / (cs.dep_sig2 * np.sqrt(2 * np.pi)) * np.exp(- (x - cs.dep_mu2) ** 2 / (2 * cs.dep_sig2 ** 2)))
-
+    def departure_pdf(self, x):
+        """
+        for a given time of day (given as a float of full hours), this function returns the probability of a trip
+        request.
+        :param x: time of day as float of full hours
+        :return: y: probability value
+        """
+        y = 0.6 * (1 / (self.cs.dep_sig1 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mu1) ** 2 / (2 * self.cs.dep_sig1 ** 2))) + \
+            0.4 * (1 / (self.cs.dep_sig2 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mu2) ** 2 / (2 * self.cs.dep_sig2 ** 2)))
         return y
+
+    def departure_cdf(self):
+        """
+        Calculate the cumulative distribution function (CDF) based on the probability density function (PDF)
+        You can integrate the PDF from -infinity to x, or use numerical integration methods like np.cumsum
+        Here, we use numerical integration via np.cumsum for simplicity:
+        :return:
+        """
+        steps_per_day = self.sc.timestep_hours / 24
+        x_vals = np.linspace(0, 24, num=steps_per_day)  # Adjust the range and resolution as needed
+        y_vals = [self.departure_pdf(val) for val in x_vals]
+        cdf_vals = np.cumsum(y_vals)
+        cdf_vals /= cdf_vals[-1]  # Normalize the CDF to [0, 1]
+        return x_vals, cdf_vals
+
+    def draw_departure_samples(self, n):
+        """
+        Draw n samples from the departure_pdf using the inverse transform sampling method via the cumulativ function
+        :param n: number of samples
+        :return:
+        """
+        x_vals, cdf_vals = self.departure_cdf()
+        uniform_samples = np.random.rand(n)  # Generate n uniform random numbers between 0 and 1
+        samples = np.interp(uniform_samples, cdf_vals, x_vals)  # Interpolate to find the samples
+        return samples
+
+    def generate_demand(self):
+        """
+        This function fills the demand dataframe with stochastically generated values describing the rental
+        requests for each day in the simulation timeframe.
+        :return: None
+        """
+        self.demand['num_total'] = round(self.rng.lognormal(self.cs.num_mu,
+                                                            self.cs.num_sig,
+                                                            self.demand.shape[0]))
+
+        # draw departure time values (come as floats of full hours)
+        self.demand['time_dep'] = self.draw_departure_samples(self.demand['num_total'])
+
+        self.distance['distance'] = self.rng.lognormal(self.cs.trip_mu, self.cs.trip_sig)
+
+        self. = dt.timedelta(hours=rs.rng.lognormal(cs.idle_mu, cs.idle_sig))
+
+        if isinstance(rs, VehicleRentalSystem):
+            self.distance = rs.rng.lognormal(cs.trip_mu, cs.trip_sig)
+            self.time_active = dt.timedelta(hours=self.distance / cs.speed_avg)
+            self.energy_req = self.distance * cs.consumption
+        else:  # battery rental
+
+            self.time_active = rs.usecases.loc[self.]
+            self.energy_req =
+
+        self.duration = self.time_active + self.time_idle
+
+        # calculate range down to minimum SOC threshold
+        self.range = (1 - cs.min_return_soc)(cs.size / cs.consumption)
+        # todo choose departure times and save to df
+        # todo choose trip lengths and save to df
+        # todo read in rental powers from usecases df
+        # todo calculate total used energies
+        # todo choose idle times
 
     def get_departure_time(self, process, env):
 
@@ -471,19 +624,29 @@ class BatteryRentalSystem(RentalSystem):
             self.store.put([commodity.name])
 
 
-    def generate_demand(self, cs: blocks.CommoditySystem, sc: main.Scenario):
+    def generate_demand(self):
+        """
+        This function fills the demand dataframe with stochastically generated values describing the rental
+        requests for each day in the simulation timeframe.
+        :return: None
+        """
 
-        #get df of all days and draw total demand of usecases
-        self.demand = pd.DataFrame(index=sc.sim_dti.date.unique())
-        self.demand['num_total'] = round(self.rng.lognormal(cs.departure_mu,
-                                                            cs.departure_sig,
+        self.demand['num_total'] = round(self.rng.lognormal(self.cs.num_mu,
+                                                            self.cs.num_sig,
                                                             self.demand.shape[0]))
         self.demand['usecases'] = np.random.choice(self.usecases['name'],
                                                          (self.demand.shape[0],self.demand['num_total']),
                                                          replace=True,
                                                          p=self.usecases['rel_prob'])
+        # todo choose departure times and save to df
+        # todo read in rental lengths from usecases df
+        # todo read in rental powers from usecases df
+        # todo calculate total used energies
+        # todo choose idle times
+
 
     def start_process(self):
+        pass
 
 
 
@@ -499,23 +662,6 @@ class RentalProcess:
                  usecase = None):
 
         self.time_request = env.now
-
-        self.time_idle = dt.timedelta(hours=rs.rng.lognormal(cs.idle_mu, cs.idle_sig))
-
-        if isinstance(rs, VehicleRentalSystem):
-            self.distance = rs.rng.lognormal(cs.trip_mu, cs.trip_sig)
-            self.time_active = dt.timedelta(hours=self.distance / cs.speed_avg)
-            self.energy_req = self.distance * cs.consumption
-        else:  # battery rental
-
-            self.time_active = rs.usecases.loc[self.]
-            self.energy_req =
-
-        self.duration =  self.time_active + self.time_idle
-
-
-        # calculate range down to minimum SOC threshold
-        self.range = (1 - cs.min_return_soc)(cs.size / cs.consumption)
 
         with rs.store.get() as self.request:
             # Wait for commodity or abort by a timeout
@@ -626,77 +772,7 @@ class Logging():
             for car in range(ID.CRS_capacity):
                 self.CRS_ind_array[:, 2 + car * 3] = 1
 
-    ###############################################################################
-    # process-log is transformed to oemof compatible .csv
-    ###############################################################################
 
-    def convert_to_csv(self, process_log, ind_array, global_count):
-
-        h = 0
-        while h < global_count:
-
-            # filter out failed trips for the ind_array
-            if process_log[h][3] != "failed":
-
-                # which column of process log contains which info
-                departure_timestep_log = process_log[h][3]
-                leaving_SOC_log = process_log[h][4]
-                used_charge_log = process_log[h][5]
-                return_timestep_log = process_log[h][6]
-                used_Car_log = process_log[h][8]
-
-                if process_log[h][8] != 0:  # check if  used car log is empty
-
-                    for k in used_Car_log:  # for every car that was used by a trip:
-
-                        j = (departure_timestep_log - 1)
-                        while (departure_timestep_log - 1) <= j <= (return_timestep_log + 1):
-
-                            # one timestep before rental set SoC
-                            if j == departure_timestep_log - 1:
-                                ind_array[j][0 + k * 3] += leaving_SOC_log
-
-                            # timestep of rental: remove battery capacity from minigrid
-                            if j == departure_timestep_log:
-                                ind_array[j][1 + k * 3] += used_charge_log
-                                ind_array[j][2 + k * 3] = 0  # .0
-
-                            # during rental: set availability to 0
-                            if departure_timestep_log < j <= return_timestep_log:
-                                ind_array[j][2 + k * 3] = 0  # .0
-
-                            j += 1
-
-            h += 1
-
-    ###############################################################################
-    # .csv File creation: save results to hard-drive, in current working dir.
-    ###############################################################################
-
-    def save(self, process_log, ind_array, fleet_capacity, name):
-
-        # Save process log
-        Simulation_Log = pd.DataFrame(process_log,
-                                      columns=['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC',
-                                               'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}'])
-
-        save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_process_log.csv')
-
-        # print(Simulation_Log.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
-        Simulation_Log.to_csv(save_filename, sep=';')
-
-        # Save oemof compatible csv file
-        ind_bev_df = pd.DataFrame(ind_array)
-
-        for i in range(0, fleet_capacity):
-
-            ind_bev_df.rename(columns={i * 3: f'{name}{i}_minsoc',
-                                       i * 3 + 1: f'{name}{i}_consumption',
-                                       i * 3 + 2: f'{name}{i}_atbase'}, inplace=True)
-
-        save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_log.csv')
-        # print(ind_bev_df.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
-        ind_bev_df.to_csv(save_filename, sep=';')
 
 ###############################################################################
 # process generator function: creates BRS rentals and or CRS trips
@@ -893,38 +969,33 @@ def battery_process_func(env, day_count, inter_day_count, resources_required, n,
 ###############################################################################
 
 
-def execute_des():
+def execute_des(sc: main.Scenario):
 
-    # generate numpy random object
-    rng = np.random.default_rng()
+    # define a DES environment
+    sc.env = simpy.Environment()
 
-    # global count for all usecase appearances during simulation
-    global global_BRS_count
-    global_BRS_count = 0
-    global global_CRS_count
-    global_CRS_count = 0
-    global failed_BRS_count
-    failed_BRS_count = 0
-    global failed_CRS_count
-    failed_CRS_count = 0
-
-    # define an environment where the processes live in
-    env = simpy.Environment()
-
-    # set up IDM
-    ID = InputDataManager(env, 'general_settings')
+    sc.rental_systems = []
+    for commodity_system in [block for block in sc.blocks if isinstance(block, blocks.CommoditySystem)]:
+        rs_name = commodity_system.name
+        # todo make a decision which commodity systems to initiate as VehicleRentalSystems and which as BatteryRentalSystems
+        rs_name = VehicleRentalSystem(sc.env, sc, commodity_system)
+        sc.rental_systems.append(rs_name)
 
     # set up logging tables (csv)
     global logger
     logger = Logging(ID)
 
     # call the function that generates the individual rental processes
-    env.process(usecase_gen(env, ID, rng))
+    sc.env.process(usecase_gen(env, ID, rng))
 
     # start the simulation
-    env.run()
+    sc.env.run()
 
     # save logging results
+    for rental_system in sc.rental_systems:
+        rental_system.convert_process_log()
+        rental_system.save_logs()
+
     if ID.BRS or ID.REX:
         logger.convert_to_csv(logger.BRS_process_log, logger.BRS_ind_array, global_BRS_count)
         logger.save(logger.BRS_process_log, logger.BRS_ind_array, ID.BRS_capacity, 'brs')
@@ -943,6 +1014,7 @@ def execute_des():
 ###############################################################################
 
 if __name__ == '__main__':
+    # todo generate fake main.Scenario to be able to run standalone
     execute_des()
 
 

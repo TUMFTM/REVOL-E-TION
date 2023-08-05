@@ -253,6 +253,13 @@ class Scenario:
                 objects[name] = class_obj(name, self, run)
             else:
                 raise ValueError(f"Class '{class_name}' not found in blocks.py file - Check for typos or add class.")
+
+        # commodity system simulation can only be started after all blocks have been initialized, as the different
+        # systems might depend on each other.
+        # todo integrate switch to use pregenerated input files instead of running des
+        if any([isinstance(block, blocks.CommoditySystem) for block in objects.values()]):
+            commodities.execute_des(self)
+
         return objects
 
     def end_timing(self, run):
