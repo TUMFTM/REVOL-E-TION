@@ -26,7 +26,6 @@ import pvlib
 import pytz
 import timezonefinder
 
-import blocks
 import economics as eco
 
 ###############################################################################
@@ -64,8 +63,10 @@ class InvestBlock:
         elif isinstance(self.size, float) or self.size is None:  # all non-SystemCore blocks that are not to be optimzed
             self.opt = False
             # size is given per commodity in scenario data
-            if isinstance(self, blocks.CommoditySystem):
+            if isinstance(self, CommoditySystem):
+                self.size_pc = self.size  # pc = per commodity
                 self.size = self.size * self.num
+
         else:
             run.logger.warning(f'Scenario {scenario.name}: \"{self.name}_size\" variable in scenario definition'
                                f' needs to be either a number or \"opt\" - exiting')
@@ -203,17 +204,17 @@ class InvestBlock:
         :return: none, saves self.size value
         """
 
-        source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
+        source_types = (PVSource, WindSource, ControllableSource)
 
-        if isinstance(self, blocks.StationaryEnergyStorage):
+        if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
-        elif isinstance(self, blocks.CommoditySystem):
+        elif isinstance(self, CommoditySystem):
             for commodity in self.commodities:
                 commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
             self.size = sum([commodity.size for commodity in self.commodities])
-        elif isinstance(self, blocks.SystemCore):
+        elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
 
