@@ -225,12 +225,11 @@ class CommoditySystem(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        # todo integrate DES trigger here
-
         self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
         self.data = pd.read_csv(self.input_file_path,
                                 sep=';',
                                 skip_blank_lines=False)
+        # todo deactivate file read if commodities DES shall run
 
         if 'Timestamp' in self.data:
             self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])

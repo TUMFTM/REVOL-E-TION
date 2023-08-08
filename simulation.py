@@ -204,8 +204,17 @@ class Scenario:
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
 
-        # Result variables --------------------------------
+        # Execute commodity system discrete event simulation
+        # can only be started after all blocks have been initialized, as the different systems depend on each other.
+        # todo integrate switch to use pregenerated input files instead of running des
+        if any([isinstance(block, blocks.CommoditySystem) for block in self.blocks.values()]):
+            commodities.execute_des(self)
 
+        for commodity_system in [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
+            if commodity_system.rex_system:  # if rex_system is not null (none selected)
+                commodity_system.rex_system = self.blocks[commodity_system.rex_system]
+
+        # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
 
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
@@ -248,13 +257,6 @@ class Scenario:
                 objects[name] = class_obj(name, self, run)
             else:
                 raise ValueError(f"Class '{class_name}' not found in blocks.py file - Check for typos or add class.")
-
-        # commodity system simulation can only be started after all blocks have been initialized, as the different
-        # systems might depend on each other.
-        # todo integrate switch to use pregenerated input files instead of running des
-        if any([isinstance(block, blocks.CommoditySystem) for block in objects.values()]):
-            commodities.execute_des(self)
-
         return objects
 
     def end_timing(self, run):
