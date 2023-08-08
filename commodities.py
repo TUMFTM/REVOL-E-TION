@@ -88,7 +88,7 @@ class RentalSystem:
         self.rng = np.random.default_rng()
 
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
-        self.processes = pd.DataFrame()
+        self.processes = pd.DataFrame(columns=['process_obj'])
         self.generate_demand()  # child function, see subclasses
 
     def convert_process_log(self):
@@ -533,7 +533,6 @@ class BatteryRentalSystem(RentalSystem):
         for commodity in cs.commodities:
             self.store.put([commodity.name])
 
-
     def draw_departure_sample(self, row):
         sample = -1  # kicking off the while loop
         while sample > 24 or sample < 0:
@@ -785,30 +784,14 @@ class RentalProcess:
 
 
 def usecase_gen(env, ID, rng):
-    # parts for demand generation already cut out, only processes left
+    """
+    This function used to call the random generators, separated for CRS and BRS, and call the process functions using
+    env.process(car_process_func(...)) or env_process(brs_process_func(...))
 
-    #
-    #     if ID.CRS:  # if CRS is active
-    #
-    #
-    #         print('Day: 'f'{d}'' Daily CRS Trip demand: 'f'{daily_CRS_trip_demand}')
-    #
-    #         for t in range(daily_CRS_trip_demand):  # for the number of usecases per day do:
-    #
-    #             # start the CRS process generator with one instance of the process function called "car_process_func()"
-    #             env.process(car_process_func(env, day, CRS_inter_day_count, global_CRS_count, ID, rng))
-    #
-    #     if ID.BRS:
-    #             # start the BRS process generator with one instance of the process function called "battery_process_func()"
-    #             env.process(battery_process_func(env, day, BRS_inter_day_count, n["num_batteries"], n, global_BRS_count, ID, rng))
-    #             global_BRS_count += 1
-    #             BRS_inter_day_count += 1
-    #
-    #     day += 1
-    #
-    #     # make sure that a day has 24h
-    #     # if step length is not 1h then 24 must be changed  (viertelstunde)
-    #     yield env.timeout(24)
+    It was itself called inside an env.process(..), because it operated daywise and therefore had to have a line like
+    "yield env.timeout(24)" at the end. So it actually was a process function controlling the generation of the other
+    processes every day.
+    """
     pass
 
 
@@ -821,6 +804,7 @@ def execute_des(sc):
     # define a DES environment
     sc.des_env = simpy.Environment()
 
+    # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = []
     for commodity_system in [block for block in sc.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
         # todo make a better decision which commodity systems to initiate as VehicleRentalSystems and which as BatteryRentalSystems
@@ -829,18 +813,30 @@ def execute_des(sc):
         else:
             rs = BatteryRentalSystem(sc.des_env, sc, commodity_system)
         sc.rental_systems.append(rs)
-    pass
 
-    # call the function that generates the individual rental processes
-    # sc.env.process(usecase_gen(env, ID, rng))
+    # Create additional range extension (rex) processes from vehicle rental systems in battery rental systems
+    # only feasible after all rental systems have been created
+    for vrs in [rs for rs in sc.rental_systems if isinstance(rs, VehicleRentalSystem)]:
+        pass
 
-    # start the simulation
-    sc.env.run()
+    # generate individual RentalProcess instances for every pregenerated process
+    for rs in sc.rental_systems:
+        for idx, row in rs.processes.iterrows():
+            process_info = row.to_dict()
+            process = RentalProcess(process_info)
+            rs.processes.loc[row, 'process_obj'] = process
+
+    # run the discrete event simulation
+    sc.des_env.run()
 
     # save logging results
-    for rental_system in sc.rental_systems:
-        rental_system.convert_process_log()
-        rental_system.save_logs()
+    for rs in sc.rental_systems:
+        rs.convert_process_log()
+        # todo implement trigger on whether to even save the .csv file as it is not needed for direct coupling to the ESM
+        rs.save_logs()
+
+    resource_logs = {rs.name: rs.resource_log for rs in sc.rental_systems}
+    return resource_logs
 
 
 def lognormal_params(mean, stdev):
