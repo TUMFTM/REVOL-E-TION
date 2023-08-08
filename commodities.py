@@ -137,6 +137,16 @@ class RentalSystem:
         #     h += 1
         pass
 
+    def assign_datetime_request(self, process_num):
+        self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
+        self.processes['year'] = self.processes['date'].apply(get_year)
+        self.processes['month'] = self.processes['date'].apply(get_month)
+        self.processes['day'] = self.processes['date'].apply(get_day)
+        self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
+                                  self.sc.timestep_hours)  # round to nearest timestep
+        self.processes['dt_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
+        self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
+
     def save_logs(self):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
@@ -240,14 +250,7 @@ class VehicleRentalSystem(RentalSystem):
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         process_num = self.daily_demand['num_total'].sum(axis=0)
         self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
-        self.processes['year'] = self.processes['date'].apply(get_year)
-        self.processes['month'] = self.processes['date'].apply(get_month)
-        self.processes['day'] = self.processes['date'].apply(get_day)
-        self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
-                                      self.sc.timestep_hours)  # round to nearest timestep
-        self.processes['dt_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
-        self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
-
+        self.assign_datetime_request(process_num)
 
         # draw requested distance and time values, calculate energy used
         p1, p2 = lognormal_params(self.cs.dist_mu, self.cs.dist_sig)
@@ -521,14 +524,26 @@ class BatteryRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc, cs):
 
-        super().__init__(cs, sc)
-
         self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.json')
         self.usecases = pd.read_json(self.usecase_file_path, orient='records')
+
+        super().__init__(cs, sc)
 
         self.store = MultiStore(env, capacity=cs.num)
         for commodity in cs.commodities:
             self.store.put([commodity.name])
+
+
+    def draw_departure_sample(self, row):
+        sample = -1  # kicking off the while loop
+        while sample > 24 or sample < 0:
+            sample = np.random.normal(self.usecases.loc[row['usecase_idx'], 'dep_mu'],
+                                      self.usecases.loc[row['usecase_idx'], 'dep_sig'])
+        return sample
+
+    def draw_departure_samples(self, n):
+        list = self.processes.apply(self.draw_departure_sample, axis=1)
+        return list
 
     def generate_demand(self):
         """
@@ -536,26 +551,37 @@ class BatteryRentalSystem(RentalSystem):
         requests for each day in the simulation timeframe.
         :return: None
         """
-        p1,p2 = lognormal_params(self.cs.num_mu, self.cs.num_sig)
-        self.daily_demand['num_total'] = round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0]))
+        p1,p2 = lognormal_params(self.cs.daily_mu, self.cs.daily_sig)
+        self.daily_demand['num_total'] = (np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0]))).astype(int)
 
         process_num = self.daily_demand['num_total'].sum(axis=0)
-        self.processes['usecase'] = np.random.choice(self.usecases.index.values,
-                                                     process_num,
-                                                     replace=True,
-                                                     p=self.usecases['rel_prob'])
-        self.processes['usecase_name'] = self.usecases.loc[self.processes['usecase'], 'name']
+        rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
+        self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
+                                                         process_num,
+                                                         replace=True,
+                                                         p=rel_prob_norm)
+        self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
+                                                              axis=1)
+        self.assign_datetime_request(process_num)
 
-        self.processes['time_req'] = np.random.normal(self.usecases.loc[self.processes['usecase'], 'dep_mu'],
-                                                      self.usecases.loc[self.processes['usecase'], 'dep_sig'])
-        self.processes['time_active'] = np.random.lognormal(8, 1, process_num)  # todo see battery process func - first draw return soc, then caalc time using power
-        self.processes['time_idle'] = np.random.lognormal(2, 1, process_num) # todo implement proper distributions per usecase
+        p1, p2 = lognormal_params(0.12, 0.1)  # todo introduce proper brs parameters
+        self.processes['soc_return'] = np.random.lognormal(p1, p2, process_num)
+        self.processes['num_bat'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'],
+                                                         axis=1)
+        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.size_pc
+
+        self.processes['time_active'] = pd.to_timedelta(self.processes.apply(lambda row: (1 - row['soc_return']) *
+                                                                                         row['energy_avail'] /
+                                                                                         self.usecases.loc[row['usecase_idx'],
+                                                                                         'power'],
+                                                                             axis=1), unit='hour')
+
+        p1, p2 = lognormal_params(4, 3)  # todo implement proper brs parameters
+        self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, process_num), unit='hour')
         self.processes['time_total'] = self.processes['time_active'] + self.processes['time_idle']
 
-        self.processes['num_bat'] = self.usecases.loc[self.processes['usecase'], 'num_bat']
-        self.processes['energy_req'] = self.processes['time_active'] * self.usecases.loc[self.processes['usecase'], 'power']
-        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.size
-        self.processes['soc_return'] = self.processes['energy_req'] / self.processes['energy_avail']
+        self.processes['energy_req_pc'] = (1 - self.processes['soc_return']) * self.cs.size_pc
+        self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_bat']
 
     def start_process(self):
         # from battery_process_func
@@ -759,6 +785,8 @@ class RentalProcess:
 
 
 def usecase_gen(env, ID, rng):
+    # parts for demand generation already cut out, only processes left
+
     #
     #     if ID.CRS:  # if CRS is active
     #
@@ -769,25 +797,8 @@ def usecase_gen(env, ID, rng):
     #
     #             # start the CRS process generator with one instance of the process function called "car_process_func()"
     #             env.process(car_process_func(env, day, CRS_inter_day_count, global_CRS_count, ID, rng))
-    #             global_CRS_count += 1
-    #             CRS_inter_day_count += 1
     #
-    #     if ID.BRS:  # if BRS is active
-    #
-    #         # number of daily rentals is based on normal distribution
-    #         daily_BRS_rental_demand = round(rng.normal(ID.mu_daily_BRS_rental_demand, ID.sigma_daily_BRS_rental_demand))
-    #
-    #         # rental demand cant be negative
-    #         while daily_BRS_rental_demand < 0:
-    #             daily_BRS_rental_demand = round(rng.normal(ID.mu_daily_BRS_rental_demand, ID.sigma_daily_BRS_rental_demand))
-    #
-    #         print('Day: 'f'{d}'' Daily BRS Trip demand: 'f'{daily_BRS_rental_demand}')
-    #
-    #         for t in range(daily_BRS_rental_demand):  # for the number of usecases per day day do:
-    #
-    #             # choose a random BRS usecase from the list
-    #             n = random.choice(ID.list_of_customers)
-    #
+    #     if ID.BRS:
     #             # start the BRS process generator with one instance of the process function called "battery_process_func()"
     #             env.process(battery_process_func(env, day, BRS_inter_day_count, n["num_batteries"], n, global_BRS_count, ID, rng))
     #             global_BRS_count += 1
@@ -806,15 +817,6 @@ def usecase_gen(env, ID, rng):
 ###############################################################################
 
 def execute_des(sc):
-
-    # # Check input.xlsx for consistency, and input errors
-    # if not ID.CRS and not ID.BRS:
-    #     print('ACHTUNG: Sowohl BRS als auch CRS ausgeschaltet, Trigger in csv überprüfen')
-    # if ID.BRS and ID.mu_daily_BRS_rental_demand <= 0:
-    #     print('Achtung: BRS ist aktiviert aber "mean rental demand" ist 0! (input.xlsx überprüfen)')
-    # if ID.CRS and ID.mu_daily_CRS_trip_demand <= 0:
-    #     print('Achtung: CRS ist aktiviert aber "mean trip demand" ist 0! (input.xlsx überprüfen)')
-    # todo implement similar consistency check
 
     # define a DES environment
     sc.des_env = simpy.Environment()
@@ -843,7 +845,7 @@ def execute_des(sc):
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
-    sig = np.log(1 + (stdev ** 2) / (mu ** 2))
+    sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
     return mu, sig
 
 
