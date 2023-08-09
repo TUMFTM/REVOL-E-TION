@@ -89,15 +89,23 @@ class RentalSystem:
 
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
         self.processes = pd.DataFrame(columns=['time_req',
+                                               'step_req',
                                                'time_wait',
+                                               'steps_wait',
                                                'time_dep',
+                                               'step_dep',
                                                'time_active',
                                                'time_idle',
                                                'time_total',
+                                               'steps_total',
                                                'time_return',
+                                               'step_return',
                                                'time_recharge',
                                                'time_buffer',
+                                               'time_blocked',
+                                               'steps_blocked',
                                                'time_reavail',
+                                               'step_reavail'
                                                'energy_avail',
                                                'energy_req',
                                                'rex_num',
@@ -215,8 +223,10 @@ class VehicleRentalSystem(RentalSystem):
         :param x: time of day as float of full hours
         :return: y: probability value
         """
-        y = 0.6 * (1 / (self.cs.dep_sig1 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mu1) ** 2 / (2 * self.cs.dep_sig1 ** 2))) + \
-            0.4 * (1 / (self.cs.dep_sig2 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mu2) ** 2 / (2 * self.cs.dep_sig2 ** 2)))
+        y = 0.6 * (1 / (self.cs.dep_stdev1 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mean1) ** 2 /
+                                                                          (2 * self.cs.dep_stdev1 ** 2))) + \
+            0.4 * (1 / (self.cs.dep_stdev2 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mean2) ** 2 /
+                                                                          (2 * self.cs.dep_stdev2 ** 2)))
         return y
 
     def departure_cdf(self):
@@ -257,7 +267,7 @@ class VehicleRentalSystem(RentalSystem):
         self.time_buffer = pd.Timedelta(hours=2)
 
         # draw total demand for every day from lognormal distribution
-        p1, p2 = lognormal_params(self.cs.daily_mu, self.cs.daily_sig)
+        p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
         self.daily_demand['num_total'] = np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0])).astype(int)
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
@@ -266,10 +276,10 @@ class VehicleRentalSystem(RentalSystem):
         self.assign_datetime_request(process_num)
 
         # draw requested distance and time values, calculate energy used
-        p1, p2 = lognormal_params(self.cs.dist_mu, self.cs.dist_sig)
+        p1, p2 = lognormal_params(self.cs.dist_mean, self.cs.dist_stdev)
         self.processes['distance'] = self.rng.lognormal(p1, p2, process_num)
         self.processes['time_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
-        p1, p2 = lognormal_params(self.cs.idle_mu, self.cs.idle_sig)
+        p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, process_num), unit='hour')
         self.processes['time_total'] = self.processes['time_active'] + self.processes['time_idle']
         self.processes['steps_total'] = np.round(self.processes['time_total'] / self.sc.timestep_td)
@@ -299,7 +309,7 @@ class BatteryRentalSystem(RentalSystem):
     def __init__(self, env: simpy.Environment, sc, cs):
 
         self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.json')
-        self.usecases = pd.read_json(self.usecase_file_path, orient='records')
+        self.usecases = pd.read_json(self.usecase_file_path, orient='records', lines=True)
 
         super().__init__(cs, sc)
 
@@ -310,8 +320,8 @@ class BatteryRentalSystem(RentalSystem):
     def draw_departure_sample(self, row):
         sample = -1  # kicking off the while loop
         while sample > 24 or sample < 0:
-            sample = np.random.normal(self.usecases.loc[row['usecase_idx'], 'dep_mu'],
-                                      self.usecases.loc[row['usecase_idx'], 'dep_sig'])
+            sample = np.random.normal(self.usecases.loc[row['usecase_idx'], 'dep_mean'],
+                                      self.usecases.loc[row['usecase_idx'], 'dep_stdev'])
         return sample
 
     def draw_departure_samples(self, n):
@@ -324,7 +334,7 @@ class BatteryRentalSystem(RentalSystem):
         requests for each day in the simulation timeframe.
         :return: None
         """
-        p1,p2 = lognormal_params(self.cs.daily_mu, self.cs.daily_sig)
+        p1,p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
         self.daily_demand['num_total'] = (np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0]))).astype(int)
 
         process_num = self.daily_demand['num_total'].sum(axis=0)

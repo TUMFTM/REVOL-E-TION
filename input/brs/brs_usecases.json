@@ -1,1 +1,13 @@
-[{"name":"lighting_construction","dep_mu":18,"dep_sig":1,"power":420,"num_bat":2,"rel_prob":2},{"name":"lighting_search","dep_mu":20,"dep_sig":1,"power":84,"num_bat":1,"rel_prob":1},{"name":"cooling_medical","dep_mu":8,"dep_sig":1,"power":76,"num_bat":1,"rel_prob":1},{"name":"cooling_food","dep_mu":8,"dep_sig":1,"power":75,"num_bat":1,"rel_prob":3},{"name":"evbs_water","dep_mu":8,"dep_sig":1,"power":110,"num_bat":1,"rel_prob":1},{"name":"evbs_fire","dep_mu":12,"dep_sig":1,"power":1100,"num_bat":1,"rel_prob":1},{"name":"milling","dep_mu":8,"dep_sig":1,"power":750,"num_bat":3,"rel_prob":3},{"name":"cocoa","dep_mu":8,"dep_sig":1,"power":1850,"num_bat":4,"rel_prob":2},{"name":"powertool","dep_mu":9,"dep_sig":1,"power":650,"num_bat":1,"rel_prob":2},{"name":"welding","dep_mu":9,"dep_sig":1,"power":400,"num_bat":1,"rel_prob":3},{"name":"ceremony","dep_mu":18,"dep_sig":1,"power":2000,"num_bat":6,"rel_prob":3},{"name":"household","dep_mu":12,"dep_sig":1,"power":10,"num_bat":1,"rel_prob":4},{"name":"boat_fishing","dep_mu":18,"dep_sig":1,"power":1092,"num_bat":4,"rel_prob":1}]
+{"name":"lighting_construction","dep_mean":18,"dep_stdev":1,"power":420,"num_bat":2,"rel_prob":2}
+{"name":"lighting_search","dep_mean":20,"dep_stdev":1,"power":84,"num_bat":1,"rel_prob":1}
+{"name":"cooling_medical","dep_mean":8,"dep_stdev":1,"power":76,"num_bat":1,"rel_prob":1}
+{"name":"cooling_food","dep_mean":8,"dep_stdev":1,"power":75,"num_bat":1,"rel_prob":3}
+{"name":"evbs_water","dep_mean":8,"dep_stdev":1,"power":110,"num_bat":1,"rel_prob":1}
+{"name":"evbs_fire","dep_mean":12,"dep_stdev":1,"power":1100,"num_bat":1,"rel_prob":1}
+{"name":"milling","dep_mean":8,"dep_stdev":1,"power":750,"num_bat":3,"rel_prob":3}
+{"name":"cocoa","dep_mean":8,"dep_stdev":1,"power":1850,"num_bat":4,"rel_prob":2}
+{"name":"powertool","dep_mean":9,"dep_stdev":1,"power":650,"num_bat":1,"rel_prob":2}
+{"name":"welding","dep_mean":9,"dep_stdev":1,"power":400,"num_bat":1,"rel_prob":3}
+{"name":"ceremony","dep_mean":18,"dep_stdev":1,"power":2000,"num_bat":6,"rel_prob":3}
+{"name":"household","dep_mean":12,"dep_stdev":1,"power":10,"num_bat":1,"rel_prob":4}
+{"name":"boat_fishing","dep_mean":18,"dep_stdev":1,"power":1092,"num_bat":4,"rel_prob":1}
