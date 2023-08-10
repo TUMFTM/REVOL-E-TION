@@ -115,7 +115,8 @@
 {"block":"brs","key":"idle_mean","bev_only":1.5,"brs_only":1.5,"both":1.5}
 {"block":"brs","key":"idle_stdev","bev_only":0.5,"brs_only":0.5,"both":0.5}
 {"block":"brs","key":"bat_patience","bev_only":1,"brs_only":1,"both":1}
-{"block":"brs","key":"min_return_soc","bev_only":0.05,"brs_only":0.05,"both":0.05}
+{"block":"brs","key":"soc_return_mean","bev_only":0.12,"brs_only":0.12,"both":0.12}
+{"block":"brs","key":"soc_return_stdev","bev_only":0.1,"brs_only":0.1,"both":0.1}
 {"block":"brs","key":"dep_soc","bev_only":1,"brs_only":1,"both":1}
 {"block":"brs","key":"capex_spec","bev_only":0,"brs_only":0,"both":0}
 {"block":"brs","key":"mntex_spec","bev_only":0,"brs_only":0,"both":0}

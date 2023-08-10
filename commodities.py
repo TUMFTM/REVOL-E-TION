@@ -87,7 +87,14 @@ class RentalSystem:
 
         self.rng = np.random.default_rng()
 
+        # buffer time is added onto minimum recharge time to ensure dispatch feasibility and give room for energy mgmt
+        self.time_buffer = pd.Timedelta(hours=2)
+
+        # draw total demand for every day from lognormal distribution
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
+        p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
+        self.daily_demand['num_total'] = np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0])).astype(int)
+
         self.processes = pd.DataFrame(columns=['time_req',
                                                'step_req',
                                                'time_wait',
@@ -96,12 +103,11 @@ class RentalSystem:
                                                'step_dep',
                                                'time_active',
                                                'time_idle',
-                                               'time_total',
-                                               'steps_total',
+                                               'time_rental',
+                                               'steps_rental',
                                                'time_return',
                                                'step_return',
                                                'time_recharge',
-                                               'time_buffer',
                                                'time_blocked',
                                                'steps_blocked',
                                                'time_reavail',
@@ -113,9 +119,16 @@ class RentalSystem:
                                                'process_obj',
                                                'commodity',
                                                'status'])
-        self.generate_demand()  # child function, see subclasses
 
-    def assign_datetime_request(self, process_num):
+        self.generate_demand(sc)  # child function, see subclasses
+
+        # common calculations for both types of RentalSystem
+        self.processes['time_rental'] = self.processes['time_active'] + self.processes['time_idle']
+        self.processes['steps_rental'] = dt2steps(self.processes['time_rental'], sc)
+        self.processes['time_blocked'] = self.processes['time_recharge'] + self.time_buffer
+        self.processes['steps_blocked'] = dt2steps(self.processes['time_blocked'], sc)
+
+    def assign_datetime_request(self, process_num, sc):
         self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
         self.processes['year'] = self.processes['date'].apply(get_year)
         self.processes['month'] = self.processes['date'].apply(get_month)
@@ -123,6 +136,7 @@ class RentalSystem:
         self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
                                   self.sc.timestep_hours)  # round to nearest timestep
         self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
+        self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
 
     def convert_process_log(self):
@@ -170,6 +184,8 @@ class RentalSystem:
         #
         #     h += 1
         pass
+
+
 
     def save_logs(self):
         """
@@ -254,7 +270,7 @@ class VehicleRentalSystem(RentalSystem):
         samples = np.interp(uniform_samples, cdf_vals, x_vals)  # Interpolate to find the samples
         return samples
 
-    def generate_demand(self):
+    def generate_demand(self, sc):
         """
         This function fills the demand dataframe with stochastically generated values describing the rental
         requests for each day in the simulation timeframe.
@@ -263,17 +279,11 @@ class VehicleRentalSystem(RentalSystem):
         # calculate base range on internal battery for rex calculations
         self.base_range = (1 - self.cs.min_return_soc) * self.cs.dep_soc * self.cs.size_pc / self.cs.consumption
 
-        # buffer time is added onto minimum recharge time to ensure dispatch feasibility and give room for energy mgmt
-        self.time_buffer = pd.Timedelta(hours=2)
-
-        # draw total demand for every day from lognormal distribution
-        p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
-        self.daily_demand['num_total'] = np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0])).astype(int)
-
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         process_num = self.daily_demand['num_total'].sum(axis=0)
         self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
-        self.assign_datetime_request(process_num)
+
+        self.assign_datetime_request(process_num, sc)
 
         # draw requested distance and time values, calculate energy used
         p1, p2 = lognormal_params(self.cs.dist_mean, self.cs.dist_stdev)
@@ -281,8 +291,6 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, process_num), unit='hour')
-        self.processes['time_total'] = self.processes['time_active'] + self.processes['time_idle']
-        self.processes['steps_total'] = np.round(self.processes['time_total'] / self.sc.timestep_td)
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
         if self.cs.rex_sys:  # system can extend range. otherwise self.rex_sys is None
@@ -301,7 +309,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
-        self.processes['time_blocked'] = self.processes['time_recharge'] + self.time_buffer
+
 
 
 class BatteryRentalSystem(RentalSystem):
@@ -328,43 +336,50 @@ class BatteryRentalSystem(RentalSystem):
         list = self.processes.apply(self.draw_departure_sample, axis=1)
         return list
 
-    def generate_demand(self):
+    def generate_demand(self, sc):
         """
         This function fills the demand dataframe with stochastically generated values describing the rental
         requests for each day in the simulation timeframe.
         :return: None
         """
-        p1,p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
-        self.daily_demand['num_total'] = (np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0]))).astype(int)
+
 
         process_num = self.daily_demand['num_total'].sum(axis=0)
         rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
+
+
+
         self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
                                                          process_num,
                                                          replace=True,
                                                          p=rel_prob_norm)
         self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
                                                               axis=1)
-        self.assign_datetime_request(process_num)
+        self.assign_datetime_request(process_num, sc)
 
-        p1, p2 = lognormal_params(0.12, 0.1)  # todo introduce proper brs parameters
-        self.processes['soc_return'] = np.random.lognormal(p1, p2, process_num)
+        p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
+        self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, process_num))
         self.processes['num_bat'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'],
                                                          axis=1)
-        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.size_pc
+        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.dep_soc * self.cs.size_pc
 
-        self.processes['time_active'] = pd.to_timedelta(self.processes.apply(lambda row: (1 - row['soc_return']) *
-                                                                                         row['energy_avail'] /
-                                                                                         self.usecases.loc[row['usecase_idx'],
-                                                                                         'power'],
-                                                                             axis=1), unit='hour')
+        self.processes['time_active'] = pd.to_timedelta(
+            self.processes.apply(lambda row:
+                                 (1 - row['soc_return']) *
+                                 row['energy_avail'] /
+                                 self.usecases.loc[row['usecase_idx'],
+                                 'power'],
+                                 axis=1),
+            unit='hour')
 
-        p1, p2 = lognormal_params(4, 3)  # todo implement proper brs parameters
+        p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
         self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, process_num), unit='hour')
-        self.processes['time_total'] = self.processes['time_active'] + self.processes['time_idle']
 
         self.processes['energy_req_pc'] = (1 - self.processes['soc_return']) * self.cs.size_pc
         self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_bat']
+
+        self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
+                                                          (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
 
 
 class RentalProcess:
@@ -407,12 +422,12 @@ class RentalProcess:
     def execute_rental(self, rs: RentalSystem, cs: blocks.CommoditySystem, sc):
 
         # cover the usage & idle time
-        yield sc.des_env.timeout(rs.processes['time_total'])   # todo does this work with timedelta?
-        self.processes.loc[self.data['index'], 'time_return'] = sc.des_env.now  # todo alternative time_dep + time_total?
+        yield sc.des_env.timeout(rs.processes['time_rental'])   # todo does this work with timedelta?
+        self.processes.loc[self.data['index'], 'time_return'] = sc.des_env.now  # todo alternative time_dep + time_rental?
 
         # cover the recharge time incl. buffer
         yield sc.des_env.timeout(rs.processes['time_blocked'])   # todo does this work with timedelta?
-        self.processes.loc[self.data['index'], 'time_reavail'] = sc.des_env.now  # todo alternative time_dep + time_total + time_blocked?
+        self.processes.loc[self.data['index'], 'time_reavail'] = sc.des_env.now  # todo alternative time_dep + time_rental + time_blocked?
 
     def request_rex_commodities(self,
                             rs: RentalSystem,
@@ -449,6 +464,21 @@ class RentalProcess:
 ###############################################################################
 # global functions
 ###############################################################################
+
+def dt2steps(series, sc):
+    if pd.api.types.is_datetime64_any_dtype(series):
+        out = np.round((series - sc.starttime) / sc.timestep_td).astype(int)
+    elif pd.api.types.is_timedelta64_dtype(series):
+        out = np.round(series / sc.timestep_td).astype(int)
+    return out
+
+
+def steps2dt(series, sc, absolute=False):
+    out = pd.to_timedelta(series * sc.timestep_hours, unit='hour')
+    if absolute:
+        out += sc.starttime
+    return out
+
 
 def execute_des(sc):
 
