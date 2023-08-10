@@ -6,7 +6,7 @@
 {"block":"scenario","key":"ph_len","bev_only":48,"brs_only":48,"both":48}
 {"block":"scenario","key":"ch_len","bev_only":24,"brs_only":24,"both":24}
 {"block":"scenario","key":"wacc","bev_only":0.09,"brs_only":0.09,"both":0.09}
-{"block":"scenario","key":"blocks","bev_only":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","bev":"CommoditySystem"},"brs_only":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","brs":"CommoditySystem"},"both":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","bev":"CommoditySystem","brs":"CommoditySystem"}}
+{"block":"scenario","key":"blocks","bev_only":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","bev":"VehicleCommoditySystem"},"brs_only":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","brs":"BatteryCommoditySystem"},"both":{"core":"SystemCore","dem":"FixedDemand","wind":"WindSource","pv":"PVSource","ess":"StationaryEnergyStorage","gen":"ControllableSource","grid":"ControllableSource","bev":"VehicleCommoditySystem","brs":"BatteryCommoditySystem"}}
 {"block":"core","key":"dcac_size","bev_only":100000.0,"brs_only":100000.0,"both":100000.0}
 {"block":"core","key":"acdc_size","bev_only":100000.0,"brs_only":100000.0,"both":100000.0}
 {"block":"core","key":"capex_spec","bev_only":0.08,"brs_only":0.08,"both":0.08}
@@ -74,7 +74,7 @@
 {"block":"bev","key":"rex_sys","bev_only":null,"brs_only":null,"both":"brs"}
 {"block":"bev","key":"int_lvl","bev_only":"cc","brs_only":"cc","both":"cc"}
 {"block":"bev","key":"system","bev_only":"AC","brs_only":"AC","both":"AC"}
-{"block":"bev","key":"filename","bev_only":"bev_example","brs_only":"bev_example","both":"bev_example"}
+{"block":"bev","key":"filename","bev_only":"run_des","brs_only":"run_des","both":"run_des"}
 {"block":"bev","key":"num","bev_only":5,"brs_only":5,"both":5}
 {"block":"bev","key":"daily_mean","bev_only":7,"brs_only":7,"both":7}
 {"block":"bev","key":"daily_stdev","bev_only":2,"brs_only":2,"both":2}
@@ -108,7 +108,7 @@
 {"block":"brs","key":"size","bev_only":3000.0,"brs_only":3000.0,"both":3000.0}
 {"block":"brs","key":"int_lvl","bev_only":"cc","brs_only":"cc","both":"cc"}
 {"block":"brs","key":"system","bev_only":"AC","brs_only":"AC","both":"AC"}
-{"block":"brs","key":"filename","bev_only":"brs_example","brs_only":"brs_example","both":"brs_usecases"}
+{"block":"brs","key":"filename","bev_only":"run_des","brs_only":"run_des","both":"run_des"}
 {"block":"brs","key":"num","bev_only":5,"brs_only":5,"both":5}
 {"block":"brs","key":"daily_mean","bev_only":6,"brs_only":6,"both":6}
 {"block":"brs","key":"daily_stdev","bev_only":1,"brs_only":1,"both":1}

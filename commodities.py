@@ -19,6 +19,7 @@ license:    GPLv3
 ###############################################################################
 
 import datetime as dt
+import logging
 import os
 import math
 import simpy
@@ -226,6 +227,15 @@ class VehicleRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc, cs):
 
+        # replace the rex system name with the actual CommoditySystem object
+        if cs.rex_cs:
+            if isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
+                cs.rex_cs = sc.blocks[cs.rex_cs]
+            else:
+                logging.error(f'Selected range extender system {cs.rex_cs.name} for VehicleCommoditySystem'
+                              f' {cs.name} is not a BatteryCommoditySystem')
+                exit()  # todo better exit strategy not ending the entire run
+
         super().__init__(cs, sc)
 
         self.store = simpy.Store(env, capacity=self.cs.num)  # does not need to be a MultiStore
@@ -293,12 +303,12 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, process_num), unit='hour')
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
-        if self.cs.rex_sys:  # system can extend range. otherwise self.rex_sys is None
-            self.processes['rex_distance'] = np.max(0, self.processes['distance'] - self.base_range)
-            self.processes['rex_energy'] = self.rex_distance * self.cs.consumption
-            self.processes['rex_num'] = math.ceil(self.rex_energy / self.cs.rex_rs.size_pc)
+        if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
+            self.processes['distance_rex'] = np.maximum(0, self.processes['distance'] - self.base_range)
+            self.processes['energy_rex'] = self.processes['distance_rex'] * self.cs.consumption
+            self.processes['rex_num'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc)
             self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.dep_soc) +
-                                              (self.processes['rex_num'] * self.cs.rex_rs.size * self.cs.rex_rs.dep_soc))
+                                              (self.processes['rex_num'] * self.cs.rex_cs.size * self.cs.rex_cs.dep_soc))
             self.processes['rex_request'] = self.processes['rex_num'] > 0
         else:
             self.processes['energy_avail'] = self.cs.size_pc * self.cs.dep_soc
@@ -309,6 +319,9 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
+
+    def generate_rex_demand(self):
+        pass
 
 
 
@@ -486,19 +499,18 @@ def execute_des(sc):
     sc.des_env = simpy.Environment()
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
-    sc.rental_systems = []
-    for commodity_system in [block for block in sc.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
-        # todo make a better decision which commodity systems to initiate as VehicleRentalSystems and which as BatteryRentalSystems
-        if commodity_system.name == 'bev':
+    sc.rental_systems = dict()
+    for commodity_system in [system for system in sc.commodity_systems if system.filename == 'run_des']:
+        if isinstance(commodity_system, blocks.VehicleCommoditySystem):
             rs = VehicleRentalSystem(sc.des_env, sc, commodity_system)
-        else:
+        elif isinstance(commodity_system, blocks.BatteryCommoditySystem):
             rs = BatteryRentalSystem(sc.des_env, sc, commodity_system)
-        sc.rental_systems.append(rs)
+        sc.rental_systems[commodity_system.name] = rs
 
     # Create additional range extension (rex) processes from vehicle rental systems in battery rental systems
     # only feasible after all rental systems have been created
     for vrs in [rs for rs in sc.rental_systems if isinstance(rs, VehicleRentalSystem)]:
-        pass
+        vrs.generate_rex_demand()
 
     # generate individual RentalProcess instances for every pregenerated process
     for rs in sc.rental_systems:
@@ -544,5 +556,5 @@ def get_year(element):
 
 if __name__ == '__main__':
     run = sim.SimulationRun()
-    scenario = sim.Scenario('brs_only', run)
+    scenario = sim.Scenario('both', run)
     execute_des(scenario)

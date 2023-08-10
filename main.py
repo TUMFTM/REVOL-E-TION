@@ -22,11 +22,9 @@ import logging
 import logging.handlers
 import threading
 import warnings
-
 import multiprocessing as mp
 
 from itertools import repeat
-
 from simulation import PredictionHorizon, Scenario, SimulationRun
 
 warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
@@ -34,6 +32,7 @@ warnings.filterwarnings("error")  # needed for catching UserWarning during infea
 ###############################################################################
 # Function definitions
 ###############################################################################
+
 
 def read_mplogger_queue(queue):
     while True:

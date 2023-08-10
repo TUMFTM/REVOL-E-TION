@@ -203,11 +203,11 @@ class Scenario:
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
+        self.commodity_systems = [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        # todo integrate switch to use pregenerated input files instead of running des
-        if any([isinstance(block, blocks.CommoditySystem) for block in self.blocks.values()]):
+        if any([system.filename == 'run_des' for system in self.commodity_systems]):
             commodities.execute_des(self)
 
         for commodity_system in [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]:

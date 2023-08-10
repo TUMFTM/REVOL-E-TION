@@ -226,18 +226,23 @@ class CommoditySystem(InvestBlock):
         super().__init__(name, scenario, run)
 
         self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
-        self.data = pd.read_csv(self.input_file_path,
-                                sep=';',
-                                skip_blank_lines=False)
-        # todo deactivate file read if commodities DES shall run
 
-        if 'Timestamp' in self.data:
-            self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-            self.data.set_index('Timestamp', drop=True, inplace=True)
-        else:
-            self.data.index = pd.date_range(start=scenario.starttime,
-                                            periods=len(self.data),
-                                            freq=scenario.timestep)
+        if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
+            self.data = None
+        else:  # use pregenerated file
+            self.data = pd.read_csv(self.input_file_path,
+                                    sep=';',
+                                    skip_blank_lines=False)
+            if 'Timestamp' in self.data:
+                self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
+                self.data.set_index('Timestamp', drop=True, inplace=True)
+            else:
+                self.data.index = pd.date_range(start=scenario.starttime,
+                                                periods=len(self.data),
+                                                freq=scenario.timestep)
+
+        # todo does this individual check for every CommoditySystem lead to infeasible scenarios (e.g. if run_des of the rex_system is not set?)
+
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
@@ -313,6 +318,12 @@ class CommoditySystem(InvestBlock):
     def update_input_components(self, *_):
         for commodity in self.commodities:
             commodity.update_input_components()
+
+
+class BatteryCommoditySystem(CommoditySystem):
+
+    def __init__(self, name, scenario, run):
+        super().__init__(name, scenario, run)
 
 
 class ControllableSource(InvestBlock):
@@ -443,12 +454,11 @@ class MobileCommodity:
         self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.chg_pwr = self.parent.chg_pwr
 
-        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        if self.parent.filename == 'run_des':
+            self.data = None  # parent data does not exist yet, filtering is done later
+        else:  #predetermined files
+            self.filter_parent_data()
 
-        self.data = self.parent.data.loc[:, colnames]
-
-        # remove CommoditySystem name and Commodity numbers in column headers
-        self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = self.parent.init_soc
@@ -553,6 +563,15 @@ class MobileCommodity:
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
+
+    def filter_parent_data(self):
+        """
+        slice only the part for the individual commodity and remove commodity name from data
+        """
+        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        self.data = self.parent.data.loc[:, colnames]
+        # remove CommoditySystem name and Commodity numbers in column headers
+        self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
 
     def get_ch_results(self, horizon, scenario):
 
@@ -940,6 +959,12 @@ class SystemCore(InvestBlock):
 
     def update_input_components(self, *_):
         pass  # function needs to be callable
+
+
+class VehicleCommoditySystem(CommoditySystem):
+
+    def __init__(self, name, scenario, run):
+        super().__init__(name, scenario, run)
 
 
 class WindSource(InvestBlock):
