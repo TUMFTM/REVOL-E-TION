@@ -432,41 +432,42 @@ class RentalProcess:
 
         # request secondary resources from other MultiStore
         if isinstance(self.rs, blocks.VehicleCommoditySystem):
-            if self.data['rex_request']: # column does not exist for BatteryCommoditySystems
-                with (self.rs.cs.rex_cs.rs.store.get(self.data['rex_num']) as self.secondary_request):
-                    self.secondary_result = yield self.secondary_request | self.env.timeout(
-                        self.rs.cs.rex_patience)
+            if self.data['rex_request']:  # column does not exist for BatteryCommoditySystems
+                self.secondary_request = self.rs.cs.rex_cs.rs.store.get(self.data['rex_num'])
+                self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.rex_patience)
 
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
 
             # cover the usage & idle time
             yield self.env.timeout(self.data['steps_rental'])
             self.rs.processes.loc[self.id, 'step_return'] = self.env.now
-            # todo alternatively time_return = time_dep + time_rental?
 
             # cover the recharge time incl. buffer
             yield self.env.timeout(self.data['steps_blocked'])
-            self.rs.processes.loc[self.id, 'time_reavail'] = self.env.now
-            # todo alternatively time_reavail = time_return + time_blocked?
-            # todo enter id of received commodity and rex commodities
+            self.rs.processes.loc[self.id, 'step_reavail'] = self.env.now
 
             self.rs.processes.loc[self.id, 'status'] = 'sucess'
+            self.rs.processes.loc[self.id, 'primary_commodity'] = self.primary_request.value
+            if self.secondary_request:
+                self.rs.processes.loc[self.id, 'secondary_commodity'] = self.secondary_request.value
 
-        else:
-            # todo implement other behavior if primary is successful - reduce trip length?
-            self.rs.processes.loc[self.id, 'status'] = 'failure'
-
-        # if self.request.triggered:
-        #     # make sure that resource is placed back in store
-        #     resource = yield self.request
-        #     self.rs.rex_system.store.put(resource)  # todo why can we not just put the car back every time (like finally)?
-
-        try:
-            self.rs.store.put(self.primary_result[self.primary_request])  # todo this would be my approach
+            self.rs.store.put(self.primary_result[self.primary_request])
             if self.secondary_request:
                 self.rs.cs.rex_cs.rs.store.put(self.secondary_result[self.secondary_request])
-        except KeyError:
-            pass
+
+
+
+        else:  # either or both (primary/secondary) request(s) unsuccessful
+
+            self.rs.processes.loc[self.id, 'status'] = 'failure'
+
+            # make sure resources are put back
+            # stackoverflow.com/questions/75371166/simpy-items-in-a-store-disappear-while-modelling-a-carfleet-with-a-simpystore-a
+            primary_resource = yield self.primary_request
+            self.rs.store.put(primary_resource)
+            if self.secondary_request:
+                secondary_resource = yield self.secondary_request
+                self.rs.cs.rex_cs.rs.store.put(secondary_resource)
 
 ###############################################################################
 # global functions
