@@ -75,7 +75,7 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('ess', 'cdc'),
                                    ('ess', 'eff'),
                                    ('bev', 'size'),
-                                   ('bev', 'rex_sys'),
+                                   ('bev', 'rex_cs'),
                                    ('bev', 'int_lvl'),
                                    ('bev', 'system'),
                                    ('bev', 'filename'),
@@ -90,12 +90,12 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('bev', 'dist_stdev'),
                                    ('bev', 'idle_mean'),
                                    ('bev', 'idle_stdev'),
-                                   ('bev', 'veh_patience'),
+                                   ('bev', 'patience'),
                                    ('bev', 'rex_patience'),
                                    ('bev', 'consumption'),
                                    ('bev', 'speed_avg'),
-                                   ('bev', 'min_return_soc'),
-                                   ('bev', 'dep_soc'),
+                                   ('bev', 'soc_min_return'),
+                                   ('bev', 'soc_dep'),
                                    ('bev', 'capex_spec'),
                                    ('bev', 'mntex_spec'),
                                    ('bev', 'opex_spec'),
@@ -118,10 +118,10 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('brs', 'daily_stdev'),
                                    ('brs', 'idle_mean'),
                                    ('brs', 'idle_stdev'),
-                                   ('brs', 'bat_patience'),
+                                   ('brs', 'patience'),
                                    ('brs', 'soc_return_mean'),
                                    ('brs', 'soc_return_stdev'),
-                                   ('brs', 'dep_soc'),
+                                   ('brs', 'soc_dep'),
                                    ('brs', 'capex_spec'),
                                    ('brs', 'mntex_spec'),
                                    ('brs', 'opex_spec'),
@@ -186,7 +186,7 @@ data = {'bev_only': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, {'core': 'S
                         5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
                         3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                         1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
-                        3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 3.2, 0.88, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                        3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                         3.00E+03, 'cc', 'AC', 'run_des', 5, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 1500, 1500, 1, 0.95, 0.95, 1]
         }  # brs
 

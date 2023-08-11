@@ -33,12 +33,14 @@ import simulation as sim
 # Simpy MultiStore Subclass Definitions
 ###############################################################################
 
+
 class MultiStoreGet(simpy.resources.base.Get):
-    def __init__(self, store, amount):
-        if amount <= 0:
-            raise ValueError('amount(=%s) must be > 0.' % amount)
-        self.amount = amount
-        """The amount of matter to be taken out of the store."""
+    def __init__(self, store, num_resources=1):
+        if num_resources <= 0:
+            raise ValueError(f'Number of resources taken from MultiStore ({num_resources} given)'
+                             f' must be larger than or equal to zero.')
+        self.amount = num_resources
+        """The number of resources to be taken out of the store."""
 
         super(MultiStoreGet, self).__init__(store)
 
@@ -112,10 +114,9 @@ class RentalSystem:
                                                'time_blocked',
                                                'steps_blocked',
                                                'time_reavail',
-                                               'step_reavail'
+                                               'step_reavail',
                                                'energy_avail',
                                                'energy_req',
-                                               'rex_num',
                                                'soc_return',
                                                'process_obj',
                                                'commodity',
@@ -185,8 +186,6 @@ class RentalSystem:
         #
         #     h += 1
         pass
-
-
 
     def save_logs(self):
         """
@@ -287,7 +286,7 @@ class VehicleRentalSystem(RentalSystem):
         :return: None
         """
         # calculate base range on internal battery for rex calculations
-        self.base_range = (1 - self.cs.min_return_soc) * self.cs.dep_soc * self.cs.size_pc / self.cs.consumption
+        self.base_range = (1 - self.cs.soc_min_return) * self.cs.soc_dep * self.cs.size_pc / self.cs.consumption
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         process_num = self.daily_demand['num_total'].sum(axis=0)
@@ -306,12 +305,12 @@ class VehicleRentalSystem(RentalSystem):
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
             self.processes['distance_rex'] = np.maximum(0, self.processes['distance'] - self.base_range)
             self.processes['energy_rex'] = self.processes['distance_rex'] * self.cs.consumption
-            self.processes['rex_num'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc)
-            self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.dep_soc) +
-                                              (self.processes['rex_num'] * self.cs.rex_cs.size * self.cs.rex_cs.dep_soc))
-            self.processes['rex_request'] = self.processes['rex_num'] > 0
+            self.processes['num_rex'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc)
+            self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.soc_dep) +
+                                              (self.processes['num_rex'] * self.cs.rex_cs.size * self.cs.rex_cs.soc_dep))
+            self.processes['rex_request'] = self.processes['num_rex'] > 0
         else:
-            self.processes['energy_avail'] = self.cs.size_pc * self.cs.dep_soc
+            self.processes['energy_avail'] = self.cs.size_pc * self.cs.soc_dep
             self.processes['rex_request'] = False
 
         # set maximum energy requirement to max available energy
@@ -320,9 +319,21 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
 
-    def generate_rex_demand(self):
-        pass
+    def generate_rex_demand(self, sc):
 
+        rex_processes = self.processes.loc[self.processes['rex_request'], :].copy()
+
+        rex_processes['usecase_idx'] = -1
+        rex_processes['usecase_name'] = self.cs.name + '_' + rex_processes.index.to_series().astype(str)
+        rex_processes['energy_req'] = rex_processes['energy_rex']
+        rex_processes['num_bat'] = rex_processes['num_rex']
+        rex_processes['energy_req_pc'] = rex_processes['energy_req'] / rex_processes['num_bat']
+        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
+        rex_processes.drop('num_rex', axis=1, inplace=True)
+        self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes],
+                                                axis=0,
+                                                join='inner')
+        pass
 
 
 class BatteryRentalSystem(RentalSystem):
@@ -365,7 +376,7 @@ class BatteryRentalSystem(RentalSystem):
         self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
                                                          process_num,
                                                          replace=True,
-                                                         p=rel_prob_norm)
+                                                         p=rel_prob_norm).astype(int)
         self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
                                                               axis=1)
         self.assign_datetime_request(process_num, sc)
@@ -373,8 +384,8 @@ class BatteryRentalSystem(RentalSystem):
         p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
         self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, process_num))
         self.processes['num_bat'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'],
-                                                         axis=1)
-        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.dep_soc * self.cs.size_pc
+                                                         axis=1).astype(int)
+        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.soc_dep * self.cs.size_pc
 
         self.processes['time_active'] = pd.to_timedelta(
             self.processes.apply(lambda row:
@@ -397,82 +408,65 @@ class BatteryRentalSystem(RentalSystem):
 
 class RentalProcess:
 
-    def __init__(self, data, rs, sc):
+    def __init__(self, idx, data, rs, sc):
 
         self.data = data
+        self.rs = rs
+        self.env = sc.des_env
+        self.id = idx
 
-        # wait until time of request is reached
-        yield sc.des_env.timeout(data['time_req'])  # todo time_req is a datetime - is conversion needed?
+        self.env.process(self.define_process())
 
-        # request resource(s) from store
-        with rs.store.get() as self.request:
-            self.result = yield self.request | sc.des_env.timeout(rs.cs.patience)
+    def define_process(self):
 
-            # request granted
-            if self.request in self.result:
-                rs.processes.loc[data.index, 'time_dep'] = sc.des_env.now
+        # wait for request time
+        yield self.env.timeout(self.data['step_req'])
 
-                if data['rex_request']:  # range extension required & available
-                    self.request_rex_commodities(rs, sc.des_env)
-                    if self.rex_sucess:
-                        self.execute_rental()  # vehicle
-                        #self.()  # rex batteries
-                    else:
-                        # log failure
-                        pass
-                else:  # range extension not required or available
-                    self.execute_rental()  #vehicle only
+        # request primary resource(s) from (Multi)Store
+        with self.rs.store.get() as self.primary_request:
+            self.primary_result = yield self.primary_request | self.env.timeout(self.rs.cs.patience)
 
-            # vehicle request not granted, patience is triggered
-            else:
-                # log failure
-                if self.request.triggered:
-                    # make sure that resource is placed back in store
-                    resource = yield self.request
-                    rs.rex_system.store.put(resource)  # todo why can we not just put the car back every time (like finally)?
-            rs.store.put(self.result[self.request])  # todo this would be my approach
+        # Dummy values to make result checks easily possible for all possible constellations
+        self.secondary_request = False
+        self.secondary_result = [False]
 
-    def execute_rental(self, rs: RentalSystem, cs: blocks.CommoditySystem, sc):
+        # request secondary resources from other MultiStore
+        if isinstance(self.rs, blocks.VehicleCommoditySystem):
+            if self.data['rex_request']: # column does not exist for BatteryCommoditySystems
+                with (self.rs.cs.rex_cs.rs.store.get(self.data['rex_num']) as self.secondary_request):
+                    self.secondary_result = yield self.secondary_request | self.env.timeout(
+                        self.rs.cs.rex_patience)
 
-        # cover the usage & idle time
-        yield sc.des_env.timeout(rs.processes['time_rental'])   # todo does this work with timedelta?
-        self.processes.loc[self.data['index'], 'time_return'] = sc.des_env.now  # todo alternative time_dep + time_rental?
+        if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
 
-        # cover the recharge time incl. buffer
-        yield sc.des_env.timeout(rs.processes['time_blocked'])   # todo does this work with timedelta?
-        self.processes.loc[self.data['index'], 'time_reavail'] = sc.des_env.now  # todo alternative time_dep + time_rental + time_blocked?
+            # cover the usage & idle time
+            yield self.env.timeout(self.data['steps_rental'])
+            self.rs.processes.loc[self.id, 'step_return'] = self.env.now
+            # todo alternatively time_return = time_dep + time_rental?
 
-    def request_rex_commodities(self,
-                            rs: RentalSystem,
-                            cs: blocks.CommoditySystem,
-                            env: simpy.Environment):
+            # cover the recharge time incl. buffer
+            yield self.env.timeout(self.data['steps_blocked'])
+            self.rs.processes.loc[self.id, 'time_reavail'] = self.env.now
+            # todo alternatively time_reavail = time_return + time_blocked?
+            # todo enter id of received commodity and rex commodities
 
-        self.rex_distance = self.distance - self.range
-        self.rex_energy = self.rex_distance * cs.consumption
-        self.rex_num = math.ceil(self.rex_energy / rs.rex_system.cs.size)
-        self.energy_avail = (cs.size * cs.departure_soc) + (self.rex_num * rs.rex_system.cs.size * rs.rex_system.cs.departure_soc)
-        self.soc_return = self.energy_req / self.energy_avail
+            self.rs.processes.loc[self.id, 'status'] = 'sucess'
 
-        with rs.rex_system.store.get(self.rex_num) as self.rex_request:
-            self.rex_result = yield self.rex_request | env.timeout(rs.rex_system.cs.patience)
-            # todo distiguish between self patience (for vehicles) and rex patience (for rex batteries)
+        else:
+            # todo implement other behavior if primary is successful - reduce trip length?
+            self.rs.processes.loc[self.id, 'status'] = 'failure'
 
-            self.rex_waittime = env.now - self.request_time
+        # if self.request.triggered:
+        #     # make sure that resource is placed back in store
+        #     resource = yield self.request
+        #     self.rs.rex_system.store.put(resource)  # todo why can we not just put the car back every time (like finally)?
 
-            if self.rex_request in self.rex_result:  # request was granted
-                self.rex_time_departure = env.now
-                yield env.timeout(self.duration.hours)  # todo hours doesnt exist
-                self.rex_time_return = env.now
-                self.rex_time_recharge = dt.timedelta(hours=self.energy_req / cs.chg_pwr)
-                self.rex_time_buffer = dt.timedelta(hours=2)
-                yield env.timeout(self.time_recharge.hours + self.time_buffer)  # todo hours doesnt exist
-                self.rex_time_reavail = env.now
-                yield rs.rex_system.store.put(self.rex_result[self.rex_request])  # put batteries back
-                self.rex_sucess = True
-            else:  # request for rex batteries not granted  -> abort trip
-
-                self.rex_sucess = False
-
+        try:
+            self.rs.store.put(self.primary_result[self.primary_request])  # todo this would be my approach
+            if self.secondary_request:
+                self.rs.cs.rex_cs.rs.store.put(self.secondary_result[self.secondary_request])
+        except KeyError:
+            pass
 
 ###############################################################################
 # global functions
@@ -502,22 +496,17 @@ def execute_des(sc):
     sc.rental_systems = dict()
     for commodity_system in [system for system in sc.commodity_systems if system.filename == 'run_des']:
         if isinstance(commodity_system, blocks.VehicleCommoditySystem):
-            rs = VehicleRentalSystem(sc.des_env, sc, commodity_system)
+            commodity_system.rs = VehicleRentalSystem(sc.des_env, sc, commodity_system)
         elif isinstance(commodity_system, blocks.BatteryCommoditySystem):
-            rs = BatteryRentalSystem(sc.des_env, sc, commodity_system)
-        sc.rental_systems[commodity_system.name] = rs
-
-    # Create additional range extension (rex) processes from vehicle rental systems in battery rental systems
-    # only feasible after all rental systems have been created
-    for vrs in [rs for rs in sc.rental_systems if isinstance(rs, VehicleRentalSystem)]:
-        vrs.generate_rex_demand()
+            commodity_system.rs = BatteryRentalSystem(sc.des_env, sc, commodity_system)
+        sc.rental_systems[commodity_system.name] = commodity_system.rs
 
     # generate individual RentalProcess instances for every pregenerated process
-    for rs in sc.rental_systems:
+    for rs in sc.rental_systems.values():
         for idx, row in rs.processes.iterrows():
-            process_info = row.to_dict()
-            process = RentalProcess(process_info)
-            rs.processes.loc[row, 'process_obj'] = process
+            # VehicleRentalSystem RentalProcesses can init additional processes in BatteryRentalSystems at runtime
+            process = RentalProcess(idx, row, rs, sc)
+            rs.processes.loc[idx, 'process_obj'] = process
 
     # run the discrete event simulation
     sc.des_env.run()

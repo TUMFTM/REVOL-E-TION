@@ -211,8 +211,8 @@ class Scenario:
             commodities.execute_des(self)
 
         for commodity_system in [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
-            if commodity_system.rex_system:  # if rex_system is not null (none selected)
-                commodity_system.rex_system = self.blocks[commodity_system.rex_system]
+            if commodity_system.rex_cs:  # if rex_system is not null (none selected)
+                commodity_system.rex_cs = self.blocks[commodity_system.rex_cs]
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
