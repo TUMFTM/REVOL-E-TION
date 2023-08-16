@@ -100,8 +100,6 @@ class RentalSystem:
 
         self.processes = pd.DataFrame(columns=['time_req',
                                                'step_req',
-                                               'time_wait',
-                                               'steps_wait',
                                                'time_dep',
                                                'step_dep',
                                                'time_active',
@@ -119,7 +117,6 @@ class RentalSystem:
                                                'energy_req',
                                                'soc_return',
                                                'process_obj',
-                                               'commodity',
                                                'status'])
 
         self.generate_demand(sc)  # child function, see subclasses
@@ -438,6 +435,8 @@ class RentalProcess:
 
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
 
+            self.rs.processes.loc[self.id, 'step_dep'] = self.env.now
+
             # cover the usage & idle time
             yield self.env.timeout(self.data['steps_rental'])
             self.rs.processes.loc[self.id, 'step_return'] = self.env.now
@@ -455,14 +454,13 @@ class RentalProcess:
             if self.secondary_request:
                 self.rs.cs.rex_cs.rs.store.put(self.secondary_result[self.secondary_request])
 
-
-
         else:  # either or both (primary/secondary) request(s) unsuccessful
 
             self.rs.processes.loc[self.id, 'status'] = 'failure'
 
-            # make sure resources are put back
-            # stackoverflow.com/questions/75371166/simpy-items-in-a-store-disappear-while-modelling-a-carfleet-with-a-simpystore-a
+            # make sure resources are put back, see weblink:
+            # stackoverflow.com/questions/75371166/simpy-items-in-a-store-
+            # disappear-while-modelling-a-carfleet-with-a-simpystore-a
             primary_resource = yield self.primary_request
             self.rs.store.put(primary_resource)
             if self.secondary_request:
@@ -511,6 +509,11 @@ def execute_des(sc):
 
     # run the discrete event simulation
     sc.des_env.run()
+
+    for rs in sc.rental_systems.values():
+        rs.processes['time_dep'] = steps2dt(rs.processes['step_dep'], sc, absolute=True)
+        rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
+        rs.processes['time_reavail'] = steps2dt(rs.processes['step_reavail'], sc, absolute=True)
 
     # save logging results
     for rs in sc.rental_systems:
