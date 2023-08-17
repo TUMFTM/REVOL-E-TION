@@ -109,7 +109,7 @@
 {"block":"brs","key":"int_lvl","bev_only":"cc","brs_only":"cc","both":"cc"}
 {"block":"brs","key":"system","bev_only":"AC","brs_only":"AC","both":"AC"}
 {"block":"brs","key":"filename","bev_only":"run_des","brs_only":"run_des","both":"run_des"}
-{"block":"brs","key":"num","bev_only":5,"brs_only":5,"both":5}
+{"block":"brs","key":"num","bev_only":5,"brs_only":5,"both":30}
 {"block":"brs","key":"daily_mean","bev_only":6,"brs_only":6,"both":6}
 {"block":"brs","key":"daily_stdev","bev_only":1,"brs_only":1,"both":1}
 {"block":"brs","key":"idle_mean","bev_only":1.5,"brs_only":1.5,"both":1.5}

@@ -116,8 +116,11 @@ class RentalSystem:
                                                'energy_avail',
                                                'energy_req',
                                                'soc_return',
+                                               'primary_commodity',
+                                               'secondary_commodity',
                                                'process_obj',
-                                               'status'])
+                                               'status'],
+                                      dtype='object')
 
         self.generate_demand(sc)  # child function, see subclasses
 
@@ -126,6 +129,11 @@ class RentalSystem:
         self.processes['steps_rental'] = dt2steps(self.processes['time_rental'], sc)
         self.processes['time_blocked'] = self.processes['time_recharge'] + self.time_buffer
         self.processes['steps_blocked'] = dt2steps(self.processes['time_blocked'], sc)
+
+        # create the actual Simpy store and populate it
+        self.store = MultiStore(sc.des_env, capacity=cs.num)
+        for commodity in cs.commodities:
+            self.store.put([commodity.name])
 
     def assign_datetime_request(self, process_num, sc):
         self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
@@ -234,10 +242,6 @@ class VehicleRentalSystem(RentalSystem):
 
         super().__init__(cs, sc)
 
-        self.store = simpy.Store(env, capacity=self.cs.num)  # does not need to be a MultiStore
-        for commodity in self.cs.commodities:
-            self.store.put(commodity.name)
-
     def departure_pdf(self, x):
         """
         for a given time of day (given as a float of full hours), this function returns the probability of a trip
@@ -302,7 +306,7 @@ class VehicleRentalSystem(RentalSystem):
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
             self.processes['distance_rex'] = np.maximum(0, self.processes['distance'] - self.base_range)
             self.processes['energy_rex'] = self.processes['distance_rex'] * self.cs.consumption
-            self.processes['num_rex'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc)
+            self.processes['num_rex'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc).astype(int)
             self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.soc_dep) +
                                               (self.processes['num_rex'] * self.cs.rex_cs.size * self.cs.rex_cs.soc_dep))
             self.processes['rex_request'] = self.processes['num_rex'] > 0
@@ -316,21 +320,23 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
 
-    def generate_rex_demand(self, sc):
+    def transfer_rex_processes(self):
+        """
 
-        rex_processes = self.processes.loc[self.processes['rex_request'], :].copy()
+        """
+        mask = (self.processes['status'] == 'sucess') & (self.processes['rex_request'])
+        rex_processes = self.processes.loc[mask, :].copy()
 
         rex_processes['usecase_idx'] = -1
-        rex_processes['usecase_name'] = self.cs.name + '_' + rex_processes.index.to_series().astype(str)
+        rex_processes['usecase_name'] = f'rex_{self.cs.name}'
+        rex_processes['num_resources'] = rex_processes['num_rex']
+        rex_processes['num_resources'] = rex_processes['num_rex']
         rex_processes['energy_req'] = rex_processes['energy_rex']
-        rex_processes['num_bat'] = rex_processes['num_rex']
-        rex_processes['energy_req_pc'] = rex_processes['energy_req'] / rex_processes['num_bat']
-        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
-        rex_processes.drop('num_rex', axis=1, inplace=True)
-        self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes],
-                                                axis=0,
-                                                join='inner')
-        pass
+        rex_processes['energy_req_pc'] = rex_processes['energy_rex'] / rex_processes['num_rex']
+        rex_processes['soc_return'] = rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
+
+        self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes], join='inner')
+        self.cs.rex_cs.rs.processes.sort_values(by='time_req', inplace=True, ignore_index=True)
 
 
 class BatteryRentalSystem(RentalSystem):
@@ -341,10 +347,6 @@ class BatteryRentalSystem(RentalSystem):
         self.usecases = pd.read_json(self.usecase_file_path, orient='records', lines=True)
 
         super().__init__(cs, sc)
-
-        self.store = MultiStore(env, capacity=cs.num)
-        for commodity in cs.commodities:
-            self.store.put([commodity.name])
 
     def draw_departure_sample(self, row):
         sample = -1  # kicking off the while loop
@@ -380,9 +382,9 @@ class BatteryRentalSystem(RentalSystem):
 
         p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
         self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, process_num))
-        self.processes['num_bat'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'],
-                                                         axis=1).astype(int)
-        self.processes['energy_avail'] = self.processes['num_bat'] * self.cs.soc_dep * self.cs.size_pc
+        self.processes['num_resources'] = self.processes.apply(
+            lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
+        self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
 
         self.processes['time_active'] = pd.to_timedelta(
             self.processes.apply(lambda row:
@@ -397,7 +399,7 @@ class BatteryRentalSystem(RentalSystem):
         self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, process_num), unit='hour')
 
         self.processes['energy_req_pc'] = (1 - self.processes['soc_return']) * self.cs.size_pc
-        self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_bat']
+        self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
 
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
@@ -412,6 +414,7 @@ class RentalProcess:
         self.env = sc.des_env
         self.id = idx
 
+        # initiate the simpy process function (define_process is not executed here, but only when the env. is run)
         self.env.process(self.define_process())
 
     def define_process(self):
@@ -420,18 +423,19 @@ class RentalProcess:
         yield self.env.timeout(self.data['step_req'])
 
         # request primary resource(s) from (Multi)Store
-        with self.rs.store.get() as self.primary_request:
-            self.primary_result = yield self.primary_request | self.env.timeout(self.rs.cs.patience)
+        num_req = self.data['num_resources'] if 'num_resources' in self.data else 1
+        with self.rs.store.get(num_req) as self.primary_request:
+                self.primary_result = yield self.primary_request | self.env.timeout(self.rs.cs.patience)
 
         # Dummy values to make result checks easily possible for all possible constellations
         self.secondary_request = False
         self.secondary_result = [False]
 
         # request secondary resources from other MultiStore
-        if isinstance(self.rs, blocks.VehicleCommoditySystem):
+        if isinstance(self.rs, VehicleRentalSystem):
             if self.data['rex_request']:  # column does not exist for BatteryCommoditySystems
-                self.secondary_request = self.rs.cs.rex_cs.rs.store.get(self.data['rex_num'])
-                self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.rex_patience)
+                with self.rs.cs.rex_cs.rs.store.get(self.data['num_rex']) as self.secondary_request:
+                    self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.rex_patience)
 
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
 
@@ -446,9 +450,9 @@ class RentalProcess:
             self.rs.processes.loc[self.id, 'step_reavail'] = self.env.now
 
             self.rs.processes.loc[self.id, 'status'] = 'sucess'
-            self.rs.processes.loc[self.id, 'primary_commodity'] = self.primary_request.value
+            self.rs.processes.at[self.id, 'primary_commodity'] = self.primary_request.value
             if self.secondary_request:
-                self.rs.processes.loc[self.id, 'secondary_commodity'] = self.secondary_request.value
+                self.rs.processes.at[self.id, 'secondary_commodity'] = self.secondary_request.value
 
             self.rs.store.put(self.primary_result[self.primary_request])
             if self.secondary_request:
@@ -456,7 +460,13 @@ class RentalProcess:
 
         else:  # either or both (primary/secondary) request(s) unsuccessful
 
-            self.rs.processes.loc[self.id, 'status'] = 'failure'
+            # log type of failure
+            if (self.primary_request not in self.primary_result) and (self.secondary_request not in self.secondary_result):
+                self.rs.processes.loc[self.id, 'status'] = 'failure - both'
+            elif (self.primary_request not in self.primary_result):
+                self.rs.processes.loc[self.id, 'status'] = 'failure - primary'
+            elif (self.secondary_request not in self.secondary_result):
+                self.rs.processes.loc[self.id, 'status'] = 'failure - secondary'
 
             # make sure resources are put back, see weblink:
             # stackoverflow.com/questions/75371166/simpy-items-in-a-store-
@@ -470,6 +480,7 @@ class RentalProcess:
 ###############################################################################
 # global functions
 ###############################################################################
+
 
 def dt2steps(series, sc):
     if pd.api.types.is_datetime64_any_dtype(series):
@@ -507,15 +518,20 @@ def execute_des(sc):
             process = RentalProcess(idx, row, rs, sc)
             rs.processes.loc[idx, 'process_obj'] = process
 
-    # run the discrete event simulation
+    # actually run the discrete event simulation
     sc.des_env.run()
 
+    # add additional rex processes from VehicleRentalSystems to BatteryRentalSystems to complete process dataframe
+    for rs in [rs for rs in sc.rental_systems.values() if isinstance(rs, VehicleRentalSystem)]:
+        rs.transfer_rex_processes()
+
+    # reconvert time steps to actual times
     for rs in sc.rental_systems.values():
         rs.processes['time_dep'] = steps2dt(rs.processes['step_dep'], sc, absolute=True)
         rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
         rs.processes['time_reavail'] = steps2dt(rs.processes['step_reavail'], sc, absolute=True)
 
-    # save logging results
+    # reframe logging results to resource-based view instead of process based (and save)
     for rs in sc.rental_systems:
         rs.convert_process_log()
         # todo implement trigger on whether to even save the .csv file as it is not needed for direct coupling to the ESM
