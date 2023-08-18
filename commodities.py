@@ -162,7 +162,7 @@ class RentalSystem:
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.data.loc[process['time_dep']:process['time_reavail'], (commodity, 'atbase')] = False
+                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')] = False
                 self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
 
@@ -174,8 +174,9 @@ class RentalSystem:
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        file_path = os.path.join(path, f'{self.cs.name}.csv')
-        self.data.to_csv(file_path)
+        if not os.path.isfile(path):
+            path = os.path.join(path, f'{self.cs.name}.csv')
+        self.data.to_csv(path)
 
 
 class VehicleRentalSystem(RentalSystem):
@@ -506,6 +507,8 @@ def execute_des(sc, save=False, path=None):
         if save:
             rs.save_data(path)
 
+    pass
+
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
     sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
@@ -527,3 +530,7 @@ def get_year(element):
 if __name__ == '__main__':
     rn = sim.SimulationRun()
     sc = sim.Scenario('both',rn)
+    for rs in sc.rental_systems.values():
+        folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
+        rs.save_data(folderpath)
+        print(f'{folderpath} created')

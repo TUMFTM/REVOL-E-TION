@@ -141,6 +141,7 @@ class Scenario:
     def __init__(self, scenario_name, run):
 
         self.name = scenario_name
+        self.run = run
 
         # General Information --------------------------------
 
@@ -304,7 +305,7 @@ class Scenario:
                                                  visible='legendonly'),  # TODO introduce TUM colors
                                       secondary_y=True)
             elif isinstance(block, blocks.CommoditySystem):
-                for commodity in block.commodities:
+                for commodity in block.commodities.values():
                     self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
                                                      y=commodity.flow * -1,
                                                      mode='lines',
@@ -441,7 +442,7 @@ class SimulationRun:
         self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 
-        if self.save_results:
+        if self.save_results or self.save_des_results:
             os.mkdir(self.result_folder_path)
 
         log_formatter = logging.Formatter(logging.BASIC_FORMAT)
