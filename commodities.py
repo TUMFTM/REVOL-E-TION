@@ -18,7 +18,6 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import datetime as dt
 import logging
 import os
 import math
@@ -93,7 +92,7 @@ class RentalSystem:
         # buffer time is added onto minimum recharge time to ensure dispatch feasibility and give room for energy mgmt
         self.time_buffer = pd.Timedelta(hours=2)
 
-        # draw total demand for every day from lognormal distribution
+        # draw total demand for every simulated ay from lognormal distribution
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
         p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
         self.daily_demand['num_total'] = np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0])).astype(int)
@@ -158,23 +157,25 @@ class RentalSystem:
             column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
 
-        self.time_log = pd.DataFrame(0, index=self.sc.sim_dti, columns=column_index)
-        self.time_log.loc[:, (slice(None), "atbase")] = True
+        self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
+        self.data.loc[:, (slice(None), "atbase")] = True
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.time_log.loc[process['time_dep']:process['time_reavail'], (commodity, 'atbase')] = False
-                self.time_log.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
-                self.time_log.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
+                self.data.loc[process['time_dep']:process['time_reavail'], (commodity, 'atbase')] = False
+                self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
+                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
 
-    def save_time_log(self, path):
+        self.cs.data = self.data
+
+    def save_data(self, path):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
         file_path = os.path.join(path, f'{self.cs.name}.csv')
-        self.time_log.to_csv(file_path)
+        self.data.to_csv(file_path)
 
 
 class VehicleRentalSystem(RentalSystem):
@@ -183,11 +184,13 @@ class VehicleRentalSystem(RentalSystem):
 
         # replace the rex system name read in from scenario json with the actual CommoditySystem object
         if cs.rex_cs:
-            if isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
+            if (isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem) &
+                    (sc.blocks[cs.rex_cs].filename == 'run_des')):
                 cs.rex_cs = sc.blocks[cs.rex_cs]
             else:
                 logging.error(f'Selected range extender system {cs.rex_cs.name} for VehicleCommoditySystem'
-                              f' {cs.name} is not a BatteryCommoditySystem')
+                              f' {cs.name} is not a BatteryCommoditySystem'
+                              f' or its filename parameter is not \"run_des\"')
                 exit()  # todo better exit strategy not ending the entire run
 
         super().__init__(cs, sc)
@@ -462,6 +465,12 @@ def execute_des(sc, save=False, path=None):
     # define a DES environment
     sc.des_env = simpy.Environment()
 
+    # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
+    if sc.strategy == 'go':
+        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(10)[-10:])
+    else:
+        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(sc.ph_nsteps)[-sc.ph_nsteps:])
+
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
     for commodity_system in [system for system in sc.commodity_systems if system.filename == 'run_des']:
@@ -495,7 +504,7 @@ def execute_des(sc, save=False, path=None):
     for rs in sc.rental_systems.values():
         rs.convert_process_log()
         if save:
-            rs.save_time_log(path)
+            rs.save_data(path)
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
@@ -514,11 +523,7 @@ def get_month(element):
 def get_year(element):
     return element.year
 
-
-###############################################################################
-# Execution (only if run as standalone file)
-###############################################################################
-
+# Execution for scenario generation
 if __name__ == '__main__':
-    run = sim.SimulationRun()
-    scenario = sim.Scenario('both', run)
+    rn = sim.SimulationRun()
+    sc = sim.Scenario('both',rn)

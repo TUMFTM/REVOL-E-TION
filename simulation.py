@@ -70,7 +70,7 @@ class PredictionHorizon:
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.ph_data = block.data[self.starttime:self.ph_endtime]
             if isinstance(block, blocks.CommoditySystem):
-                for commodity in block.commodities:
+                for commodity in block.commodities.values():
                     commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
 
         for block in scenario.blocks.values():

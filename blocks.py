@@ -231,17 +231,9 @@ class CommoditySystem(InvestBlock):
             self.data = None
         else:  # use pregenerated file
             self.data = pd.read_csv(self.input_file_path,
-                                    sep=';',
-                                    skip_blank_lines=False)
-            if 'Timestamp' in self.data:
-                self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-                self.data.set_index('Timestamp', drop=True, inplace=True)
-            else:
-                self.data.index = pd.date_range(start=scenario.starttime,
-                                                periods=len(self.data),
-                                                freq=scenario.timestep)
-
-        # todo does this individual check for every CommoditySystem lead to infeasible scenarios (e.g. if run_des of the rex_system is not set?)
+                                    header=[0, 1],
+                                    index_col=0,
+                                    parse_dates=True)
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
@@ -443,7 +435,7 @@ class FixedDemand:
 
     def update_input_components(self, scenario):
         # new ph data slice is created during initialization of the PredictionHorizon
-        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['Power']
+        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['power']
 
 
 class MobileCommodity:
@@ -458,7 +450,7 @@ class MobileCommodity:
         if self.parent.filename == 'run_des':
             self.data = None  # parent data does not exist yet, filtering is done later
         else:  #predetermined files
-            self.filter_parent_data()
+            self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
         self.ph_data = None  # placeholder, is filled in update_input_components
 
@@ -565,15 +557,6 @@ class MobileCommodity:
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-    def filter_parent_data(self):
-        """
-        slice only the part for the individual commodity and remove commodity name from data
-        """
-        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
-        self.data = self.parent.data.loc[:, colnames]
-        # remove CommoditySystem name and Commodity numbers in column headers
-        self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
-
     def get_ch_results(self, horizon, scenario):
 
         self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.ch_dti]
@@ -638,8 +621,8 @@ class MobileCommodity:
             self.snk.inputs[self.bus].fix = self.ph_data['uc_power']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase']
-            self.outflow.inputs[self.bus].max = self.ph_data['atbase']
+            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
+            self.outflow.inputs[self.bus].max = self.ph_data['atbase'].astype(int)
 
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.ph_data['consumption']

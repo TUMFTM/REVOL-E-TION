@@ -59,19 +59,17 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         try:
             horizon = PredictionHorizon(horizon_index, scenario, run)
-        except IndexError:
+        except IndexError as e:
             scenario.exception = 'Input data does not cover full sim timespan'
             logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
                             f' - continuing on next scenario')
             scenario.save_results(run)
             break
 
-        if scenario.strategy == 'lfs':
-            pass  # rule_based.lfs(horizon)
-        elif scenario.strategy == 'ccs':
-            pass  # rule_based.ccs(horizon)
-        elif scenario.strategy in ['go', 'rh']:
+        if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)
+        else:
+            raise ValueError('Strategy unknown')  # todo better error handling
 
         if scenario.exception and run.save_results:
             scenario.save_results(run)
