@@ -174,11 +174,13 @@ class Scenario:
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
 
+        # prepare for dispatch plot saving later on
         self.plot_file_path = os.path.join(run.result_folder_path, f'{run.runtimestamp}_'
                                                                    f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
-        self.results = pd.DataFrame(columns=['Block', 'Key', self.name])  # for cumulative result saving later on
+        # prepare for cumulative result saving later on
+        self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.results = self.results.set_index(['Block', 'Key'])
         self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
 
@@ -208,11 +210,7 @@ class Scenario:
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         if any([system.filename == 'run_des' for system in self.commodity_systems]):
-            commodities.execute_des(self)
-
-        for commodity_system in [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
-            if commodity_system.rex_cs:  # if rex_system is not null (none selected)
-                commodity_system.rex_cs = self.blocks[commodity_system.rex_cs]
+            commodities.execute_des(self, run.save_des_results, run.result_folder_path)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting

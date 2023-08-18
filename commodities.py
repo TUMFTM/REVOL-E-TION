@@ -132,7 +132,7 @@ class RentalSystem:
 
         # create the actual Simpy store and populate it
         self.store = MultiStore(sc.des_env, capacity=cs.num)
-        for commodity in cs.commodities:
+        for commodity in cs.commodities.values():
             self.store.put([commodity.name])
 
     def assign_datetime_request(self, process_num, sc):
@@ -148,90 +148,40 @@ class RentalSystem:
 
     def convert_process_log(self):
         """
-        This function converts the process based log from DES execution into a time based log as required by the
-        energy system model as an input
-        :return: None
+        This function converts the process based log from DES execution into a time based log for each commodity
+        as required by the energy system model as an input
         """
-        # taken from Logging.convert_to_csv:
-        #
-        # h = 0
-        # while h < global_count:
-        #
-        #     # filter out failed trips for the ind_array
-        #     if process_log[h][3] != "failed":
-        #
-        #         # which column of process log contains which info
-        #         departure_timestep_log = process_log[h][3]
-        #         leaving_SOC_log = process_log[h][4]
-        #         used_charge_log = process_log[h][5]
-        #         return_timestep_log = process_log[h][6]
-        #         used_Car_log = process_log[h][8]
-        #
-        #         if process_log[h][8] != 0:  # check if  used car log is empty
-        #
-        #             for k in used_Car_log:  # for every car that was used by a trip:
-        #
-        #                 j = (departure_timestep_log - 1)
-        #                 while (departure_timestep_log - 1) <= j <= (return_timestep_log + 1):
-        #
-        #                     # one timestep before rental set SoC
-        #                     if j == departure_timestep_log - 1:
-        #                         ind_array[j][0 + k * 3] += leaving_SOC_log
-        #
-        #                     # timestep of rental: remove battery capacity from minigrid
-        #                     if j == departure_timestep_log:
-        #                         ind_array[j][1 + k * 3] += used_charge_log
-        #                         ind_array[j][2 + k * 3] = 0  # .0
-        #
-        #                     # during rental: set availability to 0
-        #                     if departure_timestep_log < j <= return_timestep_log:
-        #                         ind_array[j][2 + k * 3] = 0  # .0
-        #
-        #                     j += 1
-        #
-        #     h += 1
-        pass
 
-    def save_logs(self):
+        commodities = list(self.cs.commodities.keys())
+        column_names = []
+        for commodity in commodities:
+            column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption')])
+        column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
+
+        self.time_log = pd.DataFrame(0, index=self.sc.sim_dti, columns=column_index)
+        self.time_log.loc[:, (slice(None), "atbase")] = True
+
+        for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
+            for commodity in process['primary_commodity']:
+                self.time_log.loc[process['time_dep']:process['time_reavail'], (commodity, 'atbase')] = False
+                self.time_log.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
+                self.time_log.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
+
+    def save_time_log(self, path):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
-        The resulting dataframe can also be returned to the energy system model directly in addition for faster
+        The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
-        :return: None
         """
-        # todo save dataframes directly after conversion
-
-        # Taken from Logging.save():
-
-        # # Save process log
-        # Simulation_Log = pd.DataFrame(process_log,
-        #                               columns=['Day', 'usage', 'day_Count', 'departure_timestep', 'leaving_SOC',
-        #                                        'used_charge', 'return_timestep', 'chargetime', 'used_'f'{name}'])
-        #
-        # save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_process_log.csv')
-        #
-        # # print(Simulation_Log.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
-        # Simulation_Log.to_csv(save_filename, sep=';')
-        #
-        # # Save oemof compatible csv file
-        # ind_bev_df = pd.DataFrame(ind_array)
-        #
-        # for i in range(0, fleet_capacity):
-        #     ind_bev_df.rename(columns={i * 3: f'{name}{i}_minsoc',
-        #                                i * 3 + 1: f'{name}{i}_consumption',
-        #                                i * 3 + 2: f'{name}{i}_atbase'}, inplace=True)
-        #
-        # save_filename = os.path.join(os.getcwd(), 'input', f'{name}', f'{name}_log.csv')
-        # # print(ind_bev_df.to_latex(index=False, caption='A', label='tab:', position='H', column_format='rllllllll'))
-        # ind_bev_df.to_csv(save_filename, sep=';')
-        pass
+        file_path = os.path.join(path, f'{self.cs.name}.csv')
+        self.time_log.to_csv(file_path)
 
 
 class VehicleRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc, cs):
 
-        # replace the rex system name with the actual CommoditySystem object
+        # replace the rex system name read in from scenario json with the actual CommoditySystem object
         if cs.rex_cs:
             if isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
                 cs.rex_cs = sc.blocks[cs.rex_cs]
@@ -316,17 +266,21 @@ class VehicleRentalSystem(RentalSystem):
 
         # set maximum energy requirement to max available energy
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
+        self.processes['energy_req_pc'] = self.processes['energy_req']  #column is needed in conversion to time log
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
 
     def transfer_rex_processes(self):
         """
-
+        This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
+        BatteryRentalSystem's processes dataframe as these don't originate from the latter's demand pregeneration
+        and are not logged there yet.
         """
         mask = (self.processes['status'] == 'sucess') & (self.processes['rex_request'])
         rex_processes = self.processes.loc[mask, :].copy()
 
+        # convert values for target BatteryRentalSystem
         rex_processes['usecase_idx'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
         rex_processes['num_resources'] = rex_processes['num_rex']
@@ -335,6 +289,12 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['energy_req_pc'] = rex_processes['energy_rex'] / rex_processes['num_rex']
         rex_processes['soc_return'] = rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
 
+        # swap primary and secondary commodities as target system has other promary commodity type
+        rex_processes['temp_primary'] = rex_processes['primary_commodity']
+        rex_processes['primary_commodity'] = rex_processes['secondary_commodity']
+        rex_processes['secondary_commodity'] = rex_processes['temp_primary']
+
+        # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
         self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes], join='inner')
         self.cs.rex_cs.rs.processes.sort_values(by='time_req', inplace=True, ignore_index=True)
 
@@ -497,7 +457,7 @@ def steps2dt(series, sc, absolute=False):
     return out
 
 
-def execute_des(sc):
+def execute_des(sc, save=False, path=None):
 
     # define a DES environment
     sc.des_env = simpy.Environment()
@@ -521,25 +481,21 @@ def execute_des(sc):
     # actually run the discrete event simulation
     sc.des_env.run()
 
-    # add additional rex processes from VehicleRentalSystems to BatteryRentalSystems to complete process dataframe
-    for rs in [rs for rs in sc.rental_systems.values() if isinstance(rs, VehicleRentalSystem)]:
-        rs.transfer_rex_processes()
-
     # reconvert time steps to actual times
     for rs in sc.rental_systems.values():
         rs.processes['time_dep'] = steps2dt(rs.processes['step_dep'], sc, absolute=True)
         rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
         rs.processes['time_reavail'] = steps2dt(rs.processes['step_reavail'], sc, absolute=True)
 
+    # add additional rex processes from VehicleRentalSystems to BatteryRentalSystems to complete process dataframe
+    for rs in [rs for rs in sc.rental_systems.values() if isinstance(rs, VehicleRentalSystem)]:
+        rs.transfer_rex_processes()
+
     # reframe logging results to resource-based view instead of process based (and save)
-    for rs in sc.rental_systems:
+    for rs in sc.rental_systems.values():
         rs.convert_process_log()
-        # todo implement trigger on whether to even save the .csv file as it is not needed for direct coupling to the ESM
-        rs.save_logs()
-
-    resource_logs = {rs.name: rs.resource_log for rs in sc.rental_systems}
-    return resource_logs
-
+        if save:
+            rs.save_time_log(path)
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
@@ -566,4 +522,3 @@ def get_year(element):
 if __name__ == '__main__':
     run = sim.SimulationRun()
     scenario = sim.Scenario('both', run)
-    execute_des(scenario)

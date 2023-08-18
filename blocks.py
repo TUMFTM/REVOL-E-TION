@@ -211,9 +211,9 @@ class InvestBlock:
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
         elif isinstance(self, CommoditySystem):
-            for commodity in self.commodities:
+            for commodity in self.commodities.values():
                 commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
-            self.size = sum([commodity.size for commodity in self.commodities])
+            self.size = sum([commodity.size for commodity in self.commodities.values()])
         elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
@@ -289,7 +289,8 @@ class CommoditySystem(InvestBlock):
                                                     conversion_factors={scenario.blocks['core'].ac_bus: 1})
         scenario.components.append(self.outflow)
 
-        self.commodities = [MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)]
+        self.commodities = {f'{self.name}{str(i)}':
+                                MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
     def accumulate_results(self, scenario):
 
@@ -297,7 +298,7 @@ class CommoditySystem(InvestBlock):
         # CommoditySystem is a sink as positive power/energy exits the core
         self.accumulate_energy_results_sink(scenario)
 
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.accumulate_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
@@ -312,11 +313,11 @@ class CommoditySystem(InvestBlock):
         self.flow = pd.concat([self.flow, self.flow_ch])
         self.flow_sum = pd.concat([self.flow_sum, self.flow_sum_ch])
 
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
 
     def update_input_components(self, *_):
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.update_input_components()
 
 
