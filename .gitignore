@@ -3,8 +3,14 @@ results/*
 input/scenarios/*
 !input/scenarios/example.json
 !input/scenarios/sgen_example.py
+!input/scenarios/des_test.json
+!input/scenarios/sgen_des_test.py
 input/bev/*
 !input/bev/bev_example.csv
+input/brs/*
+!input/brs/brs_example.csv
+!input/brs/brs_usecases.json
+!input/brs/use_case_list_gen.ipynb
 input/dem/*
 !input/dem/dem_example.csv
 input/pv/*

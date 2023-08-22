@@ -26,7 +26,6 @@ import pvlib
 import pytz
 import timezonefinder
 
-import blocks
 import economics as eco
 
 ###############################################################################
@@ -64,8 +63,10 @@ class InvestBlock:
         elif isinstance(self.size, float) or self.size is None:  # all non-SystemCore blocks that are not to be optimzed
             self.opt = False
             # size is given per commodity in scenario data
-            if isinstance(self, blocks.CommoditySystem):
+            if isinstance(self, CommoditySystem):
+                self.size_pc = self.size  # pc = per commodity
                 self.size = self.size * self.num
+
         else:
             run.logger.warning(f'Scenario {scenario.name}: \"{self.name}_size\" variable in scenario definition'
                                f' needs to be either a number or \"opt\" - exiting')
@@ -203,17 +204,17 @@ class InvestBlock:
         :return: none, saves self.size value
         """
 
-        source_types = (blocks.PVSource, blocks.WindSource, blocks.ControllableSource)
+        source_types = (PVSource, WindSource, ControllableSource)
 
-        if isinstance(self, blocks.StationaryEnergyStorage):
+        if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
-        elif isinstance(self, blocks.CommoditySystem):
-            for commodity in self.commodities:
+        elif isinstance(self, CommoditySystem):
+            for commodity in self.commodities.values():
                 commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
-            self.size = sum([commodity.size for commodity in self.commodities])
-        elif isinstance(self, blocks.SystemCore):
+            self.size = sum([commodity.size for commodity in self.commodities.values()])
+        elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
 
@@ -224,20 +225,16 @@ class CommoditySystem(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        # todo integrate DES trigger here
-
         self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
-        self.data = pd.read_csv(self.input_file_path,
-                                sep=';',
-                                skip_blank_lines=False)
 
-        if 'Timestamp' in self.data:
-            self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-            self.data.set_index('Timestamp', drop=True, inplace=True)
-        else:
-            self.data.index = pd.date_range(start=scenario.starttime,
-                                            periods=len(self.data),
-                                            freq=scenario.timestep)
+        if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
+            self.data = None
+        else:  # use pregenerated file
+            self.data = pd.read_csv(self.input_file_path,
+                                    header=[0, 1],
+                                    index_col=0,
+                                    parse_dates=True)
+
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
         self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
@@ -284,7 +281,8 @@ class CommoditySystem(InvestBlock):
                                                     conversion_factors={scenario.blocks['core'].ac_bus: 1})
         scenario.components.append(self.outflow)
 
-        self.commodities = [MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)]
+        self.commodities = {f'{self.name}{str(i)}':
+                                MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
     def accumulate_results(self, scenario):
 
@@ -292,7 +290,7 @@ class CommoditySystem(InvestBlock):
         # CommoditySystem is a sink as positive power/energy exits the core
         self.accumulate_energy_results_sink(scenario)
 
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.accumulate_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
@@ -307,12 +305,18 @@ class CommoditySystem(InvestBlock):
         self.flow = pd.concat([self.flow, self.flow_ch])
         self.flow_sum = pd.concat([self.flow_sum, self.flow_sum_ch])
 
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
 
     def update_input_components(self, *_):
-        for commodity in self.commodities:
+        for commodity in self.commodities.values():
             commodity.update_input_components()
+
+
+class BatteryCommoditySystem(CommoditySystem):
+
+    def __init__(self, name, scenario, run):
+        super().__init__(name, scenario, run)
 
 
 class ControllableSource(InvestBlock):
@@ -431,7 +435,7 @@ class FixedDemand:
 
     def update_input_components(self, scenario):
         # new ph data slice is created during initialization of the PredictionHorizon
-        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['Power']
+        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['power']
 
 
 class MobileCommodity:
@@ -443,12 +447,11 @@ class MobileCommodity:
         self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.chg_pwr = self.parent.chg_pwr
 
-        colnames = [coln for coln in self.parent.data.columns if self.name in coln]
+        if self.parent.filename == 'run_des':
+            self.data = None  # parent data does not exist yet, filtering is done later
+        else:  #predetermined files
+            self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
-        self.data = self.parent.data.loc[:, colnames]
-
-        # remove CommoditySystem name and Commodity numbers in column headers
-        self.data.columns = self.data.columns.str.split('_').str[1]  # remove commodity's name from column names
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = self.parent.init_soc
@@ -618,8 +621,8 @@ class MobileCommodity:
             self.snk.inputs[self.bus].fix = self.ph_data['uc_power']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase']
-            self.outflow.inputs[self.bus].max = self.ph_data['atbase']
+            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
+            self.outflow.inputs[self.bus].max = self.ph_data['atbase'].astype(int)
 
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.ph_data['consumption']
@@ -940,6 +943,12 @@ class SystemCore(InvestBlock):
 
     def update_input_components(self, *_):
         pass  # function needs to be callable
+
+
+class VehicleCommoditySystem(CommoditySystem):
+
+    def __init__(self, name, scenario, run):
+        super().__init__(name, scenario, run)
 
 
 class WindSource(InvestBlock):
