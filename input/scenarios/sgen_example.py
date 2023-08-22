@@ -137,7 +137,7 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('brs', 'cdc')])
 
 data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
-                    dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
+                    dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),  # scenario
                     1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
                     'AC', 'dem_example',  # dem
@@ -149,7 +149,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
         '1_mg_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
-                    dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
+                    dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),
                     # scenario
                     1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
@@ -163,8 +163,23 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
-        '2_mgev_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
-                      dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
+        '2_mg_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                    dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
+                         ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),
+                    # scenario
+                    'opt', 'opt', 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                    'AC', 'dem_example',  # dem
+                    'opt', 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                    'opt', 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                    'opt', 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                    'opt', 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                    'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                    3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+        '3_mgev_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource',
                            bev='VehicleCommoditySystem'),
                     # scenario
@@ -179,8 +194,8 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
-        '3_mgev_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
-                      dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
+        '4_mgev_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
                     # scenario
                     1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
@@ -194,39 +209,24 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
-        '4_mgev_brs_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
-                      dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
-                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem', brs='BatteryCommoditySystem'),
+        '5_mgev_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
+                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
                     # scenario
-                    1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                    'opt', 'opt', 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
                     'AC', 'dem_example',  # dem
-                    1.00E+05, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
-                    7.50E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
-                    5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
-                    3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
-                    1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                    'opt', 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                    'opt', 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                    'opt', 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                    'opt', 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                    'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
-                    3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
+                    3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
-        '5_mgev_brs_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
-                      dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
-                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem', brs='BatteryCommoditySystem'),
-                    # scenario
-                    1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
-                    'AC', 'dem_example',  # dem
-                    1.00E+05, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
-                    7.50E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
-                    5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
-                    3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
-                    1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
-                    3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
-                    3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
-        '6_mgev_brs_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
-                      dict(core='SystemCore', dem='FixedDemand', wind='WindSource', pv='PVSource',
-                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem', brs='BatteryCommoditySystem'),
+        '6_mgev_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
+                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
                     # scenario
                     1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
                     'AC', 'dem_example',  # dem
@@ -239,11 +239,56 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+        '7_mgev_brs_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
+                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
+                    # scenario
+                    1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                    'AC', 'dem_example',  # dem
+                    1.00E+05, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                    7.50E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                    5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                    3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                    1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                    3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+        '8_mgev_brs_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
+                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
+                    # scenario
+                    1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                    'AC', 'dem_example',  # dem
+                    1.00E+05, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                    7.50E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                    5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                    3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                    1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                    3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+        '9_mgev_brs_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                      dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
+                           ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
+                    # scenario
+                    1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                    'AC', 'dem_example',  # dem
+                    1.00E+05, 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                    7.50E+05, 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                    5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                    3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
+                    1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                    3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
         }
 
 df = pd.DataFrame.from_dict(data)
 df.index = index
-df.reset_index(inplace=True, names=['block', 'key']) # this saves the multiindex into a column to make the index unique for json
+df.reset_index(inplace=True, names=['block', 'key'])  # this saves the multiindex into a column to make the index unique for json
 
 file_path = os.path.join(os.getcwd(), 'example.json')
 scenarios = df.to_json(file_path, orient='records', lines=True)

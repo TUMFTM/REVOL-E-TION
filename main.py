@@ -59,7 +59,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         try:
             horizon = PredictionHorizon(horizon_index, scenario, run)
-        except IndexError as e:
+        except IndexError:
             scenario.exception = 'Input data does not cover full sim timespan'
             logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
                             f' - continuing on next scenario')
@@ -69,7 +69,8 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)
         else:
-            raise ValueError('Strategy unknown')  # todo better error handling
+            logging.error(f'Scenario {scenario.name}: energy management strategy unknown')
+            break  # todo better error handling
 
         if scenario.exception and run.save_results:
             scenario.save_results(run)
@@ -94,6 +95,10 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             if run.show_plots:
                 scenario.show_plots()
 
+    # make sure to clear up memory space
+    del(scenario)
+    del(horizon)
+
 ###############################################################################
 # Execution code
 ###############################################################################
@@ -112,6 +117,7 @@ if __name__ == '__main__':
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
             log_queue.put(None)
             log_thread.join()
+            # TODO improve error handling - scenarios that fail wait to the end and are RAM hogs
     else:
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run, None)  # no logger queue

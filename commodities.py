@@ -26,7 +26,6 @@ import numpy as np
 import pandas as pd
 
 import blocks
-import simulation as sim
 
 ###############################################################################
 # Simpy MultiStore Subclass Definitions
@@ -185,14 +184,23 @@ class VehicleRentalSystem(RentalSystem):
 
         # replace the rex system name read in from scenario json with the actual CommoditySystem object
         if cs.rex_cs:
-            if (isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem) &
-                    (sc.blocks[cs.rex_cs].filename == 'run_des')):
+            if not cs.rex_cs in sc.blocks:
+                message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
+                           f' \"{cs.name}\" in scenario \"{sc.name}\" does not exist')
+                sc.exception = message
+                logging.error(message)
+            elif not isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
+                message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
+                           f' \"{cs.name}\" in scenario \"{sc.name}\" is not a BatteryCommoditySystem')
+                sc.exception = message
+                logging.error(message)
+            elif not sc.blocks[cs.rex_cs].filename == 'run_des':
+                message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
+                           f' \"{cs.name}\" in scenario \"{sc.name}\" is not set to run DES itself')
+                sc.exception = message
+                logging.error(message)
+            else:  # everything is fine
                 cs.rex_cs = sc.blocks[cs.rex_cs]
-            else:
-                logging.error(f'Selected range extender system {cs.rex_cs.name} for VehicleCommoditySystem'
-                              f' {cs.name} is not a BatteryCommoditySystem'
-                              f' or its filename parameter is not \"run_des\"')
-                exit()  # todo better exit strategy not ending the entire run
 
         super().__init__(cs, sc)
 
@@ -288,7 +296,6 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['usecase_idx'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
         rex_processes['num_resources'] = rex_processes['num_rex']
-        rex_processes['num_resources'] = rex_processes['num_rex']
         rex_processes['energy_req'] = rex_processes['energy_rex']
         rex_processes['energy_req_pc'] = rex_processes['energy_rex'] / rex_processes['num_rex']
         rex_processes['soc_return'] = rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
@@ -311,6 +318,8 @@ class BatteryRentalSystem(RentalSystem):
         self.usecases = pd.read_json(self.usecase_file_path, orient='records', lines=True)
 
         super().__init__(cs, sc)
+
+        self.cs.rex_cs = None  # needs to be set for later check
 
     def draw_departure_sample(self, row):
         sample = -1  # kicking off the while loop
@@ -467,14 +476,14 @@ def execute_des(sc, save=False, path=None):
     sc.des_env = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    if sc.strategy == 'go':
-        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(10)[-10:])
+    if sc.strategy in ['go']:
+        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(500)[-500:])
     else:
         sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(sc.ph_nsteps)[-sc.ph_nsteps:])
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
-    for commodity_system in [system for system in sc.commodity_systems if system.filename == 'run_des']:
+    for commodity_system in [sys for sys in sc.commodity_systems.values() if sys.filename == 'run_des']:
         if isinstance(commodity_system, blocks.VehicleCommoditySystem):
             commodity_system.rs = VehicleRentalSystem(sc.des_env, sc, commodity_system)
         elif isinstance(commodity_system, blocks.BatteryCommoditySystem):
@@ -497,8 +506,8 @@ def execute_des(sc, save=False, path=None):
         rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
         rs.processes['time_reavail'] = steps2dt(rs.processes['step_reavail'], sc, absolute=True)
 
-    # add additional rex processes from VehicleRentalSystems to BatteryRentalSystems to complete process dataframe
-    for rs in [rs for rs in sc.rental_systems.values() if isinstance(rs, VehicleRentalSystem)]:
+    # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
+    for rs in [rs for rs in sc.rental_systems.values() if (rs.cs.rex_cs is not None)]:
         rs.transfer_rex_processes()
 
     # reframe logging results to resource-based view instead of process based (and save)
@@ -526,8 +535,10 @@ def get_month(element):
 def get_year(element):
     return element.year
 
-# Execution for scenario generation
+
+# Execution for example file generation
 if __name__ == '__main__':
+    import simulation as sim
     rn = sim.SimulationRun()
     sc = sim.Scenario('both',rn)
     for rs in sc.rental_systems.values():

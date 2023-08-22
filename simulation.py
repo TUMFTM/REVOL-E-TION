@@ -183,7 +183,7 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.results = self.results.set_index(['Block', 'Key'])
-        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.pkl')
+        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.json')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -206,12 +206,17 @@ class Scenario:
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
-        self.commodity_systems = [block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)]
+        self.commodity_systems = {block.name: block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)}
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([system.filename == 'run_des' for system in self.commodity_systems]):
+        if any([system.filename == 'run_des' for system in self.commodity_systems.values()]):
             commodities.execute_des(self, run.save_des_results, run.result_folder_path)
+
+        # set individual commodity system data for systems where DES has been run
+        for commodity_system in [sys for sys in self.commodity_systems.values() if sys.filename == 'run_des']:
+            for commodity in commodity_system.commodities.values():
+                commodity.data = commodity_system.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -231,18 +236,21 @@ class Scenario:
         for block in self.blocks.values():
             block.accumulate_results(self)
 
-        #  TODO find a metric for curtailed energy and calculate
+        # TODO find a metric for curtailed energy and calculate
+        # TODO implement renewable energy share evaluation
+        # TODO implement commodity usage/idle share
+        # TODO implement commodity v2g usage share
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
         except ZeroDivisionError or RuntimeWarning:
-            run.logger.warning("Efficiency calculation: division by zero")
+            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
 
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError or RuntimeWarning:
-            run.logger.warning("LCOE calculation: division by zero")
+            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
 
         lcoe_display = round(self.lcoe_dis * 1e5, 1)
         npc_display = round(self.totex_dis)
@@ -363,7 +371,7 @@ class Scenario:
         :return: none
         """
 
-        result_types = (int, float, str)
+        result_types = (int, float, str, bool)
         result_blocks = {'run': run, 'scenario': self}
         result_blocks.update(self.blocks)
 
@@ -375,8 +383,8 @@ class Scenario:
                 else:
                     self.results.loc[(name, key), self.name] = value
 
-        with open(self.result_file_path, 'wb') as file:
-            pickle.dump(self.results, file)
+        self.results.reset_index(inplace=True, names=['block', 'key'])
+        self.results.to_json(self.result_file_path, orient='records', lines=True)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -472,18 +480,17 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.pkl')]
+        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.json')]
         joined_results = pd.DataFrame()
 
         for file in files:
             file_path = os.path.join(self.result_folder_path, file)
-            with open(file_path, 'rb') as pickle_file:
-                file_results = pickle.load(pickle_file)
+            file_results = pd.read_json(file_path, orient='records', lines=True)
+            file_results.set_index(['block', 'key'], drop=True, inplace=True)
             # add all scenario results horizontally to the dataframe
             joined_results = pd.concat([joined_results, file_results], axis=1)
             os.remove(file_path)
 
-        if self.save_results:
             # saving the multiindex into a column to make the index unique for json
             joined_results.reset_index(inplace=True, names=['block', 'key'])
             joined_results.to_json(self.result_file_path, orient='records', lines=True)
