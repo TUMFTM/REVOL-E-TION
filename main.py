@@ -78,6 +78,9 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         else:
             horizon.get_results(scenario, run)
 
+        # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
+        del horizon
+
     scenario.end_timing(run)
 
     if not scenario.exception:
@@ -96,8 +99,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
                 scenario.show_plots()
 
     # make sure to clear up memory space
-    del(scenario)
-    del(horizon)
+    del scenario
 
 ###############################################################################
 # Execution code
@@ -117,7 +119,7 @@ if __name__ == '__main__':
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
             log_queue.put(None)
             log_thread.join()
-            # TODO improve error handling - scenarios that fail wait to the end and are RAM hogs
+            # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
     else:
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run, None)  # no logger queue

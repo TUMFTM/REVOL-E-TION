@@ -53,7 +53,8 @@ class PredictionHorizon:
 
         self.index = index
 
-        run.logger.info(f'Horizon {index + 1} of {scenario.nhorizons} in scenario \"{scenario.name}\" initialized')
+        run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
+                        f' Building linear optimization model')
 
         # Time and data slicing --------------------------------
         self.starttime = scenario.starttime + (index * scenario.ch_len)  # calc both start times
@@ -81,11 +82,15 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
+        logging.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
+
         self.es = solph.EnergySystem(timeindex=self.ph_dti,
                                      infer_last_interval=True)  # initialize energy system model instance
 
         for component in scenario.components:
             self.es.add(component)  # add components to this horizon's energy system
+
+        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
         if run.debugmode:  # Build the mathematical linear optimization model with pyomo
             self.model = solph.Model(self.es, debug=True)
@@ -98,13 +103,20 @@ class PredictionHorizon:
             elif scenario.strategy == 'rh':
                 run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
+        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
+
     def get_results(self, scenario, run):
         """
         Get result data slice for current CH from results and save in result dataframes for later analysis
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
+        run.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
+
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
+
+        # free up RAM
+        del self.model
 
         if run.print_results:
             self.meta_results = solph.processing.meta_results(self.model)
@@ -119,7 +131,8 @@ class PredictionHorizon:
             block.get_ch_results(self, scenario)
 
     def run_optimization(self, scenario, run):
-        run.logger.info(f'Optimization for horizon {self.index + 1} in scenario \"{scenario.name}\" initialized')
+        run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
+                        f' Model built, starting optimization')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
         except UserWarning as exc:
@@ -230,6 +243,8 @@ class Scenario:
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.lcoe = self.lcoe_dis = None
+
+        run.logger.debug(f'Scenario {self.name} initialization completed')
 
     def accumulate_results(self, run):
 
@@ -468,8 +483,12 @@ class SimulationRun:
                              f'simulating {self.scenario_num} scenario(s)'
                              f' in parallel mode with {self.process_num} process(es)')
         else:
-            self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
-            log_stream_handler.setLevel(logging.INFO)
+            if self.debugmode:
+                self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+                log_stream_handler.setLevel(logging.DEBUG)
+            else:
+                self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
+                log_stream_handler.setLevel(logging.INFO)
             self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
 
     def end_timing(self):
