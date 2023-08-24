@@ -638,7 +638,7 @@ class PVSource(InvestBlock):
         super().__init__(name, scenario, run)
 
         self.ph_data = self.input_file_name = self.input_file_path = None  # placeholders, are filled later
-        self.api_startyear = self.api_endyear = self.latitude = self.longitude = None
+        self.api_startyear = self.api_endyear = None
         self.timezone = self.data = self.meta = None
 
         self.tf = timezonefinder.TimezoneFinder()

@@ -515,10 +515,10 @@ class SimulationRun:
             joined_results = pd.concat([joined_results, file_results], axis=1)
             os.remove(file_path)
 
-            # saving the multiindex into a column to make the index unique for json
-            joined_results.reset_index(inplace=True, names=['block', 'key'])
-            joined_results.to_json(self.result_file_path, orient='records', lines=True)
-            self.logger.info("Technoeconomic output file created")
+        # saving the multiindex into a column to make the index unique for json
+        joined_results.reset_index(inplace=True, names=['block', 'key'])
+        joined_results.to_json(self.result_file_path, orient='records', lines=True)
+        self.logger.info("Technoeconomic output file created")
 
 ###############################################################################
 # global functions
