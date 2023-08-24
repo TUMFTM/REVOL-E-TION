@@ -1,11 +1,10 @@
 .idea/*
+results_explorer.ipynb
 results/*
 !results/dummy.txt
 input/scenarios/*
 !input/scenarios/example.json
 !input/scenarios/sgen_example.py
-!input/scenarios/des_test.json
-!input/scenarios/sgen_des_test.py
 input/bev/*
 !input/bev/bev_example.csv
 input/brs/*

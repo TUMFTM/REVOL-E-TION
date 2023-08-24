@@ -412,6 +412,9 @@ class SimulationRun:
         self.name = 'run'
         self.cwd = os.getcwd()
 
+        # make sure that errors are logged to logfile
+        sys.excepthook = self.handle_exception
+
         if len(sys.argv) == 1:  # if no arguments have been passed
             self.scenarios_file_path, self.settings_file_path, self.result_path = input_gui(self.cwd)
         elif len(sys.argv) == 2:  # only one argument, default result storage
@@ -501,6 +504,13 @@ class SimulationRun:
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
+
+    def handle_exception(self,exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        self.logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        exit()
 
     def join_results(self):
 
