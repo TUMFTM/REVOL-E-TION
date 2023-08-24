@@ -225,11 +225,10 @@ class CommoditySystem(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
-
         if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
             self.data = None
         else:  # use pregenerated file
+            self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
             self.data = pd.read_csv(self.input_file_path,
                                     header=[0, 1],
                                     index_col=0,
@@ -842,8 +841,8 @@ class StationaryEnergyStorage(InvestBlock):
     def accumulate_results(self, scenario):
 
         self.accumulate_invest_results(scenario)
-        self.accumulate_energy_results_sink(
-            scenario)  # StationaryEnergyStorage is a sink as positive power/energy exits the core
+        # StationaryEnergyStorage is a sink as positive power/energy exits the core
+        self.accumulate_energy_results_sink(scenario)
         # TODO is storage really a sink component and should be added to delivered energy?
 
     def get_ch_results(self, horizon, scenario):

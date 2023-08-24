@@ -411,6 +411,7 @@ class SimulationRun:
 
         self.name = 'run'
         self.cwd = os.getcwd()
+
         if len(sys.argv) == 1:  # if no arguments have been passed
             self.scenarios_file_path, self.settings_file_path, self.result_path = input_gui(self.cwd)
         elif len(sys.argv) == 2:  # only one argument, default result storage
@@ -432,7 +433,6 @@ class SimulationRun:
         self.scenario_data = self.scenario_data.apply(json_parse_bool, axis=1)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
-        self.process_num = min(self.scenario_num, os.cpu_count())
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
@@ -445,7 +445,9 @@ class SimulationRun:
         # check if the settings dict contains all necessary items
         if not all(item in settings.keys() for item in ["solver",
                                                         "parallel",
+                                                        "max_process_num",
                                                         "save_results",
+                                                        "save_des_results",
                                                         "print_results",
                                                         "save_plots",
                                                         "show_plots",
@@ -456,6 +458,9 @@ class SimulationRun:
 
         for key, value in settings.items():  # TODO convert True/False strings to bool
             setattr(self, key, value)  # this sets all the parameters defined in the json file
+
+        self.max_process_num = int(self.max_process_num)
+        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
         self.input_data_path = os.path.join(self.cwd, 'input')
         self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')

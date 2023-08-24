@@ -1,5 +1,6 @@
 { "solver":         "gurobi",
   "parallel":	    "True",
+  "max_process_num": "6",
   "save_results": 	"True",
   "save_des_results": "True",
   "print_results":  "False",
