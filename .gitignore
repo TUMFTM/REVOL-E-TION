@@ -1,10 +1,16 @@
 .idea/*
+results_explorer.ipynb
 results/*
+!results/dummy.txt
 input/scenarios/*
 !input/scenarios/example.json
 !input/scenarios/sgen_example.py
 input/bev/*
 !input/bev/bev_example.csv
+input/brs/*
+!input/brs/brs_example.csv
+!input/brs/brs_usecases.json
+!input/brs/use_case_list_gen.ipynb
 input/dem/*
 !input/dem/dem_example.csv
 input/pv/*

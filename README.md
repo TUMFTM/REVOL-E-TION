@@ -27,20 +27,70 @@ representation, generates a pyomo model and hands it to a solver. Results are su
 
 ![System diagram](./images/system_diagram.png)
 
-#### Definitions
-| Term      | Description                                                                                                                                                                                                                                                                |
-|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Run       | A run is defined by a single Microsoft Excel file, containing one sheet with run-wide information ("global_settings") such as solver and parallel mode as well as one sheet per scenario to be executed with actual energy system parameters and links to timeseries files |
-| Scenario  | A scenario is defined by a single Excel worksheet and some timeseries inputs. It models an energy system, that is then sized and dispatched using the sim_os selected                                                                                                      |
-| Horizon   | A scenario can be dispatched in multiple operating strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, each                                                                                                            |
-| Block     | A block is a set of components representing a real-world system (e.g. a PV array in combination with its controller and converter). These can be toggled on or off, except for the core block containing the AC and DC buses as well as the converter(s) inbetween them.   |
-| Component | A component is an oemof building block that is either a source, a sink, a bus, a transformer or a storage.                                                                                                                                                                 |
+#### General Terms & Definitions
+| Term                   | Description                                                                                                                                                                                                                                                       |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Run                    | A run is defined by a single Microsoft Excel file, containing one sheet with run-wide information ("global_settings") such as solver and parallel mode as well as one sheet per scenario to be executed with actual energy system parameters and links to timeseries files |
+| Scenario               | A scenario is defined by a single Excel worksheet and some timeseries inputs. It models an energy system, that is then sized and dispatched using the sim_os selected                                                                                             |
+| Horizon                | A scenario can be dispatched in multiple operating strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, each                                                                                                   |
+| Block                  | A block is a set of components representing a real-world system (e.g. a PV array in combination with its controller and converter). These can be toggled on or off, except for the core block containing the AC and DC buses as well as the converter(s) inbetween them. |
+| Component              | A component is an oemof building block that is either a source, a sink, a bus, a transformer or a storage.                                                                                                                                                        |
+| InvestBlock            ||
+| SystemCore             ||
+| FixedDemand            ||
+| PVSource               ||
+| WindSource             ||
+| ControllableSource     ||
+| VehicleCommoditySystem ||
+| BatteryCommoditySystem ||
+| RentalSystem           ||
+| RentalProcess          ||
 
 
 #### Input data
-The toolset requires multiply types of input data, more specifically parameters and timeseries data. The former is 
-directly defined in a Microsoft Excel file serving as the main input, while the latter are referenced from the Excel 
-file by name and have to be located in the appropriate folder within /inputs.
+The toolset requires multiple types of input data, more specifically settings, parameters and timeseries data. The
+former are defined in a short json file under /input/settings and define general simulation and execution settings for
+the Run. The Scenarios to be executed and their parameters are defined in a second json file in /input/scenarios,
+an example of which is distributed with the toolset including its generator script, while the latter are
+referenced in the scenarios json file by stem name (without extension) and have to be located in the appropriate folder
+within /inputs. 
+
+The scalar parameters used are named with the block they belong to, followed by the parameter's name or abbreviation.
+The following abbreviations and parameter names are used frequently:
+
+| Name / Abbreviation              | Description                                                                                                                                                                                                                                                                                         |
+|----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| strategy                         | Operational Strategy or Energy Management Algorithm. Determines whether the optimization problem is solved in one shot (global optimum - "go") or in multiple segments (rolling horizon- "rh"). In theory, other approaches such as rule-based or artificial intelligence strategies are thinkable. |
+| ph                               ||
+| ch                               ||
+| wacc                             ||
+| size                             ||
+| system                           ||
+| filename                         ||
+| capex_spec                       ||
+| mntex_spec                       ||
+| opex_spec                        ||
+| ls                               ||
+| cdc                              ||
+| eff                              ||
+| chg                              ||
+| dis                              ||
+| crate                            ||
+| sdr                              ||
+| rex (CommoditySystem)            ||
+| int_lvl (CommoditySystem)        ||
+| num (CommoditySystem)            ||
+| patience (CommoditySystem)       ||
+| soc_min_return (CommoditySystem) ||
+| soc_dep (CommoditySystem)        ||
+| sys_chg_soe (CommoditySystem)    ||
+| sys_dis_soe (CommoditySystem)    ||
+
+The required timeseries must be provided as csv files in the following formats:
+
+- FixedDemand blocks: A csv file with one or two columns, one of which must be labeled "Power" and contain values in W.
+	If a second is contained, it must be labeled "Timestamp" and contain datetime values in a pandas-readable format
+- PVSource block: Depending on the input type selected in the json file  
 - Mobile commodity system data: csv file containing columns "X_misoc", "X_consumption" and "X_atbase" with X being the name of the commodity.
 
 #### Model output
