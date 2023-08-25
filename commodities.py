@@ -282,6 +282,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
+        # todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
     def transfer_rex_processes(self):
         """

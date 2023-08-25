@@ -251,10 +251,14 @@ class Scenario:
         for block in self.blocks.values():
             block.accumulate_results(self)
 
+        # optional metrics
         # TODO find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
         # TODO implement commodity usage/idle share
         # TODO implement commodity v2g usage share
+        # TODO implement energy storage usage share
+        # TODO implement SAIDI (Average interruption time)
+        # TODO implement SAIFI (Interruption frequency per customer per year)
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
@@ -272,6 +276,7 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
 
     def create_block_objects(self, class_dict, run):
+        # todo implement anti-infeasibility controllable source? (very high soe, no sce, no sme)
         objects = {}
         for name, class_name in class_dict.items():
             class_obj = getattr(blocks, class_name, None)
