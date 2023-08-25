@@ -719,7 +719,8 @@ class PVSource(InvestBlock):
                   (k6 * (t ** 2))
         eff_rel = eff_rel.fillna(0)
 
-        self.data['P'] = eff_rel * self.data['GtiFixedTilt']  # Power of a 1kWp array
+        # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
+        self.data['P'] = np.maximum(0, eff_rel * self.data['GtiFixedTilt'])
 
     def get_ch_results(self, horizon, scenario):
 
@@ -748,6 +749,8 @@ class PVSource(InvestBlock):
                                                                      optimalangles=True,
                                                                      map_variables=True)
 
+            # PVGIS gives time slots as XX:06 - round to full hour
+            self.data.index = self.data.index.round('H')
         else:
             self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.filename}.csv')
 
@@ -756,7 +759,9 @@ class PVSource(InvestBlock):
                                                                                     map_variables=True)
                 self.latitude = self.meta['latitude']
                 self.longitude = self.meta['longitude']
-            elif self.data_source == 'Solcast file':  # data input from fixed Solcast csv file, no lat/lon contained
+                # PVGIS gives time slots as XX:06 - round to full hour
+                self.data.index = self.data.index.round('H')
+            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file, no lat/lon contained
                 self.data = pd.read_csv(self.input_file_path)
                 self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
                 self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
@@ -773,8 +778,6 @@ class PVSource(InvestBlock):
         self.data = self.data.resample(scenario.timestep, axis=0).mean().ffill().bfill()
         # convert to local time and remove timezone-awareness (model is only in one timezone)
         self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
-        # PVGIS gives time slots as XX:06 - round to full hour
-        self.data.index = self.data.index.round('H')
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['p_spec'] = self.data['P'] / 1e3
 
