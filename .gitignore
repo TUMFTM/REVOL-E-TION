@@ -1,5 +1,5 @@
 .idea/*
-results_explorer.ipynb
+result_explorer.ipynb
 results/*
 !results/dummy.txt
 input/scenarios/*

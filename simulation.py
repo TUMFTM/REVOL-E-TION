@@ -23,7 +23,6 @@ import logging
 import logging.handlers
 import math
 import os
-import pickle
 import pprint
 import sys
 import time
@@ -252,7 +251,7 @@ class Scenario:
             block.accumulate_results(self)
 
         # optional metrics
-        # TODO find a metric for curtailed energy and calculate
+        # todo find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
         # TODO implement commodity usage/idle share
         # TODO implement commodity v2g usage share

@@ -89,7 +89,7 @@ class RentalSystem:
         self.rng = np.random.default_rng()
 
         # buffer time is added onto minimum recharge time to ensure dispatch feasibility and give room for energy mgmt
-        self.time_buffer = pd.Timedelta(hours=2)
+        self.time_buffer = pd.Timedelta(hours=0)
 
         # draw total demand for every simulated ay from lognormal distribution
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
@@ -143,6 +143,27 @@ class RentalSystem:
         self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
         self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
+
+    def calc_performance_metrics(self):
+
+        self.use_rate = dict()
+        steps_total = self.data.shape[0]
+        # make an individual row for each used commodity in a process
+        exploded_processes = self.processes.explode('primary_commodity')
+
+        # calculate percentage of DES (not sim, the latter is shorter) time
+        # occupied by active, idle, recharge and buffer times
+        for commodity in list(self.cs.commodities.keys()):
+            processes = exploded_processes.loc[exploded_processes['primary_commodity'] == commodity, :]
+            steps_blocked = processes['steps_blocked'].sum() + processes['steps_rental'].sum()
+            self.use_rate[commodity] = steps_blocked / steps_total
+        self.cs.use_rate = np.mean(list(self.use_rate.values()))
+
+        # calculate overall percentage of failed trips
+        n_sucess = self.processes.loc[self.processes['status'] == 'sucess', 'status'].shape[0]
+        n_total = self.processes.shape[0]
+        self.fail_rate = self.cs.fail_rate = 1 - (n_sucess / n_total)
+        pass
 
     def convert_process_log(self):
         """
@@ -282,7 +303,6 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
-        # todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
     def transfer_rex_processes(self):
         """
@@ -458,10 +478,11 @@ class RentalProcess:
 
 def dt2steps(series, sc):
     if pd.api.types.is_datetime64_any_dtype(series):
-        out = np.round((series - sc.starttime) / sc.timestep_td).astype(int)
+        out = np.ceil((series - sc.starttime) / sc.timestep_td).astype(int)
     elif pd.api.types.is_timedelta64_dtype(series):
-        out = np.round(series / sc.timestep_td).astype(int)
+        out = np.ceil(series / sc.timestep_td).astype(int)
     return out
+# todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
 
 def steps2dt(series, sc, absolute=False):
@@ -514,10 +535,9 @@ def execute_des(sc, save=False, path=None):
     # reframe logging results to resource-based view instead of process based (and save)
     for rs in sc.rental_systems.values():
         rs.convert_process_log()
+        rs.calc_performance_metrics()
         if save:
             rs.save_data(path)
-
-    pass
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))

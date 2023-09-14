@@ -102,10 +102,9 @@ class InvestBlock:
     def accumulate_invest_results(self, scenario):
 
         if hasattr(self, 'flow_sum'):  # for all bidirectional components
-            self.e_sim = self.flow_sum.sum() * scenario.timestep_hours  # flow values are powers --> Wh
-        else:
-            self.e_sim = self.flow.sum() * scenario.timestep_hours
+            self.e_sum_sim = self.flow_sum.sum() * scenario.timestep_hours  # flow values are powers --> Wh
 
+        self.e_sim = self.flow.sum() * scenario.timestep_hours
         self.e_yrl = self.e_sim / scenario.sim_yr_rat
         self.e_prj = self.e_yrl * scenario.prj_duration_yrs
         self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
@@ -154,7 +153,7 @@ class InvestBlock:
         scenario.mntex_dis += self.mntex_dis
         scenario.mntex_ann += self.mntex_ann
 
-        self.opex_sim = self.e_sim * self.opex_spec
+        self.opex_sim = self.e_sum_sim * self.opex_spec
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
         self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
         self.opex_dis = eco.acc_discount(self.opex_yrl,
