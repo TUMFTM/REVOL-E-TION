@@ -153,7 +153,10 @@ class InvestBlock:
         scenario.mntex_dis += self.mntex_dis
         scenario.mntex_ann += self.mntex_ann
 
-        self.opex_sim = self.e_sum_sim * self.opex_spec
+        if hasattr(self, 'flow_sum'):  # for all bidirectional components
+            self.opex_sim = self.e_sum_sim * self.opex_spec
+        else:
+            self.opex_sim = self.e_sim * self.opex_spec
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
         self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
         self.opex_dis = eco.acc_discount(self.opex_yrl,
