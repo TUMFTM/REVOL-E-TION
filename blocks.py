@@ -579,6 +579,8 @@ class MobileCommodity:
         """Converting availability and consumption data of commodities into a power timeseries for uncoordinated
          (i.e. unoptimized and starting at full power after return) charging of commodity"""
 
+        # todo adapt to new minsoc time definition
+
         uc_power = []
         soc = [self.init_soc]
 

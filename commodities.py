@@ -182,9 +182,9 @@ class RentalSystem:
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')] = False
+                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')].iloc[:-1] = False
                 self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
-                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
+                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
 
         self.cs.data = self.data
 
