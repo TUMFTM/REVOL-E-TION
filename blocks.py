@@ -240,27 +240,27 @@ class InvestBlock:
 
     def calc_energy_results_source(self, scenario):
         
-        self.e_sim_out = self.flow.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
-        self.e_yrl_out = self.e_sim_out / scenario.sim_yr_rat
-        self.e_prj_out = self.e_yrl_out * scenario.prj_duration_yrs
-        self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
+        self.e_sim = self.flow.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_yrl = self.e_sim / scenario.sim_yr_rat
+        self.e_prj = self.e_yrl * scenario.prj_duration_yrs
+        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        scenario.e_sim_pro += self.e_sim_out
-        scenario.e_yrl_pro += self.e_yrl_out
-        scenario.e_prj_pro += self.e_prj_out
-        scenario.e_dis_pro += self.e_dis_out
+        scenario.e_sim_pro += self.e_sim
+        scenario.e_yrl_pro += self.e_yrl
+        scenario.e_prj_pro += self.e_prj
+        scenario.e_dis_pro += self.e_dis
 
     def calc_energy_results_sink(self, scenario):
 
-        self.e_sim_in = self.flow.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
-        self.e_yrl_in = self.e_sim_in / scenario.sim_yr_rat
-        self.e_prj_in = self.e_yrl_in * scenario.prj_duration_yrs
-        self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
+        self.e_sim = self.flow.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_yrl = self.e_sim / scenario.sim_yr_rat
+        self.e_prj = self.e_yrl * scenario.prj_duration_yrs
+        self.e_dis = eco.acc_discount(self.e_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
-        scenario.e_sim_del += self.e_sim_in
-        scenario.e_yrl_del += self.e_yrl_in
-        scenario.e_prj_del += self.e_prj_in
-        scenario.e_dis_del += self.e_dis_in
+        scenario.e_sim_del += self.e_sim
+        scenario.e_yrl_del += self.e_yrl
+        scenario.e_prj_del += self.e_prj
+        scenario.e_dis_del += self.e_dis
 
 
     def get_opt_size(self, horizon):
