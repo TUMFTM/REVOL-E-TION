@@ -188,14 +188,14 @@ class RentalSystem:
 
         self.cs.data = self.data
 
-    def save_data(self, path):
+    def save_data(self, path, sc):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
         if not os.path.isfile(path):
-            path = os.path.join(path, f'{self.cs.name}.csv')
+            path = os.path.join(path, f'{sc.name}_{self.cs.name}.csv')
         self.data.to_csv(path)
 
 
@@ -498,10 +498,11 @@ def execute_des(sc, save=False, path=None):
     sc.des_env = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    if sc.strategy in ['go']:
-        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(500)[-500:])
-    else:
-        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(sc.ph_nsteps)[-sc.ph_nsteps:])
+    sc.des_dti = sc.sim_dti.union(
+        pd.date_range(start=sc.sim_dti[-1] + sc.sim_dti.freq,
+                      periods=200,
+                      freq=sc.sim_dti.freq))
+
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
@@ -537,7 +538,7 @@ def execute_des(sc, save=False, path=None):
         rs.convert_process_log()
         rs.calc_performance_metrics()
         if save:
-            rs.save_data(path)
+            rs.save_data(path, sc)
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
@@ -564,5 +565,5 @@ if __name__ == '__main__':
     sc = sim.Scenario('both',rn)
     for rs in sc.rental_systems.values():
         folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
-        rs.save_data(folderpath)
+        rs.save_data(folderpath, sc)
         print(f'{folderpath} created')

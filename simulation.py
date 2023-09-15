@@ -64,6 +64,7 @@ class PredictionHorizon:
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
 
+        # last steps need to be deleted as time index relates to beginning of timestep
         self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep).delete(-1)
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep).delete(-1)
 
@@ -91,10 +92,7 @@ class PredictionHorizon:
 
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
-        if run.debugmode:  # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=True)
-        else:
-            self.model = solph.Model(self.es, debug=False)
+        self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
 
         if run.dump_model:
             if scenario.strategy == 'go':

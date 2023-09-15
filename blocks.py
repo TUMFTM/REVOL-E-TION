@@ -216,6 +216,8 @@ class InvestBlock:
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
+        self.flow = self.flow_in - self.flow_out  # for plotting
+
         if self.e_sim_in > self.e_sim_out:
             self.e_sim_del = self.e_sim_in - self.e_sim_out
             self.e_yrl_del = self.e_sim_del / scenario.sim_yr_rat
@@ -354,11 +356,11 @@ class CommoditySystem(InvestBlock):
 
     def calc_results(self, scenario):
 
-        self.calc_energy_results_bidi(scenario)  # bidirectional block
-        self.calc_eco_results(scenario)
-
         for commodity in self.commodities.values():
             commodity.calc_results(scenario)
+
+        self.calc_energy_results_bidi(scenario)  # bidirectional block
+        self.calc_eco_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
 
@@ -414,11 +416,10 @@ class ControllableSource(InvestBlock):
                                                )
         scenario.components.append(self.src)
 
-    def accumulate_results(self, scenario):
+    def calc_results(self, scenario):
 
-        self.calculate_energy_ud(scenario)  # unidirectional block  # unidirectional block
-        self.accumulate_invest_results(scenario)
-        self.accumulate_energy_results_source(scenario)
+        self.calc_energy_results_source(scenario)  # unidirectional block
+        self.calc_eco_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
 
@@ -633,6 +634,8 @@ class MobileCommodity:
         self.e_prj_out = self.e_yrl_out * scenario.prj_duration_yrs
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
+
+        self.flow = self.flow_in - self.flow_out  # for plotting
 
     def get_ch_results(self, horizon, scenario):
 
