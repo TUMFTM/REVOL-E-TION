@@ -245,10 +245,10 @@ class InvestBlock:
         self.e_prj_out = self.e_yrl_out * scenario.prj_duration_yrs
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
-        scenario.e_sim_pro += self.e_sim
-        scenario.e_yrl_pro += self.e_yrl
-        scenario.e_prj_pro += self.e_prj
-        scenario.e_dis_pro += self.e_dis
+        scenario.e_sim_pro += self.e_sim_out
+        scenario.e_yrl_pro += self.e_yrl_out
+        scenario.e_prj_pro += self.e_prj_out
+        scenario.e_dis_pro += self.e_dis_out
 
     def calc_energy_results_sink(self, scenario):
 
