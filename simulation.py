@@ -114,12 +114,12 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        # free up RAM
-        del self.model
-
         if run.print_results:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
+
+        # free up RAM
+        del self.model
 
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
@@ -248,7 +248,7 @@ class Scenario:
     def accumulate_results(self, run):
 
         for block in self.blocks.values():
-            block.accumulate_results(self)
+            block.calc_results(self)
 
         # optional metrics
         # todo find a metric for curtailed energy and calculate
