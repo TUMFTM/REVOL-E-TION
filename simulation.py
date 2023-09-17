@@ -38,7 +38,7 @@ from pathlib import Path
 from plotly.subplots import make_subplots
 
 import blocks
-import commodities
+import commodity_des as des
 import tum_colors as col
 
 ###############################################################################
@@ -221,7 +221,7 @@ class Scenario:
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
-            commodities.execute_des(self, run.save_des_results, run.result_folder_path)
+            des.execute_des(self, run.save_des_results, run.result_folder_path)
 
         for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
             for commodity in cs.commodities.values():

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-commodities.py
+commodity_des.py
 
 --- Description ---
 This file contains the Discrete Event Simulation to generate behavioral data of mobile commodity systems in the
