@@ -220,13 +220,19 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([system.filename == 'run_des' for system in self.commodity_systems.values()]):
+        if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
             commodities.execute_des(self, run.save_des_results, run.result_folder_path)
 
+        for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
+            for commodity in cs.commodities.values():
+                commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+
+        for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
+            for commodity in cs.commodities.values():
+                commodity.calc_uc_power(self)
+
         # set individual commodity system data for systems where DES has been run
-        for commodity_system in [sys for sys in self.commodity_systems.values() if sys.filename == 'run_des']:
-            for commodity in commodity_system.commodities.values():
-                commodity.data = commodity_system.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -272,7 +278,7 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
 
     def create_block_objects(self, class_dict, run):
-        # todo implement anti-infeasibility controllable source? (very high soe, no sce, no sme)
+        # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
         objects = {}
         for name, class_name in class_dict.items():
             class_obj = getattr(blocks, class_name, None)

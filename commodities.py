@@ -184,6 +184,7 @@ class RentalSystem:
             for commodity in process['primary_commodity']:
                 self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')].iloc[:-1] = False
                 self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
+                # minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
 
         self.cs.data = self.data
@@ -297,7 +298,7 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_avail'] = self.cs.size_pc * self.cs.soc_dep
             self.processes['rex_request'] = False
 
-        # set maximum energy requirement to max available energy
+        # set maximum energy requirement to max available energy - equivalent to charging externally
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
         self.processes['energy_req_pc'] = self.processes['energy_req']  #column is needed in conversion to time log
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']

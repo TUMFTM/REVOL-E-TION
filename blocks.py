@@ -588,9 +588,8 @@ class MobileCommodity:
         # actual values are set later in update_input_components for each prediction horizon
         scenario.components.append(self.snk)
 
-        if self.parent.int_lvl in self.parent.apriori_lvls:  # dispatch is known a priori --> simple sink is sufficient
-            self.calc_uc_power(scenario)
-        else:  # Storage is only added if MCs have flexibility potential
+        if self.parent.int_lvl not in self.parent.apriori_lvls:
+        # Storage is only added if MCs have flexibility potential (i.e. dispatch is not known a priori)
             if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
                 self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                            inputs={self.bus: solph.Flow(
@@ -661,8 +660,6 @@ class MobileCommodity:
         """Converting availability and consumption data of commodities into a power timeseries for uncoordinated
          (i.e. unoptimized and starting at full power after return) charging of commodity"""
 
-        # todo adapt to new minsoc time definition
-
         uc_power = []
         soc = [self.init_soc]
 
@@ -694,7 +691,7 @@ class MobileCommodity:
 
         self.data['uc_power'] = uc_power
         self.data['soc'] = soc[:-1]  # TODO check whether SOC indexing fits optimization output
-        pass
+
 
     def update_input_components(self):
 
