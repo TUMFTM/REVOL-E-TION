@@ -522,20 +522,24 @@ class SimulationRun:
     def join_results(self):
 
         files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.json')]
-        joined_results = pd.DataFrame()
+
+        scenario_frames = []
 
         for file in files:
             file_path = os.path.join(self.result_folder_path, file)
             file_results = pd.read_json(file_path, orient='records', lines=True)
             file_results.set_index(['block', 'key'], drop=True, inplace=True)
-            # add all scenario results horizontally to the dataframe
-            joined_results = pd.concat([joined_results, file_results], axis=1)
-            os.remove(file_path)
+            scenario_frames.append(file_results)
 
-        # saving the multiindex into a column to make the index unique for json
-        joined_results.reset_index(inplace=True, names=['block', 'key'])
+        joined_results = pd.concat(scenario_frames, axis=1)
+        joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in json
         joined_results.to_json(self.result_file_path, orient='records', lines=True)
         self.logger.info("Technoeconomic output file created")
+
+        # deletion loop at the end to avoid premature execution of results in case of error
+        for file in files:
+            file_path = os.path.join(self.result_folder_path, file)
+            os.remove(file_path)
 
 ###############################################################################
 # global functions
