@@ -690,6 +690,7 @@ class MobileCommodity:
             soc.append(soc[-1] + soc_delta)
 
         self.data['uc_power'] = uc_power
+        self.data['uc_energy'] = self.data['uc_power'] * scenario.timestep_hours
         self.data['soc'] = soc[:-1]  # TODO check whether SOC indexing fits optimization output
 
 
@@ -697,7 +698,8 @@ class MobileCommodity:
 
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define consumption data for sink (as per uc power calculation)
-            self.snk.inputs[self.bus].fix = self.ph_data['uc_power']
+            # for sink "fix" inputs, values are energies instead of powers!
+            self.snk.inputs[self.bus].fix = self.ph_data['uc_energy']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)

@@ -231,9 +231,6 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.calc_uc_power(self)
 
-        # set individual commodity system data for systems where DES has been run
-
-
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
 
