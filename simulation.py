@@ -23,7 +23,6 @@ import logging
 import logging.handlers
 import math
 import os
-import pickle
 import pprint
 import sys
 import time
@@ -39,7 +38,7 @@ from pathlib import Path
 from plotly.subplots import make_subplots
 
 import blocks
-import commodities
+import commodity_des as des
 import tum_colors as col
 
 ###############################################################################
@@ -65,6 +64,7 @@ class PredictionHorizon:
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
 
+        # last steps need to be deleted as time index relates to beginning of timestep
         self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep).delete(-1)
         self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep).delete(-1)
 
@@ -92,10 +92,7 @@ class PredictionHorizon:
 
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
-        if run.debugmode:  # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=True)
-        else:
-            self.model = solph.Model(self.es, debug=False)
+        self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
 
         if run.dump_model:
             if scenario.strategy == 'go':
@@ -115,12 +112,12 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        # free up RAM
-        del self.model
-
         if run.print_results:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
+
+        # free up RAM
+        del self.model
 
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
@@ -223,13 +220,16 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([system.filename == 'run_des' for system in self.commodity_systems.values()]):
-            commodities.execute_des(self, run.save_des_results, run.result_folder_path)
+        if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
+            des.execute_des(self, run.save_des_results, run.result_folder_path)
 
-        # set individual commodity system data for systems where DES has been run
-        for commodity_system in [sys for sys in self.commodity_systems.values() if sys.filename == 'run_des']:
-            for commodity in commodity_system.commodities.values():
-                commodity.data = commodity_system.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+        for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
+            for commodity in cs.commodities.values():
+                commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+
+        for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
+            for commodity in cs.commodities.values():
+                commodity.calc_uc_power(self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -249,12 +249,11 @@ class Scenario:
     def accumulate_results(self, run):
 
         for block in self.blocks.values():
-            block.accumulate_results(self)
+            block.calc_results(self)
 
         # optional metrics
-        # TODO find a metric for curtailed energy and calculate
+        # todo find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
-        # TODO implement commodity usage/idle share
         # TODO implement commodity v2g usage share
         # TODO implement energy storage usage share
         # TODO implement SAIDI (Average interruption time)
@@ -276,7 +275,7 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
 
     def create_block_objects(self, class_dict, run):
-        # todo implement anti-infeasibility controllable source? (very high soe, no sce, no sme)
+        # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
         objects = {}
         for name, class_name in class_dict.items():
             class_obj = getattr(blocks, class_name, None)
@@ -520,20 +519,24 @@ class SimulationRun:
     def join_results(self):
 
         files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.json')]
-        joined_results = pd.DataFrame()
+
+        scenario_frames = []
 
         for file in files:
             file_path = os.path.join(self.result_folder_path, file)
             file_results = pd.read_json(file_path, orient='records', lines=True)
             file_results.set_index(['block', 'key'], drop=True, inplace=True)
-            # add all scenario results horizontally to the dataframe
-            joined_results = pd.concat([joined_results, file_results], axis=1)
-            os.remove(file_path)
+            scenario_frames.append(file_results)
 
-        # saving the multiindex into a column to make the index unique for json
-        joined_results.reset_index(inplace=True, names=['block', 'key'])
+        joined_results = pd.concat(scenario_frames, axis=1)
+        joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in json
         joined_results.to_json(self.result_file_path, orient='records', lines=True)
         self.logger.info("Technoeconomic output file created")
+
+        # deletion loop at the end to avoid premature execution of results in case of error
+        for file in files:
+            file_path = os.path.join(self.result_folder_path, file)
+            os.remove(file_path)
 
 ###############################################################################
 # global functions

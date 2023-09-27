@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-commodities.py
+commodity_des.py
 
 --- Description ---
 This file contains the Discrete Event Simulation to generate behavioral data of mobile commodity systems in the
@@ -89,7 +89,7 @@ class RentalSystem:
         self.rng = np.random.default_rng()
 
         # buffer time is added onto minimum recharge time to ensure dispatch feasibility and give room for energy mgmt
-        self.time_buffer = pd.Timedelta(hours=2)
+        self.time_buffer = pd.Timedelta(hours=0)
 
         # draw total demand for every simulated ay from lognormal distribution
         self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
@@ -144,6 +144,27 @@ class RentalSystem:
         self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
 
+    def calc_performance_metrics(self):
+
+        self.use_rate = dict()
+        steps_total = self.data.shape[0]
+        # make an individual row for each used commodity in a process
+        exploded_processes = self.processes.explode('primary_commodity')
+
+        # calculate percentage of DES (not sim, the latter is shorter) time
+        # occupied by active, idle, recharge and buffer times
+        for commodity in list(self.cs.commodities.keys()):
+            processes = exploded_processes.loc[exploded_processes['primary_commodity'] == commodity, :]
+            steps_blocked = processes['steps_blocked'].sum() + processes['steps_rental'].sum()
+            self.use_rate[commodity] = steps_blocked / steps_total
+        self.cs.use_rate = np.mean(list(self.use_rate.values()))
+
+        # calculate overall percentage of failed trips
+        n_sucess = self.processes.loc[self.processes['status'] == 'sucess', 'status'].shape[0]
+        n_total = self.processes.shape[0]
+        self.fail_rate = self.cs.fail_rate = 1 - (n_sucess / n_total)
+        pass
+
     def convert_process_log(self):
         """
         This function converts the process based log from DES execution into a time based log for each commodity
@@ -161,20 +182,21 @@ class RentalSystem:
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')] = False
+                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')].iloc[:-1] = False
                 self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
-                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-2] = self.cs.soc_dep
+                # minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
+                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
 
         self.cs.data = self.data
 
-    def save_data(self, path):
+    def save_data(self, path, sc):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
         if not os.path.isfile(path):
-            path = os.path.join(path, f'{self.cs.name}.csv')
+            path = os.path.join(path, f'{sc.name}_{self.cs.name}.csv')
         self.data.to_csv(path)
 
 
@@ -276,13 +298,12 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_avail'] = self.cs.size_pc * self.cs.soc_dep
             self.processes['rex_request'] = False
 
-        # set maximum energy requirement to max available energy
+        # set maximum energy requirement to max available energy - equivalent to charging externally
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
         self.processes['energy_req_pc'] = self.processes['energy_req']  #column is needed in conversion to time log
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
-        # todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
     def transfer_rex_processes(self):
         """
@@ -458,10 +479,11 @@ class RentalProcess:
 
 def dt2steps(series, sc):
     if pd.api.types.is_datetime64_any_dtype(series):
-        out = np.round((series - sc.starttime) / sc.timestep_td).astype(int)
+        out = np.ceil((series - sc.starttime) / sc.timestep_td).astype(int)
     elif pd.api.types.is_timedelta64_dtype(series):
-        out = np.round(series / sc.timestep_td).astype(int)
+        out = np.ceil(series / sc.timestep_td).astype(int)
     return out
+# todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
 
 def steps2dt(series, sc, absolute=False):
@@ -477,10 +499,11 @@ def execute_des(sc, save=False, path=None):
     sc.des_env = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    if sc.strategy in ['go']:
-        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(500)[-500:])
-    else:
-        sc.des_dti = sc.sim_dti.union(sc.sim_dti.shift(sc.ph_nsteps)[-sc.ph_nsteps:])
+    sc.des_dti = sc.sim_dti.union(
+        pd.date_range(start=sc.sim_dti[-1] + sc.sim_dti.freq,
+                      periods=200,
+                      freq=sc.sim_dti.freq))
+
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
@@ -514,10 +537,9 @@ def execute_des(sc, save=False, path=None):
     # reframe logging results to resource-based view instead of process based (and save)
     for rs in sc.rental_systems.values():
         rs.convert_process_log()
+        rs.calc_performance_metrics()
         if save:
-            rs.save_data(path)
-
-    pass
+            rs.save_data(path, sc)
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
@@ -544,5 +566,5 @@ if __name__ == '__main__':
     sc = sim.Scenario('both',rn)
     for rs in sc.rental_systems.values():
         folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
-        rs.save_data(folderpath)
+        rs.save_data(folderpath, sc)
         print(f'{folderpath} created')
