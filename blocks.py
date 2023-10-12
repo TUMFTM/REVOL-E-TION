@@ -304,6 +304,7 @@ class CommoditySystem(InvestBlock):
                                     header=[0, 1],
                                     index_col=0,
                                     parse_dates=True)
+            # todo resample to timestep?
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
@@ -746,7 +747,7 @@ class PVSource(InvestBlock):
         self.outflow = solph.components.Transformer(label=f'{self.name}_dc',
                                                     inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
                                                     outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                    conversion_factors={self.bus: self.eff})
+                                                    conversion_factors={scenario.blocks['core'].dc_bus: self.eff})
         scenario.components.append(self.outflow)
 
         # input data from PVGIS is added in function "update_input_components"
@@ -996,7 +997,7 @@ class SystemCore(InvestBlock):
                                                           ep_costs=self.epc),
                                                           variable_costs=self.opex_spec)},
                                                       outputs={self.ac_bus: solph.Flow()},
-                                                      conversion_factors={self.dc_bus: self.dcac_eff})
+                                                      conversion_factors={self.ac_bus: self.dcac_eff})
         else:
             self.ac_dc = solph.components.Transformer(label='ac_dc',
                                                       inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost)},
@@ -1006,7 +1007,7 @@ class SystemCore(InvestBlock):
             self.dc_ac = solph.components.Transformer(label='dc_ac',
                                                       inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost)},
                                                       outputs={self.ac_bus: solph.Flow()},
-                                                      conversion_factors={self.dc_bus: self.dcac_eff})
+                                                      conversion_factors={self.ac_bus: self.dcac_eff})
 
         scenario.components.append(self.ac_dc)
         scenario.components.append(self.dc_ac)
