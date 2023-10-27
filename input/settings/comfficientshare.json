@@ -1,0 +1,11 @@
+{ "solver":         "gurobi",
+  "parallel":	    "False",
+  "max_process_num": "6",
+  "save_results": 	"True",
+  "save_des_results": "True",
+  "print_results":  "True",
+  "save_plots": 	"True",
+  "show_plots": 	"False",
+  "dump_model": 	"False",
+  "debugmode":  	"False",
+  "eps_cost":   	1.00E-08}
