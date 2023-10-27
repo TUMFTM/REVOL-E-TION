@@ -168,7 +168,7 @@ class InvestBlock:
                 self.opex_commodities += commodity.opex_sim
             self.opex_sim = self.opex_sys + self.opex_commodities
         elif isinstance(self, ControllableSource):
-            self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours
+            self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         else:  # all unidirectional source & sink blocks
             self.opex_sim = self.e_sim * self.opex_spec
 
