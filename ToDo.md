@@ -13,6 +13,9 @@
   - Scale efficiency behavior to actual charge power
   - Convert efficiency behavior to linear in/output power relation within a function
   - Conventional Efficiencies tauchen nur in den Komponentendefinitionen auf, nicht in nachgelagerten Berechnungen
+- Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
+- Integrate simplified battery degradation analysis post-operation
+  - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al)
 
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
