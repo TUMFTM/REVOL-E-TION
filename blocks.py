@@ -291,7 +291,7 @@ class InvestBlock:
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
             self.size = self.dcac_size + self.acdc_size
 
-    def _load_opex_spec(self, input_data_path, scenario, name):
+    def load_opex_spec(self, input_data_path, scenario, name):
         # In case of filename for operations cost read csv file
         if isinstance(self.opex_spec, str):
             # Get path of csv file for opex_spec
@@ -304,7 +304,7 @@ class InvestBlock:
                                             (self.opex_spec.index < scenario.sim_endtime)]
             # Convert data column of cost DataFrame into list
             self.opex_spec = list(self.opex_spec[self.opex_spec.columns[0]])
-        else:
+        else: # opex_spec is given as a scalar directly in scenario file
             # Use sequence of values for variable costs to unify computation of results
             self.opex_spec = len(scenario.sim_dti) * [self.opex_spec]
 
@@ -424,9 +424,9 @@ class ControllableSource(InvestBlock):
         self.bus = scenario.blocks['core'].ac_bus
 
         # Load sequence of opex_spec from csv file or create a constant sequence from a value
-        self._load_opex_spec(input_data_path=run.input_data_path,
-                             scenario=scenario,
-                             name=name)
+        self.load_opex_spec(input_data_path=run.input_data_path,
+                            scenario=scenario,
+                            name=name)
 
         if self.opt:
             self.src = solph.components.Source(label=f'{self.name}_src',
