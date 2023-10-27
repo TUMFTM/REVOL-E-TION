@@ -167,6 +167,8 @@ class InvestBlock:
                 commodity.opex_sim = commodity.e_sim_in * self.opex_spec
                 self.opex_commodities += commodity.opex_sim
             self.opex_sim = self.opex_sys + self.opex_commodities
+        elif isinstance(self, ControllableSource):
+            self.opex_sim = self.flow.mul(self.opex_spec).sum() * scenario.timestep_hours
         else:  # all unidirectional source & sink blocks
             self.opex_sim = self.e_sim * self.opex_spec
 
@@ -289,6 +291,23 @@ class InvestBlock:
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
             self.size = self.dcac_size + self.acdc_size
 
+    def _load_opex_spec(self, input_data_path, scenario, name):
+        # In case of filename for operations cost read csv file
+        if isinstance(self.opex_spec, str):
+            # Get path of csv file for opex_spec
+            self.input_file_path = os.path.join(input_data_path, name, f'{self.opex_spec}.csv')
+            # Open csv file and use first column as index; also directly convert dates to DateTime objects
+            self.opex_spec = pd.read_csv(self.input_file_path, index_col=0, parse_dates=True)
+            # Resample input data and extract relevant timesteps using start and end of simulation
+            self.opex_spec = self.opex_spec.resample(scenario.timestep, axis=0).mean().ffill().bfill()
+            self.opex_spec = self.opex_spec[(self.opex_spec.index >= scenario.starttime) &
+                                            (self.opex_spec.index < scenario.sim_endtime)]
+            # Convert data column of cost DataFrame into list
+            self.opex_spec = list(self.opex_spec[self.opex_spec.columns[0]])
+        else:
+            # Use sequence of values for variable costs to unify computation of results
+            self.opex_spec = len(scenario.sim_dti) * [self.opex_spec]
+
 
 class CommoditySystem(InvestBlock):
 
@@ -403,6 +422,11 @@ class ControllableSource(InvestBlock):
         """
 
         self.bus = scenario.blocks['core'].ac_bus
+
+        # Load sequence of opex_spec from csv file or create a constant sequence from a value
+        self._load_opex_spec(input_data_path=run.input_data_path,
+                             scenario=scenario,
+                             name=name)
 
         if self.opt:
             self.src = solph.components.Source(label=f'{self.name}_src',
