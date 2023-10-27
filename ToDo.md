@@ -13,9 +13,9 @@
   - predefine two normalized efficiency curves for AC and DC charge path
   - Scale efficiency behavior to actual charge power
   - Convert efficiency behavior to linear in/output power relation within a function
-  - Conventional Efficiencies tauchen nur in den Komponentendefinitionen auf, nicht in nachgelagerten Berechnungen
+  - Conventional Efficiencies equal c0=0, c1=eff
 - Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
-- Integrate simplified battery degradation analysis post-operation
+- Integrate simplified battery degradation analysis post-operation <mark>Philipp Rosner
   - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al)
 - Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
   - Add structure in scenario definition 
