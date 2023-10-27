@@ -294,19 +294,19 @@ class InvestBlock:
     def load_opex_spec(self, input_data_path, scenario, name):
         # In case of filename for operations cost read csv file
         if isinstance(self.opex_spec, str):
-            # Get path of csv file for opex_spec
-            self.input_file_path = os.path.join(input_data_path, name, f'{self.opex_spec}.csv')
             # Open csv file and use first column as index; also directly convert dates to DateTime objects
-            self.opex_spec = pd.read_csv(self.input_file_path, index_col=0, parse_dates=True)
+            self.opex_spec = pd.read_csv(os.path.join(input_data_path, name, f'{self.opex_spec}.csv'),
+                                         index_col=0,
+                                         parse_dates=True)
             # Resample input data and extract relevant timesteps using start and end of simulation
             self.opex_spec = self.opex_spec.resample(scenario.timestep, axis=0).mean().ffill().bfill()
             self.opex_spec = self.opex_spec[(self.opex_spec.index >= scenario.starttime) &
                                             (self.opex_spec.index < scenario.sim_endtime)]
-            # Convert data column of cost DataFrame into list
-            self.opex_spec = list(self.opex_spec[self.opex_spec.columns[0]])
+            # Convert data column of cost DataFrame into Series
+            self.opex_spec = self.opex_spec[self.opex_spec.columns[0]]
         else: # opex_spec is given as a scalar directly in scenario file
             # Use sequence of values for variable costs to unify computation of results
-            self.opex_spec = len(scenario.sim_dti) * [self.opex_spec]
+            self.opex_spec = pd.Series(self.opex_spec, index=scenario.sim_dti)
 
 
 class CommoditySystem(InvestBlock):

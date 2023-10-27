@@ -7,6 +7,7 @@
   - change cost calculation in blocks/InvestBlock/calc_eco_results from (energy times constant price) to (flow timeseries inner product with cost timeseries)
   - requires conversion of scalar cost values to vectors
   - requires decision on how to handle cost vectors in input json file
+  - requires decision for which classes besides ControllableSource the feature has to be implemented
 - Enabling nearly realistic modelling of EV charging path <mark>Philipp Rosner
   - Use oemof OffsetConverter as individual commodity charge/discharge converters
   - predefine two normalized efficiency curves for AC and DC charge path
@@ -16,6 +17,14 @@
 - Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
 - Integrate simplified battery degradation analysis post-operation
   - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al)
+- Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
+  - Add structure in scenario definition 
+  - Add additional sink next to grid connection
+  - Unify wording and meaning of v2g
+- Enabling external charging <mark>Brian Dietermann
+  - Add structure in scenario definition
+  - Add additional source for each vehicle
+  - Concept for designing vehicle input data -> additional column "external_charging" needed
 
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
