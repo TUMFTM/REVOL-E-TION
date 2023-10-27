@@ -14,6 +14,8 @@ input/brs/*
 !input/brs/use_case_list_gen.ipynb
 input/dem/*
 !input/dem/dem_example.csv
+input/grid/*
+!input/grid/grid_example.csv
 input/pv/*
 !input/pv/pv_example.csv
 input/wind/*

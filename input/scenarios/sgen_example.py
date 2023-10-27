@@ -284,6 +284,24 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+        '10_mgev_opt_grid_var': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+                                 dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
+                                      ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource',
+                                      bev='VehicleCommoditySystem'),
+                                 # scenario
+                                 'opt', 'opt', 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
+                                 'AC', 'dem_example',  # dem
+                                 'opt', 'AC', 'wind_example', 2.8, 0.084, 0, 20, 1, 0.95,  # wind
+                                 'opt', 'DC', 'PVGIS file', 11, 0, 'pv_example', 0.503, 0.01509, 0, 25, 1, 0.95,  # pv
+                                 'opt', 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
+                                 'opt', 'AC', 15, 0, 'grid_example', 10, 1, 1,  # grid
+                                 'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
+                                 3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25,
+                                 0.05,
+                                 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                                 3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035,
+                                 10,
+                                 0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
         }
 
 df = pd.DataFrame.from_dict(data)
