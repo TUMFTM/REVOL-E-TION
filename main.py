@@ -23,6 +23,7 @@ import logging.handlers
 import threading
 import warnings
 import multiprocessing as mp
+import platform
 
 from itertools import repeat
 from simulation import PredictionHorizon, Scenario, SimulationRun
@@ -39,7 +40,8 @@ def read_mplogger_queue(queue):
         record = queue.get()
         if record is None:
             break
-        # run.logger.handle(record)  # This line causes double logger outputs on Linux
+        if platform.system() == 'Windows':
+            run.logger.handle(record)  # This line causes double logger outputs on Linux
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
