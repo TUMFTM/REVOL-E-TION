@@ -304,7 +304,7 @@ class InvestBlock:
                                             (self.opex_spec.index < scenario.sim_endtime)]
             # Convert data column of cost DataFrame into Series
             self.opex_spec = self.opex_spec[self.opex_spec.columns[0]]
-        else: # opex_spec is given as a scalar directly in scenario file
+        else:  # opex_spec is given as a scalar directly in scenario file
             # Use sequence of values for variable costs to unify computation of results
             self.opex_spec = pd.Series(self.opex_spec, index=scenario.sim_dti)
 
@@ -323,7 +323,7 @@ class CommoditySystem(InvestBlock):
                                     header=[0, 1],
                                     index_col=0,
                                     parse_dates=True)
-            # todo resample to timestep?
+            self.data = self.data.resample(scenario.timestep, axis=0).ffill().bfill()
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 

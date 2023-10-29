@@ -43,6 +43,7 @@ def read_mplogger_queue(queue):
         if record is None:
             break
 
+
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
 
     if run.parallel:
@@ -111,6 +112,7 @@ if __name__ == '__main__':
 
     run = SimulationRun()  # get all global information about the run
 
+    # parallelization activated in settings file
     if run.parallel:
         with mp.Manager() as manager:
             log_queue = manager.Queue()
@@ -121,6 +123,8 @@ if __name__ == '__main__':
             log_queue.put(None)
             log_thread.join()
             # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
+
+    # sequential scenario processing selected
     else:
         for scenario_name in run.scenario_names:
             simulate_scenario(scenario_name, run, None)  # no logger queue
