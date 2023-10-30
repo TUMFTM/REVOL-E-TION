@@ -33,6 +33,7 @@
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
   - Make corresponding entry into readme
+- Resampling is not working for data which stops before scenario.sim_endtime (e.g. if last data entry is at 23:00 resampling to 15T doesn't work as last entry then should be at 23:45)
 
 ### Bugfixing
 - Hourly time steps produce pandas errors
