@@ -25,6 +25,10 @@
   - Add structure in scenario definition
   - Add additional source for each vehicle
   - Concept for designing vehicle input data -> additional column "external_charging" needed
+- Add further technoeconomic evaluation metrics <mark> Philipp Rosner
+  - Internal rate of Return
+  - RE curtailment
+  - stationary ESS energy throughput
 
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
@@ -36,4 +40,5 @@
 
 ### Tests
 - Test whether units of specific opex values are per timestep or per hour <mark>Philipp Rosner
+- Test behavior of different min SOCs with DES & optimization techniques
 
