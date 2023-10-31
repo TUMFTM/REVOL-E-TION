@@ -20,7 +20,7 @@
 - Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
   - Add structure in scenario definition 
   - Add additional sink next to grid connection
-  - Unify wording and meaning of v2g
+  - Unify wording and meaning of v2g -> Suggestion: uc < cc < v2v < v2b = v2mg < v2g
 - Enabling external charging <mark>Brian Dietermann
   - Add structure in scenario definition
   - Add additional source for each vehicle
@@ -33,7 +33,12 @@
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
   - Make corresponding entry into readme
-- Resampling is not working for data which stops before scenario.sim_endtime (e.g. if last data entry is at 23:00 resampling to 15T doesn't work as last entry then should be at 23:45)
+- Resampling is not working for data which stops before scenario.sim_endtime (e.g. if last data entry is at 23:00 resampling to 15T doesn't work as last entry then should be at 23:45):  
+  - Use standard resampling -> new DateTimeIndex[-1] <= old DateTimeIndex[-1]  
+  - When upsampling new values have to be added at the end (e.g. last: 03:00 -> 15T -> last: 03:45)  
+  - In case of new DateTimeIndex[-1] != old DateTimeIndex[-1] (equal to old timespan % new freq !=0) ffill() doesn't work  
+  - Manually use last value of old data (no more NaNs due to ffill and bfill)  
+  - -> df = df.resample(new_freq, axis=0).mean().ffill().bfill(). reindex(pd.date_range(start=df.index.min(), end=end_t, freq=new_freq, inclusive="left")).fillna(df.iloc[-1, :])  
 
 ### Bugfixing
 - Hourly time steps produce pandas errors
