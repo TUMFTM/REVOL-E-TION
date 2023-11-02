@@ -417,7 +417,7 @@ class ControllableSource(InvestBlock):
 
         ac_bus
           |
-          |<-x-gen
+          |<-x-gen/grid
           |
         """
 
