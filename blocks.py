@@ -469,17 +469,21 @@ class FixedDemand:
                                 sep=',',
                                 skip_blank_lines=False)
 
-        if 'Timestamp' in self.data:
-            self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-            self.data.set_index('Timestamp', drop=True, inplace=True)
-            self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
-            # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
-            self.data = self.data.resample(scenario.timestep, axis=0).mean().ffill().bfill()
-        else:  # In this case, there is no check whether the frequency of inputs actually matches the simulation!
-            self.data['Timestamp'] = pd.date_range(start=scenario.starttime,
-                                                   periods=len(self.data),
-                                                   freq=scenario.timestep)
-            self.data.set_index('Timestamp', drop=True, inplace=True)
+        self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
+        self.data.set_index('Timestamp', drop=True, inplace=True)
+        self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
+        # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
+        if self.data.index[0] > scenario.starttime:
+            raise IndexError  # this triggers an error message about input data not covering full simulation timespan
+
+        # resample to timestep
+        final_row = self.data.iloc[-1, :]
+        self.data = self.data.resample(scenario.timestep, axis=0).mean().ffill().bfill()
+        # ensure that added timestamps after previous end of index from resampling are filled
+        self.data = self.data.reindex(pd.date_range(start=scenario.starttime,
+                                                    end=scenario.sim_endtime,
+                                                    freq=scenario.timestep,
+                                                    inclusive="left")).fillna(final_row)
 
         self.ph_data = None  # placeholder
 
