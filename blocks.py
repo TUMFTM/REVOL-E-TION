@@ -417,7 +417,7 @@ class ControllableSource(InvestBlock):
 
         ac_bus
           |
-          |<-x-gen
+          |<-x-gen/grid
           |
         """
 
@@ -581,6 +581,8 @@ class MobileCommodity:
           |<---------mc1_mc-x-|<->mc1_ess
           |                   |
           |---mc_mc1-------x->|-->mc1_snk
+                              |
+                              |<--mc1_src (external charging)
           |
           |                 mc2_bus
           |<---------mc2_mc---|<->mc2_ess
@@ -1063,7 +1065,9 @@ class SystemCore(InvestBlock):
 
 
 class VehicleCommoditySystem(CommoditySystem):
-
+    """
+    TODO explain necessity of distinction between Vehicle and BatteryCommoditySystems
+    """
     def __init__(self, name, scenario, run):
         super().__init__(name, scenario, run)
 

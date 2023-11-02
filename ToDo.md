@@ -3,11 +3,7 @@
 ### Prio (Urgent changes)
 
 ### Feature Development
-- Enabling time-variable OpEx (e.g. for grid electricity prices) <mark>Brian Dietermann
-  - change cost calculation in blocks/InvestBlock/calc_eco_results from (energy times constant price) to (flow timeseries inner product with cost timeseries)
-  - requires conversion of scalar cost values to vectors
-  - requires decision on how to handle cost vectors in input json file
-  - requires decision for which classes besides ControllableSource the feature has to be implemented
+
 - Enabling nearly realistic modelling of EV charging path <mark>Philipp Rosner
   - Use oemof OffsetConverter as individual commodity charge/discharge converters
   - predefine two normalized efficiency curves for AC and DC charge path
@@ -20,11 +16,12 @@
 - Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
   - Add structure in scenario definition 
   - Add additional sink next to grid connection
-  - Unify wording and meaning of v2g -> Suggestion: uc < cc < v2v < v2b = v2mg < v2g
+  - Unify wording and meaning of v2g -> Suggestion: uc < cc < v2v < v2mg < v2g
 - Enabling external charging <mark>Brian Dietermann
   - Add structure in scenario definition
   - Add additional source for each vehicle
   - Concept for designing vehicle input data -> additional column "external_charging" needed
+  - Track external charging energies and cost separately through model evaluation for as long as possible to enable evaluation of different business models
 - Add further technoeconomic evaluation metrics <mark> Philipp Rosner
   - Internal rate of Return
   - RE curtailment
@@ -47,4 +44,11 @@
 ### Tests
 - Test whether units of specific opex values are per timestep or per hour <mark>Philipp Rosner
 - Test behavior of different min SOCs with DES & optimization techniques
+
+### Done
+- Enabling time-variable OpEx (e.g. for grid electricity prices) <mark>Brian Dietermann
+  - change cost calculation in blocks/InvestBlock/calc_eco_results from (energy times constant price) to (flow timeseries inner product with cost timeseries)
+  - requires conversion of scalar cost values to vectors
+  - requires decision on how to handle cost vectors in input json file
+  - requires decision for which classes besides ControllableSource the feature has to be implemented
 
