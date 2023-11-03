@@ -6,24 +6,38 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import interp2d
 
 class Cell:
-    pass
 
-# Load Cell data depending on chosen cell chemistry
-def load_cell_data(Chemistry, bet):
-    if Chemistry == 0:
-        # Schmalstieg et al model
-        cell = Cell()
-        cell = bat_ss_setting(cell)
-        cell.grav_energy_density = bet.gravimetric_energy_density[Chemistry]
-        cell.c2p_grav = bet.c2p_grav[Chemistry]
+    def __init__(self, chemistry):
 
-    elif Chemistry == 1:
-        # Naumann et al model
-        cell = Cell()
-        cell = bat_nau_setting(cell)
-        cell.grav_energy_density = bet.gravimetric_energy_density[Chemistry]
-        cell.c2p_grav = bet.c2p_grav[Chemistry]
-    return cell
+        self.chemistry = chemistry
+
+        if self.chemistry == 'nmc':
+            # Schmalstieg et al model
+            cell = bat_ss_setting(cell)
+            cell.grav_energy_density = bet.gravimetric_energy_density[Chemistry]
+            cell.c2p_grav = bet.c2p_grav[Chemistry]
+
+        elif self.chemistry == 'lfp':
+            # Cell from Naumann et al.
+            self.q_nom = 3.0  # Nominal capacity in Ah
+            self.u_nom = 3.2  # Nominal voltage in V
+            self.u_min = 2.0  # Minimum voltage in V
+            self.u_max = 3.6  # Maximum voltage in V
+            self.i_max_cont = 3  # Maximum charging current in A
+            self.i_min_cont = -20  # Maximum discharging current in A
+            self.soc_max = 1  # Upper SOC limit
+            self.soc_min = 0  # Lower SOC limit
+            self.mass = 0.0845  # Cell mass in kg
+            self.c_th = 76.27  # Cell heat capacity as per Forgez et al. # todo find unit
+            self.R_th_in = 3.3  # Thermal resistance between cell and Housing # todo find unit
+            self.e_spec_grav = bet.gravimetric_energy_density[Chemistry]
+            self.c2p_grav = bet.c2p_grav[Chemistry]
+
+            self.r_i_ch = pd.DataFrame()
+
+
+
+
 
 
 # Setting Battery Model Parameter for Model Type (1) Naumann et al.

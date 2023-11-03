@@ -2,24 +2,7 @@
 import numpy as np
 
 
-def electric_model(cell, T_Cell, SOC, P_Value, dt):
 
-    R_i_ch = cell.R_i_ch_func(T_Cell, SOC)
-    R_i_dch = cell.R_i_dch_func(T_Cell, SOC)
-    Uocv = cell.ocv_func(SOC)
-
-    if P_Value > 0:
-        R_i = R_i_ch
-    else:
-        R_i = R_i_dch
-
-    Ibat = np.real((-Uocv + np.sqrt((Uocv ** 2) + (4 * R_i * P_Value))) / (2 * R_i))
-    C_rate = Ibat / (cell.Qnom)
-    SOC_new = SOC + (C_rate * dt / 3600)
-    P_Loss = (Ibat ** 2) * R_i
-
-
-    return  SOC_new, C_rate,  P_Loss
 
 
 
