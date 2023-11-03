@@ -2,36 +2,11 @@
 #Input: Power-Profile (Time-Series)
 #Output: Capacity-Loss for Aging-Timeframe
 
-
-from init_battery_data import load_cell_data
-from batteryElectricTruck import BatteryElectricTruck
 from ElectroThermalSingle import calcElectroThermalValuesSingle
 import numpy as np
-from Aging_Model import calc_aging_routing
 
 #Debug
 import matplotlib.pyplot as plt
-
-
-#Parameterization:
-
-cell_chemistry = 1 # LFP = 0 // Schmalstieg = 1
-battery_capacity = 500 # in kWh
-bet = BatteryElectricTruck()
-dt = 1 # Simulation Step-Time in s
-
-# Import Test Power Profile
-p_profile = np.genfromtxt("Test_File/betos_power_profile.csv", delimiter='\t')
-p_profile= p_profile*(-1) # - = discharge // + = charge
-### Select Chemistry/Models ------------------------------------------
-# Chemistry // 0:Schmalstieg et. al. // 1:Naumann et.al.
-cell = load_cell_data(cell_chemistry, bet) #Initialize Cell Data + Gravimetric Density / C2P
-n_cells = (battery_capacity * 1000) / (cell.Qnom * cell.Unom) # Number of Cells // For scaling to single cell
-
-
-
-
-### Single Call -----------------------------------------------------
 
 ## Initialize Result-Arrays
 
@@ -71,5 +46,4 @@ R_inc_cyc_prev = 0
 res_aging = calc_aging_routing(cell_chemistry, cell, SOC, T_Cell, Crate, Q_loss_cal_prev, Q_loss_cyc_prev, R_inc_cal_prev, R_inc_cyc_prev, dt)
 
 print(res_aging[0])
-# Output: [Qloss_ges, Rinc_ges, Qloss_new_cal,Rinc_new_cal, Qloss_new_cyc, Rinc_new_cyc]
 
