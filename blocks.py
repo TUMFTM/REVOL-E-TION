@@ -26,6 +26,7 @@ import pvlib
 import pytz
 import timezonefinder
 
+import battery as bat
 import economics as eco
 
 ###############################################################################
@@ -336,6 +337,14 @@ class CommoditySystem(InvestBlock):
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
+        if self.aging and (self.int_lvl in self.apriori_lvls):
+            raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is not compatible'
+                                 f' with a priori integration level (e.g. \"uc\")')
+
+        if self.aging and (scenario.strategy == 'go'):
+            raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is currently not compatible'
+                                 f' with global optimum optimization')
+
         # Creation of static energy system components --------------------------------
 
         """
@@ -373,6 +382,11 @@ class CommoditySystem(InvestBlock):
 
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
+
+    def calc_aging(self):
+
+        for commodity in self.commodities:
+            commodity.calc_aging()
 
     def calc_results(self, scenario):
 
@@ -564,7 +578,8 @@ class MobileCommodity:
         self.soc = pd.Series(data=self.init_soc,
                              index=scenario.sim_dti[0:1],
                              dtype='float64')
-        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
+
+        self.soh = 1  # set initial aging state
 
         # Creation of permanent energy system components --------------------------------
 
@@ -619,8 +634,8 @@ class MobileCommodity:
         # actual values are set later in update_input_components for each prediction horizon
         scenario.components.append(self.snk)
 
-        if self.parent.int_lvl not in self.parent.apriori_lvls:
         # Storage is only added if MCs have flexibility potential (i.e. dispatch is not known a priori)
+        if self.parent.int_lvl not in self.parent.apriori_lvls:
             if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
                 self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                            inputs={self.bus: solph.Flow(
@@ -652,6 +667,14 @@ class MobileCommodity:
                                                            nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
 
+            if self.aging and not self.opt:
+                self.aging_model = bat.BatteryPack(self.chemistry, self.size)
+                # todo enable aging model for sizing case
+
+    def calc_aging(self, horizon):
+
+        self.aging_model.age(self, horizon)
+
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
 
@@ -668,6 +691,10 @@ class MobileCommodity:
         self.flow = self.flow_in - self.flow_out  # for plotting
 
     def get_ch_results(self, horizon, scenario):
+
+        if self.aging:
+            self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.ch_dti]
+            self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.ch_dti]
 
         self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.ch_dti]
         self.flow_in_ch = horizon.results[(self.inflow, self.bus)]['sequences']['flow'][horizon.ch_dti]
@@ -742,6 +769,9 @@ class MobileCommodity:
             # set initial and minimum storage levels for coming prediction horizon
             self.ess.initial_storage_level = self.ph_init_soc
             self.ess.min_storage_level = self.ph_data['minsoc']
+
+        self.ess.nominal_storage_capacity = self.size * self.soh
+
 
 
 class PVSource(InvestBlock):
