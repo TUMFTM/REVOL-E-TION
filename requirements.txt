@@ -9,5 +9,6 @@ pylightxl
 pyomo
 pysimplegui
 pytz
+rainflow
 simpy
 timezonefinder

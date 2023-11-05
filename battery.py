@@ -1,11 +1,14 @@
 import numpy as np
-import scipy.interpolate as spip
-import pickle
 import os
+import pickle
+import rainflow
+import scipy.interpolate as spip
+
+from dateutil.relativedelta import relativedelta
 
 class BatteryPack:
 
-    def __init__(self, chemistry, size):
+    def __init__(self, scenario, chemistry, size):
         # Battery Thermal System
         self.chemistry = chemistry.lower()  # 'lfp' or 'nmc'
         self.size = size  # initial nominal capacity in Wh
@@ -32,10 +35,14 @@ class BatteryPack:
         # self.e_spec_grav_c2p = [0.59, 0.71]
         # self.e_spec_vol_c2p = [0.39, 0.55]
 
-        self.q_loss_cal = self.r_inc_cal = self.q_loss_cyc = self.r_inc_cyc = 0  # Initial values for state tracking
+        # Initial values for aging state tracking
+        self.q_loss_cal = np.zeros(scenario.nhorizons)
+        self.r_inc_cal = np.zeros(scenario.nhorizons)
+        self.q_loss_cyc = np.zeros(scenario.nhorizons)
+        self.r_inc_cyc = np.zeros(scenario.nhorizons)
 
         # Placeholders for aging variables to be filled every aging evaluation
-        self.soc_hor = self.dod_hc_hor = self.msoc_hc_hor = self.temp_hor_c = self.temp_hor_k = self.p_hor = None
+        self.soc_hor = self.cycles_hor = self.temp_hor_c = self.temp_hor_k = self.p_hor = None
 
         if self.chemistry == 'nmc':
             # Cell from Schmalstieg et al. - Sanyo UR18650E
@@ -47,7 +54,7 @@ class BatteryPack:
             self.i_min_cont = -6.15  # Maximum discharging current in A
             self.m = 0.0445  # Cell mass in kg
             self.v = 0.0165  #Cell volume in L
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'input/battery/sanyo_ur18650e.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sanyo_ur18650e.pkl')
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -59,13 +66,12 @@ class BatteryPack:
             self.i_min_cont = -20  # Maximum discharging current in A
             self.m_cell = 0.0845  # Cell mass in kg
             self.v_cell = 0.0345  #Cell volume in L
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'input/battery/sony_us26650.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sony_us26650.pkl')
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
 
-        self.ocv_interp = spip.RegularGridInterpolator(points=(self.ocv.index.to_list(),
-                                                               self.ocv.colums.to_list()),
+        self.ocv_interp = spip.RegularGridInterpolator(points=(self.ocv.index.to_numpy(),),
                                                        values=self.ocv.to_numpy(),
                                                        method='linear')
         self.r_i_ch_interp = spip.RegularGridInterpolator(points=(self.r_i_ch.index.to_list(),
@@ -77,7 +83,7 @@ class BatteryPack:
                                                            values=self.r_i_dch.to_numpy(),
                                                            method='linear')
 
-        self.e_cell = self.q_nom * self.u_nom
+        self.e_cell = self.q_nom * self.u_nom  # Nominal energy content of the cell in Wh
         self.e_spec_grav_cell = self.e_cell / self.m_cell
         self.e_spec_vol_cell = self.e_cell / self.v_cell
 
@@ -91,125 +97,106 @@ class BatteryPack:
 
         # Get SOC timeseries from horizon results
         self.soc_hor = block.soc_ch
-        # Determine DODs and mean SOCs of half cycles within the horizon
-        self.rainflow_counting()
+        # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
+        self.cycles_hor = self.rainflow_cycles()
 
         self.temp_hor_c = 25  # pack temperature in °C # todo replace with ambient (or thermal model)
         self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
 
+        # Calculate power requirement per cell
         # Charge power is positive, discharging power is negative
-        self.p_hor = block.flow_bat_in_ch - block.flow_bat_out_ch
+        self.p_cell_hor = (block.flow_bat_in_ch - block.flow_bat_out_ch) / self.n_cells
+        self.crate_hor = self.p_cell_hor / self.e_cell
 
         if self.chemistry == 'nmc':
             self.calc_aging_schmalstieg()
         elif self.chemistry == 'lfp':
-            self.calc_aging_naumann()
+            self.calc_aging_naumann(horizon)
 
         # update block's storage size
         block.soh = self.soh_q  # todo calculate using q_loss
 
-    def calc_aging_naumann(self):
+    def calc_aging_naumann(self, horizon):
+
+        # Calculate Number of Full Equivalent Cycles
+        # Original Code: fec = sum(DODs) - noc half cycles counted & FEC=2Qnom missachtet?
+        fec = sum([cycle['count'] * cycle['range'] for cycle in self.cycles_hor])
+
+        # Calculate Depths of Discharge
+        # Original Code: DODs = np.asarray(DODs) - no half cycles counted
+        dod = np.array([cycle['range'] for cycle in self.cycles_hor])
+
+        # Calculate evaluation timespan
+        t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
 
         #  calendric stress factors
-        k_temp_Q_cal = np.mean(1.2571e-05 * np.exp((-17126 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15)))
-        k_temp_R_cal = np.mean(3.419e-10 * np.exp((-71827 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15)))
-        k_soc_Q_cal = np.mean(2.85750 * ((self.soc_hor - 0.5) ** 3) + 0.60225)
-        k_soc_R_cal = np.mean(3.3903 * ((self.soc_hor - 0.5) ** 2) + 1.56040)
+        k_temp_q_cal = np.mean(1.2571e-05 * np.exp((-17126 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15)))
+        k_temp_r_cal = np.mean(3.419e-10 * np.exp((-71827 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15)))
+        k_soc_q_cal = np.mean(2.85750 * ((self.soc_hor - 0.5) ** 3) + 0.60225)
+        k_soc_r_cal = np.mean(3.3903 * ((self.soc_hor - 0.5) ** 2) + 1.56040)
 
-        #  DOD calculation for cyclic aging
+        # Cyclic Stress Factors
+        k_dod_q_cyc = sum((4.0253 * ((dod - 0.6) ** 3) + 1.09230) * dod) / fec
+        k_dod_r_cyc = sum((6.8477 * ((dod - 0.5) ** 3) + 0.91882) * dod) / fec
+        k_crate_q_cyc = sum(0.0971 + 0.063 * self.crate_hor) / len(self.crate_hor)
+        k_crate_r_cyc = sum(0.0023 - 0.0018 * self.crate_hor) / len(self.crate_hor)
 
-        # fec = sum(DODs)
+        # Define previous aging state in terms of equivalent time and FECs at current conditions
+        t_eq = (self.q_loss_cal / k_soc_q_cal / k_temp_q_cal) ** 2
+        fec_eq = (100 * self.q_loss_cyc / k_dod_q_cyc / k_crate_q_cyc) ** 2
+
+        # Calculate capacity loss and resistance increase over horizon
+        self.q_loss_cal[horizon.index] = k_temp_q_cal * k_soc_q_cal * np.sqrt(t_eq + t_hor)
+        self.r_inc_cal[horizon.index] = k_temp_r_cal * k_soc_r_cal * t_hor
+        self.q_loss_cyc[horizon.index] = 0.01 * (k_dod_q_cyc * k_crate_q_cyc) * np.sqrt(fec_eq + fec)
+        self.r_inc_cyc[horizon.index] = 0.01 * (k_dod_r_cyc * k_crate_r_cyc) * fec
+        # todo enable timeseries output
+        # todo calendar aging seems a bit high... 0.6% in 5 days
+        pass
+
+    def calc_aging_schmalstieg(self):
+        pass
+
+        # Calculate stress factors for calendric aging
+        # Uocvs = cell.ocv_func(SOC)
+        # k_temp_Q_cal = np.mean(1e6 * np.exp(-6976 / T_Cell))
+        # k_temp_R_cal = np.mean(1e5 * np.exp(-5986 / T_Cell))
+        #
+        # k_soc_Q_cal = np.mean(7.543 * Uocvs - 23.75)
+        # k_soc_R_cal = np.mean(5.27 * Uocvs - 16.32)
+        #
+        # Uavgs = cell.ocv_func(SOCavgs)
+        # Qtot = sum(DODs) * cell.Qnom
         # DODs = np.asarray(DODs)
-        # k_DOD_Q_cyc = sum((4.0253 * ((DODs - 0.6) ** 3) + 1.09230) * DODs) / fec
-        # k_DOD_R_cyc = sum((6.8477 * ((DODs - 0.5) ** 3) + 0.91882) * DODs) / fec
         #
-        # Caging = abs(Crate)
-        # k_C_Q_cyc = sum(0.0971 + 0.063 * Caging) / len(Caging)
-        # k_C_R_cyc = sum(0.0023 - 0.0018 * Caging) / len(Caging)
+        # k_DOD_Q_cyc = sum((4.081e-3 * DODs) * DODs * cell.Qnom) / Qtot
+        # k_DOD_R_cyc = sum((2.798e-4 * DODs) * DODs * cell.Qnom) / Qtot
         #
-        # # Time in Seconds!
-        # t_aging = len(SOC) * dt  # Time for which aging is evaluated
+        # k_Uavgs_Q_cyc = sum((7.348e-3 * (Uavgs - 3.667) ** 2 + 7.6e-4) * DODs * cell.Qnom) / Qtot
+        # k_Uavgs_R_cyc = sum((2.153e-4 * (Uavgs - 3.725) ** 2 - 1.521e-5) * DODs * cell.Qnom) / Qtot
         #
-        # t_eq = (Q_loss_cal_prev / k_soc_Q_cal / k_temp_Q_cal) ** 2
-        # Qloss_new_cal = k_temp_Q_cal * k_soc_Q_cal * np.sqrt(t_eq + t_aging)
-        # Rinc_new_cal = R_inc_cal_prev + k_temp_R_cal * k_soc_R_cal * t_aging
+        # ## -- Calculation Q_Loss
+        # Q_tot_age = Qtot * 2
+        # Q_tot_eq = (Q_loss_cyc_prev / k_VW / (k_DOD_Q_cyc + k_Uavgs_Q_cyc)) ** 2
+        # Qloss_new_cyc = k_VW * (k_DOD_Q_cyc + k_Uavgs_Q_cyc) * np.sqrt(
+        #     Q_tot_eq + Q_tot_age)  # Scaled according to Teichert!
+        # Rinc_new_cyc = k_VW * (k_DOD_R_cyc + k_Uavgs_R_cyc) * (Q_tot_age)
         #
-        # FEC_eq = (100 * Q_loss_cyc_prev / k_DOD_Q_cyc / k_C_Q_cyc) ** 2
-        # Qloss_new_cyc = 0.01 * (k_DOD_Q_cyc * k_C_Q_cyc) * np.sqrt(FEC_eq + fec)
-        # Rinc_new_cyc = R_inc_cyc_prev + 0.01 * (k_DOD_R_cyc * k_C_R_cyc) * fec
+        # # Time = Days
+        # t_aging = len(SOC) * dt / 3600 / 24  # Time for which aging is evaluated
+        # t_eq_Q = (Q_loss_cal_prev / k_VW / k_temp_Q_cal / k_soc_Q_cal) ** (4 / 3)
+        # t_eq_R = (R_inc_cal_prev / k_VW / k_temp_R_cal / k_soc_R_cal) ** (4 / 3)
+        #
+        # Qloss_new_cal = k_VW * k_temp_Q_cal * k_soc_Q_cal * ((t_eq_Q + t_aging) ** 0.75)
+        # Rinc_new_cal = k_VW * k_temp_R_cal * k_soc_R_cal * ((t_eq_R + t_aging) ** 0.75)
         #
         # Qloss_ges = Qloss_new_cal + Qloss_new_cyc
         # Rinc_ges = Rinc_new_cal + Rinc_new_cyc
-        #
-        # return [Qloss_ges, Rinc_ges, Qloss_new_cal, Rinc_new_cal, Qloss_new_cyc, Rinc_new_cyc]
 
-    def calc_aging_schmalstieg(self):
-
-        # Calculate stress factors for calendric aging
-        Uocvs = cell.ocv_func(SOC)
-        k_temp_Q_cal = np.mean(1e6 * np.exp(-6976 / T_Cell))
-        k_temp_R_cal = np.mean(1e5 * np.exp(-5986 / T_Cell))
-
-        k_soc_Q_cal = np.mean(7.543 * Uocvs - 23.75)
-        k_soc_R_cal = np.mean(5.27 * Uocvs - 16.32)
-
-        Uavgs = cell.ocv_func(SOCavgs)
-        Qtot = sum(DODs) * cell.Qnom
-        DODs = np.asarray(DODs)
-
-        k_DOD_Q_cyc = sum((4.081e-3 * DODs) * DODs * cell.Qnom) / Qtot
-        k_DOD_R_cyc = sum((2.798e-4 * DODs) * DODs * cell.Qnom) / Qtot
-
-        k_Uavgs_Q_cyc = sum((7.348e-3 * (Uavgs - 3.667) ** 2 + 7.6e-4) * DODs * cell.Qnom) / Qtot
-        k_Uavgs_R_cyc = sum((2.153e-4 * (Uavgs - 3.725) ** 2 - 1.521e-5) * DODs * cell.Qnom) / Qtot
-
-        ## -- Calculation Q_Loss
-        Q_tot_age = Qtot * 2
-        Q_tot_eq = (Q_loss_cyc_prev / k_VW / (k_DOD_Q_cyc + k_Uavgs_Q_cyc)) ** 2
-        Qloss_new_cyc = k_VW * (k_DOD_Q_cyc + k_Uavgs_Q_cyc) * np.sqrt(
-            Q_tot_eq + Q_tot_age)  # Scaled according to Teichert!
-        Rinc_new_cyc = k_VW * (k_DOD_R_cyc + k_Uavgs_R_cyc) * (Q_tot_age)
-
-        # Time = Days
-        t_aging = len(SOC) * dt / 3600 / 24  # Time for which aging is evaluated
-        t_eq_Q = (Q_loss_cal_prev / k_VW / k_temp_Q_cal / k_soc_Q_cal) ** (4 / 3)
-        t_eq_R = (R_inc_cal_prev / k_VW / k_temp_R_cal / k_soc_R_cal) ** (4 / 3)
-
-        Qloss_new_cal = k_VW * k_temp_Q_cal * k_soc_Q_cal * ((t_eq_Q + t_aging) ** 0.75)
-        Rinc_new_cal = k_VW * k_temp_R_cal * k_soc_R_cal * ((t_eq_R + t_aging) ** 0.75)
-
-        Qloss_ges = Qloss_new_cal + Qloss_new_cyc
-        Rinc_ges = Rinc_new_cal + Rinc_new_cyc
-
-    def rainflow_counting(self):
-
-        # Remove constant SOC phases
-        soc_nozero = self.soc_hor[self.soc_hor.diff().fillna(1) != 0]
-
-        # Slice to start and end with the maximum SOC
-        ind_max_soc = np.argmax(soc_nozero)
-        soc_sorted = np.concatenate((SOC_nozero[I:], SOC_nozero[:I]))
-
-        # Find extrema
-        slope = np.diff(SOC_sorted)
-        is_extremum = np.concatenate(([True], (slope[1:] * slope[:-1]) < 0, [True]))
-        SOCs = SOC_sorted[is_extremum]
-
-        # Find DODs
-        DODs = []
-        SOCavgs = []
-        index = 1
-        while len(SOCs) > index + 1:
-            prevDOD = abs(SOCs[index] - SOCs[index - 1])
-            nextDOD = abs(SOCs[index] - SOCs[index + 1])
-            if nextDOD < prevDOD:
-                index += 1
-            else:
-                DODs.append(prevDOD)
-                SOCavgs.append((SOCs[index] + SOCs[index - 1]) / 2)
-                SOCs = np.delete(SOCs, [index - 1, index])
-                index = 1
-        return DODs, SOCavgs
+    def rainflow_cycles(self):
+        return [{'range': rng, 'mean': mean, 'count': count}
+                for rng, mean, count, _, _
+                in rainflow.extract_cycles(self.soc_hor)]
 
     def rint_model(self, p_out):
 

@@ -341,9 +341,9 @@ class CommoditySystem(InvestBlock):
             raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is not compatible'
                                  f' with a priori integration level (e.g. \"uc\")')
 
-        if self.aging and (scenario.strategy == 'go'):
+        if self.aging and self.opt:
             raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is currently not compatible'
-                                 f' with global optimum optimization')
+                                 f' with component size optimization')
 
         # Creation of static energy system components --------------------------------
 
@@ -383,10 +383,9 @@ class CommoditySystem(InvestBlock):
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
-    def calc_aging(self):
-
-        for commodity in self.commodities:
-            commodity.calc_aging()
+    def calc_aging(self, horizon):
+        for commodity in self.commodities.values():
+            commodity.calc_aging(horizon)
 
     def calc_results(self, scenario):
 
@@ -667,12 +666,11 @@ class MobileCommodity:
                                                            nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
 
-            if self.aging and not self.opt:
-                self.aging_model = bat.BatteryPack(self.chemistry, self.size)
+            if self.parent.aging and not self.parent.opt:
+                self.aging_model = bat.BatteryPack(scenario, self.parent.chemistry, self.size)
                 # todo enable aging model for sizing case
 
     def calc_aging(self, horizon):
-
         self.aging_model.age(self, horizon)
 
     # noinspection DuplicatedCode
@@ -692,7 +690,7 @@ class MobileCommodity:
 
     def get_ch_results(self, horizon, scenario):
 
-        if self.aging:
+        if self.parent.aging:
             self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.ch_dti]
             self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.ch_dti]
 
@@ -708,7 +706,10 @@ class MobileCommodity:
             self.sc_ch = solph.views.node(
                 horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
                 horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
-            # shift is needed as sc/soc is stored for end of timestep by oemof
+            # shift is needed as sc/soc is stored for end of timestep following nameplate time by oemof
+            if horizon.index == 0:
+                sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])
+                self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
             self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge

@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/MiniGrid_Optimization.iml" filepath="$PROJECT_DIR$/.idea/MiniGrid_Optimization.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/mg_ev_opti.iml" filepath="$PROJECT_DIR$/.idea/mg_ev_opti.iml" />
     </modules>
   </component>
 </project>
