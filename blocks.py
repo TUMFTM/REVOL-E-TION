@@ -281,12 +281,19 @@ class InvestBlock:
 
         if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
+
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
+
         elif isinstance(self, CommoditySystem):
             for commodity in self.commodities.values():
                 commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
+                if self.aging:
+                    commodity.aging_model.size = commodity.size
+                    # Calculate number of cells as a float to correctly represent power split with nonreal cells
+                    commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
             self.size = sum([commodity.size for commodity in self.commodities.values()])
+
         elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
@@ -667,8 +674,7 @@ class MobileCommodity:
             scenario.components.append(self.ess)
 
             if self.parent.aging and not self.parent.opt:
-                self.aging_model = bat.BatteryPack(scenario, self.parent.chemistry, self.size)
-                # todo enable aging model for sizing case
+                self.aging_model = bat.BatteryPack(scenario, self)
 
     def calc_aging(self, horizon):
         self.aging_model.age(self, horizon)
