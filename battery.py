@@ -6,12 +6,21 @@ import pandas as pd
 import rainflow
 import scipy.interpolate as spip
 
+import blocks
+
+
 class BatteryPackModel:
 
     def __init__(self, scenario, commodity):
 
         self.parent = commodity
-        self.chemistry = self.parent.parent.chemistry.lower()  # 'lfp' or 'nmc'
+
+        if isinstance(commodity, blocks.MobileCommodity):
+            self.opt = self.parent.parent.opt
+            self.chemistry = self.parent.parent.chemistry.lower()  # 'lfp' or 'nmc'
+        else:  # StationaryEnergyStorage
+            self.opt = self.parent.opt
+            self.chemistry = self.parent.chemistry.lower()
 
         self.soh = 1  # initial value
 
@@ -95,14 +104,14 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-        if self.parent.parent.opt:  # self.parent.parent is CommoditySystem
+        if self.opt:  # self.parent.parent is CommoditySystem
             self.size = None  # placeholder for nominal pack capacity - to be filled after size optimization
         else:
             self.size = self.parent.size
             # Calculate number of cells as a float to correctly represent power split with nonreal cells
             self.n_cells = self.size / self.e_cell
 
-    def age(self, block, horizon):
+    def age(self, commodity, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
@@ -110,11 +119,14 @@ class BatteryPackModel:
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
-        self.p_cell_hor = (block.flow_bat_in_ch - block.flow_bat_out_ch) / self.n_cells
+        if isinstance(commodity, blocks.MobileCommodity):
+            self.p_cell_hor = (commodity.flow_bat_in_ch - commodity.flow_bat_out_ch) / self.n_cells
+        else:  # StationaryStorage
+            self.p_cell_hor = (commodity.flow_in_ch - commodity.flow_out_ch) / self.n_cells
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = block.soc_ch[:-1]  # omit last step as its effects reach into next horizon
+        self.soc_hor = commodity.soc_ch[:-1]  # omit last step as its effects reach into next horizon
         self.ocv_hor = self.ocv_interp(self.soc_hor)
 
         # Calculate timespan of horizon in seconds
@@ -142,12 +154,15 @@ class BatteryPackModel:
         elif self.chemistry == 'lfp':
             self.calc_aging_naumann(horizon)
 
-        # update block's (in case of Commodity this is the MobileCommodity instance) storage size
-        block.soh = 1 - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
-        block.soc_min = (1 - block.soh) / 2
-        block.soc_max = 1 - ((1 - block.soh) / 2)
+        # update block / commodity storage size
+        commodity.soh = 1 - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
+        commodity.soc_min = (1 - commodity.soh) / 2
+        commodity.soc_max = 1 - ((1 - commodity.soh) / 2)
 
     def calc_aging_naumann(self, horizon):
+
+        # Set global tuning factor
+        k_tuning = 1
 
         #  Calculate calendric stress factor timeseries (from https://doi.org/10.1016/j.est.2018.01.019)
         k_temp_q_cal = 1.2571e-05 * np.exp((-17126 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15))
@@ -162,11 +177,17 @@ class BatteryPackModel:
         k_soc_r_cal = k_soc_r_cal.mean()
 
         # Calculate previous aging state as equivalent time at current conditions
-        t_eq = (np.sum(self.q_loss_cal) / k_soc_q_cal / k_temp_q_cal) ** 2
+        t_eq = (np.sum(self.q_loss_cal) / ((k_tuning * k_soc_q_cal * k_temp_q_cal) ** 2))
 
-        # Calculate calendric aging
-        self.q_loss_cal[horizon.index] = k_temp_q_cal * k_soc_q_cal * np.sqrt(t_eq + self.t_hor)
-        self.r_inc_cal[horizon.index] = k_temp_r_cal * k_soc_r_cal * self.t_hor  # linear - no equivalent time needed
+        # Calculate calendric aging within this horizon
+        self.q_loss_cal[horizon.index] = (k_tuning *
+                                          k_temp_q_cal *
+                                          k_soc_q_cal *
+                                          (np.sqrt(t_eq + self.t_hor) - np.sqrt(t_eq)))
+        self.r_inc_cal[horizon.index] = (k_tuning *
+                                         k_temp_r_cal *
+                                         k_soc_r_cal *
+                                         self.t_hor)  # linear - no equivalent time needed
 
         # Calculate cyclic stress factor series (DOD for each detected cycle, C-rate over time)
         # Methodology from https://doi.org/10.1016/j.jpowsour.2019.227666
@@ -184,11 +205,15 @@ class BatteryPackModel:
         k_crate_r_cyc = k_crate_r_cyc.mean()
 
         # Define previous aging state as equivalent FECs at current conditions
-        fec_eq = (100 * np.sum(self.q_loss_cyc) / k_dod_q_cyc / k_crate_q_cyc) ** 2
+        fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
 
-        # Calculate cyclic aging (0.01 converts percent to fraction)
-        self.q_loss_cyc[horizon.index] = 0.01 * (k_dod_q_cyc * k_crate_q_cyc) * np.sqrt(fec_eq + self.fec_hor)
-        self.r_inc_cyc[horizon.index] = 0.01 * (k_dod_r_cyc * k_crate_r_cyc) * self.fec_hor # linear, not fec_eq needed
+        # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
+        self.q_loss_cyc[horizon.index] = (0.01 *
+                                          (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
+                                          (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
+        self.r_inc_cyc[horizon.index] = (0.01 *
+                                         (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
+                                         self.fec_hor)  # linear, not fec_eq needed
 
     def calc_aging_schmalstieg(self, horizon):
 
@@ -208,10 +233,10 @@ class BatteryPackModel:
         t_eq_q = (np.sum(self.q_loss_cal) / (k_tuning * alpha_cap)) ** (4 / 3)
         t_eq_r = (np.sum(self.r_inc_cal) / (k_tuning * alpha_res)) ** (4 / 3)
 
-        # Calculate calendric aging
+        # Calculate calendric aging in this horizon
         t_hor_days = self.t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
-        self.q_loss_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75)
-        self.r_inc_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75)
+        self.q_loss_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
+        self.r_inc_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
 
         # Calculate mean OCV of each detected cycle
         ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean'])
@@ -229,7 +254,7 @@ class BatteryPackModel:
         q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
 
         # Calculate cyclic aging
-        self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * ((q_eq + self.q_tot_hor) ** 0.5)
+        self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
         self.r_inc_cal[horizon.index] = k_tuning * beta_res * self.q_tot_hor
 
 

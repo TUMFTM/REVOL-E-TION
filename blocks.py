@@ -348,10 +348,6 @@ class CommoditySystem(InvestBlock):
             raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is not compatible'
                                  f' with a priori integration level (e.g. \"uc\")')
 
-        if self.aging and self.opt:
-            raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is currently not compatible'
-                                 f' with component size optimization')
-
         # Creation of static energy system components --------------------------------
 
         """
@@ -676,7 +672,7 @@ class MobileCommodity:
                                                            nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
 
-            if self.parent.aging and not self.parent.opt:
+            if self.parent.aging:
                 self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def calc_aging(self, horizon):
@@ -998,6 +994,12 @@ class StationaryEnergyStorage(InvestBlock):
                                                        outflow_conversion_factor=self.dis_eff,
                                                        nominal_storage_capacity=self.size)
         scenario.components.append(self.ess)
+
+        if self.aging:
+            self.aging_model = bat.BatteryPackModel(scenario, self)
+
+    def calc_aging(self, horizon):
+        self.aging_model.age(self, horizon)
 
     def calc_results(self, scenario):
 
