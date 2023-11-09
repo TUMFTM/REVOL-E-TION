@@ -1,10 +1,12 @@
 import numpy as np
 import os
 import pickle
+
+import pandas as pd
 import rainflow
 import scipy.interpolate as spip
 
-class BatteryPack:
+class BatteryPackModel:
 
     def __init__(self, scenario, commodity):
 
@@ -88,7 +90,7 @@ class BatteryPack:
                                                            values=self.r_i_dch.to_numpy(),
                                                            method='linear')
 
-        self.e_cell = self.q_nom_cell * self.u_nom  # Nominal energy content of the cell in Wh
+        self.e_cell = self.q_nom_cell * self.u_nom_cell  # Nominal energy content of the cell in Wh
         self.e_spec_grav_cell = self.e_cell / self.m_cell
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         self.c_th_cell = self.m_cell * self.c_th_spec_cell
@@ -105,8 +107,6 @@ class BatteryPack:
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
         """
-        # Calculate timespan of horizon in seconds
-        self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
@@ -114,11 +114,15 @@ class BatteryPack:
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = block.soc_ch
+        self.soc_hor = block.soc_ch[:-1]  # omit last step as its effects reach into next horizon
         self.ocv_hor = self.ocv_interp(self.soc_hor)
 
+        # Calculate timespan of horizon in seconds
+        self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
+
         # Get temperature timeseries
-        self.temp_hor_c = 25  # pack temperature in °C # todo replace with ambient (or thermal model)
+        self.temp_hor_c = pd.Series(data=25,index=horizon.ch_dti)  # pack temperature in °C
+        # todo replace with ambient (or thermal model)
         self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
 
         # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
@@ -128,18 +132,20 @@ class BatteryPack:
 
         # Calculate Number of Full Equivalent Cycles (1 EFC is 2 capacities of charge throughput)
         self.fec_hor = sum([cycle['count'] * cycle['range'] for cycle in self.cycles_hor])
-        self.q_tot_hor = 2 * self.fec_hor * self.q_nom_cell   # todo check accuracy - possibly remove factor
+        self.q_tot_hor = 2 * self.fec_hor * self.q_nom_cell
 
         # Calculate Depths of Discharge
-        self.dod_hor = np.array([cycle['range'] for cycle in self.cycles_hor])  # todo how to count half cycles ?
+        self.dod_hor = np.array([cycle['range'] for cycle in self.cycles_hor])
 
         if self.chemistry == 'nmc':
             self.calc_aging_schmalstieg(horizon)
         elif self.chemistry == 'lfp':
             self.calc_aging_naumann(horizon)
 
-        # update block's storage size
+        # update block's (in case of Commodity this is the MobileCommodity instance) storage size
         block.soh = 1 - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
+        block.soc_min = (1 - block.soh) / 2
+        block.soc_max = 1 - ((1 - block.soh) / 2)
 
     def calc_aging_naumann(self, horizon):
 
@@ -150,8 +156,10 @@ class BatteryPack:
         k_soc_r_cal = 3.3903 * ((self.soc_hor - 0.5) ** 2) + 1.56040
 
         # Aggregate calendric stress factors (converting them to scalar)
-        for stress_factor in [k_temp_q_cal, k_temp_r_cal, k_soc_q_cal, k_soc_r_cal]:
-            stress_factor = np.mean(stress_factor)
+        k_temp_q_cal = k_temp_q_cal.mean()
+        k_temp_r_cal = k_temp_r_cal.mean()
+        k_soc_q_cal = k_soc_q_cal.mean()
+        k_soc_r_cal = k_soc_r_cal.mean()
 
         # Calculate previous aging state as equivalent time at current conditions
         t_eq = (np.sum(self.q_loss_cal) / k_soc_q_cal / k_temp_q_cal) ** 2
@@ -168,12 +176,12 @@ class BatteryPack:
         k_crate_r_cyc = 0.0023 - 0.0018 * self.crate_hor
 
         # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-        for stress_factor in [k_dod_q_cyc, k_dod_r_cyc]:
-            stress_factor = np.sum(stress_factor * self.dod_hor) / np.sum(self.dod_hor)
+        k_dod_q_cyc = np.sum(k_dod_q_cyc * self.dod_hor) / np.sum(self.dod_hor)
+        k_dod_r_cyc = np.sum(k_dod_q_cyc * self.dod_hor) / np.sum(self.dod_hor)
 
         # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
-        for stress_factor in [k_crate_q_cyc, k_crate_r_cyc]:
-            stress_factor = np.mean(stress_factor)
+        k_crate_q_cyc = k_crate_q_cyc.mean()
+        k_crate_r_cyc = k_crate_r_cyc.mean()
 
         # Define previous aging state as equivalent FECs at current conditions
         fec_eq = (100 * np.sum(self.q_loss_cyc) / k_dod_q_cyc / k_crate_q_cyc) ** 2

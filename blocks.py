@@ -24,6 +24,7 @@ import os
 import pandas as pd
 import pvlib
 import pytz
+import statistics
 import timezonefinder
 
 import battery as bat
@@ -45,7 +46,6 @@ class InvestBlock:
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
         # TODO add "existing" block for grid connection
-
 
         if isinstance(self, SystemCore):
             self.size = None         # SystemCore has two sizes and is initialized in its own __init__
@@ -573,6 +573,11 @@ class MobileCommodity:
 
         self.init_soc = self.parent.init_soc
         self.ph_init_soc = self.init_soc  # set first PH's initial state variables (only SOC)
+        self.soc_max = 1
+        self.soc_min = 0
+
+        self.init_soh = 1
+        self.soh = self.init_soh
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = None
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = None
@@ -654,7 +659,6 @@ class MobileCommodity:
                                                            # efficiency already modeled in transformers
                                                            outflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
-                                                           max_storage_level=1,
                                                            investment=solph.Investment(
                                                                ep_costs=self.parent.epc))
             else:
@@ -669,12 +673,11 @@ class MobileCommodity:
                                                            # efficiency already modeled in transformers
                                                            outflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
-                                                           max_storage_level=1,
                                                            nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
 
             if self.parent.aging and not self.parent.opt:
-                self.aging_model = bat.BatteryPack(scenario, self)
+                self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def calc_aging(self, horizon):
         self.aging_model.age(self, horizon)
@@ -773,12 +776,16 @@ class MobileCommodity:
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.ph_data['consumption']
 
-            # set initial and minimum storage levels for coming prediction horizon
-            self.ess.initial_storage_level = self.ph_init_soc
-            self.ess.min_storage_level = self.ph_data['minsoc']
+            # limit and set initial storage level to min and max soc from aging
+            self.ess.initial_storage_level = statistics.median([self.soc_min, self.ph_init_soc, self.soc_max])
 
-        self.ess.nominal_storage_capacity = self.size * self.soh
-
+            # set minimum and maximum storage levels as per soh for coming prediction horizon
+            # nominal_storage_capacity is untouched to enable proper soc tracking and cycle depth rel. to nom. cap.
+            minsoc_noone = self.ph_data.loc[self.ph_data['minsoc'] > self.soc_max, 'minsoc'] = self.soc_max
+            self.ess.min_storage_level = np.maximum(self.ph_data['minsoc'], self.soc_min).to_list()  # elementwise
+            # avoid setting all max_storage_levels to zero if pure minsoc timeseries if used
+            minsoc_nozero = self.ph_data.loc[:, 'minsoc'].replace(to_replace=0, value=1)
+            self.ess.max_storage_level = np.minimum(minsoc_nozero, self.soc_max).to_list()  # elementwise
 
 
 class PVSource(InvestBlock):

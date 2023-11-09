@@ -177,14 +177,21 @@ class RentalSystem:
             column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
 
+        # Initialize dataframe for time based log
         self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
-        self.data.loc[:, (slice(None), "atbase")] = True
+        self.data.loc[:, (slice(None), 'atbase')] = True
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')].iloc[:-1] = False
-                self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
-                # minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
+                # Set Availability at base for charging
+                self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
+                (commodity, 'atbase')] = False
+
+                # set consumption as constant while rented out
+                self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
+                (commodity, 'consumption')] = process['energy_req_pc'] / process['steps_rental']
+
+                # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
 
         self.cs.data = self.data
