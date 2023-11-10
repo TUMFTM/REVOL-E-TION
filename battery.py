@@ -22,11 +22,6 @@ class BatteryPackModel:
             self.opt = self.parent.opt
             self.chemistry = self.parent.chemistry.lower()
 
-        self.soh = 1  # initial value
-
-        self.soc_max = 1  # Upper SOC limit
-        self.soc_min = 0  # Lower SOC limit
-
         # Thermal model parameters
         self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
         self.c_th_spec_cell = 1045  # Specific heat capacity of LI cells as per Teichert's dissertation in J/(kg K)
@@ -127,34 +122,37 @@ class BatteryPackModel:
 
         # Get SOC & OCV timeseries from horizon results
         self.soc_hor = commodity.soc_ch[:-1]  # omit last step as its effects reach into next horizon
-        self.ocv_hor = self.ocv_interp(self.soc_hor)
+        self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
 
         # Calculate timespan of horizon in seconds
         self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
 
         # Get temperature timeseries
-        self.temp_hor_c = pd.Series(data=25,index=horizon.ch_dti)  # pack temperature in °C
+        self.temp_hor_c = pd.Series(data=25, index=horizon.ch_dti)  # pack temperature in °C
         # todo replace with ambient (or thermal model)
         self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
 
         # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
-        self.cycles_hor = [{'range': rng, 'mean': mean, 'count': count}
-                           for rng, mean, count, _, _
-                           in rainflow.extract_cycles(self.soc_hor)]
+        self.cycles_hor = {'depth': [], 'mean': [], 'type': []}
+        for range, mean, count, _, _ in rainflow.extract_cycles(self.soc_hor):
+            self.cycles_hor['depth'].append(range)  # depth of cycle expressed as SOC fraction
+            self.cycles_hor['mean'].append(mean)  # mean SOC of cycle
+            self.cycles_hor['type'].append(count)  # type of cycle 0.5 (half cycle) or 1 (full cycle)
+        self.cycles_hor['depth'] = np.array(self.cycles_hor['depth'])
+        self.cycles_hor['mean'] = np.array(self.cycles_hor['mean'])
+        self.cycles_hor['type'] = np.array(self.cycles_hor['type'])
 
         # Calculate Number of Full Equivalent Cycles (1 EFC is 2 capacities of charge throughput)
-        self.fec_hor = sum([cycle['count'] * cycle['range'] for cycle in self.cycles_hor])
-        self.q_tot_hor = 2 * self.fec_hor * self.q_nom_cell
+        self.fec_hor = sum(self.cycles_hor['type'] * self.cycles_hor['depth'])
+        self.q_tot_hor = self.fec_hor * (2 * self.q_nom_cell)
 
-        # Calculate Depths of Discharge
-        self.dod_hor = np.array([cycle['range'] for cycle in self.cycles_hor])
-
+        # Determine actual aging
         if self.chemistry == 'nmc':
             self.calc_aging_schmalstieg(horizon)
         elif self.chemistry == 'lfp':
             self.calc_aging_naumann(horizon)
 
-        # update block / commodity storage size
+        # Update block / commodity storage size
         commodity.soh = 1 - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
         commodity.soc_min = (1 - commodity.soh) / 2
         commodity.soc_max = 1 - ((1 - commodity.soh) / 2)
@@ -191,29 +189,34 @@ class BatteryPackModel:
 
         # Calculate cyclic stress factor series (DOD for each detected cycle, C-rate over time)
         # Methodology from https://doi.org/10.1016/j.jpowsour.2019.227666
-        k_dod_q_cyc = 4.0253 * ((self.dod_hor - 0.6) ** 3) + 1.09230
-        k_dod_r_cyc = 6.8477 * ((self.dod_hor - 0.5) ** 3) + 0.91882
+        k_dod_q_cyc = 4.0253 * ((self.cycles_hor['depth'] - 0.6) ** 3) + 1.09230
+        k_dod_r_cyc = 6.8477 * ((self.cycles_hor['depth'] - 0.5) ** 3) + 0.91882
         k_crate_q_cyc = 0.0971 + 0.063 * self.crate_hor
         k_crate_r_cyc = 0.0023 - 0.0018 * self.crate_hor
 
-        # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-        k_dod_q_cyc = np.sum(k_dod_q_cyc * self.dod_hor) / np.sum(self.dod_hor)
-        k_dod_r_cyc = np.sum(k_dod_q_cyc * self.dod_hor) / np.sum(self.dod_hor)
+        if np.sum(self.cycles_hor['depth']) > 0:  # actual cycling happened
+            # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
+            k_dod_q_cyc = np.sum(k_dod_q_cyc * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
+            k_dod_r_cyc = np.sum(k_dod_r_cyc * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
 
-        # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
-        k_crate_q_cyc = k_crate_q_cyc.mean()
-        k_crate_r_cyc = k_crate_r_cyc.mean()
+            # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
+            k_crate_q_cyc = k_crate_q_cyc.mean()
+            k_crate_r_cyc = k_crate_r_cyc.mean()
 
-        # Define previous aging state as equivalent FECs at current conditions
-        fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
+            # Define previous aging state as equivalent FECs at current conditions
+            fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
 
-        # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
-        self.q_loss_cyc[horizon.index] = (0.01 *
-                                          (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
-                                          (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
-        self.r_inc_cyc[horizon.index] = (0.01 *
-                                         (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
-                                         self.fec_hor)  # linear, not fec_eq needed
+            # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
+            self.q_loss_cyc[horizon.index] = (0.01 *
+                                              (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
+                                              (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
+            self.r_inc_cyc[horizon.index] = (0.01 *
+                                             (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
+                                             self.fec_hor)  # linear, not fec_eq needed
+        else:  # technically not necessary to set values here as no aging happens, eases debugging
+            beta_cap = 0
+            beta_res = 0
+            q_eq = 0
 
     def calc_aging_schmalstieg(self, horizon):
 
@@ -225,9 +228,10 @@ class BatteryPackModel:
         alpha_cap = (7.543 * self.ocv_hor - 23.75) * 1e6 * np.exp(-6976 / self.temp_hor_k)  # timeseries over all steps
         alpha_res = (5.270 * self.ocv_hor - 16.32) * 1e5 * np.exp(-5986 / self.temp_hor_k)  # timeseries over all steps
 
-        # Aggregate calendric stress factors (converting them to scalar)
-        for stress_factor in [alpha_cap, alpha_res]:
-            stress_factor = np.mean(stress_factor)
+        # Aggregate calendric stress factors (converting them to scalar) and limit them to zero to avoid
+        # a) negative aging and b) problems in calculation of t_eq
+        alpha_cap = np.maximum(alpha_cap.mean(), 1E-10)
+        alpha_res = np.maximum(alpha_res.mean(), 1E-10)
 
         # Calculate previous aging state as equivalent time at current conditions
         t_eq_q = (np.sum(self.q_loss_cal) / (k_tuning * alpha_cap)) ** (4 / 3)
@@ -236,27 +240,34 @@ class BatteryPackModel:
         # Calculate calendric aging in this horizon
         t_hor_days = self.t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
         self.q_loss_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
-        self.r_inc_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
+        self.r_inc_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
 
         # Calculate mean OCV of each detected cycle
-        ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean'])
+        ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean']).reshape([-1,])
         # TODO Schmalstieg states quadratic mean (rms) of voltage instead of arithmetic mean!
 
         # Calculate cyclic stress factor series for each cycle
-        beta_cap = 7.348E-3 * (ocv_cycles_mean - 3.667) ** 2 + 7.6E-4 + 4.081E-3 * self.dod_hor
-        beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 + 1.521E-5 + 2.798E-4 * self.dod_hor
+        beta_cap = 7.348E-3 * (ocv_cycles_mean - 3.667) ** 2 + 7.6E-4 + 4.081E-3 * self.cycles_hor['depth']
+        beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521E-5 + 2.798E-4 * self.cycles_hor['depth']
+        beta_res = np.maximum(1.5E-5, beta_res)  # limitation as per text following Eq. (21) in paper
 
-        # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
-        for stress_factor in [beta_cap, beta_res]:
-            stress_factor = np.sum(stress_factor * self.dod_hor) / np.sum(self.dod_hor)
+        if np.sum(self.cycles_hor['depth']) > 0:  # actual cycling happened
 
-        # Define previous aging state as equivalent FECs at current conditions
-        q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
+            # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
+            beta_cap = np.sum(beta_cap * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
+            beta_res = np.sum(beta_res * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
 
-        # Calculate cyclic aging
-        self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
-        self.r_inc_cal[horizon.index] = k_tuning * beta_res * self.q_tot_hor
+            # Define previous aging state as equivalent FECs at current conditions
+            q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
 
+            # Calculate cyclic aging
+            self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
+            self.r_inc_cal[horizon.index] = k_tuning * beta_res * self.q_tot_hor
+
+        else:  # technically not necessary to set values here as no aging happens, eases debugging
+            beta_cap = 0
+            beta_res = 0
+            q_eq = 0
 
     def rint_model(self, p_out):
         """

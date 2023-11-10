@@ -586,8 +586,6 @@ class MobileCommodity:
                              index=scenario.sim_dti[0:1],
                              dtype='float64')
 
-        self.soh = 1  # set initial aging state
-
         # Creation of permanent energy system components --------------------------------
 
         """
@@ -777,7 +775,7 @@ class MobileCommodity:
 
             # set minimum and maximum storage levels as per soh for coming prediction horizon
             # nominal_storage_capacity is untouched to enable proper soc tracking and cycle depth rel. to nom. cap.
-            minsoc_noone = self.ph_data.loc[self.ph_data['minsoc'] > self.soc_max, 'minsoc'] = self.soc_max
+            self.ph_data.loc[self.ph_data['minsoc'] > self.soc_max, 'minsoc'] = self.soc_max
             self.ess.min_storage_level = np.maximum(self.ph_data['minsoc'], self.soc_min).to_list()  # elementwise
             # avoid setting all max_storage_levels to zero if pure minsoc timeseries if used
             minsoc_nozero = self.ph_data.loc[:, 'minsoc'].replace(to_replace=0, value=1)
@@ -1017,6 +1015,9 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
         # shift is needed as sc/soc is stored for end of timestep
+        if horizon.index == 0:
+            sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])
+            self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
 
         self.soc_ch = self.sc_ch / self.size
 

@@ -187,9 +187,9 @@ class RentalSystem:
                 self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
                 (commodity, 'atbase')] = False
 
-                # set consumption as constant while rented out
+                # set consumption power as constant while rented out
                 self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
-                (commodity, 'consumption')] = process['energy_req_pc'] / process['steps_rental']
+                (commodity, 'consumption')] = process['energy_req_pc'] / (process['steps_rental'] * self.sc.timestep_hours)
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
