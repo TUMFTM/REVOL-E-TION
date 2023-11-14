@@ -558,6 +558,12 @@ class MobileCommodity:
         else:  # predetermined files
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
+        # add columns for external AC and DC charging to data if not existing
+        # ToDo: find better position for using with FCFS, etc. already add columns when reading data?
+        for col in ['atac', 'atdc']:
+            if col not in self.data.columns:
+                self.data[col] = False
+
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = self.parent.init_soc
