@@ -244,6 +244,10 @@ class Scenario:
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.lcoe = self.lcoe_dis = None
 
+        # ToDo: also implement other opex-variables for external charging?
+        #  Where and how to combine external charging with opex from microgrid?
+        self.opex_sim_ext = 0
+
         run.logger.debug(f'Scenario {self.name} initialization completed')
 
     def accumulate_results(self, run):
