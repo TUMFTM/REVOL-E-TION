@@ -675,19 +675,6 @@ class MobileCommodity:
                                               )
         scenario.components.append(self.ext_dc)
 
-        # ToDo: remove additional source/sink; only for debugging purposes
-        # self.add_source = solph.components.Source(label=f'{self.name}_add_source',
-        #                                       outputs={self.bus: solph.Flow(nominal_value=1000000,
-        #                                                                     variable_costs=0)}
-        #                                       )
-        # scenario.components.append(self.add_source)
-        #
-        # self.add_sink = solph.components.Sink(label=f'{self.name}_add_sink',
-        #                                           inputs={self.bus: solph.Flow(nominal_value=1000000,
-        #                                                                         variable_costs=0)}
-        #                                           )
-        # scenario.components.append(self.add_sink)
-
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
 
@@ -850,45 +837,19 @@ class MobileCommodity:
         p_act = min(p_maxchg * chg_eff, p_tominsoc)  # reduce chg power in final step to just reach departure SOC
         return p_act
 
-    def update_input_components_backup(self):
+    def update_input_components(self):
 
-        if self.parent.int_lvl in self.parent.apriori_lvls:
-            # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.uc_flows['p_int_ac']
-            self.ext_ac.outputs[self.bus].fix = self.uc_flows['p_ext_ac']
-            self.ext_dc.outputs[self.bus].fix = self.uc_flows['p_ext_dc']
-            # Not necessary. Is the same for all charging integration levels
-            # self.snk.inputs[self.bus].fix = self.uc_flows['p_consumption']
-        else:
-            # enable/disable transformers to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
-            self.outflow.inputs[self.bus].max = self.ph_data['atbase'].astype(int)
-
-            # set minimum storage levels for coming prediction horizon
-            self.ess.min_storage_level = self.ph_data['minsoc']
-
-            if self.ext_ac:  # enable/disable ac charging station dependent on input data
-                self.ext_ac.outputs.data[self.bus].max = self.ph_data['atac'].astype(int)
-
-            if self.ext_dc:  # enable/disable dc charging station dependent on input data
-                self.ext_ac.outputs.data[self.bus].max = self.ph_data['atdc'].astype(int)
-
-        # initialization for all integration levels
-        # define consumption data for sink (only enabled when detached from base)
+        # set vehicle consumption data for sink
         self.snk.inputs[self.bus].fix = self.ph_data['consumption']
 
         # set initial storage levels for coming prediction horizon
         self.ess.initial_storage_level = self.ph_init_soc
 
-    def update_input_components(self):
-
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define charging powers (as per uc power calculation)
             self.inflow.outputs[self.bus].fix = self.uc_flows['p_int_ac']
             self.ext_ac.outputs[self.bus].fix = self.uc_flows['p_ext_ac']
             self.ext_dc.outputs[self.bus].fix = self.uc_flows['p_ext_dc']
-            # Not necessary. Is the same for all charging integration levels
-            # self.snk.inputs[self.bus].fix = self.uc_flows['p_consumption']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
@@ -900,13 +861,6 @@ class MobileCommodity:
             # enable/disable ac and dc charging station dependent on input data
             self.ext_ac.outputs.data[self.bus].max = self.ph_data['atac'].astype(int) * self.parent.ext_ac_power
             self.ext_dc.outputs.data[self.bus].max = self.ph_data['atdc'].astype(int) * self.parent.ext_dc_power
-
-        # initialization for all integration levels
-        # define consumption data for sink (only enabled when detached from base)
-        self.snk.inputs[self.bus].fix = self.ph_data['consumption']
-
-        # set initial storage levels for coming prediction horizon
-        self.ess.initial_storage_level = self.ph_init_soc
 
 
 class PVSource(InvestBlock):
