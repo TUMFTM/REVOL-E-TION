@@ -827,6 +827,7 @@ class MobileCommodity:
             self.uc_flows.loc[dtindex, 'p_consumption'] = row['consumption']
 
             # update SOC
+            # ToDo: use row['consumption'] (=previous ToDo)
             soc_delta = (self.uc_flows.loc[dtindex, 'p_int_ac'] + \
                          self.uc_flows.loc[dtindex, 'p_ext_ac'] + \
                          self.uc_flows.loc[dtindex, 'p_ext_dc'] - \
