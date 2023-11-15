@@ -759,6 +759,7 @@ class MobileCommodity:
         # get all timesteps, where charging is available (internal AC, external AC, external DC)
         chg_inz = self.data.index[self.data[['atbase', 'atac', 'atdc']].any(axis=1)]
 
+        # initialize variable for charging during single parking process
         parking_charging = False
 
         for dtindex, row in self.data.iterrows():
@@ -788,8 +789,6 @@ class MobileCommodity:
                                                                         chg_eff=self.parent.chg_eff,
                                                                         scenario=scenario)
 
-                parking_charging = False  # ToDo: find better position to set variable
-
             elif row['atac'] == 1:  # parking at destination
                 if dtindex in arr_parking_inz:  # plugging in only happens when parking starts
                     # use current int-index and next arrival index to calculate consumption and convert to SOC
@@ -801,6 +800,8 @@ class MobileCommodity:
                     # set charging to True, if charging is necessary
                     if consumption_remaining > ((soc[-1] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
                         parking_charging = True
+                    else:
+                        parking_charging = False
 
                 if parking_charging is True:
                     dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
@@ -836,7 +837,6 @@ class MobileCommodity:
             if (soc[-1] < 0) or (soc[-1] > 1):
                 # ToDo: Raise exception
                 print("Error! Calculation of UC charging profile failed. SOC out of bounds")
-        pass
 
     def uc_charge(self, soc_target, soc_current, p_maxchg, chg_eff, scenario):
         soc_target = min(soc_target, 1)  # soc must not get bigger than 1
