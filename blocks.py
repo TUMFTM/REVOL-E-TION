@@ -281,12 +281,12 @@ class InvestBlock:
         source_types = (PVSource, WindSource, ControllableSource)
 
         if isinstance(self, StationaryEnergyStorage):
-            self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
+            self.size = horizon.results[(self.ess, None)]['scalars']['invest']
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
         elif isinstance(self, CommoditySystem):
             for commodity in self.commodities.values():
-                commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
+                commodity.size = horizon.results[(commodity.ess, None)]['scalars']['invest']
             self.size = sum([commodity.size for commodity in self.commodities.values()])
         elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
@@ -617,7 +617,7 @@ class MobileCommodity:
                                                    inputs={
                                                        self.parent.bus: solph.Flow(nominal_value=self.parent.chg_pwr,
                                                                                    variable_costs=run.eps_cost)},
-                                                   outputs={self.bus: solph.Flow()},
+                                                   outputs={self.bus: solph.Flow(nominal_value=1)},
                                                    conversion_factors={self.bus: self.parent.chg_eff})
         scenario.components.append(self.inflow)
 
@@ -721,13 +721,10 @@ class MobileCommodity:
         self.flow_ext_ac = pd.concat([self.flow_ext_ac, self.flow_ext_ac_ch])
         self.flow_ext_dc = pd.concat([self.flow_ext_dc, self.flow_ext_dc_ch])
 
-        # ToDo: Distinguishing shouldn't be necessary anymore, due to activation of storage for all int_lvls
-        # if self.parent.int_lvl in self.parent.apriori_lvls:
-        #     self.soc_ch = self.ph_data.loc[horizon.ch_dti, 'soc']
-        # else:
+        # ToDo: Check whether shifting is necessary (doesn't seem to be the case; neither for uc nor cc)
         self.sc_ch = solph.views.node(
-            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
-            horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
+            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')]  # [
+            # horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
         # shift is needed as sc/soc is stored for end of timestep by oemof
         self.soc_ch = self.sc_ch / self.size
 
@@ -738,11 +735,14 @@ class MobileCommodity:
         """Converting availability and consumption data of commodities into a power timeseries for uncoordinated
          (i.e. unoptimized and starting at full power after return) charging of commodity"""
 
-        self.uc_flows = pd.DataFrame({'p_int_ac': 0,
-                                      'p_ext_ac': 0,
-                                      'p_ext_dc': 0}, index=self.data.index)
+        self.uc_data = pd.DataFrame({'p_int_ac': 0,  # charging power of AC charger at base
+                                     'p_ext_ac': 0,  # charging power of external AC charger
+                                     'p_ext_dc': 0,  # charging power of external DC charger
+                                     'soc': 0},  # soc of storage at beginning of timestep
+                                    index=self.data.index)
 
-        soc = [self.init_soc]  # initialize list of socs
+        # initialize soc tracking
+        self.uc_data.loc[self.uc_data.index[0], 'soc'] = self.init_soc
 
         # get the indices of all nonzero minsoc rows in the data
         minsoc_inz = self.data.index[self.data['minsoc'] != 0]
@@ -783,11 +783,11 @@ class MobileCommodity:
                     dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
 
                 # Execute AC charging at base
-                self.uc_flows.loc[dtindex, 'p_int_ac'] = self.uc_charge(soc_target=dep_soc,
-                                                                        soc_current=soc[-1],
-                                                                        p_maxchg=self.chg_pwr,
-                                                                        chg_eff=self.parent.chg_eff,
-                                                                        scenario=scenario)
+                self.uc_data.loc[dtindex, 'p_int_ac'] = self.uc_charge(soc_target=dep_soc,
+                                                                       soc_current=self.uc_data.loc[dtindex, 'soc'],
+                                                                       p_maxchg=self.chg_pwr,
+                                                                       chg_eff=self.parent.chg_eff,
+                                                                       scenario=scenario)
 
             elif row['atac'] == 1:  # parking at destination
                 if dtindex in arr_parking_inz:  # plugging in only happens when parking starts
@@ -798,7 +798,7 @@ class MobileCommodity:
                         arr_inxt = self.data.index[-1]
                     consumption_remaining = self.data.loc[dtindex:arr_inxt, 'consumption'].sum()
                     # set charging to True, if charging is necessary
-                    if consumption_remaining > ((soc[-1] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
+                    if consumption_remaining > ((self.uc_data.loc[dtindex, 'soc'] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
                         parking_charging = True
                     else:
                         parking_charging = False
@@ -807,36 +807,37 @@ class MobileCommodity:
                     dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
 
                     # Execute AC charging at destination parking
-                    self.uc_flows.loc[dtindex, 'p_ext_ac'] = self.uc_charge(soc_target=dep_soc,
-                                                                            soc_current=soc[-1],
-                                                                            p_maxchg=self.parent.ext_ac_power,
-                                                                            chg_eff=1,
-                                                                            scenario=scenario)
+                    self.uc_data.loc[dtindex, 'p_ext_ac'] = self.uc_charge(soc_target=dep_soc,
+                                                                           soc_current=self.uc_data.loc[dtindex, 'soc'],
+                                                                           p_maxchg=self.parent.ext_ac_power,
+                                                                           chg_eff=1,
+                                                                           scenario=scenario)
 
             elif row['atdc'] == 1:  # vehicle is driving with possibility to charge on-route
                 # activate charging, if SOC will fall below threshold, before next possibility to charge
                 chg_inxt = chg_inz[chg_inz > dtindex][0]
-                chg_soc = soc[-1] - self.data.loc[dtindex:chg_inxt, 'consumption'].sum() * scenario.timestep_hours / self.size
+                chg_soc = self.uc_data.loc[dtindex, 'soc'] - self.data.loc[dtindex:chg_inxt, 'consumption'].sum() * scenario.timestep_hours / self.size
                 if chg_soc < 0.05:
                     dep_soc = 0.8  # fast-charging only up to SOC of 80 %
 
                     # Execute DC charging on-route
-                    self.uc_flows.loc[dtindex, 'p_ext_dc'] = self.uc_charge(soc_target=dep_soc,
-                                                                            soc_current=soc[-1],
-                                                                            p_maxchg=self.parent.ext_dc_power,
-                                                                            chg_eff=1,
-                                                                            scenario=scenario)
+                    self.uc_data.loc[dtindex, 'p_ext_dc'] = self.uc_charge(soc_target=dep_soc,
+                                                                           soc_current=self.uc_data.loc[dtindex, 'soc'],
+                                                                           p_maxchg=self.parent.ext_dc_power,
+                                                                           chg_eff=1,
+                                                                           scenario=scenario)
 
             # update SOC
-            print(dtindex)
-            soc_delta = (self.uc_flows.loc[dtindex, 'p_int_ac'] + \
-                         self.uc_flows.loc[dtindex, 'p_ext_ac'] + \
-                         self.uc_flows.loc[dtindex, 'p_ext_dc'] - \
+            soc_delta = (self.uc_data.loc[dtindex, 'p_int_ac'] + \
+                         self.uc_data.loc[dtindex, 'p_ext_ac'] + \
+                         self.uc_data.loc[dtindex, 'p_ext_dc'] - \
                          row['consumption']) * scenario.timestep_hours / self.size
-            soc.append(soc[-1] + soc_delta)  # TODO check whether SOC indexing fits optimization output
-            if (soc[-1] < 0) or (soc[-1] > 1):
+            new_soc = self.uc_data.loc[dtindex, 'soc'] + soc_delta
+            # ToDo: check whether SOC indexing fits optimization output -> depending on soc shifting in calc_results()
+            self.uc_data.loc[dtindex + scenario.timestep_td, 'soc'] = new_soc
+            if (new_soc < 0) or (new_soc > 1):
                 # ToDo: Raise exception
-                print("Error! Calculation of UC charging profile failed. SOC out of bounds")
+                print('Error! Calculation of UC charging profile failed. SOC out of bounds')
 
     def uc_charge(self, soc_target, soc_current, p_maxchg, chg_eff, scenario):
         soc_target = min(soc_target, 1)  # soc must not get bigger than 1
@@ -855,9 +856,9 @@ class MobileCommodity:
 
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.uc_flows['p_int_ac']
-            self.ext_ac.outputs[self.bus].fix = self.uc_flows['p_ext_ac']
-            self.ext_dc.outputs[self.bus].fix = self.uc_flows['p_ext_dc']
+            self.inflow.outputs[self.bus].fix = self.uc_data['p_int_ac']
+            self.ext_ac.outputs[self.bus].fix = self.uc_data['p_ext_ac']
+            self.ext_dc.outputs[self.bus].fix = self.uc_data['p_ext_dc']
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
