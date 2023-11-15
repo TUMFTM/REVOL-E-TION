@@ -254,7 +254,7 @@ class Scenario:
         # optional metrics
         # todo find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
-        # TODO implement commodity v2g usage share
+        # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
         # TODO implement SAIDI (Average interruption time)
         # TODO implement SAIFI (Interruption frequency per customer per year)
