@@ -322,7 +322,7 @@ class InvestBlock:
 
         if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]['scalars']['invest']
-        
+
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
 
