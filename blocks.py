@@ -522,7 +522,7 @@ class ControllableSource(InvestBlock):
 
         ac_bus
           |
-          |<-x-gen/grid
+          |<-x-gen
           |
         """
 
@@ -557,6 +557,81 @@ class ControllableSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
+
+    def update_input_components(self, *_):
+        pass  # no sliced input data needed for controllable source, but function needs to be callable
+
+
+class GridConnection(InvestBlock):
+    # ToDo: Draft! Functionality not checked
+    def __init__(self, name, scenario, run):
+
+        super().__init__(name, scenario, run)
+
+        """
+        x denotes the flow measurement point in results
+
+        ac_bus
+          |
+          |-x->grid source
+          |
+          |<-x-grid sink
+          |
+        """
+
+        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
+        self.flow_in = self.flow_out = pd.Series(dtype='float64')
+
+        self.bus = scenario.blocks['core'].ac_bus
+
+        # Load sequence of opex_spec from csv file or create a constant sequence from a value
+        self.load_opex_spec(input_data_path=run.input_data_path,
+                            scenario=scenario,
+                            name=name)
+
+        # ToDo: how to integrate sizing based on chosen integration level
+        if self.opt:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                   investment=solph.Investment(ep_costs=self.epc),
+                                                   variable_costs=self.opex_spec)}
+                                               )
+            self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                             inputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                 investment=solph.Investment(ep_costs=self.epc),
+                                                 variable_costs=self.opex_spec)}
+                                             )
+        else:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                   nominal_value=self.size,
+                                                   variable_costs=self.opex_spec)}
+                                               )
+            self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                             inputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                 nominal_value={'uc': 0,
+                                                                'cc': 0,
+                                                                'tc': 0,
+                                                                'v2v': 0,
+                                                                'v2mg': None,
+                                                                'v2g': None}[self.int_lvl],
+                                                 variable_costs=self.opex_spec)}
+                                             )
+        scenario.components.append(self.src)
+        scenario.components.append(self.snk)
+
+    def calc_results(self, scenario):
+
+        self.calc_energy_results_bidi(scenario)  # bidirectional block
+        self.calc_eco_results(scenario)
+
+    def get_ch_results(self, horizon, scenario):
+
+        self.flow_in_ch = horizon.results[(scenario.blocks['core'].ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
+        self.flow_out_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
+
+        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
 
     def update_input_components(self, *_):
         pass  # no sliced input data needed for controllable source, but function needs to be callable
