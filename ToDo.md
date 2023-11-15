@@ -38,6 +38,7 @@
   - Manually use last value of old data (no more NaNs due to ffill and bfill)  
   - -> df = df.resample(new_freq, axis=0).mean().ffill().bfill(). reindex(pd.date_range(start=df.index.min(), end=end_t, freq=new_freq, inclusive="left")).fillna(df.iloc[-1, :])
 - Always initialize flows with nominal_value!=0? Or even initialize with nominal_value=1?
+- Clean up .gitignore using gitkeep instead of dummy files
 
 ### Bugfixing
 - Hourly time steps produce pandas errors
