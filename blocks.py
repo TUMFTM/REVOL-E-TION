@@ -740,40 +740,45 @@ class MobileCommodity:
 
         self.uc_flows = pd.DataFrame({'p_int_ac': 0,
                                       'p_ext_ac': 0,
-                                      'p_ext_dc': 0,
-                                      'p_consumption': 0}, index=scenario.sim_dti)
+                                      'p_ext_dc': 0}, index=self.data.index)
 
         soc = [self.init_soc]  # initialize list of socs
 
-        # get the integer indices of all leaving (nonzero) minsoc rows in the data
-        minsoc_inz, = self.data['minsoc'].to_numpy().nonzero()
-        dep_inz = np.argwhere(self.data['atbase'].astype(int).diff().bfill().to_numpy() == -1).reshape([-1, ]) - 1
-        # get first timestep, where vehicle is at base again
-        arr_inz = np.argwhere(self.data['atbase'].astype(int).diff().bfill().to_numpy() == 1).reshape([-1, ])
-        # get first timestep, where vehicle is parking at destination
-        arr_parking_inz = np.argwhere(self.data['atac'].astype(int).diff().bfill().to_numpy() == 1).reshape([-1, ])
+        # get the indices of all nonzero minsoc rows in the data
+        minsoc_inz = self.data.index[self.data['minsoc'] != 0]
+
+        # get first timesteps, where vehicle has left the base
+        dep_inz = self.data.index[self.data['atbase'] & ~self.data['atbase'].shift(-1, fill_value=False)]
+
+        # get first timesteps, where vehicle is at base again
+        arr_inz = self.data.index[self.data['atbase'] & ~self.data['atbase'].shift(fill_value=False)][1:]
+
+        # get first timesteps, where vehicle is parking at destination
+        arr_parking_inz = self.data.index[self.data['atac'] & ~self.data['atac'].shift(fill_value=False)]
+
         # get all timesteps, where charging is available (internal AC, external AC, external DC)
-        chg_inz = np.array([self.data.index.get_loc(idx) for idx in
-                            self.data[self.data[["atbase", "atac", "atdc"]].any(axis=1)].index])
+        chg_inz = self.data.index[self.data[['atbase', 'atac', 'atdc']].any(axis=1)]
 
         parking_charging = False
 
         for dtindex, row in self.data.iterrows():
-            intindex = self.data.index.get_loc(dtindex)  # get row number
             # Heuristic:
-            # Vehicle is charged immediately, if atbase is True
-            # Vehicle gets charged during driving, if soc in next timestep is going to fall below threshold value
-            # Vehicle is charged during parking at destination, if current SOC is not enough for trip back to base
+            # - Vehicle is charged immediately, if atbase is True
+            # - Vehicle gets charged during driving, if soc in next timestep is going to fall below threshold value
+            # - Vehicle is charged during parking at destination, if current SOC is not enough for trip back to base
+            # ToDo: influence of min soc for atbase charging: min soc should not have any influence:
+            #  vehicle starts charging, when returning and charges at full speed, until battery is full
+            #  min soc doesn't accelerate things
+            #  -> remove minsoc in its current function from atbase
             if row['atbase'] == 1:  # commodity is at base and chargeable
                 try:
-                    minsoc_inxt = min(minsoc_inz[minsoc_inz >= intindex])  # find next nonzero min SOC
-                    dep_inxt = min(dep_inz[dep_inz >= intindex])  # find next departure
+                    minsoc_inxt = minsoc_inz[minsoc_inz >= dtindex][0]  # find next nonzero min SOC
+                    dep_inxt = dep_inz[dep_inz >= dtindex][0]  # find next departure
                     if minsoc_inxt > dep_inxt:  # Next min soc is not defined before next departure
                         dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
                     else:  # next min_soc is defined before departure and therefore valid for this charging session
-                        soc_time = self.data.index[minsoc_inxt]
-                        dep_soc = self.data.loc[soc_time, 'minsoc']  # get the SOC to recharge to
-                except ValueError:  # when there is no further departure
+                        dep_soc = self.data.loc[minsoc_inxt, 'minsoc']  # get the SOC to recharge to
+                except:  # when there is no further departure
                     dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
 
                 # Execute AC charging at base
@@ -786,15 +791,15 @@ class MobileCommodity:
                 parking_charging = False  # ToDo: find better position to set variable
 
             elif row['atac'] == 1:  # parking at destination
-                if intindex in arr_parking_inz:  # plugging in only happens when parking starts
+                if dtindex in arr_parking_inz:  # plugging in only happens when parking starts
                     # use current int-index and next arrival index to calculate consumption and convert to SOC
-                    try:  # Only works, if last trip ends within prediction horizon
-                        arr_inxt = min(arr_inz[arr_inz >= intindex])
+                    try:  # Fails, if current trip is last trip and doesn't end within prediction horizon
+                        arr_inxt = arr_inz[arr_inz >= dtindex][0]
                     except:
-                        arr_inxt = len(self.data.index) - 1
-                    consumption_remaining = self.data.loc[dtindex:self.data.index[arr_inxt], 'consumption'].sum()
+                        arr_inxt = self.data.index[-1]
+                    consumption_remaining = self.data.loc[dtindex:arr_inxt, 'consumption'].sum()
                     # set charging to True, if charging is necessary
-                    if consumption_remaining > ((soc[-1] + self.data.loc[self.data.index[arr_inxt], 'minsoc']) * self.size):
+                    if consumption_remaining > ((soc[-1] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
                         parking_charging = True
 
                 if parking_charging is True:
@@ -808,11 +813,9 @@ class MobileCommodity:
                                                                             scenario=scenario)
 
             elif row['atdc'] == 1:  # vehicle is driving with possibility to charge on-route
-                # activate charging, if SOC after current timestep will fall below 0
-                # ToDo: compute consumption for all timesteps until next charging station is available
-                chg_inxt = min(chg_inz[chg_inz > intindex])
-                chg_soc = soc[-1] - self.data.loc[dtindex:self.data.index[chg_inxt],
-                                    'consumption'].sum() * scenario.timestep_hours / self.size
+                # activate charging, if SOC will fall below threshold, before next possibility to charge
+                chg_inxt = chg_inz[chg_inz > dtindex][0]
+                chg_soc = soc[-1] - self.data.loc[dtindex:chg_inxt, 'consumption'].sum() * scenario.timestep_hours / self.size
                 if chg_soc < 0.05:
                     dep_soc = 0.8  # fast-charging only up to SOC of 80 %
 
@@ -822,20 +825,18 @@ class MobileCommodity:
                                                                             p_maxchg=self.parent.ext_dc_power,
                                                                             chg_eff=1,
                                                                             scenario=scenario)
-            # ToDo: not necessary anymore? Consumption data is taken from self.ph_data?
-            # use consumption from main input file
-            self.uc_flows.loc[dtindex, 'p_consumption'] = row['consumption']
 
             # update SOC
-            # ToDo: use row['consumption'] (=previous ToDo)
+            print(dtindex)
             soc_delta = (self.uc_flows.loc[dtindex, 'p_int_ac'] + \
                          self.uc_flows.loc[dtindex, 'p_ext_ac'] + \
                          self.uc_flows.loc[dtindex, 'p_ext_dc'] - \
-                         self.uc_flows.loc[dtindex, 'p_consumption']) * scenario.timestep_hours / self.size
+                         row['consumption']) * scenario.timestep_hours / self.size
             soc.append(soc[-1] + soc_delta)  # TODO check whether SOC indexing fits optimization output
             if (soc[-1] < 0) or (soc[-1] > 1):
                 # ToDo: Raise exception
                 print("Error! Calculation of UC charging profile failed. SOC out of bounds")
+        pass
 
     def uc_charge(self, soc_target, soc_current, p_maxchg, chg_eff, scenario):
         soc_target = min(soc_target, 1)  # soc must not get bigger than 1
