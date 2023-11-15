@@ -41,6 +41,8 @@
 - Hourly time steps produce pandas errors
 - Large scenario files (>ca. 100 scenarios) lead to failures in joining up scenarios
 - Resampling bev input data may lead to inaccuracies if the old timestep is not dividable by the new timestep as the input file contains a power which after resampling may not sum up to the actual energy demand
+- SOC profile for MobileCommodity is shifted by one timestep. This doesn't seem to be necessary
+- Meaning of minsoc in uc: is it really necessary before trips?
 
 ### Tests
 - Test whether units of specific opex values are per timestep or per hour <mark>Philipp Rosner
