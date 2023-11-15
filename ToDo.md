@@ -26,6 +26,7 @@
   - Internal rate of Return
   - RE curtailment
   - stationary ESS energy throughput
+- Add rule based charging: FCFS, EQUAL, SOC-based (compare to Waclaw)
 
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
@@ -35,7 +36,8 @@
   - When upsampling new values have to be added at the end (e.g. last: 03:00 -> 15T -> last: 03:45)  
   - In case of new DateTimeIndex[-1] != old DateTimeIndex[-1] (equal to old timespan % new freq !=0) ffill() doesn't work  
   - Manually use last value of old data (no more NaNs due to ffill and bfill)  
-  - -> df = df.resample(new_freq, axis=0).mean().ffill().bfill(). reindex(pd.date_range(start=df.index.min(), end=end_t, freq=new_freq, inclusive="left")).fillna(df.iloc[-1, :])  
+  - -> df = df.resample(new_freq, axis=0).mean().ffill().bfill(). reindex(pd.date_range(start=df.index.min(), end=end_t, freq=new_freq, inclusive="left")).fillna(df.iloc[-1, :])
+- Always initialize flows with nominal_value!=0? Or even initialize with nominal_value=1?
 
 ### Bugfixing
 - Hourly time steps produce pandas errors
