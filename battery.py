@@ -1,7 +1,6 @@
 import numpy as np
 import os
 import pickle
-
 import pandas as pd
 import rainflow
 import scipy.interpolate as spip
@@ -45,7 +44,8 @@ class BatteryPackModel:
         self.r_inc_cyc = np.zeros(scenario.nhorizons)
 
         # Placeholders for aging variables to be filled every aging evaluation
-        self.soc_hor = self.cycles_hor = self.temp_hor_c = self.temp_hor_k = self.p_hor = None
+        self.soc_hor = self.ocv_hor = self.cycles_hor = None
+        self.temp_hor_c = self.temp_hor_k = self.p_hor = self.t_hor = None
 
         if self.chemistry == 'nmc':
             # Cell from Schmalstieg et al. - Sanyo UR18650E
@@ -84,15 +84,21 @@ class BatteryPackModel:
 
         self.ocv_interp = spip.RegularGridInterpolator(points=(self.ocv.index.to_numpy(),),
                                                        values=self.ocv.to_numpy(),
-                                                       method='linear')
+                                                       method='linear',
+                                                       bounds_error=False,
+                                                       fill_value=None)
         self.r_i_ch_interp = spip.RegularGridInterpolator(points=(self.r_i_ch.index.to_list(),
                                                                   self.r_i_ch.columns.to_list()),
                                                           values=self.r_i_ch.to_numpy(),
-                                                          method='linear')
+                                                          method='linear',
+                                                          bounds_error=False,
+                                                          fill_value=None)
         self.r_i_dch_interp = spip.RegularGridInterpolator(points=(self.r_i_dch.index.to_list(),
                                                                    self.r_i_dch.columns.to_list()),
                                                            values=self.r_i_dch.to_numpy(),
-                                                           method='linear')
+                                                           method='linear',
+                                                           bounds_error=False,
+                                                           fill_value=None)
 
         self.e_cell = self.q_nom_cell * self.u_nom_cell  # Nominal energy content of the cell in Wh
         self.e_spec_grav_cell = self.e_cell / self.m_cell
@@ -105,8 +111,12 @@ class BatteryPackModel:
             self.size = self.parent.size
             # Calculate number of cells as a float to correctly represent power split with nonreal cells
             self.n_cells = self.size / self.e_cell
+            self.m_cells = self.n_cells * self.m_cell
+            self.m_housing = self.m_cells * (1 - self.e_spec_grav_c2p)
+            self.c_th_cells = self.n_cells * self.c_th_cell
+            self.c_th_housing = self.c_th_spec_housing * self.m_housing
 
-    def age(self, commodity, horizon):
+    def age(self, commodity, scenario, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
@@ -128,8 +138,17 @@ class BatteryPackModel:
         self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
 
         # Get temperature timeseries
-        self.temp_hor_c = pd.Series(data=25, index=horizon.ch_dti)  # pack temperature in °C
-        # todo replace with ambient (or thermal model)
+        if isinstance(commodity.temp_battery, str):
+            if isinstance(scenario.blocks[commodity.temp_battery], blocks.PVSource):
+                self.temp_hor_c = scenario.blocks[commodity.temp_battery].ph_data.loc[horizon.ch_dti, 'temp_air']
+            else:
+                raise ValueError('Battery temperature must be the name of a PVSource block or numeric')
+
+        elif isinstance(commodity.temp_battery, (int, float)):
+            self.temp_hor_c = pd.Series(data=commodity.temp_battery, index=horizon.ch_dti)  # pack temperature in °C
+        else:
+            raise ValueError('Battery temperature must be the name of a PVSource block or numeric')
+
         self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
 
         # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
@@ -220,6 +239,8 @@ class BatteryPackModel:
 
     def calc_aging_schmalstieg(self, horizon):
 
+        # Schmalstieg aging model is not verified yet against aging data from original paper
+
         # Set global tuning factor
         # k_tuning = 0.43  # Teichert for VW ID.3 cell
         k_tuning = 1  # deactivation of tuning factor
@@ -262,7 +283,7 @@ class BatteryPackModel:
 
             # Calculate cyclic aging
             self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
-            self.r_inc_cal[horizon.index] = k_tuning * beta_res * self.q_tot_hor
+            self.r_inc_cyc[horizon.index] = k_tuning * beta_res * self.q_tot_hor
 
         else:  # technically not necessary to set values here as no aging happens, eases debugging
             beta_cap = 0
@@ -289,15 +310,9 @@ class BatteryPackModel:
 
         return i, p_loss
 
-    # def thermal_model(self,bet, cell, n_cells, T_Cell, T_Housing, T_amb, P_Loss, Pcool, Pheat, dt):
+    # def thermal_model(self):
     #
-    #     # Mass Calculation based on battery size
-    #     m_housing = ((n_cells * cell.Qnom * cell.Unom) / cell.grav_energy_density) * (1 - cell.c2p_grav)
-    #
-    #
-    #     c_th_housing = self.c_th_spec_housing * m_housing  # J/K
-    #
-    #     T_Housing_new = T_Housing + dt * (
+    #     temp_housing_new = temp_housing + dt * (
     #                 ((Pcool * bet.COPcool) + (Pheat * bet.COPheat) + bet.k_bh * n_cells * (T_Cell -
     #                                                                                        T_Housing) + bet.k_out * (
     #                              T_amb - T_Housing)) / Cth_Housing)

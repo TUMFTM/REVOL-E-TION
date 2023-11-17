@@ -386,9 +386,9 @@ class CommoditySystem(InvestBlock):
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
-    def calc_aging(self, horizon):
+    def calc_aging(self, scenario, horizon):
         for commodity in self.commodities.values():
-            commodity.calc_aging(horizon)
+            commodity.calc_aging(scenario, horizon)
 
     def calc_results(self, scenario):
 
@@ -559,6 +559,7 @@ class MobileCommodity:
         self.parent = parent
         self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.chg_pwr = self.parent.chg_pwr
+        self.temp_battery = self.parent.temp_battery
 
         if self.parent.filename == 'run_des':
             self.data = None  # parent data does not exist yet, filtering is done later
@@ -673,8 +674,8 @@ class MobileCommodity:
             if self.parent.aging:
                 self.aging_model = bat.BatteryPackModel(scenario, self)
 
-    def calc_aging(self, horizon):
-        self.aging_model.age(self, horizon)
+    def calc_aging(self, scenario, horizon):
+        self.aging_model.age(self, scenario, horizon)
 
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
@@ -773,14 +774,12 @@ class MobileCommodity:
             # limit and set initial storage level to min and max soc from aging
             self.ess.initial_storage_level = statistics.median([self.soc_min, self.ph_init_soc, self.soc_max])
 
-            # set minimum and maximum storage levels as per soh for coming prediction horizon
-            # nominal_storage_capacity is untouched to enable proper soc tracking and cycle depth rel. to nom. cap.
-            self.ph_data.loc[self.ph_data['minsoc'] > self.soc_max, 'minsoc'] = self.soc_max
-            self.ess.min_storage_level = np.maximum(self.ph_data['minsoc'], self.soc_min).to_list()  # elementwise
-            # avoid setting all max_storage_levels to zero if pure minsoc timeseries if used
-            minsoc_nozero = self.ph_data.loc[:, 'minsoc'].replace(to_replace=0, value=1)
-            self.ess.max_storage_level = np.minimum(minsoc_nozero, self.soc_max).to_list()  # elementwise
-
+            # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
+            # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
+            # relative to nominal capacity
+            soc_min_clipped = self.ph_data['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = soc_min_clipped
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.ph_data.index)
 
 class PVSource(InvestBlock):
 
@@ -843,7 +842,7 @@ class PVSource(InvestBlock):
 
         u0 = 26.9  # W/(˚C.m2) - cSi Free standing
         u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-        mod_temp = self.data['AirTemp'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
+        mod_temp = self.data['temp_ambient'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
 
         # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
         # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
@@ -900,24 +899,27 @@ class PVSource(InvestBlock):
                                                                      optimalangles=True,
                                                                      map_variables=True)
 
-            # PVGIS gives time slots as XX:06 - round to full hour
+            # PVGIS gives time slots as XX:06h - round to full hour
             self.data.index = self.data.index.round('H')
-        else:
+
+        else:  # input from file instead of API
             self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.filename}.csv')
 
-            if self.data_source == 'PVGIS file':  # data input from fixed PVGIS csv file
-                self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
-                                                                                    map_variables=True)
+            if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
+                self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path, map_variables=True)
                 self.latitude = self.meta['latitude']
                 self.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('H')
-            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file, no lat/lon contained
+
+            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
+                # no lat/lon contained in solcast files
                 self.data = pd.read_csv(self.input_file_path)
                 self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
                 self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
                 self.data.set_index(pd.DatetimeIndex(self.data['PeriodStart']), inplace=True)
                 self.data['wind_speed'] = self.data['WindSpeed10m']
+                self.data.rename(columns={'AirTemp': 'temp_air'}, inplace=True)  # compatibility with aging model
                 self.calc_power_solcast()
             else:
                 run.logger.warning('No usable PV input type specified - exiting')
@@ -932,7 +934,7 @@ class PVSource(InvestBlock):
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['p_spec'] = self.data['P'] / 1e3
 
-        self.data = self.data[['p_spec', 'wind_speed']]
+        self.data = self.data[['p_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
 
     def update_input_components(self, *_):
 
@@ -996,8 +998,8 @@ class StationaryEnergyStorage(InvestBlock):
         if self.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
-    def calc_aging(self, horizon):
-        self.aging_model.age(self, horizon)
+    def calc_aging(self, scenario, horizon):
+        self.aging_model.age(self, scenario, horizon)
 
     def calc_results(self, scenario):
 
