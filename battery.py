@@ -47,6 +47,9 @@ class BatteryPackModel:
         self.soc_hor = self.ocv_hor = self.cycles_hor = None
         self.temp_hor_c = self.temp_hor_k = self.p_hor = self.t_hor = None
 
+        # Placeholders for pack level variables to be filled after component sizing in first horizon
+        self.size = self.n_cells = self.m_cells = self.m_housing = self.c_th_cells = self.c_th_housing = None
+
         if self.chemistry == 'nmc':
             # Cell from Schmalstieg et al. - Sanyo UR18650E
             self.q_nom_cell = 2.15  # Typical capacity in Ah
@@ -105,22 +108,14 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-        if self.opt:  # self.parent.parent is CommoditySystem
-            self.size = None  # placeholder for nominal pack capacity - to be filled after size optimization
-        else:
-            self.size = self.parent.size
-            # Calculate number of cells as a float to correctly represent power split with nonreal cells
-            self.n_cells = self.size / self.e_cell
-            self.m_cells = self.n_cells * self.m_cell
-            self.m_housing = self.m_cells * (1 - self.e_spec_grav_c2p)
-            self.c_th_cells = self.n_cells * self.c_th_cell
-            self.c_th_housing = self.c_th_spec_housing * self.m_housing
-
     def age(self, commodity, scenario, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
         """
+
+        if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
+            self.get_pack_parameters()
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
@@ -289,6 +284,15 @@ class BatteryPackModel:
             beta_cap = 0
             beta_res = 0
             q_eq = 0
+
+    def get_pack_parameters(self):
+        self.size = self.parent.size
+        # Calculate number of cells as a float to correctly represent power split with nonreal cells
+        self.n_cells = self.size / self.e_cell
+        self.m_cells = self.n_cells * self.m_cell
+        self.m_housing = self.m_cells * (1 - self.e_spec_grav_c2p)
+        self.c_th_cells = self.n_cells * self.c_th_cell
+        self.c_th_housing = self.c_th_spec_housing * self.m_housing
 
     def rint_model(self, p_out):
         """
