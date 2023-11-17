@@ -11,12 +11,10 @@
   - Convert efficiency behavior to linear in/output power relation within a function
   - Conventional Efficiencies equal c0=0, c1=eff
 - Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
-- Integrate simplified battery degradation analysis post-operation <mark>Philipp Rosner
-  - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al)
 - Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
   - Add structure in scenario definition 
   - Add additional class GridConnection
-  - Unify wording and meaning of v2g -> Suggestion: uc < cc < v2v < v2mg < v2g
+  - Unify wording and meaning of v2g -> Suggestion: (CommoditySystem: uc < cc < v2v < v2mg) (GridConnection: mg2g)
   - Add possibility for PV2g and ESS2g -> mg2g without v2g
 - Enabling external charging <mark>Brian Dietermann
   - Add structure in scenario definition
@@ -58,4 +56,6 @@
   - requires conversion of scalar cost values to vectors
   - requires decision on how to handle cost vectors in input json file
   - requires decision for which classes besides ControllableSource the feature has to be implemented
+- Integrate simplified battery degradation analysis post-operation <mark>Philipp Rosner
+  - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al / Schmalstieg et al)
 
