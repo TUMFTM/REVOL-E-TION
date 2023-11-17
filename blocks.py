@@ -24,8 +24,10 @@ import os
 import pandas as pd
 import pvlib
 import pytz
+import statistics
 import timezonefinder
 
+import battery as bat
 import economics as eco
 
 ###############################################################################
@@ -44,7 +46,6 @@ class InvestBlock:
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
         # TODO add "existing" block for grid connection
-
 
         if isinstance(self, SystemCore):
             self.size = None         # SystemCore has two sizes and is initialized in its own __init__
@@ -280,12 +281,19 @@ class InvestBlock:
 
         if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]["scalars"]["invest"]
+
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
+
         elif isinstance(self, CommoditySystem):
             for commodity in self.commodities.values():
                 commodity.size = horizon.results[(commodity.ess, None)]["scalars"]["invest"]
+                if self.aging:
+                    commodity.aging_model.size = commodity.size
+                    # Calculate number of cells as a float to correctly represent power split with nonreal cells
+                    commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
             self.size = sum([commodity.size for commodity in self.commodities.values()])
+
         elif isinstance(self, SystemCore):
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
@@ -336,6 +344,10 @@ class CommoditySystem(InvestBlock):
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
+        if self.aging and (self.int_lvl in self.apriori_lvls):
+            raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is not compatible'
+                                 f' with a priori integration level (e.g. \"uc\")')
+
         # Creation of static energy system components --------------------------------
 
         """
@@ -373,6 +385,10 @@ class CommoditySystem(InvestBlock):
 
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
+
+    def calc_aging(self, scenario, horizon):
+        for commodity in self.commodities.values():
+            commodity.calc_aging(scenario, horizon)
 
     def calc_results(self, scenario):
 
@@ -543,6 +559,7 @@ class MobileCommodity:
         self.parent = parent
         self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.chg_pwr = self.parent.chg_pwr
+        self.temp_battery = self.parent.temp_battery
 
         if self.parent.filename == 'run_des':
             self.data = None  # parent data does not exist yet, filtering is done later
@@ -553,6 +570,11 @@ class MobileCommodity:
 
         self.init_soc = self.parent.init_soc
         self.ph_init_soc = self.init_soc  # set first PH's initial state variables (only SOC)
+        self.soc_max = 1
+        self.soc_min = 0
+
+        self.init_soh = 1
+        self.soh = self.init_soh
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = None
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = None
@@ -564,7 +586,6 @@ class MobileCommodity:
         self.soc = pd.Series(data=self.init_soc,
                              index=scenario.sim_dti[0:1],
                              dtype='float64')
-        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
         # Creation of permanent energy system components --------------------------------
 
@@ -619,21 +640,20 @@ class MobileCommodity:
         # actual values are set later in update_input_components for each prediction horizon
         scenario.components.append(self.snk)
 
-        if self.parent.int_lvl not in self.parent.apriori_lvls:
         # Storage is only added if MCs have flexibility potential (i.e. dispatch is not known a priori)
+        if self.parent.int_lvl not in self.parent.apriori_lvls:
             if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
                 self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                            inputs={self.bus: solph.Flow(
                                                                variable_costs=self.parent.opex_spec)},
                                                            outputs={self.bus: solph.Flow()},
-                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           loss_rate=0,  # TODO integrate self discharge (loss_rate is per timestep)
                                                            balanced=False,
                                                            initial_storage_level=self.ph_init_soc,
                                                            inflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
                                                            outflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
-                                                           max_storage_level=1,
                                                            investment=solph.Investment(
                                                                ep_costs=self.parent.epc))
             else:
@@ -641,16 +661,21 @@ class MobileCommodity:
                                                            inputs={self.bus: solph.Flow(
                                                                variable_costs=self.parent.opex_spec)},
                                                            outputs={self.bus: solph.Flow()},
-                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           loss_rate=0,  # TODO integrate self discharge (loss_rate is per timestep)
                                                            balanced=False,
                                                            initial_storage_level=self.ph_init_soc,
                                                            inflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
                                                            outflow_conversion_factor=1,
                                                            # efficiency already modeled in transformers
-                                                           max_storage_level=1,
                                                            nominal_storage_capacity=self.size)
             scenario.components.append(self.ess)
+
+            if self.parent.aging:
+                self.aging_model = bat.BatteryPackModel(scenario, self)
+
+    def calc_aging(self, scenario, horizon):
+        self.aging_model.age(self, scenario, horizon)
 
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
@@ -669,6 +694,10 @@ class MobileCommodity:
 
     def get_ch_results(self, horizon, scenario):
 
+        if self.parent.aging:
+            self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.ch_dti]
+            self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.ch_dti]
+
         self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.ch_dti]
         self.flow_in_ch = horizon.results[(self.inflow, self.bus)]['sequences']['flow'][horizon.ch_dti]
 
@@ -681,7 +710,10 @@ class MobileCommodity:
             self.sc_ch = solph.views.node(
                 horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
                 horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
-            # shift is needed as sc/soc is stored for end of timestep by oemof
+            # shift is needed as sc/soc is stored for end of timestep following nameplate time by oemof
+            if horizon.index == 0:
+                sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])
+                self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
             self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
@@ -739,10 +771,15 @@ class MobileCommodity:
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.ph_data['consumption']
 
-            # set initial and minimum storage levels for coming prediction horizon
-            self.ess.initial_storage_level = self.ph_init_soc
-            self.ess.min_storage_level = self.ph_data['minsoc']
+            # limit and set initial storage level to min and max soc from aging
+            self.ess.initial_storage_level = statistics.median([self.soc_min, self.ph_init_soc, self.soc_max])
 
+            # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
+            # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
+            # relative to nominal capacity
+            soc_min_clipped = self.ph_data['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = soc_min_clipped
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.ph_data.index)
 
 class PVSource(InvestBlock):
 
@@ -805,7 +842,7 @@ class PVSource(InvestBlock):
 
         u0 = 26.9  # W/(˚C.m2) - cSi Free standing
         u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-        mod_temp = self.data['AirTemp'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
+        mod_temp = self.data['temp_ambient'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
 
         # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
         # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
@@ -862,24 +899,27 @@ class PVSource(InvestBlock):
                                                                      optimalangles=True,
                                                                      map_variables=True)
 
-            # PVGIS gives time slots as XX:06 - round to full hour
+            # PVGIS gives time slots as XX:06h - round to full hour
             self.data.index = self.data.index.round('H')
-        else:
+
+        else:  # input from file instead of API
             self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.filename}.csv')
 
-            if self.data_source == 'PVGIS file':  # data input from fixed PVGIS csv file
-                self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path,
-                                                                                    map_variables=True)
+            if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
+                self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.input_file_path, map_variables=True)
                 self.latitude = self.meta['latitude']
                 self.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('H')
-            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file, no lat/lon contained
+
+            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
+                # no lat/lon contained in solcast files
                 self.data = pd.read_csv(self.input_file_path)
                 self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
                 self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
                 self.data.set_index(pd.DatetimeIndex(self.data['PeriodStart']), inplace=True)
                 self.data['wind_speed'] = self.data['WindSpeed10m']
+                self.data.rename(columns={'AirTemp': 'temp_air'}, inplace=True)  # compatibility with aging model
                 self.calc_power_solcast()
             else:
                 run.logger.warning('No usable PV input type specified - exiting')
@@ -894,7 +934,7 @@ class PVSource(InvestBlock):
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['p_spec'] = self.data['P'] / 1e3
 
-        self.data = self.data[['p_spec', 'wind_speed']]
+        self.data = self.data[['p_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
 
     def update_input_components(self, *_):
 
@@ -932,7 +972,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        inputs={scenario.blocks['core'].dc_bus: solph.Flow(
                                                            variable_costs=self.opex_spec)},
                                                        outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                       loss_rate=0,  # TODO proper self discharge
+                                                       loss_rate=0,  # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
                                                        invest_relation_input_capacity=self.chg_crate,
@@ -945,7 +985,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        inputs={scenario.blocks['core'].dc_bus: solph.Flow(
                                                            variable_costs=self.opex_spec)},
                                                        outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                       loss_rate=0,  # TODO proper self discharge
+                                                       loss_rate=0,  # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
                                                        invest_relation_input_capacity=self.chg_crate,
@@ -954,6 +994,12 @@ class StationaryEnergyStorage(InvestBlock):
                                                        outflow_conversion_factor=self.dis_eff,
                                                        nominal_storage_capacity=self.size)
         scenario.components.append(self.ess)
+
+        if self.aging:
+            self.aging_model = bat.BatteryPackModel(scenario, self)
+
+    def calc_aging(self, scenario, horizon):
+        self.aging_model.age(self, scenario, horizon)
 
     def calc_results(self, scenario):
 
@@ -971,6 +1017,9 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
         # shift is needed as sc/soc is stored for end of timestep
+        if horizon.index == 0:
+            sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])
+            self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
 
         self.soc_ch = self.sc_ch / self.size
 

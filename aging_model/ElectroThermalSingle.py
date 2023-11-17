@@ -1,11 +1,5 @@
-# Electro-Thermal Model
 
-#Input: Temperature/SOC State + Next Power-Value
 
-#Requirement: Init-States
-
-from Electric_Model import electric_control
-from Electric_Model import electric_model
 from Thermal_Model import thermal_control
 from Thermal_Model import thermal_model
 
