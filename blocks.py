@@ -365,8 +365,7 @@ class CommoditySystem(InvestBlock):
                                                                        'cc': 0,
                                                                        'tc': 0,
                                                                        'v2v': 0,
-                                                                       'v2mg': None,
-                                                                       'v2g': None}[self.int_lvl],
+                                                                       'v2mg': None}[self.int_lvl],
                                                         variable_costs=self.sys_dis_soe)},
                                                     outputs={scenario.blocks['core'].ac_bus: solph.Flow()},
                                                     conversion_factors={scenario.blocks['core'].ac_bus: 1})
@@ -507,8 +506,7 @@ class GridConnection(InvestBlock):
                                                                 'cc': 0,
                                                                 'tc': 0,
                                                                 'v2v': 0,
-                                                                'v2mg': None,
-                                                                'v2g': None}[self.int_lvl],
+                                                                'v2mg': None}[self.int_lvl],
                                                  variable_costs=self.opex_spec)}
                                              )
         scenario.components.append(self.src)
@@ -681,7 +679,7 @@ class MobileCommodity:
                                                    conversion_factors={self.bus: self.parent.chg_eff})
         scenario.components.append(self.inflow)
 
-        self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2mg', 'v2g'] else False
+        self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2mg'] else False
         self.outflow = solph.components.Transformer(label=f'{self.name}_mc',
                                                     inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable
                                                                                                * self.parent.dis_pwr,
