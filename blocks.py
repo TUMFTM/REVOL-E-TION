@@ -647,7 +647,7 @@ class MobileCommodity:
                                                            inputs={self.bus: solph.Flow(
                                                                variable_costs=self.parent.opex_spec)},
                                                            outputs={self.bus: solph.Flow()},
-                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           loss_rate=0,  # TODO integrate self discharge (loss_rate is per timestep)
                                                            balanced=False,
                                                            initial_storage_level=self.ph_init_soc,
                                                            inflow_conversion_factor=1,
@@ -661,7 +661,7 @@ class MobileCommodity:
                                                            inputs={self.bus: solph.Flow(
                                                                variable_costs=self.parent.opex_spec)},
                                                            outputs={self.bus: solph.Flow()},
-                                                           loss_rate=0,  # TODO integrate self discharge
+                                                           loss_rate=0,  # TODO integrate self discharge (loss_rate is per timestep)
                                                            balanced=False,
                                                            initial_storage_level=self.ph_init_soc,
                                                            inflow_conversion_factor=1,
@@ -972,7 +972,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        inputs={scenario.blocks['core'].dc_bus: solph.Flow(
                                                            variable_costs=self.opex_spec)},
                                                        outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                       loss_rate=0,  # TODO proper self discharge
+                                                       loss_rate=0,  # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
                                                        invest_relation_input_capacity=self.chg_crate,
@@ -985,7 +985,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        inputs={scenario.blocks['core'].dc_bus: solph.Flow(
                                                            variable_costs=self.opex_spec)},
                                                        outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                       loss_rate=0,  # TODO proper self discharge
+                                                       loss_rate=0,  # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.ph_init_soc,
                                                        invest_relation_input_capacity=self.chg_crate,
