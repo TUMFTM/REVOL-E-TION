@@ -613,8 +613,7 @@ class GridConnection(InvestBlock):
                                                                 'cc': 0,
                                                                 'tc': 0,
                                                                 'v2v': 0,
-                                                                'v2mg': None,
-                                                                'v2g': None}[self.int_lvl],
+                                                                'v2mg': None}[self.int_lvl],
                                                  variable_costs=self.opex_spec)}
                                              )
         scenario.components.append(self.src)
