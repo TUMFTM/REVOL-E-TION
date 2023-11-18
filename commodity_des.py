@@ -213,21 +213,21 @@ class VehicleRentalSystem(RentalSystem):
 
         # replace the rex system name read in from scenario json with the actual CommoditySystem object
         if cs.rex_cs:
-            if not cs.rex_cs in sc.blocks:
+            if cs.rex_cs not in sc.blocks.keys():
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" does not exist')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             elif not isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" is not a BatteryCommoditySystem')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             elif not sc.blocks[cs.rex_cs].filename == 'run_des':
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" is not set to run DES itself')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             else:  # everything is fine
                 cs.rex_cs = sc.blocks[cs.rex_cs]
 

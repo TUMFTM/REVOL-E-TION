@@ -10,7 +10,6 @@
   - Scale efficiency behavior to actual charge power
   - Convert efficiency behavior to linear in/output power relation within a function
   - Conventional Efficiencies equal c0=0, c1=eff
-- Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
 - Enabling "real" V2G not only into Minigrid but into external grid <mark>Brian Dietermann
   - Add structure in scenario definition 
   - Add additional class GridConnection
@@ -26,6 +25,8 @@
   - RE curtailment
   - stationary ESS energy throughput
 - Add rule based charging: FCFS, EQUAL, SOC-based (compare to Waclaw) <mark> Brian Dietermann
+- Convert input file format to csv as this can be viewed as a table in the code editor <mark> Philipp Rosner
+  - list and dict reader necessary as nested objects are read in as strings
 
 ### Adaptions
 - Convert all time (indices) used to UTC instead of local time
@@ -41,7 +42,8 @@
 
 ### Bugfixing
 - Hourly time steps produce pandas errors
-- Large scenario files (>ca. 100 scenarios) lead to failures in joining up scenarios
+- Large scenario files (>ca. 100 scenarios) lead to failures in joining up scenarios & stop a few scenarios short
+  - idea: individual scenarios failing block more and more workers until all workers are blocked
 - Resampling bev input data may lead to inaccuracies if the old timestep is not dividable by the new timestep as the input file contains a power which after resampling may not sum up to the actual energy demand
 - SOC profile for MobileCommodity is shifted by one timestep. This doesn't seem to be necessary
 - Meaning of minsoc in uc: is it really necessary before trips?
@@ -58,4 +60,5 @@
   - requires decision for which classes besides ControllableSource the feature has to be implemented
 - Integrate simplified battery degradation analysis post-operation <mark>Philipp Rosner
   - Take methodology from Max Zähringer / Jakob Schneider for LFP cells (Naumann et al / Schmalstieg et al)
+- Enable AC/DC switching of CommoditySystem connection to system core <mark>Philipp Rosner
 

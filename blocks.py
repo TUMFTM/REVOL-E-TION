@@ -364,31 +364,46 @@ class CommoditySystem(InvestBlock):
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
 
-        self.inflow = solph.components.Transformer(label=f'xc_{self.name}',
-                                                   outputs={self.bus: solph.Flow()},
-                                                   conversion_factors={self.bus: 1})
-
-        self.outflow = solph.components.Transformer(label=f'{self.name}_xc',
-                                                    inputs={self.bus: solph.Flow(
-                                                        nominal_value={'uc': 0,
-                                                                       'cc': 0,
-                                                                       'tc': 0,
-                                                                       'v2v': 0,
-                                                                       'v2mg': None}[self.int_lvl],
-                                                        variable_costs=self.sys_dis_soe)})
-
         if self.system.lower() == 'ac':
-            self.inflow.inputs = {scenario.blocks['core'].ac_bus: solph.Flow(variable_costs=self.sys_chg_soe)}
-            self.outflow.outputs = {scenario.blocks['core'].ac_bus: solph.Flow()},
-            self.outflow.conversion_factors = {scenario.blocks['core'].ac_bus: 1}
+            self.inflow = solph.components.Transformer(label=f'xc_{self.name}',
+                                                       inputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                           variable_costs=self.sys_chg_soe)},
+                                                       outputs={self.bus: solph.Flow()},
+                                                       conversion_factors={self.bus: 1})
+
+            self.outflow = solph.components.Transformer(label=f'{self.name}_xc',
+                                                        inputs={self.bus: solph.Flow(
+                                                            nominal_value={'uc': 0,
+                                                                           'cc': 0,
+                                                                           'tc': 0,
+                                                                           'v2v': 0,
+                                                                           'v2mg': None}[self.int_lvl],
+                                                            variable_costs=self.sys_dis_soe)},
+                                                        outputs={scenario.blocks['core'].ac_bus: solph.Flow()},
+                                                        conversion_factors={scenario.blocks['core'].ac_bus: 1})
+
         elif self.system.lower() == 'dc':
-            self.inflow.inputs = {scenario.blocks['core'].dc_bus: solph.Flow(variable_costs=self.sys_chg_soe)}
-            self.outflow.outputs = {scenario.blocks['core'].dc_bus: solph.Flow()},
-            self.outflow.conversion_factors = {scenario.blocks['core'].dc_bus: 1}
+            self.inflow = solph.components.Transformer(label=f'xc_{self.name}',
+                                                       inputs={scenario.blocks['core'].dc_bus: solph.Flow(
+                                                           variable_costs=self.sys_chg_soe)},
+                                                       outputs={self.bus: solph.Flow()},
+                                                       conversion_factors={self.bus: 1})
+
+            self.outflow = solph.components.Transformer(label=f'{self.name}_xc',
+                                                        inputs={self.bus: solph.Flow(
+                                                            nominal_value={'uc': 0,
+                                                                           'cc': 0,
+                                                                           'tc': 0,
+                                                                           'v2v': 0,
+                                                                           'v2mg': None}[self.int_lvl],
+                                                            variable_costs=self.sys_dis_soe)},
+                                                        outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
+                                                        conversion_factors={scenario.blocks['core'].dc_bus: 1})
 
         scenario.components.append(self.inflow)
         scenario.components.append(self.outflow)
 
+        # Generate individual commodity instances
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
@@ -406,10 +421,16 @@ class CommoditySystem(InvestBlock):
 
     def get_ch_results(self, horizon, scenario):
 
-        self.flow_out_ch = horizon.results[
-            (self.outflow, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
-        self.flow_in_ch = horizon.results[
-            (scenario.blocks['core'].ac_bus, self.inflow)]['sequences']['flow'][horizon.ch_dti]
+        if self.system == 'ac':
+            self.flow_out_ch = horizon.results[
+                (self.outflow, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
+            self.flow_in_ch = horizon.results[
+                (scenario.blocks['core'].ac_bus, self.inflow)]['sequences']['flow'][horizon.ch_dti]
+        elif self.system == 'dc':
+            self.flow_out_ch = horizon.results[
+                (self.outflow, scenario.blocks['core'].dc_bus)]['sequences']['flow'][horizon.ch_dti]
+            self.flow_in_ch = horizon.results[
+                (scenario.blocks['core'].dc_bus, self.inflow)]['sequences']['flow'][horizon.ch_dti]
 
         self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
