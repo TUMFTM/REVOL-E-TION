@@ -242,6 +242,8 @@ class Scenario:
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_eta = None
 
+        self.renewable_curtailment = None
+
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
@@ -256,7 +258,6 @@ class Scenario:
             block.calc_results(self)
 
         # optional metrics
-        # todo find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
@@ -273,6 +274,14 @@ class Scenario:
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError or RuntimeWarning:
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+
+        re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
+        e_pot = e_curt = 0
+        for block in re_blx:
+            block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
+            e_pot += sum(block.e_pot)
+            e_curt += sum(block.e_curt)
+        self.renewable_curtailment = e_curt / e_pot if e_pot > 0 else 0
 
         lcoe_display = round(self.lcoe_dis * 1e5, 1)
         npc_display = round(self.totex_dis)

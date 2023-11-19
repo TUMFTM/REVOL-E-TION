@@ -58,13 +58,14 @@ class InvestBlock:
             else:
                 self.opt = False
 
-        elif self.size == 'opt': # all non-SystemCore blocks that are to be optimzed
+        # all non-SystemCore blocks that are to be optimzed
+        elif self.size == 'opt':
             self.opt = True
             # size will now be set when getting results
             self.size = None
 
         # all non-SystemCore blocks that are not to be optimized
-        elif (isinstance(self.size, [float, int]) or self.size is None):
+        elif isinstance(self.size, (float, int)):
             self.opt = False
             # size is given per commodity in scenario data
             if isinstance(self, CommoditySystem):
@@ -80,8 +81,6 @@ class InvestBlock:
             run.logger.warning(f'Scenario {scenario.name}: {self.name} component size optimization not implemented'
                                f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of entire execution
-
-
 
         # Calculate adjusted ce (including maintenance) of the component in $/W
         self.ace = eco.adj_ce(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
@@ -100,6 +99,9 @@ class InvestBlock:
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = None
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = None
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = None
+
+        if isinstance(self, (PVSource, WindSource)):
+            self.e_pot = self.e_pot_ch = self.e_curt = self.e_curt_ch = self.curtailment = []
 
         scenario.blocks[self.name] = self
 
@@ -270,6 +272,12 @@ class InvestBlock:
         scenario.e_prj_del += self.e_prj
         scenario.e_dis_del += self.e_dis
 
+    def get_ch_curtailment(self, horizon, scenario):
+
+        self.e_pot_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.ch_dti].sum() * scenario.timestep_hours
+        self.e_curt_ch = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.ch_dti].sum() * scenario.timestep_hours
+        self.e_pot.append(self.e_pot_ch)
+        self.e_curt.append(self.e_curt_ch)
 
     def get_opt_size(self, horizon):
 
@@ -602,7 +610,7 @@ class MobileCommodity:
 
         if self.parent.filename == 'run_des':
             self.data = None  # parent data does not exist yet, filtering is done later
-        else:  #predetermined files
+        else:  # predetermined files
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
         self.ph_data = None  # placeholder, is filled in update_input_components
@@ -796,7 +804,6 @@ class MobileCommodity:
         self.data['uc_energy'] = self.data['uc_power'] * scenario.timestep_hours
         self.data['soc'] = soc[:-1]  # TODO check whether SOC indexing fits optimization output
 
-
     def update_input_components(self):
 
         if self.parent.int_lvl in self.parent.apriori_lvls:
@@ -820,6 +827,7 @@ class MobileCommodity:
             soc_min_clipped = self.ph_data['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
             self.ess.min_storage_level = soc_min_clipped
             self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.ph_data.index)
+
 
 class PVSource(InvestBlock):
 
@@ -916,6 +924,8 @@ class PVSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.blocks['core'].dc_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
+
+        self.get_ch_curtailment(horizon, scenario)
 
     def get_timeseries_data(self, scenario, run):
 
@@ -1086,7 +1096,6 @@ class SystemCore(InvestBlock):
         self.flow_acdc_ch = self.flow_dcac_ch = pd.Series(dtype='float64')  # result data
         self.flow_acdc = self.flow_dcac = pd.Series(dtype='float64')
 
-
         """
         x denotes the flow measurement point in results
         
@@ -1228,6 +1237,8 @@ class WindSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
+
+        self.get_ch_curtailment(horizon, scenario)
 
     def update_input_components(self, *_):
 
