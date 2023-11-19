@@ -1,3 +1,23 @@
+"""
+battery.py
+
+--- Description ---
+This script implements the Battery Aging Model for the degradation simulation in the mg_ev toolset.
+
+For further information, see readme
+
+--- Created by ---
+Philipp Rosner
+
+--- File Information ---
+coding:     utf-8
+license:    GPLv3
+"""
+
+###############################################################################
+# Module imports
+###############################################################################
+
 import numpy as np
 import os
 import pickle
@@ -7,6 +27,9 @@ import scipy.interpolate as spip
 
 import blocks
 
+###############################################################################
+# Class definitions
+###############################################################################
 
 class BatteryPackModel:
 

@@ -57,11 +57,14 @@ class InvestBlock:
                     self.dcac_size = None
             else:
                 self.opt = False
+
         elif self.size == 'opt': # all non-SystemCore blocks that are to be optimzed
             self.opt = True
             # size will now be set when getting results
             self.size = None
-        elif isinstance(self.size, float) or self.size is None:  # all non-SystemCore blocks that are not to be optimzed
+
+        # all non-SystemCore blocks that are not to be optimized
+        elif (isinstance(self.size, [float, int]) or self.size is None):
             self.opt = False
             # size is given per commodity in scenario data
             if isinstance(self, CommoditySystem):
@@ -677,8 +680,9 @@ class MobileCommodity:
         scenario.components.append(self.snk)
 
         # Storage is only added if MCs have flexibility potential (i.e. dispatch is not known a priori)
+        # in that case dispatch is optimized later --> commodity is modeled as storage and sink
         if self.parent.int_lvl not in self.parent.apriori_lvls:
-            if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
+            if self.parent.opt:
                 self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                            inputs={self.bus: solph.Flow(
                                                                variable_costs=self.parent.opex_spec)},
