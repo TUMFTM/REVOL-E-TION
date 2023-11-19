@@ -276,7 +276,8 @@ class Scenario:
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
 
         re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
-        e_pot = e_curt = 0
+        e_pot = 0
+        e_curt = 0
         for block in re_blx:
             block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
             e_pot += sum(block.e_pot)

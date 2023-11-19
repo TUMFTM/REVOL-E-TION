@@ -101,7 +101,11 @@ class InvestBlock:
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = None
 
         if isinstance(self, (PVSource, WindSource)):
-            self.e_pot = self.e_pot_ch = self.e_curt = self.e_curt_ch = self.curtailment = []
+            self.e_pot = []
+            self.e_pot_ch = None
+            self.e_curt = []
+            self.e_curt_ch = None
+            self.curtailment = None
 
         scenario.blocks[self.name] = self
 
@@ -274,8 +278,10 @@ class InvestBlock:
 
     def get_ch_curtailment(self, horizon, scenario):
 
-        self.e_pot_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.ch_dti].sum() * scenario.timestep_hours
-        self.e_curt_ch = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.ch_dti].sum() * scenario.timestep_hours
+        self.e_pot_ch = (horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.ch_dti].sum()
+                         * scenario.timestep_hours)
+        self.e_curt_ch = (horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.ch_dti].sum()
+                          * scenario.timestep_hours)
         self.e_pot.append(self.e_pot_ch)
         self.e_curt.append(self.e_curt_ch)
 
