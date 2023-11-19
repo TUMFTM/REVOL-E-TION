@@ -331,7 +331,16 @@ class CommoditySystem(InvestBlock):
                                     header=[0, 1],
                                     index_col=0,
                                     parse_dates=True)
-            self.data = self.data.resample(scenario.timestep, axis=0).ffill().bfill()
+
+            if (pd.infer_freq(self.data.index)) != (scenario.timestep):
+                run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'
+                                   f' - resampling is experimental')
+                consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
+                bool_columns = self.data.columns.difference(consumption_columns)
+                # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+                df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
+                df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
+                self.data = df
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
