@@ -178,16 +178,23 @@ class RentalSystem:
                                  (commodity,'atac'), (commodity,'atdc')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
 
+        # Initialize dataframe for time based log
         self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
-        self.data.loc[:, (slice(None), "atbase")] = True
-        self.data.loc[:, (slice(None), "atac")] = False
-        self.data.loc[:, (slice(None), "atdc")] = False
+        self.data.loc[:, (slice(None), 'atbase')] = True
+        self.data.loc[:, (slice(None), 'atac')] = False
+        self.data.loc[:, (slice(None), 'atdc')] = False
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
-                self.data.loc[process['time_dep']:process['time_return'], (commodity, 'atbase')].iloc[:-1] = False
-                self.data.loc[process['time_dep'], (commodity, 'consumption')] = process['energy_req_pc']
-                # minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
+                # Set Availability at base for charging
+                self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
+                (commodity, 'atbase')] = False
+
+                # set consumption power as constant while rented out
+                self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
+                (commodity, 'consumption')] = process['energy_req_pc'] / (process['steps_rental'] * self.sc.timestep_hours)
+
+                # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
 
         self.cs.data = self.data
@@ -209,21 +216,21 @@ class VehicleRentalSystem(RentalSystem):
 
         # replace the rex system name read in from scenario json with the actual CommoditySystem object
         if cs.rex_cs:
-            if not cs.rex_cs in sc.blocks:
+            if cs.rex_cs not in sc.blocks.keys():
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" does not exist')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             elif not isinstance(sc.blocks[cs.rex_cs], blocks.BatteryCommoditySystem):
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" is not a BatteryCommoditySystem')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             elif not sc.blocks[cs.rex_cs].filename == 'run_des':
                 message = (f'Selected range extender system \"{cs.rex_cs}\" for VehicleCommoditySystem'
                            f' \"{cs.name}\" in scenario \"{sc.name}\" is not set to run DES itself')
                 sc.exception = message
-                logging.error(message)
+                raise ValueError(message)
             else:  # everything is fine
                 cs.rex_cs = sc.blocks[cs.rex_cs]
 

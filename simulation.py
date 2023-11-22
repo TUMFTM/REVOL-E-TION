@@ -127,13 +127,17 @@ class PredictionHorizon:
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
 
+        for block in [block for block in scenario.blocks.values() if hasattr(block, 'aging')]:
+            if block.aging:
+                block.calc_aging(scenario, self)
+
     def run_optimization(self, scenario, run):
         run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
                         f' Model built, starting optimization')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
         except UserWarning as exc:
-            run.logger.warning(f'Scenario {scenario.name} failed or infeasible - continue on next scenario')
+            run.logger.warning(f'Scenario \"{scenario.name}\" failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
             # TODO does not jump to next scenario properly (at least in parallel mode)
 
@@ -240,6 +244,8 @@ class Scenario:
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
         self.e_eta = None
 
+        self.renewable_curtailment = None
+
         # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
@@ -256,9 +262,8 @@ class Scenario:
             block.calc_results(self)
 
         # optional metrics
-        # todo find a metric for curtailed energy and calculate
         # TODO implement renewable energy share evaluation
-        # TODO implement commodity v2g usage share
+        # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
         # TODO implement SAIDI (Average interruption time)
         # TODO implement SAIFI (Interruption frequency per customer per year)
@@ -273,6 +278,15 @@ class Scenario:
             self.lcoe_dis = self.totex_dis / self.e_dis_del
         except ZeroDivisionError or RuntimeWarning:
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+
+        re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
+        e_pot = 0
+        e_curt = 0
+        for block in re_blx:
+            block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
+            e_pot += sum(block.e_pot)
+            e_curt += sum(block.e_curt)
+        self.renewable_curtailment = e_curt / e_pot if e_pot > 0 else 0
 
         lcoe_display = round(self.lcoe_dis * 1e5, 1)
         npc_display = round(self.totex_dis)
