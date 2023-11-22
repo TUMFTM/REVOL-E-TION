@@ -148,21 +148,6 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('brs', 'ext_dc_power')])
 
 
-df = pd.DataFrame.from_dict(data)
-df.index = index
-df.reset_index(inplace=True, names=['block', 'key'])  # this saves the multiindex into a column to make the index unique for json
-
-file_path = os.path.join(os.getcwd(), 'example.json')
-scenarios = df.to_json(file_path, orient='records', lines=True)
-
-print(f'{file_path} created')
-
-
-
-
-
-
-
 data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),  # scenario

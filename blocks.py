@@ -1063,7 +1063,7 @@ class PVSource(InvestBlock):
 
         u0 = 26.9  # W/(˚C.m2) - cSi Free standing
         u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-        mod_temp = self.data['temp_ambient'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
+        mod_temp = self.data['temp_air'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
 
         # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
         # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
