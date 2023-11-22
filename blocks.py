@@ -93,6 +93,7 @@ class InvestBlock:
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = None
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = None
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = None
+        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = None
 
         scenario.blocks[self.name] = self
@@ -169,6 +170,7 @@ class InvestBlock:
                 self.opex_commodities += commodity.opex_sim
                 self.opex_commodities_ext += commodity.opex_sim_ext
             self.opex_sim = self.opex_sys + self.opex_commodities
+            self.opex_sim_ext = self.opex_commodities_ext
         elif isinstance(self, ControllableSource):
             self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         else:  # all unidirectional source & sink blocks
@@ -190,6 +192,24 @@ class InvestBlock:
         scenario.opex_prj += self.opex_prj
         scenario.opex_dis += self.opex_dis
         scenario.opex_ann += self.opex_ann
+
+        # Cost calculation for external charging
+        self.opex_yrl_ext = self.opex_sim_ext / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
+        self.opex_prj_ext = self.opex_yrl_ext * scenario.prj_duration_yrs
+        self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
+                                             scenario.prj_duration_yrs,
+                                             scenario.wacc)
+        self.opex_ann_ext = eco.ann_recur(self.opex_yrl_ext,
+                                          1,  # lifespan of 1 yr -> opex happening yearly
+                                          scenario.prj_duration_yrs,
+                                          scenario.wacc,
+                                          1)  # no cost decrease in opex
+
+        scenario.opex_sim_ext += self.opex_sim_ext
+        scenario.opex_yrl_ext += self.opex_yrl_ext
+        scenario.opex_prj_ext += self.opex_prj_ext
+        scenario.opex_dis_ext += self.opex_dis_ext
+        scenario.opex_ann_ext += self.opex_ann_ext
 
         ###########
         # Total expenses
@@ -243,7 +263,6 @@ class InvestBlock:
             scenario.e_yrl_pro += self.e_yrl_pro
             scenario.e_prj_pro += self.e_prj_pro
             scenario.e_dis_pro += self.e_dis_pro
-        pass
 
     def calc_energy_results_source(self, scenario):
 
@@ -340,7 +359,7 @@ class CommoditySystem(InvestBlock):
         # Setting the transformer cost of the main feed(back) transformers of the system to either eps or the set values
         self.sys_chg_soe = run.eps_cost if self.sys_chg_soe == 0 else self.sys_chg_soe
         self.sys_dis_soe = run.eps_cost if self.sys_dis_soe == 0 else self.sys_dis_soe
-
+        
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
@@ -382,10 +401,17 @@ class CommoditySystem(InvestBlock):
         self.commodities = {f'{self.name}{str(i)}':
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
+        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
+
     def calc_results(self, scenario):
 
+        # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.commodities.values():
             commodity.calc_results(scenario)
+            scenario.e_sim_ext += (commodity.e_ext_ac_sim + commodity.e_ext_dc_sim) * scenario.timestep_hours
+            scenario.e_yrl_ext += (commodity.e_ext_ac_yrl + commodity.e_ext_dc_yrl) * scenario.timestep_hours
+            scenario.e_prj_ext += (commodity.e_ext_ac_prj + commodity.e_ext_dc_prj) * scenario.timestep_hours
+            scenario.e_dis_ext += (commodity.e_ext_ac_dis + commodity.e_ext_dc_dis) * scenario.timestep_hours
 
         self.calc_energy_results_bidi(scenario)  # bidirectional block
         self.calc_eco_results(scenario)

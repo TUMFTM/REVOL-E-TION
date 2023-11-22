@@ -234,19 +234,19 @@ class Scenario:
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
 
+        # Result variables - Energy
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
+        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
         self.e_eta = None
 
+        # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
+        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.lcoe = self.lcoe_dis = None
-
-        # ToDo: also implement other opex-variables for external charging?
-        #  Where and how to combine external charging with opex from microgrid?
-        self.opex_sim_ext = 0
 
         run.logger.debug(f'Scenario {self.name} initialization completed')
 
@@ -276,7 +276,11 @@ class Scenario:
 
         lcoe_display = round(self.lcoe_dis * 1e5, 1)
         npc_display = round(self.totex_dis)
+        npc_display_ext = round(self.opex_dis_ext)
+        e_display_ext = round(self.e_dis_ext * 1e-3, 1)
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
+        run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} USD - '
+                        f'External charged energy: {e_display_ext} kWh')
 
     def create_block_objects(self, class_dict, run):
         # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
@@ -379,6 +383,7 @@ class Scenario:
         run.logger.info(f'Results for Scenario {self.name}:')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
+        # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
         print('#################')
