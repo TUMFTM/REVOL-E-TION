@@ -109,6 +109,10 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('bev', 'chg_eff'),
                                    ('bev', 'dis_eff'),
                                    ('bev', 'cdc'),
+                                   ('bev', 'ext_ac_costs'),
+                                   ('bev', 'ext_ac_power'),
+                                   ('bev', 'ext_dc_costs'),
+                                   ('bev', 'ext_dc_power'),
                                    ('brs', 'size'),
                                    ('brs', 'int_lvl'),
                                    ('brs', 'system'),
@@ -134,7 +138,27 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('brs', 'eff'),
                                    ('brs', 'chg_eff'),
                                    ('brs', 'dis_eff'),
-                                   ('brs', 'cdc')])
+                                   ('brs', 'cdc'),
+                                   ('brs', 'ext_ac_costs'),
+                                   ('brs', 'ext_ac_power'),
+                                   ('brs', 'ext_dc_costs'),
+                                   ('brs', 'ext_dc_power')])
+
+
+df = pd.DataFrame.from_dict(data)
+df.index = index
+df.reset_index(inplace=True, names=['block', 'key'])  # this saves the multiindex into a column to make the index unique for json
+
+file_path = os.path.join(os.getcwd(), 'example.json')
+scenarios = df.to_json(file_path, orient='records', lines=True)
+
+print(f'{file_path} created')
+
+
+
+
+
+
 
 data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
@@ -146,8 +170,8 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     5.00E+04, 'AC', 0.261, 0.02088, 0.00065, 10, 1, 1,  # gen
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
-                    3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
-                    3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
+                    3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '1_mg_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),
@@ -160,9 +184,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '2_mg_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource'),
@@ -175,9 +199,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     'opt', 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '3_mgev_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource',
@@ -191,9 +215,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '4_mgev_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -206,9 +230,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '5_mgev_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -221,9 +245,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     'opt', 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '6_mgev_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -236,9 +260,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '7_mgev_brs_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -251,9 +275,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '8_mgev_brs_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -266,9 +290,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '9_mgev_brs_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource', bev='VehicleCommoditySystem'),
@@ -281,9 +305,9 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     3.00E+04, 'AC', 15, 0, 0.00003, 10, 1, 1,  # grid
                     1.10E+06, 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05,
-                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                    1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
-                    0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                    0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         '10_mgev_opt_grid_var': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                                  dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                                       ess='StationaryEnergyStorage', gen='ControllableSource', grid='ControllableSource',
@@ -298,17 +322,8 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                                  'opt', 'DC', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                                  3.00E+04, None, 'cc', 'AC', 'bev_example', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25,
                                  0.05,
-                                 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1,  # bev
+                                 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                                  3.00E+03, 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035,
                                  10,
-                                 0.5, 1500, 1500, 1, 0.95, 0.95, 1],  # brs
+                                 0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
         }
-
-df = pd.DataFrame.from_dict(data)
-df.index = index
-df.reset_index(inplace=True, names=['block', 'key'])  # this saves the multiindex into a column to make the index unique for json
-
-file_path = os.path.join(os.getcwd(), 'example.json')
-scenarios = df.to_json(file_path, orient='records', lines=True)
-
-print(f'{file_path} created')

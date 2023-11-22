@@ -174,11 +174,14 @@ class RentalSystem:
         commodities = list(self.cs.commodities.keys())
         column_names = []
         for commodity in commodities:
-            column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption')])
+            column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption'),
+                                 (commodity,'atac'), (commodity,'atdc')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
 
         self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
         self.data.loc[:, (slice(None), "atbase")] = True
+        self.data.loc[:, (slice(None), "atac")] = False
+        self.data.loc[:, (slice(None), "atdc")] = False
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
             for commodity in process['primary_commodity']:
