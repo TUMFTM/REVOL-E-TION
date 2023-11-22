@@ -1,8 +1,8 @@
 .idea/*
 analysis/*
-!analysis/dummy.txt
+!analysis/.gitignore
 results/*
-!results/dummy.txt
+!results/.gitignore
 
 input/*/*
 
