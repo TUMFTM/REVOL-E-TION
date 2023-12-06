@@ -607,6 +607,7 @@ class GridConnection(InvestBlock):
           |
         """
 
+        # ToDo: check direction of flows
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 

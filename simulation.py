@@ -276,7 +276,8 @@ class Scenario:
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except ZeroDivisionError or RuntimeWarning:
+        except (ZeroDivisionError, RuntimeWarning):
+            self.lcoe = self.lcoe_dis = 0
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
 
         re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
@@ -317,7 +318,7 @@ class Scenario:
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
         # types for which positive flow values are power taken out of the core
-        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
+        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem, blocks.GridConnection)
 
         for block in [block for block in self.blocks.values() if not isinstance(block, blocks.SystemCore)]:
 
