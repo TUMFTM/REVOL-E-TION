@@ -291,6 +291,11 @@ class InvestBlock:
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
+        self.flow = self.flow_in - self.flow_out  # for plotting
+
+        if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
+            print("GridConnection: Simultanious in- and outflow detected!")
+
         scenario.e_sim_pro += self.e_sim_out
         scenario.e_sim_del += self.e_sim_in
         scenario.e_yrl_pro += self.e_yrl_out
@@ -1083,6 +1088,7 @@ class MobileCommodity:
         else:
             # enable/disable transformers to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
+            self.inflow.outputs[self.bus].max = pd.Series(self.chg_pwr, index=self.ph_data.index)  # fixes bug due to setting nominal_value to 1
             self.outflow.inputs[self.bus].max = self.ph_data['atbase'].astype(int)
 
             # define consumption data for sink (only enabled when detached from base)
