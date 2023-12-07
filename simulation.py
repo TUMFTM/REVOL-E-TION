@@ -460,7 +460,7 @@ class SimulationRun:
 
         self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.scenario_data = pd.read_json(self.scenarios_file_path, orient='records', lines=True)
-        self.scenario_data = self.scenario_data.applymap(lambda x: x.lower() if isinstance(x, str) else x)
+        self.scenario_data = self.scenario_data.map(lambda x: x.lower() if isinstance(x, str) else x)
         self.scenario_data.set_index(['block', 'key'], inplace=True)
         self.scenario_data = self.scenario_data.apply(json_parse_bool, axis=1)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
