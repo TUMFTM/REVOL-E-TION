@@ -916,7 +916,7 @@ class MobileCommodity:
                         arr_inxt = arr_inz[arr_inz >= dtindex][0]
                     except:
                         arr_inxt = self.data.index[-1]
-                    consumption_remaining = self.data.loc[dtindex:arr_inxt, 'consumption'].sum()
+                    consumption_remaining = self.data.loc[dtindex:arr_inxt, 'consumption'].sum() * scenario.timestep_hours
                     # set charging to True, if charging is necessary
                     if consumption_remaining > ((self.uc_data.loc[dtindex, 'soc'] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
                         parking_charging = True
