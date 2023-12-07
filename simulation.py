@@ -270,13 +270,14 @@ class Scenario:
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
-        except ZeroDivisionError or RuntimeWarning:
+        except (ZeroDivisionError, RuntimeWarning):
             run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
 
         try:
             self.lcoe = self.totex_dis / self.e_prj_del
             self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except ZeroDivisionError or RuntimeWarning:
+        except (ZeroDivisionError, RuntimeWarning):
+            self.lcoe = self.lcoe_dis = -1e-5  # prevent errors in further calculations and force end result to -1
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
 
         re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
@@ -459,6 +460,7 @@ class SimulationRun:
 
         self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.scenario_data = pd.read_json(self.scenarios_file_path, orient='records', lines=True)
+        self.scenario_data = self.scenario_data.applymap(lambda x: x.lower() if isinstance(x, str) else x)
         self.scenario_data.set_index(['block', 'key'], inplace=True)
         self.scenario_data = self.scenario_data.apply(json_parse_bool, axis=1)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
