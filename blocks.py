@@ -982,6 +982,7 @@ class MobileCommodity:
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
+            self.inflow.outputs[self.bus].max = pd.Series(self.chg_pwr, index=self.ph_data.index)  # fixes bug due to setting nominal_value to 1
             self.outflow.inputs[self.bus].max = self.ph_data['atbase'].astype(int)
 
             # define consumption data for sink (only enabled when detached from base)
