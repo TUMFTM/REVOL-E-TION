@@ -196,3 +196,6 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# MacOS folder setup files
+.DS_Store
