@@ -453,7 +453,7 @@ class SimulationRun:
             self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
             self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
             self.result_path = os.path.join(self.cwd, 'results')
-        else:
+        else:  # more than three inputs
             self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
             self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
             self.result_path = sys.argv[3]
