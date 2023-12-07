@@ -38,7 +38,7 @@ warnings.filterwarnings("error")  # needed for catching UserWarning during infea
 def read_mplogger_queue(queue):
     while True:
         record = queue.get()
-        if platform.system() == 'Windows':
+        if platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
             run.logger.handle(record)  # This line causes double logger outputs on Linux
         if record is None:
             break
