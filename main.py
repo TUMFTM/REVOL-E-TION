@@ -28,7 +28,12 @@ import platform
 from itertools import repeat
 from simulation import PredictionHorizon, Scenario, SimulationRun
 
-warnings.filterwarnings("error")  # needed for catching UserWarning during infeasibility of scenario
+# raise UserWarnings about infeasibility as errors to catch them properly
+warnings.simplefilter(action='error', category=UserWarning)
+
+# only print FutureWarnings once (in theory) # TOdo: some warnings are still printed multiple times
+# Set to 'ignore' to suppress all FutureWarnings
+warnings.simplefilter(action='once', category=FutureWarning)
 
 ###############################################################################
 # Function definitions
