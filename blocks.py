@@ -399,10 +399,6 @@ class CommoditySystem(InvestBlock):
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
-        if self.aging and (self.int_lvl in self.apriori_lvls):
-            raise AttributeError(f'CommoditySystem \"{self.name}\": Aging model is not compatible'
-                                 f' with a priori integration level (e.g. \"uc\")')
-
         # Creation of static energy system components --------------------------------
 
         """
