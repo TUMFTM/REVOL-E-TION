@@ -318,7 +318,7 @@ class Scenario:
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
         # types for which positive flow values are power taken out of the core
-        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem)
+        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem, blocks.GridConnection)
 
         for block in [block for block in self.blocks.values() if not isinstance(block, blocks.SystemCore)]:
 

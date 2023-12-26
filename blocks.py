@@ -185,6 +185,9 @@ class InvestBlock:
             self.opex_sim_ext = self.opex_commodities_ext
         elif isinstance(self, ControllableSource):
             self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
+        elif isinstance(self, GridConnection):
+            self.opex_sim = self.flow_out @ self.opex_spec_g2mg * scenario.timestep_hours + \
+                            self.flow_in @ self.opex_spec_mg2g * scenario.timestep_hours
         else:  # all unidirectional source & sink blocks
             self.opex_sim = self.e_sim * self.opex_spec
 
@@ -276,6 +279,32 @@ class InvestBlock:
             scenario.e_prj_pro += self.e_prj_pro
             scenario.e_dis_pro += self.e_dis_pro
 
+    def calc_energy_results_source_sink(self, scenario):
+        # ToDo: Can this be also used for blocks that contain source or sink only? This would make the code more compact
+        # ToDo: Alternative: use bidi function -> What are '_pro' and '_del' used for?
+        self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
+        self.e_yrl_in = self.e_sim_in / scenario.sim_yr_rat
+        self.e_yrl_out = self.e_sim_out / scenario.sim_yr_rat
+        self.e_prj_in = self.e_yrl_in * scenario.prj_duration_yrs
+        self.e_prj_out = self.e_yrl_out * scenario.prj_duration_yrs
+        self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
+        self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
+
+        self.flow = self.flow_in - self.flow_out  # for plotting
+
+        if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
+            print("GridConnection: Simultanious in- and outflow detected!")
+
+        scenario.e_sim_pro += self.e_sim_out
+        scenario.e_sim_del += self.e_sim_in
+        scenario.e_yrl_pro += self.e_yrl_out
+        scenario.e_yrl_del += self.e_yrl_in
+        scenario.e_prj_pro += self.e_prj_out
+        scenario.e_prj_del += self.e_prj_in
+        scenario.e_dis_pro += self.e_dis_out
+        scenario.e_dis_del += self.e_dis_in
+
     def calc_energy_results_source(self, scenario):
         
         self.e_sim = self.flow.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
@@ -322,7 +351,7 @@ class InvestBlock:
 
         if isinstance(self, StationaryEnergyStorage):
             self.size = horizon.results[(self.ess, None)]['scalars']['invest']
-        
+
         elif isinstance(self, source_types):
             self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
 
@@ -518,7 +547,7 @@ class ControllableSource(InvestBlock):
 
         ac_bus
           |
-          |<-x-gen/grid
+          |<-x-gen
           |
         """
 
@@ -553,6 +582,84 @@ class ControllableSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow = pd.concat([self.flow, self.flow_ch])
+
+    def update_input_components(self, *_):
+        pass  # no sliced input data needed for controllable source, but function needs to be callable
+
+
+class GridConnection(InvestBlock):
+    def __init__(self, name, scenario, run):
+
+        super().__init__(name, scenario, run)
+
+        """
+        x denotes the flow measurement point in results
+
+        ac_bus
+          |
+          |-x->grid source
+          |
+          |<-x-grid sink
+          |
+        """
+
+        # ToDo: check direction of flows
+        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
+        self.flow_in = self.flow_out = pd.Series(dtype='float64')
+
+        self.bus = scenario.blocks['core'].ac_bus
+
+        # Load sequence of opex_spec from csv file or create a constant sequence from a value
+        self.load_opex(var_name='opex_spec_g2mg',
+                       input_data_path=run.input_data_path,
+                       scenario=scenario,
+                       name=name)
+
+        self.load_opex(var_name='opex_spec_mg2g',
+                       input_data_path=run.input_data_path,
+                       scenario=scenario,
+                       name=name)
+
+        # ToDo: how to integrate sizing based on chosen integration level, currently NOT WORKING
+        if self.opt:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                   investment=solph.Investment(ep_costs=self.epc),
+                                                   variable_costs=self.opex_spec_g2mg)}
+                                               )
+            self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                             inputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                 investment=solph.Investment(ep_costs=self.epc),
+                                                 variable_costs=self.opex_spec_mg2g)}
+                                             )
+        else:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                   nominal_value=self.size,
+                                                   variable_costs=self.opex_spec_g2mg)}
+                                               )
+            self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                             inputs={scenario.blocks['core'].ac_bus: solph.Flow(
+                                                 nominal_value={False: 0,
+                                                                True: None}[self.mg2g],
+                                                 variable_costs=self.opex_spec_mg2g)}
+                                             )
+        scenario.components.append(self.src)
+        scenario.components.append(self.snk)
+
+    def calc_results(self, scenario):
+
+        self.calc_energy_results_source_sink(scenario)
+        # self.calc_energy_results_bidi(scenario)  # bidirectional block
+        self.calc_eco_results(scenario)
+
+    def get_ch_results(self, horizon, scenario):
+
+        self.flow_in_ch = horizon.results[(scenario.blocks['core'].ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
+        self.flow_out_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
+
+        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
 
     def update_input_components(self, *_):
         pass  # no sliced input data needed for controllable source, but function needs to be callable
