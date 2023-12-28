@@ -419,7 +419,7 @@ class CommoditySystem(InvestBlock):
         self.load_opex('ext_ac_costs', 'bev', scenario, name)
         self.load_opex('ext_dc_costs', 'bev', scenario, name)
 
-        self.apriori_lvls = ['uc']  # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']  # integration levels at which power consumption is determined a priori
 
         # Setting the converter cost of the main feed(back) converters of the system to either eps or the set values
         self.sys_chg_soe = run.eps_cost if self.sys_chg_soe == 0 else self.sys_chg_soe
@@ -454,6 +454,9 @@ class CommoditySystem(InvestBlock):
             self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                       inputs={self.bus: solph.Flow(
                                                           nominal_value={'uc': 0,
+                                                                         'fcfs': 0,
+                                                                         'equal': 0,
+                                                                         'soc': 0,
                                                                          'cc': 0,
                                                                          'tc': 0,
                                                                          'v2v': 0,
@@ -472,6 +475,9 @@ class CommoditySystem(InvestBlock):
             self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                       inputs={self.bus: solph.Flow(
                                                           nominal_value={'uc': 0,
+                                                                         'fcfs': 0,
+                                                                         'equal': 0,
+                                                                         'soc': 0,
                                                                          'cc': 0,
                                                                          'tc': 0,
                                                                          'v2v': 0,
@@ -769,6 +775,8 @@ class MobileCommodity:
                 if col not in self.data.columns:
                     self.data[col] = False
 
+        self.apriori_data = None
+
         self.ph_data = None  # placeholder, is filled in update_input_components
 
         self.init_soc = self.parent.init_soc
@@ -954,121 +962,6 @@ class MobileCommodity:
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
-    def calc_uc_power(self, scenario):
-        """Converting availability and consumption data of commodities into a power timeseries for uncoordinated
-         (i.e. unoptimized and starting at full power after return) charging of commodity"""
-
-        self.uc_data = pd.DataFrame({'p_int_ac': 0,  # charging power of AC charger at base
-                                     'p_ext_ac': 0,  # charging power of external AC charger
-                                     'p_ext_dc': 0,  # charging power of external DC charger
-                                     'soc': 0},  # soc of storage at beginning of timestep
-                                    index=self.data.index)
-
-        # initialize soc tracking
-        self.uc_data.loc[self.uc_data.index[0], 'soc'] = self.init_soc
-
-        # get the indices of all nonzero minsoc rows in the data
-        minsoc_inz = self.data.index[self.data['minsoc'] != 0]
-
-        # get first timesteps, where vehicle has left the base
-        dep_inz = self.data.index[self.data['atbase'] & ~self.data['atbase'].shift(-1, fill_value=False)]
-
-        # get first timesteps, where vehicle is at base again
-        arr_inz = self.data.index[self.data['atbase'] & ~self.data['atbase'].shift(fill_value=False)][1:]
-
-        # get first timesteps, where vehicle is parking at destination
-        arr_parking_inz = self.data.index[self.data['atac'] & ~self.data['atac'].shift(fill_value=False)]
-
-        # get all timesteps, where charging is available (internal AC, external AC, external DC)
-        chg_inz = self.data.index[self.data[['atbase', 'atac', 'atdc']].any(axis=1)]
-
-        # initialize variable for charging during single parking process
-        parking_charging = False
-
-        for dtindex, row in self.data.iterrows():
-            # Heuristic:
-            # - Vehicle is charged immediately, if atbase is True
-            # - Vehicle gets charged during driving, if soc in next timestep is going to fall below threshold value
-            # - Vehicle is charged during parking at destination, if current SOC is not enough for trip back to base
-            # ToDo: influence of min soc for atbase charging: min soc should not have any influence:
-            #  vehicle starts charging, when returning and charges at full speed, until battery is full
-            #  min soc doesn't accelerate things
-            #  -> remove minsoc in its current function from atbase
-            if row['atbase'] == 1:  # commodity is at base and chargeable
-                try:
-                    minsoc_inxt = minsoc_inz[minsoc_inz >= dtindex][0]  # find next nonzero min SOC
-                    dep_inxt = dep_inz[dep_inz >= dtindex][0]  # find next departure
-                    if minsoc_inxt > dep_inxt:  # Next min soc is not defined before next departure
-                        dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
-                    else:  # next min_soc is defined before departure and therefore valid for this charging session
-                        dep_soc = self.data.loc[minsoc_inxt, 'minsoc']  # get the SOC to recharge to
-                except:  # when there is no further departure
-                    dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
-
-                # Execute AC charging at base
-                self.uc_data.loc[dtindex, 'p_int_ac'] = self.uc_charge(soc_target=dep_soc,
-                                                                       soc_current=self.uc_data.loc[dtindex, 'soc'],
-                                                                       p_maxchg=self.chg_pwr,
-                                                                       chg_eff=self.parent.chg_eff,
-                                                                       scenario=scenario)
-
-            elif row['atac'] == 1:  # parking at destination
-                if dtindex in arr_parking_inz:  # plugging in only happens when parking starts
-                    # use current int-index and next arrival index to calculate consumption and convert to SOC
-                    try:  # Fails, if current trip is last trip and doesn't end within prediction horizon
-                        arr_inxt = arr_inz[arr_inz >= dtindex][0]
-                    except:
-                        arr_inxt = self.data.index[-1]
-                    consumption_remaining = self.data.loc[dtindex:arr_inxt, 'consumption'].sum() * scenario.timestep_hours
-                    # set charging to True, if charging is necessary
-                    if consumption_remaining > ((self.uc_data.loc[dtindex, 'soc'] + self.data.loc[arr_inxt, 'minsoc']) * self.size):
-                        parking_charging = True
-                    else:
-                        parking_charging = False
-
-                if parking_charging is True:
-                    dep_soc = 1  # ToDo: implement input dependent target soc (e.g. 80%)
-
-                    # Execute AC charging at destination parking
-                    self.uc_data.loc[dtindex, 'p_ext_ac'] = self.uc_charge(soc_target=dep_soc,
-                                                                           soc_current=self.uc_data.loc[dtindex, 'soc'],
-                                                                           p_maxchg=self.parent.ext_ac_power,
-                                                                           chg_eff=1,
-                                                                           scenario=scenario)
-
-            elif row['atdc'] == 1:  # vehicle is driving with possibility to charge on-route
-                # activate charging, if SOC will fall below threshold, before next possibility to charge
-                chg_inxt = chg_inz[chg_inz > dtindex][0]
-                chg_soc = self.uc_data.loc[dtindex, 'soc'] - self.data.loc[dtindex:chg_inxt, 'consumption'].sum() * scenario.timestep_hours / self.size
-                if chg_soc < 0.05:
-                    dep_soc = 0.8  # fast-charging only up to SOC of 80 %
-
-                    # Execute DC charging on-route
-                    self.uc_data.loc[dtindex, 'p_ext_dc'] = self.uc_charge(soc_target=dep_soc,
-                                                                           soc_current=self.uc_data.loc[dtindex, 'soc'],
-                                                                           p_maxchg=self.parent.ext_dc_power,
-                                                                           chg_eff=1,
-                                                                           scenario=scenario)
-
-            # update SOC
-            soc_delta = (self.uc_data.loc[dtindex, 'p_int_ac'] + \
-                         self.uc_data.loc[dtindex, 'p_ext_ac'] + \
-                         self.uc_data.loc[dtindex, 'p_ext_dc'] - \
-                         row['consumption']) * scenario.timestep_hours / self.size
-            new_soc = self.uc_data.loc[dtindex, 'soc'] + soc_delta
-            # ToDo: check whether SOC indexing fits optimization output -> depending on soc shifting in calc_results()
-            self.uc_data.loc[dtindex + scenario.timestep_td, 'soc'] = new_soc
-            if (new_soc < 0) or (new_soc > 1):
-                # ToDo: Raise exception
-                print('Error! Calculation of UC charging profile failed. SOC out of bounds')
-
-    def uc_charge(self, soc_target, soc_current, p_maxchg, chg_eff, scenario):
-        soc_target = min(soc_target, 1)  # soc must not get bigger than 1
-        e_tominsoc = max(0, (soc_target - soc_current) * self.size)  # energy to be recharged to departure SOC in Wh
-        p_tominsoc = e_tominsoc / scenario.timestep_hours  # power to recharge to departure SOC in one step
-        p_act = min(p_maxchg * chg_eff, p_tominsoc)  # reduce chg power in final step to just reach departure SOC
-        return p_act
-
     def update_input_components(self):
 
         # set vehicle consumption data for sink
@@ -1079,9 +972,9 @@ class MobileCommodity:
 
         if self.parent.int_lvl in self.parent.apriori_lvls:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.uc_data['p_int_ac']
-            self.ext_ac.outputs[self.bus].fix = self.uc_data['p_ext_ac']
-            self.ext_dc.outputs[self.bus].fix = self.uc_data['p_ext_dc']
+            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
+            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
+            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc']
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.ph_data['atbase'].astype(int)
