@@ -57,19 +57,8 @@ class AprioriPowerScheduler:
             # ToDo: Update soc for stationary energy storages
             pass
 
-            #     # update SOC
-            #     soc_delta = (self.uc_data.loc[dtindex, 'p_int_ac'] + \
-            #                  self.uc_data.loc[dtindex, 'p_ext_ac'] + \
-            #                  self.uc_data.loc[dtindex, 'p_ext_dc'] - \
-            #                  row['consumption']) * self.scenario.timestep_hours / self.size
-            #     new_soc = self.uc_data.loc[dtindex, 'soc'] + soc_delta
-            #     # ToDo: check whether SOC indexing fits optimization output -> depending on soc shifting in calc_results()
-            #     self.uc_data.loc[dtindex + self.scenario.timestep_td, 'soc'] = new_soc
-            #     if (new_soc < 0) or (new_soc > 1):
-            #         # ToDo: Raise exception
-            #         print('Error! Calculation of UC charging profile failed. SOC out of bounds')
-
-        # ToDo: assign charging power schedule to flows of commodities
+        # scheduled power flows are assigned using MobileCommodity.update_input_components() called in
+        # PredictionHorizon.__init__()
         pass
 
     def calc_available_power(self):
