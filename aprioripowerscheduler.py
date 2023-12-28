@@ -34,7 +34,7 @@ class AprioriPowerScheduler:
             # Schedule at base charging
             self.func_map[self.apriori_cs[0].int_lvl](dtindex)
 
-            # ToDo: Schedule energy storage power
+            # ToDo: Schedule energy storage power and update soc
             pass
 
             # Schedule external charging
@@ -54,9 +54,6 @@ class AprioriPowerScheduler:
                     # ToDo: Raise exception
                     print('Error! Calculation of UC charging profile failed. SOC out of bounds')
 
-            # ToDo: Update soc for stationary energy storages
-            pass
-
         # scheduled power flows are assigned using MobileCommodity.update_input_components() called in
         # PredictionHorizon.__init__()
         pass
@@ -65,21 +62,15 @@ class AprioriPowerScheduler:
         # compute available power resulting from different blocks at the AC and DC bus
         for block_name, block in self.scenario.blocks.items():
             if isinstance(block, blocks.WindSource):
-                # ToDo: How to compute wind power - specific power * size or total power?
-                p_wind = block.ph_data['P'] * block.eff  # measured at AC bus
-                self.p_available['p_ac'] += p_wind
+                self.p_available['p_ac'] += block.ph_data['P'] * block.size * block.eff
             elif isinstance(block, blocks.PVSource):
-                p_pv = block.ph_data['p_spec'] * block.size * block.eff  # measured at DC bus
-                self.p_available['p_dc'] += p_pv
+                self.p_available['p_dc'] += block.ph_data['p_spec'] * block.size * block.eff
             elif isinstance(block, blocks.ControllableSource):
-                p_controllable_source = block.size * block.eff  # measured at AC bus
-                self.p_available['p_ac'] += p_controllable_source
+                self.p_available['p_ac'] += block.size * block.eff
             elif isinstance(block, blocks.GridConnection):
-                p_grid = block.size * block.eff  # measured at AC bus
-                self.p_available['p_ac'] += p_grid
+                self.p_available['p_ac'] += block.size * block.eff
             elif isinstance(block, blocks.FixedDemand):
-                p_dem = block.ph_data['power']
-                self.p_available['p_ac'] -= p_dem
+                self.p_available['p_ac'] -= block.ph_data['power']
 
     def calc_power_uc(self, dtindex):
         for com in self.commodities.values():
@@ -162,8 +153,7 @@ class CommodityData:
         self.parking_charging = False
 
     def ext_charging(self, dtindex):
-        row = self.commodity.ph_data.loc[dtindex]
-        if row['atac'] == 1:  # parking at destination
+        if self.commodity.ph_data.loc[dtindex, 'atac'] == 1:  # parking at destination
             if dtindex in self.arr_parking_inz:  # plugging in only happens when parking starts
                 # use current int-index and next arrival index to calculate consumption and convert to SOC
                 try:  # Fails, if current trip is last trip and doesn't end within prediction horizon
@@ -189,7 +179,7 @@ class CommodityData:
                                                                                    p_maxchg=self.commodity.parent.ext_ac_power,
                                                                                    chg_eff=1)
 
-        elif row['atdc'] == 1:  # vehicle is driving with possibility to charge on-route
+        elif self.commodity.ph_data.loc[dtindex, 'atdc'] == 1:  # vehicle is driving with possibility to charge on-route
             # activate charging, if SOC will fall below threshold, before next possibility to charge
             chg_inxt = self.chg_inz[self.chg_inz > dtindex][0]
             chg_soc = self.commodity.apriori_data.loc[dtindex, 'soc'] - self.commodity.ph_data.loc[dtindex:chg_inxt,
