@@ -75,12 +75,9 @@ class PredictionHorizon:
                 for commodity in block.commodities.values():
                     commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
 
-        # check, if apriori power scheduling is necessary:
-        if [cs for cs in scenario.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
-            # calculate power schedule for each commodity with apriori integration level
-            scheduler = AprioriPowerScheduler(scenario=scenario, horizon=self)
-            scheduler.calc_schedule()
-            pass
+        # if apriori power scheduling is necessary, calculate power schedules:
+        if scenario.scheduler:
+            scenario.scheduler.calc_schedule(self.ph_dti)
 
         for block in scenario.blocks.values():
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -243,6 +240,11 @@ class Scenario:
         # for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
         #     for commodity in cs.commodities.values():
         #         commodity.calc_uc_power(self)
+
+        # ToDo:
+        self.scheduler = None
+        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
+            self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
