@@ -986,7 +986,7 @@ class MobileCommodity:
         # set initial storage levels for coming prediction horizon
         self.ess.initial_storage_level = self.ph_init_soc
 
-        if self.parent.int_lvl in self.parent.apriori_lvls:
+        if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
             self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
             self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
