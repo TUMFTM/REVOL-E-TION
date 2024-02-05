@@ -177,27 +177,54 @@ class AprioriPowerScheduler:
         return p_avail_sys
 
     def calc_power_fcfs(self, dtindex, p_avail_sys, int_lvl_commodities):
-        # Get list of names and SOCs of all commodities
-        prio_list = [(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items()]
-
-        # ToDO: Sort list of commodities based on last arrival timestamp
-        prio_list.sort(key=lambda x: x)
+        # Get list of names and SOCs of all commodities and sort according to arrival time
+        prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
+                            com.block.ph_data.loc[dtindex, 'atbase']],
+                            key=lambda x: int_lvl_commodities[x[0]].get_arr(dtindex))
 
         # Calculate charging powers based on calculated priorities
         p_avail_sys = self.prio_charging(dtindex, prio_list, p_avail_sys)
-
         return p_avail_sys
 
     def calc_power_equal(self, dtindex, p_avail_sys, int_lvl_commodities):
+        # This only works, if all commodities are connected to the same bus
+        # Get system of all commodities and see if all are connected to the same bus
+        if not all([com.system == list(int_lvl_commodities.values())[0].system for com in int_lvl_commodities.values()]):
+            raise ValueError('Equal charging only works, if all commodities are connected to the same bus!')
+        else:
+            # Define bus
+            bus = list(int_lvl_commodities.values())[0].system
+            pwr_avail = (p_avail_sys[bus] +
+                         min(p_avail_sys[self.get_bus(bus, 'other')],
+                             self.get_conv_cap(self.get_bus(bus, 'other'), bus)) *
+                         self.get_conv_eff(self.get_bus(bus, 'other'), bus))
+            pwr_avail_init = pwr_avail
+            commodities = list(int_lvl_commodities.keys())
+            while pwr_avail > 0 and commodities:
+                # equally split available power between all commodities
+                pwr_chg_per_com = pwr_avail / len(commodities)
+                for com in commodities:
+                    com = int_lvl_commodities[com]
+                    # get max charging power for commodity
+                    pwr_com = com.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac')
+                    pwr_chg = min(pwr_com, pwr_chg_per_com)
+                    com.set_p(dtindex=dtindex,
+                              power=pwr_chg,
+                              mode='int_ac')
+                    pwr_avail -= pwr_chg
+                    if pwr_chg == pwr_com:
+                        commodities.remove(com.block.name)
+
+            p_avail_sys = self.draw_power(bus_connected=bus,
+                                          pwr=pwr_avail_init - pwr_avail,
+                                          p_avail_sys=p_avail_sys)
+
         return p_avail_sys
 
     def calc_power_soc(self, dtindex, p_avail_sys, int_lvl_commodities):
-        # Get list of names and SOCs of all commodities
-        prio_list = [(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
-                     com.block.ph_data.loc[dtindex, 'atbase']]
-
-        # Sort list of commodities based on SOC
-        prio_list.sort(key=lambda x: x[1])
+        # Get list of names and SOCs of all commodities and sort according to SOC
+        prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
+                     com.block.ph_data.loc[dtindex, 'atbase']], key=lambda x: x[1])
 
         # Calculate charging powers based on calculated priorities
         p_avail_sys = self.prio_charging(dtindex, prio_list, p_avail_sys)
@@ -261,7 +288,11 @@ class AprioriPowerScheduler:
 
         # Create DataFrame with available power of all components of the local grid and the used power of both buses
         p_system = self.p_available.loc[dtindex, :]
-        p_system[['ac', 'dc']] -= pd.Series(p_avail_sys)
+        # ToDo: Change! This is just a workaround
+        p_system_copy = p_system.copy()
+        p_system_copy.loc[['ac', 'dc']] -= pd.Series(p_avail_sys)
+        p_system = p_system_copy
+        pass
 
         #######################################
         ### Step 1: Use negative cost power ###
@@ -441,6 +472,8 @@ class StorageBlock(EnergySystemModelBlock):
 
     def update_ph(self, ph_dti, columns):
         super().update_ph(ph_dti, columns)
+        if 'soc' in columns:
+            self.block.apriori_data['soc'] = self.block.apriori_data['soc'].astype(float)
         self.set_data(ph_dti[0], self.block.ph_init_soc, 'soc')
 
     def set_p(self, dtindex, power, col):
@@ -542,8 +575,11 @@ class Commodity(StorageBlock):
             self.block.ph_data['atbase'] & ~self.block.ph_data['atbase'].shift(-1, fill_value=False)]
 
         # get first timesteps, where vehicle is at base again
-        self.arr_inz = self.block.ph_data.index[
-                           self.block.ph_data['atbase'] & ~self.block.ph_data['atbase'].shift(fill_value=False)][1:]
+        # based on data instead of ph_data to include info from previous prediction horizon
+        # ToDo: switch to ph_data again and include the data from the previous prediction horizon
+        #  [1:] only necessary, if vehicle is atbase at beginning of prediction horizon
+        self.arr_inz = self.block.data.index[
+                           self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)][1:]
 
         # get first timesteps, where vehicle is parking at destination
         self.arr_parking_inz = self.block.ph_data.index[
@@ -554,6 +590,14 @@ class Commodity(StorageBlock):
 
         # initialize variable for charging during single parking process
         self.parking_charging = False
+
+    def get_arr(self, dtindex):
+        # get latest arrival before current timestep
+        try:
+            return self.arr_inz[self.arr_inz <= dtindex][-1]
+        except:
+            # return 1900 if no arrival is found -> at start of new simulation
+            return pd.to_datetime('1900')
 
     def set_p(self, dtindex, power, mode='int_ac'):
         super().set_p(dtindex=dtindex,
