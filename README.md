@@ -1,7 +1,8 @@
-# MG_EV_Opti
-Minigrid (MG) & Electric Vehicle (EV) Toolset
+# REVOL-E-TION
+Resilient Electric Vehicle Optimization model for Local Energy Transition
 
-This toolset is designed to estimate technoeconomic potentials of electric vehicle integration into localized power systems such as mini- and microgrids.
+This toolset is designed to optimize and estimate technoeconomic potentials of electric vehicle integration into 
+local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes.
 
 #### Created by 
 Philipp Rosner, M.Sc.
@@ -15,6 +16,7 @@ Originally created September 2nd, 2021
 
 #### Contributors
 Brian Dietermann, M.Sc. - Research Associate 06/2022-
+Marcel Brödel, B.Sc. - Research Associate 01/2024-
 
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
@@ -27,8 +29,8 @@ Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023
 
 ## Installation
 
-This toolset was designed to run under Windows 10 and Ubuntu 22.04 LTS. While portability was built in, other operating
-systems are untested.
+This toolset was designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 14 Sonoma.
+While portability is generally built in, other operating systems are untested.
 
 #### Source Code, licensing & Distribution
 The toolset is developed and internally distributed via LRZ Gitlab prior to being published open source via the FTM EV Lab's GitLab. It is easiest to clone the respective repository at https://gitlab.lrz.de/ftm-electric-powertrain/mg_ev_opti to obtain a working copy of the source code.
