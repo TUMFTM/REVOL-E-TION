@@ -75,6 +75,9 @@ class PredictionHorizon:
                 for commodity in block.commodities.values():
                     commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
 
+        for block in [block for block in scenario.blocks.values() if callable(getattr(block, 'update_costs', None))]:
+            block.update_costs(scenario=scenario, ph_dti=self.ph_dti)
+
         # if apriori power scheduling is necessary, calculate power schedules:
         if scenario.scheduler:
             scenario.scheduler.calc_schedule(self.ph_dti)

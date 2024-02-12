@@ -29,6 +29,7 @@ import timezonefinder
 
 import battery as bat
 import economics as eco
+from epf import EPF
 
 ###############################################################################
 # Class definitions
@@ -604,6 +605,9 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        if self.epf_model is not None:
+            self.epf = EPF(self.epf_model)
+
         """
         x denotes the flow measurement point in results
 
@@ -662,7 +666,7 @@ class GridConnection(InvestBlock):
         scenario.components.append(self.snk)
 
     def calc_results(self, scenario):
-
+        self.epf.get_flow(self.flow_in, self.flow_out)
         self.calc_energy_results_source_sink(scenario)
         # self.calc_energy_results_bidi(scenario)  # bidirectional block
         self.calc_eco_results(scenario)
@@ -681,6 +685,11 @@ class GridConnection(InvestBlock):
             # Use power calculated in apriori_data for fixed output of block
             self.src.outputs[scenario.blocks['core'].ac_bus].fix = self.apriori_data['p'].clip(lower=0)
             self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.apriori_data['p'].clip(upper=0) * -1
+
+    def update_costs(self, scenario, ph_dti):
+        if self.epf_model is not None:
+            self.src.outputs[scenario.blocks['core'].ac_bus].variable_costs = self.epf.update_costs(ph_dti,
+                                                                                                    self.src.outputs[scenario.blocks['core'].ac_bus].variable_costs)
 
 
 class FixedDemand:
