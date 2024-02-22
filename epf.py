@@ -3,38 +3,38 @@ import os
 
 
 class EPF:
-    def __init__(self, model_name, file_path, data_name):
+    def __init__(self, model_name):
         self.model = model_name
-        self.file_path = file_path
-        self.data_name = data_name
         self.costs = pd.DataFrame()
-        ##daten einlesen (gesamte datei)
-        #self cost rea
-        #self cost predicted
 
-        self.data = pd.read_csv(os.path.join(file_path, data_name + '.csv'), index_col=0, parse_dates=True)
-        self.data.columns = ['Real','Predict']
+        path = './input/gird/'
+        dataset = 'ALL'
+        file_path = os.path.join(path, dataset + '.csv')
+        self.data = pd.read_csv(file_path, index_col=0, parse_dates=True)
+        self.data.columns = ['Real', 'LEAR', 'DNN']
+
+        if self.model == 'LEAR':
+            self.data = self.data[['Real', 'LEAR']]
+            pass
+        elif self.model == 'DNN':
+            self.data = self.data[['Real', 'DNN']]
+            pass
+        #elif self.model == 'real':
+            #pass
 
     def update_costs(self, ph_dti, costs):
         # ToDo: update cost series for the ph_dti time index with the real day ahead prices
         #  for day X+1 and the predicted prices for day X+2
 
         self.costs = costs
+        start_date = ph_dti[0]
 
-        for date in ph_dti:
-            day1 = self.data.loc[date:date + pd.Timedelta(days=1)]
-            day2 = self.data.loc[date + pd.Timedelta(days=1):date + pd.Timedelta(days=2)]
-
-            costs.loc[day1.index, 'Cost1'] = day1['Real']
-            costs.loc[day2.index, 'Cost2'] = day2['Predict']
+        day1_range = pd.date_range(start_date, start_date + pd.Timedelta(days=1), freq='15T')
+        day2_range = pd.date_range(start_date + pd.Timedelta(days=1), start_date + pd.Timedelta(days=2), freq='15T')
+        costs.loc[day1_range] = self.data.loc[day1_range, 'Real']
+        costs.loc[day2_range] += self.data.loc[day2_range, self.model]
 
         # you can specify the name of the models here. Just make sure to use the same name in the sgen file
-        if self.model == 'DNN':
-            pass
-        elif self.model == 'LEAR':
-            pass
-        elif self.model == 'real':
-            pass
 
         return costs
 
@@ -44,6 +44,7 @@ class EPF:
         # ToDo: Use these flows to calculate the costs or revenues related to the energy flow from and to the grid
         #  print or save the results
         result = self.costs * (flow_in + flow_out)
+        result = result.sum()
         print(result)
 
         return result
