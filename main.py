@@ -31,7 +31,7 @@ from simulation import PredictionHorizon, Scenario, SimulationRun
 # raise UserWarnings about infeasibility as errors to catch them properly
 warnings.simplefilter(action='error', category=UserWarning)
 
-# only print FutureWarnings once (in theory) # TOdo: some warnings are still printed multiple times
+# only print FutureWarnings once (in theory)
 # Set to 'ignore' to suppress all FutureWarnings
 warnings.simplefilter(action='once', category=FutureWarning)
 

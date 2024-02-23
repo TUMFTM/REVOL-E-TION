@@ -1,13 +1,13 @@
 datetime
 gurobipy
 numpy
-oemof.solph==0.5.2dev1
-pandas==2.1.3
+oemof.solph==0.5.2
+pandas==2.2.0
 plotly
 pvlib
 pylightxl
-pyomo
-pysimplegui
+pyomo==6.7.0
+pysimplegui==4.60.5
 pytz
 rainflow
 simpy

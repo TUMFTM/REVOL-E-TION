@@ -581,7 +581,7 @@ class ControllableSource(InvestBlock):
     def get_ch_results(self, horizon, scenario):
 
         self.flow_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
-        self.flow = pd.concat([self.flow, self.flow_ch])
+        self.flow = pd.concat([self.flow if not self.flow.empty else None, self.flow_ch])
 
     def update_input_components(self, *_):
         pass  # no sliced input data needed for controllable source, but function needs to be callable
@@ -658,8 +658,8 @@ class GridConnection(InvestBlock):
         self.flow_in_ch = horizon.results[(scenario.blocks['core'].ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
         self.flow_out_ch = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['sequences']['flow'][horizon.ch_dti]
 
-        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
     def update_input_components(self, *_):
         pass  # no sliced input data needed for controllable source, but function needs to be callable
@@ -738,7 +738,7 @@ class FixedDemand:
 
     def get_ch_results(self, horizon, scenario):
         self.flow_ch = horizon.results[(scenario.blocks['core'].ac_bus, self.snk)]['sequences']['flow'][horizon.ch_dti]
-        self.flow = pd.concat([self.flow, self.flow_ch])
+        self.flow = pd.concat([self.flow if not self.flow.empty else None, self.flow_ch])
 
     def update_input_components(self, scenario):
         # new ph data slice is created during initialization of the PredictionHorizon
@@ -930,15 +930,15 @@ class MobileCommodity:
         self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.ch_dti]
         self.flow_in_ch = horizon.results[(self.inflow, self.bus)]['sequences']['flow'][horizon.ch_dti]
 
-        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         # Get results of external chargers
         self.flow_ext_ac_ch = horizon.results[(self.ext_ac, self.bus)]['sequences']['flow'][horizon.ch_dti]
         self.flow_ext_dc_ch = horizon.results[(self.ext_dc, self.bus)]['sequences']['flow'][horizon.ch_dti]
 
-        self.flow_ext_ac = pd.concat([self.flow_ext_ac, self.flow_ext_ac_ch])
-        self.flow_ext_dc = pd.concat([self.flow_ext_dc, self.flow_ext_dc_ch])
+        self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
+        self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
 
         # ToDo: Check whether shifting is necessary (doesn't seem to be the case; neither for uc nor cc)
         self.sc_ch = solph.views.node(
@@ -952,6 +952,7 @@ class MobileCommodity:
         self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
+        # no need to catch case of self.soc being empty as inital value is always set
         self.ph_init_soc = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
     def calc_uc_power(self, scenario):
@@ -1201,7 +1202,7 @@ class PVSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.blocks['core'].dc_bus)]['sequences']['flow'][
             horizon.ch_dti]
-        self.flow = pd.concat([self.flow, self.flow_ch])
+        self.flow = pd.concat([self.flow if not self.flow.empty else None, self.flow_ch])
 
         self.get_ch_curtailment(horizon, scenario)
 
@@ -1228,7 +1229,7 @@ class PVSource(InvestBlock):
                                                                      map_variables=True)
 
             # PVGIS gives time slots as XX:06h - round to full hour
-            self.data.index = self.data.index.round('H')
+            self.data.index = self.data.index.round('h')
 
         else:  # input from file instead of API
             self.input_file_path = os.path.join(run.input_data_path, 'pv', f'{self.filename}.csv')
@@ -1238,7 +1239,7 @@ class PVSource(InvestBlock):
                 self.latitude = self.meta['latitude']
                 self.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
-                self.data.index = self.data.index.round('H')
+                self.data.index = self.data.index.round('h')
 
             elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
@@ -1341,8 +1342,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.flow_in_ch = horizon.results[(scenario.blocks['core'].dc_bus, self.ess)]['sequences']['flow'][
             horizon.ch_dti]
 
-        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
@@ -1443,8 +1444,8 @@ class SystemCore(InvestBlock):
         self.flow_dcac_ch = horizon.results[(scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
             horizon.ch_dti]
 
-        self.flow_acdc = pd.concat([self.flow_acdc, self.flow_acdc_ch])
-        self.flow_dcac = pd.concat([self.flow_dcac, self.flow_dcac_ch])
+        self.flow_acdc = pd.concat([self.flow_acdc if not self.flow_acdc.empty else None, self.flow_acdc_ch])
+        self.flow_dcac = pd.concat([self.flow_dcac if not self.flow_dcac.empty else None, self.flow_dcac_ch])
 
     def update_input_components(self, *_):
         pass  # function needs to be callable
@@ -1521,7 +1522,7 @@ class WindSource(InvestBlock):
 
         self.flow_ch = horizon.results[(self.outflow, scenario.blocks['core'].ac_bus)]['sequences']['flow'][
             horizon.ch_dti]
-        self.flow = pd.concat([self.flow, self.flow_ch])
+        self.flow = pd.concat([self.flow if not self.flow.empty else None, self.flow_ch])
 
         self.get_ch_curtailment(horizon, scenario)
 
