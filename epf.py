@@ -32,7 +32,7 @@ class EPF:
         day1_range = pd.date_range(start_date, start_date + pd.Timedelta(days=1)- pd.Timedelta(minutes=15), freq='15T')
         day2_range = pd.date_range(start_date + pd.Timedelta(days=1), start_date + pd.Timedelta(days=2) - pd.Timedelta(minutes=15), freq='15T')
         costs.loc[day1_range] = self.data.loc[day1_range, 'Real']
-        costs.loc[day2_range] += self.data.loc[day2_range, self.model]
+        costs.loc[day2_range] = self.data.loc[day2_range, self.model]
 
         # you can specify the name of the models here. Just make sure to use the same name in the sgen file
 
