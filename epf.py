@@ -7,17 +7,17 @@ class EPF:
         self.model = model_name
         self.costs = pd.DataFrame()
 
-        path = './input/gird/'
+        path = './input/grid/'
         dataset = 'ALL'
         file_path = os.path.join(path, dataset + '.csv')
         self.data = pd.read_csv(file_path, index_col=0, parse_dates=True)
-        self.data.columns = ['Real', 'LEAR', 'DNN']
+        self.data.columns = ['Real', 'statistical', 'dnn']
 
-        if self.model == 'LEAR':
-            self.data = self.data[['Real', 'LEAR']]
+        if self.model == 'statistical':
+            self.data = self.data[['Real', 'statistical']]
             pass
-        elif self.model == 'DNN':
-            self.data = self.data[['Real', 'DNN']]
+        elif self.model == 'dnn':
+            self.data = self.data[['Real', 'dnn']]
             pass
         #elif self.model == 'real':
             #pass
@@ -29,8 +29,8 @@ class EPF:
         self.costs = costs
         start_date = ph_dti[0]
 
-        day1_range = pd.date_range(start_date, start_date + pd.Timedelta(days=1), freq='15T')
-        day2_range = pd.date_range(start_date + pd.Timedelta(days=1), start_date + pd.Timedelta(days=2), freq='15T')
+        day1_range = pd.date_range(start_date, start_date + pd.Timedelta(days=1)- pd.Timedelta(minutes=15), freq='15T')
+        day2_range = pd.date_range(start_date + pd.Timedelta(days=1), start_date + pd.Timedelta(days=2) - pd.Timedelta(minutes=15), freq='15T')
         costs.loc[day1_range] = self.data.loc[day1_range, 'Real']
         costs.loc[day2_range] += self.data.loc[day2_range, self.model]
 
