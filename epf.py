@@ -23,6 +23,7 @@ class EPF:
             self.data = self.data[['Real', 'actual']]
             pass
 
+
     def update_costs(self, ph_dti, costs):
         # ToDo: update cost series for the ph_dti time index with the real day ahead prices
         #  for day X+1 and the predicted prices for day X+2
@@ -56,6 +57,8 @@ class EPF:
             result_statistical = result_statistical.sum()
             print(result_statistical)
             overall_result['result_statistical'] = result_statistical
+            path_result = './results/'
+            overall_result.to_csv(os.path.join(path_result, 'statistical_result.csv'))
             pass
         elif self.model == 'dnn':
             self.data = self.data[['dnn']]
@@ -63,6 +66,8 @@ class EPF:
             result_dnn = result_dnn.sum()
             print(result_dnn)
             overall_result['result_dnn'] = result_dnn
+            path_result = './results/'
+            overall_result.to_csv(os.path.join(path_result, 'dnn_result.csv'))
             pass
         elif self.model == 'actual':
             self.data = self.data[['actual']]
@@ -70,12 +75,14 @@ class EPF:
             result_actual = result_actual.sum()
             print(result_actual)
             overall_result['result_actual'] = result_actual
+            path_result = './results/'
+            overall_result.to_csv(os.path.join(path_result, 'actual_result.csv'))
             pass
 
-        path_result = './results/'
-        if not os.path.exists(path_result):
-            os.makedirs(path_result)
-        overall_result.to_csv(os.path.join(path_result,'overall_result.csv'))
+        #path_result = './results/'
+        #if not os.path.exists(path_result):
+         #   os.makedirs(path_result)
+        #overall_result.to_csv(os.path.join(path_result,'overall_result.csv'))
 
         #self.data gehen und diese Daten verwenden
         #sim_dti Parameter in scenario - beinhaltet gesamten Zeitraum der simulation
