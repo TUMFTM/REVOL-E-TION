@@ -307,6 +307,8 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
         run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} USD - '
                         f'External charged energy: {e_display_ext} kWh')
+        run.logger.info(f'Scenario \"{self.name}\" - external charging {self.opex_sim_ext} USD - '
+                        f'External charged energy: {self.e_sim_ext * 1e-3} kWh')
 
     def create_block_objects(self, class_dict, run):
         # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)

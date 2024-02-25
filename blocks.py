@@ -695,10 +695,10 @@ class FixedDemand:
         self.input_file_path = os.path.join(run.input_data_path, 'dem', f'{self.filename}.csv')
         self.data = pd.read_csv(self.input_file_path,
                                 sep=',',
-                                skip_blank_lines=False)
+                                skip_blank_lines=False,
+                                parse_dates=True,
+                                index_col=0)
 
-        self.data['Timestamp'] = pd.to_datetime(self.data['Timestamp'])
-        self.data.set_index('Timestamp', drop=True, inplace=True)
         self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
         # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
         if self.data.index[0] > scenario.starttime:
@@ -1158,6 +1158,9 @@ class PVSource(InvestBlock):
 
             elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
+                # self.data = pd.read_csv(self.input_file_path,
+                #                         parse_dates=True,
+                #                         index_col='PeriodStart')
                 self.data = pd.read_csv(self.input_file_path)
                 self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
                 self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
