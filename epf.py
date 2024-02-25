@@ -10,19 +10,23 @@ class EPF:
         path = './input/grid/'
         dataset = 'ALL'
         file_path = os.path.join(path, dataset + '.csv')
-        self.data = pd.read_csv(file_path, index_col=0, parse_dates=True, float_precision='round_trip')
-        self.data.columns = ['Real', 'statistical', 'dnn', 'actual']
+        # Read data; already parse dates and convert prices from €/MWh to €/Wh
+        self.data = pd.read_csv(file_path, index_col=0, parse_dates=True, float_precision='round_trip') * 1e-6
 
+        # Rename columns
+        rename_dict = {'Real_15minutes': 'Real',
+                       'LEAR_15minutes': 'statistical',
+                       'DNN_15minutes': 'dnn',
+                       'Actual_15minutes': 'actual'}
+        self.data = self.data.rename(columns=rename_dict)
+
+        # ToDo: seems to be unnecessary as data is accessed by column name in the following
         if self.model == 'statistical':
             self.data = self.data[['Real', 'statistical']]
-            pass
         elif self.model == 'dnn':
             self.data = self.data[['Real', 'dnn']]
-            pass
         elif self.model == 'actual':
             self.data = self.data[['Real', 'actual']]
-            pass
-
 
     def update_costs(self, ph_dti, costs):
         # ToDo: update cost series for the ph_dti time index with the real day ahead prices
@@ -51,9 +55,20 @@ class EPF:
         #  print or save the results
         overall_result = pd.DataFrame(index=scenario.sim_dti)
 
+        # Alternative approach instead of whole if/else structure
+        # Costs * Powerflow * Timestep (conversion from power to energy) -> a single value for the whole simulation
+
+        # result = (self.data.loc[scenario.sim_dti, self.model] * flow_out * scenario.timestep_hours).sum()
+        # print(f'Costs for scheduling based on {self.model} costs: {result} €')
+
+        # ToDo: manually create a new file in results called results_epf.txt -> csv is not necessary for single values
+
+        # with open('results/results_epf.txt', 'a') as file:
+        #     file.write(f'Costs for scheduling based on {self.model} costs: {result} €\n')
+
         if self.model == 'statistical':
             self.data = self.data[['statistical']]
-            result_statistical = self.data.loc[scenario.sim_dti] * (1/1000000)*(flow_in + flow_out)
+            result_statistical = self.data.loc[scenario.sim_dti] * (flow_in + flow_out)  # * (1/1000000) not needed anymore
             result_statistical = result_statistical.sum()
             print(result_statistical)
             overall_result['result_statistical'] = result_statistical
@@ -62,7 +77,7 @@ class EPF:
             pass
         elif self.model == 'dnn':
             self.data = self.data[['dnn']]
-            result_dnn = self.data.loc[scenario.sim_dti] *(1/1000000)* (flow_in + flow_out)
+            result_dnn = self.data.loc[scenario.sim_dti] * (flow_in + flow_out)  # * (1/1000000) not needed anymore
             result_dnn = result_dnn.sum()
             print(result_dnn)
             overall_result['result_dnn'] = result_dnn
@@ -71,7 +86,7 @@ class EPF:
             pass
         elif self.model == 'actual':
             self.data = self.data[['actual']]
-            result_actual = self.data.loc[scenario.sim_dti]*(1/1000000)* (flow_in + flow_out)
+            result_actual = self.data.loc[scenario.sim_dti] * (flow_in + flow_out)  # * (1/1000000) not needed anymore
             result_actual = result_actual.sum()
             print(result_actual)
             overall_result['result_actual'] = result_actual
@@ -87,4 +102,5 @@ class EPF:
         #self.data gehen und diese Daten verwenden
         #sim_dti Parameter in scenario - beinhaltet gesamten Zeitraum der simulation
 
+        # ToDo: remove return -> won't be used in the main file as function is conceptualized as void
         return overall_result

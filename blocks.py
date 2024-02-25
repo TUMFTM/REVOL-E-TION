@@ -666,7 +666,7 @@ class GridConnection(InvestBlock):
         scenario.components.append(self.snk)
 
     def calc_results(self, scenario):
-        self.epf.get_flow(self.flow_in, self.flow_out)
+        self.epf.get_flow(self.flow_in, self.flow_out, scenario)
         self.calc_energy_results_source_sink(scenario)
         # self.calc_energy_results_bidi(scenario)  # bidirectional block
         self.calc_eco_results(scenario)
