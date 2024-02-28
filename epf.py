@@ -8,7 +8,7 @@ class EPF:
         self.costs = pd.DataFrame()
 
         path = './input/grid/'
-        dataset = 'Forecast_2017'
+        dataset = 'Forecast_2023'
         file_path = os.path.join(path, dataset + '.csv')
         # Read data; already parse dates and convert prices from €/MWh to €/Wh
         self.data = pd.read_csv(file_path, index_col=0, parse_dates=True) * 1e-6
@@ -51,7 +51,7 @@ class EPF:
         # Alternative approach instead of whole if/else structure
         # Costs * Powerflow * Timestep (conversion from power to energy) -> a single value for the whole simulation
         tax_balance = (flow_out* scenario.timestep_hours).sum()*14.634*1e-5
-        energy_balance = (self.data.loc[scenario.sim_dti, self.model] * flow_out * scenario.timestep_hours).sum()
+        energy_balance = (self.data.loc[scenario.sim_dti, 'real'] * flow_out * scenario.timestep_hours).sum()
         result = (tax_balance+energy_balance)*1.19
 
         print(f'Taxes excl. VAT for scheduling based on {self.model} costs: {tax_balance} €')
