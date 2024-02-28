@@ -606,7 +606,7 @@ class GridConnection(InvestBlock):
         super().__init__(name, scenario, run)
 
         if self.epf_model is not None:
-            self.epf = EPF(self.epf_model)
+            self.epf = EPF(self.epf_model, scenario)
 
         """
         x denotes the flow measurement point in results

@@ -3,13 +3,12 @@ import os
 
 
 class EPF:
-    def __init__(self, model_name):
+    def __init__(self, model_name, scenario):
         self.model = model_name
         self.costs = pd.DataFrame()
 
-        path = './input/grid/'
-        dataset = 'Forecast_2023'
-        file_path = os.path.join(path, dataset + '.csv')
+        dataset = f'Forecast_{scenario.sim_dti[0].year}.csv'
+        file_path = os.path.join('input', 'grid', dataset)
         # Read data; already parse dates and convert prices from €/MWh to €/Wh
         self.data = pd.read_csv(file_path, index_col=0, parse_dates=True) * 1e-6
 
