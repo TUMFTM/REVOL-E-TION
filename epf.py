@@ -27,7 +27,7 @@ class EPF:
         start_date = ph_dti[0]
 
         day1_range = pd.date_range(start_date, start_date + pd.Timedelta(days=1)- pd.Timedelta(minutes=15), freq='15T')
-        day2_range = pd.date_range(start_date + pd.Timedelta(days=1), start_date + pd.Timedelta(days=2) - pd.Timedelta(minutes=15), freq='15T')
+        day2_range = pd.date_range(start_date + pd.Timedelta(days=1), ph_dti[-1], freq='15T')
 
         day1_range = day1_range[day1_range.isin(costs.index)]
         day2_range = day2_range[day2_range.isin(costs.index)]
