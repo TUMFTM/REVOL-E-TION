@@ -40,6 +40,7 @@ from plotly.subplots import make_subplots
 import blocks
 import commodity_des as des
 import tum_colors as col
+from aprioripowerscheduler import AprioriPowerScheduler
 
 ###############################################################################
 # Class definitions
@@ -73,6 +74,10 @@ class PredictionHorizon:
             if isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
+
+        # if apriori power scheduling is necessary, calculate power schedules:
+        if scenario.scheduler:
+            scenario.scheduler.calc_schedule(self.ph_dti)
 
         for block in scenario.blocks.values():
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -231,9 +236,15 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
-        for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
-            for commodity in cs.commodities.values():
-                commodity.calc_uc_power(self)
+        # ToDo: remove section; old code!
+        # for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
+        #     for commodity in cs.commodities.values():
+        #         commodity.calc_uc_power(self)
+
+        # ToDo:
+        self.scheduler = None
+        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
+            self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -296,6 +307,8 @@ class Scenario:
         run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
         run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} USD - '
                         f'External charged energy: {e_display_ext} kWh')
+        run.logger.info(f'Scenario \"{self.name}\" - external charging {self.opex_sim_ext} USD - '
+                        f'External charged energy: {self.e_sim_ext * 1e-3} kWh')
 
     def create_block_objects(self, class_dict, run):
         # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
