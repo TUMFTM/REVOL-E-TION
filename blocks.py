@@ -381,7 +381,7 @@ class InvestBlock:
                                index_col=0,
                                parse_dates=True)
             # Resample input data and extract relevant timesteps using start and end of simulation
-            opex = opex.resample(scenario.timestep, axis=0).mean().ffill().bfill()
+            opex = opex.resample(scenario.timestep).mean().ffill().bfill()
             opex = opex[(opex.index >= scenario.starttime) &
                         (opex.index < scenario.sim_endtime)]
             # Convert data column of cost DataFrame into Series
@@ -1177,8 +1177,9 @@ class PVSource(InvestBlock):
 
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(scenario.timestep).mean().ffill().bfill()
-        # convert to local time and remove timezone-awareness (model is only in one timezone)
-        self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
+        # if index is tz-aware: convert to local time and remove timezone-awareness (model is only in one timezone)
+        if self.data.index.tz:
+            self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['p_spec'] = self.data['P'] / 1e3
 
