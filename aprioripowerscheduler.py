@@ -44,8 +44,8 @@ class AprioriPowerScheduler:
         # initialize dataframe for available and fixed power for both the AC and the DC bus
         self.p_available = pd.DataFrame(columns=['ac', 'dc'] + [name for name in {**self.sources,
                                                                                   **self.storages}.keys()]
-                                        + [f'{name}_chg' for name in self.storages.keys()])
-        self.p_fixed = pd.DataFrame(columns=['ac', 'dc'] + [name for name in self.demands.keys()])
+                                        + [f'{name}_chg' for name in self.storages.keys()], dtype=float)
+        self.p_fixed = pd.DataFrame(columns=['ac', 'dc'] + [name for name in self.demands.keys()], dtype=float)
 
         # Placeholder for timeindex of current prediction horizon
         self.ph_dti = None
@@ -118,9 +118,10 @@ class AprioriPowerScheduler:
             for int_lvl in ['uc', 'fcfs', 'equal', 'soc']:
                 int_coms = {name: com for name, com in self.commodities.items() if
                             com.block.parent.int_lvl == int_lvl}
-                p_avail_sys = self.func_map[int_lvl](dtindex=dtindex,
-                                                     p_avail_sys=p_avail_sys,
-                                                     int_lvl_commodities=int_coms)
+                if int_coms:  # only run power scheduling, if there are commodities with the current int_lvl
+                    p_avail_sys = self.func_map[int_lvl](dtindex=dtindex,
+                                                         p_avail_sys=p_avail_sys,
+                                                         int_lvl_commodities=int_coms)
 
             # ===============================================================
             # === 3. Schedule sources to cover power demand in local grid ===
@@ -190,6 +191,7 @@ class AprioriPowerScheduler:
         # This only works, if all commodities are connected to the same bus
         # Get system of all commodities and see if all are connected to the same bus
         if not all([com.system == list(int_lvl_commodities.values())[0].system for com in int_lvl_commodities.values()]):
+            pass
             raise ValueError('Equal charging only works, if all commodities are connected to the same bus!')
         else:
             # Define bus
@@ -288,10 +290,7 @@ class AprioriPowerScheduler:
 
         # Create DataFrame with available power of all components of the local grid and the used power of both buses
         p_system = self.p_available.loc[dtindex, :]
-        # ToDo: Change! This is just a workaround
-        p_system_copy = p_system.copy()
-        p_system_copy.loc[['ac', 'dc']] -= pd.Series(p_avail_sys)
-        p_system = p_system_copy
+        p_system.loc[['ac', 'dc']] -= pd.Series(p_avail_sys)
         pass
 
         #######################################
@@ -396,7 +395,7 @@ class EnergySystemModelBlock:
 
     def update_ph(self, ph_dti, cols):
         # Initialize apriori_data at start of every new prediction horizon
-        self.block.apriori_data = pd.DataFrame(0, index=ph_dti, columns=cols)
+        self.block.apriori_data = pd.DataFrame(0, index=ph_dti, columns=cols, dtype=float)
 
     def set_data(self, dtindex, value, col):
         # Set power value of apriori_data of block for given timestamp
@@ -473,7 +472,7 @@ class StorageBlock(EnergySystemModelBlock):
     def update_ph(self, ph_dti, columns):
         super().update_ph(ph_dti, columns)
         if 'soc' in columns:
-            self.block.apriori_data['soc'] = self.block.apriori_data['soc'].astype(float)
+            self.block.apriori_data['soc'] = self.block.apriori_data['soc']
         self.set_data(ph_dti[0], self.block.ph_init_soc, 'soc')
 
     def set_p(self, dtindex, power, col):
