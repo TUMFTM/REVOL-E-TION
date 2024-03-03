@@ -406,7 +406,7 @@ class CommoditySystem(InvestBlock):
                                     index_col=0,
                                     parse_dates=True)
 
-            if (pd.infer_freq(self.data.index)) != (scenario.timestep):
+            if (pd.infer_freq(self.data.index).lower()) != (scenario.timestep):
                 run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'
                                    f' - resampling is experimental')
                 consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))

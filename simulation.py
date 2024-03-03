@@ -304,10 +304,10 @@ class Scenario:
         npc_display = round(self.totex_dis)
         npc_display_ext = round(self.opex_dis_ext)
         e_display_ext = round(self.e_dis_ext * 1e-3, 1)
-        run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} USD - LCOE {lcoe_display} USct/kWh')
-        run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} USD - '
+        run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} {self.currency} - LCOE {lcoe_display} {self.currency}-ct/kWh')
+        run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} {self.currency} - '
                         f'External charged energy: {e_display_ext} kWh')
-        run.logger.info(f'Scenario \"{self.name}\" - external charging {self.opex_sim_ext} USD - '
+        run.logger.info(f'Scenario \"{self.name}\" - external charging {self.opex_sim_ext} {self.currency} - '
                         f'External charged energy: {self.e_sim_ext * 1e-3} kWh')
 
     def create_block_objects(self, class_dict, run):
@@ -412,8 +412,8 @@ class Scenario:
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million USD')
-        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} USct/kWh')
+        run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
+        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
