@@ -10,6 +10,7 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('scenario', 'ph_len'),
                                    ('scenario', 'ch_len'),
                                    ('scenario', 'wacc'),
+                                   ('scenario', 'currency'),
                                    ('scenario', 'blocks'),
                                    ('core', 'dcac_size'),
                                    ('core', 'acdc_size'),
@@ -150,7 +151,7 @@ index = pd.MultiIndex.from_tuples([('scenario', 'starttime'),
                                    ('brs', 'ext_dc_power')])
 
 
-data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection'),  # scenario
                     1.00E+05, 1.00E+05, 0.08, 0.0024, 0, 20, 1, 0.95, 0.95,  # core
@@ -162,7 +163,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1.10E+06, True, 'lfp', 'pv', 0.139, 0.142, 0.00417, 10, 1, 0.9, 0.9, 0.8, 0.8, 0.5, 0, 1, 1,  # ess
                     3.00E+04, True, 'nmc', 'pv', 'brs', 'cc', 'AC', 'run_des', 5, 7, 2, 8, 2, 17, 2, 50, 30, 1.5, 0.5, 2, 1, 300, 25, 0.05, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '1_mg_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
+        '1_mg_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09, 'USD',
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection'),
                     # scenario
@@ -177,7 +178,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '2_mg_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '2_mg_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                     dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                          ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection'),
                     # scenario
@@ -192,7 +193,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '3_mgev_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '3_mgev_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection',
                            bev='VehicleCommoditySystem'),
@@ -208,7 +209,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '4_mgev_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
+        '4_mgev_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -223,7 +224,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '5_mgev_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '5_mgev_opt': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -238,7 +239,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '6_mgev_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '6_mgev_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -253,7 +254,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '7_mgev_brs_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '7_mgev_brs_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -268,7 +269,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '8_mgev_brs_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09,
+        '8_mgev_brs_rh': ['1/1/2005', '15T', 365, 25, 'rh', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -283,7 +284,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'brs_example', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '9_mgev_brs_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '9_mgev_brs_go_des': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                       dict(core='SystemCore', dem='FixedDemand', pv='PVSource', brs='BatteryCommoditySystem',
                            ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection', bev='VehicleCommoditySystem'),
                     # scenario
@@ -298,7 +299,7 @@ data = {'0_mg_go': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
                     1, 0, 0, 0, -0.0003, 0.00035, 10, 0.5, 11000, 11000, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0,  # bev
                     3.00E+03, True, 'nmc', 'pv', 'cc', 'AC', 'run_des', 30, 6, 1, 1.5, 0.5, 1, 0.12, 0.1, 1, 0, 0, 0, -0.0003, 0.00035, 10,
                     0.5, 1500, 1500, 1, 0.95, 0.95, 1, -3e-5, 0, 8e-4, 0],  # brs
-        '10_mgev_opt_grid_var': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09,
+        '10_mgev_opt_grid_var': ['1/1/2005', '15T', 365, 25, 'go', 48, 24, 0.09, 'USD',
                                  dict(core='SystemCore', dem='FixedDemand', pv='PVSource',
                                       ess='StationaryEnergyStorage', gen='ControllableSource', grid='GridConnection',
                                       bev='VehicleCommoditySystem'),
