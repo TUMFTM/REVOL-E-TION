@@ -179,8 +179,8 @@ class InvestBlock:
             self.opex_commodities_ext = 0
             for commodity in self.commodities.values():
                 commodity.opex_sim = commodity.e_sim_in * self.opex_spec
-                commodity.opex_sim_ext = commodity.flow_ext_ac @ self.ext_ac_costs + \
-                                         commodity.flow_ext_dc @ self.ext_dc_costs
+                commodity.opex_sim_ext = (commodity.flow_ext_ac * scenario.timestep_hours) @ self.ext_ac_costs + \
+                                         (commodity.flow_ext_dc * scenario.timestep_hours) @ self.ext_dc_costs
                 self.opex_commodities += commodity.opex_sim
                 self.opex_commodities_ext += commodity.opex_sim_ext
             self.opex_sim = self.opex_sys + self.opex_commodities
@@ -506,10 +506,10 @@ class CommoditySystem(InvestBlock):
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.commodities.values():
             commodity.calc_results(scenario)
-            scenario.e_sim_ext += (commodity.e_ext_ac_sim + commodity.e_ext_dc_sim) * scenario.timestep_hours
-            scenario.e_yrl_ext += (commodity.e_ext_ac_yrl + commodity.e_ext_dc_yrl) * scenario.timestep_hours
-            scenario.e_prj_ext += (commodity.e_ext_ac_prj + commodity.e_ext_dc_prj) * scenario.timestep_hours
-            scenario.e_dis_ext += (commodity.e_ext_ac_dis + commodity.e_ext_dc_dis) * scenario.timestep_hours
+            scenario.e_sim_ext += (commodity.e_ext_ac_sim + commodity.e_ext_dc_sim)
+            scenario.e_yrl_ext += (commodity.e_ext_ac_yrl + commodity.e_ext_dc_yrl)
+            scenario.e_prj_ext += (commodity.e_ext_ac_prj + commodity.e_ext_dc_prj)
+            scenario.e_dis_ext += (commodity.e_ext_ac_dis + commodity.e_ext_dc_dis)
 
         self.calc_energy_results_bidi(scenario)  # bidirectional block
         self.calc_eco_results(scenario)
