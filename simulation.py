@@ -176,6 +176,11 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
+        curr_dict = {'eur': 'EUR',
+                     'usd': 'USD',}
+        if self.currency in curr_dict.keys():
+            self.currency = curr_dict[self.currency]
+
         # convert to datetime and calculate time(delta) values
         self.starttime = datetime.strptime(self.starttime,
                                            '%d/%m/%Y')  # simulation and project timeframe start simultaneously
