@@ -15,7 +15,8 @@ class EPF:
         # Rename columns
         rename_dict = {'Real_15minutes': 'real',
                        'LEAR_15minutes': 'statistical',
-                       'DNN_15minutes': 'dnn'}
+                       'DNN_15minutes': 'dnn',
+                       'NaiveForecast_15minutes': 'naive'}
         self.data = self.data.rename(columns=rename_dict)
 
         # ToDo: seems to be unnecessary as data is accessed by column name in the following
@@ -53,13 +54,13 @@ class EPF:
         energy_balance = (self.data.loc[scenario.sim_dti, 'real'] * flow_out * scenario.timestep_hours).sum()
         result = (tax_balance+energy_balance)*1.19
 
-        print(f'Taxes excl. VAT for scheduling based on {self.model} costs: {tax_balance} €')
-        print(f'NettoCosts for scheduling based on {self.model} costs: {energy_balance} €')
-        print(f'Costs for scheduling based on {self.model} costs: {result} €')
+        print(f'Taxes excl. VAT for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {tax_balance} €')
+        print(f'NettoCosts for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {energy_balance} €')
+        print(f'Costs for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {result} €')
 
         # ToDo: manually create a new file in results called results_epf.txt -> csv is not necessary for single values
 
         with open('results/results_epf.txt', 'a') as file:
-            file.write(f'Costs for scheduling based on {self.model} costs: {result} €\n')
+            file.write(f'Costs for scheduling based on {scenario.name} on {self.model} costs in {scenario.sim_dti[0].year}: {result} €\n')
 
         # ToDo: remove return -> won't be used in the main file as function is conceptualized as void
