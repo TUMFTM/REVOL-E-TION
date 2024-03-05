@@ -18,6 +18,8 @@ class EPF:
                        'DNN_15minutes': 'dnn',
                        'NaiveForecast_15minutes': 'naive'}
         self.data = self.data.rename(columns=rename_dict)
+        self.data += (14.634 * 1e-5)  # add taxes
+        self.data += abs(self.data) * 0.19  # add VAT
 
         # ToDo: seems to be unnecessary as data is accessed by column name in the following
 
@@ -50,12 +52,13 @@ class EPF:
 
         # Alternative approach instead of whole if/else structure
         # Costs * Powerflow * Timestep (conversion from power to energy) -> a single value for the whole simulation
-        tax_balance = (flow_out* scenario.timestep_hours).sum()*14.634*1e-5
+        # tax_balance = (flow_out* scenario.timestep_hours).sum()*14.634*1e-5
         energy_balance = (self.data.loc[scenario.sim_dti, 'real'] * flow_out * scenario.timestep_hours).sum()
-        result = (tax_balance+energy_balance)*1.19
+        # result = (tax_balance+energy_balance)*1.19
+        result = energy_balance
 
-        print(f'Taxes excl. VAT for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {tax_balance} €')
-        print(f'NettoCosts for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {energy_balance} €')
+        # print(f'Taxes excl. VAT for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {tax_balance} €')
+        # print(f'NettoCosts for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {energy_balance} €')
         print(f'Costs for scheduling based on {self.model} costs in {scenario.sim_dti[0].year}: {result} €')
 
         # ToDo: manually create a new file in results called results_epf.txt -> csv is not necessary for single values
