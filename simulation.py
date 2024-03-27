@@ -31,7 +31,8 @@ import multiprocessing as mp
 import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
-import PySimpleGUI as psg
+import tkinter as tk
+from tkinter import filedialog
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -597,62 +598,28 @@ def json_parse_bool(dct: dict) -> dict:
 
 
 def input_gui(directory):
-    """
-    GUI to choose input pickle file containing scenario definition DataFrame
-    :return:
-    """
+    # create a Tkinter window to select files and folders
+    root = tk.Tk()
+    root.withdraw()  # hide small tk-window
+    root.lift()  # make sure all tk windows appear in front of other windows
 
-    input_default = os.path.join(directory, 'input', 'scenarios')
-    input_default_file = os.path.join(input_default, 'example.json')
-    input_default_file_show = os.path.relpath(input_default_file, directory)
-    settings_default = os.path.join(directory, 'input', 'settings')
-    settings_default_file = os.path.join(settings_default, 'default.json')
-    settings_default_file_show = os.path.relpath(settings_default_file, directory)
-    results_default = os.path.join(directory, 'results')
-    results_default_show = os.path.relpath(results_default, directory)
+    # get scenario file
+    scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
+    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.json')
+    scenarios_filename = filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
+                                           filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
+    if not scenarios_filename: scenarios_filename = scenarios_default_filename
 
-    input_file = [[psg.Text('Choose scenario definition file')],
-                  [psg.Input(key='file',
-                             default_text=input_default_file_show),
-                   psg.FileBrowse(initial_folder=input_default,
-                                  file_types=(('.json files',
-                                               '.json'),))],
-                  ]
+    # get settings file
+    settings_default_dir = os.path.join(directory, 'input', 'settings')
+    settings_default_filename = os.path.join(settings_default_dir, 'default.json')
+    settings_filename = filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
+                                           filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
+    if not settings_filename: settings_filename = settings_default_filename
 
-    settings_file = [[psg.Text('Choose settings file')],
-                  [psg.Input(key='file2',
-                             default_text=settings_default_file_show),
-                   psg.FileBrowse(initial_folder=settings_default,
-                                  file_types=(('.json files',
-                                               '.json'),))],
-                  ]
+    # get result folder
+    results_default_dir = os.path.join(directory, 'results')
+    results_foldername = filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
+    if not results_foldername: results_foldername = results_default_dir
 
-    result_folder = [[psg.Text('Choose result storage folder')],
-                     [psg.Input(key='folder',
-                                default_text=results_default_show),
-                      psg.FolderBrowse(initial_folder=results_default), ],
-                     ]
-
-    layout = [
-        [psg.Column(input_file)],
-        [psg.HSeparator()],
-        [psg.Column(settings_file)],
-        [psg.HSeparator()],
-        [psg.Column(result_folder)],
-        [psg.HSeparator()],
-        [psg.OK(bind_return_key=True), psg.Cancel()],
-    ]
-
-    event, values = psg.Window('EV_ESM toolset - select scenario file, settings file and result path', layout).read(close=True)
-
-    try:
-        scenarios_filename = os.path.abspath(values['file'])
-        settings_filename =  os.path.abspath(values['file2'])
-        results_foldername = os.path.abspath(values['folder'])
-        if scenarios_filename == '.' or settings_filename == '.' or results_foldername == '.':
-            print('not all required paths entered - exiting')
-            exit()
-        return scenarios_filename, settings_filename, results_foldername
-    except TypeError:
-        print('GUI window closed manually - exiting')
-        exit()
+    return scenarios_filename, settings_filename, results_foldername

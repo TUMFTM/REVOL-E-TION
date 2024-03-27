@@ -7,7 +7,6 @@ plotly
 pvlib
 pylightxl
 pyomo==6.7.0
-pysimplegui==4.60.5
 pytz
 rainflow
 simpy
