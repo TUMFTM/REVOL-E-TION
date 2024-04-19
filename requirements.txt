@@ -11,4 +11,4 @@ pytz
 rainflow
 simpy
 timezonefinder
-tkinter
+tk
