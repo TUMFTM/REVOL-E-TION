@@ -2,7 +2,7 @@
 blocks.py
 
 --- Description ---
-This script defines the energy system blocks for the oemof mg_ev toolset.
+This script defines the energy system blocks for the REVOL-E-TION toolset.
 
 For further information, see readme
 
@@ -25,10 +25,45 @@ import pandas as pd
 import pvlib
 import pytz
 import statistics
-import timezonefinder
 
 import battery as bat
 import economics as eco
+
+###############################################################################
+# Functions
+###############################################################################
+
+def read_input_csv(input_file_path, scenario):
+    """
+    Properly read in timezone-aware input csv files and form correct datetimeindex
+    """
+    df = pd.read_csv(input_file_path)  # parser in to_csv does not create datetimeindex
+    df = df.set_index(pd.to_datetime(df['time'], utc=True)).tz_convert(scenario.timezone).drop(columns='time')
+    df = resample_to_timestep(df, scenario)
+    return df
+
+
+def resample_to_timestep (data: pd.DataFrame, scenario):
+    """
+    Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
+    :param scenario: The current scenario object
+    :return: resampled dataframe
+    """
+
+    dti = data.index
+    # Add one element to the dataframe to include the last timesteps
+    dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+    data_ext = data.reindex(dti_ext).ffill()
+
+    def resample_column(column):
+        if data_ext[column].dtype == bool:
+            return data_ext[column].resample(scenario.timestep).ffill().bfill()
+        else:
+            return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
+
+    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
+    return resampled_data
+
 
 ###############################################################################
 # Class definitions
@@ -371,19 +406,15 @@ class InvestBlock:
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
             self.size = self.dcac_size + self.acdc_size
 
-    def load_opex(self, var_name, input_data_path, scenario, name):
+    def load_opex(self, var_name, input_data_path, scenario, block_name):
         # get opex variable
         opex = getattr(self, var_name)
         # In case of filename for operations cost read csv file
         if isinstance(opex, str):
             # Open csv file and use first column as index; also directly convert dates to DateTime objects
-            opex = pd.read_csv(os.path.join(input_data_path, name, f'{opex}.csv'),
-                               index_col=0,
-                               parse_dates=True)
-            # Resample input data and extract relevant timesteps using start and end of simulation
-            opex = opex.resample(scenario.timestep).mean().ffill().bfill()
-            opex = opex[(opex.index >= scenario.starttime) &
-                        (opex.index < scenario.sim_endtime)]
+            opex = read_input_csv(os.path.join(input_data_path, block_name, f'{opex}.csv'), scenario)
+
+            opex = opex[scenario.starttime:scenario.sim_endtime]
             # Convert data column of cost DataFrame into Series
             setattr(self, var_name, opex[opex.columns[0]])
         else:  # opex_spec is given as a scalar directly in scenario file
@@ -418,8 +449,14 @@ class CommoditySystem(InvestBlock):
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
-        self.load_opex('ext_ac_costs', 'bev', scenario, name)
-        self.load_opex('ext_dc_costs', 'bev', scenario, name)
+        self.load_opex(var_name='ext_ac_costs',
+                       input_data_path='bev',
+                       scenario=scenario,
+                       block_name=self.name)
+        self.load_opex(var_name='ext_dc_costs',
+                       input_data_path='bev',
+                       scenario=scenario,
+                       block_name=self.name)
 
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']  # integration levels at which power consumption is determined a priori
 
@@ -435,7 +472,7 @@ class CommoditySystem(InvestBlock):
         """
         x denotes the flow measurement point in results (?c denotes ac or dc, depending on the parameter 'system')
 
-        ac_bus               bus
+        ac/dc_bus            bus
           |<-x--------mc_xc---|---(MobileCommodity Instance)
           |                   |
           |-x-xc_mc---------->|---(MobileCommodity Instance)
@@ -565,7 +602,7 @@ class ControllableSource(InvestBlock):
         self.load_opex(input_data_path=run.input_data_path,
                        var_name='opex_spec',
                        scenario=scenario,
-                       name=name)
+                       block_name=self.name)
 
         if self.opt:
             self.src = solph.components.Source(label=f'{self.name}_src',
@@ -625,14 +662,15 @@ class GridConnection(InvestBlock):
         self.load_opex(var_name='opex_spec_g2mg',
                        input_data_path=run.input_data_path,
                        scenario=scenario,
-                       name=name)
+                       block_name=self.name)
 
         self.load_opex(var_name='opex_spec_mg2g',
                        input_data_path=run.input_data_path,
                        scenario=scenario,
-                       name=name)
+                       block_name=self.name)
 
         # ToDo: how to integrate sizing based on chosen integration level, currently NOT WORKING
+
         if self.opt:
             self.src = solph.components.Source(label=f'{self.name}_src',
                                                outputs={scenario.blocks['core'].ac_bus: solph.Flow(
@@ -693,25 +731,7 @@ class FixedDemand:
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
         self.input_file_path = os.path.join(run.input_data_path, 'dem', f'{self.filename}.csv')
-        self.data = pd.read_csv(self.input_file_path,
-                                sep=',',
-                                skip_blank_lines=False,
-                                parse_dates=True,
-                                index_col=0)
-
-        self.data = self.data.tz_localize(None)  # Remove timezone-awareness of index while not converting values
-        # resample to timestep, fill upsampling NaN values with previous ones (or next ones, if not available)
-        if self.data.index[0] > scenario.starttime:
-            raise IndexError  # this triggers an error message about input data not covering full simulation timespan
-
-        # resample to timestep
-        final_row = self.data.iloc[-1, :]
-        self.data = self.data.resample(scenario.timestep).mean().ffill().bfill()
-        # ensure that added timestamps after previous end of index from resampling are filled
-        self.data = self.data.reindex(pd.date_range(start=scenario.starttime,
-                                                    end=scenario.sim_endtime,
-                                                    freq=scenario.timestep,
-                                                    inclusive="left")).fillna(final_row)
+        self.data = read_input_csv(self.input_file_path, scenario)
 
         self.ph_data = None  # placeholder
 
@@ -760,7 +780,7 @@ class FixedDemand:
 
     def update_input_components(self, scenario):
         # new ph data slice is created during initialization of the PredictionHorizon
-        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['power']
+        self.snk.inputs[scenario.blocks['core'].ac_bus].fix = self.ph_data['power_w']
 
 
 class MobileCommodity:
@@ -1023,10 +1043,7 @@ class PVSource(InvestBlock):
 
         self.ph_data = self.input_file_name = self.input_file_path = None  # placeholders, are filled later
         self.api_startyear = self.api_endyear = None
-        self.timezone = self.data = self.meta = None
-
-        self.tf = timezonefinder.TimezoneFinder()
-        self.utc = pytz.timezone('UTC')
+        self.data = self.meta = None
 
         self.get_timeseries_data(scenario, run)
 
@@ -1034,7 +1051,7 @@ class PVSource(InvestBlock):
         # self.load_opex(var_name='opex_spec',
         #                input_data_path=run.input_data_path,
         #                scenario=scenario,
-        #                name=name)
+        #                block_name=name)
 
         # Creation of static energy system components --------------------------------
 
@@ -1053,9 +1070,10 @@ class PVSource(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_dc',
                                                   inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
-                                                  outputs={scenario.blocks['core'].dc_bus: solph.Flow(nominal_value=1,
-                                                                                                      max=self.size *
-                                                                                                          self.eff)},
+                                                  #outputs={scenario.blocks['core'].dc_bus: solph.Flow(nominal_value=1,
+                                                  #                                                    max=self.size *
+                                                  #                                                        self.eff)},
+                                                  outputs={scenario.blocks['core'].dc_bus: solph.Flow(nominal_value=1)},
                                                   conversion_factors={scenario.blocks['core'].dc_bus: self.eff})
         scenario.components.append(self.outflow)
 
@@ -1124,12 +1142,11 @@ class PVSource(InvestBlock):
 
     def get_timeseries_data(self, scenario, run):
 
-        if self.data_source == 'PVGIS API':  # API input selected
-            self.timezone = pytz.timezone(self.tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
-            self.api_startyear = self.timezone.localize(scenario.starttime).astimezone(self.utc).year
-            self.api_endyear = self.timezone.localize(scenario.sim_endtime).astimezone(self.utc).year
-            self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(self.latitude,
-                                                                     self.longitude,
+        if self.data_source == 'pvgis api':  # API input selected
+            self.api_startyear = scenario.starttime.astimezone(pytz.utc).year
+            self.api_endyear = scenario.sim_endtime.astimezone(pytz.utc).year
+            self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
+                                                                     scenario.longitude,
                                                                      start=self.api_startyear,
                                                                      end=self.api_endyear,
                                                                      url='https://re.jrc.ec.europa.eu/api/v5_2/',
@@ -1156,7 +1173,6 @@ class PVSource(InvestBlock):
                 self.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('h')
-
             elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
                 # self.data = pd.read_csv(self.input_file_path,
@@ -1173,13 +1189,10 @@ class PVSource(InvestBlock):
                 run.logger.warning('No usable PV input type specified - exiting')
                 exit()  # TODO exit scenario instead of entire execution
 
-            self.timezone = pytz.timezone(self.tf.certain_timezone_at(lat=self.latitude, lng=self.longitude))
-
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(scenario.timestep).mean().ffill().bfill()
-        # if index is tz-aware: convert to local time and remove timezone-awareness (model is only in one timezone)
-        if self.data.index.tz:
-            self.data.index = self.data.index.tz_convert(tz=self.timezone).tz_localize(tz=None)
+        # convert to local time
+        self.data.index = self.data.index.tz_convert(tz=scenario.timezone)
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['p_spec'] = self.data['P'] / 1e3
 
@@ -1216,7 +1229,7 @@ class StationaryEnergyStorage(InvestBlock):
         # self.load_opex(var_name='opex_spec',
         #                input_data_path=run.input_data_path,
         #                scenario=scenario,
-        #                name=name)
+        #                block_name=name)
 
         # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
@@ -1412,19 +1425,17 @@ class WindSource(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.input_file_path = os.path.join(run.input_data_path, 'wind', self.filename + '.csv')
-        self.data = pd.read_csv(self.input_file_path,
-                                sep=',',
-                                skip_blank_lines=False)
-        self.data.index = pd.date_range(start=scenario.starttime,
-                                        periods=len(self.data),
-                                        freq=scenario.timestep)
+        if self.filename in scenario.blocks.keys():
+            self.data = scenario.blocks[self.filename].data['wind_speed']
+            # TODO integrate windpowerlib
+        else:
+            self.input_file_path = os.path.join(run.input_data_path, 'wind', self.filename + '.csv')
+            self.data = read_input_csv(self.input_file_path, scenario)
 
-        # ToDo: OPEX
-        # self.load_opex(var_name='opex_spec',
-        #                input_data_path=run.input_data_path,
-        #                scenario=scenario,
-        #                name=name)
+        self.load_opex(var_name='opex_spec',
+                       input_data_path=run.input_data_path,
+                       scenario=scenario,
+                       block_name=self.name)
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
@@ -1445,8 +1456,10 @@ class WindSource(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_ac',
                                                   inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
-                                                  outputs={scenario.blocks['core'].ac_bus: solph.Flow(nominal_value=1,
-                                                                                                      max=self.size * self.eff)},
+                                                  #outputs={scenario.blocks['core'].ac_bus: solph.Flow(nominal_value=1,
+                                                  #                                                    max=self.size *
+                                                  #                                                        self.eff)},
+                                                  outputs={scenario.blocks['core'].ac_bus: solph.Flow(nominal_value=1)},
                                                   conversion_factors={scenario.blocks['core'].ac_bus: self.eff})
         scenario.components.append(self.outflow)
 
@@ -1482,7 +1495,7 @@ class WindSource(InvestBlock):
 
     def update_input_components(self, scenario):
 
-        self.src.outputs[self.bus].fix = self.ph_data['P']
+        self.src.outputs[self.bus].fix = self.ph_data['power_spec']
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block

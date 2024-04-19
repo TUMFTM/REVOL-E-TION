@@ -19,9 +19,12 @@ input/*/*
 
 !input/dem/dem_example.csv
 
-!input/grid/grid_example.csv
+!input/grid/grid_buy_example.csv
+!input/grid/grid_sell_example.csv
 
 !input/pv/pv_example.csv
+
+!input/pv/wind_example.csv
 
 !input/scenarios/example.json
 !input/scenarios/sgen_example.py
