@@ -158,6 +158,8 @@ class InvestBlock:
         ###########
 
         # for CommoditySystems, size is the sum of all commodity sizes
+        # For SystemCore, size is the sum of both sizes
+        # For GridConnection, size is the size of the larger flow
         self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
@@ -375,7 +377,7 @@ class InvestBlock:
         self.e_pot.append(self.e_pot_ch)
         self.e_curt.append(self.e_curt_ch)
 
-    def get_opt_size(self, horizon):
+    def get_opt_size(self, horizon, scenario):
 
         """
         Get back the optimal size from solver results. Can only be reached in GO strategy, as only there,
@@ -405,6 +407,11 @@ class InvestBlock:
             self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
             self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
             self.size = self.dcac_size + self.acdc_size
+
+        elif isinstance(self, GridConnection):
+            self.g2mg_size = horizon.results[(self.src, scenario.blocks['core'].ac_bus)]['scalars']['invest']
+            self.mg2g_size = horizon.results[(scenario.blocks['core'].ac_bus, self.snk)]['scalars']['invest']
+            self.size = max(self.g2mg_size, self.mg2g_size)
 
     def load_opex(self, var_name, input_data_path, scenario, block_name):
         # get opex variable
@@ -646,9 +653,9 @@ class GridConnection(InvestBlock):
 
         ac_bus
           |
-          |-x->grid source
+          |<-x-grid source
           |
-          |<-x-grid sink
+          |-x->grid sink
           |
         """
 
