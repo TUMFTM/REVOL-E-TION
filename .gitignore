@@ -1,4 +1,6 @@
+.idea/
 .idea/*
+
 analysis/*
 !analysis/.gitignore
 results/*
@@ -199,3 +201,4 @@ $RECYCLE.BIN/
 
 # MacOS folder setup files
 .DS_Store
+
