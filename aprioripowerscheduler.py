@@ -289,7 +289,7 @@ class AprioriPowerScheduler:
         # Step 5: All other options are scheduled by the optimizer (including negative grid costs)
 
         # Create DataFrame with available power of all components of the local grid and the used power of both buses
-        p_system = self.p_available.loc[dtindex, :]
+        p_system = self.p_available.loc[dtindex, :].copy()
         p_system.loc[['ac', 'dc']] -= pd.Series(p_avail_sys)
         pass
 
@@ -579,6 +579,8 @@ class Commodity(StorageBlock):
         #  [1:] only necessary, if vehicle is atbase at beginning of prediction horizon
         self.arr_inz = self.block.data.index[
                            self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)][1:]
+        # ToDo: check why this line was added
+        self.arr_inz = self.arr_inz[self.arr_inz <= self.block.ph_data.index[0]]
 
         # get first timesteps, where vehicle is parking at destination
         self.arr_parking_inz = self.block.ph_data.index[
