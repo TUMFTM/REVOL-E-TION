@@ -222,13 +222,12 @@ class InvestBlock:
                 self.opex_commodities_ext += commodity.opex_sim_ext
             self.opex_sim = self.opex_sys + self.opex_commodities
             self.opex_sim_ext = self.opex_commodities_ext
-        elif isinstance(self, ControllableSource):
-            self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         elif isinstance(self, GridConnection):
+            # @ is dot product (Skalarprodukt)
             self.opex_sim = self.flow_out @ self.opex_spec_g2mg * scenario.timestep_hours + \
                             self.flow_in @ self.opex_spec_mg2g * scenario.timestep_hours
         else:  # all unidirectional source & sink blocks
-            self.opex_sim = self.e_sim * self.opex_spec
+            self.opex_sim = self.flow @ self.opex_spec * scenario.timestep_hours
 
         self.opex_yrl = self.opex_sim / scenario.sim_yr_rat  # linear scaling i.c.o. longer or shorter than 1 year
         self.opex_prj = self.opex_yrl * scenario.prj_duration_yrs
@@ -420,8 +419,7 @@ class InvestBlock:
         if isinstance(opex, str):
             # Open csv file and use first column as index; also directly convert dates to DateTime objects
             opex = read_input_csv(os.path.join(input_data_path, block_name, f'{opex}.csv'), scenario)
-
-            opex = opex[scenario.starttime:scenario.sim_endtime]
+            opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
             # Convert data column of cost DataFrame into Series
             setattr(self, var_name, opex[opex.columns[0]])
         else:  # opex_spec is given as a scalar directly in scenario file
@@ -1054,11 +1052,10 @@ class PVSource(InvestBlock):
 
         self.get_timeseries_data(scenario, run)
 
-        # ToDo: OPEX
-        # self.load_opex(var_name='opex_spec',
-        #                input_data_path=run.input_data_path,
-        #                scenario=scenario,
-        #                block_name=name)
+        self.load_opex(var_name='opex_spec',
+                       input_data_path=run.input_data_path,
+                       scenario=scenario,
+                       block_name=name)
 
         # Creation of static energy system components --------------------------------
 
