@@ -5,7 +5,7 @@
   "save_des_results": "True",
   "print_results":  "False",
   "save_plots": 	"False",
-  "show_plots": 	"False",
+  "show_plots": 	"True",
   "dump_model": 	"False",
   "debugmode":  	"False",
   "eps_cost":   	1.00E-08}

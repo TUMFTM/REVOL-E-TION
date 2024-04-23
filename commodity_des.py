@@ -140,7 +140,8 @@ class RentalSystem:
         self.processes['day'] = self.processes['date'].apply(get_day)
         self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
                                   self.sc.timestep_hours)  # round to nearest timestep
-        self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
+        self.processes['time_req'] = (pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
+                                      .dt.tz_localize(sc.timezone))
         self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
 
@@ -573,7 +574,7 @@ def get_year(element):
 if __name__ == '__main__':
     import simulation as sim
     rn = sim.SimulationRun()
-    sc = sim.Scenario('both',rn)
+    sc = sim.Scenario('des',rn)
     for rs in sc.rental_systems.values():
         folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
         rs.save_data(folderpath, sc)

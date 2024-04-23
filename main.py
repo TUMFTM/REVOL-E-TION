@@ -3,7 +3,7 @@
 main.py
 
 --- Description ---
-This script is the main executable for the oemof mg_ev toolset.
+This script is the main executable for the REVOL-E-TION toolset.
 For further information, see readme.md
 
 --- Created by ---
@@ -33,7 +33,7 @@ warnings.simplefilter(action='error', category=UserWarning)
 
 # only print FutureWarnings once (in theory)
 # Set to 'ignore' to suppress all FutureWarnings
-warnings.simplefilter(action='once', category=FutureWarning)
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 ###############################################################################
 # Function definitions
