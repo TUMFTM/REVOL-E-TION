@@ -3,7 +3,7 @@
 simulation.py
 
 --- Description ---
-This script provides the main simulation procedure classes for the oemof mg_ev toolset.
+This script provides the main simulation procedure classes for the REVOL-E-TION toolset.
 For further information, see readme.md
 
 --- Created by ---
@@ -24,15 +24,16 @@ import logging.handlers
 import math
 import os
 import pprint
+import pytz
 import sys
 import time
+import timezonefinder
 
 import multiprocessing as mp
 import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
 import tkinter as tk
-from tkinter import filedialog
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -128,7 +129,7 @@ class PredictionHorizon:
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
-            block.get_opt_size(self)
+            block.get_opt_size(self, scenario)
 
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
@@ -177,17 +178,17 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
-        curr_dict = {'eur': 'EUR',
-                     'usd': 'USD',}
-        if self.currency in curr_dict.keys():
-            self.currency = curr_dict[self.currency]
+        self.currency = self.currency.upper()
+
+        self.tzfinder = timezonefinder.TimezoneFinder()
+        self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
 
         # convert to datetime and calculate time(delta) values
-        self.starttime = datetime.strptime(self.starttime,
-                                           '%d/%m/%Y')  # simulation and project timeframe start simultaneously
+        # simulation and project timeframe start simultaneously
+        self.starttime = self.timezone.localize(datetime.strptime(self.starttime,'%d/%m/%Y'))
         self.sim_duration = timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
-        self.prj_duration = timedelta(days=self.prj_duration * 365)  # no leap years accounted for
+        self.prj_duration = timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
         self.prj_duration_yrs = self.prj_duration.days / 365
         self.prj_endtime = self.starttime + self.prj_duration
 
@@ -606,20 +607,20 @@ def input_gui(directory):
     # get scenario file
     scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
     scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.json')
-    scenarios_filename = filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
+    scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
                                            filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
     if not scenarios_filename: scenarios_filename = scenarios_default_filename
 
     # get settings file
     settings_default_dir = os.path.join(directory, 'input', 'settings')
     settings_default_filename = os.path.join(settings_default_dir, 'default.json')
-    settings_filename = filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
+    settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
                                            filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
     if not settings_filename: settings_filename = settings_default_filename
 
     # get result folder
     results_default_dir = os.path.join(directory, 'results')
-    results_foldername = filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
+    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
     if not results_foldername: results_foldername = results_default_dir
 
     return scenarios_filename, settings_filename, results_foldername
