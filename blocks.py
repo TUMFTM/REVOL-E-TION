@@ -82,6 +82,12 @@ class InvestBlock:
         for key, value in self.parameters.items():
             setattr(self, key, value)  # this sets all the parameters defined in the json file
 
+        # run load_opex() for all opex_spec related variables
+        opex_vars = [var for var in vars(self) if 'opex_spec' in var]
+        for var in opex_vars:
+            self.load_opex(var, run.input_data_path, scenario, self.name)
+        pass
+
         # TODO add "existing" block for grid connection
 
         if isinstance(self, SystemCore):
@@ -207,17 +213,18 @@ class InvestBlock:
         ###########
 
         if isinstance(self, SystemCore):
-            self.opex_sim = (self.e_sim_dcac + self.e_sim_acdc) * self.opex_spec
+            self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec * scenario.timestep_hours
         elif isinstance(self, StationaryEnergyStorage):
-            self.opex_sim = self.e_sim_in * self.opex_spec
+            self.opex_sim = self.flow_in @ self.opex_spec * scenario.timestep_hours
         elif isinstance(self, CommoditySystem):
+            # ToDo: Convert to timeseries; Furthermore: Is this a good idea? Incentivates to burn energy sometimes
             self.opex_sys = self.e_sim_in * self.sys_chg_soe + self.e_sim_out * self.sys_dis_soe
             self.opex_commodities = 0
             self.opex_commodities_ext = 0
             for commodity in self.commodities.values():
-                commodity.opex_sim = commodity.e_sim_in * self.opex_spec
-                commodity.opex_sim_ext = (commodity.flow_ext_ac * scenario.timestep_hours) @ self.ext_ac_costs + \
-                                         (commodity.flow_ext_dc * scenario.timestep_hours) @ self.ext_dc_costs
+                commodity.opex_sim = commodity.flow_in @ self.opex_spec * scenario.timestep_hours
+                commodity.opex_sim_ext = commodity.flow_ext_ac @ self.opex_spec_ext_ac * scenario.timestep_hours + \
+                                         commodity.flow_ext_dc @ self.opex_spec_ext_dc * scenario.timestep_hours
                 self.opex_commodities += commodity.opex_sim
                 self.opex_commodities_ext += commodity.opex_sim_ext
             self.opex_sim = self.opex_sys + self.opex_commodities
@@ -454,15 +461,6 @@ class CommoditySystem(InvestBlock):
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 
-        self.load_opex(var_name='ext_ac_costs',
-                       input_data_path='bev',
-                       scenario=scenario,
-                       block_name=self.name)
-        self.load_opex(var_name='ext_dc_costs',
-                       input_data_path='bev',
-                       scenario=scenario,
-                       block_name=self.name)
-
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']  # integration levels at which power consumption is determined a priori
 
         # Setting the converter cost of the main feed(back) converters of the system to either eps or the set values
@@ -603,12 +601,6 @@ class ControllableSource(InvestBlock):
 
         self.bus = scenario.blocks['core'].ac_bus
 
-        # Load sequence of opex_spec from csv file or create a constant sequence from a value
-        self.load_opex(input_data_path=run.input_data_path,
-                       var_name='opex_spec',
-                       scenario=scenario,
-                       block_name=self.name)
-
         if self.opt:
             self.src = solph.components.Source(label=f'{self.name}_src',
                                                outputs={scenario.blocks['core'].ac_bus: solph.Flow(
@@ -662,17 +654,6 @@ class GridConnection(InvestBlock):
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
         self.bus = scenario.blocks['core'].ac_bus
-
-        # Load sequence of opex_spec from csv file or create a constant sequence from a value
-        self.load_opex(var_name='opex_spec_g2mg',
-                       input_data_path=run.input_data_path,
-                       scenario=scenario,
-                       block_name=self.name)
-
-        self.load_opex(var_name='opex_spec_mg2g',
-                       input_data_path=run.input_data_path,
-                       scenario=scenario,
-                       block_name=self.name)
 
         # ToDo: how to integrate sizing based on chosen integration level, currently NOT WORKING
 
@@ -925,14 +906,14 @@ class MobileCommodity:
         # add external AC charger as new energy source
         self.ext_ac = solph.components.Source(label=f'{self.name}_ext_ac',
                                               outputs={self.bus: solph.Flow(nominal_value=1,
-                                                                            variable_costs=self.parent.ext_ac_costs)}
+                                                                            variable_costs=self.parent.opex_spec_ext_ac)}
                                               )
         scenario.components.append(self.ext_ac)
 
         # add external DC charger as new energy source
         self.ext_dc = solph.components.Source(label=f'{self.name}_ext_dc',
                                               outputs={self.bus: solph.Flow(nominal_value=1,
-                                                                            variable_costs=self.parent.ext_dc_costs)}
+                                                                            variable_costs=self.parent.opex_spec_ext_dc)}
                                               )
         scenario.components.append(self.ext_dc)
 
@@ -1051,11 +1032,6 @@ class PVSource(InvestBlock):
         self.data = self.meta = None
 
         self.get_timeseries_data(scenario, run)
-
-        self.load_opex(var_name='opex_spec',
-                       input_data_path=run.input_data_path,
-                       scenario=scenario,
-                       block_name=name)
 
         # Creation of static energy system components --------------------------------
 
@@ -1228,12 +1204,6 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc = pd.Series(data=self.init_soc,
                              index=scenario.sim_dti[0:1],
                              dtype='float64')
-
-        # ToDo: OPEX
-        # self.load_opex(var_name='opex_spec',
-        #                input_data_path=run.input_data_path,
-        #                scenario=scenario,
-        #                block_name=name)
 
         # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
@@ -1435,11 +1405,6 @@ class WindSource(InvestBlock):
         else:
             self.input_file_path = os.path.join(run.input_data_path, 'wind', self.filename + '.csv')
             self.data = read_input_csv(self.input_file_path, scenario)
-
-        self.load_opex(var_name='opex_spec',
-                       input_data_path=run.input_data_path,
-                       scenario=scenario,
-                       block_name=self.name)
 
         self.ph_data = None  # placeholder, is filled in "update_input_components"
 

@@ -108,9 +108,9 @@
 {"block":"bev","key":"chg_eff","sizing":0.95}
 {"block":"bev","key":"dis_eff","sizing":0.95}
 {"block":"bev","key":"cdc","sizing":1}
-{"block":"bev","key":"ext_ac_costs","sizing":-0.00003}
+{"block":"bev","key":"opex_spec_ext_ac","sizing":-0.00003}
 {"block":"bev","key":"ext_ac_power","sizing":0}
-{"block":"bev","key":"ext_dc_costs","sizing":0.0008}
+{"block":"bev","key":"opex_spec_ext_dc","sizing":0.0008}
 {"block":"bev","key":"ext_dc_power","sizing":0}
 {"block":"brs","key":"size","sizing":3000.0}
 {"block":"brs","key":"aging","sizing":true}
@@ -141,7 +141,7 @@
 {"block":"brs","key":"chg_eff","sizing":0.95}
 {"block":"brs","key":"dis_eff","sizing":0.95}
 {"block":"brs","key":"cdc","sizing":1}
-{"block":"brs","key":"ext_ac_costs","sizing":-0.00003}
+{"block":"brs","key":"opex_spec_ext_ac","sizing":-0.00003}
 {"block":"brs","key":"ext_ac_power","sizing":0}
-{"block":"brs","key":"ext_dc_costs","sizing":0.0008}
+{"block":"brs","key":"opex_spec_ext_dc","sizing":0.0008}
 {"block":"brs","key":"ext_dc_power","sizing":0}
