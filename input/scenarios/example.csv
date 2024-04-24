@@ -30,7 +30,7 @@ wind,ls,20,20,20,20
 wind,cdc,1,1,1,1
 wind,eff,0.95,0.95,0.95,0.95
 pv,size,opt,8000,8000,opt
-pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
+pv,data_source,PVGIS API,PVGIS File,PVGIS API,PVGIS API
 pv,filename,pv_example,pv_example,pv_example,pv_example
 pv,capex_spec,0.250,0.250,0.250,0.250
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
