@@ -529,9 +529,9 @@ class CommoditySystem(InvestBlock):
 
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
-    def calc_aging(self, scenario, horizon):
+    def calc_aging(self, run, scenario, horizon):
         for commodity in self.commodities.values():
-            commodity.calc_aging(scenario, horizon)
+            commodity.calc_aging(run, scenario, horizon)
 
     def calc_results(self, scenario):
 
@@ -916,8 +916,8 @@ class MobileCommodity:
         if self.parent.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
-    def calc_aging(self, scenario, horizon):
-        self.aging_model.age(self, scenario, horizon)
+    def calc_aging(self, run, scenario, horizon):
+        self.aging_model.age(self, run, scenario, horizon)
 
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
@@ -1255,8 +1255,8 @@ class StationaryEnergyStorage(InvestBlock):
         if self.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
-    def calc_aging(self, scenario, horizon):
-        self.aging_model.age(self, scenario, horizon)
+    def calc_aging(self, run, scenario, horizon):
+        self.aging_model.age(self, run, scenario, horizon)
 
     def calc_results(self, scenario):
 

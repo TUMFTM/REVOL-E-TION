@@ -132,7 +132,7 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-    def age(self, commodity, scenario, horizon):
+    def age(self, commodity, run, scenario, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
@@ -158,15 +158,15 @@ class BatteryPackModel:
 
         # Get temperature timeseries
         if isinstance(commodity.temp_battery, str):
-            if isinstance(scenario.blocks[commodity.temp_battery], blocks.PVSource):
+            try:
                 self.temp_hor_c = scenario.blocks[commodity.temp_battery].ph_data.loc[horizon.ch_dti, 'temp_air']
-            else:
-                raise ValueError('Battery temperature must be the name of a PVSource block or numeric')
-
+            except KeyError or NameError:
+                run.logger.warning(f'Battery temp source for {self.parent.name} not found, using default value: 25°C')
+                self.temp_hor_c = pd.Series(data=25, index=horizon.ch_dti)
         elif isinstance(commodity.temp_battery, (int, float)):
             self.temp_hor_c = pd.Series(data=commodity.temp_battery, index=horizon.ch_dti)  # pack temperature in °C
         else:
-            raise ValueError('Battery temperature must be the name of a PVSource block or numeric')
+           ValueError('Battery temperature must be the name of a PVSource block or numeric')
 
         self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
 
