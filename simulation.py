@@ -35,7 +35,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import tkinter as tk
 
-from datetime import datetime, timedelta
 from pathlib import Path
 from plotly.subplots import make_subplots
 
@@ -67,9 +66,9 @@ class PredictionHorizon:
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
 
-        # last steps need to be deleted as time index relates to beginning of timestep
-        self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep).delete(-1)
-        self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep).delete(-1)
+        # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
+        self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
+        self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.ph_data = block.data[self.starttime:self.ph_endtime]
@@ -185,15 +184,15 @@ class Scenario:
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
-        self.starttime = self.timezone.localize(datetime.strptime(self.starttime,'%d/%m/%Y'))
-        self.sim_duration = timedelta(days=self.sim_duration)
+        self.starttime = pd.to_datetime(self.starttime, format='%d/%m/%Y').tz_localize(self.timezone)
+        self.sim_duration = pd.Timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
-        self.prj_duration = timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
+        self.prj_duration = pd.Timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
         self.prj_duration_yrs = self.prj_duration.days / 365
         self.prj_endtime = self.starttime + self.prj_duration
 
         # generate a datetimeindex for the energy system model to run on
-        self.sim_dti = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep).delete(-1)
+        self.sim_dti = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
 
         # generate variables for calculations
         self.timestep_hours = self.sim_dti.freq.nanos / 1e9 / 3600
@@ -214,8 +213,8 @@ class Scenario:
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len = timedelta(hours=self.ph_len)
-            self.ch_len = timedelta(hours=self.ch_len)
+            self.ph_len = pd.Timedelta(hours=self.ph_len)
+            self.ch_len = pd.Timedelta(hours=self.ch_len)
             # number of timesteps for PH
             self.ph_nsteps = math.ceil(self.ph_len.total_seconds() / 3600 / self.timestep_hours)
             # number of timesteps for CH
@@ -489,7 +488,7 @@ class SimulationRun:
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
         self.runtime_len = None  # placeholder
-        self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
+        self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
         with open(self.settings_file_path) as file:
             settings = json.load(file, object_hook=json_parse_bool)
