@@ -496,51 +496,29 @@ class CommoditySystem(InvestBlock):
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
-        # ToDo: make this smarter
-        self.connected_bus = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
         scenario.components.append(self.bus)
 
-        if self.system == 'ac':
-            self.inflow = solph.components.Converter(label=f'xc_{self.name}',
-                                                     inputs={scenario.blocks['core'].ac_bus: solph.Flow(
-                                                         variable_costs=self.sys_chg_soe)},
-                                                     outputs={self.bus: solph.Flow()},
-                                                     conversion_factors={self.bus: 1})
+        self.connected_bus = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
 
-            self.outflow = solph.components.Converter(label=f'{self.name}_xc',
-                                                      inputs={self.bus: solph.Flow(
-                                                          nominal_value={'uc': 0,
-                                                                         'fcfs': 0,
-                                                                         'equal': 0,
-                                                                         'soc': 0,
-                                                                         'cc': 0,
-                                                                         'tc': 0,
-                                                                         'v2v': 0,
-                                                                         'v2mg': None}[self.int_lvl],
-                                                          variable_costs=self.sys_dis_soe)},
-                                                      outputs={scenario.blocks['core'].ac_bus: solph.Flow()},
-                                                      conversion_factors={scenario.blocks['core'].ac_bus: 1})
+        self.inflow = solph.components.Converter(label=f'xc_{self.name}',
+                                                 inputs={self.connected_bus: solph.Flow(
+                                                     variable_costs=self.sys_chg_soe)},
+                                                 outputs={self.bus: solph.Flow()},
+                                                 conversion_factors={self.bus: 1})
 
-        elif self.system == 'dc':
-            self.inflow = solph.components.Converter(label=f'xc_{self.name}',
-                                                     inputs={scenario.blocks['core'].dc_bus: solph.Flow(
-                                                         variable_costs=self.sys_chg_soe)},
-                                                     outputs={self.bus: solph.Flow()},
-                                                     conversion_factors={self.bus: 1})
-
-            self.outflow = solph.components.Converter(label=f'{self.name}_xc',
-                                                      inputs={self.bus: solph.Flow(
-                                                          nominal_value={'uc': 0,
-                                                                         'fcfs': 0,
-                                                                         'equal': 0,
-                                                                         'soc': 0,
-                                                                         'cc': 0,
-                                                                         'tc': 0,
-                                                                         'v2v': 0,
-                                                                         'v2mg': None}[self.int_lvl],
-                                                          variable_costs=self.sys_dis_soe)},
-                                                      outputs={scenario.blocks['core'].dc_bus: solph.Flow()},
-                                                      conversion_factors={scenario.blocks['core'].dc_bus: 1})
+        self.outflow = solph.components.Converter(label=f'{self.name}_xc',
+                                                  inputs={self.bus: solph.Flow(
+                                                      nominal_value={'uc': 0,
+                                                                     'fcfs': 0,
+                                                                     'equal': 0,
+                                                                     'soc': 0,
+                                                                     'cc': 0,
+                                                                     'tc': 0,
+                                                                     'v2v': 0,
+                                                                     'v2mg': None}[self.int_lvl],
+                                                      variable_costs=self.sys_dis_soe)},
+                                                  outputs={self.connected_bus: solph.Flow()},
+                                                  conversion_factors={self.connected_bus: 1})
 
         scenario.components.append(self.inflow)
         scenario.components.append(self.outflow)
@@ -1064,8 +1042,9 @@ class PVSource(InvestBlock):
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
-        self.connected_bus = scenario.blocks['core'].dc_bus
         scenario.components.append(self.bus)
+
+        self.connected_bus = scenario.blocks['core'].dc_bus
 
         self.outflow = solph.components.Converter(label=f'{self.name}_dc',
                                                   inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
@@ -1234,6 +1213,7 @@ class StationaryEnergyStorage(InvestBlock):
           |<-x->ess
           |
         """
+
         self.connected_bus = scenario.blocks['core'].dc_bus
 
         if self.opt:
@@ -1443,8 +1423,9 @@ class WindSource(InvestBlock):
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
-        self.connected_bus = scenario.blocks['core'].ac_bus
         scenario.components.append(self.bus)
+
+        self.connected_bus = scenario.blocks['core'].ac_bus
 
         self.outflow = solph.components.Converter(label=f'{self.name}_ac',
                                                   inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
