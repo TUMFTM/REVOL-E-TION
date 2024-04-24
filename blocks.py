@@ -1051,7 +1051,7 @@ class PVSource(InvestBlock):
                                                   #outputs={scenario.blocks['core'].dc_bus: solph.Flow(nominal_value=1,
                                                   #                                                    max=self.size *
                                                   #                                                        self.eff)},
-                                                  outputs={self.connected_bus: solph.Flow(nominal_value=1)},
+                                                  outputs={self.connected_bus: solph.Flow()},
                                                   conversion_factors={self.connected_bus: self.eff})
         scenario.components.append(self.outflow)
 
@@ -1432,7 +1432,7 @@ class WindSource(InvestBlock):
                                                   #outputs={scenario.blocks['core'].ac_bus: solph.Flow(nominal_value=1,
                                                   #                                                    max=self.size *
                                                   #                                                        self.eff)},
-                                                  outputs={self.connected_bus: solph.Flow(nominal_value=1)},
+                                                  outputs={self.connected_bus: solph.Flow()},
                                                   conversion_factors={self.connected_bus: self.eff})
         scenario.components.append(self.outflow)
 
