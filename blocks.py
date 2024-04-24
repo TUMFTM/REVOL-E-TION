@@ -35,12 +35,20 @@ import economics as eco
 ###############################################################################
 
 
-def read_input_csv(input_file_path, scenario):
+def read_input_csv(input_file_path, scenario, multiheader=False):
     """
     Properly read in timezone-aware input csv files and form correct datetimeindex
     """
-    df = pd.read_csv(input_file_path)  # parser in to_csv does not create datetimeindex
-    df = df.set_index(pd.to_datetime(df['time'], utc=True)).tz_convert(scenario.timezone).drop(columns='time')
+    if multiheader:
+        df = pd.read_csv(input_file_path, header=[0, 1])
+        df.sort_index(axis=1, sort_remaining=True, inplace=True)
+        df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
+    else:
+        df = pd.read_csv(input_file_path)
+        df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
+
+    # parser in to_csv does not create datetimeindex
+    df = df.tz_convert(scenario.timezone)
     df = resample_to_timestep(df, scenario)
     return df
 
@@ -451,10 +459,7 @@ class CommoditySystem(InvestBlock):
             self.data = None
         else:  # use pregenerated file
             self.input_file_path = os.path.join(run.input_data_path, self.name, self.filename + '.csv')
-            self.data = pd.read_csv(self.input_file_path,
-                                    header=[0, 1],
-                                    index_col=0,
-                                    parse_dates=True)
+            self.data = read_input_csv(self.input_file_path, scenario, multiheader=True)
 
             if (pd.infer_freq(self.data.index).lower()) != (scenario.timestep):
                 run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'

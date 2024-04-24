@@ -177,7 +177,7 @@ class RentalSystem:
         for commodity in commodities:
             column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption'),
                                  (commodity,'atac'), (commodity,'atdc')])
-        column_index = pd.MultiIndex.from_tuples(column_names, names=['commodity', 'value'])
+        column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
         self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
@@ -206,9 +206,11 @@ class RentalSystem:
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        if not os.path.isfile(path):
-            path = os.path.join(path, f'{sc.name}_{self.cs.name}.csv')
-        self.data.to_csv(path)
+        processes_path = os.path.join(path, f'{sc.name}_{self.cs.name}_processes.csv')
+        self.processes.to_csv(processes_path)
+
+        log_path = os.path.join(path, f'{sc.name}_{self.cs.name}_log.csv')
+        self.data.to_csv(log_path)
 
 
 class VehicleRentalSystem(RentalSystem):
@@ -282,7 +284,9 @@ class VehicleRentalSystem(RentalSystem):
         :return: None
         """
         # calculate base range on internal battery for rex calculations
-        self.base_range = (1 - self.cs.soc_min_return) * self.cs.soc_dep * self.cs.size_pc / self.cs.consumption
+        self.base_dsoc = self.cs.soc_dep - self.cs.soc_min_return
+        self.base_energy = self.base_dsoc * self.cs.size_pc  # VRS always has just one primary commodity (vehicle) per process
+        self.base_range = self.base_energy / self.cs.consumption
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         process_num = self.daily_demand['num_total'].sum(axis=0)
@@ -299,9 +303,9 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
-            self.processes['distance_rex'] = np.maximum(0, self.processes['distance'] - self.base_range)
-            self.processes['energy_rex'] = self.processes['distance_rex'] * self.cs.consumption
-            self.processes['num_rex'] = np.ceil(self.processes['energy_rex'] / self.cs.rex_cs.size_pc).astype(int)
+            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.base_range)
+            self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
+            self.processes['num_rex'] = np.ceil(self.processes['energy_missing'] / self.cs.rex_cs.size_pc).astype(int)
             self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.soc_dep) +
                                               (self.processes['num_rex'] * self.cs.rex_cs.size * self.cs.rex_cs.soc_dep))
             self.processes['rex_request'] = self.processes['num_rex'] > 0
@@ -311,9 +315,11 @@ class VehicleRentalSystem(RentalSystem):
 
         # set maximum energy requirement to max available energy - equivalent to charging externally
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
-        self.processes['energy_req_pc'] = self.processes['energy_req']  #column is needed in conversion to time log
         self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
-        self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req'] /
+
+        # rex and vehicle storage are discharged to equal soc storage
+        self.processes['energy_req_pc'] = self.cs.size_pc * self.processes['dsoc_req']
+        self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
                                                           (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
 
     def transfer_rex_processes(self):
@@ -329,9 +335,9 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['usecase_idx'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
         rex_processes['num_resources'] = rex_processes['num_rex']
-        rex_processes['energy_req'] = rex_processes['energy_rex']
-        rex_processes['energy_req_pc'] = rex_processes['energy_rex'] / rex_processes['num_rex']
-        rex_processes['soc_return'] = rex_processes['energy_req_pc'] / self.cs.rex_cs.size_pc
+        rex_processes['energy_req_pc'] = rex_processes['dsoc_req'] * self.cs.rex_cs.size_pc
+        rex_processes['energy_req'] = rex_processes['energy_req_pc'] * rex_processes['num_resources']
+        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['dsoc_req']
 
         # swap primary and secondary commodities as target system has other promary commodity type
         rex_processes['temp_primary'] = rex_processes['primary_commodity']

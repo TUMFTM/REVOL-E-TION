@@ -1,6 +1,6 @@
 key,value
 solver,gurobi
-parallel,False
+parallel,True
 max_process_num,12
 save_results,True
 save_des_results,True

@@ -43,10 +43,11 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 def read_mplogger_queue(queue):
     while True:
         record = queue.get()
-        if platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
-            run.logger.handle(record)  # This line causes double logger outputs on Linux
         if record is None:
             break
+        elif platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
+            run.logger.handle(record)  # This line causes double logger outputs on Linux
+
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
@@ -64,14 +65,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     scenario = Scenario(name, run)  # Create scenario instance
 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-        try:
-            horizon = PredictionHorizon(horizon_index, scenario, run)
-        except IndexError:
-            scenario.exception = 'Input data does not cover full sim timespan'
-            logging.warning(f'Input data in scenario \"{scenario.name}\" does not cover full simulation timespan'
-                            f' - continuing on next scenario')
-            scenario.save_results(run)
-            break
+        horizon = PredictionHorizon(horizon_index, scenario, run)
 
         if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)

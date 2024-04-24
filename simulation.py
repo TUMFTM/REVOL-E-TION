@@ -19,7 +19,6 @@ license:    GPLv3
 ###############################################################################
 
 import ast
-import dateutil.parser
 import logging
 import logging.handlers
 import math
@@ -74,11 +73,6 @@ def infer_dtype(value):
         if isinstance(evaluated, dict):
             return evaluated
     except (ValueError, SyntaxError):
-        pass
-
-    try:
-        return dateutil.parser.parse(value, fuzzy=False)
-    except (ValueError, OverflowError):
         pass
 
     return value.lower()
@@ -167,7 +161,13 @@ class PredictionHorizon:
 
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
-        self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
+        try:
+            self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
+        except IndexError:
+            msg = (f'Scenario {scenario.name} - Horizon {self.index + 1} of {scenario.nhorizons}:'
+                   f' Input data not matching time index - check input data and time index consistency')
+            run.logger.error(msg)
+            raise IndexError(msg)
 
         if run.dump_model:
             if scenario.strategy == 'go':
@@ -253,7 +253,7 @@ class Scenario:
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
-        self.starttime = self.timezone.localize(self.starttime)
+        self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y').tz_localize(self.timezone)
         self.sim_duration = timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
         self.prj_duration = timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
