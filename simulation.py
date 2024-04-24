@@ -18,7 +18,8 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import json
+import ast
+import dateutil.parser
 import logging
 import logging.handlers
 import math
@@ -43,6 +44,38 @@ import blocks
 import commodity_des as des
 import tum_colors as col
 from aprioripowerscheduler import AprioriPowerScheduler
+
+###############################################################################
+# Functions
+###############################################################################
+
+def infer_dtype(value):
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    if value.lower() in ['true', 'false']:
+        return bool(value)
+
+    try:
+        evaluated = ast.literal_eval(value)
+        if isinstance(evaluated, dict):
+            return evaluated
+    except (ValueError, SyntaxError):
+        pass
+
+    try:
+        return dateutil.parser.parse(value, fuzzy=False)
+    except (ValueError, OverflowError):
+        pass
+
+    return value
 
 ###############################################################################
 # Class definitions
@@ -176,7 +209,7 @@ class Scenario:
 
         self.parameters = run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
-            setattr(self, key, value)  # this sets all the parameters defined in the json file
+            setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
         self.currency = self.currency.upper()
 
@@ -185,7 +218,7 @@ class Scenario:
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
-        self.starttime = self.timezone.localize(datetime.strptime(self.starttime,'%d/%m/%Y'))
+        self.starttime = self.timezone.localize(self.starttime)
         self.sim_duration = timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
         self.prj_duration = timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
@@ -209,7 +242,7 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.results = self.results.set_index(['Block', 'Key'])
-        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.json')
+        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -447,7 +480,7 @@ class Scenario:
                     self.results.loc[(name, key), self.name] = value
 
         self.results.reset_index(inplace=True, names=['block', 'key'])
-        self.results.to_json(self.result_file_path, orient='records', lines=True)
+        self.results.to_csv(self.result_file_path, index=False)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -467,7 +500,7 @@ class SimulationRun:
             self.scenarios_file_path, self.settings_file_path, self.result_path = input_gui(self.cwd)
         elif len(sys.argv) == 2:  # only one argument, default result storage
             self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
-            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', 'default.json')
+            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', 'default.csv')
             self.result_path = os.path.join(self.cwd, 'results')
         elif len(sys.argv) == 3:
             self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
@@ -479,10 +512,8 @@ class SimulationRun:
             self.result_path = sys.argv[3]
 
         self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
-        self.scenario_data = pd.read_json(self.scenarios_file_path, orient='records', lines=True)
-        self.scenario_data = self.scenario_data.map(lambda x: x.lower() if isinstance(x, str) else x)
-        self.scenario_data.set_index(['block', 'key'], inplace=True)
-        self.scenario_data = self.scenario_data.apply(json_parse_bool, axis=1)
+        self.scenario_data = pd.read_csv(self.scenarios_file_path, index_col=[0, 1])
+        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
@@ -491,25 +522,11 @@ class SimulationRun:
         self.runtime_len = None  # placeholder
         self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
-        with open(self.settings_file_path) as file:
-            settings = json.load(file, object_hook=json_parse_bool)
+        settings = pd.read_csv(self.settings_file_path, index_col=[0])
+        settings.map(infer_dtype)
 
-        # check if the settings dict contains all necessary items
-        if not all(item in settings.keys() for item in ["solver",
-                                                        "parallel",
-                                                        "max_process_num",
-                                                        "save_results",
-                                                        "save_des_results",
-                                                        "print_results",
-                                                        "save_plots",
-                                                        "show_plots",
-                                                        "dump_model",
-                                                        "debugmode",
-                                                        "eps_cost"]):
-            raise Exception('incomplete settings file')
-
-        for key, value in settings.items():  # TODO convert True/False strings to bool
-            setattr(self, key, value)  # this sets all the parameters defined in the json file
+        for key, value in settings['value'].items():
+            setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
         self.max_process_num = int(self.max_process_num)
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
@@ -517,7 +534,7 @@ class SimulationRun:
         self.input_data_path = os.path.join(self.cwd, 'input')
         self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
         self.result_file_path = os.path.join(self.result_folder_path,
-                                             f'{self.runtimestamp}_{self.scenario_file_name}.json')
+                                             f'{self.runtimestamp}_{self.scenario_file_name}.csv')
         self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
@@ -588,16 +605,6 @@ class SimulationRun:
 ###############################################################################
 
 
-def json_parse_bool(dct: dict) -> dict:
-    for key, value in dct.items():
-        if isinstance(value, str):
-            if value.lower() == 'true':
-                dct[key] = True
-            elif value.lower() == 'false':
-                dct[key] = False
-    return dct
-
-
 def input_gui(directory):
     # create a Tkinter window to select files and folders
     root = tk.Tk()
@@ -606,16 +613,16 @@ def input_gui(directory):
 
     # get scenario file
     scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
-    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.json')
+    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
     scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
-                                           filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
+                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
     if not scenarios_filename: scenarios_filename = scenarios_default_filename
 
     # get settings file
     settings_default_dir = os.path.join(directory, 'input', 'settings')
-    settings_default_filename = os.path.join(settings_default_dir, 'default.json')
+    settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
     settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
-                                           filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
+                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
     if not settings_filename: settings_filename = settings_default_filename
 
     # get result folder

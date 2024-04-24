@@ -26,15 +26,10 @@ input/*/*
 
 !input/pv/wind_example.csv
 
-!input/scenarios/example.json
-!input/scenarios/sgen_example.py
+!input/scenarios/example.csv
 
-!input/settings/debug.json
-!input/settings/default.json
-!input/settings/default_seq.json
-!input/settings/server.json
-!input/settings/server_seq.json
-!input/settings/twocore.json
+!input/settings/default.csv
+!input/settings/default_seq.csv
 
 !input/wind/wind_example.csv
 
