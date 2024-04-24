@@ -24,6 +24,7 @@ import math
 import simpy
 import numpy as np
 import pandas as pd
+import pytz
 
 import blocks
 
@@ -140,8 +141,28 @@ class RentalSystem:
         self.processes['day'] = self.processes['date'].apply(get_day)
         self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
                                   self.sc.timestep_hours)  # round to nearest timestep
-        self.processes['time_req'] = (pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
-                                      .dt.tz_localize(sc.timezone))
+
+        # Vectorized handling of time conversion to avoid slow for loop
+        try:
+            self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
+            self.processes['time_req'] = self.processes['time_req'].dt.tz_localize(sc.timezone)
+
+        # If DST causes a sampled time to be invalid, loop over all processes (much slower)
+        # and advance the problematic one
+        except pytz.exceptions.AmbiguousTimeError or pytz.exceptions.NonExistentTimeError:
+            for idx, process in self.processes.iterrows():
+                try:
+                    self.processes.iloc[idx, 'time_req'] =\
+                        pd.to_datetime(self.processes.iloc[idx,['year', 'month', 'day', 'hour']])
+                    self.processes.iloc[idx, 'time_req'] =\
+                        self.processes.iloc[idx, 'time_req'].tz_localize(sc.timezone)
+                except pytz.exceptions.AmbiguousTimeError or pytz.exceptions.NonExistentTimeError:
+                    self.processes.iloc[idx, 'time_req'] =\
+                         pd.to_datetime(self.processes.iloc[idx, ['year', 'month', 'day', 'hour']] +\
+                         pd.Timedelta(hours=1))
+                    self.processes.iloc[idx, 'time_req'] =\
+                        self.processes.iloc[idx, 'time_req'].tz_localize(sc.timezone)
+
         self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
 
