@@ -495,8 +495,7 @@ class CommoditySystem(InvestBlock):
         self.connected_bus = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
         scenario.components.append(self.bus)
 
-        # ToDo: is lower() needed here? Or already done when reading the scenario file?
-        if self.system.lower() == 'ac':
+        if self.system == 'ac':
             self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                      inputs={scenario.blocks['core'].ac_bus: solph.Flow(
                                                          variable_costs=self.sys_chg_soe)},
@@ -517,7 +516,7 @@ class CommoditySystem(InvestBlock):
                                                       outputs={scenario.blocks['core'].ac_bus: solph.Flow()},
                                                       conversion_factors={scenario.blocks['core'].ac_bus: 1})
 
-        elif self.system.lower() == 'dc':
+        elif self.system == 'dc':
             self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                      inputs={scenario.blocks['core'].dc_bus: solph.Flow(
                                                          variable_costs=self.sys_chg_soe)},

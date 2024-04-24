@@ -494,7 +494,6 @@ def dt2steps(series, sc):
     elif pd.api.types.is_timedelta64_dtype(series):
         out = np.ceil(series / sc.timestep_td).astype(int)
     return out
-# todo introduce ceil in rounding or here to ensure feasibility without a buffer time
 
 
 def steps2dt(series, sc, absolute=False):

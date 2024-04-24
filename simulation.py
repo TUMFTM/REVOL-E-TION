@@ -35,6 +35,7 @@ import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
 import tkinter as tk
+import tkinter.filedialog
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,7 @@ from aprioripowerscheduler import AprioriPowerScheduler
 # Functions
 ###############################################################################
 
+
 def infer_dtype(value):
     try:
         return int(value)
@@ -60,8 +62,12 @@ def infer_dtype(value):
     except ValueError:
         pass
 
-    if value.lower() in ['true', 'false']:
-        return bool(value)
+    if value.lower() == 'true':
+        return True
+    elif value.lower() == 'false':
+        return False
+    elif value.lower() in ['none', 'null', 'nan']:
+        return None
 
     try:
         evaluated = ast.literal_eval(value)
@@ -75,7 +81,36 @@ def infer_dtype(value):
     except (ValueError, OverflowError):
         pass
 
-    return value
+    return value.lower()
+
+
+def input_gui(directory):
+    # create a Tkinter window to select files and folders
+    root = tk.Tk()
+    root.withdraw()  # hide small tk-window
+    root.lift()  # make sure all tk windows appear in front of other windows
+
+    # get scenario file
+    scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
+    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
+    scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
+                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+    if not scenarios_filename: scenarios_filename = scenarios_default_filename
+
+    # get settings file
+    settings_default_dir = os.path.join(directory, 'input', 'settings')
+    settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
+    settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
+                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+    if not settings_filename: settings_filename = settings_default_filename
+
+    # get result folder
+    results_default_dir = os.path.join(directory, 'results')
+    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
+    if not results_foldername: results_foldername = results_default_dir
+
+    return scenarios_filename, settings_filename, results_foldername
+
 
 ###############################################################################
 # Class definitions
@@ -242,7 +277,7 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.results = self.results.set_index(['Block', 'Key'])
-        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}.csv')
+        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}_tempresults.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -276,12 +311,6 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
-        # ToDo: remove section; old code!
-        # for cs in [cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]:
-        #     for commodity in cs.commodities.values():
-        #         commodity.calc_uc_power(self)
-
-        # ToDo:
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
@@ -512,7 +541,10 @@ class SimulationRun:
             self.result_path = sys.argv[3]
 
         self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
-        self.scenario_data = pd.read_csv(self.scenarios_file_path, index_col=[0, 1])
+        self.scenario_data = pd.read_csv(self.scenarios_file_path,
+                                         index_col=[0, 1],
+                                         na_values=['NaN', 'nan'],  # this inhibits None/Null being read as float NaN
+                                         keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
@@ -523,7 +555,7 @@ class SimulationRun:
         self.runtimestamp = datetime.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings.map(infer_dtype)
+        settings = settings.map(infer_dtype)
 
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
@@ -534,7 +566,7 @@ class SimulationRun:
         self.input_data_path = os.path.join(self.cwd, 'input')
         self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
         self.result_file_path = os.path.join(self.result_folder_path,
-                                             f'{self.runtimestamp}_{self.scenario_file_name}.csv')
+                                             f'{self.runtimestamp}_{self.scenario_file_name}_results.csv')
         self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
@@ -580,54 +612,21 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('.json')]
+        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('_tempresults.csv')]
 
         scenario_frames = []
 
         for file in files:
             file_path = os.path.join(self.result_folder_path, file)
-            file_results = pd.read_json(file_path, orient='records', lines=True)
-            file_results.set_index(['block', 'key'], drop=True, inplace=True)
+            file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
         joined_results = pd.concat(scenario_frames, axis=1)
-        joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in json
-        joined_results.to_json(self.result_file_path, orient='records', lines=True)
+        joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
+        joined_results.to_csv(self.result_file_path)
         self.logger.info("Technoeconomic output file created")
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
             file_path = os.path.join(self.result_folder_path, file)
             os.remove(file_path)
-
-###############################################################################
-# global functions
-###############################################################################
-
-
-def input_gui(directory):
-    # create a Tkinter window to select files and folders
-    root = tk.Tk()
-    root.withdraw()  # hide small tk-window
-    root.lift()  # make sure all tk windows appear in front of other windows
-
-    # get scenario file
-    scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
-    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
-    scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not scenarios_filename: scenarios_filename = scenarios_default_filename
-
-    # get settings file
-    settings_default_dir = os.path.join(directory, 'input', 'settings')
-    settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
-    settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not settings_filename: settings_filename = settings_default_filename
-
-    # get result folder
-    results_default_dir = os.path.join(directory, 'results')
-    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
-    if not results_foldername: results_foldername = results_default_dir
-
-    return scenarios_filename, settings_filename, results_foldername
