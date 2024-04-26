@@ -89,7 +89,6 @@ class InvestBlock:
         opex_vars = [var for var in vars(self) if 'opex_spec' in var]
         for var in opex_vars:
             self.load_opex(var, run.input_data_path, scenario, self.name)
-        pass
 
         # TODO add "existing" block for grid connection
 
@@ -613,7 +612,6 @@ class ControllableSource(InvestBlock):
         self.flow = pd.concat([self.flow if not self.flow.empty else None, self.flow_ch])
 
     def update_input_components(self, scenario):
-        pass  # no sliced input data needed for controllable source, but function needs to be callable
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
             self.src.outputs[self.connected_bus].fix = self.apriori_data['p']
@@ -687,7 +685,6 @@ class GridConnection(InvestBlock):
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
     def update_input_components(self, scenario):
-        pass  # no sliced input data needed for controllable source, but function needs to be callable
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
             self.src.outputs[self.connected_bus].fix = self.apriori_data['p'].clip(lower=0)
