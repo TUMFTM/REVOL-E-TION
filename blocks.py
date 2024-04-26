@@ -1116,8 +1116,8 @@ class PVSource(InvestBlock):
     def get_timeseries_data(self, scenario, run):
 
         if self.data_source == 'pvgis api':  # API input selected
-            self.api_startyear = scenario.starttime.astimezone(pytz.utc).year
-            self.api_endyear = scenario.sim_endtime.astimezone(pytz.utc).year
+            self.api_startyear = scenario.starttime.tz_convert(pytz.utc).year
+            self.api_endyear = scenario.sim_endtime.tz_convert(pytz.utc).year
             self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
                                                                      scenario.longitude,
                                                                      start=self.api_startyear,
