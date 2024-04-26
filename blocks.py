@@ -94,12 +94,25 @@ class InvestBlock:
 
         if isinstance(self, SystemCore):
             self.size = None  # SystemCore has two sizes and is initialized in its own __init__
+            self.equal = False
+            if self.acdc_size == 'equal':
+                self.acdc_size = self.dcac_size
+                self.equal = True
+            if self.dcac_size == 'equal':
+                self.dcac_size = self.acdc_size
+                self.equal = True
+
+            # ToDo: raise error, if both sizes are defined as "equal"
+
             if self.acdc_size == 'opt' or self.dcac_size == 'opt':
                 self.opt = True
+                # ToDo: there's a identical block of code in SystemCore class -> remove at least one of them
+                '''
                 if self.acdc_size == 'opt':
                     self.acdc_size = None
                 if self.dcac_size == 'opt':
                     self.dcac_size = None
+                '''
             else:
                 self.opt = False
 
@@ -394,6 +407,7 @@ class InvestBlock:
         :return: none, saves self.size value
         """
 
+        # ToDo: think about inheriting this function in subclasses to avoid "isinstance"
         source_types = (PVSource, WindSource)  # all source types that have an internal bus
         simple_source_types = (ControllableSource)  # all source types that are directly connected to a SystemCore bus
 
@@ -416,8 +430,10 @@ class InvestBlock:
             self.size = sum([commodity.size for commodity in self.commodities.values()])
 
         elif isinstance(self, SystemCore):
-            self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
-            self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
+            if self.acdc_size == 'opt':
+                self.acdc_size = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
+            if self.dcac_size == 'opt':
+                self.dcac_size = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
             self.size = self.dcac_size + self.acdc_size
 
         elif isinstance(self, GridConnection):
@@ -1294,8 +1310,13 @@ class SystemCore(InvestBlock):
         super().__init__(name, scenario, run)
 
         if self.opt:
-            self.acdc_size = None
-            self.dcac_size = None
+            '''
+            if self.acdc_size == 'opt':
+                self.acdc_size = None
+            if self.dcac_size == 'opt':
+                self.dcac_size = None
+            '''
+            pass
         else:
             self.size = self.acdc_size + self.dcac_size
 
@@ -1318,7 +1339,7 @@ class SystemCore(InvestBlock):
         self.dc_bus = solph.Bus(label='dc_bus')
         scenario.components.append(self.dc_bus)
 
-        if self.opt:
+        if self.acdc_size == 'opt':
             self.ac_dc = solph.components.Converter(label='ac_dc',
                                                     inputs={self.ac_bus: solph.Flow(investment=solph.Investment(
                                                         ep_costs=self.epc),
@@ -1326,12 +1347,6 @@ class SystemCore(InvestBlock):
                                                     outputs={self.dc_bus: solph.Flow()},
                                                     conversion_factors={self.dc_bus: self.acdc_eff})
 
-            self.dc_ac = solph.components.Converter(label='dc_ac',
-                                                    inputs={self.dc_bus: solph.Flow(investment=solph.Investment(
-                                                        ep_costs=self.epc),
-                                                        variable_costs=self.opex_spec)},
-                                                    outputs={self.ac_bus: solph.Flow()},
-                                                    conversion_factors={self.ac_bus: self.dcac_eff})
         else:
             self.ac_dc = solph.components.Converter(label='ac_dc',
                                                     inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost,
@@ -1340,6 +1355,14 @@ class SystemCore(InvestBlock):
                                                     outputs={self.dc_bus: solph.Flow()},
                                                     conversion_factors={self.dc_bus: self.acdc_eff})
 
+        if self.dcac_size == 'opt':
+            self.dc_ac = solph.components.Converter(label='dc_ac',
+                                                    inputs={self.dc_bus: solph.Flow(investment=solph.Investment(
+                                                        ep_costs=self.epc),
+                                                        variable_costs=self.opex_spec)},
+                                                    outputs={self.ac_bus: solph.Flow()},
+                                                    conversion_factors={self.ac_bus: self.dcac_eff})
+        else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
                                                     inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost,
                                                                                     nominal_value=1,
@@ -1349,6 +1372,11 @@ class SystemCore(InvestBlock):
 
         scenario.components.append(self.ac_dc)
         scenario.components.append(self.dc_ac)
+
+        if self.opt and self.equal:
+            # add a tuple of tuples to the list of equal variables of the scenario
+            scenario.equal_variables.append(({'in': self.dc_bus, 'out': self.dc_ac},
+                                             {'in': self.ac_bus, 'out': self.ac_dc}))
 
     def calc_results(self, scenario):
 

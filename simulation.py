@@ -101,7 +101,15 @@ class PredictionHorizon:
         self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
 
         #### Add additonal user-specific constraints
+
+        for equal_variable in scenario.equal_variables:
+            var1 = self.model.InvestmentFlowBlock.invest[equal_variable[0]['in'], equal_variable[0]['out'], 0]
+            var2 = self.model.InvestmentFlowBlock.invest[equal_variable[1]['in'], equal_variable[1]['out'], 0]
+            solph.constraints.equate_variables(model=self.model, var1=var1, var2=var2)
+
+        '''
         import pyomo.environ as pyo
+
 
         var1 = self.model.InvestmentFlowBlock.invest[self.es.groups['dc_bus'], self.es.groups['dc_ac'], 0]
         var2 = self.model.InvestmentFlowBlock.invest[self.es.groups['ac_bus'], self.es.groups['ac_dc'], 0]
@@ -113,7 +121,6 @@ class PredictionHorizon:
         flow2 = [(scenario.blocks['pv'].outflow, scenario.blocks['pv'].connected_bus)]
         solph.constraints.equate_flows(model=self.model, flows1=flow1, flows2=flow2, factor1=0.5)
 
-        '''
         myblock = pyo.Block()
 
         # Add relevant flow from system into grid
@@ -293,6 +300,8 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
+        self.equal_flows = []
+        self.equal_variables = []
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
