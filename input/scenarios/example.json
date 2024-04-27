@@ -44,8 +44,8 @@
 {"block":"gen","key":"ls","sizing":10}
 {"block":"gen","key":"cdc","sizing":1}
 {"block":"gen","key":"eff","sizing":1}
-{"block":"grid","key":"size","sizing":"opt"}
-{"block":"grid","key":"mg2g","sizing":true}
+{"block":"grid","key":"g2mg_size","sizing":"opt"}
+{"block":"grid","key":"mg2g_size","sizing":"equal"}
 {"block":"grid","key":"capex_spec","sizing":15}
 {"block":"grid","key":"mntex_spec","sizing":0}
 {"block":"grid","key":"opex_spec_g2mg","sizing":"grid_buy_example"}

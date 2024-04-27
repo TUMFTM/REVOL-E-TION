@@ -108,19 +108,27 @@ class InvestBlock:
                                    f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
                                    f' components with an additional "equal" constraint')
 
-            if self.acdc_size == 'opt' or self.dcac_size == 'opt':
-                self.opt = True
-                # ToDo: there's a identical block of code in SystemCore class -> remove at least one of them
-                '''
-                if self.acdc_size == 'opt':
-                    self.acdc_size = None
-                if self.dcac_size == 'opt':
-                    self.dcac_size = None
-                '''
-            else:
-                self.opt = False
+            self.opt = True if self.acdc_size == 'opt' or self.dcac_size == 'opt' else False
 
-        # all non-SystemCore blocks that are to be optimzed
+        elif isinstance(self, GridConnection):
+            self.size = None  # GridConnection has two sizes and is initialized in its own __init__
+            self.equal = False
+            if self.g2mg_size == 'equal':
+                self.g2mg_size = self.mg2g_size
+                self.equal = True
+            if self.mg2g_size == 'equal':
+                self.mg2g_size = self.g2mg_size
+                self.equal = True
+
+            if self.g2mg_size == 'equal' and self.mg2g_size == 'equal':
+                self.g2mg_size = self.mg2g_size = 'opt'
+                run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+                                   f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
+                                   f' components with an additional "equal" constraint')
+
+            self.opt = True if self.g2mg_size == 'opt' or self.mg2g_size == 'opt' else False
+
+        # all non-SystemCore blocks that are to be optimized
         elif self.size == 'opt':
             self.opt = True
             # size will now be set when getting results
@@ -441,11 +449,11 @@ class InvestBlock:
             self.size = self.dcac_size + self.acdc_size
 
         elif isinstance(self, GridConnection):
-            self.g2mg_size = horizon.results[(self.src, self.connected_bus)]['scalars']['invest']
-            self.mg2g_size = horizon.results[(self.connected_bus, self.snk)]['scalars']['invest']
-            # ToDo: does this work? The result calculated afterwards is not the same as of the optimization as for the
-            #  optimization the total cost is cost_mg2g * size_mg2g + cost_g2mg + size_g2mg (with cost_m2mg=cost_mg2g)
-            self.size = max(self.g2mg_size, self.mg2g_size)
+            if self.g2mg_size == 'opt':
+                self.g2mg_size = horizon.results[(self.src, self.connected_bus)]['scalars']['invest']
+            if self.mg2g_size == 'opt':
+                self.mg2g_size = horizon.results[(self.connected_bus, self.snk)]['scalars']['invest']
+            self.size = self.g2mg_size + self.mg2g_size
 
     def load_opex(self, var_name, input_data_path, scenario, block_name):
         # get opex variable
@@ -644,6 +652,14 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        if not self.opt:
+            self.size = self.acdc_size + self.dcac_size
+
+        # flow direction is specified with respect to the component
+        # -> flow_in: from MiniGrid into GridConnection component
+        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
+        self.flow_in = self.flow_out = pd.Series(dtype='float64')
+
         """
         x denotes the flow measurement point in results
 
@@ -655,42 +671,42 @@ class GridConnection(InvestBlock):
           |
         """
 
-        # flow direction is specified with respect to the component
-        # -> flow_in: from MiniGrid into GridConnection component
-        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
-        self.flow_in = self.flow_out = pd.Series(dtype='float64')
-
         self.connected_bus = scenario.blocks['core'].ac_bus
 
-        # ToDo: how to integrate sizing based on chosen integration level, currently NOT WORKING
-
-        if self.opt:
+        if self.g2mg_size == 'opt':
             self.src = solph.components.Source(label=f'{self.name}_src',
                                                outputs={self.connected_bus: solph.Flow(
                                                    investment=solph.Investment(ep_costs=self.epc),
                                                    variable_costs=self.opex_spec_g2mg)}
                                                )
+        else:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={self.connected_bus: solph.Flow(
+                                                   nominal_value=1,
+                                                   max=self.g2mg_size,
+                                                   variable_costs=self.opex_spec_g2mg)}
+                                               )
+        if self.mg2g_size == 'opt':
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                              inputs={self.connected_bus: solph.Flow(
                                                  investment=solph.Investment(ep_costs=self.epc),
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.connected_bus: solph.Flow(
-                                                   nominal_value=1,
-                                                   max=self.size,
-                                                   variable_costs=self.opex_spec_g2mg)}
-                                               )
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                              inputs={self.connected_bus: solph.Flow(
                                                  nominal_value=1,
-                                                 max={False: 0,
-                                                      True: self.size}[self.mg2g],
+                                                 max=self.mg2gsize,
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         scenario.components.append(self.src)
         scenario.components.append(self.snk)
+
+        if self.opt and self.equal:
+            # add a tuple of tuples to the list of equal variables of the scenario
+            scenario.equal_variables.append({'var1': {'in': self.src, 'out': self.connected_bus},
+                                             'var2': {'in': self.connected_bus, 'out': self.snk},
+                                             'factor': 1})
 
     def calc_results(self, scenario):
 
@@ -1315,15 +1331,7 @@ class SystemCore(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        if self.opt:
-            '''
-            if self.acdc_size == 'opt':
-                self.acdc_size = None
-            if self.dcac_size == 'opt':
-                self.dcac_size = None
-            '''
-            pass
-        else:
+        if not self.opt:
             self.size = self.acdc_size + self.dcac_size
 
         self.flow_acdc_ch = self.flow_dcac_ch = pd.Series(dtype='float64')  # result data
