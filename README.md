@@ -9,14 +9,14 @@ Philipp Rosner, M.Sc.
 Research Associate
 Institute of Automotive Technology  
 Department of Mobility Systems Engineering  
-School of Engineering and Design  
+TUM School of Engineering and Design  
 Technical University of Munich  
 philipp.rosner@tum.de  
 Originally created September 2nd, 2021
 
 #### Contributors
 Brian Dietermann, M.Sc. - Research Associate 06/2022-  
-Marcel Brödel, B.Sc. - Research Associate 01/2024-
+Marcel Brödel, M.Sc. - Research Associate 01/2024-
 
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
