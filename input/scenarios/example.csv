@@ -12,7 +12,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,dcac_size,0,13000,13000,opt
-core,acdc_size,0,13000,13000,opt
+core,acdc_size,equal,equal,equal,equal
 core,capex_spec,0.08,0.08,0.08,0.08
 core,mntex_spec,0.0024,0.0024,0.0024,0.0024
 core,opex_spec,0,0,0,0
@@ -46,7 +46,7 @@ gen,ls,10,10,10,10
 gen,cdc,1,1,1,1
 gen,eff,1,1,1,1
 grid,g2mg_size,opt,11000,11000,opt
-grid,mg2g_size,True,True,True,True
+grid,mg2g_size,equal,equal,equal,equal
 grid,capex_spec,10,10,10,10
 grid,mntex_spec,0,0,0,0
 grid,opex_spec_g2mg,grid_buy_example,grid_buy_example,grid_buy_example,grid_buy_example
