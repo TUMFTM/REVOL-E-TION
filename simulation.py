@@ -168,6 +168,86 @@ class PredictionHorizon:
             run.logger.error(msg)
             raise IndexError(msg)
 
+        # Add additonal user-specific constraints for investment variables
+        for equal_variable in scenario.equal_variables:
+            # var1 * factor = var2
+            solph.constraints.equate_variables(model=self.model,
+                                               var1=self.model.InvestmentFlowBlock.invest[
+                                                   equal_variable['var1']['in'], equal_variable['var1']['out'], 0],
+                                               var2=self.model.InvestmentFlowBlock.invest[
+                                                   equal_variable['var2']['in'], equal_variable['var2']['out'], 0],
+                                               factor1=equal_variable['factor'])
+
+        for equal_flow in scenario.equal_flows:
+            flows1 = None
+            flows2 = None
+            factor = None
+            solph.constraints.equate_flows(model=self.model, flows1=flows1, flows2=flows2, factor1=factor)
+        '''
+        import pyomo.environ as pyo
+
+
+        var1 = self.model.InvestmentFlowBlock.invest[self.es.groups['dc_bus'], self.es.groups['dc_ac'], 0]
+        var2 = self.model.InvestmentFlowBlock.invest[self.es.groups['ac_bus'], self.es.groups['ac_dc'], 0]
+        solph.constraints.equate_variables(self.model, var1, var2)
+
+        # flow1 = self.model.flows[scenario.blocks['grid'].connected_bus, scenario.blocks['grid'].snk]
+        # flow2 = self.model.flows[scenario.blocks['pv'].outflow, scenario.blocks['pv'].connected_bus]
+        flow1 = [(scenario.blocks['grid'].connected_bus, scenario.blocks['grid'].snk)]
+        flow2 = [(scenario.blocks['pv'].outflow, scenario.blocks['pv'].connected_bus)]
+        solph.constraints.equate_flows(model=self.model, flows1=flow1, flows2=flow2, factor1=0.5)
+
+        myblock = pyo.Block()
+
+        # Add relevant flow from system into grid
+        LIST = True
+        # Should not make a difference whether we use the set or the list
+        if LIST:
+            myblock.MYFLOWS = [k for (k, v) in self.model.flows.items() if
+                                    k == (scenario.blocks['core'].ac_bus, scenario.blocks['grid'].snk)]
+        else:
+            myblock.MYFLOWS = pyo.Set(
+                initialize=[
+                    k for (k, v) in self.model.flows.items() if
+                    k == (scenario.blocks['core'].ac_bus, scenario.blocks['grid'].snk)
+                ]
+            )
+
+
+        # myblock.myconstraint = pyo.Constraint(expr=myblock.var1 + myblock.var2 <= 10)
+        # self.model.add_component('myblock', myblock)
+
+        # add the sub-model to the oemof Model instance
+        self.model.add_component("MyBlock", myblock)
+
+        def _feed_grid_rule(m, s, e, t):
+            # m: MyBlock
+            # s: start node -> first part of flow (ac_bus)
+            # e: end node -> second part of flow (grid_snk)
+            # t: time step (only one timestep per time -> iterating)
+            """pyomo rule definition: Here we can use all objects from the block or
+            the self.model object, in this case we don't need anything from the block
+            except the newly defined set MYFLOWS.
+            """
+            expr = self.model.flows[s, e] <= 500
+            return expr
+
+        myblock.inflow_share = pyo.Constraint(
+            myblock.MYFLOWS, self.model.TIMESTEPS, rule=_feed_grid_rule
+        )
+
+
+
+        def max_grid_feed(model):
+            return model.flows[(scenario.blocks['core'].ac_bus, scenario.blocks['grid'].snk)].flow <= 500
+        pass
+        # [k for (k, v) in self.model.flows.items() if 'ac_bus' in k[0].label and 'grid_snk' in k[1].label]
+        # a=[k for (k, v) in self.model.flows.items() if k==(scenario.blocks['core'].ac_bus, scenario.blocks['grid'].snk)]
+
+        # a=[(k, v) for (k, v) in self.model.flows.items() if k==(scenario.blocks['core'].ac_bus, scenario.blocks['grid'].snk)]
+
+        '''
+
         if run.dump_model:
             if scenario.strategy == 'go':
                 self.model.write(run.dump_file_path, io_options={'symbolic_solver_labels': True})
@@ -296,6 +376,8 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
+        self.equal_flows = []
+        self.equal_variables = []
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
