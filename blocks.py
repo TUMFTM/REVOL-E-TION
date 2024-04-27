@@ -658,7 +658,7 @@ class GridConnection(InvestBlock):
         super().__init__(name, scenario, run)
 
         if not self.opt:
-            self.size = self.acdc_size + self.dcac_size
+            self.size = self.g2mg_size + self.mg2g_size
 
         # flow direction is specified with respect to the component
         # -> flow_in: from MiniGrid into GridConnection component
@@ -701,7 +701,7 @@ class GridConnection(InvestBlock):
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                              inputs={self.connected_bus: solph.Flow(
                                                  nominal_value=1,
-                                                 max=self.mg2gsize,
+                                                 max=self.mg2g_size,
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         scenario.components.append(self.src)

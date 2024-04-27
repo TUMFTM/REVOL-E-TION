@@ -49,7 +49,6 @@ def read_mplogger_queue(queue):
             run.logger.handle(record)  # This line causes double logger outputs on Linux
 
 
-
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
 
     if run.parallel:
