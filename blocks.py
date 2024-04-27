@@ -102,7 +102,11 @@ class InvestBlock:
                 self.dcac_size = self.acdc_size
                 self.equal = True
 
-            # ToDo: raise error, if both sizes are defined as "equal"
+            if self.acdc_size == 'equal' and self.dcac_size == 'equal':
+                self.acdc_size = self.dcac_size = 'opt'
+                run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+                                   f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
+                                   f' components with an additional "equal" constraint')
 
             if self.acdc_size == 'opt' or self.dcac_size == 'opt':
                 self.opt = True
@@ -180,7 +184,7 @@ class InvestBlock:
 
         # for CommoditySystems, size is the sum of all commodity sizes
         # For SystemCore, size is the sum of both sizes
-        # For GridConnection, size is the size of the larger flow
+        # For GridConnection, size is the larger size
         self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
                                  self.capex_init,  # TODO integrate cost decrease
@@ -439,6 +443,8 @@ class InvestBlock:
         elif isinstance(self, GridConnection):
             self.g2mg_size = horizon.results[(self.src, self.connected_bus)]['scalars']['invest']
             self.mg2g_size = horizon.results[(self.connected_bus, self.snk)]['scalars']['invest']
+            # ToDo: does this work? The result calculated afterwards is not the same as of the optimization as for the
+            #  optimization the total cost is cost_mg2g * size_mg2g + cost_g2mg + size_g2mg (with cost_m2mg=cost_mg2g)
             self.size = max(self.g2mg_size, self.mg2g_size)
 
     def load_opex(self, var_name, input_data_path, scenario, block_name):
@@ -1375,8 +1381,9 @@ class SystemCore(InvestBlock):
 
         if self.opt and self.equal:
             # add a tuple of tuples to the list of equal variables of the scenario
-            scenario.equal_variables.append(({'in': self.dc_bus, 'out': self.dc_ac},
-                                             {'in': self.ac_bus, 'out': self.ac_dc}))
+            scenario.equal_variables.append({'var1': {'in': self.dc_bus, 'out': self.dc_ac},
+                                             'var2': {'in': self.ac_bus, 'out': self.ac_dc},
+                                             'factor': 1})
 
     def calc_results(self, scenario):
 

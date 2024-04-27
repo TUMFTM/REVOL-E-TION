@@ -100,13 +100,21 @@ class PredictionHorizon:
 
         self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
 
-        #### Add additonal user-specific constraints
-
+        # Add additonal user-specific constraints for investment variables
         for equal_variable in scenario.equal_variables:
-            var1 = self.model.InvestmentFlowBlock.invest[equal_variable[0]['in'], equal_variable[0]['out'], 0]
-            var2 = self.model.InvestmentFlowBlock.invest[equal_variable[1]['in'], equal_variable[1]['out'], 0]
-            solph.constraints.equate_variables(model=self.model, var1=var1, var2=var2)
+            # var1 * factor = var2
+            solph.constraints.equate_variables(model=self.model,
+                                               var1=self.model.InvestmentFlowBlock.invest[
+                                                   equal_variable['var1']['in'], equal_variable['var1']['out'], 0],
+                                               var2=self.model.InvestmentFlowBlock.invest[
+                                                   equal_variable['var2']['in'], equal_variable['var2']['out'], 0],
+                                               factor1=equal_variable['factor'])
 
+        for equal_flow in scenario.equal_flows:
+            flows1 = None
+            flows2 = None
+            factor = None
+            solph.constraints.equate_flows(model=self.model, flows1=flows1, flows2=flows2, factor1=factor)
         '''
         import pyomo.environ as pyo
 
