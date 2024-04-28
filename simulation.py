@@ -560,18 +560,19 @@ class Scenario:
         print('#################')
         run.logger.info(f'Results for Scenario {self.name}:')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
+            unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    run.logger.info(f'Optimized size of AC/DC power in component {block.name}: {round(block.acdc_size / 1e3)} kW')
+                    run.logger.info(f'Optimized size of AC/DC power in component {block.name}: {round(block.acdc_size / 1e3)} {unit}')
                 if block.opt_dcac:
-                    run.logger.info(f'Optimized size of DC/AC power in component {block.name}: {round(block.dcac_size / 1e3)} kW')
+                    run.logger.info(f'Optimized size of DC/AC power in component {block.name}: {round(block.dcac_size / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.g2mg_size / 1e3)} kW')
+                    run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.g2mg_size / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.mg2g_size / 1e3)} kW')
+                    run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.mg2g_size / 1e3)} {unit}')
             else:
-                run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} kW(h)')
+                run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} {self.currency}-ct/kWh')
