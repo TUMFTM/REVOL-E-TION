@@ -1219,13 +1219,13 @@ class PVSource(InvestBlock):
         # convert to local time
         self.data.index = self.data.index.tz_convert(tz=scenario.timezone)
         # data is in W for a 1kWp PV array -> convert to specific power
-        self.data['p_spec'] = self.data['P'] / 1e3
+        self.data['power_spec'] = self.data['P'] / 1e3
 
-        self.data = self.data[['p_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
+        self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
 
     def update_input_components(self, scenario):
 
-        self.src.outputs[self.bus].fix = self.data_ph['p_spec']
+        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block

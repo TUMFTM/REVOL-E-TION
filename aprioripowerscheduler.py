@@ -438,7 +438,7 @@ class SourceBlock(EnergySystemModelBlock):
         if isinstance(self.block, blocks.WindSource):
             return self.block.data_ph['P'] * self.block.size * self.block.eff
         elif isinstance(self.block, blocks.PVSource):
-            return self.block.data_ph['p_spec'] * self.block.size * self.block.eff
+            return self.block.data_ph['power_spec'] * self.block.size * self.block.eff
         elif isinstance(self.block, blocks.ControllableSource):
             return self.block.size * self.block.eff
         elif isinstance(self.block, blocks.GridConnection):
