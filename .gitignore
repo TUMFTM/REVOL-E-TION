@@ -6,7 +6,7 @@ analysis/*
 results/*
 !results/.gitignore
 
-input/*/*
+/input/*
 
 !input/battery/sanyo_ur18650e.pkl
 !input/battery/sony_us26650.pkl
@@ -199,4 +199,3 @@ $RECYCLE.BIN/
 
 # MacOS folder setup files
 .DS_Store
-
