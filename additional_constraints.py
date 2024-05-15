@@ -108,21 +108,21 @@ class Constraints:
 
 def renewables_only(model, scenario):
     # Apply additional constraints to limit energy feed into the grid to renewable energy generation
-    grid_flows = [(block.connected_bus, block.snk) for block in scenario.blocks.values() if
+    grid_flows = [(block.bus_connected, block.snk) for block in scenario.blocks.values() if
                   isinstance(block, blocks.GridConnection) and getattr(block, 'res_only', False)]
-    pv_flows = [(block.outflow, block.connected_bus) for block in scenario.blocks.values() if
+    pv_flows = [(block.outflow, block.bus_connected) for block in scenario.blocks.values() if
                 isinstance(block, (blocks.PVSource))]
-    wind_flows = [(block.outflow, block.connected_bus) for block in scenario.blocks.values() if
+    wind_flows = [(block.outflow, block.bus_connected) for block in scenario.blocks.values() if
                 isinstance(block, (blocks.WindSource))]
-    ess_in_flows = [(block.connected_bus, block.ess) for block in scenario.blocks.values() if
+    ess_in_flows = [(block.bus_connected, block.ess) for block in scenario.blocks.values() if
                     isinstance(block, (blocks.StationaryEnergyStorage)) and getattr(block, 'pv_only', False)]
-    ess_out_flows = [(block.ess, block.connected_bus) for block in scenario.blocks.values() if
+    ess_out_flows = [(block.ess, block.bus_connected) for block in scenario.blocks.values() if
                      isinstance(block, (blocks.StationaryEnergyStorage)) and getattr(block, 'pv_only', False)]
     sys_core = [block for block in scenario.blocks.values() if isinstance(block, blocks.SystemCore)][0]
     if grid_flows:
         if ess_in_flows:
             # ensure that no commodity system is connected to the DC bus
-            if any([getattr(block, 'connected_bus', False) == sys_core.dc_bus for block in scenario.blocks.values() if
+            if any([getattr(block, 'bus_connected', False) == sys_core.dc_bus for block in scenario.blocks.values() if
                     isinstance(block, blocks.CommoditySystem)]):
                 # ToDo: only exit scenario, not the whole execution
                 print('Error: Commodity systems are connected to the DC bus. This is not allowed if "pv_only" is '
@@ -154,7 +154,7 @@ def equal_sizing(model, scenario):
                                            factor1=equal_variable['factor'])
 
 
-def apply_additional_constraints(model, scenario):
+def apply_additional_constraints(model, prediction_horizon, scenario, run):
     # Apply additional constraints to equalize investment variables for bidirectional flows
     equal_sizing(model, scenario)
 

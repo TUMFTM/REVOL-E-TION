@@ -93,9 +93,9 @@ class RentalSystem:
         self.time_buffer = pd.Timedelta(hours=0)
 
         # draw total demand for every simulated ay from lognormal distribution
-        self.daily_demand = pd.DataFrame(index=np.unique(self.sc.sim_dti.date))
+        self.demand_daily = pd.DataFrame(index=np.unique(self.sc.dti_sim.date))
         p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
-        self.daily_demand['num_total'] = np.round(self.rng.lognormal(p1, p2, self.daily_demand.shape[0])).astype(int)
+        self.demand_daily['num_total'] = np.round(self.rng.lognormal(p1, p2, self.demand_daily.shape[0])).astype(int)
 
         self.processes = pd.DataFrame(columns=['time_req',
                                                'step_req',
@@ -130,16 +130,16 @@ class RentalSystem:
         self.processes['steps_blocked'] = dt2steps(self.processes['time_blocked'], sc)
 
         # create the actual Simpy store and populate it
-        self.store = MultiStore(sc.des_env, capacity=cs.num)
+        self.store = MultiStore(sc.env_des, capacity=cs.num)
         for commodity in cs.commodities.values():
             self.store.put([commodity.name])
 
-    def assign_datetime_request(self, process_num, sc):
-        self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
+    def assign_datetime_request(self, n_processes, sc):
+        self.processes['date'] = np.repeat(self.demand_daily.index, self.demand_daily['num_total'])
         self.processes['year'] = self.processes['date'].apply(get_year)
         self.processes['month'] = self.processes['date'].apply(get_month)
         self.processes['day'] = self.processes['date'].apply(get_day)
-        self.processes['hour'] = (np.round(self.draw_departure_samples(process_num) / self.sc.timestep_hours) *
+        self.processes['hour'] = (np.round(self.draw_departure_samples(n_processes) / self.sc.timestep_hours) *
                                   self.sc.timestep_hours)  # round to nearest timestep
 
         # Vectorized handling of time conversion to avoid slow for loop
@@ -171,12 +171,12 @@ class RentalSystem:
         self.use_rate = dict()
         steps_total = self.data.shape[0]
         # make an individual row for each used commodity in a process
-        exploded_processes = self.processes.explode('primary_commodity')
+        processes_exploded = self.processes.explode('primary_commodity')
 
         # calculate percentage of DES (not sim, the latter is shorter) time
         # occupied by active, idle, recharge and buffer times
         for commodity in list(self.cs.commodities.keys()):
-            processes = exploded_processes.loc[exploded_processes['primary_commodity'] == commodity, :]
+            processes = processes_exploded.loc[processes_exploded['primary_commodity'] == commodity, :]
             steps_blocked = processes['steps_blocked'].sum() + processes['steps_rental'].sum()
             self.use_rate[commodity] = steps_blocked / steps_total
         self.cs.use_rate = np.mean(list(self.use_rate.values()))
@@ -311,17 +311,17 @@ class VehicleRentalSystem(RentalSystem):
         self.base_range = self.base_energy / self.cs.consumption
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
-        process_num = self.daily_demand['num_total'].sum(axis=0)
-        self.processes['date'] = np.repeat(self.daily_demand.index, self.daily_demand['num_total'])
+        n_processes = self.demand_daily['num_total'].sum(axis=0)
+        self.processes['date'] = np.repeat(self.demand_daily.index, self.demand_daily['num_total'])
 
-        self.assign_datetime_request(process_num, sc)
+        self.assign_datetime_request(n_processes, sc)
 
         # draw requested distance and time values, calculate energy used
         p1, p2 = lognormal_params(self.cs.dist_mean, self.cs.dist_stdev)
-        self.processes['distance'] = self.rng.lognormal(p1, p2, process_num)
+        self.processes['distance'] = self.rng.lognormal(p1, p2, n_processes)
         self.processes['time_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
-        self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, process_num), unit='hour')
+        self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, n_processes), unit='hour')
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
@@ -342,7 +342,7 @@ class VehicleRentalSystem(RentalSystem):
         # rex and vehicle storage are discharged to equal soc storage
         self.processes['energy_req_pc'] = self.cs.size_pc * self.processes['dsoc_req']
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
-                                                          (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
+                                                          (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
     def transfer_rex_processes(self):
         """
@@ -401,21 +401,21 @@ class BatteryRentalSystem(RentalSystem):
         """
 
 
-        process_num = self.daily_demand['num_total'].sum(axis=0)
+        n_processes = self.demand_daily['num_total'].sum(axis=0)
         rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
 
 
 
         self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
-                                                         process_num,
+                                                         n_processes,
                                                          replace=True,
                                                          p=rel_prob_norm).astype(int)
         self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
                                                               axis=1)
-        self.assign_datetime_request(process_num, sc)
+        self.assign_datetime_request(n_processes, sc)
 
         p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
-        self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, process_num))
+        self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, n_processes))
         self.processes['num_resources'] = self.processes.apply(
             lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
         self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
@@ -430,13 +430,13 @@ class BatteryRentalSystem(RentalSystem):
             unit='hour')
 
         p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
-        self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, process_num), unit='hour')
+        self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
 
         self.processes['energy_req_pc'] = (1 - self.processes['soc_return']) * self.cs.size_pc
         self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
 
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
-                                                          (self.cs.chg_pwr * self.cs.chg_eff), unit='hour')
+                                                          (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
 
 class RentalProcess:
@@ -445,7 +445,7 @@ class RentalProcess:
 
         self.data = data
         self.rs = rs
-        self.env = sc.des_env
+        self.env = sc.env_des
         self.id = idx
 
         # initiate the simpy process function (define_process is not executed here, but only when the env. is run)
@@ -469,7 +469,7 @@ class RentalProcess:
         if isinstance(self.rs, VehicleRentalSystem):
             if self.data['rex_request']:  # column does not exist for BatteryCommoditySystems
                 with self.rs.cs.rex_cs.rs.store.get(self.data['num_rex']) as self.secondary_request:
-                    self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.rex_patience)
+                    self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.patience_rex)
 
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
 
@@ -534,22 +534,22 @@ def steps2dt(series, sc, absolute=False):
 def execute_des(sc, save=False, path=None):
 
     # define a DES environment
-    sc.des_env = simpy.Environment()
+    sc.env_des = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    sc.des_dti = sc.sim_dti.union(
-        pd.date_range(start=sc.sim_dti[-1] + sc.sim_dti.freq,
+    sc.des_dti = sc.dti_sim.union(
+        pd.date_range(start=sc.dti_sim[-1] + sc.dti_sim.freq,
                       periods=200,
-                      freq=sc.sim_dti.freq))
+                      freq=sc.dti_sim.freq))
 
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
     for commodity_system in [sys for sys in sc.commodity_systems.values() if sys.filename == 'run_des']:
         if isinstance(commodity_system, blocks.VehicleCommoditySystem):
-            commodity_system.rs = VehicleRentalSystem(sc.des_env, sc, commodity_system)
+            commodity_system.rs = VehicleRentalSystem(sc.env_des, sc, commodity_system)
         elif isinstance(commodity_system, blocks.BatteryCommoditySystem):
-            commodity_system.rs = BatteryRentalSystem(sc.des_env, sc, commodity_system)
+            commodity_system.rs = BatteryRentalSystem(sc.env_des, sc, commodity_system)
         sc.rental_systems[commodity_system.name] = commodity_system.rs
 
     # generate individual RentalProcess instances for every pregenerated process
@@ -560,7 +560,7 @@ def execute_des(sc, save=False, path=None):
             rs.processes.loc[idx, 'process_obj'] = process
 
     # actually run the discrete event simulation
-    sc.des_env.run()
+    sc.env_des.run()
 
     # reconvert time steps to actual times
     for rs in sc.rental_systems.values():

@@ -48,7 +48,7 @@ class AprioriPowerScheduler:
         self.p_fixed = pd.DataFrame(columns=['ac', 'dc'] + [name for name in self.demands.keys()], dtype=float)
 
         # Placeholder for timeindex of current prediction horizon
-        self.ph_dti = None
+        self.dti_ph = None
 
     @staticmethod
     def get_bus(bus, which):
@@ -58,8 +58,8 @@ class AprioriPowerScheduler:
 
     def get_conv_eff(self, source, target):
         return {'ac': {'ac': 1,
-                       'dc': self.scenario.blocks[self.sys_core].acdc_eff},
-                'dc': {'ac': self.scenario.blocks[self.sys_core].dcac_eff,
+                       'dc': self.scenario.blocks[self.sys_core].eff_acdc},
+                'dc': {'ac': self.scenario.blocks[self.sys_core].eff_dcac,
                        'dc': 1}}[source][target]
 
     def get_conv_cap(self, source, target):
@@ -71,23 +71,23 @@ class AprioriPowerScheduler:
     def p_avail_conv_reset(self):
         # store how much power still can be converted on the system core within current timestep
         # key specifies origin of power
-        self.p_avail_conv = {'ac': self.scenario.blocks[self.sys_core].acdc_size,
-                             'dc': self.scenario.blocks[self.sys_core].dcac_size}
+        self.p_avail_conv = {'ac': self.scenario.blocks[self.sys_core].size_acdc,
+                             'dc': self.scenario.blocks[self.sys_core].size_dcac}
 
-    def calc_schedule(self, ph_dti):
+    def calc_schedule(self, dti_ph):
         # Set timeindex of current prediction horizon
-        self.ph_dti = ph_dti
+        self.dti_ph = dti_ph
 
         # Update objects with data of Prediction Horizon
         for block in {**self.commodities, **self.storages, **self.sources}.values():
-            block.update_ph(self.ph_dti)
+            block.update_ph(self.dti_ph)
 
         # Calculate available and fixed power for prediction horizon
         self.p_available = self.calc_power_ph(power=self.p_available, items=self.sources)
         self.p_fixed = self.calc_power_ph(power=self.p_fixed, items=self.demands)
 
         # Calculate powers in energy system for every timestep in Prediction Horizon
-        for dtindex in self.ph_dti:
+        for dtindex in self.dti_ph:
             # =============================================
             # === 1. Preparing data of current timestep ===
             # =============================================
@@ -153,7 +153,7 @@ class AprioriPowerScheduler:
 
     def calc_power_ph(self, power, items):
         # reset power to zero for all timestamps including deleting data from previous prediction horizon
-        power = power.reindex(self.ph_dti).fillna(0)
+        power = power.reindex(self.dti_ph).fillna(0)
 
         # compute power resulting from different blocks at the AC and DC bus
         for name, block in items.items():
@@ -164,7 +164,7 @@ class AprioriPowerScheduler:
 
     def calc_power_uc(self, dtindex, p_avail_sys, int_lvl_commodities):
         for com in int_lvl_commodities.values():
-            if com.block.ph_data.loc[dtindex, 'atbase']:
+            if com.block.data_ph.loc[dtindex, 'atbase']:
                 # Execute AC charging at base
                 pwr_chg = com.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac')
                 com.set_p(dtindex=dtindex,
@@ -180,7 +180,7 @@ class AprioriPowerScheduler:
     def calc_power_fcfs(self, dtindex, p_avail_sys, int_lvl_commodities):
         # Get list of names and SOCs of all commodities and sort according to arrival time
         prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
-                            com.block.ph_data.loc[dtindex, 'atbase']],
+                            com.block.data_ph.loc[dtindex, 'atbase']],
                             key=lambda x: int_lvl_commodities[x[0]].get_arr(dtindex))
 
         # Calculate charging powers based on calculated priorities
@@ -226,7 +226,7 @@ class AprioriPowerScheduler:
     def calc_power_soc(self, dtindex, p_avail_sys, int_lvl_commodities):
         # Get list of names and SOCs of all commodities and sort according to SOC
         prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
-                     com.block.ph_data.loc[dtindex, 'atbase']], key=lambda x: x[1])
+                     com.block.data_ph.loc[dtindex, 'atbase']], key=lambda x: x[1])
 
         # Calculate charging powers based on calculated priorities
         p_avail_sys = self.prio_charging(dtindex, prio_list, p_avail_sys)
@@ -393,9 +393,9 @@ class EnergySystemModelBlock:
             if isinstance(self.block.parent, (blocks.VehicleCommoditySystem, blocks.BatteryCommoditySystem)):
                 self.system = self.block.parent.system
 
-    def update_ph(self, ph_dti, cols):
+    def update_ph(self, dti_ph, cols):
         # Initialize apriori_data at start of every new prediction horizon
-        self.block.apriori_data = pd.DataFrame(0, index=ph_dti, columns=cols, dtype=float)
+        self.block.apriori_data = pd.DataFrame(0, index=dti_ph, columns=cols, dtype=float)
 
     def set_data(self, dtindex, value, col):
         # Set power value of apriori_data of block for given timestamp
@@ -424,10 +424,10 @@ class SourceBlock(EnergySystemModelBlock):
         else:
             self.opex_spec = getattr(self.block, 'opex_spec', 0)
         if not isinstance(self.opex_spec, pd.Series):
-            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.sim_dti)
+            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.dti_sim)
 
-    def update_ph(self, ph_dti):
-        super().update_ph(ph_dti, ['p'])
+    def update_ph(self, dti_ph):
+        super().update_ph(dti_ph, ['p'])
 
     def set_p(self, dtindex, power):
         super().set_data(dtindex=dtindex,
@@ -436,20 +436,20 @@ class SourceBlock(EnergySystemModelBlock):
 
     def calc_p(self):
         if isinstance(self.block, blocks.WindSource):
-            return self.block.ph_data['P'] * self.block.size * self.block.eff
+            return self.block.data_ph['P'] * self.block.size * self.block.eff
         elif isinstance(self.block, blocks.PVSource):
-            return self.block.ph_data['p_spec'] * self.block.size * self.block.eff
+            return self.block.data_ph['power_spec'] * self.block.size * self.block.eff
         elif isinstance(self.block, blocks.ControllableSource):
             return self.block.size * self.block.eff
         elif isinstance(self.block, blocks.GridConnection):
-            return self.block.size * self.block.eff
+            return self.block.size_g2mg * self.block.eff
 
 
 class SinkBlock(EnergySystemModelBlock):
     def __init__(self, block, scenario):
         super().__init__(block, scenario)
 
-    def update_ph(self, ph_dti):
+    def update_ph(self, dti_ph):
         # No apriori data for sinks
         return
 
@@ -462,18 +462,18 @@ class SinkBlock(EnergySystemModelBlock):
         return
 
     def calc_p(self):
-        return self.block.ph_data['power'] * -1
+        return self.block.data_ph['power'] * -1
 
 
 class StorageBlock(EnergySystemModelBlock):
     def __init__(self, block, scenario):
         super().__init__(block, scenario)
 
-    def update_ph(self, ph_dti, columns):
-        super().update_ph(ph_dti, columns)
+    def update_ph(self, dti_ph, columns):
+        super().update_ph(dti_ph, columns)
         if 'soc' in columns:
             self.block.apriori_data['soc'] = self.block.apriori_data['soc']
-        self.set_data(ph_dti[0], self.block.ph_init_soc, 'soc')
+        self.set_data(dti_ph[0], self.block.soc_init_ph, 'soc')
 
     def set_p(self, dtindex, power, col):
         super().set_data(dtindex=dtindex,
@@ -512,11 +512,11 @@ class Storage(StorageBlock):
         super().__init__(block, scenario)
         self.opex_spec = getattr(self.block, 'opex_spec', 0)
         if not isinstance(self.opex_spec, pd.Series):
-            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.sim_dti)
+            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.dti_sim)
 
-    def update_ph(self, ph_dti, *_):
+    def update_ph(self, dti_ph, *_):
         columns = ['p', 'soc']
-        super().update_ph(ph_dti, columns)
+        super().update_ph(dti_ph, columns)
 
     def set_p(self, dtindex, power, *_):
         super().set_p(dtindex=dtindex,
@@ -525,23 +525,23 @@ class Storage(StorageBlock):
 
     def calc_p_chg(self, dtindex, soc_max=1, *_):
         return super().calc_p_chg(dtindex=dtindex,
-                                  p_maxchg=self.block.size * self.block.chg_crate,
-                                  eff=self.block.chg_eff,
+                                  p_maxchg=self.block.size * self.block.crate_chg,
+                                  eff=self.block.eff_chg,
                                   soc_max=soc_max)
 
     def calc_p_dis(self, dtindex, soc_min=0, *_):
         return super().calc_p_dis(dtindex=dtindex,
-                                  p_maxdis=self.block.size * self.block.dis_crate,
-                                  eff=self.block.dis_eff,
+                                  p_maxdis=self.block.size * self.block.crate_dis,
+                                  eff=self.block.eff_dis,
                                   soc_min=soc_min)
 
     def calc_new_soc(self, dtindex, *_):
         # convert power at connection to DC bus to power at storage:
         power = self.get_data(dtindex, ['p']).sum() * (-1)
         if power >= 0:
-            power *= self.block.chg_eff
+            power *= self.block.eff_chg
         else:
-            power /= self.block.dis_eff
+            power /= self.block.eff_dis
 
         super().calc_new_soc(dtindex=dtindex, power=power)
 
@@ -561,33 +561,33 @@ class Commodity(StorageBlock):
         self.minsoc_inz = self.dep_inz = self.arr_inz = self.arr_parking_inz = self.chg_inz = None
         self.parking_charging = None
 
-    def update_ph(self, ph_dti, *_):
+    def update_ph(self, dti_ph, *_):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc']
-        super().update_ph(ph_dti, columns)
-        self.set_data(dtindex=':', value=-1 * self.block.ph_data['consumption'], col='p_consumption')
+        super().update_ph(dti_ph, columns)
+        self.set_data(dtindex=':', value=-1 * self.block.data_ph['consumption'], col='p_consumption')
 
         # get the indices of all nonzero minsoc rows in the data
-        self.minsoc_inz = self.block.ph_data.index[self.block.ph_data['minsoc'] != 0]
+        self.minsoc_inz = self.block.data_ph.index[self.block.data_ph['minsoc'] != 0]
 
         # get first timesteps, where vehicle has left the base
-        self.dep_inz = self.block.ph_data.index[
-            self.block.ph_data['atbase'] & ~self.block.ph_data['atbase'].shift(-1, fill_value=False)]
+        self.dep_inz = self.block.data_ph.index[
+            self.block.data_ph['atbase'] & ~self.block.data_ph['atbase'].shift(-1, fill_value=False)]
 
         # get first timesteps, where vehicle is at base again
-        # based on data instead of ph_data to include info from previous prediction horizon
-        # ToDo: switch to ph_data again and include the data from the previous prediction horizon
+        # based on data instead of data_ph to include info from previous prediction horizon
+        # ToDo: switch to data_ph again and include the data from the previous prediction horizon
         #  [1:] only necessary, if vehicle is atbase at beginning of prediction horizon
         self.arr_inz = self.block.data.index[
                            self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)][1:]
         # ToDo: check why this line was added
-        self.arr_inz = self.arr_inz[self.arr_inz <= self.block.ph_data.index[0]]
+        self.arr_inz = self.arr_inz[self.arr_inz <= self.block.data_ph.index[0]]
 
         # get first timesteps, where vehicle is parking at destination
-        self.arr_parking_inz = self.block.ph_data.index[
-            self.block.ph_data['atac'] & ~self.block.ph_data['atac'].shift(fill_value=False)]
+        self.arr_parking_inz = self.block.data_ph.index[
+            self.block.data_ph['atac'] & ~self.block.data_ph['atac'].shift(fill_value=False)]
 
         # get all timesteps, where charging is available (internal AC, external AC, external DC)
-        self.chg_inz = self.block.ph_data.index[self.block.ph_data[['atbase', 'atac', 'atdc']].any(axis=1)]
+        self.chg_inz = self.block.data_ph.index[self.block.data_ph[['atbase', 'atac', 'atdc']].any(axis=1)]
 
         # initialize variable for charging during single parking process
         self.parking_charging = False
@@ -602,17 +602,17 @@ class Commodity(StorageBlock):
 
     def set_p(self, dtindex, power, mode='int_ac'):
         super().set_p(dtindex=dtindex,
-                      power={'int_ac': self.block.parent.chg_eff,
+                      power={'int_ac': self.block.parent.eff_chg,
                              'ext_ac': 1,
                              'ext_dc': 1}[mode] * power,
                       col=f'p_{mode}')
 
     def calc_p_chg(self, dtindex, soc_max=1, mode='int_ac', *_):
         return super().calc_p_chg(dtindex=dtindex,
-                                  p_maxchg={'int_ac': self.block.chg_pwr * self.block.parent.chg_eff,
-                                            'ext_ac': self.block.parent.ext_ac_power,
-                                            'ext_dc': self.block.parent.ext_dc_power}[mode],
-                                  eff={'int_ac': self.block.parent.chg_eff,
+                                  p_maxchg={'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
+                                            'ext_ac': self.block.parent.pwr_ext_ac,
+                                            'ext_dc': self.block.parent.pwr_ext_dc}[mode],
+                                  eff={'int_ac': self.block.parent.eff_chg,
                                        'ext_ac': 1,
                                        'ext_dc': 1}[mode],
                                   soc_max=soc_max)
@@ -627,18 +627,18 @@ class Commodity(StorageBlock):
         super().calc_new_soc(dtindex=dtindex, power=power)
 
     def ext_charging(self, dtindex):
-        if self.block.ph_data.loc[dtindex, 'atac'] == 1:  # parking at destination
+        if self.block.data_ph.loc[dtindex, 'atac'] == 1:  # parking at destination
             if dtindex in self.arr_parking_inz:  # plugging in only happens when parking starts
                 # use current int-index and next arrival index to calculate consumption and convert to SOC
                 try:  # Fails, if current trip is last trip and doesn't end within prediction horizon
                     arr_inxt = self.arr_inz[self.arr_inz >= dtindex][0]
                 except:
-                    arr_inxt = self.block.ph_data.index[-1]
-                consumption_remaining = self.block.ph_data.loc[dtindex:arr_inxt,
+                    arr_inxt = self.block.data_ph.index[-1]
+                consumption_remaining = self.block.data_ph.loc[dtindex:arr_inxt,
                                         'consumption'].sum() * self.scenario.timestep_hours
                 # set charging to True, if charging is necessary
                 if consumption_remaining > (
-                        (self.get_data(dtindex, 'soc') + self.block.ph_data.loc[
+                        (self.get_data(dtindex, 'soc') + self.block.data_ph.loc[
                             arr_inxt, 'minsoc']) * self.block.size):
                     self.parking_charging = True
                 else:
@@ -650,10 +650,10 @@ class Commodity(StorageBlock):
                             power=self.calc_p_chg(dtindex=dtindex, soc_max=1, mode='ext_ac'),
                             mode='ext_ac')
 
-        elif self.block.ph_data.loc[dtindex, 'atdc'] == 1:  # vehicle is driving with possibility to charge on-route
+        elif self.block.data_ph.loc[dtindex, 'atdc'] == 1:  # vehicle is driving with possibility to charge on-route
             # activate charging, if SOC will fall below threshold, before next possibility to charge
             chg_inxt = self.chg_inz[self.chg_inz > dtindex][0]
-            chg_soc = self.get_data(dtindex, 'soc') - self.block.ph_data.loc[dtindex:chg_inxt,
+            chg_soc = self.get_data(dtindex, 'soc') - self.block.data_ph.loc[dtindex:chg_inxt,
                                                       'consumption'].sum() * self.scenario.timestep_hours / self.block.size
             if chg_soc < 0.05:
                 # fast-charging only up to SOC of 80 %

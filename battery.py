@@ -159,13 +159,13 @@ class BatteryPackModel:
         # Get temperature timeseries
         if isinstance(commodity.temp_battery, str):
             try:
-                self.temp_hor_c = scenario.blocks[commodity.temp_battery].ph_data.loc[horizon.ch_dti, 'temp_air']
+                self.temp_hor_c = scenario.blocks[commodity.temp_battery].data_ph.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
                 run.logger.warning(f'Scenario {scenario.name}: Battery temp source for storage {self.parent.name}'
                                    f' not found, using 25°C default')
-                self.temp_hor_c = pd.Series(data=25, index=horizon.ch_dti)
+                self.temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
         elif isinstance(commodity.temp_battery, (int, float)):
-            self.temp_hor_c = pd.Series(data=commodity.temp_battery, index=horizon.ch_dti)  # pack temperature in °C
+            self.temp_hor_c = pd.Series(data=commodity.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
         else:
            ValueError('Battery temperature must be the name of a PVSource block or numeric')
 

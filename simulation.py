@@ -121,27 +121,27 @@ class PredictionHorizon:
                         f' Building linear optimization model')
 
         # Time and data slicing --------------------------------
-        self.starttime = scenario.starttime + (index * scenario.ch_len)  # calc both start times
-        self.ch_endtime = self.starttime + scenario.ch_len
-        self.ph_endtime = self.starttime + scenario.ph_len
+        self.starttime = scenario.starttime + (index * scenario.len_ch)  # calc both start times
+        self.ch_endtime = self.starttime + scenario.len_ch
+        self.ph_endtime = self.starttime + scenario.len_ph
         self.timestep = scenario.timestep
 
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
 
         # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
-        self.ph_dti = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
-        self.ch_dti = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
+        self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
+        self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
-            block.ph_data = block.data[self.starttime:self.ph_endtime]
+            block.data_ph = block.data[self.starttime:self.ph_endtime]
             if isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
-                    commodity.ph_data = commodity.data[self.starttime:self.ph_endtime]
+                    commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if scenario.scheduler:
-            scenario.scheduler.calc_schedule(self.ph_dti)
+            scenario.scheduler.calc_schedule(self.dti_ph)
 
         for block in scenario.blocks.values():
             block.update_input_components(scenario)  # (re)define solph components that need input slices
@@ -153,7 +153,7 @@ class PredictionHorizon:
 
         logging.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
 
-        self.es = solph.EnergySystem(timeindex=self.ph_dti,
+        self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
 
         for component in scenario.components:
@@ -169,11 +169,11 @@ class PredictionHorizon:
             run.logger.error(msg)
             raise IndexError(msg)
 
-        apply_additional_constraints(self.model, scenario)
+        apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
 
         if run.dump_model:
             if scenario.strategy == 'go':
-                self.model.write(run.dump_file_path, io_options={'symbolic_solver_labels': True})
+                self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
             elif scenario.strategy == 'rh':
                 run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
@@ -263,37 +263,37 @@ class Scenario:
         self.prj_endtime = self.starttime + self.prj_duration
 
         # generate a datetimeindex for the energy system model to run on
-        self.sim_dti = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
+        self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
 
         # generate variables for calculations
-        self.timestep_hours = self.sim_dti.freq.nanos / 1e9 / 3600
+        self.timestep_hours = self.dti_sim.freq.nanos / 1e9 / 3600
         self.timestep_td = pd.Timedelta(hours=self.timestep_hours)
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
 
         # prepare for dispatch plot saving later on
-        self.plot_file_path = os.path.join(run.result_folder_path, f'{run.runtimestamp}_'
+        self.plot_file_path = os.path.join(run.path_result_folder, f'{run.runtimestamp}_'
                                                                    f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
         # prepare for cumulative result saving later on
         self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.results = self.results.set_index(['Block', 'Key'])
-        self.result_file_path = os.path.join(run.result_folder_path, f'{self.name}_tempresults.csv')
+        self.path_result_file = os.path.join(run.path_result_folder, f'{self.name}_tempresults.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
         if self.strategy == 'rh':
-            self.ph_len = pd.Timedelta(hours=self.ph_len)
-            self.ch_len = pd.Timedelta(hours=self.ch_len)
+            self.len_ph = pd.Timedelta(hours=self.len_ph)
+            self.len_ch = pd.Timedelta(hours=self.len_ch)
             # number of timesteps for PH
-            self.ph_nsteps = math.ceil(self.ph_len.total_seconds() / 3600 / self.timestep_hours)
+            self.ph_nsteps = math.ceil(self.len_ph.total_seconds() / 3600 / self.timestep_hours)
             # number of timesteps for CH
-            self.ch_nsteps = math.ceil(self.ch_len.total_seconds() / 3600 / self.timestep_hours)
-            self.nhorizons = int(self.sim_duration // self.ch_len)  # number of timeslices to run
+            self.ch_nsteps = math.ceil(self.len_ch.total_seconds() / 3600 / self.timestep_hours)
+            self.nhorizons = int(self.sim_duration // self.len_ch)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
-            self.ph_len = self.sim_duration
-            self.ch_len = self.sim_duration
+            self.len_ph = self.sim_duration
+            self.len_ch = self.sim_duration
             self.nhorizons = 1
 
         # Energy System Blocks --------------------------------
@@ -308,7 +308,7 @@ class Scenario:
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
-            des.execute_des(self, run.save_des_results, run.result_folder_path)
+            des.execute_des(self, run.save_des_results, run.path_result_folder)
 
         for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
             for commodity in cs.commodities.values():
@@ -413,7 +413,7 @@ class Scenario:
                     display_size = round(block.size / 1e3, 1)
                 if isinstance(block, blocks.StationaryEnergyStorage):
                     display_size = round(block.size / 1e3, 1)
-                    display_dpwr = round(block.dis_crate * block.size / 1e3, 1)
+                    display_dpwr = round(block.crate_dis * block.size / 1e3, 1)
                     legentry_p = f"{block.name} power ({display_dpwr} kW)"
                 else:
                     display_size = round(block.size / 1e3, 1)
@@ -476,7 +476,7 @@ class Scenario:
                 title=f'Global Optimum Results ({run.scenario_file_name} - Scenario: {self.name})')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenario_file_name} - Scenario: {self.name}'
-                                            f'- PH:{self.ph_len}h/CH:{self.ch_len}h)')
+                                            f'- PH:{self.len_ph}h/CH:{self.len_ch}h)')
 
     def print_results(self, run):
         print('#################')
@@ -485,14 +485,14 @@ class Scenario:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    run.logger.info(f'Optimized size of AC/DC power in component {block.name}: {round(block.acdc_size / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of AC/DC power in component {block.name}: {round(block.size_acdc / 1e3)} {unit}')
                 if block.opt_dcac:
-                    run.logger.info(f'Optimized size of DC/AC power in component {block.name}: {round(block.dcac_size / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of DC/AC power in component {block.name}: {round(block.size_dcac / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.g2mg_size / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.mg2g_size / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.size_mg2g / 1e3)} {unit}')
             else:
                 run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
@@ -524,7 +524,7 @@ class Scenario:
                     self.results.loc[(name, key), self.name] = value
 
         self.results.reset_index(inplace=True, names=['block', 'key'])
-        self.results.to_csv(self.result_file_path, index=False)
+        self.results.to_csv(self.path_result_file, index=False)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -578,21 +578,21 @@ class SimulationRun:
         self.max_process_num = int(self.max_process_num)
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
-        self.input_data_path = os.path.join(self.cwd, 'input')
-        self.result_folder_path = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
-        self.result_file_path = os.path.join(self.result_folder_path,
+        self.path_input_data = os.path.join(self.cwd, 'input')
+        self.path_result_folder = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
+        self.path_result_file = os.path.join(self.path_result_folder,
                                              f'{self.runtimestamp}_{self.scenario_file_name}_results.csv')
-        self.dump_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
-        self.log_file_path = os.path.join(self.result_folder_path, f'{self.runtimestamp}_{self.scenario_file_name}.log')
+        self.path_dump_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
+        self.path_log_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 
         if self.save_results or self.save_des_results:
-            os.mkdir(self.result_folder_path)
+            os.mkdir(self.path_result_folder)
 
         log_formatter = logging.Formatter(logging.BASIC_FORMAT)
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
-        log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.log_file_path))
+        log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.path_log_file))
         log_file_handler.setFormatter(log_formatter)
         self.logger = logging.getLogger()
         self.logger.addHandler(log_stream_handler)
@@ -627,21 +627,21 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.result_folder_path) if filename.endswith('_tempresults.csv')]
+        files = [filename for filename in os.listdir(self.path_result_folder) if filename.endswith('_tempresults.csv')]
 
         scenario_frames = []
 
         for file in files:
-            file_path = os.path.join(self.result_folder_path, file)
+            file_path = os.path.join(self.path_result_folder, file)
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
         joined_results = pd.concat(scenario_frames, axis=1)
         joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
-        joined_results.to_csv(self.result_file_path)
+        joined_results.to_csv(self.path_result_file)
         self.logger.info("Technoeconomic output file created")
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
-            file_path = os.path.join(self.result_folder_path, file)
+            file_path = os.path.join(self.path_result_folder, file)
             os.remove(file_path)
