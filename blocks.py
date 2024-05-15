@@ -1016,8 +1016,8 @@ class MobileCommodity:
             horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
         # self.sc_ch = solph.views.node(
         #     horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')]
-
         # shift is needed as sc/soc is stored for end of timestep following nameplate time by oemof
+
         # ToDo: check whether if condition is necessary
         if horizon.index == 0:
             sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])
@@ -1322,7 +1322,10 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.ch_dti].shift(periods=1, freq=scenario.timestep)
+        # self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
+        #     ((self.name, 'None'), 'storage_content')][horizon.ch_dti]
         # shift is needed as sc/soc is stored for end of timestep
+
         # ToDo: check whether if condition is needed (MERGE)
         if horizon.index == 0:
             sc_init_series = pd.Series(data=[self.init_soc * self.size], index=[scenario.starttime])

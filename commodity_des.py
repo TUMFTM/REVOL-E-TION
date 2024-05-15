@@ -149,14 +149,14 @@ class RentalSystem:
 
         # If DST causes a sampled time to be invalid, loop over all processes (much slower)
         # and advance the problematic one
-        except pytz.exceptions.AmbiguousTimeError or pytz.exceptions.NonExistentTimeError:
+        except (pytz.exceptions.AmbiguousTimeError, pytz.exceptions.NonExistentTimeError):
             for idx, process in self.processes.iterrows():
                 try:
                     self.processes.iloc[idx, 'time_req'] =\
                         pd.to_datetime(self.processes.iloc[idx,['year', 'month', 'day', 'hour']])
                     self.processes.iloc[idx, 'time_req'] =\
                         self.processes.iloc[idx, 'time_req'].tz_localize(sc.timezone)
-                except pytz.exceptions.AmbiguousTimeError or pytz.exceptions.NonExistentTimeError:
+                except (pytz.exceptions.AmbiguousTimeError, pytz.exceptions.NonExistentTimeError):
                     self.processes.iloc[idx, 'time_req'] =\
                          pd.to_datetime(self.processes.iloc[idx, ['year', 'month', 'day', 'hour']] +\
                          pd.Timedelta(hours=1))
@@ -218,6 +218,7 @@ class RentalSystem:
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
+
 
         self.cs.data = self.data
 
