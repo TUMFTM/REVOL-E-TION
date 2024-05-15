@@ -98,8 +98,6 @@ class InvestBlock:
         for var in opex_vars:
             self.load_opex(var, run.path_input_data, scenario, self.name)
 
-        # TODO add "existing" block for grid connection
-
         if isinstance(self, SystemCore):
             self.size = None  # SystemCore has two sizes and is initialized in its own __init__
             self.equal = False
@@ -386,7 +384,7 @@ class InvestBlock:
         self.flow = self.flow_in - self.flow_out  # for plotting
 
         if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
-            print("GridConnection: Simultanious in- and outflow detected!")
+            print("GridConnection: Simultaneous in- and outflow detected!")
 
         scenario.e_sim_pro += self.e_sim_out
         scenario.e_sim_del += self.e_sim_in
