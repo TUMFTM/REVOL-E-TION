@@ -1,18 +1,17 @@
 # REVOL-E-TION
-Resilient Electric Vehicle Optimization model for Local Energy Transition
+Resilient Electric Vehicle Optimization model for Local Energy TransitION
 
 This toolset is designed to optimize and estimate technoeconomic potentials of electric vehicle integration into 
 local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes.
 
-#### Created by 
+#### Originally created by 
 Philipp Rosner, M.Sc.
-Research Associate
-Institute of Automotive Technology  
+Research Associate Institute of Automotive Technology
 Department of Mobility Systems Engineering  
 TUM School of Engineering and Design  
 Technical University of Munich  
 philipp.rosner@tum.de  
-Originally created September 2nd, 2021
+September 2nd, 2021
 
 #### Contributors
 Brian Dietermann, M.Sc. - Research Associate 06/2022-  
@@ -64,9 +63,9 @@ in order to properly close the server handler
 
 ## Basic Usage
 
-A toolset run needs closely defined scenarios to simulate and simulation settings to operate on. These are provided in two separate .json-files to be specified when starting a simulation, either via a Graphical User Interface (GUI, this variant also enables a path choice of where to store results) automatically coming up when starting the toolset without any parameters given. Alternatively, the names of the files can be specified in the terminal command as follows, given the base folder is selected:
+Running the toolset needs closely defined scenarios to simulate and simulation settings to operate on. These are provided in two separate .csv-files to be specified when starting a simulation, either via a Graphical User Interface (GUI, this variant also enables a path choice of where to store results) automatically coming up when starting the toolset without any parameters given. Alternatively, the names of the files can be specified in the terminal command as follows, given the base folder is selected:
 ```
-python main.py <scenario_file_name>.json <settings_file_name>.json
+python main.py <scenario_file_name>.csv <settings_file_name>.csv
 ```
 Formatting of the scenario and settings files can be taken from the example files.
 
@@ -79,23 +78,24 @@ representation, generates a pyomo model and hands it to a solver. Results are su
 ![System diagram](./images/system_diagram.png)
 
 #### General Terms & Definitions
-| Term                   | Description                                                                                                                                                                                                                                                       |
-|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Run                    | A run is defined by a single Microsoft Excel file, containing one sheet with run-wide information ("global_settings") such as solver and parallel mode as well as one sheet per scenario to be executed with actual energy system parameters and links to timeseries files |
-| Scenario               | A scenario is defined by a single Excel worksheet and some timeseries inputs. It models an energy system, that is then sized and dispatched using the sim_os selected                                                                                             |
-| Horizon                | A scenario can be dispatched in multiple operating strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, each                                                                                                   |
-| Block                  | A block is a set of components representing a real-world system (e.g. a PV array in combination with its controller and converter). These can be toggled on or off, except for the core block containing the AC and DC buses as well as the converter(s) inbetween them. |
-| Component              | A component is an oemof building block that is either a source, a sink, a bus, a transformer or a storage.                                                                                                                                                        |
-| InvestBlock            ||
-| SystemCore             ||
-| FixedDemand            ||
-| PVSource               ||
-| WindSource             ||
-| ControllableSource     ||
-| VehicleCommoditySystem ||
-| BatteryCommoditySystem ||
-| RentalSystem           ||
-| RentalProcess          ||
+| Term                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Run                    | A run is defined by a single csv scenario file and a settings csv file, the latter containing run-wide information such as solver and parallel and the former the actual scenario to be simulated/optimized with actual energy system parameters and links to timeseries files                                                                                                                                                                                                                                       |
+| Scenario               | A scenario is defined by a column in the scenario csv file and some timeseries inputs. It models an energy system, that is then sized and dispatched using the strategy selected                                                                                                                                                                                                                                                                                                                                     |
+| Strategy               | A strategy is a set of rules or an optimization algorithm that determines how the energy system is operated. The toolset supports two strategies: "go" for global optimum and "rh" for rolling horizon optimization.                                                                                                                                                                                                                                                                                                 |
+| Horizon                | A scenario can be simulated in multiple strategies, one of which is called "rolling horizon" and is similar to an MPC controller. In this case, the total simulation time is split up into prediction horizons that are simulated consecutively. However, to guarantee some overlap between the horizons, only the so called control horizon is actually taken for overall result calculation. It has to be equal to or shorter than the prediction horizon. ![Rolling Horizon principle](./images/rolling_horizon.png) |
+| Block                  | A block is a set of components representing a real-world system (e.g. a PV array in combination with its controller and converter). These are classes, the instances of which to be actually simulated can be defined in the scenario file as a dictionary, except for the core block containing the AC and DC buses as well as the converter(s) inbetween them. Multiple instances of one block can coexist in a model.                                                                                             |
+| Component              | A component is an oemof element that is either a source, a sink, a bus, a converter or a storage.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| InvestBlock            | This is the parent class for all blocks that are possibly being sized in optimization (i.e. where an investment decision has to be taken) and for which entering ```'opt'``` as the size in the scenario file will trigger that size optimization. However, this is only possible in the ```'go'``` strategy                                                                                                                                                                                                                    |
+| SystemCore             |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| FixedDemand            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| PVSource               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| WindSource             |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ControllableSource     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| VehicleCommoditySystem |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| BatteryCommoditySystem |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| RentalSystem           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| RentalProcess          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 
 #### Input data
