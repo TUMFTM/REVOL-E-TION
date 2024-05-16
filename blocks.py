@@ -728,7 +728,6 @@ class GridConnection(InvestBlock):
     def calc_results(self, scenario):
 
         self.calc_energy_results_source_sink(scenario)
-        # self.calc_energy_results_bidi(scenario)  # bidirectional block
         self.calc_eco_results(scenario)
 
     def get_ch_results(self, horizon, scenario):
@@ -1010,18 +1009,10 @@ class MobileCommodity:
         self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
         self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
 
-        # ToDo: Check whether shifting is necessary (doesn't seem to be the case; neither for uc nor cc)
         self.sc_ch = solph.views.node(
-            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
-            horizon.dti_ch].shift(periods=1, freq=scenario.timestep)
-        # self.sc_ch = solph.views.node(
-        #     horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')]
-        # shift is needed as sc/soc is stored for end of timestep following nameplate time by oemof
+            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'),
+                                                               'storage_content')][horizon.dti_ch]
 
-        # ToDo: check whether if condition is necessary
-        if horizon.index == 0:
-            sc_init_series = pd.Series(data=[self.soc_init * self.size], index=[scenario.starttime])
-            self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
         self.soc_ch = self.sc_ch / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
@@ -1323,13 +1314,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
-            ((self.name, 'None'), 'storage_content')][horizon.dti_ch].shift(periods=1, freq=scenario.timestep)
-        # shift is needed as sc/soc is stored for end of timestep
-
-        # ToDo: check whether if condition is needed (MERGE)
-        if horizon.index == 0:
-            sc_init_series = pd.Series(data=[self.soc_init * self.size], index=[scenario.starttime])
-            self.sc_ch = pd.concat([sc_init_series, self.sc_ch])
+            ((self.name, 'None'), 'storage_content')][horizon.dti_ch]
 
         self.soc_ch = self.sc_ch / self.size
 

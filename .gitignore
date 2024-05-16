@@ -6,7 +6,7 @@ analysis/*
 results/*
 !results/.gitignore
 
-/input/*
+input/*
 
 !input/battery/sanyo_ur18650e.pkl
 !input/battery/sony_us26650.pkl
@@ -32,6 +32,8 @@ results/*
 !input/settings/default_seq.csv
 
 !input/wind/wind_example.csv
+
+utils/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

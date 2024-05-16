@@ -59,7 +59,7 @@ ess,size,0,90000,90000,opt
 ess,pv_only,False,False,False,False
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
-ess,temp_battery,pv,pv,pv,pv
+ess,temp_battery,25,pv,pv,pv
 ess,capex_spec,0.25,0.25,0.25,0.25
 ess,mntex_spec,0.00625,0.00625,0.00625,0.00625
 ess,opex_spec,0,0,0,0
@@ -117,7 +117,7 @@ bev,pwr_ext_dc,0,0,0,0
 brs,size,3000.0,3000.0,3000.0,3000.0
 brs,aging,True,True,True,True
 brs,chemistry,nmc,nmc,nmc,nmc
-brs,temp_battery,pv,pv,pv,pv
+brs,temp_battery,25,pv,pv,pv
 brs,int_lvl,cc,cc,cc,cc
 brs,system,AC,AC,AC,AC
 brs,filename,run_des,run_des,run_des,run_des

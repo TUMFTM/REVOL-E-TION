@@ -67,7 +67,7 @@ Running the toolset needs closely defined scenarios to simulate and simulation s
 ```
 python main.py <scenario_file_name>.csv <settings_file_name>.csv
 ```
-Formatting of the scenario and settings files can be taken from the example files.
+Formatting of the scenario and settings files can be taken from the example files. It is recommended to mostly use the parallel computing option for multiple rolling horizon scenarios.
 
 
 ## Detailed Description  

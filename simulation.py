@@ -117,19 +117,11 @@ class PredictionHorizon:
 
         self.index = index
 
-        run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
-                        f' Building linear optimization model')
-
         # Time and data slicing --------------------------------
         self.starttime = scenario.starttime + (index * scenario.len_ch)  # calc both start times
         self.ch_endtime = self.starttime + scenario.len_ch
         self.ph_endtime = self.starttime + scenario.len_ph
         self.timestep = scenario.timestep
-        run.logger.debug(f'Scenario {scenario.name} -'
-                         f'Horizon {self.index + 1} -'
-                         f' PH start: {self.starttime} -'
-                         f' PH end: {self.ph_endtime} -'
-                         f' CH end: {self.ch_endtime}')
 
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
@@ -137,6 +129,13 @@ class PredictionHorizon:
         # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
+
+        run.logger.info(f'Scenario {scenario.name} - '
+                        f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                        f'Start: {self.starttime} - '
+                        f'CH end: {self.ch_endtime} - '
+                        f'PH end: {self.ph_endtime} - '
+                        f'initializing model build')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
