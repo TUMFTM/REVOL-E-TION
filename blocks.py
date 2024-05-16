@@ -512,6 +512,8 @@ class CommoditySystem(InvestBlock):
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
+        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr, scenario.timestep_td)
+
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']  # integration levels at which power consumption is determined a priori
 
         # Setting the converter cost of the main feed(back) converters of the system to either eps or the set values
@@ -914,7 +916,7 @@ class MobileCommodity:
                                                        inputs={self.bus: solph.Flow(
                                                            variable_costs=self.parent.opex_spec)},
                                                        outputs={self.bus: solph.Flow()},
-                                                       loss_rate=0,
+                                                       loss_rate=self.parent.loss_rate,
                                                        # TODO integrate self discharge (loss_rate is per timestep)
                                                        balanced=False,
                                                        initial_storage_level=self.soc_init_ph,
@@ -931,7 +933,7 @@ class MobileCommodity:
                                                        inputs={self.bus: solph.Flow(
                                                            variable_costs=self.parent.opex_spec)},
                                                        outputs={self.bus: solph.Flow()},
-                                                       loss_rate=0,
+                                                       loss_rate=self.parent.loss_rate,
                                                        # TODO integrate self discharge (loss_rate is per timestep)
                                                        balanced=False,
                                                        initial_storage_level=self.soc_init_ph,
@@ -1240,6 +1242,8 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.apriori_data = None
 
+        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr, scenario.timestep_td)
+
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
@@ -1266,7 +1270,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        inputs={self.bus_connected: solph.Flow(
                                                            variable_costs=self.opex_spec)},
                                                        outputs={self.bus_connected: solph.Flow()},
-                                                       loss_rate=0,
+                                                       loss_rate=self.loss_rate,
                                                        # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.soc_init_ph,
@@ -1286,7 +1290,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                            nominal_value=1,
                                                            max=self.size * self.crate_dis,
                                                        )},
-                                                       loss_rate=0,
+                                                       loss_rate=self.loss_rate,
                                                        # TODO proper self discharge (loss_rate is per timestep)
                                                        # ToDo: add parameter for rulebased ESM
                                                        balanced=False,

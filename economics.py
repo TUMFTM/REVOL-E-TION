@@ -25,6 +25,8 @@ none
 coding:     utf-8
 license:    GPLv3
 '''
+import pandas as pd
+
 
 def discount(value, deltat, discrate):
     """
@@ -103,3 +105,12 @@ def pce(ice, rce, ls, hor, discrate):
     """
     pce = ice + sum([discount(rce, x, discrate) for x in repllist(ls, hor)])
     return pce
+
+
+def convert_sdr_to_timestep(sdr: float, timestep: pd.Timedelta) -> float:
+    """
+    This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
+    """
+    tsr = timestep / pd.Timedelta('30 days')
+    lr = 1 - (1 - sdr) ** tsr
+    return lr

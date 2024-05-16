@@ -125,6 +125,11 @@ class PredictionHorizon:
         self.ch_endtime = self.starttime + scenario.len_ch
         self.ph_endtime = self.starttime + scenario.len_ph
         self.timestep = scenario.timestep
+        run.logger.debug(f'Scenario {scenario.name} -'
+                         f'Horizon {self.index + 1} -'
+                         f' PH start: {self.starttime} -'
+                         f' PH end: {self.ph_endtime} -'
+                         f' CH end: {self.ch_endtime}')
 
         if self.ph_endtime > scenario.sim_endtime:
             self.ph_endtime = scenario.sim_endtime
