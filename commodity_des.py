@@ -309,13 +309,6 @@ class VehicleRentalSystem(RentalSystem):
         self.energy_base = self.dsoc_base * self.cs.size_pc  # VRS always has just one primary commodity (vehicle) per process
         self.range_base = self.energy_base / self.cs.consumption
 
-        if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
-            self.dsoc_base_rex = self.cs.rex_cs.soc_dep - self.cs.soc_min_return
-            self.energy_base_rex_pc = self.cs.rex_cs.size_pc * self.dsoc_base_rex
-        else:
-            self.dsoc_base_rex = None
-            self.energy_base_rex_pc = None
-
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         n_processes = self.demand_daily['num_total'].sum(axis=0)
         self.processes['date'] = np.repeat(self.demand_daily.index, self.demand_daily['num_total'])
@@ -330,16 +323,18 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, n_processes), unit='hour')
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
-        # calculate energy to be augmented and number of rex commodities needed
-        self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_base)
-        self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
-        try:
+        if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
+            self.dsoc_base_rex = self.cs.rex_cs.soc_dep - self.cs.soc_min_return
+            self.energy_base_rex_pc = self.cs.rex_cs.size_pc * self.dsoc_base_rex
+            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_base)
+            self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
             self.processes['num_rex'] = np.ceil(self.processes['energy_missing'] / self.energy_base_rex_pc).astype(int)
-        except ZeroDivisionError:
+            self.processes['rex_request'] = self.processes['num_rex'] > 0
+            self.processes['energy_avail'] = self.energy_base + (self.processes['num_rex'] * self.energy_base_rex_pc)
+        else:  # no rex defined
+            self.processes['rex_request'] = False
             self.processes['num_rex'] = 0
-        self.processes['rex_request'] = self.processes['num_rex'] > 0
-
-        self.processes['energy_avail'] = self.energy_base + (self.processes['num_rex'] * self.energy_base_rex_pc)
+            self.processes['energy_avail'] = self.energy_base
 
         # set maximum energy requirement to max available energy - equivalent to charging externally
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
