@@ -681,19 +681,19 @@ class GridConnection(InvestBlock):
         x denotes the flow measurement point in results
 
         ac_bus           grid_bus
-          |                  |
-          |<-----------------|<-x-grid source
-          |----------------->|
-          |                  |
-          |<-----------------|
-          |----------------->|
-          |                  |-x->grid sink
-          |         .        |
+          |                   |
+          |<--xc_grid_1--x----|
+          |---grid_xc_1--x--->|<-x-grid source
+          |                   |
+          |<--xc_grid_2--x----|-x->grid sink
+          |---grid_xc_2--x--->|
+          |                   |
+          |         .         |
                     .
-          |         .        |
-          |<-----------------|
-          |----------------->|
-          |                  |
+          |         .         |
+          |<--xc_grid_n--x----|
+          |---grid_xc_n--x--->|
+          |                   |
         """
 
         self.bus_connected = scenario.blocks['core'].ac_bus
