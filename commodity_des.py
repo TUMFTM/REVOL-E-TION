@@ -18,7 +18,6 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import logging
 import os
 import math
 import simpy
@@ -217,7 +216,7 @@ class RentalSystem:
                 (commodity, 'consumption')] = process['energy_req_pc'] / (process['steps_rental'] * self.sc.timestep_hours)
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
-                self.data.loc[:process['time_dep'], (commodity, 'minsoc')][-1] = self.cs.soc_dep
+                self.data.loc[process['time_dep'], (commodity, 'minsoc')] = self.cs.soc_dep
 
 
         self.cs.data = self.data
@@ -404,8 +403,6 @@ class BatteryRentalSystem(RentalSystem):
         n_processes = self.demand_daily['num_total'].sum(axis=0)
         rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
 
-
-
         self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
                                                          n_processes,
                                                          replace=True,
@@ -415,24 +412,22 @@ class BatteryRentalSystem(RentalSystem):
         self.assign_datetime_request(n_processes, sc)
 
         p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
-        self.processes['soc_return'] = np.minimum(1, np.random.lognormal(p1, p2, n_processes))
+        self.processes['soc_return'] = np.minimum(self.cs.soc_dep, np.random.lognormal(p1, p2, n_processes))
         self.processes['num_resources'] = self.processes.apply(
             lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
         self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
 
         self.processes['time_active'] = pd.to_timedelta(
             self.processes.apply(lambda row:
-                                 (1 - row['soc_return']) *
-                                 row['energy_avail'] /
-                                 self.usecases.loc[row['usecase_idx'],
-                                 'power'],
+                                 (self.cs.soc_dep - row['soc_return']) * row['energy_avail'] /
+                                 self.usecases.loc[row['usecase_idx'], 'power'],
                                  axis=1),
             unit='hour')
 
         p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
         self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
 
-        self.processes['energy_req_pc'] = (1 - self.processes['soc_return']) * self.cs.size_pc
+        self.processes['energy_req_pc'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
         self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
 
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /

@@ -220,7 +220,6 @@ class PredictionHorizon:
         except UserWarning as exc:
             run.logger.warning(f'Scenario \"{scenario.name}\" failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
-            # TODO does not jump to next scenario properly (at least in parallel mode)
 
     def run_lfs(self, scenario, run):
         # TODO implement load following rule based dispatch strategy
