@@ -468,9 +468,9 @@ class InvestBlock:
 
         elif isinstance(self, GridConnection):
             if self.opt_g2mg:
-                self.size_g2mg = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
+                self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
             if self.opt_mg2g:
-                self.size_mg2g = horizon.results[(self.bus_connected, self.snk)]['scalars']['invest']
+                self.size_mg2g = horizon.results[(self.bus, self.snk)]['scalars']['invest']
             self.size = self.size_g2mg + self.size_mg2g
 
     def load_opex(self, var_name, path_input_data, scenario, block_name):
@@ -680,38 +680,48 @@ class GridConnection(InvestBlock):
         """
         x denotes the flow measurement point in results
 
-        ac_bus
-          |
-          |<-x-grid source
-          |
-          |-x->grid sink
-          |
+        ac_bus           grid_bus
+          |                  |
+          |<-----------------|<-x-grid source
+          |----------------->|
+          |                  |
+          |<-----------------|
+          |----------------->|
+          |                  |-x->grid sink
+          |         .        |
+                    .
+          |         .        |
+          |<-----------------|
+          |----------------->|
+          |                  |
         """
 
         self.bus_connected = scenario.blocks['core'].ac_bus
+        self.bus = solph.Bus(label=f'{self.name}_bus')
+        scenario.components.append(self.bus)
 
         if self.opt_g2mg:
             self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(
+                                               outputs={self.bus: solph.Flow(
                                                    investment=solph.Investment(ep_costs=self.epc),
                                                    variable_costs=self.opex_spec_g2mg)}
                                                )
         else:
             self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(
+                                               outputs={self.bus: solph.Flow(
                                                    nominal_value=1,
                                                    max=self.size_g2mg,
                                                    variable_costs=self.opex_spec_g2mg)}
                                                )
         if self.opt_mg2g:
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                             inputs={self.bus_connected: solph.Flow(
+                                             inputs={self.bus: solph.Flow(
                                                  investment=solph.Investment(ep_costs=self.epc),
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         else:
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                             inputs={self.bus_connected: solph.Flow(
+                                             inputs={self.bus: solph.Flow(
                                                  nominal_value=1,
                                                  max=self.size_mg2g,
                                                  variable_costs=self.opex_spec_mg2g)}
@@ -721,9 +731,24 @@ class GridConnection(InvestBlock):
 
         if self.opt and self.equal:
             # add a tuple of tuples to the list of equal variables of the scenario
-            scenario.equal_variables.append({'var1': {'in': self.src, 'out': self.bus_connected},
-                                             'var2': {'in': self.bus_connected, 'out': self.snk},
+            scenario.equal_variables.append({'var1': {'in': self.src, 'out': self.bus},
+                                             'var2': {'in': self.bus, 'out': self.snk},
                                              'factor': 1})
+
+        if self.opex_peakshaving > 0:
+            self.inflow = []
+            self.outflow = []
+        else:
+            self.inflow = [solph.components.Converter(label=f'{self.name}_xc',
+                                                      inputs={self.bus: solph.Flow()},
+                                                      outputs={self.bus_connected: solph.Flow()},
+                                                      conversion_factors={self.bus_connected: 1})]
+            self.outflow = [solph.components.Converter(label=f'xc_{self.name}',
+                                                       inputs={self.bus_connected: solph.Flow()},
+                                                       outputs={self.bus: solph.Flow()},
+                                                       conversion_factors={self.bus: 1})]
+        scenario.components.extend(self.inflow)
+        scenario.components.extend(self.outflow)
 
     def calc_results(self, scenario):
 
@@ -732,8 +757,8 @@ class GridConnection(InvestBlock):
 
     def get_ch_results(self, horizon, scenario):
 
-        self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_in_ch = horizon.results[(self.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_out_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
@@ -741,8 +766,8 @@ class GridConnection(InvestBlock):
     def update_input_components(self, scenario):
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0)
-            self.snk.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * -1
+            self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0)
+            self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
 
 
 class FixedDemand:
