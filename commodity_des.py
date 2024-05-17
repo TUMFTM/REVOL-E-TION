@@ -200,7 +200,7 @@ class RentalSystem:
         column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
-        self.data = pd.DataFrame(0, index=self.sc.des_dti, columns=column_index)
+        self.data = pd.DataFrame(0, index=self.sc.dti_des, columns=column_index)
         self.data.loc[:, (slice(None), 'atbase')] = True
         self.data.loc[:, (slice(None), 'atac')] = False
         self.data.loc[:, (slice(None), 'atdc')] = False
@@ -305,9 +305,16 @@ class VehicleRentalSystem(RentalSystem):
         :return: None
         """
         # calculate base range on internal battery for rex calculations
-        self.base_dsoc = self.cs.soc_dep - self.cs.soc_min_return
-        self.base_energy = self.base_dsoc * self.cs.size_pc  # VRS always has just one primary commodity (vehicle) per process
-        self.base_range = self.base_energy / self.cs.consumption
+        self.dsoc_base = self.cs.soc_dep - self.cs.soc_min_return
+        self.energy_base = self.dsoc_base * self.cs.size_pc  # VRS always has just one primary commodity (vehicle) per process
+        self.range_base = self.energy_base / self.cs.consumption
+
+        if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
+            self.dsoc_base_rex = self.cs.rex_cs.soc_dep - self.cs.soc_min_return
+            self.energy_base_rex_pc = self.cs.rex_cs.size_pc * self.dsoc_base_rex
+        else:
+            self.dsoc_base_rex = None
+            self.energy_base_rex_pc = None
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
         n_processes = self.demand_daily['num_total'].sum(axis=0)
@@ -323,16 +330,16 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, n_processes), unit='hour')
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
-        if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
-            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.base_range)
-            self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
-            self.processes['num_rex'] = np.ceil(self.processes['energy_missing'] / self.cs.rex_cs.size_pc).astype(int)
-            self.processes['energy_avail'] = ((self.cs.size_pc * self.cs.soc_dep) +
-                                              (self.processes['num_rex'] * self.cs.rex_cs.size * self.cs.rex_cs.soc_dep))
-            self.processes['rex_request'] = self.processes['num_rex'] > 0
-        else:
-            self.processes['energy_avail'] = self.cs.size_pc * self.cs.soc_dep
-            self.processes['rex_request'] = False
+        # calculate energy to be augmented and number of rex commodities needed
+        self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_base)
+        self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
+        try:
+            self.processes['num_rex'] = np.ceil(self.processes['energy_missing'] / self.energy_base_rex_pc).astype(int)
+        except ZeroDivisionError:
+            self.processes['num_rex'] = 0
+        self.processes['rex_request'] = self.processes['num_rex'] > 0
+
+        self.processes['energy_avail'] = self.energy_base + (self.processes['num_rex'] * self.energy_base_rex_pc)
 
         # set maximum energy requirement to max available energy - equivalent to charging externally
         self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
@@ -532,7 +539,7 @@ def execute_des(sc, save=False, path=None):
     sc.env_des = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    sc.des_dti = sc.dti_sim.union(
+    sc.dti_des = sc.dti_sim.union(
         pd.date_range(start=sc.dti_sim[-1] + sc.dti_sim.freq,
                       periods=200,
                       freq=sc.dti_sim.freq))
