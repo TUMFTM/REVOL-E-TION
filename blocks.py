@@ -914,7 +914,6 @@ class MobileCommodity:
                                                            variable_costs=self.parent.opex_spec)},
                                                        outputs={self.bus: solph.Flow()},
                                                        loss_rate=self.parent.loss_rate,
-                                                       # TODO integrate self discharge (loss_rate is per timestep)
                                                        balanced=False,
                                                        initial_storage_level=self.soc_init_ph,
                                                        inflow_conversion_factor=1,
@@ -931,7 +930,6 @@ class MobileCommodity:
                                                            variable_costs=self.parent.opex_spec)},
                                                        outputs={self.bus: solph.Flow()},
                                                        loss_rate=self.parent.loss_rate,
-                                                       # TODO integrate self discharge (loss_rate is per timestep)
                                                        balanced=False,
                                                        initial_storage_level=self.soc_init_ph,
                                                        inflow_conversion_factor=1,

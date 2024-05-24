@@ -82,7 +82,7 @@ class RentalSystem:
     def __init__(self, cs, sc):
 
         self.name = cs.name
-        self.cs = cs  # making cs callable through RentalSystem
+        self.cs = cs  # making parent CommoditySystem callable through RentalSystem
         self.sc = sc  # making scenario callable through RentalSystem
         # all other values are accessible through the commodity system self.cs
 
@@ -305,8 +305,8 @@ class VehicleRentalSystem(RentalSystem):
         :return: None
         """
         # calculate base range on internal battery for rex calculations
-        self.dsoc_base = self.cs.soc_dep - self.cs.soc_min_return
-        self.energy_base = self.dsoc_base * self.cs.size_pc  # VRS always has just one primary commodity (vehicle) per process
+        self.dsoc_base = self.cs.soc_dep - self.cs.soc_return_min
+        self.energy_base = self.dsoc_base * self.cs.size_pc  # VRS always has just one primary commodity (vehicle)
         self.range_base = self.energy_base / self.cs.consumption
 
         # create array of processes (daily number drawn before) and draw time of departure from custom function
@@ -324,24 +324,36 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
 
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
-            self.dsoc_base_rex = self.cs.rex_cs.soc_dep - self.cs.soc_min_return
+
+            self.dsoc_base_rex = self.cs.rex_cs.soc_dep - self.cs.soc_return_min
             self.energy_base_rex_pc = self.cs.rex_cs.size_pc * self.dsoc_base_rex
+
+            # determine number of rex needed to cover missing distance and calc available energy
             self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_base)
             self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
             self.processes['num_rex'] = np.ceil(self.processes['energy_missing'] / self.energy_base_rex_pc).astype(int)
             self.processes['rex_request'] = self.processes['num_rex'] > 0
             self.processes['energy_avail'] = self.energy_base + (self.processes['num_rex'] * self.energy_base_rex_pc)
+            self.processes['energy_total'] = self.cs.size_pc + (self.processes['num_rex'] * self.cs.rex_cs.size_pc)
+
+            # calculate different delta SOC for primary and secondary commodity due to different start SOCs (linear)
+            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req'] /
+                                              self.processes['energy_avail'])
+            self.processes['dsoc_secondary'] = (self.dsoc_base_rex * self.processes['energy_req'] /
+                                                self.processes['energy_avail'])
+
         else:  # no rex defined
             self.processes['rex_request'] = False
             self.processes['num_rex'] = 0
             self.processes['energy_avail'] = self.energy_base
+            self.processes['energy_total'] = self.cs.size_pc
 
-        # set maximum energy requirement to max available energy - equivalent to charging externally
-        self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
-        self.processes['dsoc_req'] = self.processes['energy_req'] / self.processes['energy_avail']
+            # cap energy request at available energy (equivalent to external charging)
+            self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
+            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req'] /
+                                              self.processes['energy_avail'])
 
-        # rex and vehicle storage are discharged to equal soc storage
-        self.processes['energy_req_pc'] = self.cs.size_pc * self.processes['dsoc_req']
+        self.processes['energy_req_pc'] = self.processes['dsoc_primary'] * self.cs.size_pc
         self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
                                                           (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
@@ -358,9 +370,9 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['usecase_idx'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
         rex_processes['num_resources'] = rex_processes['num_rex']
-        rex_processes['energy_req_pc'] = rex_processes['dsoc_req'] * self.cs.rex_cs.size_pc
+        rex_processes['energy_req_pc'] = rex_processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
         rex_processes['energy_req'] = rex_processes['energy_req_pc'] * rex_processes['num_resources']
-        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['dsoc_req']
+        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['dsoc_secondary']
 
         # swap primary and secondary commodities as target system has other promary commodity type
         rex_processes['temp_primary'] = rex_processes['primary_commodity']
@@ -401,7 +413,6 @@ class BatteryRentalSystem(RentalSystem):
         :return: None
         """
 
-
         n_processes = self.demand_daily['num_total'].sum(axis=0)
         rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
 
@@ -414,7 +425,9 @@ class BatteryRentalSystem(RentalSystem):
         self.assign_datetime_request(n_processes, sc)
 
         p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
-        self.processes['soc_return'] = np.minimum(self.cs.soc_dep, np.random.lognormal(p1, p2, n_processes))
+        self.processes['soc_return'] = np.clip(np.random.lognormal(p1, p2, n_processes),
+                                               self.cs.soc_return_min,
+                                               self.cs.soc_dep)
         self.processes['num_resources'] = self.processes.apply(
             lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
         self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc

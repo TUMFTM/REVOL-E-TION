@@ -76,7 +76,7 @@ ess,eff,1,1,1,1
 bev,size,30000.0,30000.0,30000.0,30000.0
 bev,aging,True,True,True,True
 bev,chemistry,nmc,nmc,nmc,nmc
-bev,temp_battery,pv,pv,pv,pv
+bev,temp_battery,25,pv,pv,pv
 bev,rex_cs,brs,brs,brs,brs
 bev,int_lvl,v2mg,v2mg,v2mg,v2mg
 bev,system,ac,ac,ac,ac
@@ -96,7 +96,7 @@ bev,patience,2,2,2,2
 bev,patience_rex,1,1,1,1
 bev,consumption,300,300,300,300
 bev,speed_avg,25,25,25,25
-bev,soc_min_return,0.15,0.15,0.15,0.15
+bev,soc_return_min,0.15,0.15,0.15,0.15
 bev,soc_dep,1,1,1,1
 bev,capex_spec,0,0,0,0
 bev,mntex_spec,0,0,0,0
@@ -128,7 +128,7 @@ brs,daily_stdev,1,1,1,1
 brs,idle_mean,1.5,1.5,1.5,1.5
 brs,idle_stdev,0.5,0.5,0.5,0.5
 brs,patience,1,1,1,1
-brs,soc_return_mean,0.12,0.12,0.12,0.12
+brs,soc_return_mean,0.15,0.15,0.15,0.15
 brs,soc_return_stdev,0.1,0.1,0.1,0.1
 brs,soc_dep,1,1,1,1
 brs,capex_spec,0,0,0,0
@@ -150,3 +150,4 @@ brs,opex_spec_ext_dc,0.0008,0.0008,0.0008,0.0008
 brs,pwr_ext_dc,0,0,0,0
 bev,sdr,0.02,0.02,0.02,7.0E-6
 brs,sdr,0.02,0.02,0.02,7.0E-6
+brs,soc_return_min,0.1,0.1,0.1,0.1
