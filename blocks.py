@@ -858,9 +858,7 @@ class MobileCommodity:
         self.flow_ext_ac = self.flow_ext_dc = pd.Series(dtype='float64')
 
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
-        self.soc = pd.Series(data=self.soc_init,
-                             index=scenario.dti_sim[0:1],
-                             dtype='float64')
+        self.soc = pd.Series()
 
         # Creation of permanent energy system components --------------------------------
 
@@ -1009,15 +1007,19 @@ class MobileCommodity:
         self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
         self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
 
+        # storage content during PH (does not include endtime)
         self.sc_ch = solph.views.node(
             horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'),
                                                                'storage_content')][horizon.dti_ch]
+        # storage content at end of ph to initialize next PH
+        self.sc_init_ph = solph.views.node(
+            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'),
+                                                               'storage_content')][horizon.ch_endtime]
 
         self.soc_ch = self.sc_ch / self.size
+        self.soc_init_ph = self.sc_init_ph / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
-        # no need to catch case of self.soc being empty as inital value is always set
-        self.soc_init_ph = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
     def update_input_components(self):
 
@@ -1025,7 +1027,8 @@ class MobileCommodity:
         self.snk.inputs[self.bus].fix = self.data_ph['consumption']
 
         # set initial storage levels for coming prediction horizon
-        self.ess.initial_storage_level = self.soc_init_ph
+        # limit and set initial storage level to min and max soc from aging
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
@@ -1039,9 +1042,6 @@ class MobileCommodity:
 
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.data_ph['consumption']
-
-            # limit and set initial storage level to min and max soc from aging
-            self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
 
             # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
             # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
@@ -1239,9 +1239,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
-        self.soc = pd.Series(data=self.soc_init,
-                             index=scenario.dti_sim[0:1],
-                             dtype='float64')
+        self.soc = pd.Series()
 
         # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
 
@@ -1313,13 +1311,17 @@ class StationaryEnergyStorage(InvestBlock):
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
+        # storage content during PH (does not include endtime)
         self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][horizon.dti_ch]
+        # storage content at end of ph to initialize next PH
+        self.sc_init_ph = solph.views.node(horizon.results, self.name)['sequences'][
+            ((self.name, 'None'), 'storage_content')][horizon.ch_endtime]
 
         self.soc_ch = self.sc_ch / self.size
+        self.soc_init_ph = self.sc_init_ph / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
-        self.soc_init_ph = self.soc.iloc[-1]  # reset initial SOC for next prediction horizon
 
     def update_input_components(self, scenario):
 
