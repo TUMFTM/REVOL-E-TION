@@ -517,8 +517,8 @@ class CommoditySystem(InvestBlock):
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']  # integration levels at which power consumption is determined a priori
 
         # Setting the converter cost of the main feed(back) converters of the system to either eps or the set values
-        self.sys_chg_soe = run.eps_cost if self.sys_chg_soe == 0 else self.sys_chg_soe
-        self.sys_dis_soe = run.eps_cost if self.sys_dis_soe == 0 else self.sys_dis_soe
+        self.sys_chg_soe = scenario.cost_eps if self.sys_chg_soe == 0 else self.sys_chg_soe
+        self.sys_dis_soe = scenario.cost_eps if self.sys_dis_soe == 0 else self.sys_dis_soe
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
@@ -890,7 +890,7 @@ class MobileCommodity:
         self.inflow = solph.components.Converter(label=f'mc_{self.name}',
                                                  inputs={
                                                      self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
-                                                                                 variable_costs=run.eps_cost)},
+                                                                                 variable_costs=scenario.cost_eps)},
                                                  outputs={self.bus: solph.Flow(nominal_value=1,
                                                                                max=self.pwr_chg * self.parent.eff_chg)},
                                                  conversion_factors={self.bus: self.parent.eff_chg})
@@ -900,7 +900,7 @@ class MobileCommodity:
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
                                                   inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable * \
                                                                                              self.parent.pwr_dis,
-                                                                               variable_costs=run.eps_cost)},
+                                                                               variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
                                                   conversion_factors={self.parent.bus: self.parent.eff_dis})
         scenario.components.append(self.outflow)
@@ -1085,7 +1085,7 @@ class PVSource(InvestBlock):
         self.bus_connected = scenario.blocks['core'].dc_bus
 
         self.outflow = solph.components.Converter(label=f'{self.name}_dc',
-                                                  inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
+                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                   #outputs={scenario.blocks['core'].dc_bus: solph.Flow(nominal_value=1,
                                                   #                                                    max=self.size *
                                                   #                                                        self.eff)},
@@ -1368,7 +1368,7 @@ class SystemCore(InvestBlock):
 
         else:
             self.ac_dc = solph.components.Converter(label='ac_dc',
-                                                    inputs={self.ac_bus: solph.Flow(variable_costs=run.eps_cost,
+                                                    inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
                                                                                     nominal_value=1,
                                                                                     max=self.size_acdc)},
                                                     outputs={self.dc_bus: solph.Flow()},
@@ -1383,7 +1383,7 @@ class SystemCore(InvestBlock):
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
         else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
-                                                    inputs={self.dc_bus: solph.Flow(variable_costs=run.eps_cost,
+                                                    inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
                                                                                     nominal_value=1,
                                                                                     max=self.size_dcac)},
                                                     outputs={self.ac_bus: solph.Flow()},
@@ -1468,7 +1468,7 @@ class WindSource(InvestBlock):
         self.bus_connected = scenario.blocks['core'].ac_bus
 
         self.outflow = solph.components.Converter(label=f'{self.name}_ac',
-                                                  inputs={self.bus: solph.Flow(variable_costs=run.eps_cost)},
+                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                   #outputs={scenario.blocks['core'].ac_bus: solph.Flow(nominal_value=1,
                                                   #                                                    max=self.size *
                                                   #                                                        self.eff)},

@@ -10,6 +10,7 @@ scenario,wacc,0.09,0.09,0.09,0.09
 scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
+scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_dcac,0,21000,21000,opt
 core,size_acdc,0,21000,21000,opt
