@@ -221,14 +221,6 @@ class PredictionHorizon:
             run.logger.warning(f'Scenario \"{scenario.name}\" failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
-    def run_lfs(self, scenario, run):
-        # TODO implement load following rule based dispatch strategy
-        pass
-
-    def run_ccs(self, scenario, run):
-        # TODO implement cycle charging rule based dispatch strategy
-        pass
-
 
 class Scenario:
 
