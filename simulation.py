@@ -351,8 +351,6 @@ class Scenario:
         # TODO implement renewable energy share evaluation
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
-        # TODO implement SAIDI (Average interruption time)
-        # TODO implement SAIFI (Interruption frequency per customer per year)
 
         try:
             self.e_eta = self.e_sim_del / self.e_sim_pro
@@ -379,10 +377,14 @@ class Scenario:
         npc_display = round(self.totex_dis)
         npc_display_ext = round(self.opex_dis_ext)
         e_display_ext = round(self.e_dis_ext * 1e-3, 1)
-        run.logger.info(f'Scenario \"{self.name}\" - NPC {npc_display} {self.currency} - LCOE {lcoe_display} {self.currency}-ct/kWh')
-        run.logger.info(f'Scenario \"{self.name}\" - NPC external charging {npc_display_ext} {self.currency} - '
+        run.logger.info(f'Scenario \"{self.name}\" -'
+                        f' NPC {npc_display} {self.currency} -'
+                        f' LCOE {lcoe_display} {self.currency}-ct/kWh')
+        run.logger.info(f'Scenario \"{self.name}\" -'
+                        f' NPC external charging {npc_display_ext} {self.currency} - '
                         f'External charged energy: {e_display_ext} kWh')
-        run.logger.info(f'Scenario \"{self.name}\" - external charging {self.opex_sim_ext} {self.currency} - '
+        run.logger.info(f'Scenario \"{self.name}\" -'
+                        f' external charging {self.opex_sim_ext} {self.currency} - '
                         f'External charged energy: {self.e_sim_ext * 1e-3} kWh')
 
     def create_block_objects(self, class_dict, run):
