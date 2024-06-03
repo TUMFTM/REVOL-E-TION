@@ -213,11 +213,11 @@ class InvestBlock:
         # For GridConnection, size is the larger size
         self.capex_init = self.size * self.capex_spec
         self.capex_prj = eco.tce(self.capex_init,
-                                 self.capex_init,  # TODO integrate cost decrease
+                                 self.capex_init,
                                  self.ls,
                                  scenario.prj_duration_yrs)
         self.capex_dis = eco.pce(self.capex_init,
-                                 self.capex_init,  # TODO integrate cost decrease
+                                 self.capex_init,
                                  self.ls,
                                  scenario.prj_duration_yrs,
                                  scenario.wacc)

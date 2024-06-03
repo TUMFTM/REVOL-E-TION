@@ -89,21 +89,22 @@ def repllist(ls, hor):
     return repyrs
 
 
-def tce(ice, rce, ls, hor):
+def tce(ce, cdr, ls, hor):
     """
         This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor
+        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
     """
-    tce = ice + rce * len(repllist(ls, hor))
+
+    tce = ce + sum([ce * cdr ** yr for yr in repllist(ls, hor)])
     return tce
 
 
-def pce(ice, rce, ls, hor, discrate):
+def pce(ce, cdr, discrate, ls, hor):
     """
         This function calculates the present (discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor
+        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
     """
-    pce = ice + sum([discount(rce, x, discrate) for x in repllist(ls, hor)])
+    pce = ce + sum([discount(ce * yr ** cdr, yr, discrate) for yr in repllist(ls, hor)])
     return pce
 
 
