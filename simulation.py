@@ -30,6 +30,7 @@ import time
 import timezonefinder
 
 import multiprocessing as mp
+import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
@@ -243,6 +244,7 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
+        # noinspection PyUnresolvedReferences
         self.currency = self.currency.upper()
 
         self.tzfinder = timezonefinder.TimezoneFinder()
@@ -253,8 +255,8 @@ class Scenario:
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y').tz_localize(self.timezone)
         self.sim_duration = pd.Timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
+        self.prj_duration_yrs = self.prj_duration
         self.prj_duration = pd.Timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
-        self.prj_duration_yrs = self.prj_duration.days / 365
         self.prj_endtime = self.starttime + self.prj_duration
 
         # generate a datetimeindex for the energy system model to run on
@@ -316,6 +318,8 @@ class Scenario:
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
 
+        self.cashflows = pd.DataFrame()
+
         # Result variables - Energy
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
@@ -330,54 +334,10 @@ class Scenario:
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
-        self.lcoe = self.lcoe_dis = None
+        self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
+        self.lcoe = self.lcoe_dis = 0
 
         run.logger.debug(f'Scenario {self.name} initialization completed')
-
-    def accumulate_results(self, run):
-
-        for block in self.blocks.values():
-            block.calc_results(self)
-
-        # optional metrics
-        # TODO implement renewable energy share evaluation
-        # TODO implement commodity v2mg usage share
-        # TODO implement energy storage usage share
-
-        try:
-            self.e_eta = self.e_sim_del / self.e_sim_pro
-        except (ZeroDivisionError, RuntimeWarning):
-            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
-
-        try:
-            self.lcoe = self.totex_dis / self.e_prj_del
-            self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except (ZeroDivisionError, RuntimeWarning):
-            self.lcoe = self.lcoe_dis = -1e-5  # prevent errors in further calculations and force end result to -1
-            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
-
-        re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
-        e_pot = 0
-        e_curt = 0
-        for block in re_blx:
-            block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
-            e_pot += sum(block.e_pot)
-            e_curt += sum(block.e_curt)
-        self.renewable_curtailment = e_curt / e_pot if e_pot > 0 else 0
-
-        lcoe_display = round(self.lcoe_dis * 1e5, 1)
-        npc_display = round(self.totex_dis)
-        npc_display_ext = round(self.opex_dis_ext)
-        e_display_ext = round(self.e_dis_ext * 1e-3, 1)
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC {npc_display} {self.currency} -'
-                        f' LCOE {lcoe_display} {self.currency}-ct/kWh')
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC external charging {npc_display_ext} {self.currency} - '
-                        f'External charged energy: {e_display_ext} kWh')
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' external charging {self.opex_sim_ext} {self.currency} - '
-                        f'External charged energy: {self.e_sim_ext * 1e-3} kWh')
 
     def create_block_objects(self, class_dict, run):
         # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
@@ -474,6 +434,50 @@ class Scenario:
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenario_file_name} - Scenario: {self.name}'
                                             f'- PH:{self.len_ph}h/CH:{self.len_ch}h)')
+
+    def get_results(self, run):
+
+        for block in self.blocks.values():
+            block.calc_energy(self)
+            block.calc_expenses(self)
+            block.calc_revenue(self)
+            block.calc_cashflows(self)
+
+        # optional metrics
+        # TODO implement renewable energy share evaluation
+        # TODO implement commodity v2mg usage share
+        # TODO implement energy storage usage share
+
+        try:
+            self.e_eta = self.e_sim_del / self.e_sim_pro
+        except (ZeroDivisionError, RuntimeWarning):
+            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
+
+        try:
+            self.lcoe = self.totex_dis / self.e_prj_del
+            self.lcoe_dis = self.totex_dis / self.e_dis_del
+        except (ZeroDivisionError, RuntimeWarning):
+            self.lcoe = self.lcoe_dis = None
+            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+
+        self.npv = self.crev_dis - self.totex_dis
+        self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
+        self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
+
+        re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
+        e_pot = 0
+        e_curt = 0
+        for block in re_blx:
+            block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
+            e_pot += sum(block.e_pot)
+            e_curt += sum(block.e_curt)
+        self.renewable_curtailment = e_curt / e_pot if e_pot > 0 else 0
+
+        # print basic results
+        run.logger.info(f'Scenario \"{self.name}\" -'
+                        f' NPV {round(self.npv):,} {self.currency} -'
+                        f' LCOE {round(self.lcoe_dis * 1e5, 1)} {self.currency}-ct/kWh -'
+                        f' mIRR {round(self.mirr * 100, 1)} %')
 
     def print_results(self, run):
         print('#################')

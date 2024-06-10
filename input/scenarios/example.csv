@@ -151,3 +151,7 @@ brs,pwr_ext_dc,0,0,0,0
 bev,sdr,0.02,0.02,0.02,7.0E-6
 brs,sdr,0.02,0.02,0.02,7.0E-6
 brs,soc_return_min,0.1,0.1,0.1,0.1
+dem,revenue_spec,3e-05,3e-05,3e-05,3e-05
+bev,revenue_spec_time,0.1,0.1,0.1,0.1
+bev,revenue_spec_dist,0.2,0.2,0.2,0.2
+brs,revenue_spec_time,0.05,0.05,0.05,0.05
