@@ -149,7 +149,7 @@ class PredictionHorizon:
             scenario.scheduler.calc_schedule(self.dti_ph)
 
         for block in scenario.blocks.values():
-            block.update_input_components(scenario)  # (re)define solph components that need input slices
+            block.update_input_components()  # (re)define solph components that need input slices
 
         self.results = None
         self.meta_results = None
@@ -204,7 +204,7 @@ class PredictionHorizon:
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
-            block.get_opt_size(self, scenario)
+            block.get_opt_size(self)
 
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
@@ -359,60 +359,60 @@ class Scenario:
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
-        # types for which positive flow values are power taken out of the core
-        invert_types = (blocks.FixedDemand, blocks.StationaryEnergyStorage, blocks.CommoditySystem, blocks.GridConnection)
-
         for block in [block for block in self.blocks.values() if not isinstance(block, blocks.SystemCore)]:
+            block.add_power_trace(self)
+            #if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)):
+            #    block.add_soc_trace(self)
 
-            if hasattr(block, 'size'):
-                if isinstance(block, blocks.CommoditySystem):
-                    legentry_p = f"{block.name} total power"
-                    display_size = round(block.size / 1e3, 1)
-                if isinstance(block, blocks.StationaryEnergyStorage):
-                    display_size = round(block.size / 1e3, 1)
-                    display_dpwr = round(block.crate_dis * block.size / 1e3, 1)
-                    legentry_p = f"{block.name} power ({display_dpwr} kW)"
-                else:
-                    display_size = round(block.size / 1e3, 1)
-                    legentry_p = f"{block.name} power ({display_size} kW)"
-            else:
-                legentry_p = f"{block.name} power"
+            # if hasattr(block, 'size'):
+            #     if isinstance(block, blocks.CommoditySystem):
+            #         legentry_p = f"{block.name} total power"
+            #         display_size = round(block.size / 1e3, 1)
+            #     if isinstance(block, blocks.StationaryEnergyStorage):
+            #         display_size = round(block.size / 1e3, 1)
+            #         display_dpwr = round(block.crate_dis * block.size / 1e3, 1)
+            #         legentry_p = f"{block.name} power ({display_dpwr} kW)"
+            #     else:
+            #         display_size = round(block.size / 1e3, 1)
+            #         legentry_p = f"{block.name} power ({display_size} kW)"
+            # else:
+            #     legentry_p = f"{block.name} power"
 
-            invert_power = isinstance(block, invert_types)  # TODO show as stacked plot
-            self.figure.add_trace(go.Scatter(x=block.flow.index,
-                                             y=block.flow * {True: -1,
-                                                             False: 1}[invert_power],
-                                             mode='lines',
-                                             name=legentry_p,
-                                             line=dict(width=2, dash=None)),  # TODO introduce TUM colors
-                                  secondary_y=False)
-
-            if isinstance(block, blocks.StationaryEnergyStorage):
-                legentry_soc = f"{block.name} SOC ({display_size} kWh)"
-                self.figure.add_trace(go.Scatter(x=block.soc.index,
-                                                 y=block.soc,
-                                                 mode='lines',
-                                                 name=legentry_soc,
-                                                 line=dict(width=2, dash=None),
-                                                 visible='legendonly'),  # TODO introduce TUM colors
-                                      secondary_y=True)
-            elif isinstance(block, blocks.CommoditySystem):
-                for commodity in block.commodities.values():
-                    self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
-                                                     y=commodity.flow * -1,
-                                                     mode='lines',
-                                                     name=f"{commodity.name} power",
-                                                     line=dict(width=2, dash=None),
-                                                     visible='legendonly'),  # TODO introduce TUM colors
-                                          secondary_y=False)
-                    commodity_display_size = round(commodity.size / 1e3, 1)
-                    self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
-                                                     y=commodity.soc,
-                                                     mode='lines',
-                                                     name=f"{commodity.name} SOC ({commodity_display_size} kWh)",
-                                                     line=dict(width=2, dash=None),
-                                                     visible='legendonly'),  # TODO introduce TUM colors
-                                          secondary_y=True)
+            # invert_power = isinstance(block, invert_types)  # TODO show as stacked plot
+            # self.figure.add_trace(go.Scatter(x=block.flow.index,
+            #                                  y=block.flow * {True: -1,
+            #                                                  False: 1}[invert_power],
+            #                                  mode='lines',
+            #                                  name=legentry_p,
+            #                                  line=dict(width=2, dash=None)),  # TODO introduce TUM colors
+            #                       secondary_y=False)
+            #
+            # if isinstance(block, blocks.StationaryEnergyStorage):
+            #     legentry_soc = f"{block.name} SOC ({display_size} kWh)"
+            #     self.figure.add_trace(go.Scatter(x=block.soc.index,
+            #                                      y=block.soc,
+            #                                      mode='lines',
+            #                                      name=legentry_soc,
+            #                                      line=dict(width=2, dash=None),
+            #                                      visible='legendonly'),  # TODO introduce TUM colors
+            #                           secondary_y=True)
+            # elif isinstance(block, blocks.CommoditySystem):
+            #     for commodity in block.commodities.values():
+            #         self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
+            #                                          y=commodity.flow * -1,
+            #                                          mode='lines',
+            #                                          name=f"{commodity.name} power",
+            #                                          line=dict(width=2, dash=None),
+            #                                          visible='legendonly'),  # TODO introduce TUM colors
+            #                               secondary_y=False)
+            #         commodity_display_size = round(commodity.size / 1e3, 1)
+            #         self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
+            #                                          y=commodity.soc,
+            #                                          mode='lines',
+            #                                          name=f"{commodity.name} SOC ({commodity_display_size} kWh)",
+            #                                          line=dict(width=2, dash=None),
+            #                                          visible='legendonly'),  # TODO introduce TUM colors
+            #                               secondary_y=True)
 
         self.figure.update_layout(plot_bgcolor=col.tum_white)
         self.figure.update_xaxes(title='Local Time',
@@ -433,7 +433,7 @@ class Scenario:
                 title=f'Global Optimum Results ({run.scenario_file_name} - Scenario: {self.name})')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenario_file_name} - Scenario: {self.name}'
-                                            f'- PH:{self.len_ph}h/CH:{self.len_ch}h)')
+                                            f' - PH:{self.len_ph}h/CH:{self.len_ch}h)')
 
     def get_results(self, run):
 
