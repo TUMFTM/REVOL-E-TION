@@ -628,6 +628,8 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        self.equal = None
+
         """
         x denotes the flow measurement point in results
 
@@ -722,6 +724,8 @@ class GridConnection(InvestBlock):
         elif self.size_mg2g == 'equal':
             self.size_mg2g = self.size_g2mg
             self.equal = True
+        else:
+            self.equal = False
 
 
         if (self.size_g2mg != 'opt') and (self.size_mg2g != 'opt'):
@@ -1336,6 +1340,8 @@ class SystemCore(InvestBlock):
         self.flow_acdc_ch = self.flow_dcac_ch = pd.Series(dtype='float64')  # result data
         self.flow_acdc = self.flow_dcac = pd.Series(dtype='float64')
 
+        self.equal = None
+
         """
         x denotes the flow measurement point in results
         
@@ -1443,6 +1449,8 @@ class SystemCore(InvestBlock):
         elif self.size_dcac == 'equal':
             self.size_dcac = self.size_acdc
             self.equal = True
+        else:
+            self.equal = False
 
         if (self.size_acdc != 'opt') and (self.size_dcac != 'opt'):
             self.opt = self.opt_acdc = self.opt_dcac = False
