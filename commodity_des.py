@@ -197,6 +197,8 @@ class RentalSystem:
         for commodity in commodities:
             column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption'),
                                  (commodity,'atac'), (commodity,'atdc')])
+            if isinstance(self, VehicleRentalSystem):
+                column_names.extend([(commodity,'tour_dist')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
@@ -218,6 +220,9 @@ class RentalSystem:
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[process['time_dep'], (commodity, 'minsoc')] = self.cs.soc_dep
 
+                if isinstance(self, VehicleRentalSystem):
+                    # set distance in first timestep of rental (for distance based revenue calculation)
+                    self.data.loc[process['time_dep'], (commodity, 'tour_dist')] = process['distance']
 
         self.cs.data = self.data
 

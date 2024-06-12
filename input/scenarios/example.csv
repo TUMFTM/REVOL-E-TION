@@ -22,6 +22,7 @@ core,cdc,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
 dem,filename,dem_example,dem_example,dem_example,dem_example
+dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size,0,6000,6000,opt
 wind,filename,wind_example,wind_example,wind_example,wind_example
 wind,capex_spec,2.8,2.8,2.8,2.8
@@ -111,6 +112,9 @@ bev,eff,1,1,1,1
 bev,eff_chg,0.95,0.95,0.95,0.95
 bev,eff_dis,0.95,0.95,0.95,0.95
 bev,cdc,1,1,1,1
+bev,sdr,0.02,0.02,0.02,0.02
+bev,crev_spec_time,0.1,0.1,0.1,0.1
+bev,crev_spec_dist,0.2,0.2,0.2,0.2
 bev,opex_spec_ext_ac,-3e-05,-3e-05,-3e-05,-3e-05
 bev,pwr_ext_ac,0,0,0,0
 bev,opex_spec_ext_dc,0.0008,0.0008,0.0008,0.0008
@@ -144,10 +148,10 @@ brs,eff,1,1,1,1
 brs,eff_chg,0.95,0.95,0.95,0.95
 brs,eff_dis,0.95,0.95,0.95,0.95
 brs,cdc,1,1,1,1
+brs,crev_spec_time,0.05,0.05,0.05,0.05
 brs,opex_spec_ext_ac,-3e-05,-3e-05,-3e-05,-3e-05
 brs,pwr_ext_ac,0,0,0,0
 brs,opex_spec_ext_dc,0.0008,0.0008,0.0008,0.0008
 brs,pwr_ext_dc,0,0,0,0
-bev,sdr,0.02,0.02,0.02,7.0E-6
-brs,sdr,0.02,0.02,0.02,7.0E-6
+brs,sdr,0.02,0.02,0.02,0.02
 brs,soc_return_min,0.1,0.1,0.1,0.1
