@@ -86,6 +86,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     if not scenario.exception:
         if run.save_results or run.print_results:
             scenario.get_results(run)
+            scenario.calc_meta_results(run)
             if run.save_results:
                 scenario.save_results(run)
             if run.print_results:

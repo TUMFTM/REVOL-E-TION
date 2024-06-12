@@ -14,10 +14,6 @@ coding:     utf-8
 license:    GPLv3
 """
 
-###############################################################################
-# Module imports
-###############################################################################
-
 import numpy as np
 import oemof.solph as solph
 import os
@@ -30,56 +26,6 @@ import battery as bat
 import economics as eco
 
 import plotly.graph_objects as go
-
-
-###############################################################################
-# Functions
-###############################################################################
-
-
-def read_input_csv(path_input_file, scenario, multiheader=False):
-    """
-    Properly read in timezone-aware input csv files and form correct datetimeindex
-    """
-    if multiheader:
-        df = pd.read_csv(path_input_file, header=[0, 1])
-        df.sort_index(axis=1, sort_remaining=True, inplace=True)
-        df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
-    else:
-        df = pd.read_csv(path_input_file)
-        df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
-
-    # parser in to_csv does not create datetimeindex
-    df = df.tz_convert(scenario.timezone)
-    df = resample_to_timestep(df, scenario)
-    return df
-
-
-def resample_to_timestep(data: pd.DataFrame, scenario):
-    """
-    Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-    :param data: The input dataframe with DatetimeIndex
-    :param scenario: The current scenario object
-    :return: resampled dataframe
-    """
-
-    dti = data.index
-    # Add one element to the dataframe to include the last timesteps
-    dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
-    data_ext = data.reindex(dti_ext).ffill()
-
-    def resample_column(column):
-        if data_ext[column].dtype == bool:
-            return data_ext[column].resample(scenario.timestep).ffill().bfill()
-        else:
-            return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
-
-    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
-    return resampled_data
-
-###############################################################################
-# Class definitions
-###############################################################################
 
 
 class Block:
@@ -205,7 +151,7 @@ class Block:
 
     def calc_energy_common(self, scenario):
 
-        self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
         self.e_yrl_in = eco.scale_sim2year(self.e_sim_in, scenario)
         self.e_yrl_out = eco.scale_sim2year(self.e_sim_out, scenario)
@@ -215,11 +161,11 @@ class Block:
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
         if self.flow_in.empty:
-            self.flow = -1 * self.flow_out
+            self.flow = self.flow_out
         elif self.flow_out.empty:
-            self.flow = self.flow_in
+            self.flow = -1 * self.flow_in
         else:
-            self.flow = self.flow_in - self.flow_out
+            self.flow = self.flow_out - self.flow_in
 
     def calc_expenses(self, scenario):
         """
@@ -235,24 +181,63 @@ class Block:
         """
         pass
 
+    def get_legend_entry(self):
+        """
+        Standard legend entry for simple blocks using power as their size
+        """
+        return f'{self.name} power (max. {round(self.size / 1e3)} kW)'
+
+    def read_input_csv(self, path_input_file, scenario, multiheader=False):
+        """
+        Properly read in timezone-aware input csv files and form correct datetimeindex
+        """
+        if multiheader:
+            df = pd.read_csv(path_input_file, header=[0, 1])
+            df.sort_index(axis=1, sort_remaining=True, inplace=True)
+            df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
+        else:
+            df = pd.read_csv(path_input_file)
+            df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
+
+        # parser in to_csv does not create datetimeindex
+        df = df.tz_convert(scenario.timezone)
+        df = self.resample_to_timestep(df, scenario)
+        return df
+
+    def resample_to_timestep(self, data: pd.DataFrame, scenario):
+        """
+        Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
+        :param data: The input dataframe with DatetimeIndex
+        :param scenario: The current scenario object
+        :return: resampled dataframe
+        """
+
+        dti = data.index
+        # Add one element to the dataframe to include the last timesteps
+        dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        data_ext = data.reindex(dti_ext).ffill()
+
+        def resample_column(column):
+            if data_ext[column].dtype == bool:
+                return data_ext[column].resample(scenario.timestep).ffill().bfill()
+            else:
+                return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
+
+        resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
+        return resampled_data
+
     def transform_scalar_var(self, var_name, scenario, run):
         scenario_entry = getattr(self, var_name)
         # In case of filename for operations cost read csv file
         if isinstance(scenario_entry, str):
             # Open csv file and use first column as index; also directly convert dates to DateTime objects
-            opex = read_input_csv(os.path.join(run.path_input_data, self.name, f'{scenario_entry}.csv'), scenario)
+            opex = self.read_input_csv(os.path.join(run.path_input_data, self.name, f'{scenario_entry}.csv'), scenario)
             opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
             # Convert data column of cost DataFrame into Series
             setattr(self, var_name, opex[opex.columns[0]])
         else:  # opex_spec is given as a scalar directly in scenario file
             # Use sequence of values for variable costs to unify computation of results
             setattr(self, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
-
-    def get_legend_entry(self):
-        """
-        Standard legend entry for simple blocks using power as their size
-        """
-        return f'{self.name} ({round(self.size / 1e3)} kW)'
 
 class InvestBlock(Block):
     """
@@ -383,18 +368,6 @@ class InvestBlock(Block):
         scenario.opex_dis += self.opex_dis
         scenario.opex_ann += self.opex_ann
 
-    def get_ch_curtailment(self, horizon, scenario):
-        """
-        Function keeps track of renewable energy curtailment for PV and Wind sources
-        """
-
-        self.e_pot_ch = (horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch].sum()
-                         * scenario.timestep_hours)
-        self.e_curt_ch = (horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch].sum()
-                          * scenario.timestep_hours)
-        self.e_pot.append(self.e_pot_ch)
-        self.e_curt.append(self.e_curt_ch)
-
     def set_init_size(self, scenario, run):
         """
         Default function for components with a single size (i.e. not GridConnection and SystemCore)
@@ -411,6 +384,112 @@ class InvestBlock(Block):
                 self.size_pc = self.size  # pc = per commodity
                 self.size = self.size * self.num
 
+class RenewableInvestBlock(InvestBlock):
+
+    def __init__(self, name, scenario, run):
+
+        super().__init__(name, scenario, run)
+
+        self.data_ph = self.input_file_name = self.path_input_file = None  # placeholders, are filled later
+
+        self.flow_pot = self.flow_pot_ch = self.flow_curt = self.flow_curt_ch = pd.Series(dtype='float64')
+        self.e_pot = self.e_curt = 0
+
+        self.get_timeseries_data(scenario, run)
+
+        # Creation of static energy system components --------------------------------
+
+        """
+        x denotes the flow measurement point in results
+
+        bus_connected      self.bus
+          |                   |
+          |<--x----self_out---|<--self_src
+          |                   |
+                              |-->self_exc
+        """
+
+        self.bus = solph.Bus(label=f'{self.name}_bus')
+        scenario.components.append(self.bus)
+
+        self.outflow = solph.components.Converter(label=f'{self.name}_out',
+                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                  outputs={self.bus_connected: solph.Flow()},
+                                                  conversion_factors={self.bus_connected: self.eff})
+        scenario.components.append(self.outflow)
+
+        self.exc = solph.components.Sink(label=f'{self.name}_exc',
+                                         inputs={self.bus: solph.Flow()})
+        scenario.components.append(self.exc)
+
+        if self.opt:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={self.bus: solph.Flow(investment=solph.Investment(
+                                                   ep_costs=self.epc),
+                                                   variable_costs=self.opex_spec)})
+        else:
+            self.src = solph.components.Source(label=f'{self.name}_src',
+                                               outputs={self.bus: solph.Flow(nominal_value=self.size,
+                                                                             variable_costs=self.opex_spec)})
+        scenario.components.append(self.src)
+
+    def add_curtailment_trace(self, scenario):
+        legentry = f'{self.name} curtailed power'
+        scenario.figure.add_trace(go.Scatter(x=self.flow_curt.index,
+                                             y=-1 * self.flow_curt,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
+
+        legentry = f'{self.name} potential power'
+        scenario.figure.add_trace(go.Scatter(x=self.flow_pot.index,
+                                             y=self.flow_pot,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
+
+    def calc_energy(self, scenario):
+        self.calc_energy_source_sink(scenario)
+
+        self.e_pot = self.flow_pot.sum() * scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
+        self.e_curt = self.flow_curt.sum() * scenario.timestep_hours
+
+        scenario.e_renewable_act += self.e_sim_out
+        scenario.e_renewable_pot += self.e_pot
+        scenario.e_renewable_curt += self.e_curt
+
+    def calc_opex_sim(self, scenario):
+        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+
+    def get_ch_results(self, horizon, *_):
+
+        # flow values are powers
+        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_pot_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_curt_ch = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch]
+
+        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_pot = pd.concat([self.flow_pot, self.flow_pot_ch])
+        self.flow_curt = pd.concat([self.flow_curt, self.flow_curt_ch])
+
+    def get_legend_entry(self):
+        return f'{self.name} power (nom. {round(self.size / 1e3)} kW)'
+
+    def get_opt_size(self, horizon):
+        self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
+
+    def update_input_components(self):
+
+        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
+
+        if self.apriori_data is not None:
+            # Use power calculated in apriori_data for fixed output of block
+            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p']
+
 
 class CommoditySystem(InvestBlock):
 
@@ -422,7 +501,7 @@ class CommoditySystem(InvestBlock):
             self.data = None
         else:  # use pregenerated file
             self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
-            self.data = read_input_csv(self.path_input_file, scenario, multiheader=True)
+            self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
                 run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'
@@ -490,6 +569,15 @@ class CommoditySystem(InvestBlock):
                                 MobileCommodity(self.name + str(i), self, scenario, run) for i in range(self.num)}
 
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
+
+    def add_power_trace(self, scenario):
+        super().add_power_trace(scenario)
+        for commodity in self.commodities.values():
+            commodity.add_power_trace(scenario)
+
+    def add_soc_trace(self, scenario):
+        for commodity in self.commodities.values():
+            commodity.add_soc_trace(scenario)
 
     def calc_aging(self, run, scenario, horizon):
         for commodity in self.commodities.values():
@@ -569,7 +657,7 @@ class CommoditySystem(InvestBlock):
             commodity.get_ch_results(horizon, scenario)
 
     def get_legend_entry(self):
-        return f'{self.name} power ({round(self.size_pc/1e3)} kWh p.c.)'
+        return f'{self.name} total power'
 
     def get_opt_size(self, horizon):
         """
@@ -728,7 +816,8 @@ class GridConnection(InvestBlock):
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
     def get_legend_entry(self):
-        return f'{self.name} power ({round(self.size_g2mg / 1e3)}kW/{round(self.size_mg2g / 1e3)}kW)'
+        return (f'{self.name} power (max. {round(self.size_g2mg / 1e3)} kW from / '
+                f'{round(self.size_mg2g / 1e3)} kW to grid)')
 
     def get_opt_size(self, horizon):
 
@@ -777,7 +866,7 @@ class FixedDemand(Block):
         super().__init__(name, scenario, run)
 
         self.path_input_file = os.path.join(run.path_input_data, 'dem', f'{self.filename}.csv')
-        self.data = read_input_csv(self.path_input_file, scenario)
+        self.data = self.read_input_csv(self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
 
@@ -805,7 +894,7 @@ class FixedDemand(Block):
         self.crev_sim = (self.flow_in @ self.crev_spec) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev(scenario)
 
-    def get_ch_results(self, horizon, *_):
+    def get_ch_results(self, horizon, scenario):
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
 
@@ -825,6 +914,9 @@ class MobileCommodity:
         self.parent = parent
         self.size = None if self.parent.opt else self.parent.size / self.parent.num
         self.pwr_chg = self.parent.pwr_chg
+        self.pwr_dis = self.parent.pwr_dis
+        self.eff_chg = self.parent.eff_chg
+        self.eff_dis = self.parent.eff_dis
         self.temp_battery = self.parent.temp_battery
 
         self.ext_ac = None  # prepare for external chargers
@@ -898,17 +990,17 @@ class MobileCommodity:
                                                      self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
                                                                                  variable_costs=scenario.cost_eps)},
                                                  outputs={self.bus: solph.Flow(nominal_value=1,
-                                                                               max=self.pwr_chg * self.parent.eff_chg)},
-                                                 conversion_factors={self.bus: self.parent.eff_chg})
+                                                                               max=self.pwr_chg * self.eff_chg)},
+                                                 conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
 
         self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2mg'] else False
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
                                                   inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable *
-                                                                                             self.parent.pwr_dis,
+                                                                                             self.pwr_dis,
                                                                                variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
-                                                  conversion_factors={self.parent.bus: self.parent.eff_dis})
+                                                  conversion_factors={self.parent.bus: self.eff_dis})
         scenario.components.append(self.outflow)
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
@@ -962,6 +1054,29 @@ class MobileCommodity:
 
         if self.parent.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
+
+    def add_power_trace(self, scenario):
+        power_charge_max = round(self.pwr_chg / 1e3, 1)
+        power_discharge_max = round(self.pwr_dis * self.parent.eff_chg / 1e3, 1)
+        legentry = f'{self.name} power (max. {power_charge_max} kW charge / {power_discharge_max} kW discharge)'
+        scenario.figure.add_trace(go.Scatter(x=self.flow.index,
+                                             y=self.flow,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
+
+    def add_soc_trace(self, scenario):
+        legentry = f"{self.name} SOC ({round(self.size/1e3,1)} kWh)"
+        scenario.figure.add_trace(go.Scatter(x=self.soc.index,
+                                             y=self.soc,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=True)
+
 
     def calc_aging(self, run, scenario, horizon):
         self.aging_model.age(self, run, scenario, horizon)
@@ -1072,65 +1187,14 @@ class MobileCommodity:
             self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int) * self.parent.pwr_ext_dc
 
 
-class PVSource(InvestBlock):
+class PVSource(RenewableInvestBlock):
 
     def __init__(self, name, scenario, run):
 
-        super().__init__(name, scenario, run)
-
-        self.data_ph = self.input_file_name = self.path_input_file = None  # placeholders, are filled later
-        self.api_startyear = self.api_endyear = None
-        self.data = self.meta = None
-
-        self.e_pot = self.e_curt = []
-        self.e_pot_ch = self.e_curt_ch = self.curtailment = 0
-
-        self.get_timeseries_data(scenario, run)
-
-        # Creation of static energy system components --------------------------------
-
-        """
-        x denotes the flow measurement point in results
-
-        dc_bus              pv_bus
-          |                   |
-          |<--x-------pv_dc---|<--pv_src
-          |                   |
-                              |-->pv_exc
-        """
-
-        self.bus = solph.Bus(label=f'{self.name}_bus')
-        scenario.components.append(self.bus)
-
+        self.api_startyear = self.api_endyear = self.meta = None
         self.bus_connected = scenario.blocks['core'].dc_bus
 
-        self.outflow = solph.components.Converter(label=f'{self.name}_dc',
-                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
-                                                  outputs={self.bus_connected: solph.Flow()},
-                                                  conversion_factors={self.bus_connected: self.eff})
-        scenario.components.append(self.outflow)
-
-        # input data from PVGIS is added in function "update_input_components"
-        if self.opt:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(investment=solph.Investment(
-                                                   ep_costs=self.epc),
-                                                   variable_costs=self.opex_spec)})
-        else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(nominal_value=self.size,
-                                                                             variable_costs=self.opex_spec)})
-        scenario.components.append(self.src)
-
-        self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow()})
-        scenario.components.append(self.exc)
-
-    def calc_energy(self, scenario):
-        self.calc_energy_source_sink(scenario)
-
-    def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+        super().__init__(name, scenario, run)
 
     def calc_power_solcast(self):
 
@@ -1166,16 +1230,6 @@ class PVSource(InvestBlock):
         # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
         self.data['P'] = np.maximum(0, eff_rel * self.data['GtiFixedTilt'])
 
-    def get_ch_results(self, horizon, scenario):
-
-        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][
-            horizon.dti_ch]
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
-
-        self.get_ch_curtailment(horizon, scenario)
-
-    def get_opt_size(self, horizon):
-        self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
 
     def get_timeseries_data(self, scenario, run):
 
@@ -1235,13 +1289,6 @@ class PVSource(InvestBlock):
 
         self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
 
-    def update_input_components(self):
-
-        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
-
-        if self.apriori_data is not None:
-            # Use power calculated in apriori_data for fixed output of block
-            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p']
 
 
 class StationaryEnergyStorage(InvestBlock):
@@ -1314,6 +1361,15 @@ class StationaryEnergyStorage(InvestBlock):
         if self.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
+    def add_soc_trace(self, scenario):
+        legentry = f"{self.name} SOC ({round(self.size/1e3)} kWh)"
+        scenario.figure.add_trace(go.Scatter(x=self.soc.index,
+                                             y=self.soc,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None)),
+                                  secondary_y=True)
+
     def calc_aging(self, run, scenario, horizon):
         self.aging_model.age(self, run, scenario, horizon)
 
@@ -1349,7 +1405,9 @@ class StationaryEnergyStorage(InvestBlock):
         self.size = horizon.results[(self.ess, None)]['scalars']['invest']
 
     def get_legend_entry(self):
-        return f'{self.name} power ({round(self.size / 1e3)}kWh)'
+        power_charge = round(self.size * self.crate_chg / 1e3)
+        power_discharge = round(self.size * self.crate_dis * self.eff_dis / 1e3)
+        return f'{self.name} power (max. {power_charge} kW charge / {power_discharge} kW discharge)'
 
     def update_input_components(self):
 
@@ -1426,6 +1484,25 @@ class SystemCore(InvestBlock):
             scenario.equal_variables.append({'var1': {'in': self.dc_bus, 'out': self.dc_ac},
                                              'var2': {'in': self.ac_bus, 'out': self.ac_dc},
                                              'factor': 1})
+
+    def add_power_trace(self, scenario):
+        legentry = f'{self.name} DC-AC power (max. {round(self.size_dcac/1e3)} kW)'
+        scenario.figure.add_trace(go.Scatter(x=self.flow_dcac.index,
+                                             y=self.flow_dcac,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
+
+        legentry = f'{self.name} AC-DC power (max. {round(self.size_acdc/1e3)} kW)'
+        scenario.figure.add_trace(go.Scatter(x=self.flow_acdc.index,
+                                             y=self.flow_acdc,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
 
     def calc_capex_init(self, scenario):
         self.capex_init = (self.size_acdc + self.size_dcac) * self.capex_spec
@@ -1510,85 +1587,14 @@ class VehicleCommoditySystem(CommoditySystem):
         self.accumulate_crev(scenario)
 
 
-class WindSource(InvestBlock):
+class WindSource(RenewableInvestBlock):
 
     def __init__(self, name, scenario, run):
 
+        self.bus_connected = scenario.blocks['core'].ac_bus
         super().__init__(name, scenario, run)
 
-        if self.filename in scenario.blocks.keys():
-            self.data = scenario.blocks[self.filename].data['wind_speed']
-            # TODO integrate windpowerlib
-        else:
-            self.path_input_file = os.path.join(run.path_input_data, 'wind', self.filename + '.csv')
-            self.data = read_input_csv(self.path_input_file, scenario)
+    def get_timeseries_data(self, scenario, run):
 
-        self.e_pot = self.e_curt = []
-        self.e_pot_ch = self.e_curt_ch = self.curtailment = 0
-
-        self.data_ph = None  # placeholder, is filled in "update_input_components"
-
-        # Creation of static energy system components --------------------------------
-
-        """
-        x denotes the flow measurement point in results
-
-        ac_bus             wind_bus
-          |                   |
-          |<--x-----wind_ac---|<--wind_src
-          |                   |
-                              |-->wind_exc
-        """
-
-        self.bus = solph.Bus(label=f'{self.name}_bus')
-        scenario.components.append(self.bus)
-
-        self.bus_connected = scenario.blocks['core'].ac_bus
-
-        self.outflow = solph.components.Converter(label=f'{self.name}_ac',
-                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
-                                                  outputs={self.bus_connected: solph.Flow()},
-                                                  conversion_factors={self.bus_connected: self.eff})
-        scenario.components.append(self.outflow)
-
-        self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow()})
-        scenario.components.append(self.exc)
-
-        # TODO make wind speed from PVGIS usable - then it's also time based and not just stepwise...
-
-        if self.opt:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(investment=solph.Investment(
-                                                   ep_costs=self.epc),
-                                                   variable_costs=self.opex_spec)})
-        else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(nominal_value=self.size,
-                                                                             variable_costs=self.opex_spec)})
-        scenario.components.append(self.src)
-
-    def calc_energy(self, scenario):
-        self.calc_energy_source_sink(scenario)
-
-    def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
-
-    def get_ch_results(self, horizon, scenario):
-
-        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][
-            horizon.dti_ch]
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
-
-        self.get_ch_curtailment(horizon, scenario)
-
-    def get_opt_size(self, horizon):
-        self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
-
-    def update_input_components(self):
-
-        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
-
-        if self.apriori_data is not None:
-            # Use power calculated in apriori_data for fixed output of block
-            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p']
+        self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
+        self.data = self.read_input_csv(self.path_input_file, scenario)

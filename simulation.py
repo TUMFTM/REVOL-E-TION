@@ -324,9 +324,8 @@ class Scenario:
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
-        self.e_eta = None
-
-        self.renewable_curtailment = None
+        self.e_eta = 0
+        self.renewable_curtailment = self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
 
         # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
@@ -339,8 +338,47 @@ class Scenario:
 
         run.logger.debug(f'Scenario {self.name} initialization completed')
 
+    def calc_meta_results(self, run):
+
+        # TODO implement commodity v2mg usage share
+        # TODO implement energy storage usage share
+
+        try:
+            self.e_eta = self.e_sim_del / self.e_sim_pro
+        except:
+            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
+
+        try:
+            self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
+        except (ZeroDivisionError, RuntimeWarning):
+            run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
+
+        try:
+            self.renewable_share = self.e_renewable_act / self.e_sim_pro
+        except (ZeroDivisionError, RuntimeWarning):
+            run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
+
+        try:
+            self.lcoe = self.totex_dis / self.e_prj_del
+            self.lcoe_dis = self.totex_dis / self.e_dis_del
+        except (ZeroDivisionError, RuntimeWarning):
+            self.lcoe = self.lcoe_dis = None
+            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+
+        self.npv = self.crev_dis - self.totex_dis
+        self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
+        self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
+
+        # print basic results
+        run.logger.info(f'Scenario \"{self.name}\" -'
+                        f' NPV {round(self.npv):,} {self.currency} -'
+                        f' LCOE {round(self.lcoe_dis * 1e5, 1)} {self.currency}-ct/kWh -'
+                        f' mIRR {round(self.mirr * 100, 1)} % -'
+                        f' Renewable Share: {round(self.renewable_share * 100, 1)} % -'
+                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1)} % -'
+                        f' Total Efficiency: {round(self.e_eta * 100, 1)} %')
+
     def create_block_objects(self, class_dict, run):
-        # todo implement anti-infeasibility controllable source? (unlimited size, very high soe, no sce, no sme)
         objects = {}
         for name, class_name in class_dict.items():
             class_obj = getattr(blocks, class_name, None)
@@ -359,60 +397,12 @@ class Scenario:
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
-        for block in [block for block in self.blocks.values() if not isinstance(block, blocks.SystemCore)]:
+        for block in self.blocks.values():
             block.add_power_trace(self)
-            #if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)):
-            #    block.add_soc_trace(self)
-
-            # if hasattr(block, 'size'):
-            #     if isinstance(block, blocks.CommoditySystem):
-            #         legentry_p = f"{block.name} total power"
-            #         display_size = round(block.size / 1e3, 1)
-            #     if isinstance(block, blocks.StationaryEnergyStorage):
-            #         display_size = round(block.size / 1e3, 1)
-            #         display_dpwr = round(block.crate_dis * block.size / 1e3, 1)
-            #         legentry_p = f"{block.name} power ({display_dpwr} kW)"
-            #     else:
-            #         display_size = round(block.size / 1e3, 1)
-            #         legentry_p = f"{block.name} power ({display_size} kW)"
-            # else:
-            #     legentry_p = f"{block.name} power"
-
-            # invert_power = isinstance(block, invert_types)  # TODO show as stacked plot
-            # self.figure.add_trace(go.Scatter(x=block.flow.index,
-            #                                  y=block.flow * {True: -1,
-            #                                                  False: 1}[invert_power],
-            #                                  mode='lines',
-            #                                  name=legentry_p,
-            #                                  line=dict(width=2, dash=None)),  # TODO introduce TUM colors
-            #                       secondary_y=False)
-            #
-            # if isinstance(block, blocks.StationaryEnergyStorage):
-            #     legentry_soc = f"{block.name} SOC ({display_size} kWh)"
-            #     self.figure.add_trace(go.Scatter(x=block.soc.index,
-            #                                      y=block.soc,
-            #                                      mode='lines',
-            #                                      name=legentry_soc,
-            #                                      line=dict(width=2, dash=None),
-            #                                      visible='legendonly'),  # TODO introduce TUM colors
-            #                           secondary_y=True)
-            # elif isinstance(block, blocks.CommoditySystem):
-            #     for commodity in block.commodities.values():
-            #         self.figure.add_trace(go.Scatter(x=commodity.flow.index,  # .to_pydatetime(),
-            #                                          y=commodity.flow * -1,
-            #                                          mode='lines',
-            #                                          name=f"{commodity.name} power",
-            #                                          line=dict(width=2, dash=None),
-            #                                          visible='legendonly'),  # TODO introduce TUM colors
-            #                               secondary_y=False)
-            #         commodity_display_size = round(commodity.size / 1e3, 1)
-            #         self.figure.add_trace(go.Scatter(x=commodity.soc.index.to_pydatetime(),
-            #                                          y=commodity.soc,
-            #                                          mode='lines',
-            #                                          name=f"{commodity.name} SOC ({commodity_display_size} kWh)",
-            #                                          line=dict(width=2, dash=None),
-            #                                          visible='legendonly'),  # TODO introduce TUM colors
-            #                               secondary_y=True)
+            if hasattr(block, 'add_soc_trace'):  # should affect CommoditySystems and StationaryEnergyStorage
+                block.add_soc_trace(self)
+            if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
+                block.add_curtailment_trace(self)
 
         self.figure.update_layout(plot_bgcolor=col.tum_white)
         self.figure.update_xaxes(title='Local Time',
@@ -429,55 +419,23 @@ class Scenario:
                                  secondary_y=True)
 
         if self.strategy == 'go':
-            self.figure.update_layout(
-                title=f'Global Optimum Results ({run.scenario_file_name} - Scenario: {self.name})')
+            self.figure.update_layout(title=f'Global Optimum Results - '
+                                            f'{run.scenario_file_name} - '
+                                            f'Scenario: {self.name}')
         if self.strategy == 'rh':
-            self.figure.update_layout(title=f'Rolling Horizon Results ({run.scenario_file_name} - Scenario: {self.name}'
-                                            f' - PH:{self.len_ph}h/CH:{self.len_ch}h)')
+            self.figure.update_layout(title=f'Rolling Horizon Results - '
+                                            f'{run.scenario_file_name} - '
+                                            f'Scenario: {self.name} - '
+                                            f'PH: {self.len_ph}h - '
+                                            f'CH: {self.len_ch}h')
 
     def get_results(self, run):
-
         for block in self.blocks.values():
             block.calc_energy(self)
             block.calc_expenses(self)
             block.calc_revenue(self)
             block.calc_cashflows(self)
 
-        # optional metrics
-        # TODO implement renewable energy share evaluation
-        # TODO implement commodity v2mg usage share
-        # TODO implement energy storage usage share
-
-        try:
-            self.e_eta = self.e_sim_del / self.e_sim_pro
-        except (ZeroDivisionError, RuntimeWarning):
-            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
-
-        try:
-            self.lcoe = self.totex_dis / self.e_prj_del
-            self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except (ZeroDivisionError, RuntimeWarning):
-            self.lcoe = self.lcoe_dis = None
-            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
-
-        self.npv = self.crev_dis - self.totex_dis
-        self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
-        self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
-
-        re_blx = [block for block in self.blocks.values() if isinstance(block, (blocks.PVSource, blocks.WindSource))]
-        e_pot = 0
-        e_curt = 0
-        for block in re_blx:
-            block.curtailment = sum(block.e_curt) / sum(block.e_pot) if sum(block.e_pot) > 0 else 0
-            e_pot += sum(block.e_pot)
-            e_curt += sum(block.e_curt)
-        self.renewable_curtailment = e_curt / e_pot if e_pot > 0 else 0
-
-        # print basic results
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPV {round(self.npv):,} {self.currency} -'
-                        f' LCOE {round(self.lcoe_dis * 1e5, 1)} {self.currency}-ct/kWh -'
-                        f' mIRR {round(self.mirr * 100, 1)} %')
 
     def print_results(self, run):
         print('#################')
