@@ -655,7 +655,7 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self, scenario):
 
-        self.opex_sys = self.e_sim_in @ self.opex_spec_sys_chg + self.e_sim_out @ self.opex_spec_sys_dis
+        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg + self.flow_out @ self.opex_spec_sys_dis
         self.opex_commodities = 0
         self.opex_commodities_ext = 0
 
@@ -1521,7 +1521,7 @@ class SystemCore(InvestBlock):
                                                         ep_costs=self.epc),
                                                         variable_costs=self.opex_spec)},
                                                     outputs={self.dc_bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)}
+                                                        variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.dc_bus: self.eff_acdc})
 
         else:
