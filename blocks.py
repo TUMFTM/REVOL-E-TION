@@ -94,7 +94,7 @@ class Block:
         if hasattr(self, 'ls'):
             for year in eco.repllist(self.ls, scenario.prj_duration_yrs):
                 capex[year] = self.capex_init * (self.cdc ** year)
-        self.cashflows[f'capex_{self.name}'] = -1 * capex
+        self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
         self.cashflows[f'mntex_{self.name}'] = -1 * self.mntex_yrl
         self.cashflows[f'opex_{self.name}'] = -1 * self.opex_yrl
@@ -137,9 +137,6 @@ class Block:
         """
         self.calc_energy_common(scenario)
 
-        if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
-            print("GridConnection: Simultaneous in- and outflow detected!")
-
         scenario.e_sim_pro += self.e_sim_out
         scenario.e_sim_del += self.e_sim_in
         scenario.e_yrl_pro += self.e_yrl_out
@@ -150,6 +147,11 @@ class Block:
         scenario.e_dis_del += self.e_dis_in
 
     def calc_energy_common(self, scenario):
+
+        if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
+            print(f'Scenario \"{scenario.name}\" - '
+                  f'Block {self.name} - '
+                  f'simultaneous in- and outflow detected!')
 
         self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
@@ -187,6 +189,14 @@ class Block:
         """
         return f'{self.name} power (max. {round(self.size / 1e3)} kW)'
 
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        block_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
+                                         f'{self.name}_flow_out': self.flow_out})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
+
     def read_input_csv(self, path_input_file, scenario, multiheader=False):
         """
         Properly read in timezone-aware input csv files and form correct datetimeindex
@@ -204,7 +214,8 @@ class Block:
         df = self.resample_to_timestep(df, scenario)
         return df
 
-    def resample_to_timestep(self, data: pd.DataFrame, scenario):
+    @staticmethod
+    def resample_to_timestep(data: pd.DataFrame, scenario):
         """
         Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
         :param data: The input dataframe with DatetimeIndex
@@ -368,6 +379,12 @@ class InvestBlock(Block):
         scenario.opex_dis += self.opex_dis
         scenario.opex_ann += self.opex_ann
 
+    def get_timeseries_results(self, scenario):
+        """
+        Dummy method to make Block method available to InvestBlock children classes
+        """
+        super().get_timeseries_results(scenario)
+
     def set_init_size(self, scenario, run):
         """
         Default function for components with a single size (i.e. not GridConnection and SystemCore)
@@ -481,6 +498,17 @@ class RenewableInvestBlock(InvestBlock):
 
     def get_opt_size(self, horizon):
         self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
+
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        super().get_timeseries_results(scenario)  # this goes up to the Block class
+
+        block_ts_results = pd.DataFrame({f'{self.name}_flow_pot': self.flow_pot,
+                                         f'{self.name}_flow_curt': self.flow_curt})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
+
 
     def update_input_components(self):
 
@@ -670,6 +698,14 @@ class CommoditySystem(InvestBlock):
                 commodity.aging_model.size = commodity.size
                 # Calculate number of cells as a float to correctly represent power split with nonreal cells
                 commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
+
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        super().get_timeseries_results(scenario)  # this goes up to the Block class
+        for commodity in self.commodities.values():
+            commodity.get_timeseries_results(scenario)
 
     def update_input_components(self):
         for commodity in self.commodities.values():
@@ -951,14 +987,12 @@ class MobileCommodity:
         self.e_ext_dc_sim = self.e_ext_dc_yrl = self.e_ext_dc_prj = self.e_ext_dc_dis = None
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = None
 
-        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
-        self.flow_in = self.flow_out = pd.Series(dtype='float64')
+        # timeseries result initialization
+        self.flow_in_ch = self.flow_out_ch = self.flow_in = self.flow_out = pd.Series(dtype='float64')
+        self.flow_bat_in = self.flow_bat_out = self.flow_bat_in_ch = self.flow_bat_out_ch = pd.Series(dtype='float64')
+        self.flow_ext_ac = self.flow_ext_dc =self.flow_ext_ac_ch = self.flow_ext_dc_ch = pd.Series(dtype='float64')  # result data
 
-        self.flow_ext_ac_ch = self.flow_ext_dc_ch = pd.Series(dtype='float64')  # result data
-        self.flow_ext_ac = self.flow_ext_dc = pd.Series(dtype='float64')
-
-        self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
-        self.soc = pd.Series()
+        self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')
 
         # Creation of permanent energy system components --------------------------------
 
@@ -1122,9 +1156,11 @@ class MobileCommodity:
 
     def get_ch_results(self, horizon, scenario):
 
-        if self.parent.aging:
-            self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
-            self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
+
+        self.flow_bat_in = pd.concat([self.flow_bat_in if not self.flow_bat_in.empty else None, self.flow_bat_in_ch])
+        self.flow_bat_out = pd.concat([self.flow_bat_out if not self.flow_bat_out.empty else None, self.flow_bat_out_ch])
 
         self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.dti_ch]
         self.flow_in_ch = horizon.results[(self.inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
@@ -1152,6 +1188,19 @@ class MobileCommodity:
         self.soc_init_ph = self.sc_init_ph / self.size
 
         self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
+
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the commodity in a scenario wide dataframe to be saved
+        """
+        commodity_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
+                                             f'{self.name}_flow_out': self.flow_out,
+                                             f'{self.name}_flow_bat_in': self.flow_bat_in,
+                                             f'{self.name}_flow_bat_out': self.flow_bat_out,
+                                             f'{self.name}_flow_ext_dc': self.flow_ext_dc,
+                                             f'{self.name}_flow_ext_ac': self.flow_ext_ac,
+                                             f'{self.name}_soc': self.soc})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, commodity_ts_results], axis=1)
 
     def update_input_components(self):
 
@@ -1409,6 +1458,15 @@ class StationaryEnergyStorage(InvestBlock):
         power_discharge = round(self.size * self.crate_dis * self.eff_dis / 1e3)
         return f'{self.name} power (max. {power_charge} kW charge / {power_discharge} kW discharge)'
 
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        super().get_timeseries_results(scenario)  # this goes up to the Block class
+
+        block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
+
     def update_input_components(self):
 
         self.ess.initial_storage_level = self.soc_init_ph
@@ -1541,6 +1599,14 @@ class SystemCore(InvestBlock):
             self.size_acdc = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
         if self.opt_dcac:
             self.size_dcac = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
+
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        block_ts_results = pd.DataFrame({f'{self.name}_flow_dcac': self.flow_dcac,
+                                         f'{self.name}_flow_acdc': self.flow_acdc})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
     def set_init_size(self, scenario, run):
 
