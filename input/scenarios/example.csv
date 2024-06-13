@@ -102,8 +102,8 @@ bev,soc_dep,1,1,1,1
 bev,capex_spec,0,0,0,0
 bev,mntex_spec,0,0,0,0
 bev,opex_spec,0,0,0,0
-bev,sys_chg_soe,0,0,0,0
-bev,sys_dis_soe,0,0,0,0
+bev,opex_spec_sys_chg,0,0,0,0
+bev,opex_spec_sys_dis,0,0,0,0
 bev,ls,10,10,10,10
 bev,soc_init,0.5,0.5,0.5,0.5
 bev,pwr_chg,11000,11000,11000,11000

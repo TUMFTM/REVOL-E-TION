@@ -548,10 +548,6 @@ class CommoditySystem(InvestBlock):
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
-        # Setting the converter cost of the main feed(back) converters of the system to either eps or the set values
-        self.sys_chg_soe = scenario.cost_eps if self.sys_chg_soe == 0 else self.sys_chg_soe
-        self.sys_dis_soe = scenario.cost_eps if self.sys_dis_soe == 0 else self.sys_dis_soe
-
         # Creation of static energy system components --------------------------------
 
         """
@@ -572,8 +568,9 @@ class CommoditySystem(InvestBlock):
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     variable_costs=self.sys_chg_soe)},
-                                                 outputs={self.bus: solph.Flow()},
+                                                     variable_costs=self.opex_spec_sys_chg)},
+                                                 outputs={self.bus: solph.Flow(
+                                                        variable_costs=scenario.cost_eps)},
                                                  conversion_factors={self.bus: 1})
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
@@ -586,8 +583,9 @@ class CommoditySystem(InvestBlock):
                                                                      'tc': 0,
                                                                      'v2v': 0,
                                                                      'v2mg': None}[self.int_lvl],
-                                                      variable_costs=self.sys_dis_soe)},
-                                                  outputs={self.bus_connected: solph.Flow()},
+                                                      variable_costs=self.opex_spec_sys_dis)},
+                                                  outputs={self.bus_connected: solph.Flow(
+                                                      variable_costs=scenario.cost_eps)},
                                                   conversion_factors={self.bus_connected: 1})
 
         scenario.components.append(self.inflow)
@@ -657,8 +655,7 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self, scenario):
 
-        # ToDo: Convert to timeseries; Furthermore: Is this a good idea? Incentivizes burning energy sometimes
-        self.opex_sys = self.e_sim_in * self.sys_chg_soe + self.e_sim_out * self.sys_dis_soe
+        self.opex_sys = self.e_sim_in @ self.opex_spec_sys_chg + self.e_sim_out @ self.opex_spec_sys_dis
         self.opex_commodities = 0
         self.opex_commodities_ext = 0
 
@@ -1523,7 +1520,8 @@ class SystemCore(InvestBlock):
                                                     inputs={self.ac_bus: solph.Flow(investment=solph.Investment(
                                                         ep_costs=self.epc),
                                                         variable_costs=self.opex_spec)},
-                                                    outputs={self.dc_bus: solph.Flow()},
+                                                    outputs={self.dc_bus: solph.Flow(
+                                                        variable_costs=scenario.cost_eps)}
                                                     conversion_factors={self.dc_bus: self.eff_acdc})
 
         else:
@@ -1531,7 +1529,8 @@ class SystemCore(InvestBlock):
                                                     inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
                                                                                     nominal_value=1,
                                                                                     max=self.size_acdc)},
-                                                    outputs={self.dc_bus: solph.Flow()},
+                                                    outputs={self.dc_bus: solph.Flow(
+                                                        variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.dc_bus: self.eff_acdc})
 
         if self.opt_dcac:
@@ -1539,14 +1538,16 @@ class SystemCore(InvestBlock):
                                                     inputs={self.dc_bus: solph.Flow(investment=solph.Investment(
                                                         ep_costs=self.epc),
                                                         variable_costs=self.opex_spec)},
-                                                    outputs={self.ac_bus: solph.Flow()},
+                                                    outputs={self.ac_bus: solph.Flow(
+                                                        variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
         else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
                                                     inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
                                                                                     nominal_value=1,
                                                                                     max=self.size_dcac)},
-                                                    outputs={self.ac_bus: solph.Flow()},
+                                                    outputs={self.ac_bus: solph.Flow(
+                                                        variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
 
         scenario.components.append(self.ac_dc)
