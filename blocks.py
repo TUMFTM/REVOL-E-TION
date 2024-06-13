@@ -1385,10 +1385,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                            variable_costs=self.opex_spec)},
                                                        outputs={self.bus_connected: solph.Flow()},
                                                        loss_rate=self.loss_rate,
-                                                       # TODO proper self discharge (loss_rate is per timestep)
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.soc_init_ph,
-                                                       # ToDo: check if crate is used correctly
                                                        invest_relation_input_capacity=self.crate_chg,
                                                        invest_relation_output_capacity=self.crate_dis,
                                                        inflow_conversion_factor=self.eff_chg,
@@ -1405,10 +1403,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                            max=self.size * self.crate_dis,
                                                        )},
                                                        loss_rate=self.loss_rate,
-                                                       # TODO proper self discharge (loss_rate is per timestep)
                                                        # ToDo: add parameter for rulebased ESM
-                                                       balanced=False,
-                                                       # balanced={'go': True, 'rh': False}[scenario.strategy],
+                                                       balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.soc_init_ph,
                                                        inflow_conversion_factor=self.eff_chg,
                                                        outflow_conversion_factor=self.eff_dis,
