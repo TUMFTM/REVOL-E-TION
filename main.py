@@ -73,7 +73,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             break
 
         if scenario.exception and run.save_results:
-            scenario.save_results(run)
+            scenario.save_result_summary(run)
             break
         else:
             horizon.get_results(scenario, run)
