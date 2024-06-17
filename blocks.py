@@ -526,7 +526,7 @@ class CommoditySystem(InvestBlock):
         super().__init__(name, scenario, run)
 
         if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
-            self.data = None
+            self.data = None  # data will be generated in a joint DES run after model setup
         else:  # use pregenerated file
             self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
             self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
