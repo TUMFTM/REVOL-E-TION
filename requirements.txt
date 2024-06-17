@@ -1,5 +1,5 @@
 datetime
-gurobipy
+graphviz
 numpy
 numpy_financial
 oemof.solph==0.5.2

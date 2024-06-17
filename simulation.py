@@ -19,6 +19,7 @@ license:    GPLv3
 ###############################################################################
 
 import ast
+import graphviz
 import logging
 import logging.handlers
 import math
@@ -166,6 +167,9 @@ class PredictionHorizon:
         for component in scenario.components:
             self.es.add(component)  # add components to this horizon's energy system
 
+        if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
+            self.draw_energy_system(scenario, run)
+
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
         try:
@@ -185,6 +189,52 @@ class PredictionHorizon:
                 run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
+
+    def draw_energy_system(self, scenario, run):
+
+        # Creates the Directed-Graph
+        dot = graphviz.Digraph(filename=run.path_system_graph_file, format='pdf')
+
+        dot.node("Bus", shape='rectangle', fontsize="10", color='red')
+        dot.node("Sink", shape='trapezium', fontsize="10")
+        dot.node("Source", shape='invtrapezium', fontsize="10")
+        dot.node("Transformer", shape='rectangle', fontsize="10")
+        dot.node("Storage", shape='rectangle', style='dashed', fontsize="10", color="green")
+
+        busses = []
+        # draw a node for each of the network's component. The shape depends on the component's type
+        for nd in self.es.nodes:
+            if isinstance(nd, solph.Bus):
+                dot.node(nd.label,
+                         shape='rectangle',
+                         fontsize="10",
+                         fixedsize='shape',
+                         width='2.4',
+                         height='0.6',
+                         color='red')
+                # keep the bus reference for drawing edges later
+                busses.append(nd)
+            elif isinstance(nd, solph.components.Sink):
+                dot.node(nd.label, shape='trapezium', fontsize="10")
+            elif isinstance(nd, solph.components.Source):
+                dot.node(nd.label, shape='invtrapezium', fontsize="10")
+            elif isinstance(nd, solph.components.Converter):
+                dot.node(nd.label, shape='rectangle', fontsize="10")
+            elif isinstance(nd, solph.components.GenericStorage):
+                dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
+            else:
+                run.logger.debug(f'Scenario: {scenario.name} - System Node {nd.label} - Type {type(nd)} not recognized')
+
+        # draw the edges between the nodes based on each bus inputs/outputs
+        for bus in busses:
+            for component in bus.inputs:
+                # draw an arrow from the component to the bus
+                dot.edge(component.label, bus.label)
+            for component in bus.outputs:
+                # draw an arrow from the bus to the component
+                dot.edge(bus.label, component.label)
+
+        dot.render()
 
     def get_results(self, scenario, run):
         """
@@ -557,11 +607,17 @@ class SimulationRun:
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
         self.path_input_data = os.path.join(self.cwd, 'input')
-        self.path_result_folder = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
+        self.path_result_folder = os.path.join(self.result_path,
+                                               f'{self.runtimestamp}_{self.scenario_file_name}')
         self.path_result_summary_file = os.path.join(self.path_result_folder,
                                                      f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
-        self.path_dump_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
-        self.path_log_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.log')
+        self.path_dump_file = os.path.join(self.path_result_folder,
+                                           f'{self.runtimestamp}_{self.scenario_file_name}.lp')
+        self.path_log_file = os.path.join(self.path_result_folder,
+                                          f'{self.runtimestamp}_{self.scenario_file_name}.log')
+        self.path_system_graph_file = os.path.join(self.path_result_folder,
+                                                   f'{self.runtimestamp}_{self.scenario_file_name}_system')
+
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 
         if self.save_results or self.save_des_results:
