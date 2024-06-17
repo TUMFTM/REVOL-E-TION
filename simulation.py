@@ -475,17 +475,23 @@ class Scenario:
         :return: none
         """
 
-        result_types = (int, float, str, bool)
-        result_blocks = {'run': run, 'scenario': self}
-        result_blocks.update(self.blocks)
-
-        for name, block in result_blocks.items():
+        def write_values(name, block):
             for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
                 value = block.__dict__[key]
                 if isinstance(value, int):
                     self.result_summary.loc[(name, key), self.name] = float(value)
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
+
+        result_types = (int, float, str, bool)
+        result_blocks = {'run': run, 'scenario': self}
+        result_blocks.update(self.blocks)
+
+        for name, block in result_blocks.items():
+            write_values(name, block)
+            if isinstance(block, blocks.CommoditySystem):
+                for name, commodity in block.commodities.items():
+                    write_values(name, commodity)
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
