@@ -14,6 +14,7 @@ coding:     utf-8
 license:    GPLv3
 """
 
+import ast
 import numpy as np
 import oemof.solph as solph
 import os
@@ -21,6 +22,7 @@ import pandas as pd
 import pvlib
 import pytz
 import statistics
+import windpowerlib
 
 import battery as bat
 import economics as eco
@@ -1694,9 +1696,31 @@ class WindSource(RenewableInvestBlock):
     def __init__(self, name, scenario, run):
 
         self.bus_connected = scenario.blocks['core'].ac_bus
+
         super().__init__(name, scenario, run)
+
+        self.path_turbine_data_file = self.turbine_data = self.turbine_type = None
 
     def get_timeseries_data(self, scenario, run):
 
-        self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
-        self.data = self.read_input_csv(self.path_input_file, scenario)
+        if self.data_source in scenario.blocks.keys():  # input from a PV block
+
+            self.data = scenario.blocks[self.data_source].data.copy()
+            self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
+
+            self.path_turbine_data_file = os.path.join(run.path_input_data, 'wind', 'turbine_data.pkl')
+            self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
+            self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
+            self.turbine_data = self.turbine_data.loc[self.turbine_data['turbine_type'] == self.turbine_type].reset_index()
+
+            self.data['power_original'] = windpowerlib.power_output.power_curve(
+                wind_speed=self.data['wind_speed_adj'],
+                power_curve_wind_speeds=ast.literal_eval(self.turbine_data.loc[0, 'power_curve_wind_speeds']),
+                power_curve_values=ast.literal_eval(self.turbine_data.loc[0, 'power_curve_values']),
+                density_correction=False)
+            self.data['power_spec'] = self.data['power_original'] / self.turbine_data.loc[0, 'nominal_power']
+
+        else:  # input from file instead of PV block
+
+            self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
+            self.data = self.read_input_csv(self.path_input_file, scenario)

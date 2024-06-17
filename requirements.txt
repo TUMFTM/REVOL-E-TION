@@ -1,3 +1,4 @@
+ast
 datetime
 graphviz
 numpy
@@ -13,3 +14,4 @@ rainflow
 simpy
 timezonefinder
 tk
+windpowerlib
