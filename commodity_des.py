@@ -394,8 +394,8 @@ class BatteryRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc, cs):
 
-        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.json')
-        self.usecases = pd.read_json(self.usecase_file_path, orient='records', lines=True)
+        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.csv')
+        self.usecases = pd.read_csv(self.usecase_file_path, header=0)
 
         super().__init__(cs, sc)
 
@@ -557,7 +557,6 @@ def execute_des(sc, save=False, path=None):
         pd.date_range(start=sc.dti_sim[-1] + sc.dti_sim.freq,
                       periods=200,
                       freq=sc.dti_sim.freq))
-
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()

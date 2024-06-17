@@ -16,8 +16,7 @@ input/*
 
 !input/brs/brs_example.csv
 !input/brs/brs_example_processes.csv
-!input/brs/brs_usecases.json
-!input/brs/use_case_list_gen.ipynb
+!input/brs/brs_usecases.csv
 
 !input/dem/dem_example.csv
 
