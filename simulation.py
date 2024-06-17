@@ -23,8 +23,10 @@ import logging
 import logging.handlers
 import math
 import os
+import pickle
 import pprint
 import pytz
+import subprocess
 import sys
 import time
 import timezonefinder
@@ -274,9 +276,12 @@ class Scenario:
                                                                    f'{self.name}.html')
 
         # prepare for cumulative result saving later on
-        self.results = pd.DataFrame(columns=['Block', 'Key', self.name])
-        self.results = self.results.set_index(['Block', 'Key'])
-        self.path_result_file = os.path.join(run.path_result_folder, f'{self.name}_tempresults.csv')
+        self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
+        self.result_summary = self.result_summary.set_index(['Block', 'Key'])
+        self.path_result_summary_tempfile = os.path.join(run.path_result_folder, f'{self.name}_tempresults.csv')
+
+        self.result_timeseries = pd.DataFrame(index=self.dti_sim)
+        self.path_result_file = os.path.join(run.path_result_folder, f'{run.runtimestamp}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -462,7 +467,7 @@ class Scenario:
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
 
-    def save_results(self, run):
+    def save_result_summary(self, run):
         """
         Saves all int, float and str attributes of run, scenario (incl. technoeconomic KPIs) and all blocks to the
         results dataframe
@@ -470,20 +475,32 @@ class Scenario:
         :return: none
         """
 
+        def write_values(name, block):
+            for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
+                value = block.__dict__[key]
+                if isinstance(value, int):
+                    self.result_summary.loc[(name, key), self.name] = float(value)
+                else:
+                    self.result_summary.loc[(name, key), self.name] = value
+
         result_types = (int, float, str, bool)
         result_blocks = {'run': run, 'scenario': self}
         result_blocks.update(self.blocks)
 
         for name, block in result_blocks.items():
-            for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
-                value = block.__dict__[key]
-                if isinstance(value, int):
-                    self.results.loc[(name, key), self.name] = float(value)
-                else:
-                    self.results.loc[(name, key), self.name] = value
+            write_values(name, block)
+            if isinstance(block, blocks.CommoditySystem):
+                for name, commodity in block.commodities.items():
+                    write_values(name, commodity)
 
-        self.results.reset_index(inplace=True, names=['block', 'key'])
-        self.results.to_csv(self.path_result_file, index=False)
+        self.result_summary.reset_index(inplace=True, names=['block', 'key'])
+        self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
+
+    def save_result_timeseries(self):
+        for block in self.blocks.values():
+            block.get_timeseries_results(self)
+        #self.result_timeseries.to_pickle(self.path_result_file.replace('.csv', '.pkl'))
+        self.result_timeseries.to_csv(self.path_result_file)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -528,6 +545,8 @@ class SimulationRun:
         self.runtime_len = None  # placeholder
         self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
 
+        self.commit_hash = self.get_git_commit_hash()
+
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
         settings = settings.map(infer_dtype)
 
@@ -539,8 +558,8 @@ class SimulationRun:
 
         self.path_input_data = os.path.join(self.cwd, 'input')
         self.path_result_folder = os.path.join(self.result_path, f'{self.runtimestamp}_{self.scenario_file_name}')
-        self.path_result_file = os.path.join(self.path_result_folder,
-                                             f'{self.runtimestamp}_{self.scenario_file_name}_results.csv')
+        self.path_result_summary_file = os.path.join(self.path_result_folder,
+                                                     f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
         self.path_dump_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_folder, f'{self.runtimestamp}_{self.scenario_file_name}.log')
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
@@ -577,6 +596,24 @@ class SimulationRun:
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
+    def get_git_commit_hash(self):
+        """
+        Get commit hash of current HEAD. Caution: does not consider work in progress
+        """
+        try:
+            result = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True)
+
+            if result.returncode == 0:  # success
+                return result.stdout.strip()
+            else:  # error case
+                return result.stderr
+
+        except Exception as e:
+            return e
+
     def handle_exception(self,exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -597,7 +634,7 @@ class SimulationRun:
 
         joined_results = pd.concat(scenario_frames, axis=1)
         joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
-        joined_results.to_csv(self.path_result_file)
+        joined_results.to_csv(self.path_result_summary_file)
         self.logger.info("Technoeconomic output file created")
 
         # deletion loop at the end to avoid premature execution of results in case of error

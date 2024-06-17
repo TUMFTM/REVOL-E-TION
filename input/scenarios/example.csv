@@ -12,8 +12,8 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
-core,size_dcac,0,21000,21000,opt
-core,size_acdc,0,21000,21000,opt
+core,size_dcac,0,22000,22000,opt
+core,size_acdc,0,22000,22000,opt
 core,capex_spec,0.08,0.08,0.08,0.08
 core,mntex_spec,0.0024,0.0024,0.0024,0.0024
 core,opex_spec,0,0,0,0
@@ -23,7 +23,7 @@ core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
 dem,filename,dem_example,dem_example,dem_example,dem_example
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
-wind,size,0,6000,6000,opt
+wind,size,0,15000,15000,opt
 wind,filename,wind_example,wind_example,wind_example,wind_example
 wind,capex_spec,2.8,2.8,2.8,2.8
 wind,mntex_spec,0.084,0.084,0.084,0.084
@@ -31,7 +31,7 @@ wind,opex_spec,0,0,0,0
 wind,ls,20,20,20,20
 wind,cdc,1,1,1,1
 wind,eff,0.95,0.95,0.95,0.95
-pv,size,0,90000,90000,opt
+pv,size,0,105000,105000,opt
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
 pv,filename,pv_example,pv_example,pv_example,pv_example
 pv,capex_spec,0.250,0.250,0.250,0.250
@@ -40,7 +40,7 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,cdc,1,1,1,1
 pv,eff,0.95,0.95,0.95,0.95
-gen,size,opt,5000,5000,opt
+gen,size,0,5000,5000,opt
 gen,capex_spec,0.261,0.261,0.261,0.261
 gen,mntex_spec,0.03,0.02088,0.02088,0.03
 gen,opex_spec,0.0009,0.00065,0.00065,0.0009
@@ -57,7 +57,7 @@ grid,opex_spec_mg2g,grid_sell_example,grid_sell_example,grid_sell_example,grid_s
 grid,ls,10,10,10,10
 grid,cdc,1,1,1,1
 grid,eff,1,1,1,1
-ess,size,0,90000,90000,opt
+ess,size,0,115000,115000,opt
 ess,pv_only,False,False,False,False
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
@@ -102,8 +102,8 @@ bev,soc_dep,1,1,1,1
 bev,capex_spec,0,0,0,0
 bev,mntex_spec,0,0,0,0
 bev,opex_spec,0,0,0,0
-bev,sys_chg_soe,0,0,0,0
-bev,sys_dis_soe,0,0,0,0
+bev,opex_spec_sys_chg,0,0,0,0
+bev,opex_spec_sys_dis,0,0,0,0
 bev,ls,10,10,10,10
 bev,soc_init,0.5,0.5,0.5,0.5
 bev,pwr_chg,11000,11000,11000,11000
@@ -138,8 +138,8 @@ brs,soc_dep,1,1,1,1
 brs,capex_spec,0,0,0,0
 brs,mntex_spec,0,0,0,0
 brs,opex_spec,0,0,0,0
-brs,sys_chg_soe,-0.0003,-0.0003,-0.0003,-0.0003
-brs,sys_dis_soe,0.00035,0.00035,0.00035,0.00035
+brs,opex_spec_sys_chg,-0.0003,-0.0003,-0.0003,-0.0003
+brs,opex_spec_sys_dis,0.00035,0.00035,0.00035,0.00035
 brs,ls,10,10,10,10
 brs,soc_init,0.5,0.5,0.5,0.5
 brs,pwr_chg,1500,1500,1500,1500

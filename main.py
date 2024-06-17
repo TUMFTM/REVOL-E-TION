@@ -70,10 +70,10 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             horizon.run_optimization(scenario, run)
         else:
             logging.error(f'Scenario {scenario.name}: energy management strategy unknown')
-            break  # todo better error handling
+            break
 
         if scenario.exception and run.save_results:
-            scenario.save_results(run)
+            scenario.save_result_summary(run)
             break
         else:
             horizon.get_results(scenario, run)
@@ -88,7 +88,8 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             scenario.get_results(run)
             scenario.calc_meta_results(run)
             if run.save_results:
-                scenario.save_results(run)
+                scenario.save_result_summary(run)
+                scenario.save_result_timeseries()
             if run.print_results:
                 scenario.print_results(run)
 
