@@ -71,6 +71,7 @@ ess,eff_dis,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8
 ess,crate_dis,0.8,0.8,0.8,0.8
 ess,soc_init,0.5,0.5,0.5,0.5
+ess,soh_init,1,1,1,1
 ess,sdr,0.02,0.02,0.02,0.02
 ess,cdc,1,1,1,1
 ess,eff,1,1,1,1
@@ -106,6 +107,7 @@ bev,opex_spec_sys_chg,0,0,0,0
 bev,opex_spec_sys_dis,0,0,0,0
 bev,ls,10,10,10,10
 bev,soc_init,0.5,0.5,0.5,0.5
+bev,soh_init,1,1,1,1
 bev,pwr_chg,11000,11000,11000,11000
 bev,pwr_dis,11000,11000,11000,11000
 bev,eff,1,1,1,1
@@ -142,6 +144,7 @@ brs,opex_spec_sys_chg,-0.0003,-0.0003,-0.0003,-0.0003
 brs,opex_spec_sys_dis,0.00035,0.00035,0.00035,0.00035
 brs,ls,10,10,10,10
 brs,soc_init,0.5,0.5,0.5,0.5
+brs,soh_init,1,1,1,1
 brs,pwr_chg,1500,1500,1500,1500
 brs,pwr_dis,1500,1500,1500,1500
 brs,eff,1,1,1,1

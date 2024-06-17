@@ -182,9 +182,9 @@ class RentalSystem:
         self.cs.use_rate = np.mean(list(self.use_rate.values()))
 
         # calculate overall percentage of failed trips
-        n_sucess = self.processes.loc[self.processes['status'] == 'sucess', 'status'].shape[0]
+        n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
-        self.fail_rate = self.cs.fail_rate = 1 - (n_sucess / n_total)
+        self.fail_rate = self.cs.fail_rate = 1 - (n_success / n_total)
         pass
 
     def convert_process_log(self):
@@ -208,7 +208,7 @@ class RentalSystem:
         self.data.loc[:, (slice(None), 'atac')] = False
         self.data.loc[:, (slice(None), 'atdc')] = False
 
-        for process in [row for _, row in self.processes.iterrows() if row['status'] == 'sucess']:
+        for process in [row for _, row in self.processes.iterrows() if row['status'] == 'success']:
             for commodity in process['primary_commodity']:
                 # Set Availability at base for charging
                 self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
@@ -369,7 +369,7 @@ class VehicleRentalSystem(RentalSystem):
         BatteryRentalSystem's processes dataframe as these don't originate from the latter's demand pregeneration
         and are not logged there yet.
         """
-        mask = (self.processes['status'] == 'sucess') & (self.processes['rex_request'])
+        mask = (self.processes['status'] == 'success') & (self.processes['rex_request'])
         rex_processes = self.processes.loc[mask, :].copy()
 
         # convert values for target BatteryRentalSystem
@@ -499,7 +499,7 @@ class RentalProcess:
             yield self.env.timeout(self.data['steps_blocked'])
             self.rs.processes.loc[self.id, 'step_reavail'] = self.env.now
 
-            self.rs.processes.loc[self.id, 'status'] = 'sucess'
+            self.rs.processes.loc[self.id, 'status'] = 'success'
             self.rs.processes.at[self.id, 'primary_commodity'] = self.primary_request.value
             if self.secondary_request:
                 self.rs.processes.at[self.id, 'secondary_commodity'] = self.secondary_request.value

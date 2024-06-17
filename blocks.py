@@ -978,11 +978,13 @@ class MobileCommodity:
 
         self.soc_init = self.parent.soc_init
         self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
-        self.soc_max = 1
-        self.soc_min = 0
 
-        self.init_soh = 1
-        self.soh = self.init_soh
+        self.soh_init = self.parent.soh_init
+        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh.loc[scenario.starttime] = self.soh_init
+
+        self.soc_min = (1 - self.soh_init) / 2
+        self.soc_max = 1 - ((1 - self.soh_init) / 2)
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
@@ -1122,6 +1124,16 @@ class MobileCommodity:
                                              visible='legendonly'),
                                   secondary_y=True)
 
+        legentry = f"{self.name} SOH"
+        data = self.soh.dropna()
+        scenario.figure.add_trace(go.Scatter(x=data.index,
+                                             y=data,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=True)
+
     def calc_aging(self, run, scenario, horizon):
         self.aging_model.age(self, run, scenario, horizon)
 
@@ -1209,7 +1221,8 @@ class MobileCommodity:
                                              f'{self.name}_flow_bat_out': self.flow_bat_out,
                                              f'{self.name}_flow_ext_dc': self.flow_ext_dc,
                                              f'{self.name}_flow_ext_ac': self.flow_ext_ac,
-                                             f'{self.name}_soc': self.soc})
+                                             f'{self.name}_soc': self.soc,
+                                             f'{self.name}_soh': self.soh})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, commodity_ts_results], axis=1)
 
     def update_input_components(self):
@@ -1366,7 +1379,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
         self.soc = pd.Series()
 
-        # add initial sc (and later soc) to the timeseries of the first horizon (otherwise not recorded)
+        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh.loc[scenario.starttime] = self.soh_init
 
         """
         x denotes the flow measurement point in results
@@ -1423,6 +1437,16 @@ class StationaryEnergyStorage(InvestBlock):
                                              line=dict(width=2, dash=None)),
                                   secondary_y=True)
 
+        legentry = f"{self.name} SOH"
+        data = self.soh.dropna()
+        scenario.figure.add_trace(go.Scatter(x=data.index,
+                                             y=data,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=True)
+
     def calc_aging(self, run, scenario, horizon):
         self.aging_model.age(self, run, scenario, horizon)
 
@@ -1468,7 +1492,7 @@ class StationaryEnergyStorage(InvestBlock):
         """
         super().get_timeseries_results(scenario)  # this goes up to the Block class
 
-        block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc})
+        block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc, f'{self.name}_soh': self.soh})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
     def update_input_components(self):
