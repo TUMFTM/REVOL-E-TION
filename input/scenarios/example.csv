@@ -24,6 +24,7 @@ core,eff_acdc,0.95,0.95,0.95,0.95
 dem,filename,dem_example,dem_example,dem_example,dem_example
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size,0,15000,15000,opt
+wind,data_source,None,pv,pv,pv
 wind, height,50,50,50,50
 wind,filename,wind_example,wind_example,wind_example,wind_example
 wind,capex_spec,2.8,2.8,2.8,2.8
