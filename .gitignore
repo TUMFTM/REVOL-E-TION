@@ -33,6 +33,7 @@ input/*
 !input/settings/default_seq.csv
 
 !input/wind/wind_example.csv
+!input/wind/turbine_data.pkl
 
 utils/*
 
