@@ -710,7 +710,7 @@ class CommoditySystem(InvestBlock):
     def set_init_size(self, scenario, run):
         super().set_init_size(scenario, run)
         self.size_pc = self.size  # pc = per commodity
-        self.size = self.size_pc * self.num
+        self.size = self.size_pc * self.num if not self.opt else None
 
     def update_input_components(self):
         for commodity in self.commodities.values():
@@ -953,7 +953,7 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
-        self.size = None if self.parent.opt else self.parent.size / self.parent.num
+        self.size = None if self.parent.opt else self.parent.size_pc
         self.pwr_chg = self.parent.pwr_chg
         self.pwr_dis = self.parent.pwr_dis
         self.eff_chg = self.parent.eff_chg
