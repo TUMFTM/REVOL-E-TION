@@ -84,7 +84,7 @@ bev,temp_battery,25,pv,pv,pv
 bev,rex_cs,brs,brs,brs,brs
 bev,int_lvl,v2mg,v2mg,v2mg,v2mg
 bev,system,ac,ac,ac,ac
-bev,lm_static,20000.0,False,False,False
+bev,lm_static,10000,None,None,None
 bev,filename,run_des,run_des,run_des,run_des
 bev,num,5,5,5,5
 bev,daily_mean,8,8,8,8
@@ -130,7 +130,7 @@ brs,chemistry,nmc,nmc,nmc,nmc
 brs,temp_battery,25,pv,pv,pv
 brs,int_lvl,cc,cc,cc,cc
 brs,system,ac,ac,ac,ac
-brs,lm_static,False,False,False,False
+brs,lm_static,None,None,None,None
 brs,filename,run_des,run_des,run_des,run_des
 brs,filename_usecases,usecases_default,usecases_default,usecases_default,usecases_default
 brs,num,10,10,10,10

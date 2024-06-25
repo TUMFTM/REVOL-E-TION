@@ -554,8 +554,7 @@ class CommoditySystem(InvestBlock):
         if self.lm_static and self.int_lvl not in self.apriori_lvls:
             run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented'
                                f' for {self.apriori_lvls} - deactivated static load management')
-            self.lm_static = False
-
+            self.lm_static = None
 
         # Creation of static energy system components --------------------------------
 
@@ -572,12 +571,14 @@ class CommoditySystem(InvestBlock):
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
-
         self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     variable_costs=self.opex_spec_sys_chg)},
+                                                     variable_costs=self.opex_spec_sys_chg,
+                                                     nominal_value=self.lm_static,  # 50000
+                                                     max=1 if self.lm_static else None
+                                                 )},
                                                  outputs={self.bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                  conversion_factors={self.bus: 1})
