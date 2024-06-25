@@ -366,6 +366,13 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
+        # check input parameter configuration of rulebased charging for validity
+        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
+                                                                               x != 'uc'] and not cs.lm_static]) and \
+                any([block for block in self.blocks.values() if getattr(block, 'opt', False)]):
+            run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
+                             f' without static load management (lm_static) is not compatible with size optimization')
+
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)

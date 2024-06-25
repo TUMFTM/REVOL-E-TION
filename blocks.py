@@ -556,6 +556,11 @@ class CommoditySystem(InvestBlock):
                                f' for {self.apriori_lvls} - deactivated static load management')
             self.lm_static = None
 
+        if self.opt and self.int_lvl in self.apriori_lvls:
+            run.logger.error(f'Scenario {scenario.name}: \"{self.name}\" optimization of commodity size not'
+                             f' implemented for integration levels {self.apriori_lvls}')
+            exit()  # TODO exit scenario instead of run
+
         # Creation of static energy system components --------------------------------
 
         """
@@ -576,7 +581,7 @@ class CommoditySystem(InvestBlock):
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
                                                      variable_costs=self.opex_spec_sys_chg,
-                                                     nominal_value=self.lm_static,  # 50000
+                                                     nominal_value=self.lm_static,
                                                      max=1 if self.lm_static else None
                                                  )},
                                                  outputs={self.bus: solph.Flow(
