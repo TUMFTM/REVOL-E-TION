@@ -617,7 +617,7 @@ class CommoditySystem(InvestBlock):
         Default function to calculate initial capex of simple blocks with a single size value.
         GridConnection, SystemCore and CommoditySystem are more complex.
         """
-        self.capex_init = self.num * self.size * self.capex_spec
+        self.capex_init = np.array([com.size for com in self.commodities.values()]).sum() * self.capex_spec
 
     def calc_energy(self, scenario):
 
@@ -632,7 +632,7 @@ class CommoditySystem(InvestBlock):
         self.calc_energy_bidi(scenario)  # bidirectional block
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = self.num * self.size * self.mntex_spec
+        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_yrl
 
     def calc_opex_ext(self, scenario):
         """

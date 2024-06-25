@@ -504,7 +504,6 @@ class Scenario:
             block.calc_revenue(self)
             block.calc_cashflows(self)
 
-
     def print_results(self, run):
         print('#################')
         run.logger.info(f'Results for Scenario {self.name}:')
@@ -520,6 +519,9 @@ class Scenario:
                     run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
                     run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.size_mg2g / 1e3)} {unit}')
+            elif isinstance(block, blocks.CommoditySystem):
+                for commodity in block.commodities.values():
+                    run.logger.info(f'Optimized size of commodity {commodity.name} in component {block.name}: {round(commodity.size / 1e3, 1)} {unit}')
             else:
                 run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
