@@ -398,27 +398,40 @@ class Scenario:
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
-        try:
-            self.e_eta = self.e_sim_del / self.e_sim_pro
-        except:
-            run.logger.warning(f'Scenario {self.name} - total efficiency calculation: division by zero')
+        if self.e_sim_pro == 0:
+            run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
+        else:
+            try:
+                self.e_eta = self.e_sim_del / self.e_sim_pro
+            except ZeroDivisionError:
+                run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
 
-        try:
-            self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
-        except (ZeroDivisionError, RuntimeWarning):
+        if self.e_renewable_pot == 0:
             run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
+        else:
+            try:
+                self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
+            except ZeroDivisionError:
+                run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
-        try:
-            self.renewable_share = self.e_renewable_act / self.e_sim_pro
-        except (ZeroDivisionError, RuntimeWarning):
+
+        if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
+        else:
+            try:
+                self.renewable_share = self.e_renewable_act / self.e_sim_pro
+            except ZeroDivisionError:
+                run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
 
-        try:
-            self.lcoe = self.totex_dis / self.e_prj_del
-            self.lcoe_dis = self.totex_dis / self.e_dis_del
-        except (ZeroDivisionError, RuntimeWarning):
-            self.lcoe = self.lcoe_dis = None
+        if self.e_dis_del == 0 or self.e_prj_del == 0:
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+        else:
+            try:
+                self.lcoe = self.totex_dis / self.e_prj_del
+                self.lcoe_dis = self.totex_dis / self.e_dis_del
+            except ZeroDivisionError:
+                self.lcoe = self.lcoe_dis = None
+                run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
@@ -431,7 +444,7 @@ class Scenario:
                         f' mIRR {round(self.mirr * 100, 1)} % -'
                         f' Renewable Share: {round(self.renewable_share * 100, 1)} % -'
                         f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1)} % -'
-                        f' Total Efficiency: {round(self.e_eta * 100, 1)} %')
+                        f' Core Efficiency: {round(self.e_eta * 100, 1)} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}

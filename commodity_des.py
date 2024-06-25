@@ -113,6 +113,7 @@ class RentalSystem:
                                                'step_reavail',
                                                'energy_avail',
                                                'energy_req',
+                                               'energy_req_pc',
                                                'soc_return',
                                                'primary_commodity',
                                                'secondary_commodity',
@@ -394,7 +395,8 @@ class BatteryRentalSystem(RentalSystem):
 
     def __init__(self, env: simpy.Environment, sc, cs):
 
-        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', 'brs_usecases.csv')
+        self.usecase_file_name = cs.filename_usecases
+        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', f'{self.usecase_file_name}.csv')
         self.usecases = pd.read_csv(self.usecase_file_path, header=0)
 
         super().__init__(cs, sc)
@@ -422,37 +424,38 @@ class BatteryRentalSystem(RentalSystem):
         n_processes = self.demand_daily['num_total'].sum(axis=0)
         rel_prob_norm = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
 
-        self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
-                                                         n_processes,
-                                                         replace=True,
-                                                         p=rel_prob_norm).astype(int)
-        self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
-                                                              axis=1)
-        self.assign_datetime_request(n_processes, sc)
+        if not self.usecases.empty:
+            self.processes['usecase_idx'] = np.random.choice(self.usecases.index.values,
+                                                             n_processes,
+                                                             replace=True,
+                                                             p=rel_prob_norm).astype(int)
+            self.processes['usecase_name'] = self.processes.apply(lambda row: self.usecases.loc[row['usecase_idx'], 'name'],
+                                                                  axis=1)
+            self.assign_datetime_request(n_processes, sc)
 
-        p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
-        self.processes['soc_return'] = np.clip(np.random.lognormal(p1, p2, n_processes),
-                                               self.cs.soc_return_min,
-                                               self.cs.soc_dep)
-        self.processes['num_resources'] = self.processes.apply(
-            lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
-        self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
+            p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
+            self.processes['soc_return'] = np.clip(np.random.lognormal(p1, p2, n_processes),
+                                                   self.cs.soc_return_min,
+                                                   self.cs.soc_dep)
+            self.processes['num_resources'] = self.processes.apply(
+                lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
+            self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
 
-        self.processes['time_active'] = pd.to_timedelta(
-            self.processes.apply(lambda row:
-                                 (self.cs.soc_dep - row['soc_return']) * row['energy_avail'] /
-                                 self.usecases.loc[row['usecase_idx'], 'power'],
-                                 axis=1),
-            unit='hour')
+            self.processes['time_active'] = pd.to_timedelta(
+                self.processes.apply(lambda row:
+                                     (self.cs.soc_dep - row['soc_return']) * row['energy_avail'] /
+                                     self.usecases.loc[row['usecase_idx'], 'power'],
+                                     axis=1),
+                unit='hour')
 
-        p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
-        self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
+            p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
+            self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
 
-        self.processes['energy_req_pc'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
-        self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
+            self.processes['energy_req_pc'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
+            self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
 
-        self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
-                                                          (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
+            self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
+                                                              (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
 
 class RentalProcess:
@@ -533,6 +536,7 @@ class RentalProcess:
 
 
 def dt2steps(series, sc):
+    out = None  # default value
     if pd.api.types.is_datetime64_any_dtype(series):
         out = np.ceil((series - sc.starttime) / sc.timestep_td).astype(int)
     elif pd.api.types.is_timedelta64_dtype(series):
@@ -594,10 +598,14 @@ def execute_des(sc, save=False, path=None):
         if save:
             rs.save_data(path, sc)
 
+
 def lognormal_params(mean, stdev):
-    mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
-    sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
-    return mu, sig
+    if mean == 0 and stdev == 0:
+        return 0, 0
+    else:
+        mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
+        sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
+        return mu, sig
 
 
 def get_day(element):

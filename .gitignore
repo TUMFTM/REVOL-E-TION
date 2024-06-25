@@ -16,7 +16,7 @@ input/*
 
 !input/brs/brs_example.csv
 !input/brs/brs_example_processes.csv
-!input/brs/brs_usecases.csv
+!input/brs/usecases_default.csv
 
 !input/dem/dem_example.csv
 
