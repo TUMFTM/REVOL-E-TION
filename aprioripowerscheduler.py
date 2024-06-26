@@ -105,7 +105,21 @@ class AprioriPowerScheduler:
                         # update SOCs of all commodities within the CommoditySystem
                         commodity.calc_new_soc(dtindex=dtindex)
                 elif cs.int_lvl == 'equal':
-                    pass
+                    # get list of commodities in CommoditySystem which are ready for charging
+                    coms = [self.commodities[key] for key in cs.commodities.keys() if self.commodities[key].block.data_ph.loc[dtindex, 'atbase']]
+                    while p_avail_lm > 0 and len(coms) > 0:
+                        # calculate power for each commodity
+                        p_share = p_avail_lm / len(coms)
+                        for commodity in coms:
+                            p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
+                            commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
+                            p_avail_lm -= p_chg
+                            if p_chg == 0:
+                                coms.remove(commodity)
+                    # update SOCs of all commodities within the CommoditySystem
+                    for commodity in [self.commodities[key] for key in cs.commodities.keys()]:
+                        commodity.calc_new_soc(dtindex=dtindex)
+
                 else:
                     print('Error: Integration level not implemented')
             # endregion
