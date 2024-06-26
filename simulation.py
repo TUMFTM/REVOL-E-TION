@@ -234,7 +234,12 @@ class PredictionHorizon:
                 # draw an arrow from the bus to the component
                 dot.edge(bus.label, component.label)
 
-        dot.render()
+        try:
+            dot.render()
+        except Exception as e:  # inhibiting renderer from stopping model execution
+            run.logger.warning(f'Scenario: {scenario.name} - '
+                               f'Graphviz rendering failed - '
+                               f'Error Message: {e}')
 
     def get_results(self, scenario, run):
         """
@@ -421,7 +426,6 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
-
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
         else:
@@ -511,7 +515,6 @@ class Scenario:
             block.calc_revenue(self)
             block.calc_cashflows(self)
 
-
     def print_results(self, run):
         print('#################')
         run.logger.info(f'Results for Scenario {self.name}:')
@@ -527,6 +530,9 @@ class Scenario:
                     run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
                     run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.size_mg2g / 1e3)} {unit}')
+            elif isinstance(block, blocks.CommoditySystem):
+                for commodity in block.commodities.values():
+                    run.logger.info(f'Optimized size of commodity {commodity.name} in component {block.name}: {round(commodity.size / 1e3, 1)} {unit}')
             else:
                 run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
