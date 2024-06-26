@@ -34,6 +34,7 @@ warnings.simplefilter(action='error', category=UserWarning)
 # only print FutureWarnings once (in theory)
 # Set to 'ignore' to suppress all FutureWarnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.simplefilter(action='ignore', category=RuntimeWarning)
 
 ###############################################################################
 # Function definitions
