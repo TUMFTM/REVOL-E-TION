@@ -98,6 +98,8 @@ class RentalSystem:
 
         self.processes = pd.DataFrame(columns=['time_req',
                                                'step_req',
+                                               'energy_req_total',
+                                               'rex_request',
                                                'time_dep',
                                                'step_dep',
                                                'time_active',
@@ -106,30 +108,39 @@ class RentalSystem:
                                                'steps_rental',
                                                'time_return',
                                                'step_return',
-                                               'time_recharge',
-                                               'time_blocked',
-                                               'steps_blocked',
-                                               'time_reavail',
-                                               'step_reavail',
+                                               'time_recharge_primary',
+                                               'time_recharge_secondary',
+                                               'time_blocked_primary',
+                                               'time_blocked_secondary',
+                                               'steps_blocked_primary',
+                                               'steps_blocked_secondary',
+                                               'time_reavail_primary',
+                                               'time_reavail_secondary',
+                                               'step_reavail_primary',
+                                               'step_reavail_secondary',
                                                'energy_avail',
-                                               'energy_req',
-                                               'energy_req_pc',
-                                               'soc_return',
+                                               'energy_req_pc_primary',
+                                               'energy_req_pc_secondary',
                                                'primary_commodity',
                                                'secondary_commodity',
                                                'process_obj',
                                                'status'],
                                       dtype='object')
 
+        self.processes['rex_request'] = False  # default value
+
         self.generate_demand(sc)  # child function, see subclasses
 
         # common calculations for both types of RentalSystem
         self.processes['time_rental'] = self.processes['time_active'] + self.processes['time_idle']
         self.processes['steps_rental'] = dt2steps(self.processes['time_rental'], sc)
-        self.processes['time_blocked'] = self.processes['time_recharge'] + self.time_buffer
-        self.processes['steps_blocked'] = dt2steps(self.processes['time_blocked'], sc)
+        self.processes['time_blocked_primary'] = self.processes['time_recharge_primary'] + self.time_buffer
+        self.processes['steps_blocked_primary'] = dt2steps(self.processes['time_blocked_primary'], sc)
 
-        # create the actual Simpy store and populate it
+        self.processes['time_blocked_secondary'] = self.processes[ 'time_recharge_secondary'] + self.time_buffer
+        self.processes['steps_blocked_secondary'] = dt2steps(self.processes['time_blocked_secondary'], sc)
+
+        # create the actual Simpy store and populate it with commodities
         self.store = MultiStore(sc.env_des, capacity=cs.num)
         for commodity in cs.commodities.values():
             self.store.put([commodity.name])
@@ -178,7 +189,7 @@ class RentalSystem:
         # occupied by active, idle, recharge and buffer times
         for commodity in list(self.cs.commodities.keys()):
             processes = processes_exploded.loc[processes_exploded['primary_commodity'] == commodity, :]
-            steps_blocked = processes['steps_blocked'].sum() + processes['steps_rental'].sum()
+            steps_blocked = processes['steps_blocked_primary'].sum() + processes['steps_rental'].sum()
             self.use_rate[commodity] = steps_blocked / steps_total
         self.cs.use_rate = np.mean(list(self.use_rate.values()))
 
@@ -217,7 +228,8 @@ class RentalSystem:
 
                 # set consumption power as constant while rented out
                 self.data.loc[process['time_dep']:(process['time_return'] - self.sc.timestep_td),
-                (commodity, 'consumption')] = process['energy_req_pc'] / (process['steps_rental'] * self.sc.timestep_hours)
+                (commodity, 'consumption')] = (process['energy_req_pc_primary'] /
+                                               (process['steps_rental'] * self.sc.timestep_hours))
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
                 self.data.loc[process['time_dep'], (commodity, 'minsoc')] = self.cs.soc_dep
@@ -328,7 +340,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['time_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
         self.processes['time_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, n_processes), unit='hour')
-        self.processes['energy_req'] = self.processes['distance'] * self.cs.consumption
+        self.processes['energy_req_total'] = self.processes['distance'] * self.cs.consumption
 
         if self.cs.rex_cs:  # system can extend range. otherwise self.rex_cs is None
 
@@ -344,10 +356,21 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_total'] = self.cs.size_pc + (self.processes['num_rex'] * self.cs.rex_cs.size_pc)
 
             # calculate different delta SOC for primary and secondary commodity due to different start SOCs (linear)
-            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req'] /
+            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req_total'] /
                                               self.processes['energy_avail'])
-            self.processes['dsoc_secondary'] = (self.dsoc_base_rex * self.processes['energy_req'] /
+            self.processes['dsoc_secondary'] = (self.dsoc_base_rex * self.processes['energy_req_total'] /
                                                 self.processes['energy_avail'])
+
+            self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
+            self.processes['energy_req_pc_secondary'] = self.processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
+
+            self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
+                                                                     (self.cs.pwr_chg * self.cs.eff_chg),
+                                                                      unit='hour')
+            self.processes['time_recharge_secondary'] = pd.to_timedelta(self.processes['energy_req_pc_secondary'] /
+                                                                       (self.cs.rex_cs.pwr_chg *
+                                                                        self.cs.rex_cs.eff_chg),
+                                                                        unit='hour')
 
         else:  # no rex defined
             self.processes['rex_request'] = False
@@ -360,11 +383,12 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req'] /
                                               self.processes['energy_avail'])
 
-        self.processes['energy_req_pc'] = self.processes['dsoc_primary'] * self.cs.size_pc
-        self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
-                                                          (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
+            self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
+            self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc'] /
+                                                                      (self.cs.pwr_chg * self.cs.eff_chg),
+                                                                      unit='hour')
 
-    def transfer_rex_processes(self):
+    def transfer_rex_processes(self, sc):
         """
         This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
         BatteryRentalSystem's processes dataframe as these don't originate from the latter's demand pregeneration
@@ -377,14 +401,22 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['usecase_idx'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
         rex_processes['num_resources'] = rex_processes['num_rex']
-        rex_processes['energy_req_pc'] = rex_processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
-        rex_processes['energy_req'] = rex_processes['energy_req_pc'] * rex_processes['num_resources']
         rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['dsoc_secondary']
 
+        # set secondary recharge & reavailability times as primary values for BatteryRentalSystem
+        rex_processes['energy_req_pc_primary'] = rex_processes['energy_req_pc_secondary']
+        rex_processes['time_recharge_primary'] = rex_processes['time_recharge_secondary']
+        rex_processes['time_blocked_primary'] = rex_processes['time_recharge_primary'] + self.time_buffer
+        rex_processes['steps_blocked_primary'] = dt2steps(rex_processes['time_blocked_primary'], sc)
+        rex_processes['time_reavail_primary'] = rex_processes['time_reavail_secondary']
+        rex_processes['step_reavail_primary'] = rex_processes['step_reavail_secondary']
+
         # swap primary and secondary commodities as target system has other promary commodity type
-        rex_processes['temp_primary'] = rex_processes['primary_commodity']
         rex_processes['primary_commodity'] = rex_processes['secondary_commodity']
-        rex_processes['secondary_commodity'] = rex_processes['temp_primary']
+        rex_processes['dsoc_primary'] = rex_processes['dsoc_secondary']
+
+        # drop all secondary columns
+        rex_processes.drop([col for col in rex_processes.columns if 'secondary' in col], axis=1, inplace=True)
 
         # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
         self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes], join='inner')
@@ -499,8 +531,24 @@ class RentalProcess:
             self.rs.processes.loc[self.id, 'step_return'] = self.env.now
 
             # cover the recharge time incl. buffer
-            yield self.env.timeout(self.data['steps_blocked'])
-            self.rs.processes.loc[self.id, 'step_reavail'] = self.env.now
+            if self.data['rex_request']:
+                if self.data['steps_blocked_primary'] > self.data['steps_blocked_secondary']:
+                    yield self.env.timeout(self.data['steps_blocked_secondary'])
+                    self.rs.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
+                    yield self.env.timeout(self.data['steps_blocked_primary'] - self.data['steps_blocked_secondary'])
+                    self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
+                elif self.data['steps_blocked_primary'] < self.data['steps_blocked_secondary']:
+                    yield self.env.timeout(self.data['steps_blocked_primary'])
+                    self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
+                    yield self.env.timeout(self.data['steps_blocked_secondary'] - self.data['steps_blocked_primary'])
+                    self.rs.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
+                else:  # both blocked times are equal
+                    yield self.env.timeout(self.data['steps_blocked_primary'])
+                    self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
+                    self.rs.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
+            else:  # no rex request
+                yield self.env.timeout(self.data['steps_blocked_primary'])
+                self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
 
             self.rs.processes.loc[self.id, 'status'] = 'success'
             self.rs.processes.at[self.id, 'primary_commodity'] = self.primary_request.value
@@ -538,9 +586,10 @@ class RentalProcess:
 def dt2steps(series, sc):
     out = None  # default value
     if pd.api.types.is_datetime64_any_dtype(series):
-        out = np.ceil((series - sc.starttime) / sc.timestep_td).astype(int)
+        # ensure that the result is at least 1, as 0 would leave no time for any action in real life
+        out = np.maximum(1, np.ceil((series - sc.starttime) / sc.timestep_td).astype(int))
     elif pd.api.types.is_timedelta64_dtype(series):
-        out = np.ceil(series / sc.timestep_td).astype(int)
+        out = np.maximum(1, np.ceil(series / sc.timestep_td).astype(int))
     return out
 
 
@@ -585,11 +634,12 @@ def execute_des(sc, save=False, path=None):
     for rs in sc.rental_systems.values():
         rs.processes['time_dep'] = steps2dt(rs.processes['step_dep'], sc, absolute=True)
         rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
-        rs.processes['time_reavail'] = steps2dt(rs.processes['step_reavail'], sc, absolute=True)
+        rs.processes['time_reavail_primary'] = steps2dt(rs.processes['step_reavail_primary'], sc, absolute=True)
+        rs.processes['time_reavail_secondary'] = steps2dt(rs.processes['step_reavail_secondary'], sc, absolute=True)
 
     # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
     for rs in [rs for rs in sc.rental_systems.values() if (rs.cs.rex_cs is not None)]:
-        rs.transfer_rex_processes()
+        rs.transfer_rex_processes(sc)
 
     # reframe logging results to resource-based view instead of process based (and save)
     for rs in sc.rental_systems.values():
@@ -601,7 +651,7 @@ def execute_des(sc, save=False, path=None):
 
 def lognormal_params(mean, stdev):
     if mean == 0 and stdev == 0:
-        return 0, 0
+        return 0, 0  # todo these parameters will not result in a dominant value of 0, but 1
     else:
         mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
         sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
