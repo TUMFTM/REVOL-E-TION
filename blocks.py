@@ -545,7 +545,7 @@ class CommoditySystem(InvestBlock):
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
-        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr, scenario.timestep_td)
+        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
@@ -1373,7 +1373,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.apriori_data = self.sc_init_ph =  None
 
-        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr, scenario.timestep_td)
+        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
