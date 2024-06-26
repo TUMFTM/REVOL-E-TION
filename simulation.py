@@ -403,6 +403,7 @@ class Scenario:
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
+        self.e_eta = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
         else:
@@ -411,6 +412,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
 
+        self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
             run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
         else:
@@ -419,6 +421,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
+        self.renewable_share = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
         else:
@@ -427,6 +430,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
 
+        self.lcoe = self.lcoe_dis = None
         if self.e_dis_del == 0 or self.e_prj_del == 0:
             run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
         else:
@@ -444,11 +448,11 @@ class Scenario:
         # print basic results
         run.logger.info(f'Scenario \"{self.name}\" -'
                         f' NPV {round(self.npv):,} {self.currency} -'
-                        f' LCOE {round(self.lcoe_dis * 1e5, 1)} {self.currency}-ct/kWh -'
-                        f' mIRR {round(self.mirr * 100, 1)} % -'
-                        f' Renewable Share: {round(self.renewable_share * 100, 1)} % -'
-                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1)} % -'
-                        f' Core Efficiency: {round(self.e_eta * 100, 1)} %')
+                        f' LCOE {round(self.lcoe_dis * 1e5, 1) if self.lcoe else "-"} {self.currency}-ct/kWh -'
+                        f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+                        f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} % -'
+                        f' Core Efficiency: {round(self.e_eta * 100, 1) if self.e_eta else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -530,7 +534,7 @@ class Scenario:
                 run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} {self.currency}-ct/kWh')
+        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
