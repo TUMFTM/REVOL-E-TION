@@ -234,7 +234,12 @@ class PredictionHorizon:
                 # draw an arrow from the bus to the component
                 dot.edge(bus.label, component.label)
 
-        dot.render()
+        try:
+            dot.render()
+        except Exception as e:  # inhibiting renderer from stopping model execution
+            run.logger.warning(f'Scenario: {scenario.name} - '
+                               f'Graphviz rendering failed - '
+                               f'Error Message: {e}')
 
     def get_results(self, scenario, run):
         """
@@ -413,7 +418,6 @@ class Scenario:
                 self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
-
 
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
