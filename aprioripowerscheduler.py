@@ -86,18 +86,23 @@ class AprioriPowerScheduler:
             for cs in self.cs_apriori_lm:
                 p_avail_lm = cs.lm_static
                 if cs.int_lvl in ['fcfs', 'soc']:
-                    if cs.int_lvl == 'soc':
-                        coms = sorted([self.commodities[key] for key in cs.commodities.keys()],
-                                      key=lambda x: x.block.apriori_data.loc[dtindex, 'soc'])
-                    if cs.int_lvl == 'fcfs':
-                        pass
+                    # calculate charging priority based on chosen strategy
+                    sort_key_funcs = {
+                        'fcfs': lambda x: x.get_arr(dtindex),
+                        'soc': lambda x: x.get_data(dtindex, 'soc')
+                    }
+                    coms = sorted([self.commodities[key] for key in cs.commodities.keys()],
+                                  key=sort_key_funcs[cs.int_lvl])
                     for commodity in coms:
+                        # only charge Commodities at base
                         if commodity.block.data_ph.loc[dtindex, 'atbase']:
+                            # get maximum charging power based on vehicle and static load management
                             p_chg = min(p_avail_lm, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
-                            commodity.set_p(dtindex=dtindex,
-                                            power=p_chg,
-                                            mode='int_ac')
+                            # set charging power
+                            commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
+                            # update available power of static load management
                             p_avail_lm -= p_chg
+                        # update SOCs of all commodities within the CommoditySystem
                         commodity.calc_new_soc(dtindex=dtindex)
                 elif cs.int_lvl == 'equal':
                     pass
@@ -341,7 +346,7 @@ class EsmCommodity(EsmStorage):
             return self.arr_inz[self.arr_inz <= dtindex][-1]
         except:
             # return 1900 if no arrival is found -> at start of new simulation
-            return pd.to_datetime('1900')
+            return pd.to_datetime('1900').replace(tzinfo=self.scenario.timezone)
 
     def set_p(self, dtindex, power, mode='int_ac'):
         super().set_p(dtindex=dtindex,
