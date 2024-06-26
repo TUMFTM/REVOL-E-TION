@@ -84,16 +84,21 @@ class AprioriPowerScheduler:
 
             # region 2. Calculate power for all CommoditySystems with other apriori integration levels than 'uc' with lm
             for cs in self.cs_apriori_lm:
-                p_max = cs.lm_static
+                p_avail_lm = cs.lm_static
                 if cs.int_lvl in ['fcfs', 'soc']:
                     if cs.int_lvl == 'soc':
-                        coms = sorted([self.commodities[key] for key in cs.commodities.keys() if
-                                       self.commodities[key].block.data_ph.loc[dtindex, 'atbase']],
+                        coms = sorted([self.commodities[key] for key in cs.commodities.keys()],
                                       key=lambda x: x.block.apriori_data.loc[dtindex, 'soc'])
                     if cs.int_lvl == 'fcfs':
                         pass
-                    for commodity in [com.name for com in cs.commodities.values()]:
-                        pass
+                    for commodity in coms:
+                        if commodity.block.data_ph.loc[dtindex, 'atbase']:
+                            p_chg = min(p_avail_lm, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
+                            commodity.set_p(dtindex=dtindex,
+                                            power=p_chg,
+                                            mode='int_ac')
+                            p_avail_lm -= p_chg
+                        commodity.calc_new_soc(dtindex=dtindex)
                 elif cs.int_lvl == 'equal':
                     pass
                 else:
@@ -204,7 +209,7 @@ class EsmStorage(EsmBlock):
     def set_p(self, dtindex, power, col):
         super().set_data(dtindex=dtindex, value=power, col=col)
 
-    def calc_p_chg(self, dtindex, p_maxchg, eff=1, soc_max=1, soc_threshold=0):
+    def calc_p_chg(self, dtindex, p_maxchg, eff=1, soc_max=1, soc_threshold=0.005):
         # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
 
         # Only charge if SOC falls below threshold (soc_max - soc_threshold)
