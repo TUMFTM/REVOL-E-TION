@@ -72,59 +72,46 @@ class AprioriPowerScheduler:
             block.init_ph(self.dti_ph)
 
         for dtindex in self.dti_ph:
-            # region 1. Calculate power for all CommoditySystems with apriori integration level 'uc'
-            for commodity in [com.name for cs in self.cs_uc for com in cs.commodities.values()]:
-                if self.commodities[commodity].block.data_ph.loc[dtindex, 'atbase']:
-                    self.commodities[commodity].set_p(dtindex=dtindex,
-                                    power=self.commodities[commodity].calc_p_chg(dtindex, soc_max=1, mode='int_ac'),
-                                    mode='int_ac')
-                # if dtindex + self.scenario.timestep_td in self.dti_ph:
-                self.commodities[commodity].calc_new_soc(dtindex=dtindex)
-            # endregion
-
-            # region 2. Calculate power for all CommoditySystems with other apriori integration levels than 'uc' with lm
-            for cs in self.cs_apriori_lm:
-                p_avail_lm = cs.lm_static
-                if cs.int_lvl in ['fcfs', 'soc']:
-                    # calculate charging priority based on chosen strategy
-                    sort_key_funcs = {
-                        'fcfs': lambda x: x.get_arr(dtindex),
-                        'soc': lambda x: x.get_data(dtindex, 'soc')
-                    }
-                    coms = sorted([self.commodities[key] for key in cs.commodities.keys()],
-                                  key=sort_key_funcs[cs.int_lvl])
-                    for commodity in coms:
-                        # only charge Commodities at base
-                        if commodity.block.data_ph.loc[dtindex, 'atbase']:
-                            # get maximum charging power based on vehicle and static load management
-                            p_chg = min(p_avail_lm, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
-                            # set charging power
-                            commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
-                            # update available power of static load management
-                            p_avail_lm -= p_chg
-                        # update SOCs of all commodities within the CommoditySystem
-                        commodity.calc_new_soc(dtindex=dtindex)
-                elif cs.int_lvl == 'equal':
+            # region 1. Calculate power for all CommoditySystems with 'uc' or static load management
+            for cs in self.cs_uc + self.cs_apriori_lm:
+                # Get the available power of the static load management for the CommoditySystem
+                p_avail_lm = np.inf if cs.int_lvl in 'uc' else cs.lm_static
+                if cs.int_lvl == 'equal':
                     # get list of commodities in CommoditySystem which are ready for charging
-                    coms = [self.commodities[key] for key in cs.commodities.keys() if self.commodities[key].block.data_ph.loc[dtindex, 'atbase']]
+                    coms = [self.commodities[key] for key in cs.commodities.keys() if
+                            self.commodities[key].block.data_ph.loc[dtindex, 'atbase']]
                     while p_avail_lm > 0 and len(coms) > 0:
                         # calculate power for each commodity
                         p_share = p_avail_lm / len(coms)
                         for commodity in coms:
-                            p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
-                            commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
+                            # ToDo: needs to be done in a prettier way
+                            p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac') - commodity.get_data(dtindex, 'p_int_ac') / commodity.block.parent.eff_chg)
+                            commodity.set_p(dtindex=dtindex, power=p_chg + commodity.get_data(dtindex, 'p_int_ac') / commodity.block.parent.eff_chg, mode='int_ac')
                             p_avail_lm -= p_chg
                             if p_chg == 0:
                                 coms.remove(commodity)
-                    # update SOCs of all commodities within the CommoditySystem
-                    for commodity in [self.commodities[key] for key in cs.commodities.keys()]:
-                        commodity.calc_new_soc(dtindex=dtindex)
-
                 else:
-                    print('Error: Integration level not implemented')
+                    # define sorting functions for the different strategies
+                    sort_key_funcs = {
+                        'uc': lambda x: x.block.name,  # sorting makes no difference -> dummy function´for uc
+                        'fcfs': lambda x: x.get_arr(dtindex),
+                        'soc': lambda x: x.get_data(dtindex, 'soc')
+                    }
+                    # get a list of all available commodities and sort them according to the chosen strategy
+                    coms = sorted([self.commodities[key] for key in cs.commodities.keys() if
+                                   self.commodities[key].block.data_ph.loc[dtindex, 'atbase']],
+                                  key=sort_key_funcs[cs.int_lvl])
+                    for commodity in coms:
+                        # get maximum charging power based on vehicle and static load management
+                        p_chg = min(p_avail_lm, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
+                        # set charging power
+                        commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
+                        # update available power of static load management
+                        p_avail_lm -= p_chg
+            # update SOCs of all commodities within the CommoditySystem
+            for commodity in [com.name for cs in self.cs_uc + self.cs_apriori_lm for com in cs.commodities.values()]:
+                self.commodities[commodity].calc_new_soc(dtindex=dtindex)
             # endregion
-
-
 
 class EsmBlock:
     def __init__(self, block, scenario):
@@ -228,7 +215,7 @@ class EsmStorage(EsmBlock):
     def set_p(self, dtindex, power, col):
         super().set_data(dtindex=dtindex, value=power, col=col)
 
-    def calc_p_chg(self, dtindex, p_maxchg, eff=1, soc_max=1, soc_threshold=0.005):
+    def calc_p_chg(self, dtindex, p_maxchg, eff=1, soc_max=1, soc_threshold=0):
         # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
 
         # Only charge if SOC falls below threshold (soc_max - soc_threshold)
