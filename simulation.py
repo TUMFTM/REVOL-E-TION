@@ -403,6 +403,7 @@ class Scenario:
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
+        self.e_eta = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
         else:
@@ -411,6 +412,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
 
+        self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
             run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
         else:
@@ -419,6 +421,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
+        self.renewable_share = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
         else:
@@ -531,7 +534,7 @@ class Scenario:
                 run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2))} {self.currency}-ct/kWh')
+        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
