@@ -551,9 +551,9 @@ class CommoditySystem(InvestBlock):
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
         # static load management can only be activated for rulebased integration levels
-        if self.lm_static and self.int_lvl not in self.apriori_lvls:
-            run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented'
-                               f' for {self.apriori_lvls} - deactivated static load management')
+        if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
+            run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented for'
+                               f' {[x for x in self.apriori_lvls if x != "uc"]} - deactivated static load management')
             self.lm_static = None
 
         if self.opt and self.int_lvl in self.apriori_lvls:
