@@ -373,18 +373,18 @@ class VehicleRentalSystem(RentalSystem):
                                                                         unit='hour')
 
         else:  # no rex defined
-            self.processes['rex_request'] = False
             self.processes['num_rex'] = 0
             self.processes['energy_avail'] = self.energy_base
             self.processes['energy_total'] = self.cs.size_pc
 
             # cap energy request at available energy (equivalent to external charging)
-            self.processes['energy_req'] = np.minimum(self.processes['energy_req'], self.processes['energy_avail'])
-            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req'] /
+            self.processes['energy_req_total'] = np.minimum(self.processes['energy_req_total'],
+                                                            self.processes['energy_avail'])
+            self.processes['dsoc_primary'] = (self.dsoc_base * self.processes['energy_req_total'] /
                                               self.processes['energy_avail'])
 
             self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
-            self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc'] /
+            self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
                                                                       (self.cs.pwr_chg * self.cs.eff_chg),
                                                                       unit='hour')
 
@@ -518,7 +518,7 @@ class RentalProcess:
 
         # request secondary resources from other MultiStore
         if isinstance(self.rs, VehicleRentalSystem):
-            if self.data['rex_request']:  # column does not exist for BatteryCommoditySystems
+            if self.data['rex_request'] == True:  # BatteryCommoditySystems have nan as value -> explicit True check
                 with self.rs.cs.rex_cs.rs.store.get(self.data['num_rex']) as self.secondary_request:
                     self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.patience_rex)
 
@@ -530,8 +530,8 @@ class RentalProcess:
             yield self.env.timeout(self.data['steps_rental'])
             self.rs.processes.loc[self.id, 'step_return'] = self.env.now
 
-            # cover the recharge time incl. buffer
-            if self.data['rex_request']:
+            # cover the recharge time including safety buffer
+            if self.data['rex_request'] == True:  # BatteryCommoditySystems have nan as value -> explicit True check
                 if self.data['steps_blocked_primary'] > self.data['steps_blocked_secondary']:
                     yield self.env.timeout(self.data['steps_blocked_secondary'])
                     self.rs.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
