@@ -7,7 +7,6 @@ class AprioriPowerScheduler:
     def __init__(self, scenario):
         self.scenario = scenario
 
-        '''
         # Get name of system core block
         self.sys_core = [name for name, block in self.scenario.blocks.items() if isinstance(block, blocks.SystemCore)][
             0]
@@ -15,6 +14,7 @@ class AprioriPowerScheduler:
         # remaining power available on the system core converter for the current timestep
         self.p_avail_conv = {}
 
+        '''
         # mapping dictionary to execute correct function corresponding to input file specification
         self.func_map = {'uc': self.calc_power_uc,
                          'fcfs': self.calc_power_fcfs,
@@ -25,7 +25,6 @@ class AprioriPowerScheduler:
         self.apriori_cs = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]
 
         # define dict of elements controlled by rule based algorithm (all commodity systems)
-        # ToDo: necessary or split into different int_lvls?
         self.commodities = {name: EsmCommodity(commodity, self.scenario) for block in
                             self.apriori_cs for name, commodity in block.commodities.items()}
 
@@ -72,46 +71,57 @@ class AprioriPowerScheduler:
             block.init_ph(self.dti_ph)
 
         for dtindex in self.dti_ph:
-            # region 1. Calculate power for all CommoditySystems with 'uc' or static load management
+            # Calculate power for all CommoditySystems with 'uc' or static load management
+            p_cs_lim = {'ac': 0, 'dc': 0}
             for cs in self.cs_uc + self.cs_apriori_lm:
-                # Get the available power of the static load management for the CommoditySystem
-                p_avail_lm = np.inf if cs.int_lvl in 'uc' else cs.lm_static
-                if cs.int_lvl == 'equal':
-                    # get list of commodities in CommoditySystem which are ready for charging
-                    coms = [self.commodities[key] for key in cs.commodities.keys() if
-                            self.commodities[key].block.data_ph.loc[dtindex, 'atbase']]
-                    while p_avail_lm > 0 and len(coms) > 0:
-                        # calculate power for each commodity
-                        p_share = p_avail_lm / len(coms)
-                        for commodity in coms:
-                            # ToDo: needs to be done in a prettier way
-                            p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac') - commodity.get_data(dtindex, 'p_int_ac') / commodity.block.parent.eff_chg)
-                            commodity.set_p(dtindex=dtindex, power=p_chg + commodity.get_data(dtindex, 'p_int_ac') / commodity.block.parent.eff_chg, mode='int_ac')
-                            p_avail_lm -= p_chg
-                            if p_chg == 0:
-                                coms.remove(commodity)
-                else:
-                    # define sorting functions for the different strategies
-                    sort_key_funcs = {
-                        'uc': lambda x: x.block.name,  # sorting makes no difference -> dummy function´for uc
-                        'fcfs': lambda x: x.get_arr(dtindex),
-                        'soc': lambda x: x.get_data(dtindex, 'soc')
-                    }
-                    # get a list of all available commodities and sort them according to the chosen strategy
-                    coms = sorted([self.commodities[key] for key in cs.commodities.keys() if
-                                   self.commodities[key].block.data_ph.loc[dtindex, 'atbase']],
-                                  key=sort_key_funcs[cs.int_lvl])
-                    for commodity in coms:
-                        # get maximum charging power based on vehicle and static load management
-                        p_chg = min(p_avail_lm, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
-                        # set charging power
-                        commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
-                        # update available power of static load management
-                        p_avail_lm -= p_chg
-            # update SOCs of all commodities within the CommoditySystem
-            for commodity in [com.name for cs in self.cs_uc + self.cs_apriori_lm for com in cs.commodities.values()]:
-                self.commodities[commodity].calc_new_soc(dtindex=dtindex)
-            # endregion
+                p_cs_lim[cs.bus_connected.label[0:2]] += self.calc_p_cs_lim(cs, dtindex)
+            pass
+
+    def calc_p_cs_lim(self, cs, dtindex):
+        # Get the available power of the static load management for the CommoditySystem
+        p_avail_lm = np.inf if cs.int_lvl in 'uc' else cs.lm_static
+        p_cs = 0
+        if cs.int_lvl == 'equal':
+            # get list of commodities in CommoditySystem which are ready for charging
+            coms = [self.commodities[key] for key in cs.commodities.keys() if
+                    self.commodities[key].block.data_ph.loc[dtindex, 'atbase']]
+            while p_avail_lm > 0 and len(coms) > 0:
+                # calculate power for each commodity
+                p_share = (p_avail_lm - p_cs) / len(coms)
+                for commodity in coms:
+                    # ToDo: needs to be done in a prettier way
+                    p_chg = min(p_share,
+                                commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac') - commodity.get_data(dtindex,
+                                                                                                             'p_int_ac') / commodity.block.parent.eff_chg)
+                    commodity.set_p(dtindex=dtindex, power=p_chg + commodity.get_data(dtindex,
+                                                                                      'p_int_ac') / commodity.block.parent.eff_chg,
+                                    mode='int_ac')
+                    p_cs += p_chg
+                    if p_chg == 0:
+                        coms.remove(commodity)
+        else:
+            # define sorting functions for the different strategies
+            sort_key_funcs = {
+                'uc': lambda x: x.block.name,  # sorting makes no difference -> dummy function´for uc
+                'fcfs': lambda x: x.get_arr(dtindex),
+                'soc': lambda x: x.get_data(dtindex, 'soc')
+            }
+            # get a list of all available commodities and sort them according to the chosen strategy
+            coms = sorted([self.commodities[key] for key in cs.commodities.keys() if
+                           self.commodities[key].block.data_ph.loc[dtindex, 'atbase']],
+                          key=sort_key_funcs[cs.int_lvl])
+            for commodity in coms:
+                # get maximum charging power based on vehicle and static load management
+                p_chg = min((p_avail_lm - p_cs), commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac'))
+                # set charging power
+                commodity.set_p(dtindex=dtindex, power=p_chg, mode='int_ac')
+                # update available power of static load management
+                p_cs += p_chg
+        # update SOCs of all commodities within the CommoditySystem
+        for commodity in [com.name for cs in self.cs_uc + self.cs_apriori_lm for com in cs.commodities.values()]:
+            self.commodities[commodity].calc_new_soc(dtindex=dtindex)
+
+        return p_cs
 
 class EsmBlock:
     def __init__(self, block, scenario):
