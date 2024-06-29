@@ -67,7 +67,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
 
-        if scenario.strategy in ['go', 'rh']:
+        if scenario.strategy in ['go', 'rh', 'rl']:
             horizon.run_optimization(scenario, run)
         else:
             logging.error(f'Scenario {scenario.name}: energy management strategy unknown')

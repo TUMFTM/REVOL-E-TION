@@ -148,7 +148,10 @@ class PredictionHorizon:
                     commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
 
         # if apriori power scheduling is necessary, calculate power schedules:
-        if scenario.scheduler:
+        if scenario.strategy == 'rl':
+
+            scenario.scheduler.calc_schedule(self.dti_ph)
+        elif scenario.scheduler:
             scenario.scheduler.calc_schedule(self.dti_ph)
 
         for block in scenario.blocks.values():
@@ -183,7 +186,7 @@ class PredictionHorizon:
         apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
 
         if run.dump_model:
-            if scenario.strategy == 'go':
+            if scenario.strategy in ['go', 'rl']:
                 self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
             elif scenario.strategy == 'rh':
                 run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
@@ -348,7 +351,7 @@ class Scenario:
             # number of timesteps for CH
             self.ch_nsteps = math.ceil(self.len_ch.total_seconds() / 3600 / self.timestep_hours)
             self.nhorizons = int(self.sim_duration // self.len_ch)  # number of timeslices to run
-        elif self.strategy in ['go', 'lfs']:
+        elif self.strategy in ['go', 'lfs', 'rl']:
             self.len_ph = self.sim_duration
             self.len_ch = self.sim_duration
             self.nhorizons = 1
@@ -494,7 +497,7 @@ class Scenario:
                                  showgrid=False,
                                  secondary_y=True)
 
-        if self.strategy == 'go':
+        if self.strategy in ['go', 'rl']:
             self.figure.update_layout(title=f'Global Optimum Results - '
                                             f'{run.scenario_file_name} - '
                                             f'Scenario: {self.name}')
