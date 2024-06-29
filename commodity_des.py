@@ -547,7 +547,10 @@ class RentalProcess:
                     self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
                     self.rs.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
             else:  # no rex request
-                yield self.env.timeout(self.data['steps_blocked_primary'])
+                a = self.data['steps_blocked_primary']
+                if a is None:
+                    a = 0
+                yield self.env.timeout(a)
                 self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
 
             self.rs.processes.loc[self.id, 'status'] = 'success'
