@@ -676,7 +676,7 @@ class SimulationRun:
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
     @staticmethod
-    def get_git_commit_hash(self):
+    def get_git_commit_hash():
         """
         Get commit hash of current HEAD. Caution: does not consider work in progress
         """
