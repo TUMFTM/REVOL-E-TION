@@ -403,7 +403,7 @@ class Scenario:
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
-        self.e_eta = None
+        #self.e_eta = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
         else:
@@ -412,7 +412,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
 
-        self.renewable_curtailment = None
+        #self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
             run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
         else:
@@ -421,7 +421,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
-        self.renewable_share = None
+        #self.renewable_share = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
         else:
@@ -675,6 +675,7 @@ class SimulationRun:
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
+    @staticmethod
     def get_git_commit_hash(self):
         """
         Get commit hash of current HEAD. Caution: does not consider work in progress

@@ -467,8 +467,8 @@ class BatteryRentalSystem(RentalSystem):
 
             p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
             self.processes['soc_return'] = np.clip(np.random.lognormal(p1, p2, n_processes),
-                                                   self.cs.soc_return_min,
-                                                   self.cs.soc_dep)
+                                                           self.cs.soc_return_min,
+                                                           self.cs.soc_dep)
             self.processes['num_resources'] = self.processes.apply(
                 lambda row: self.usecases.loc[row['usecase_idx'], 'num_bat'], axis=1).astype(int)
             self.processes['energy_avail'] = self.processes['num_resources'] * self.cs.soc_dep * self.cs.size_pc
@@ -483,11 +483,12 @@ class BatteryRentalSystem(RentalSystem):
             p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
             self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
 
-            self.processes['energy_req_pc'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
-            self.processes['energy_req'] = self.processes['energy_req_pc'] * self.processes['num_resources']
+            self.processes['energy_req_pc_primary'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
+            self.processes['energy_req_primary'] = (self.processes['energy_req_pc_primary'] *
+                                                    self.processes['num_resources'])
 
-            self.processes['time_recharge'] = pd.to_timedelta(self.processes['energy_req_pc'] /
-                                                              (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
+            self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
+                                                                      (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
 
 class RentalProcess:
