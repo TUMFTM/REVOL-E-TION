@@ -469,7 +469,7 @@ class Scenario:
 
         # print basic results
         run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC {round(self.totex_dis) if self.totex_dis else "-":, } {self.currency} -'
+                        f' NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
                         f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
                         f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
                         f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
