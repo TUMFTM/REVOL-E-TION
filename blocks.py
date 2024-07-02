@@ -1432,7 +1432,6 @@ class StationaryEnergyStorage(InvestBlock):
                                                            max=self.size * self.crate_dis,
                                                        )},
                                                        loss_rate=self.loss_rate,
-                                                       # ToDo: add parameter for rulebased ESM
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.soc_init_ph,
                                                        inflow_conversion_factor=self.eff_chg,

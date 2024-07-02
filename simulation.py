@@ -425,7 +425,7 @@ class Scenario:
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
-        self.e_eta = None
+        #self.e_eta = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
         else:
@@ -434,7 +434,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
 
-        self.renewable_curtailment = None
+        #self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
             run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
         else:
@@ -443,7 +443,7 @@ class Scenario:
             except ZeroDivisionError:
                 run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
 
-        self.renewable_share = None
+        #self.renewable_share = None
         if self.e_sim_pro == 0:
             run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
         else:
@@ -469,12 +469,12 @@ class Scenario:
 
         # print basic results
         run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC {round(self.totex_dis):,} {self.currency} -'
-                        f' NPV {round(self.npv):,} {self.currency} -'
-                        f' LCOE {round(self.lcoe_wocs * 1e5, 1)} {self.currency}-ct/kWh -'
-                        f' mIRR {round(self.mirr * 100, 1)} % -'
-                        f' Renewable Share: {round(self.renewable_share * 100, 1)} % -'
-                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1)} %')
+                        f' NPC {round(self.totex_dis) if self.totex_dis else "-":, } {self.currency} -'
+                        f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
+                        f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
+                        f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+                        f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -697,7 +697,8 @@ class SimulationRun:
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
-    def get_git_commit_hash(self):
+    @staticmethod
+    def get_git_commit_hash():
         """
         Get commit hash of current HEAD. Caution: does not consider work in progress
         """
