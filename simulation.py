@@ -134,7 +134,7 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
-        run.logger.info(f'Scenario {scenario.name} - '
+        run.logger.info(f'Scenario \"{scenario.name}\" - '
                         f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                         f'Start: {self.starttime} - '
                         f'CH end: {self.ch_endtime} - '
@@ -223,7 +223,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                run.logger.debug(f'Scenario: {scenario.name} - System Node {nd.label} - Type {type(nd)} not recognized')
+                run.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -237,7 +237,7 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting renderer from stopping model execution
-            run.logger.warning(f'Scenario: {scenario.name} - '
+            run.logger.warning(f'Scenario: \"{scenario.name}\" - '
                                f'Graphviz rendering failed - '
                                f'Error Message: {e}')
 
@@ -418,7 +418,7 @@ class Scenario:
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
         self.lcoe = self.lcoe_dis = 0
 
-        run.logger.debug(f'Scenario {self.name} initialization completed')
+        run.logger.debug(f'Scenario \"{self.name}\" initialization completed')
 
     def calc_meta_results(self, run):
 
@@ -432,36 +432,36 @@ class Scenario:
             try:
                 self.e_eta = self.e_sim_del / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
+                run.logger.warning(f'Scenario \"{self.name}\" - core efficiency calculation: division by zero')
 
         #self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
-            run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
+            run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
         else:
             try:
                 self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario {self.name} - renewable curtailment calculation: division by zero')
+                run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
 
         #self.renewable_share = None
         if self.e_sim_pro == 0:
-            run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
+            run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
         else:
             try:
                 self.renewable_share = self.e_renewable_act / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario {self.name} - renewable share calculation: division by zero')
+                run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
 
         totex_dis_cs = sum([cs.totex_dis for cs in self.commodity_systems.values()])
         if self.e_dis_del == 0:
-            run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+            run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
         else:
             try:
                 self.lcoe = self.totex_dis / self.e_dis_del
                 self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
             except ZeroDivisionError:
                 self.lcoe = self.lcoe_wocs = None
-                run.logger.warning(f'Scenario {self.name} - LCOE calculation: division by zero')
+                run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
@@ -536,24 +536,24 @@ class Scenario:
 
     def print_results(self, run):
         print('#################')
-        run.logger.info(f'Results for Scenario {self.name}:')
+        run.logger.info(f'Results for Scenario \"{self.name}\":')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    run.logger.info(f'Optimized size of AC/DC power in component {block.name}: {round(block.size_acdc / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
                 if block.opt_dcac:
-                    run.logger.info(f'Optimized size of DC/AC power in component {block.name}: {round(block.size_dcac / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    run.logger.info(f'Optimized size of g2mg power in component {block.name}: {round(block.size_g2mg / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    run.logger.info(f'Optimized size of mg2g power in component {block.name}: {round(block.size_mg2g / 1e3)} {unit}')
+                    run.logger.info(f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
-                    run.logger.info(f'Optimized size of commodity {commodity.name} in component {block.name}: {round(commodity.size / 1e3, 1)} {unit}')
+                    run.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
             else:
-                run.logger.info(f'Optimized size of component {block.name}: {round(block.size / 1e3)} {unit}')
+                run.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
         run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')

@@ -267,7 +267,7 @@ class InvestBlock(Block):
         self.set_init_size(scenario, run)
 
         if self.opt and scenario.strategy != 'go':
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size optimization not implemented'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size optimization not implemented'
                                f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of run
 
@@ -534,7 +534,7 @@ class CommoditySystem(InvestBlock):
             self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-                run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'
+                run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" input data does not match timestep'
                                    f' - resampling is experimental')
                 consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
                 bool_columns = self.data.columns.difference(consumption_columns)
@@ -884,7 +884,7 @@ class GridConnection(InvestBlock):
 
         if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
             self.size_g2mg = self.size_mg2g = 'opt'
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
                                f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
                                f' components with an additional "equal" constraint')
             self.equal = False
@@ -1662,7 +1662,7 @@ class SystemCore(InvestBlock):
 
         if (self.size_acdc == 'equal') and (self.size_dcac == 'equal'):
             self.size_acdc = self.size_dcac = 'opt'
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
                                f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
                                f' components with an additional "equal" constraint')
         elif self.size_acdc == 'equal':
