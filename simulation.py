@@ -395,7 +395,7 @@ class Scenario:
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
-            self.scheduler = AprioriPowerScheduler(scenario=self)
+            self.scheduler = AprioriPowerScheduler(run=run, scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting

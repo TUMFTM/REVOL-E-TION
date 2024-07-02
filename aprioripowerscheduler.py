@@ -4,7 +4,8 @@ import blocks
 
 
 class AprioriPowerScheduler:
-    def __init__(self, scenario):
+    def __init__(self, run, scenario):
+        self.run = run
         self.scenario = scenario
 
         # Get name of system core block
@@ -84,7 +85,8 @@ class AprioriPowerScheduler:
                 for system in ['ac', 'dc']:
                     p_avail_sys['system'] = self.draw_power(bus_connected=system,
                                                             pwr=(-1) * self.p_fixed.loc[dtindex, system] + p_cs_lim_uc[system],
-                                                            p_avail_sys=p_avail_sys)
+                                                            p_avail_sys=p_avail_sys,
+                                                            dtindex=dtindex)
 
                 # Schedule at base charging of commodities
                 int_lvl = self.cs_apriori_unlim[0].int_lvl  # have to be the same for all CommoditySystems
@@ -160,7 +162,8 @@ class AprioriPowerScheduler:
                 if not p_avail_lm and int_lvl != 'uc':
                     p_avail_sys = self.draw_power(bus_connected=bus_prio,
                                                   pwr=pwr_chg,
-                                                  p_avail_sys=p_avail_sys)
+                                                  p_avail_sys=p_avail_sys,
+                                                  dtindex=dtindex)
 
                 p_cs += pwr_chg
 
@@ -169,7 +172,7 @@ class AprioriPowerScheduler:
 
         return p_cs
 
-    def draw_power(self, bus_connected, pwr, p_avail_sys):
+    def draw_power(self, bus_connected, pwr, p_avail_sys, dtindex):
         # deduct power from available power on the corresponding bus(es) and the converter
         pwr_prio = min(p_avail_sys[bus_connected], pwr)
         p_avail_sys[bus_connected] -= pwr_prio
@@ -178,21 +181,14 @@ class AprioriPowerScheduler:
         p_avail_sys[self.get_bus(bus_connected, 'other')] -= pwr_non_prio
         self.p_avail_conv[self.get_bus(bus_connected, 'other')] -= pwr_non_prio
 
-        # ToDo: check whether is really necessary
-        if 0 > p_avail_sys[self.get_bus(bus_connected, 'other')] > -1E-10:
-            print(f'Error! Small value: {p_avail_sys[self.get_bus(bus_connected, "other")]}')
-            p_avail_sys[self.get_bus(bus_connected, 'other')] = 0
-
-        if 0 > p_avail_sys[bus_connected] > -1E-10:
-            print(f'Error! Small value: {p_avail_sys[bus_connected]}')
-            p_avail_sys[bus_connected] = 0
-
-        if p_avail_sys['ac'] < 0 or p_avail_sys['dc'] < 0:
-            print('\n\nError! Not enough power available on buses!')
-
-        if self.p_avail_conv['ac'] < 0 or self.p_avail_conv['dc'] < 0:
-            print('\n\nError! Not enough power available on SystemCore converter!')
-
+        for location, value in {'AC bus': p_avail_sys['ac'],
+                                'DC bus': p_avail_sys['dc'],
+                                'AC/DC converter': self.p_avail_conv['ac'],
+                                'DC/AC converter': self.p_avail_conv['dc']}.items():
+            if value < 0:
+                self.run.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {value:.2E} W on'
+                                        f' {location} occurred in AprioriScheduler at {dtindex}!'
+                                        f' This shortage may lead to infeasiblity during optimization.')
         return p_avail_sys
 
     def get_conv_eff(self, source, target):
