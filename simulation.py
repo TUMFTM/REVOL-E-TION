@@ -677,8 +677,8 @@ class SimulationRun:
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
 
-        if len(self.scenario_names) == 1 and self.parallel:
-            self.logger.warning('Parallel mode not possible with single scenario - switching to sequential mode')
+        if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
+            self.logger.warning('Single scenario or process: Parallel mode not possible - switching to sequential mode')
             self.parallel = False
 
         if self.parallel:
