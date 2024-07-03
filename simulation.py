@@ -23,6 +23,7 @@ import graphviz
 import logging
 import logging.handlers
 import math
+import numpy as np
 import os
 import pickle
 import pprint
@@ -31,6 +32,7 @@ import subprocess
 import sys
 import time
 import timezonefinder
+import traceback
 
 import multiprocessing as mp
 import numpy_financial as npf
@@ -115,6 +117,12 @@ def input_gui(directory):
 ###############################################################################
 
 
+class OptimizationSuccessfulFilter(logging.Filter):
+    def filter(self, record):
+        # Filter out log messages from the root logger
+        return not (record.name == 'root' and record.msg == 'Optimization successful...')
+
+
 class PredictionHorizon:
 
     def __init__(self, index, scenario, run):
@@ -137,8 +145,9 @@ class PredictionHorizon:
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Start: {self.starttime} - '
                              f'CH end: {self.ch_endtime} - '
-                             f'PH end: {self.ph_endtime} - '
-                             f'initializing model build')
+                             f'PH end: {self.ph_endtime}')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                             f'Initializing model build')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
@@ -158,7 +167,8 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Building energy system instance')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -169,13 +179,14 @@ class PredictionHorizon:
         if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system(scenario, run)
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Creating optimization model')
 
         try:
             self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
         except IndexError:
-            msg = (f'Horizon {self.index + 1} of {scenario.nhorizons}:'
-                   f' Input data not matching time index - check input data and time index consistency')
+            msg = (f'Horizon {self.index + 1} of {scenario.nhorizons} -'
+                   f'Input data not matching time index - check input data and time index consistency')
             scenario.logger.error(msg)
             raise IndexError(msg)
 
@@ -187,7 +198,8 @@ class PredictionHorizon:
             elif scenario.strategy == 'rh':
                 scenario.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Model build completed')
 
     def draw_energy_system(self, scenario, run):
 
@@ -269,10 +281,12 @@ class PredictionHorizon:
                 block.calc_aging(run, scenario, self)
 
     def run_optimization(self, scenario, run):
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons}:'
-                             f' Model built, starting optimization')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                             f'Model built, starting optimization')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                                 f'Optimization completed, getting results')
         except UserWarning as exc:
             scenario.logger.warning(f'Scenario failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
@@ -296,7 +310,8 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        self.logger.info(f'Scenario initialized on {self.worker}')
+        self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)}' +
+                         (f' - Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else ''))
 
         self.parameters = run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
@@ -304,6 +319,7 @@ class Scenario:
 
         # noinspection PyUnresolvedReferences
         self.currency = self.currency.upper()
+        self.currency.egtxx()
 
         self.tzfinder = timezonefinder.TimezoneFinder()
         self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
@@ -447,7 +463,7 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f' NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
+        self.logger.info(f'NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
                          f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
                          f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
                          f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
@@ -625,7 +641,8 @@ class SimulationRun:
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
-        self.max_process_num = int(self.max_process_num)
+        # set number of processes based on specified settings and available CPUs
+        self.max_process_num = np.inf if self.max_process_num == 'max' else int(self.max_process_num)
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
         self.path_input_data = os.path.join(self.cwd, 'input')
@@ -645,20 +662,28 @@ class SimulationRun:
         if self.save_results or self.save_des_results:
             os.mkdir(self.path_result_folder)
 
-        log_formatter = logging.Formatter(logging.BASIC_FORMAT)
+        self.logger = logging.getLogger()
+        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s'
+                                          f'  %(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s'
+                                          f'  %(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
         log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.path_log_file))
         log_file_handler.setFormatter(log_formatter)
-        self.logger = logging.getLogger()
         self.logger.addHandler(log_stream_handler)
         self.logger.addHandler(log_file_handler)  # TODO global messages not getting through to logs in parallel mode
 
+        # Adding the custom filter to prevent root logger messages
+        log_stream_handler.addFilter(OptimizationSuccessfulFilter())
+        log_file_handler.addFilter(OptimizationSuccessfulFilter())
+
+        if len(self.scenario_names) == 1 and self.parallel:
+            self.logger.warning('Parallel mode not possible with single scenario - switching to sequential mode')
+            self.parallel = False
+
         if self.parallel:
             log_stream_handler.setLevel(logging.INFO)
-            self.logger.info(f'Global settings read - '
-                             f'simulating {self.scenario_num} scenario(s)'
-                             f' in parallel mode with {self.process_num} process(es)')
+            self.logger.setLevel(logging.INFO)
         else:
             if self.debugmode:
                 self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
@@ -666,7 +691,11 @@ class SimulationRun:
             else:
                 self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
                 log_stream_handler.setLevel(logging.INFO)
-            self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
+
+        self.logger.info(
+            f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
+            f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
+        )
 
     def end_timing(self):
 
@@ -697,6 +726,12 @@ class SimulationRun:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
+
+        self.logger.error(f"Exception type: {exc_type.__name__}")
+        self.logger.error(f"Exception message: {str(exc_value)}")
+        self.logger.error("Traceback:")
+        self.logger.error(''.join(traceback.format_tb(exc_traceback)))
+
         self.logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
         exit()
 

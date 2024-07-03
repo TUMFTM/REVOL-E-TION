@@ -44,16 +44,10 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 
 def setup_logger(name, log_queue, debugmode):
     logger = logging.getLogger(name)
-
-    # Remove all existing handlers
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-
-    # Set up QueueHandler and configure logger
-    queue_handler = QueueHandler(log_queue)
     logger.setLevel(logging.DEBUG if debugmode else logging.INFO)
-    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     formatter = logging.Formatter('%(message)s')
+
+    queue_handler = QueueHandler(log_queue)
     queue_handler.setFormatter(formatter)
     logger.addHandler(queue_handler)
 
@@ -63,16 +57,12 @@ def setup_logger(name, log_queue, debugmode):
 def read_mplogger_queue(queue):
     main_logger = logging.getLogger('main')
 
-    for handler in main_logger.handlers[:]:
-        main_logger.removeHandler(handler)
-
     while True:
         record = queue.get()
         if record is None:
             break
         elif platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
             main_logger.handle(record)  # This line causes double logger outputs on Linux
-
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
@@ -90,7 +80,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)
         else:
-            logging.error(f'Scenario {scenario.name}: energy management strategy unknown')
+            logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
             break
 
         if scenario.exception and run.save_results:
@@ -134,24 +124,22 @@ if __name__ == '__main__':
     run = SimulationRun()  # get all global information about the run
 
     # parallelization activated in settings file
-    if run.parallel:
-        with mp.Manager() as manager:
-            log_queue = manager.Queue()
+    with mp.Manager() as manager:
+        log_queue = manager.Queue()
 
-            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
-            log_thread.start()
+        log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
+        log_thread.start()
+        if run.parallel:
             with mp.Pool(processes=run.process_num) as pool:
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
-            log_queue.put(None)
-            log_thread.join()
-            # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
+        else:
+            for scenario_name in run.scenario_names:
+                simulate_scenario(scenario_name, run, log_queue)
 
-    # sequential scenario processing selected
-    else:
-        for scenario_name in run.scenario_names:
-            simulate_scenario(scenario_name, run, None)  # no logger queue
+        if run.save_results:
+            run.join_results()
 
-    if run.save_results:
-        run.join_results()
-
-    run.end_timing()
+        run.end_timing()
+        log_queue.put(None)
+        log_thread.join()
+        # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
