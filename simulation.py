@@ -317,9 +317,7 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
-        # noinspection PyUnresolvedReferences
         self.currency = self.currency.upper()
-        self.currency.egtxx()
 
         self.tzfinder = timezonefinder.TimezoneFinder()
         self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
@@ -600,6 +598,7 @@ class SimulationRun:
 
         self.name = 'run'
         self.cwd = os.getcwd()
+        self.process = None
 
         # make sure that errors are logged to logfile
         sys.excepthook = self.handle_exception

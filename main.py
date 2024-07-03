@@ -42,14 +42,20 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 ###############################################################################
 
 
-def setup_logger(name, log_queue, debugmode):
+def setup_logger(name, log_queue, run):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG if debugmode else logging.INFO)
-    formatter = logging.Formatter('%(message)s')
+    if log_queue:
+        logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
+        formatter = logging.Formatter('%(message)s')
 
-    queue_handler = QueueHandler(log_queue)
-    queue_handler.setFormatter(formatter)
-    logger.addHandler(queue_handler)
+        queue_handler = QueueHandler(log_queue)
+        queue_handler.setFormatter(formatter)
+        logger.addHandler(queue_handler)
+
+    else:
+        logger.setLevel(run.logger.level)
+        for handler in run.logger.handlers:
+            logger.addHandler(handler)
 
     return logger
 
@@ -66,11 +72,9 @@ def read_mplogger_queue(queue):
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
+    logger = setup_logger(name, log_queue, run)
 
-    logger = setup_logger(name, log_queue, run.debugmode)
-
-    run.logger = logger
-    run.process = mp.current_process()
+    run.process = mp.current_process() if run.parallel else None
 
     scenario = Scenario(name, run, logger)  # Create scenario instance
 
@@ -124,22 +128,22 @@ if __name__ == '__main__':
     run = SimulationRun()  # get all global information about the run
 
     # parallelization activated in settings file
-    with mp.Manager() as manager:
-        log_queue = manager.Queue()
+    if run.parallel:
+        with mp.Manager() as manager:
+            log_queue = manager.Queue()
 
-        log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
-        log_thread.start()
-        if run.parallel:
+            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
+            log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
-        else:
-            for scenario_name in run.scenario_names:
-                simulate_scenario(scenario_name, run, log_queue)
+            log_queue.put(None)
+            log_thread.join()
+    else:
+        for scenario_name in run.scenario_names:
+            simulate_scenario(scenario_name, run, None)
 
-        if run.save_results:
-            run.join_results()
+    if run.save_results:
+        run.join_results()
 
-        run.end_timing()
-        log_queue.put(None)
-        log_thread.join()
-        # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
+    run.end_timing()
+    # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
