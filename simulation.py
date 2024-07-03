@@ -134,12 +134,11 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
-        run.logger.info(f'Scenario \"{scenario.name}\" - '
-                        f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                        f'Start: {self.starttime} - '
-                        f'CH end: {self.ch_endtime} - '
-                        f'PH end: {self.ph_endtime} - '
-                        f'initializing model build')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                             f'Start: {self.starttime} - '
+                             f'CH end: {self.ch_endtime} - '
+                             f'PH end: {self.ph_endtime} - '
+                             f'initializing model build')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
@@ -159,7 +158,7 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        logging.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -170,14 +169,14 @@ class PredictionHorizon:
         if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system(scenario, run)
 
-        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
         try:
             self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
         except IndexError:
-            msg = (f'Scenario {scenario.name} - Horizon {self.index + 1} of {scenario.nhorizons}:'
+            msg = (f'Horizon {self.index + 1} of {scenario.nhorizons}:'
                    f' Input data not matching time index - check input data and time index consistency')
-            run.logger.error(msg)
+            scenario.logger.error(msg)
             raise IndexError(msg)
 
         apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
@@ -186,9 +185,9 @@ class PredictionHorizon:
             if scenario.strategy == 'go':
                 self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
             elif scenario.strategy == 'rh':
-                run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
+                scenario.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
-        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
 
     def draw_energy_system(self, scenario, run):
 
@@ -223,7 +222,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                run.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
+                scenario.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -237,9 +236,8 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting renderer from stopping model execution
-            run.logger.warning(f'Scenario: \"{scenario.name}\" - '
-                               f'Graphviz rendering failed - '
-                               f'Error Message: {e}')
+            scenario.logger.warning(f'Graphviz rendering failed - '
+                                    f'Error Message: {e}')
 
     def get_results(self, scenario, run):
         """
@@ -247,7 +245,7 @@ class PredictionHorizon:
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
-        run.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
+        scenario.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
@@ -271,21 +269,24 @@ class PredictionHorizon:
                 block.calc_aging(run, scenario, self)
 
     def run_optimization(self, scenario, run):
-        run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
-                        f' Model built, starting optimization')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons}:'
+                             f' Model built, starting optimization')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
         except UserWarning as exc:
-            run.logger.warning(f'Scenario \"{scenario.name}\" failed or infeasible - continue on next scenario')
+            scenario.logger.warning(f'Scenario failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
 
 class Scenario:
 
-    def __init__(self, scenario_name, run):
+    def __init__(self, scenario_name, run, logger):
 
         self.name = scenario_name
         self.run = run
+        self.logger = logger
+        self.logger.propagate = False
+        pass
 
         # General Information --------------------------------
 
@@ -295,7 +296,7 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        run.logger.info(f'Scenario \"{self.name}\" initialized on {self.worker}')
+        self.logger.info(f'Scenario initialized on {self.worker}')
 
         self.parameters = run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
@@ -396,7 +397,7 @@ class Scenario:
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
         self.lcoe = self.lcoe_dis = 0
 
-        run.logger.debug(f'Scenario \"{self.name}\" initialization completed')
+        self.logger.debug(f'Scenario initialization completed')
 
     def calc_meta_results(self, run):
 
@@ -405,54 +406,53 @@ class Scenario:
 
         #self.e_eta = None
         if self.e_sim_pro == 0:
-            run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
+            self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
             try:
                 self.e_eta = self.e_sim_del / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - core efficiency calculation: division by zero')
+                self.logger.warning(f'Core efficiency calculation: division by zero')
 
         #self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
+            self.logger.warning(f'Renewable curtailment calculation: division by zero')
         else:
             try:
                 self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
+                self.logger.warning(f'Renewable curtailment calculation: division by zero')
 
         #self.renewable_share = None
         if self.e_sim_pro == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
+            self.logger.warning(f'Renewable share calculation: division by zero')
         else:
             try:
                 self.renewable_share = self.e_renewable_act / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
+                self.logger.warning(f'Renewable share calculation: division by zero')
 
         totex_dis_cs = sum([cs.totex_dis for cs in self.commodity_systems.values()])
         if self.e_dis_del == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
+            self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
                 self.lcoe = self.totex_dis / self.e_dis_del
                 self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
             except ZeroDivisionError:
                 self.lcoe = self.lcoe_wocs = None
-                run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
+                self.logger.warning(f'LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
-                        f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
-                        f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
-                        f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
-                        f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
-                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
+        self.logger.info(f' NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
+                         f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
+                         f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
+                         f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+                         f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                         f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -467,7 +467,7 @@ class Scenario:
     def end_timing(self, run):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        run.logger.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
+        self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
 
     def generate_plots(self, run):
 
@@ -514,27 +514,26 @@ class Scenario:
 
     def print_results(self, run):
         print('#################')
-        run.logger.info(f'Results for Scenario \"{self.name}\":')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    run.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
                 if block.opt_dcac:
-                    run.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    run.logger.info(f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    run.logger.info(f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
-                    run.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
+                    self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
             else:
-                run.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
+                self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
+        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):

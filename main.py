@@ -20,6 +20,7 @@ license:    GPLv3
 
 import logging
 import logging.handlers
+from logging.handlers import QueueHandler
 import threading
 import warnings
 import multiprocessing as mp
@@ -41,28 +42,47 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 ###############################################################################
 
 
+def setup_logger(name, log_queue, debugmode):
+    logger = logging.getLogger(name)
+
+    # Remove all existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Set up QueueHandler and configure logger
+    queue_handler = QueueHandler(log_queue)
+    logger.setLevel(logging.DEBUG if debugmode else logging.INFO)
+    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(message)s')
+    queue_handler.setFormatter(formatter)
+    logger.addHandler(queue_handler)
+
+    return logger
+
+
 def read_mplogger_queue(queue):
+    main_logger = logging.getLogger('main')
+
+    for handler in main_logger.handlers[:]:
+        main_logger.removeHandler(handler)
+
     while True:
         record = queue.get()
         if record is None:
             break
         elif platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
-            run.logger.handle(record)  # This line causes double logger outputs on Linux
+            main_logger.handle(record)  # This line causes double logger outputs on Linux
+
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
 
-    if run.parallel:
-        run.process = mp.current_process()
-        run.queue_handler = logging.handlers.QueueHandler(log_queue)
-        run.logger = logging.getLogger()
-        if run.debugmode:
-            run.logger.setLevel(logging.DEBUG)
-        else:
-            run.logger.setLevel(logging.INFO)
-        run.logger.addHandler(run.queue_handler)
+    logger = setup_logger(name, log_queue, run.debugmode)
 
-    scenario = Scenario(name, run)  # Create scenario instance
+    run.logger = logger
+    run.process = mp.current_process()
+
+    scenario = Scenario(name, run, logger)  # Create scenario instance
 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
@@ -117,6 +137,7 @@ if __name__ == '__main__':
     if run.parallel:
         with mp.Manager() as manager:
             log_queue = manager.Queue()
+
             log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
