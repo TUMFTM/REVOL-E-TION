@@ -4,259 +4,175 @@ import blocks
 
 
 class AprioriPowerScheduler:
-    def __init__(self, scenario):
+    def __init__(self, run, scenario):
+        self.run = run
         self.scenario = scenario
 
         # Get name of system core block
         self.sys_core = [name for name, block in self.scenario.blocks.items() if isinstance(block, blocks.SystemCore)][
             0]
 
+        # remaining power available on the system core converter for the current timestep
         self.p_avail_conv = {}
-
-        # mapping dictionary to execute correct function corresponding to input file specification
-        self.func_map = {'uc': self.calc_power_uc,
-                         'fcfs': self.calc_power_fcfs,
-                         'equal': self.calc_power_equal,
-                         'soc': self.calc_power_soc}
 
         # get list of commodity systems with apriori integration level
         self.apriori_cs = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]
 
         # define dict of elements controlled by rule based algorithm (all commodity systems)
-        self.commodities = {name: Commodity(commodity, self.scenario) for block in
+        self.commodities = {name: EsmCommodity(commodity, self.scenario) for block in
                             self.apriori_cs for name, commodity in block.commodities.items()}
 
-        # define dict of sources in scenario
-        self.sources = {name: SourceBlock(block, self.scenario) for name, block in self.scenario.blocks.items() if
-                        isinstance(block, (blocks.PVSource,
-                                           blocks.WindSource,
-                                           blocks.GridConnection,
-                                           blocks.ControllableSource))}
-
-        # define dict of StationaryEnergyStorages in scenario
-        self.storages = {name: Storage(block, self.scenario) for name, block in self.scenario.blocks.items() if
-                         isinstance(block, blocks.StationaryEnergyStorage)}
-
-        # define dict of FixedDemands in scenario
-        self.demands = {name: SinkBlock(block, self.scenario) for name, block in self.scenario.blocks.items() if
-                        isinstance(block, blocks.FixedDemand)}
+        # get different lists of commodity systems according to the restrictions of the apriori integration level
+        self.cs_uc = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
+        self.cs_apriori_lm = [cs for cs in self.scenario.commodity_systems.values() if
+                              cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and cs.lm_static]
+        self.cs_apriori_unlim = [cs for cs in self.scenario.commodity_systems.values() if
+                                 cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # initialize dataframe for available and fixed power for both the AC and the DC bus
-        self.p_available = pd.DataFrame(columns=['ac', 'dc'] + [name for name in {**self.sources,
-                                                                                  **self.storages}.keys()]
-                                        + [f'{name}_chg' for name in self.storages.keys()], dtype=float)
-        self.p_fixed = pd.DataFrame(columns=['ac', 'dc'] + [name for name in self.demands.keys()], dtype=float)
+        self.p_available = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
+        self.p_fixed = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
 
         # Placeholder for timeindex of current prediction horizon
         self.dti_ph = None
-
-    @staticmethod
-    def get_bus(bus, which):
-        # Takes the bus the block is connected to and returns the specified bus
-        return {'ac': {'same': 'ac', 'other': 'dc'},
-                'dc': {'same': 'dc', 'other': 'ac'}}[bus][which]
-
-    def get_conv_eff(self, source, target):
-        return {'ac': {'ac': 1,
-                       'dc': self.scenario.blocks[self.sys_core].eff_acdc},
-                'dc': {'ac': self.scenario.blocks[self.sys_core].eff_dcac,
-                       'dc': 1}}[source][target]
-
-    def get_conv_cap(self, source, target):
-        if source == target:
-            return np.inf
-        else:
-            return self.p_avail_conv[source]
-
-    def p_avail_conv_reset(self):
-        # store how much power still can be converted on the system core within current timestep
-        # key specifies origin of power
-        self.p_avail_conv = {'ac': self.scenario.blocks[self.sys_core].size_acdc,
-                             'dc': self.scenario.blocks[self.sys_core].size_dcac}
 
     def calc_schedule(self, dti_ph):
         # Set timeindex of current prediction horizon
         self.dti_ph = dti_ph
 
-        # Update objects with data of Prediction Horizon
-        for block in {**self.commodities, **self.storages, **self.sources}.values():
-            block.update_ph(self.dti_ph)
+        # Initialize apriori_data dataframes for all apriori commodities (including index, column names, initial SOC
+        # value and additional information about the presence and absence of commodities)
+        for commodity in self.commodities.values():
+            commodity.init_ph(self.dti_ph)
 
-        # Calculate available and fixed power for prediction horizon
-        self.p_available = self.calc_power_ph(power=self.p_available, items=self.sources)
-        self.p_fixed = self.calc_power_ph(power=self.p_fixed, items=self.demands)
+        # # Calculate available and fixed power for prediction horizon
+        self.p_available = self.p_available.reindex(self.dti_ph).fillna(0)
+        self.p_fixed = self.p_fixed.reindex(self.dti_ph).fillna(0)
 
-        # Calculate powers in energy system for every timestep in Prediction Horizon
+        for block in self.scenario.blocks.values():
+            if isinstance(block, blocks.GridConnection):
+                self.p_available.loc[:, block.bus_connected.label[0:2]] += block.size_g2mg * block.eff
+            elif isinstance(block, blocks.WindSource):
+                self.p_available.loc[:, block.bus_connected.label[0:2]] += block.data_ph['power_spec'] * block.size * block.eff
+            elif isinstance(block, blocks.PVSource):
+                self.p_available.loc[:, block.bus_connected.label[0:2]] += block.data_ph['power_spec'] * block.size * block.eff
+            elif isinstance(block, blocks.ControllableSource):
+                self.p_available.loc[:, block.bus_connected.label[0:2]] += block.size * block.eff
+            elif isinstance(block, blocks.FixedDemand):
+                self.p_fixed.loc[:, block.bus_connected.label[0:2]] += block.data_ph['power_w'] * -1
+
         for dtindex in self.dti_ph:
-            # =============================================
-            # === 1. Preparing data of current timestep ===
-            # =============================================
+            # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
+            p_cs_lim_uc = {'ac': 0, 'dc': 0}
+            for cs in self.cs_uc + self.cs_apriori_lm:
+                cs_commodities = [self.commodities[key] for key in cs.commodities.keys()]
+                p_cs_lim_uc[cs.system] += self.calc_p_commodities(dtindex=dtindex,
+                                                                  commodities=cs_commodities,
+                                                                  int_lvl=cs.int_lvl,
+                                                                  p_avail_lm=cs.lm_static,
+                                                                  p_avail_sys=None)
 
-            # 1.(a) Calculate available power from stationary energy storage and add to available dc power
-            for name, storage in self.storages.items():
-                self.p_available.loc[dtindex, name] = storage.calc_p_dis(dtindex)
-                self.p_available.loc[dtindex, 'dc'] += self.p_available.loc[dtindex, name]
+            # only execute optimization of the local grid if there are rulebased components
+            if self.cs_apriori_unlim:
+                p_avail_sys = {'ac': self.p_available.loc[dtindex, 'ac'],
+                               'dc': self.p_available.loc[dtindex, 'dc']}
 
-            # 1.(b) Store how much power is available on the buses within the current timestep
-            p_avail_sys = {'ac': self.p_available.loc[dtindex, 'ac'],
-                           'dc': self.p_available.loc[dtindex, 'dc']}
+                # reset available power on converter to maximum power
+                self.p_avail_conv = {'ac': self.scenario.blocks[self.sys_core].size_acdc,
+                                     'dc': self.scenario.blocks[self.sys_core].size_dcac}
 
-            # ======================================================
-            # === 2. Schedule demand and charging of commodities ===
-            # ======================================================
+                # Subtract demand from available power on AC bus (demand is specified as a negative power)
+                for system in ['ac', 'dc']:
+                    p_avail_sys['system'] = self.draw_power(bus_connected=system,
+                                                            pwr=(-1) * self.p_fixed.loc[dtindex, system] + p_cs_lim_uc[system],
+                                                            p_avail_sys=p_avail_sys,
+                                                            dtindex=dtindex)
 
-            # 2.(a) reset available power on converter to maximum power
-            self.p_avail_conv_reset()
+                # Schedule at base charging of commodities
+                int_lvl = self.cs_apriori_unlim[0].int_lvl  # have to be the same for all CommoditySystems
 
-            # 2.(b) Subtract demand from available power on AC bus (demand is specified as a negative power)
-            for system in ['ac', 'dc']:
-                p_avail_sys = self.draw_power(bus_connected=system,
-                                              pwr=(-1) * self.p_fixed.loc[dtindex, system],
-                                              p_avail_sys=p_avail_sys)
+                cs_commodities = [self.commodities[key] for cs in self.cs_apriori_unlim for key in cs.commodities.keys()]
+                self.calc_p_commodities(dtindex, cs_commodities, int_lvl, None, p_avail_sys)
 
-            # 2.(c) Schedule at base charging of commodities
-            for int_lvl in ['uc', 'fcfs', 'equal', 'soc']:
-                int_coms = {name: com for name, com in self.commodities.items() if
-                            com.block.parent.int_lvl == int_lvl}
-                if int_coms:  # only run power scheduling, if there are commodities with the current int_lvl
-                    p_avail_sys = self.func_map[int_lvl](dtindex=dtindex,
-                                                         p_avail_sys=p_avail_sys,
-                                                         int_lvl_commodities=int_coms)
-
-            # ===============================================================
-            # === 3. Schedule sources to cover power demand in local grid ===
-            # ===============================================================
-
-            # 3.(a) reset available power on converter to maximum power
-            self.p_avail_conv_reset()
-
-            # 3.(b) Calculate power of sources and storages to cover demand of both buses
-            self.calc_local_grid(dtindex, p_avail_sys)
-
-            # ====================================================
-            # === 4. Schedule external charging of commodities ===
-            # ====================================================
-
+            # Execute external charging of commodities based on the defined criteria
             for commodity in self.commodities.values():
                 commodity.ext_charging(dtindex)
+                commodity.calc_new_soc(dtindex)
 
-            # =============================================================
-            # === 5. Calculate new SOC for all commodities and storages ===
-            # =============================================================
+    def calc_p_commodities(self, dtindex, commodities, int_lvl, p_avail_lm, p_avail_sys):
+        # get all commodities which are ready for charging
+        commodities = [commodity for commodity in commodities if commodity.block.data_ph.loc[dtindex, 'atbase']]
+        p_cs = 0
 
-            for block in {**self.commodities, **self.storages}.values():
-                block.calc_new_soc(dtindex)
+        if not commodities:
+            return p_cs
 
-        # Apriori data for sources is not set. Reset apriori data of sources to None
-        for name, block in self.sources.items():
-            block.block.apriori_data = None
+        if int_lvl == 'equal':
+            # get maximum available power of dynamic load management if not limited by static load management
+            if not p_avail_lm:
+                # define bus priority and non-priority
+                bus_prio = commodities[0].system
+                bus_non_prio = self.get_bus(bus_prio, 'other')
+                # calculate available power for dynamic load management
+                p_avail_lm = p_avail_sys[bus_prio] + min(p_avail_sys[bus_non_prio],
+                                                         self.p_avail_conv[bus_non_prio]) * \
+                             self.get_conv_eff(bus_non_prio, bus_prio)
 
-    def calc_power_ph(self, power, items):
-        # reset power to zero for all timestamps including deleting data from previous prediction horizon
-        power = power.reindex(self.dti_ph).fillna(0)
-
-        # compute power resulting from different blocks at the AC and DC bus
-        for name, block in items.items():
-            power.loc[:, name] += block.calc_p()
-            power.loc[:, block.system] += power.loc[:, name]
-
-        return power
-
-    def calc_power_uc(self, dtindex, p_avail_sys, int_lvl_commodities):
-        for com in int_lvl_commodities.values():
-            if com.block.data_ph.loc[dtindex, 'atbase']:
-                # Execute AC charging at base
-                pwr_chg = com.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac')
-                com.set_p(dtindex=dtindex,
-                          power=pwr_chg,
-                          mode='int_ac')
-
-                p_avail_sys = self.draw_power(bus_connected=com.system,
-                                              pwr=pwr_chg,
-                                              p_avail_sys=p_avail_sys)
-
-        return p_avail_sys
-
-    def calc_power_fcfs(self, dtindex, p_avail_sys, int_lvl_commodities):
-        # Get list of names and SOCs of all commodities and sort according to arrival time
-        prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
-                            com.block.data_ph.loc[dtindex, 'atbase']],
-                            key=lambda x: int_lvl_commodities[x[0]].get_arr(dtindex))
-
-        # Calculate charging powers based on calculated priorities
-        p_avail_sys = self.prio_charging(dtindex, prio_list, p_avail_sys)
-        return p_avail_sys
-
-    def calc_power_equal(self, dtindex, p_avail_sys, int_lvl_commodities):
-        # This only works, if all commodities are connected to the same bus
-        # Get system of all commodities and see if all are connected to the same bus
-        if not all([com.system == list(int_lvl_commodities.values())[0].system for com in int_lvl_commodities.values()]):
-            pass
-            raise ValueError('Equal charging only works, if all commodities are connected to the same bus!')
+            while (p_avail_lm - p_cs) > 0 and len(commodities) > 0:
+                # calculate possible power for each commodity
+                p_share = (p_avail_lm - p_cs) / len(commodities)
+                for commodity in commodities:
+                    # get maximum possible charging power for commodity, consider the power already assigned to the
+                    # commodity in previous iterations
+                    p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac') -
+                                commodity.block.apriori_data.loc[dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg)
+                    # set charging power -> consider the power already assigned to the commodity in previous iterations
+                    commodity.set_p(dtindex=dtindex, power=p_chg + commodity.block.apriori_data.loc[
+                        dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg, mode='int_ac')
+                    p_cs += p_chg
+                    if p_chg == 0:
+                        commodities.remove(commodity)
         else:
-            # Define bus
-            bus = list(int_lvl_commodities.values())[0].system
-            pwr_avail = (p_avail_sys[bus] +
-                         min(p_avail_sys[self.get_bus(bus, 'other')],
-                             self.get_conv_cap(self.get_bus(bus, 'other'), bus)) *
-                         self.get_conv_eff(self.get_bus(bus, 'other'), bus))
-            pwr_avail_init = pwr_avail
-            commodities = list(int_lvl_commodities.keys())
-            while pwr_avail > 0 and commodities:
-                # equally split available power between all commodities
-                pwr_chg_per_com = pwr_avail / len(commodities)
-                for com in commodities:
-                    com = int_lvl_commodities[com]
-                    # get max charging power for commodity
-                    pwr_com = com.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac')
-                    pwr_chg = min(pwr_com, pwr_chg_per_com)
-                    com.set_p(dtindex=dtindex,
-                              power=pwr_chg,
-                              mode='int_ac')
-                    pwr_avail -= pwr_chg
-                    if pwr_chg == pwr_com:
-                        commodities.remove(com.block.name)
+            # define sorting functions for the different strategies
+            sort_key_funcs = {
+                'uc': lambda x: x.block.name,  # sorting makes no difference -> dummy function´for uc
+                'fcfs': lambda x: x.get_latest_arr(dtindex),
+                'soc': lambda x: x.block.apriori_data.loc[dtindex, 'soc']
+            }
+            # get a list of all available commodities and sort them according to the chosen strategy
+            commodities = sorted(commodities, key=sort_key_funcs[int_lvl])
+            for commodity in commodities:
+                bus_prio = self.get_bus(commodity.system, 'same')
+                bus_non_prio = self.get_bus(commodity.system, 'other')
 
-            p_avail_sys = self.draw_power(bus_connected=bus,
-                                          pwr=pwr_avail_init - pwr_avail,
-                                          p_avail_sys=p_avail_sys)
+                # get limitations of the system (available power on buses and converter or static load managment)
+                if int_lvl == 'uc':
+                    p_sys_lim = np.inf
+                elif p_avail_lm:
+                    p_sys_lim = p_avail_lm - p_cs
+                else:
+                    p_sys_lim = p_avail_sys[bus_prio] + min(p_avail_sys[bus_non_prio],
+                                                            self.p_avail_conv[bus_non_prio]) * \
+                                self.get_conv_eff(bus_non_prio, bus_prio)
 
-        return p_avail_sys
+                # power for commodity considering limitations of the commodity and the system
+                pwr_chg = min(commodity.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac'), p_sys_lim)
 
-    def calc_power_soc(self, dtindex, p_avail_sys, int_lvl_commodities):
-        # Get list of names and SOCs of all commodities and sort according to SOC
-        prio_list = sorted([(name, com.get_data(dtindex, 'soc')) for name, com in int_lvl_commodities.items() if
-                     com.block.data_ph.loc[dtindex, 'atbase']], key=lambda x: x[1])
+                # update available power of the system for dynamic load management
+                if not p_avail_lm and int_lvl != 'uc':
+                    p_avail_sys = self.draw_power(bus_connected=bus_prio,
+                                                  pwr=pwr_chg,
+                                                  p_avail_sys=p_avail_sys,
+                                                  dtindex=dtindex)
 
-        # Calculate charging powers based on calculated priorities
-        p_avail_sys = self.prio_charging(dtindex, prio_list, p_avail_sys)
-        return p_avail_sys
+                p_cs += pwr_chg
 
-    def prio_charging(self, dtindex, prio_list, p_avail_sys):
-        # loop through commodities starting with highest prio and compute charging power
-        for com_name, com_soc in prio_list:
-            # get preferred bus for charging
-            bus_prio = self.get_bus(self.commodities[com_name].system, 'same')
-            bus_non_prio = self.get_bus(self.commodities[com_name].system, 'other')
+                # assign charging power to commodity
+                commodity.set_p(dtindex=dtindex, power=pwr_chg, mode='int_ac')
 
-            # ToDo: implement input dependent target soc (e.g. 80%)
-            # ToDo: if available power = 0 (then it should be 0 for all following commodities, too)
-            # power for commodity considering all limitations (max charging power, available power, converter)
-            pwr_chg = min(self.commodities[com_name].calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac'),
-                          p_avail_sys[bus_prio] + min(p_avail_sys[bus_non_prio],
-                                                      self.get_conv_cap(bus_non_prio, bus_prio)) * self.get_conv_eff(
-                              bus_non_prio, bus_prio))
+        return p_cs
 
-            p_avail_sys = self.draw_power(bus_connected=bus_prio,
-                                          pwr=pwr_chg,
-                                          p_avail_sys=p_avail_sys)
-
-            # assign charging power to commodity
-            self.commodities[com_name].set_p(dtindex=dtindex, power=pwr_chg, mode='int_ac')
-
-        return p_avail_sys
-
-    def draw_power(self, bus_connected, pwr, p_avail_sys):
+    def draw_power(self, bus_connected, pwr, p_avail_sys, dtindex):
         # deduct power from available power on the corresponding bus(es) and the converter
         pwr_prio = min(p_avail_sys[bus_connected], pwr)
         p_avail_sys[bus_connected] -= pwr_prio
@@ -265,306 +181,53 @@ class AprioriPowerScheduler:
         p_avail_sys[self.get_bus(bus_connected, 'other')] -= pwr_non_prio
         self.p_avail_conv[self.get_bus(bus_connected, 'other')] -= pwr_non_prio
 
-        # ToDo: check whether is really necessary
-        if 0 > p_avail_sys[self.get_bus(bus_connected, 'other')] > -1E-10:
-            p_avail_sys[self.get_bus(bus_connected, 'other')] = 0
-
-        if 0 > p_avail_sys[bus_connected] > -1E-10:
-            p_avail_sys[bus_connected] = 0
-
-        if p_avail_sys['ac'] < 0 or p_avail_sys['dc'] < 0:
-            print('\n\nError! Not enough power available on buses!')
-
-        if self.p_avail_conv['ac'] < 0 or self.p_avail_conv['dc'] < 0:
-            print('\n\nError! Not enough power available on SystemCore converter!')
-
+        for location, value in {'AC bus': p_avail_sys['ac'],
+                                'DC bus': p_avail_sys['dc'],
+                                'AC/DC converter': self.p_avail_conv['ac'],
+                                'DC/AC converter': self.p_avail_conv['dc']}.items():
+            if value < 0:
+                self.run.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {value:.2E} W on'
+                                        f' {location} occurred in AprioriScheduler at {dtindex}!'
+                                        f' This shortage may lead to infeasiblity during optimization.')
         return p_avail_sys
 
-    def calc_local_grid(self, dtindex, p_avail_sys):
-        # Concept:
-        # Step 1: Use power with negative costs for both buses (sometimes this happens for grid power)
-        # Step 2: Use all power free of charge (mainly renewable sources) to cover demand of AC and DC bus
-        # Step 3: Assign excess power of sources free of charge to storages
-        # Step 4: Use storage power to cover demand of AC and DC bus
-        # Step 5: All other options are scheduled by the optimizer (including negative grid costs)
+    def get_conv_eff(self, source, target):
+        return {'ac': {'ac': 1,
+                       'dc': self.scenario.blocks[self.sys_core].eff_acdc},
+                'dc': {'ac': self.scenario.blocks[self.sys_core].eff_dcac,
+                       'dc': 1}}[source][target]
 
-        # Create DataFrame with available power of all components of the local grid and the used power of both buses
-        p_system = self.p_available.loc[dtindex, :].copy()
-        p_system.loc[['ac', 'dc']] -= pd.Series(p_avail_sys)
-        pass
-
-        #######################################
-        ### Step 1: Use negative cost power ###
-        #######################################
-
-        sources_sorted = sorted(self.sources.items(), key=lambda item: item[1].opex_spec[dtindex])
-
-        # Use power with negative costs (sometimes grid power) to cover demand of AC and DC bus
-        for name, block in sources_sorted:
-            if getattr(block, "opex_spec", 0)[dtindex] < 0:
-                # system here target system
-                for demand_system in ['ac', 'dc']:
-                    # Power limitations: demand, offer, conversion between buses
-                    used = min(p_system[demand_system] / self.get_conv_eff(block.system, demand_system),
-                               p_system[name],
-                               self.get_conv_cap(block.system, demand_system))
-                    # Subtract usage from demand, offer of current source and converter capacity
-                    p_system[demand_system] -= used * self.get_conv_eff(block.system, demand_system)
-                    p_system[name] -= used
-                    if demand_system != block.system:  # only reduce available converter power if converter is used
-                        self.p_avail_conv[block.system] -= used
-
-        ########################################
-        ### Step 2: Use free of charge power ###
-        ########################################
-
-        # Use all power free of charge (mainly renewable sources) to cover demand of AC and DC bus
-        # First, try to cover demand using sources at own bus, then try to cover demand using sources at other bus
-        for bus_type in ['same', 'other']:
-            for system in ['ac', 'dc']:  # system describes system the source is connected to
-                for name, block in sources_sorted:
-                    if block.system == system and getattr(block, "opex_spec", 0)[dtindex] == 0:
-                        # Power limitations: demand, offer, conversion between buses
-                        used = min(p_system[self.get_bus(system, bus_type)] / self.get_conv_eff(system, self.get_bus(system, bus_type)),
-                                   p_system[name],
-                                   self.get_conv_cap(system, self.get_bus(system, bus_type)))
-                        # Subtract usage from demand, offer of current source and converter capacity
-                        p_system[self.get_bus(system, bus_type)] -= used * self.get_conv_eff(system, self.get_bus(system, bus_type))
-                        p_system[name] -= used
-                        if bus_type == 'other':  # only reduce available converter power if converter is used
-                            self.p_avail_conv[system] -= used
-
-        ##############################################
-        ### Step 3: Assign excess power to storage ###
-        ##############################################
-
-        # Assign excess power of sources free of charge to storages
-        # Start with dc (as this is the same bus as the storages)
-        for storage_name, storage_block in self.storages.items():
-            p_system[f'{storage_name}_chg'] = storage_block.calc_p_chg(dtindex=dtindex, soc_max=1)
-
-        storages_sorted = sorted(self.storages.items(), key=lambda item: item[1].opex_spec[dtindex])
-        for system in ['dc', 'ac']:
-            for storage_name, storage_block in storages_sorted:
-                for name, block in sources_sorted:
-                    if block.system == system and getattr(block, "opex_spec", 0)[dtindex] <= 0:
-                        # Power limitations: demand, offer, conversion between buses
-                        used = min(p_system[f'{storage_name}_chg'] / self.get_conv_eff(block.system, 'dc'),
-                                   p_system[name],
-                                   self.get_conv_cap(block.system, 'dc'))
-                        p_system[storage_name] += used * self.get_conv_eff(block.system, 'dc')
-                        p_system[name] -= used
-                        p_system[f'{storage_name}_chg'] -= used * self.get_conv_eff(block.system, 'dc')
-                        if system == 'ac':  # only reduce available converter power if converter is used
-                            self.p_avail_conv[system] -= used
-
-        ###########################################
-        ### Step 4: Cover demand using storages ###
-        ###########################################
-
-        for demand_system in ['dc', 'ac']:
-            for name, block in storages_sorted:
-                # Power limitations: demand, offer, conversion between buses
-                used = min(p_system[demand_system] / self.get_conv_eff(block.system, demand_system),
-                           p_system[name],
-                           self.get_conv_cap(block.system, demand_system))
-                # Subtract usage from demand, offer of current source and converter capacity
-                p_system[demand_system] -= used * self.get_conv_eff(block.system, demand_system)
-                p_system[name] -= used
-                if demand_system != block.system:  # only reduce available converter power if converter is used
-                    self.p_avail_conv[block.system] -= used
-
-        # apply power to apriori data of sources
-        for name, block in {**self.sources, **self.storages}.items():
-            # >0: power into grid, <0 power out of grid; measured at connection to corresponding bus
-            block.set_p(dtindex=dtindex, power=self.p_available.loc[dtindex, name] - p_system[name])
+    @staticmethod
+    def get_bus(bus, which):
+        # Takes the bus the block is connected to and returns the specified bus
+        return {'ac': {'same': 'ac', 'other': 'dc'},
+                'dc': {'same': 'dc', 'other': 'ac'}}[bus][which]
 
 
-class EnergySystemModelBlock:
+class EsmCommodity():
     def __init__(self, block, scenario):
         self.block = block
         self.scenario = scenario
-        self.system = None
-        if isinstance(self.block, (blocks.PVSource, blocks.StationaryEnergyStorage)):
-            self.system = 'dc'
-        elif isinstance(self.block, (blocks.WindSource, blocks.ControllableSource, blocks.GridConnection, blocks.FixedDemand)):
-            self.system = 'ac'
-        elif hasattr(self.block, 'parent'):
-            if isinstance(self.block.parent, (blocks.VehicleCommoditySystem, blocks.BatteryCommoditySystem)):
-                self.system = self.block.parent.system
+        # get the system to which the block is connected
+        self.system = self.block.parent.system
 
-    def update_ph(self, dti_ph, cols):
-        # Initialize apriori_data at start of every new prediction horizon
-        self.block.apriori_data = pd.DataFrame(0, index=dti_ph, columns=cols, dtype=float)
-
-    def set_data(self, dtindex, value, col):
-        # Set power value of apriori_data of block for given timestamp
-        if dtindex == ':':
-            self.block.apriori_data.loc[:, col] = value
-        else:
-            self.block.apriori_data.loc[dtindex, col] = value
-
-    def get_data(self, dtindex, col):
-        # Function the get apriori data of a block for a given timestamp
-        if dtindex == ':':
-            return self.block.apriori_data.loc[:, col]
-        else:
-            return self.block.apriori_data.loc[dtindex, col]
-
-
-class SourceBlock(EnergySystemModelBlock):
-    def __init__(self, block, scenario):
-        super().__init__(block, scenario)
-        # Flag for renewable energy sources (res)
-        self.res = False
-        if isinstance(self.block, (blocks.PVSource, blocks.WindSource)):
-            self.res = True
-        if isinstance(self.block, blocks.GridConnection):
-            self.opex_spec = getattr(self.block, 'opex_spec_g2mg', 0)
-        else:
-            self.opex_spec = getattr(self.block, 'opex_spec', 0)
-        if not isinstance(self.opex_spec, pd.Series):
-            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.dti_sim)
-
-    def update_ph(self, dti_ph):
-        super().update_ph(dti_ph, ['p'])
-
-    def set_p(self, dtindex, power):
-        super().set_data(dtindex=dtindex,
-                         value=power,
-                         col=['p'])
-
-    def calc_p(self):
-        if isinstance(self.block, blocks.WindSource):
-            return self.block.data_ph['P'] * self.block.size * self.block.eff
-        elif isinstance(self.block, blocks.PVSource):
-            return self.block.data_ph['power_spec'] * self.block.size * self.block.eff
-        elif isinstance(self.block, blocks.ControllableSource):
-            return self.block.size * self.block.eff
-        elif isinstance(self.block, blocks.GridConnection):
-            return self.block.size_g2mg * self.block.eff
-
-
-class SinkBlock(EnergySystemModelBlock):
-    def __init__(self, block, scenario):
-        super().__init__(block, scenario)
-
-    def update_ph(self, dti_ph):
-        # No apriori data for sinks
-        return
-
-    def set_data(self, dtindex, value, col):
-        # No apriori data for sinks
-        return
-
-    def get_data(self, dtindex, col):
-        # No apriori data for sinks
-        return
-
-    def calc_p(self):
-        return self.block.data_ph['power_w'] * -1
-
-
-class StorageBlock(EnergySystemModelBlock):
-    def __init__(self, block, scenario):
-        super().__init__(block, scenario)
-
-    def update_ph(self, dti_ph, columns):
-        super().update_ph(dti_ph, columns)
-        if 'soc' in columns:
-            self.block.apriori_data['soc'] = self.block.apriori_data['soc']
-        self.set_data(dti_ph[0], self.block.soc_init_ph, 'soc')
-
-    def set_p(self, dtindex, power, col):
-        super().set_data(dtindex=dtindex,
-                         value=power,
-                         col=col)
-
-    def calc_p_chg(self, dtindex, p_maxchg, eff=1, soc_max=1):
-        # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
-
-        # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta (clip soc_target to 1)
-        p_tosoc = max(0, (min(soc_max, 1) - self.get_data(dtindex, 'soc')) * self.block.size) / \
-                  self.scenario.timestep_hours
-
-        # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
-        p_chg = min(p_maxchg, p_tosoc) / eff
-        return p_chg
-
-    def calc_p_dis(self, dtindex, p_maxdis, eff=1, soc_min=0):
-        # STORAGE: power to be discharged to target SOC in Wh in one timestep using SOC delta (clip soc_target to 0)
-        p_tosoc = max(0, (self.get_data(dtindex, 'soc') - max(soc_min, 0)) * self.block.size) / \
-                  self.scenario.timestep_hours
-
-        # BUS: discharging power measured at connection to DC bus; reduce power in final step to just reach target SOC
-        p_dis = min(p_maxdis, p_tosoc) * eff
-        return p_dis
-
-    def calc_new_soc(self, dtindex, power):
-        # Assign new SOC to apriori_data DataFrame of block
-        self.set_data(dtindex=dtindex + self.scenario.timestep_td,
-                      value=power / self.block.size * self.scenario.timestep_hours + self.get_data(dtindex, 'soc'),
-                      col='soc')
-
-
-class Storage(StorageBlock):
-    def __init__(self, block, scenario):
-        super().__init__(block, scenario)
-        self.opex_spec = getattr(self.block, 'opex_spec', 0)
-        if not isinstance(self.opex_spec, pd.Series):
-            self.opex_spec = pd.Series(self.opex_spec, index=self.scenario.dti_sim)
-
-    def update_ph(self, dti_ph, *_):
-        columns = ['p', 'soc']
-        super().update_ph(dti_ph, columns)
-
-    def set_p(self, dtindex, power, *_):
-        super().set_p(dtindex=dtindex,
-                      power=power,
-                      col='p')
-
-    def calc_p_chg(self, dtindex, soc_max=1, *_):
-        return super().calc_p_chg(dtindex=dtindex,
-                                  p_maxchg=self.block.size * self.block.crate_chg,
-                                  eff=self.block.eff_chg,
-                                  soc_max=soc_max)
-
-    def calc_p_dis(self, dtindex, soc_min=0, *_):
-        return super().calc_p_dis(dtindex=dtindex,
-                                  p_maxdis=self.block.size * self.block.crate_dis,
-                                  eff=self.block.eff_dis,
-                                  soc_min=soc_min)
-
-    def calc_new_soc(self, dtindex, *_):
-        # convert power at connection to DC bus to power at storage:
-        power = self.get_data(dtindex, ['p']).sum() * (-1)
-        if power >= 0:
-            power *= self.block.eff_chg
-        else:
-            power /= self.block.eff_dis
-
-        super().calc_new_soc(dtindex=dtindex, power=power)
-
-
-class Commodity(StorageBlock):
-    def __init__(self, block, scenario):
-        super().__init__(block, scenario)
-
-        # define priorities for charging power from buses of SystemCore
-        self.system_map = {'ac': {'prio': 'ac',
-                                  'non_prio': 'dc'},
-                           'dc': {'prio': 'p_dc',
-                                  'non_prio': 'p_ac'}
-                           }[self.block.parent.system]
+        self.loss_rate = None
 
         # Placeholder for variables for power calculations at external charging
         self.minsoc_inz = self.dep_inz = self.arr_inz = self.arr_parking_inz = self.chg_inz = None
         self.parking_charging = None
 
-    def update_ph(self, dti_ph, *_):
+    def init_ph(self, dti_ph, *_):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc']
-        super().update_ph(dti_ph, columns)
-        self.set_data(dtindex=':', value=-1 * self.block.data_ph['consumption'], col='p_consumption')
+        self.block.apriori_data = pd.DataFrame(0,
+                                               index=dti_ph,
+                                               columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
+                                               dtype=float)
+        self.block.apriori_data.loc[dti_ph[0], 'soc'] = self.block.soc_init_ph
+        self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
+
+        # define loss_rate
+        self.loss_rate = 1 - (1 - self.block.parent.loss_rate) ** (self.scenario.timestep_td / pd.Timedelta('1h'))
 
         # get the indices of all nonzero minsoc rows in the data
         self.minsoc_inz = self.block.data_ph.index[self.block.data_ph['minsoc'] != 0]
@@ -579,8 +242,6 @@ class Commodity(StorageBlock):
         #  [1:] only necessary, if vehicle is atbase at beginning of prediction horizon
         self.arr_inz = self.block.data.index[
                            self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)][1:]
-        # ToDo: check why this line was added
-        self.arr_inz = self.arr_inz[self.arr_inz <= self.block.data_ph.index[0]]
 
         # get first timesteps, where vehicle is parking at destination
         self.arr_parking_inz = self.block.data_ph.index[
@@ -592,39 +253,54 @@ class Commodity(StorageBlock):
         # initialize variable for charging during single parking process
         self.parking_charging = False
 
-    def get_arr(self, dtindex):
+    def get_latest_arr(self, dtindex):
         # get latest arrival before current timestep
         try:
             return self.arr_inz[self.arr_inz <= dtindex][-1]
         except:
             # return 1900 if no arrival is found -> at start of new simulation
-            return pd.to_datetime('1900')
+            return pd.to_datetime('1900').replace(tzinfo=self.scenario.timezone)
 
     def set_p(self, dtindex, power, mode='int_ac'):
-        super().set_p(dtindex=dtindex,
-                      power={'int_ac': self.block.parent.eff_chg,
-                             'ext_ac': 1,
-                             'ext_dc': 1}[mode] * power,
-                      col=f'p_{mode}')
+        p = {'int_ac': self.block.parent.eff_chg,
+             'ext_ac': 1,
+             'ext_dc': 1}[mode] * power
+        col = f'p_{mode}'
+        self.block.apriori_data.loc[dtindex, col] = p
+
 
     def calc_p_chg(self, dtindex, soc_max=1, mode='int_ac', *_):
-        return super().calc_p_chg(dtindex=dtindex,
-                                  p_maxchg={'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
-                                            'ext_ac': self.block.parent.pwr_ext_ac,
-                                            'ext_dc': self.block.parent.pwr_ext_dc}[mode],
-                                  eff={'int_ac': self.block.parent.eff_chg,
-                                       'ext_ac': 1,
-                                       'ext_dc': 1}[mode],
-                                  soc_max=soc_max)
+        # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
 
-    def calc_p_dis(self, dtindex, soc_min=0, mode='int_ac', *_):
-        return 0
+        soc_threshold = 0
+        p_maxchg = {'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
+                    'ext_ac': self.block.parent.pwr_ext_ac,
+                    'ext_dc': self.block.parent.pwr_ext_dc}[mode]
+        eff = {'int_ac': self.block.parent.eff_chg,
+               'ext_ac': 1,
+               'ext_dc': 1}[mode]
+
+        # Only charge if SOC falls below threshold (soc_max - soc_threshold)
+        if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) >= soc_max - soc_threshold:
+            return 0
+
+        # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta (clip soc_target to 1)
+        p_tosoc = (soc_max - soc_current * (1 - self.loss_rate)) * self.block.size / self.scenario.timestep_hours
+        if p_tosoc < 0:
+            print('charging power below 0')
+
+        # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
+        p_chg = min(p_maxchg, p_tosoc) / eff
+        return p_chg
 
     def calc_new_soc(self, dtindex, *_):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption']
-        power = self.get_data(dtindex, columns).sum()
-
-        super().calc_new_soc(dtindex=dtindex, power=power)
+        power = self.block.apriori_data.loc[dtindex, columns].sum()
+        # calculate new soc value
+        new_soc = power / self.block.size * self.scenario.timestep_hours + self.block.apriori_data.loc[dtindex, 'soc'] * (
+                    1 - self.loss_rate)
+        # Assign new SOC to apriori_data DataFrame of block
+        self.block.apriori_data.loc[dtindex + self.scenario.timestep_td, 'soc'] = new_soc
 
     def ext_charging(self, dtindex):
         if self.block.data_ph.loc[dtindex, 'atac'] == 1:  # parking at destination

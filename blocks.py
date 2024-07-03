@@ -267,7 +267,7 @@ class InvestBlock(Block):
         self.set_init_size(scenario, run)
 
         if self.opt and scenario.strategy != 'go':
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size optimization not implemented'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size optimization not implemented'
                                f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of run
 
@@ -534,7 +534,7 @@ class CommoditySystem(InvestBlock):
             self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-                run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" input data does not match timestep'
+                run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" input data does not match timestep'
                                    f' - resampling is experimental')
                 consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
                 bool_columns = self.data.columns.difference(consumption_columns)
@@ -549,6 +549,17 @@ class CommoditySystem(InvestBlock):
 
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
+
+        # static load management can only be activated for rulebased integration levels
+        if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
+            run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented for'
+                               f' {[x for x in self.apriori_lvls if x != "uc"]} - deactivated static load management')
+            self.lm_static = None
+
+        if self.opt and self.int_lvl in self.apriori_lvls:
+            run.logger.error(f'Scenario {scenario.name}: \"{self.name}\" optimization of commodity size not'
+                             f' implemented for integration levels {self.apriori_lvls}')
+            exit()  # TODO exit scenario instead of run
 
         # Creation of static energy system components --------------------------------
 
@@ -565,12 +576,14 @@ class CommoditySystem(InvestBlock):
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
-
         self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     variable_costs=self.opex_spec_sys_chg)},
+                                                     variable_costs=self.opex_spec_sys_chg,
+                                                     nominal_value=self.lm_static,
+                                                     max=1 if self.lm_static else None
+                                                 )},
                                                  outputs={self.bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                  conversion_factors={self.bus: 1})
@@ -871,7 +884,7 @@ class GridConnection(InvestBlock):
 
         if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
             self.size_g2mg = self.size_mg2g = 'opt'
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
                                f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
                                f' components with an additional "equal" constraint')
             self.equal = False
@@ -1649,7 +1662,7 @@ class SystemCore(InvestBlock):
 
         if (self.size_acdc == 'equal') and (self.size_dcac == 'equal'):
             self.size_acdc = self.size_dcac = 'opt'
-            run.logger.warning(f'Scenario {scenario.name}: {self.name} component size was defined as "equal" for'
+            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
                                f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
                                f' components with an additional "equal" constraint')
         elif self.size_acdc == 'equal':
