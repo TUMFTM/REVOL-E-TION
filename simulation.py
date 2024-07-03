@@ -142,10 +142,11 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                             f'Start: {self.starttime} - '
-                             f'CH end: {self.ch_endtime} - '
-                             f'PH end: {self.ph_endtime}')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
+                             f'Start: {self.starttime} - ' +
+                             (f'CH end: {self.ch_endtime} - ' if self.ch_endtime != self.ph_endtime else '') +
+                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime else f'End: {self.ph_endtime}'))
+
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Initializing model build')
 
