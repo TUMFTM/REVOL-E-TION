@@ -26,6 +26,8 @@ import pandas as pd
 import pytz
 
 import blocks
+import scenario
+
 
 ###############################################################################
 # Simpy MultiStore Subclass Definitions
@@ -678,7 +680,7 @@ def get_year(element):
 if __name__ == '__main__':
     import simulation as sim
     rn = sim.SimulationRun()
-    sc = sim.Scenario('des',rn)
+    sc = scenario.Scenario('des', rn)
     for rs in sc.rental_systems.values():
         folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
         rs.save_data(folderpath, sc)

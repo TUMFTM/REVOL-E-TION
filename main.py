@@ -26,7 +26,8 @@ import multiprocessing as mp
 import platform
 
 from itertools import repeat
-from simulation import PredictionHorizon, Scenario, SimulationRun
+from simulation import PredictionHorizon, SimulationRun
+from scenario import Scenario
 
 # raise UserWarnings about infeasibility as errors to catch them properly
 warnings.simplefilter(action='error', category=UserWarning)
