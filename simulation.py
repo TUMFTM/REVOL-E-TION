@@ -27,6 +27,7 @@ import numpy as np
 import os
 import pickle
 import pprint
+import psutil
 import pytz
 import subprocess
 import sys
@@ -641,10 +642,6 @@ class SimulationRun:
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
-        # set number of processes based on specified settings and available CPUs
-        self.max_process_num = np.inf if self.max_process_num == 'max' else int(self.max_process_num)
-        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
-
         self.path_input_data = os.path.join(self.cwd, 'input')
         self.path_result_folder = os.path.join(self.result_path,
                                                f'{self.runtimestamp}_{self.scenario_file_name}')
@@ -676,6 +673,11 @@ class SimulationRun:
         # Adding the custom filter to prevent root logger messages
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
+
+        # set number of processes based on specified settings and available CPUs
+        self.max_process_num = os.cpu_count() if self.max_process_num == 'max' else psutil.cpu_count(
+            logical=False) if self.max_process_num == 'physical' else int(self.max_process_num)
+        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
         if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
             self.logger.warning('Single scenario or process: Parallel mode not possible - switching to sequential mode')
