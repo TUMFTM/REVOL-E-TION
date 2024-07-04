@@ -67,8 +67,7 @@ def read_mplogger_queue(queue):
         record = queue.get()
         if record is None:
             break
-        elif platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
-            main_logger.handle(record)  # This line causes double logger outputs on Linux
+        main_logger.handle(record)
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
