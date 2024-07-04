@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import statistics
 import blocks
 
 
@@ -36,7 +37,7 @@ class AprioriPowerScheduler:
                                  cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
-        self.commodities = {name: EsmCommodity(commodity, self.scenario) for block in
+        self.commodities = {name: EsmCommodity(commodity, self.scenario, self.run) for block in
                             self.cs_uc + self.cs_apriori_lm + self.cs_apriori_unlim for name, commodity in
                             block.commodities.items()}
 
@@ -54,8 +55,11 @@ class AprioriPowerScheduler:
             commodity.init_ph(self.dti_ph)
 
         # Calculate available and fixed power for prediction horizon
+        # ToDo: create new dataframe instead of reindexing and replacing all values?
         self.p_available = self.p_available.reindex(self.dti_ph).fillna(0)
+        self.p_available.loc[:] = 0
         self.p_fixed = self.p_fixed.reindex(self.dti_ph).fillna(0)
+        self.p_fixed.loc[:] = 0
 
         for block in self.scenario.blocks.values():
             if isinstance(block, blocks.GridConnection):
@@ -99,7 +103,7 @@ class AprioriPowerScheduler:
             # Execute external charging of commodities based on the defined criteria
             for commodity in self.commodities.values():
                 commodity.ext_charging(dtindex)
-                commodity.calc_new_soc(dtindex)
+                commodity.calc_new_soc(dtindex, self.scenario)
 
     def calc_p_commodities(self, dtindex, commodities, int_lvl, p_avail_lm):
         # get all commodities which are ready for charging
@@ -191,7 +195,7 @@ class AprioriPowerScheduler:
                                 'DC/AC converter': self.p_avail_conv['dc']}.items():
             if value < 0:
                 # ToDo: change to self.scenario.logger if new logger structure is merged into branch
-                self.run.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {value:.2E} W on'
+                self.run.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
                                         f' {location} occurred in AprioriScheduler at {dtindex}!'
                                         f' This shortage may lead to infeasiblity during optimization.')
 
@@ -203,8 +207,9 @@ class AprioriPowerScheduler:
 
 
 class EsmCommodity:
-    def __init__(self, block, scenario):
+    def __init__(self, block, scenario, run):
         self.block = block
+        self.run = run
         self.scenario = scenario
         # get the system to which the block is connected
         self.system = self.block.parent.system
@@ -221,7 +226,12 @@ class EsmCommodity:
                                                index=dti_ph,
                                                columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
                                                dtype=float)
-        self.block.apriori_data.loc[dti_ph[0], 'soc'] = self.block.soc_init_ph
+
+        # set inital soc for PH -> take aging results (soc_min, soc_max) into account
+        self.block.apriori_data.loc[dti_ph[0], 'soc'] = statistics.median([self.block.soc_min,
+                                                                           self.block.soc_init_ph,
+                                                                           self.block.soc_max])
+
         self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
 
         # define loss_rate
@@ -268,7 +278,8 @@ class EsmCommodity:
 
     def calc_p_chg(self, dtindex, soc_max=1, mode='int_ac', *_):
         # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
-
+        soc_max = float(soc_max)
+        soc_max = min(self.block.soc_max, soc_max)
         soc_threshold = 0
         p_maxchg = {'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
                     'ext_ac': self.block.parent.pwr_ext_ac,
@@ -292,12 +303,18 @@ class EsmCommodity:
             self.run.warning('Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
         return p_chg
 
-    def calc_new_soc(self, dtindex, *_):
+    def calc_new_soc(self, dtindex, scenario):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption']
         power = self.block.apriori_data.loc[dtindex, columns].sum()
         # calculate new soc value
         new_soc = power / self.block.size * self.scenario.timestep_hours + \
                   self.block.apriori_data.loc[dtindex, 'soc'] * (1 - self.loss_rate)
+
+        if new_soc < self.block.soc_min:
+            # ToDo: change to self.scenario.logger if new logger structure is merged into branch
+            self.run.logger.warning(f'SOC of commodity {self.block.name} falls below minimum SOC of'
+                                             f' {self.block.soc_min * 100:.2f} % at {dtindex}!')
+
         # Assign new SOC to apriori_data DataFrame of block
         self.block.apriori_data.loc[dtindex + self.scenario.timestep_td, 'soc'] = new_soc
 

@@ -1262,16 +1262,17 @@ class MobileCommodity:
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.data_ph['consumption']
 
+            # enable/disable ac and dc charging station dependent on input data
+            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int) * self.parent.pwr_ext_ac
+            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int) * self.parent.pwr_ext_dc
+
             # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
             # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
             # relative to nominal capacity
             soc_min_clipped = self.data_ph['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
             self.ess.min_storage_level = soc_min_clipped
-            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
-
-            # enable/disable ac and dc charging station dependent on input data
-            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int) * self.parent.pwr_ext_ac
-            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int) * self.parent.pwr_ext_dc
+        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
 
 
 class PVSource(RenewableInvestBlock):
