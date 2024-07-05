@@ -151,9 +151,8 @@ class Block:
     def calc_energy_common(self, scenario):
 
         if any(~(self.flow_in == 0) & ~(self.flow_out == 0)):
-            print(f'Scenario \"{scenario.name}\" - '
-                  f'Block {self.name} - '
-                  f'simultaneous in- and outflow detected!')
+            scenario.logger.warning(f'Block {self.name} - '
+                                    f'simultaneous in- and outflow detected!')
 
         self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
@@ -267,8 +266,8 @@ class InvestBlock(Block):
         self.set_init_size(scenario, run)
 
         if self.opt and scenario.strategy != 'go':
-            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size optimization not implemented'
-                               f' for any other strategy than \"GO\" - exiting')
+            scenario.logger.warning(f'\"{self.name}\" component size optimization not implemented'
+                                    f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of run
 
         # ace = adjusted capital expenses (including maintenance)
@@ -534,8 +533,8 @@ class CommoditySystem(InvestBlock):
             self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-                run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" input data does not match timestep'
-                                   f' - resampling is experimental')
+                scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
+                                        f' - resampling is experimental')
                 consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
                 bool_columns = self.data.columns.difference(consumption_columns)
                 # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
@@ -871,9 +870,9 @@ class GridConnection(InvestBlock):
 
         if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
             self.size_g2mg = self.size_mg2g = 'opt'
-            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
-                               f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
-                               f' components with an additional "equal" constraint')
+            scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
+                                    f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
+                                    f' components with an additional "equal" constraint')
             self.equal = False
         elif self.size_g2mg == 'equal':
             self.size_g2mg = self.size_mg2g
@@ -1350,7 +1349,7 @@ class PVSource(RenewableInvestBlock):
                 self.data.rename(columns={'AirTemp': 'temp_air'}, inplace=True)  # compatibility with aging model
                 self.calc_power_solcast()
             else:
-                run.logger.warning('No usable PV input type specified - exiting')
+                scenario.logger.warning('No usable PV input type specified - exiting')
                 exit()  # TODO exit scenario instead of entire execution
 
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
@@ -1649,9 +1648,9 @@ class SystemCore(InvestBlock):
 
         if (self.size_acdc == 'equal') and (self.size_dcac == 'equal'):
             self.size_acdc = self.size_dcac = 'opt'
-            run.logger.warning(f'Scenario \"{scenario.name}\": \"{self.name}\" component size was defined as "equal" for'
-                               f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
-                               f' components with an additional "equal" constraint')
+            scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
+                                    f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
+                                    f' components with an additional "equal" constraint')
         elif self.size_acdc == 'equal':
             self.size_acdc = self.size_dcac
             self.equal = True
