@@ -6,6 +6,7 @@ numpy_financial
 oemof.solph==0.5.2
 pandas==2.2.0
 plotly
+psutil
 pvlib
 pylightxl
 pyomo==6.7.0
