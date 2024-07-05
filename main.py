@@ -20,6 +20,7 @@ license:    GPLv3
 
 import logging
 import logging.handlers
+from logging.handlers import QueueHandler
 import threading
 import warnings
 import multiprocessing as mp
@@ -41,28 +42,40 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 ###############################################################################
 
 
+def setup_logger(name, log_queue, run):
+    logger = logging.getLogger(name)
+    if log_queue:
+        logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
+        formatter = logging.Formatter('%(message)s')
+
+        queue_handler = QueueHandler(log_queue)
+        queue_handler.setFormatter(formatter)
+        logger.addHandler(queue_handler)
+
+    else:
+        logger.setLevel(run.logger.level)
+        for handler in run.logger.handlers:
+            logger.addHandler(handler)
+
+    return logger
+
+
 def read_mplogger_queue(queue):
+    main_logger = logging.getLogger('main')
+
     while True:
         record = queue.get()
         if record is None:
             break
-        elif platform.system() in ['Windows', 'Darwin']:  # Darwin is macOS
-            run.logger.handle(record)  # This line causes double logger outputs on Linux
+        main_logger.handle(record)
 
 
 def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
+    logger = setup_logger(name, log_queue, run)
 
-    if run.parallel:
-        run.process = mp.current_process()
-        run.queue_handler = logging.handlers.QueueHandler(log_queue)
-        run.logger = logging.getLogger()
-        if run.debugmode:
-            run.logger.setLevel(logging.DEBUG)
-        else:
-            run.logger.setLevel(logging.INFO)
-        run.logger.addHandler(run.queue_handler)
+    run.process = mp.current_process() if run.parallel else None
 
-    scenario = Scenario(name, run)  # Create scenario instance
+    scenario = Scenario(name, run, logger)  # Create scenario instance
 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
         horizon = PredictionHorizon(horizon_index, scenario, run)
@@ -70,7 +83,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)
         else:
-            logging.error(f'Scenario {scenario.name}: energy management strategy unknown')
+            logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
             break
 
         if scenario.exception and run.save_results:
@@ -117,20 +130,19 @@ if __name__ == '__main__':
     if run.parallel:
         with mp.Manager() as manager:
             log_queue = manager.Queue()
+
             log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
                 pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
             log_queue.put(None)
             log_thread.join()
-            # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
-
-    # sequential scenario processing selected
     else:
         for scenario_name in run.scenario_names:
-            simulate_scenario(scenario_name, run, None)  # no logger queue
+            simulate_scenario(scenario_name, run, None)
 
     if run.save_results:
         run.join_results()
 
     run.end_timing()
+    # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
