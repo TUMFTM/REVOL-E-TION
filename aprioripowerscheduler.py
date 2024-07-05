@@ -16,8 +16,7 @@ def get_block_system(block):
 
 
 class AprioriPowerScheduler:
-    def __init__(self, run, scenario):
-        self.run = run
+    def __init__(self, scenario):
         self.scenario = scenario
         self.horizon = None
 
@@ -38,7 +37,7 @@ class AprioriPowerScheduler:
                                  cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
-        self.commodities = {name: EsmCommodity(commodity, self.scenario, self.run) for block in
+        self.commodities = {name: EsmCommodity(commodity, self.scenario) for block in
                             self.cs_uc + self.cs_apriori_lm + self.cs_apriori_unlim for name, commodity in
                             block.commodities.items()}
 
@@ -195,10 +194,9 @@ class AprioriPowerScheduler:
                                 'AC/DC converter': self.p_avail_conv['ac'],
                                 'DC/AC converter': self.p_avail_conv['dc']}.items():
             if value < 0:
-                # ToDo: change to self.scenario.logger if new logger structure is merged into branch
-                self.run.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
-                                        f' {location} occurred in AprioriScheduler at {dtindex}!'
-                                        f' This shortage may lead to infeasiblity during optimization.')
+                self.scenario.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
+                                             f' {location} occurred in AprioriScheduler at {dtindex}!'
+                                             f' This shortage may lead to infeasiblity during optimization.')
 
     def get_conv_eff(self, source, target):
         return {'ac': {'ac': 1,
@@ -208,9 +206,8 @@ class AprioriPowerScheduler:
 
 
 class EsmCommodity:
-    def __init__(self, block, scenario, run):
+    def __init__(self, block, scenario):
         self.block = block
-        self.run = run
         self.scenario = scenario
         # get the system to which the block is connected
         self.system = self.block.parent.system
@@ -296,8 +293,7 @@ class EsmCommodity:
         p_chg = min(p_maxchg, p_tosoc) / eff
 
         if p_chg < 0:
-            # ToDo: change to self.scenario.logger if new logger structure is merged into branch
-            self.run.warning('Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
+            self.scenario.logger.warning('Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
         return p_chg
 
     def calc_new_soc(self, dtindex, scenario):
@@ -308,9 +304,8 @@ class EsmCommodity:
                   self.block.apriori_data.loc[dtindex, 'soc'] * (1 - self.loss_rate)
 
         if new_soc < self.block.soc_min:
-            # ToDo: change to self.scenario.logger if new logger structure is merged into branch
-            self.run.logger.warning(f'SOC of commodity {self.block.name} falls below minimum SOC of'
-                                    f' {self.block.soc_min * 100:.2f} % at {dtindex}!')
+            self.scenario.logger.warning(f'SOC of commodity {self.block.name} falls below minimum SOC of'
+                                         f' {self.block.soc_min * 100:.2f} % at {dtindex}!')
 
         # Assign new SOC to apriori_data DataFrame of block
         self.block.apriori_data.loc[dtindex + self.scenario.timestep_td, 'soc'] = new_soc
