@@ -282,7 +282,7 @@ class EsmCommodity:
                'ext_dc': 1}[mode]
 
         # Only charge if SOC falls below threshold (soc_max - soc_threshold)
-        if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) >= soc_target - soc_threshold:
+        if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) > soc_target - soc_threshold * self.soh:
             return 0
 
         # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta
@@ -290,11 +290,12 @@ class EsmCommodity:
                    self.scenario.timestep_hours) - self.block.apriori_data.loc[dtindex, 'p_consumption']
 
         # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
-        p_chg = min(p_maxchg, p_tosoc) / eff
-
-        if p_chg < 0:
+        if (p_chg := min(p_maxchg, p_tosoc) / eff) < 0:
             self.scenario.logger.warning('Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
-        return p_chg
+
+        # avoid negative powers which can be caused by aging at the start of a new PH, if soc_target is already reached
+        # but new soc_target which is decreased compared to the old soc_target due to aging.
+        return max(p_chg, 0)
 
     def calc_new_soc(self, dtindex, scenario):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption']
