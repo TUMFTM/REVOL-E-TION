@@ -19,6 +19,7 @@ class AprioriPowerScheduler:
     def __init__(self, run, scenario):
         self.run = run
         self.scenario = scenario
+        self.horizon = None
 
         # Get name of system core block
         self.sys_core = [block for block in self.scenario.blocks.values() if isinstance(block, blocks.SystemCore)][0]
@@ -45,20 +46,20 @@ class AprioriPowerScheduler:
         self.p_available = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
         self.p_fixed = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
 
-    def calc_schedule(self, dti_ph):
+    def calc_ph_schedule(self, horizon):
         # Set timeindex of current prediction horizon
-        self.dti_ph = dti_ph
+        self.horizon = horizon
 
         # Initialize apriori_data dataframes for all apriori commodities (including index, column names, initial SOC
         # value and additional information about the presence and absence of commodities)
         for commodity in self.commodities.values():
-            commodity.init_ph(self.dti_ph)
+            commodity.init_ph(self.horizon.dti_ph)
 
         # Calculate available and fixed power for prediction horizon
         # ToDo: create new dataframe instead of reindexing and replacing all values?
-        self.p_available = self.p_available.reindex(self.dti_ph).fillna(0)
+        self.p_available = self.p_available.reindex(self.horizon.dti_ph).fillna(0)
         self.p_available.loc[:] = 0
-        self.p_fixed = self.p_fixed.reindex(self.dti_ph).fillna(0)
+        self.p_fixed = self.p_fixed.reindex(self.horizon.dti_ph).fillna(0)
         self.p_fixed.loc[:] = 0
 
         for block in self.scenario.blocks.values():
@@ -71,7 +72,7 @@ class AprioriPowerScheduler:
             elif isinstance(block, blocks.FixedDemand):
                 self.p_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w'] * -1
 
-        for dtindex in self.dti_ph:
+        for dtindex in self.horizon.dti_ph:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
             p_cs_lim_uc = {'ac': 0, 'dc': 0}
             for cs in self.cs_uc + self.cs_apriori_lm:
@@ -130,7 +131,7 @@ class AprioriPowerScheduler:
                 for commodity in commodities:
                     # get maximum possible charging power for commodity, consider the power already assigned to the
                     # commodity in previous iterations
-                    p_chg = min(p_share, commodity.calc_p_chg(dtindex, soc_max=1, mode='int_ac') -
+                    p_chg = min(p_share, commodity.calc_p_chg(dtindex, mode='int_ac') -
                                 commodity.block.apriori_data.loc[dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg)
                     # set charging power -> consider the power already assigned to the commodity in previous iterations
                     commodity.set_p(dtindex=dtindex, power=p_chg + commodity.block.apriori_data.loc[
@@ -166,7 +167,7 @@ class AprioriPowerScheduler:
                                     self.p_avail_conv[bus_non_prio]) * self.get_conv_eff(bus_non_prio, bus_prio)
 
                 # power for commodity considering limitations of the commodity and the system
-                pwr_chg = min(commodity.calc_p_chg(dtindex=dtindex, soc_max=1, mode='int_ac'), p_sys_lim)
+                pwr_chg = min(commodity.calc_p_chg(dtindex=dtindex, mode='int_ac'), p_sys_lim)
 
                 # update available power of the system for dynamic load management
                 if not p_avail_lm and int_lvl != 'uc':
@@ -214,72 +215,67 @@ class EsmCommodity:
         # get the system to which the block is connected
         self.system = self.block.parent.system
 
-        self.loss_rate = None
-
-        # Placeholder for variables for power calculations at external charging
-        self.minsoc_inz = self.dep_inz = self.arr_inz = self.arr_parking_inz = self.chg_inz = None
-        self.parking_charging = None
-
-    def init_ph(self, dti_ph, *_):
-        columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc']
-        self.block.apriori_data = pd.DataFrame(0,
-                                               index=dti_ph,
-                                               columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
-                                               dtype=float)
-
-        # set inital soc for PH -> take aging results (soc_min, soc_max) into account
-        self.block.apriori_data.loc[dti_ph[0], 'soc'] = statistics.median([self.block.soc_min,
-                                                                           self.block.soc_init_ph,
-                                                                           self.block.soc_max])
-
-        self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
+        # placeholder for current soh
+        self.soh = None
 
         # define loss_rate
         self.loss_rate = 1 - (1 - self.block.parent.loss_rate) ** (self.scenario.timestep_td / pd.Timedelta('1h'))
 
         # get the indices of all nonzero minsoc rows in the data
-        self.minsoc_inz = self.block.data_ph.index[self.block.data_ph['minsoc'] != 0]
+        self.minsoc_inz = self.block.data.index[self.block.data['minsoc'] != 0]
 
         # get first timesteps, where vehicle has left the base
-        self.dep_inz = self.block.data_ph.index[
-            self.block.data_ph['atbase'] & ~self.block.data_ph['atbase'].shift(-1, fill_value=False)]
+        self.dep_base_inz = self.block.data.index[~self.block.data['atbase'] & self.block.data['atbase'].shift(1, fill_value=False)]
+        # get first timesteps, where vehicle has left the destination
+        self.dep_dest_inz = self.block.data.index[~self.block.data['atac'] & self.block.data['atac'].shift(1, fill_value=False)]
 
         # get first timesteps, where vehicle is at base again
-        # based on data instead of data_ph to include info from previous prediction horizon
-        # ToDo: switch to data_ph again and include the data from the previous prediction horizon
-        #  [1:] only necessary, if vehicle is atbase at beginning of prediction horizon
-        self.arr_inz = self.block.data.index[
-                           self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)][1:]
-
+        self.arr_base_inz = self.block.data.index[self.block.data['atbase'] & ~self.block.data['atbase'].shift(fill_value=False)]
         # get first timesteps, where vehicle is parking at destination
-        self.arr_parking_inz = self.block.data_ph.index[
-            self.block.data_ph['atac'] & ~self.block.data_ph['atac'].shift(fill_value=False)]
+        self.arr_dest_inz = self.block.data.index[self.block.data['atac'] & ~self.block.data['atac'].shift(fill_value=False)]
 
         # get all timesteps, where charging is available (internal AC, external AC, external DC)
-        self.chg_inz = self.block.data_ph.index[self.block.data_ph[['atbase', 'atac', 'atdc']].any(axis=1)]
+        self.chg_avail_inz = self.block.data.index[self.block.data[['atbase', 'atac', 'atdc']].any(axis=1)]
 
         # initialize variable for charging during single parking process
         self.parking_charging = False
 
+    def init_ph(self, dti_ph, *_):
+        # Initialize apriori_data DataFrame and set inital soc for horizon taking aging results into account
+        self.block.apriori_data = pd.DataFrame(0,
+                                               index=dti_ph,
+                                               columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
+                                               dtype=float)
+
+        self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
+
+        self.block.apriori_data.loc[dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
+                                                                              self.block.soc_init_ph,
+                                                                              self.block.soc_max])
+
+        # get soh for current prediction horizon
+        self.soh = self.block.soh.dropna().loc[self.block.soh.dropna().index.max()]
+
     def get_latest_arr(self, dtindex):
         # get latest arrival before current timestep
-        try:
-            return self.arr_inz[self.arr_inz <= dtindex][-1]
-        except:
-            # return 1900 if no arrival is found -> at start of new simulation
-            return pd.to_datetime('1900').replace(tzinfo=self.scenario.timezone)
+        return self.arr_base_inz[self.arr_base_inz <= dtindex].max()
 
     def set_p(self, dtindex, power, mode='int_ac'):
         p = {'int_ac': self.block.parent.eff_chg,
              'ext_ac': 1,
              'ext_dc': 1}[mode] * power
-        col = f'p_{mode}'
-        self.block.apriori_data.loc[dtindex, col] = p
 
-    def calc_p_chg(self, dtindex, soc_max=1, mode='int_ac', *_):
+        self.block.apriori_data.loc[dtindex, f'p_{mode}'] = p
+
+    def convert_soc_ui2internal(self, soc_ui):
+        # convert the soc the displayed soc (UI) to the soc of the oemof storage taking aging effects into account
+        return soc_ui * self.soh + self.block.soc_min
+
+    def calc_p_chg(self, dtindex, mode='int_ac', soc_target=None, *_):
         # p_maxchg: maximum charging power in W, measured at storage, NOT at bus
-        soc_max = float(soc_max)
-        soc_max = min(self.block.soc_max, soc_max)
+        soc_target = self.get_soc_target(dtindex) if not soc_target else soc_target
+        # apply aging boundaries to soc_target
+        soc_target = self.convert_soc_ui2internal(soc_target)
         soc_threshold = 0
         p_maxchg = {'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
                     'ext_ac': self.block.parent.pwr_ext_ac,
@@ -289,11 +285,12 @@ class EsmCommodity:
                'ext_dc': 1}[mode]
 
         # Only charge if SOC falls below threshold (soc_max - soc_threshold)
-        if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) >= soc_max - soc_threshold:
+        if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) >= soc_target - soc_threshold:
             return 0
 
         # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta
-        p_tosoc = (soc_max - soc_current * (1 - self.loss_rate)) * self.block.size / self.scenario.timestep_hours
+        p_tosoc = ((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size /
+                   self.scenario.timestep_hours) - self.block.apriori_data.loc[dtindex, 'p_consumption']
 
         # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
         p_chg = min(p_maxchg, p_tosoc) / eff
@@ -313,42 +310,61 @@ class EsmCommodity:
         if new_soc < self.block.soc_min:
             # ToDo: change to self.scenario.logger if new logger structure is merged into branch
             self.run.logger.warning(f'SOC of commodity {self.block.name} falls below minimum SOC of'
-                                             f' {self.block.soc_min * 100:.2f} % at {dtindex}!')
+                                    f' {self.block.soc_min * 100:.2f} % at {dtindex}!')
 
         # Assign new SOC to apriori_data DataFrame of block
         self.block.apriori_data.loc[dtindex + self.scenario.timestep_td, 'soc'] = new_soc
 
+    def get_soc_target(self, dtindex):
+        # check if there are any departures after current timestep within forecast period
+        if (departures := self.dep_base_inz[(self.dep_base_inz >= dtindex) &
+                                            (self.dep_base_inz <= dtindex + pd.Timedelta(hours=self.block.parent.forecast_hours)
+                                            if self.block.parent.forecast_hours else True)]).empty:
+            return self.block.parent.soc_target
+
+        #  get start and end of next trip
+        dep_nxt = departures.min()
+        arr_nxt = self.arr_base_inz[self.arr_base_inz >= dtindex].min()
+        #  sum up energy between trip start and end
+        if arr_nxt <= dep_nxt:
+            # Destination charging -> sum up remaining energy of ongoing trip until end of trip
+            e_con = self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
+        else:
+            # Charging at base -> sum up energy for next trip
+            e_con = self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
+        #  Convert energy consumption to delta soc taking the current soh into account
+        soc_delta = e_con / (self.block.size * self.soh)
+        #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
+        soc_target = 1 if soc_delta > (self.block.parent.soc_target - self.block.parent.soc_return) else self.block.parent.soc_target
+        return soc_target
+
     def ext_charging(self, dtindex):
-        if self.block.data_ph.loc[dtindex, 'atac'] == 1:  # parking at destination
-            if dtindex in self.arr_parking_inz:  # plugging in only happens when parking starts
-                # use current int-index and next arrival index to calculate consumption and convert to SOC
-                try:  # Fails, if current trip is last trip and doesn't end within prediction horizon
-                    arr_inxt = self.arr_inz[self.arr_inz >= dtindex][0]
-                except:
-                    arr_inxt = self.block.data_ph.index[-1]
-                consumption_remaining = self.block.data_ph.loc[dtindex:arr_inxt,
-                                        'consumption'].sum() * self.scenario.timestep_hours
+        # determine whether destination charging is necessary
+        if self.block.data_ph.loc[dtindex, 'atac'] == 1:
+            if dtindex in self.arr_dest_inz:  # plugging in only happens when parking starts
+                # use current time and next arrival index to calculate consumption and convert to SOC
+                arr_nxt = arrivals.min() if not (arrivals := self.arr_base_inz[self.arr_base_inz >= dtindex]).empty else self.block.data_ph.index.max()
+                e_trip_remaining = self.block.data_ph.loc[dtindex:arr_nxt, 'consumption'].sum() * self.scenario.timestep_hours
+
                 # set charging to True, if charging is necessary
-                if consumption_remaining > (
-                        (self.get_data(dtindex, 'soc') + self.block.data_ph.loc[
-                            arr_inxt, 'minsoc']) * self.block.size):
+                if e_trip_remaining > ((self.block.apriori_data.loc[dtindex, 'soc'] - self.block.parent.soc_return) *
+                                       self.block.size * self.soh):
                     self.parking_charging = True
                 else:
                     self.parking_charging = False
 
             if self.parking_charging is True:
-                # ToDo: implement input dependent target soc (e.g. 80%)
-                self.set_p(dtindex=dtindex,
-                           power=self.calc_p_chg(dtindex=dtindex, soc_max=1, mode='ext_ac'),
-                           mode='ext_ac')
+                self.set_p(dtindex=dtindex, power=self.calc_p_chg(dtindex=dtindex, mode='ext_ac'), mode='ext_ac')
 
-        elif self.block.data_ph.loc[dtindex, 'atdc'] == 1:  # vehicle is driving with possibility to charge on-route
+        # determine whether on-route charging is necessary
+        elif self.block.data_ph.loc[dtindex, 'atdc'] == 1:
             # activate charging, if SOC will fall below threshold, before next possibility to charge
-            chg_inxt = self.chg_inz[self.chg_inz > dtindex][0]
-            chg_soc = self.get_data(dtindex, 'soc') - self.block.data_ph.loc[dtindex:chg_inxt,
-                                                      'consumption'].sum() * self.scenario.timestep_hours / self.block.size
-            if chg_soc < 0.05:
+            chg_nxt = self.chg_avail_inz[self.chg_avail_inz > dtindex].min()
+            soc_chg_nxt = self.block.apriori_data.loc[dtindex, 'soc'] - \
+                          self.block.data_ph.loc[dtindex:chg_nxt - self.scenario.timestep_td,
+                          'consumption'].sum() * self.scenario.timestep_hours / self.block.size
+            if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
                 # fast-charging only up to SOC of 80 %
                 self.set_p(dtindex=dtindex,
-                           power=self.calc_p_chg(dtindex=dtindex, soc_max=0.8, mode='ext_dc'),
+                           power=self.calc_p_chg(dtindex=dtindex, mode='ext_dc', soc_target=0.8),
                            mode='ext_dc')

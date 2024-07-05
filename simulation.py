@@ -149,7 +149,7 @@ class PredictionHorizon:
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if scenario.scheduler:
-            scenario.scheduler.calc_schedule(self.dti_ph)
+            scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():
             block.update_input_components()  # (re)define solph components that need input slices
