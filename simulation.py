@@ -22,21 +22,34 @@ import ast
 import graphviz
 import logging
 import logging.handlers
+import math
+import numpy as np
 import os
+import pickle
 import pprint
+import psutil
+import pytz
 import subprocess
 import sys
 import time
+import timezonefinder
+import traceback
 
+import multiprocessing as mp
+import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
+import plotly.graph_objects as go
 import tkinter as tk
 import tkinter.filedialog
 
 from pathlib import Path
+from plotly.subplots import make_subplots
 
 import blocks
+import commodity_des as des
 from additional_constraints import apply_additional_constraints
+import tum_colors as col
 from ensys_interface import call_ensys_interface
 
 
@@ -107,6 +120,12 @@ def input_gui(directory):
 ###############################################################################
 
 
+class OptimizationSuccessfulFilter(logging.Filter):
+    def filter(self, record):
+        # Filter out log messages from the root logger
+        return not (record.name == 'root' and record.msg == 'Optimization successful...')
+
+
 class PredictionHorizon:
 
     def __init__(self, index, scenario, run):
@@ -126,12 +145,13 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
 
-        run.logger.info(f'Scenario \"{scenario.name}\" - '
-                        f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                        f'Start: {self.starttime} - '
-                        f'CH end: {self.ch_endtime} - '
-                        f'PH end: {self.ph_endtime} - '
-                        f'initializing model build')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
+                             f'Start: {self.starttime} - ' +
+                             (f'CH end: {self.ch_endtime} - ' if self.ch_endtime != self.ph_endtime else '') +
+                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime else f'End: {self.ph_endtime}'))
+
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                             f'Initializing model build')
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
@@ -141,8 +161,10 @@ class PredictionHorizon:
 
         if scenario.strategy == 'rl':
             call_ensys_interface(scenario, run, 8, "DQN")
+        # if apriori power scheduling is necessary, calculate power schedules:
         elif scenario.scheduler:
-            scenario.scheduler.calc_schedule(self.dti_ph)
+            scenario.scheduler.calc_ph_schedule(self)
+
         for block in scenario.blocks.values():
             block.update_input_components()  # (re)define solph components that need input slices
 
@@ -151,7 +173,8 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        logging.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: building energy system instance')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Building energy system instance')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -162,15 +185,16 @@ class PredictionHorizon:
         if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system(scenario, run)
 
-        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Creating optimization model')
 
         try:
             self.model = solph.Model(self.es,
                                      debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
         except IndexError:
-            msg = (f'Scenario {scenario.name} - Horizon {self.index + 1} of {scenario.nhorizons}:'
-                   f' Input data not matching time index - check input data and time index consistency')
-            run.logger.error(msg)
+            msg = (f'Horizon {self.index + 1} of {scenario.nhorizons} -'
+                   f'Input data not matching time index - check input data and time index consistency')
+            scenario.logger.error(msg)
             raise IndexError(msg)
 
         apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
@@ -179,9 +203,10 @@ class PredictionHorizon:
             if scenario.strategy in ['go', 'rl']:
                 self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
             elif scenario.strategy == 'rh':
-                run.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
+                scenario.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
 
-        run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: model build completed')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                              f'Model build completed')
 
     def draw_energy_system(self, scenario, run):
 
@@ -216,8 +241,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                run.logger.debug(
-                    f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
+                scenario.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -231,9 +255,8 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting renderer from stopping model execution
-            run.logger.warning(f'Scenario: \"{scenario.name}\" - '
-                               f'Graphviz rendering failed - '
-                               f'Error Message: {e}')
+            scenario.logger.warning(f'Graphviz rendering failed - '
+                                    f'Error Message: {e}')
 
     def get_results(self, scenario, run):
         """
@@ -241,7 +264,7 @@ class PredictionHorizon:
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
-        run.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
+        scenario.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
@@ -265,12 +288,14 @@ class PredictionHorizon:
                 block.calc_aging(run, scenario, self)
 
     def run_optimization(self, scenario, run):
-        run.logger.info(f'Scenario \"{scenario.name}\" - Horizon {self.index + 1} of {scenario.nhorizons}:'
-                        f' Model built, starting optimization')
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                             f'Model built, starting optimization')
         try:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                                 f'Optimization completed, getting results')
         except UserWarning as exc:
-            run.logger.warning(f'Scenario \"{scenario.name}\" failed or infeasible - continue on next scenario')
+            scenario.logger.warning(f'Scenario failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
 
 
@@ -280,6 +305,7 @@ class SimulationRun:
 
         self.name = 'run'
         self.cwd = os.getcwd()
+        self.process = None
 
         # make sure that errors are logged to logfile
         sys.excepthook = self.handle_exception
@@ -321,9 +347,6 @@ class SimulationRun:
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
-        self.max_process_num = int(self.max_process_num)
-        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
-
         self.path_input_data = os.path.join(self.cwd, 'input')
         self.path_result_folder = os.path.join(self.result_path,
                                                f'{self.runtimestamp}_{self.scenario_file_name}')
@@ -341,20 +364,33 @@ class SimulationRun:
         if self.save_results or self.save_des_results:
             os.mkdir(self.path_result_folder)
 
-        log_formatter = logging.Formatter(logging.BASIC_FORMAT)
+        self.logger = logging.getLogger()
+        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s'
+                                          f'  %(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s'
+                                          f'  %(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
         log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.path_log_file))
         log_file_handler.setFormatter(log_formatter)
-        self.logger = logging.getLogger()
         self.logger.addHandler(log_stream_handler)
         self.logger.addHandler(log_file_handler)  # TODO global messages not getting through to logs in parallel mode
 
+        # Adding the custom filter to prevent root logger messages
+        log_stream_handler.addFilter(OptimizationSuccessfulFilter())
+        log_file_handler.addFilter(OptimizationSuccessfulFilter())
+
+        # set number of processes based on specified settings and available CPUs
+        self.max_process_num = os.cpu_count() if self.max_process_num == 'max' else psutil.cpu_count(
+            logical=False) if self.max_process_num == 'physical' else int(self.max_process_num)
+        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
+
+        if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
+            self.logger.warning('Single scenario or process: Parallel mode not possible - switching to sequential mode')
+            self.parallel = False
+
         if self.parallel:
             log_stream_handler.setLevel(logging.INFO)
-            self.logger.info(f'Global settings read - '
-                             f'simulating {self.scenario_num} scenario(s)'
-                             f' in parallel mode with {self.process_num} process(es)')
+            self.logger.setLevel(logging.INFO)
         else:
             if self.debugmode:
                 self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
@@ -362,7 +398,11 @@ class SimulationRun:
             else:
                 self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
                 log_stream_handler.setLevel(logging.INFO)
-            self.logger.info(f'Global settings read - simulating {self.scenario_num} scenario(s) in sequential mode')
+
+        self.logger.info(
+            f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
+            f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
+        )
 
     def end_timing(self):
 
@@ -393,6 +433,12 @@ class SimulationRun:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
+
+        self.logger.error(f"Exception type: {exc_type.__name__}")
+        self.logger.error(f"Exception message: {str(exc_value)}")
+        self.logger.error("Traceback:")
+        self.logger.error(''.join(traceback.format_tb(exc_traceback)))
+
         self.logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
         exit()
 
