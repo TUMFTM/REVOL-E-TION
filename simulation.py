@@ -83,19 +83,20 @@ def input_gui(directory):
     scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
     scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
     scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+                                                       filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
     if not scenarios_filename: scenarios_filename = scenarios_default_filename
 
     # get settings file
     settings_default_dir = os.path.join(directory, 'input', 'settings')
     settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
     settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+                                                      filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
     if not settings_filename: settings_filename = settings_default_filename
 
     # get result folder
     results_default_dir = os.path.join(directory, 'results')
-    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
+    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir,
+                                                    title="Select result storage folder")
     if not results_foldername: results_foldername = results_default_dir
 
     return scenarios_filename, settings_filename, results_foldername
@@ -138,7 +139,9 @@ class PredictionHorizon:
                 for commodity in block.commodities.values():
                     commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
 
-        if scenario.scheduler:
+        if scenario.strategy == 'rl':
+            call_ensys_interface(scenario, run, 8, "DQN")
+        elif scenario.scheduler:
             scenario.scheduler.calc_schedule(self.dti_ph)
         for block in scenario.blocks.values():
             block.update_input_components()  # (re)define solph components that need input slices
@@ -162,7 +165,8 @@ class PredictionHorizon:
         run.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons}: creating optimization model')
 
         try:
-            self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
+            self.model = solph.Model(self.es,
+                                     debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
         except IndexError:
             msg = (f'Scenario {scenario.name} - Horizon {self.index + 1} of {scenario.nhorizons}:'
                    f' Input data not matching time index - check input data and time index consistency')
@@ -212,7 +216,8 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                run.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
+                run.logger.debug(
+                    f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -384,7 +389,7 @@ class SimulationRun:
         except Exception as e:
             return e
 
-    def handle_exception(self,exc_type, exc_value, exc_traceback):
+    def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
