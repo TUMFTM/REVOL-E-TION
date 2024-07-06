@@ -17,10 +17,13 @@ from aprioripowerscheduler import AprioriPowerScheduler
 
 class Scenario:
 
-    def __init__(self, scenario_name, run):
+    def __init__(self, scenario_name, run, logger):
 
         self.name = scenario_name
         self.run = run
+        self.logger = logger
+        self.logger.propagate = False
+        pass
 
         # General Information --------------------------------
 
@@ -30,13 +33,13 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        run.logger.info(f'Scenario \"{self.name}\" initialized on {self.worker}')
+        self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)}' +
+                         (f' - Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else ''))
 
         self.parameters = run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
-        # noinspection PyUnresolvedReferences
         self.currency = self.currency.upper()
 
         self.tzfinder = timezonefinder.TimezoneFinder()
@@ -95,7 +98,8 @@ class Scenario:
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
-        self.commodity_systems = {block.name: block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)}
+        self.commodity_systems = {block.name: block for block in self.blocks.values() if
+                                  isinstance(block, blocks.CommoditySystem)}
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
@@ -108,7 +112,7 @@ class Scenario:
 
         # check input parameter configuration of rulebased charging for validity
         if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
-                                                                               x != 'uc'] and not cs.lm_static]:
+                                                                                       x != 'uc'] and not cs.lm_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
                                  f' without static load management (lm_static) is not compatible with size optimization')
@@ -130,7 +134,7 @@ class Scenario:
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
-            self.scheduler = AprioriPowerScheduler(run=run, scenario=self)
+            self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -153,63 +157,62 @@ class Scenario:
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
         self.lcoe = self.lcoe_dis = 0
 
-        run.logger.debug(f'Scenario \"{self.name}\" initialization completed')
+        self.logger.debug(f'Scenario initialization completed')
 
     def calc_meta_results(self, run):
 
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
-        #self.e_eta = None
+        # self.e_eta = None
         if self.e_sim_pro == 0:
-            run.logger.warning(f'Scenario {self.name} - core efficiency calculation: division by zero')
+            self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
             try:
                 self.e_eta = self.e_sim_del / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - core efficiency calculation: division by zero')
+                self.logger.warning(f'Core efficiency calculation: division by zero')
 
-        #self.renewable_curtailment = None
+        # self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
+            self.logger.warning(f'Renewable curtailment calculation: division by zero')
         else:
             try:
                 self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - renewable curtailment calculation: division by zero')
+                self.logger.warning(f'Renewable curtailment calculation: division by zero')
 
-        #self.renewable_share = None
+        # self.renewable_share = None
         if self.e_sim_pro == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
+            self.logger.warning(f'Renewable share calculation: division by zero')
         else:
             try:
                 self.renewable_share = self.e_renewable_act / self.e_sim_pro
             except ZeroDivisionError:
-                run.logger.warning(f'Scenario \"{self.name}\" - renewable share calculation: division by zero')
+                self.logger.warning(f'Renewable share calculation: division by zero')
 
         totex_dis_cs = sum([cs.totex_dis for cs in self.commodity_systems.values()])
         if self.e_dis_del == 0:
-            run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
+            self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
                 self.lcoe = self.totex_dis / self.e_dis_del
                 self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
             except ZeroDivisionError:
                 self.lcoe = self.lcoe_wocs = None
-                run.logger.warning(f'Scenario \"{self.name}\" - LCOE calculation: division by zero')
+                self.logger.warning(f'LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        run.logger.info(f'Scenario \"{self.name}\" -'
-                        f' NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
-                        f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
-                        f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
-                        f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
-                        f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
-                        f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
+        self.logger.info(f'NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
+                         f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
+                         f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
+                         f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+                         f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                         f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -224,7 +227,7 @@ class Scenario:
     def end_timing(self, run):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        run.logger.info(f'Scenario \"{self.name}\" finished - runtime {self.runtime_len} s')
+        self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
 
     def generate_plots(self, run):
 
@@ -271,27 +274,32 @@ class Scenario:
 
     def print_results(self, run):
         print('#################')
-        run.logger.info(f'Results for Scenario \"{self.name}\":')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    run.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
+                    self.logger.info(
+                        f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
                 if block.opt_dcac:
-                    run.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
+                    self.logger.info(
+                        f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    run.logger.info(f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
+                    self.logger.info(
+                        f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    run.logger.info(f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
+                    self.logger.info(
+                        f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
-                    run.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
+                    self.logger.info(
+                        f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
             else:
-                run.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
+                self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        run.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        run.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
+        self.logger.info(
+            f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
@@ -329,7 +337,7 @@ class Scenario:
     def save_result_timeseries(self):
         for block in self.blocks.values():
             block.get_timeseries_results(self)
-        #self.result_timeseries.to_pickle(self.path_result_file.replace('.csv', '.pkl'))
+        # self.result_timeseries.to_pickle(self.path_result_file.replace('.csv', '.pkl'))
         self.result_timeseries.to_csv(self.path_result_file)
 
     def show_plots(self):
