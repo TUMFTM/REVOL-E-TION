@@ -19,6 +19,7 @@ import numpy as np
 import oemof.solph as solph
 import os
 import pandas as pd
+import pandas.errors
 import pvlib
 import pytz
 import statistics
@@ -215,8 +216,7 @@ class Block:
         df = self.resample_to_timestep(df, scenario)
         return df
 
-    @staticmethod
-    def resample_to_timestep(data: pd.DataFrame, scenario):
+    def resample_to_timestep(self, data: pd.DataFrame, scenario):
         """
         Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
         :param data: The input dataframe with DatetimeIndex
@@ -226,7 +226,13 @@ class Block:
 
         dti = data.index
         # Add one element to the dataframe to include the last timesteps
-        dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        try:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        except pandas.errors.NullFrequencyError:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
+            scenario.logger.warning(f'Block \"{self.name}\": Timestep of csv input data could not be inferred -'
+                                    f'using 15 min default')
+
         data_ext = data.reindex(dti_ext).ffill()
 
         def resample_column(column):
