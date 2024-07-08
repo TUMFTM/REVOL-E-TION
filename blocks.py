@@ -1254,6 +1254,10 @@ class MobileCommodity:
             self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
             self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
             self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc']
+
+            # ToDo: find solution for min_soc in input files, also in 'else' below
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
@@ -1269,10 +1273,10 @@ class MobileCommodity:
             # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
             # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
             # relative to nominal capacity
+            # ToDo: find solution for min_soc in input files, also in 'if' above
             soc_min_clipped = self.data_ph['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
             self.ess.min_storage_level = soc_min_clipped
-        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
 
 
 class PVSource(RenewableInvestBlock):
