@@ -24,7 +24,6 @@ from logging.handlers import QueueHandler
 import threading
 import warnings
 import multiprocessing as mp
-import platform
 
 from itertools import repeat
 from simulation import PredictionHorizon, Scenario, SimulationRun
@@ -87,7 +86,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
             break
 
         if scenario.exception and run.save_results:
-            scenario.save_result_summary(run)
+            scenario.save_result_summary()
             break
         else:
             horizon.get_results(scenario, run)
@@ -95,20 +94,20 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
         # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
         del horizon
 
-    scenario.end_timing(run)
+    scenario.end_timing()
 
     if not scenario.exception:
         if run.save_results or run.print_results:
-            scenario.get_results(run)
-            scenario.calc_meta_results(run)
+            scenario.get_results()
+            scenario.calc_meta_results()
             if run.save_results:
-                scenario.save_result_summary(run)
+                scenario.save_result_summary()
                 scenario.save_result_timeseries()
             if run.print_results:
-                scenario.print_results(run)
+                scenario.print_results()
 
         if run.save_plots or run.show_plots:
-            scenario.generate_plots(run)
+            scenario.generate_plots()
             if run.save_plots:
                 scenario.save_plots()
             if run.show_plots:
