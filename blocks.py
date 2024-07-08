@@ -551,13 +551,14 @@ class CommoditySystem(InvestBlock):
 
         # static load management can only be activated for rulebased integration levels
         if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
-            scenario.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented for'
-                             f' {[x for x in self.apriori_lvls if x != "uc"]} - deactivated static load management')
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management only implemented for'
+                                    f' {", ".join([x for x in self.apriori_lvls if x != "uc"])}'
+                                    f' -> deactivated static load management')
             self.lm_static = None
 
         if self.opt and self.int_lvl in self.apriori_lvls:
-            scenario.error(f'Scenario {scenario.name}: \"{self.name}\" optimization of commodity size not'
-                             f' implemented for integration levels {self.apriori_lvls}')
+            scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
+                                  f' implemented for integration levels {self.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
 
         # Creation of static energy system components --------------------------------
