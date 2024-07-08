@@ -34,8 +34,8 @@ wind,ls,20
 wind,cdc,1
 wind,eff,0.95
 pv,size,105000
-pv,data_source,PVGIS API
-pv,filename,pv_example
+pv,data_source,solcast file
+pv,filename,pv_example_solcast
 pv,capex_spec,0.250
 pv,mntex_spec,0.01509
 pv,opex_spec,0
@@ -49,7 +49,7 @@ gen,opex_spec,0.00065
 gen,ls,10
 gen,cdc,1
 gen,eff,1
-grid,size_g2mg,11000
+grid,size_g2mg,55000
 grid,size_mg2g,equal
 grid,res_only,False
 grid,capex_spec,10
