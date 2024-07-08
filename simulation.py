@@ -159,6 +159,8 @@ class PredictionHorizon:
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if scenario.scheduler:
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                                 f'Calculating power schedules for commodities with rulebased charging strategies')
             scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():

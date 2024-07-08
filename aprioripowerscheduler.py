@@ -54,22 +54,24 @@ class AprioriPowerScheduler:
         for commodity in self.commodities.values():
             commodity.init_ph(self.horizon.dti_ph)
 
-        # Calculate available and fixed power for prediction horizon
-        # ToDo: create new dataframe instead of reindexing and replacing all values?
-        self.p_available = self.p_available.reindex(self.horizon.dti_ph).fillna(0)
-        self.p_available.loc[:] = 0
-        self.p_fixed = self.p_fixed.reindex(self.horizon.dti_ph).fillna(0)
-        self.p_fixed.loc[:] = 0
+        # Only necessary, if there are CommoditySystems with dynamic load management
+        if self.cs_apriori_unlim:
+            # Calculate available and fixed power for prediction horizon
+            # reset available and fixed power for the current prediction horizon to zero
+            self.p_available = self.p_available.reindex(self.horizon.dti_ph)
+            self.p_available.loc[:] = 0
+            self.p_fixed = self.p_fixed.reindex(self.horizon.dti_ph)
+            self.p_fixed.loc[:] = 0
 
-        for block in self.scenario.blocks.values():
-            if isinstance(block, blocks.GridConnection):
-                self.p_available.loc[:, get_block_system(block)] += block.size_g2mg * block.eff
-            elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
-                self.p_available.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
-            elif isinstance(block, blocks.ControllableSource):
-                self.p_available.loc[:, get_block_system(block)] += block.size * block.eff
-            elif isinstance(block, blocks.FixedDemand):
-                self.p_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w'] * -1
+            for block in self.scenario.blocks.values():
+                if isinstance(block, blocks.GridConnection):
+                    self.p_available.loc[:, get_block_system(block)] += block.size_g2mg * block.eff
+                elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
+                    self.p_available.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
+                elif isinstance(block, blocks.ControllableSource):
+                    self.p_available.loc[:, get_block_system(block)] += block.size * block.eff
+                elif isinstance(block, blocks.FixedDemand):
+                    self.p_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w'] * -1
 
         for dtindex in self.horizon.dti_ph:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
@@ -127,7 +129,12 @@ class AprioriPowerScheduler:
             while (p_avail_lm - p_cs) > 0 and len(commodities) > 0:
                 # calculate possible power for each commodity
                 p_share = (p_avail_lm - p_cs) / len(commodities)
-                for commodity in commodities:
+                # necessary to avoid floating point errors and endless loops
+                if p_share < 1.00E-10:
+                    return p_cs
+                # slicing creates a copy of the list. This is necessary to remove commodities from the list without an
+                # error in the for loop. Otherwise, the next element after the removed one is skipped.
+                for commodity in commodities[:]:
                     # get maximum possible charging power for commodity, consider the power already assigned to the
                     # commodity in previous iterations
                     p_chg = min(p_share, commodity.calc_p_chg(dtindex, mode='int_ac') -
@@ -196,7 +203,7 @@ class AprioriPowerScheduler:
             if value < 0:
                 self.scenario.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
                                              f' {location} occurred in AprioriScheduler at {dtindex}!'
-                                             f' This shortage may lead to infeasiblity during optimization.')
+                                             f' This shortage may lead to infeasibility during optimization.')
 
     def get_conv_eff(self, source, target):
         return {'ac': {'ac': 1,
