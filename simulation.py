@@ -95,20 +95,23 @@ def input_gui(directory):
     scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
     scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
     scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not scenarios_filename: scenarios_filename = scenarios_default_filename
+                                                       filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+    if not scenarios_filename:
+        scenarios_filename = scenarios_default_filename
 
     # get settings file
     settings_default_dir = os.path.join(directory, 'input', 'settings')
     settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
     settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
-                                           filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not settings_filename: settings_filename = settings_default_filename
+                                                      filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
+    if not settings_filename:
+        settings_filename = settings_default_filename
 
     # get result folder
     results_default_dir = os.path.join(directory, 'results')
-    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result storage folder")
-    if not results_foldername: results_foldername = results_default_dir
+    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result directory")
+    if not results_foldername:
+        results_foldername = results_default_dir
 
     return scenarios_filename, settings_filename, results_foldername
 
@@ -146,7 +149,8 @@ class PredictionHorizon:
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
                              f'Start: {self.starttime} - ' +
                              (f'CH end: {self.ch_endtime} - ' if self.ch_endtime != self.ph_endtime else '') +
-                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime else f'End: {self.ph_endtime}'))
+                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime
+                              else f'End: {self.ph_endtime}'))
 
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Initializing model build')
@@ -187,7 +191,8 @@ class PredictionHorizon:
                               f'Creating optimization model')
 
         try:
-            self.model = solph.Model(self.es, debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
+            # Build the mathematical linear optimization model with pyomo
+            self.model = solph.Model(self.es, debug=run.debugmode)
         except IndexError:
             msg = (f'Horizon {self.index + 1} of {scenario.nhorizons} -'
                    f'Input data not matching time index - check input data and time index consistency')
@@ -238,7 +243,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                scenario.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
+                scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -379,7 +384,8 @@ class Scenario:
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
-        self.commodity_systems = {block.name: block for block in self.blocks.values() if isinstance(block, blocks.CommoditySystem)}
+        self.commodity_systems = {block.name: block for block in self.blocks.values()
+                                  if isinstance(block, blocks.CommoditySystem)}
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
@@ -427,6 +433,7 @@ class Scenario:
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
         self.e_eta = 0
         self.renewable_curtailment = self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
+        self.renewable_share = 0
 
         # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
@@ -435,16 +442,16 @@ class Scenario:
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
-        self.lcoe = self.lcoe_dis = 0
+        self.lcoe = self.lcoe_dis = self.lcoe_wocs = 0
+        self.npv = self.irr = self.mirr = 0
 
         self.logger.debug(f'Scenario initialization completed')
 
-    def calc_meta_results(self, run):
+    def calc_meta_results(self):
 
         # TODO implement commodity v2mg usage share
         # TODO implement energy storage usage share
 
-        #self.e_eta = None
         if self.e_sim_pro == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
@@ -453,7 +460,6 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Core efficiency calculation: division by zero')
 
-        #self.renewable_curtailment = None
         if self.e_renewable_pot == 0:
             self.logger.warning(f'Renewable curtailment calculation: division by zero')
         else:
@@ -462,7 +468,6 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable curtailment calculation: division by zero')
 
-        #self.renewable_share = None
         if self.e_sim_pro == 0:
             self.logger.warning(f'Renewable share calculation: division by zero')
         else:
@@ -491,8 +496,10 @@ class Scenario:
                          f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
                          f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
                          f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
-                         f' Renewable Share: {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
-                         f' Renewable Curtailment: {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
+                         f' Renewable Share:'
+                         f' {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                         f' Renewable Curtailment:'
+                         f' {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -504,12 +511,12 @@ class Scenario:
                 raise ValueError(f"Class '{class_name}' not found in blocks.py file - Check for typos or add class.")
         return objects
 
-    def end_timing(self, run):
+    def end_timing(self):
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
         self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
 
-    def generate_plots(self, run):
+    def generate_plots(self):
 
         self.figure = make_subplots(specs=[[{'secondary_y': True}]])
 
@@ -536,54 +543,59 @@ class Scenario:
 
         if self.strategy == 'go':
             self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{run.scenario_file_name} - '
+                                            f'{self.run.scenario_file_name} - '
                                             f'Scenario: {self.name}')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{run.scenario_file_name} - '
+                                            f'{self.run.scenario_file_name} - '
                                             f'Scenario: {self.name} - '
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
-    def get_results(self, run):
+    def get_results(self):
         for block in self.blocks.values():
             block.calc_energy(self)
             block.calc_expenses(self)
             block.calc_revenue(self)
             block.calc_cashflows(self)
 
-    def print_results(self, run):
+    def print_results(self):
         print('#################')
         for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
-                    self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\": {round(block.size_acdc / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
+                                     f' {round(block.size_acdc / 1e3)} {unit}')
                 if block.opt_dcac:
-                    self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\": {round(block.size_dcac / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
+                                     f' {round(block.size_dcac / 1e3)} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
-                    self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\": {round(block.size_g2mg / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\":'
+                                     f' {round(block.size_g2mg / 1e3)} {unit}')
                 if block.opt_mg2g:
-                    self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\": {round(block.size_mg2g / 1e3)} {unit}')
+                    self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
+                                     f' {round(block.size_mg2g / 1e3)} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
-                    self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\": {round(commodity.size / 1e3, 1)} {unit}')
+                    self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
+                                     f' {round(commodity.size / 1e3, 1)} {unit}')
             else:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Levelized cost of electricity:'
+                         f' {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
 
-    def save_result_summary(self, run):
+    def save_result_summary(self):
         """
         Saves all int, float and str attributes of run, scenario (incl. technoeconomic KPIs) and all blocks to the
         results dataframe
-        :param run: SimulationRun
         :return: none
         """
 
@@ -596,14 +608,14 @@ class Scenario:
                     self.result_summary.loc[(name, key), self.name] = value
 
         result_types = (int, float, str, bool)
-        result_blocks = {'run': run, 'scenario': self}
+        result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
 
-        for name, block in result_blocks.items():
-            write_values(name, block)
-            if isinstance(block, blocks.CommoditySystem):
-                for name, commodity in block.commodities.items():
-                    write_values(name, commodity)
+        for block_name, block_obj in result_blocks.items():
+            write_values(block_name, block_obj)
+            if isinstance(block_obj, blocks.CommoditySystem):
+                for commodity_name, commodity_obj in block_obj.commodities.items():
+                    write_values(commodity_name, commodity_obj)
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
@@ -611,7 +623,6 @@ class Scenario:
     def save_result_timeseries(self):
         for block in self.blocks.values():
             block.get_timeseries_results(self)
-        #self.result_timeseries.to_pickle(self.path_result_file.replace('.csv', '.pkl'))
         self.result_timeseries.to_csv(self.path_result_file)
 
     def show_plots(self):
@@ -748,7 +759,7 @@ class SimulationRun:
         except Exception as e:
             return e
 
-    def handle_exception(self,exc_type, exc_value, exc_traceback):
+    def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return

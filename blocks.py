@@ -488,7 +488,7 @@ class RenewableInvestBlock(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         # flow values are powers
         self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -551,6 +551,8 @@ class CommoditySystem(InvestBlock):
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
         self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
+
+        self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
 
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
@@ -677,8 +679,6 @@ class CommoditySystem(InvestBlock):
     def calc_opex_sim(self, scenario):
 
         self.opex_sys = self.flow_in @ self.opex_spec_sys_chg + self.flow_out @ self.opex_spec_sys_dis
-        self.opex_commodities = 0
-        self.opex_commodities_ext = 0
 
         for commodity in self.commodities.values():
             commodity.opex_sim = commodity.flow_in @ self.opex_spec * scenario.timestep_hours
@@ -782,7 +782,7 @@ class ControllableSource(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
 
@@ -867,7 +867,7 @@ class GridConnection(InvestBlock):
         self.opex_sim = self.flow_out @ self.opex_spec_g2mg * scenario.timestep_hours + \
                         self.flow_in @ self.opex_spec_mg2g * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -954,7 +954,7 @@ class FixedDemand(Block):
         self.crev_sim = (self.flow_in @ self.crev_spec) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev(scenario)
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
 
@@ -1191,7 +1191,7 @@ class MobileCommodity:
 
         self.crev_sim = self.crev_time + self.crev_usage
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
         self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
@@ -1311,12 +1311,12 @@ class PVSource(RenewableInvestBlock):
         # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
         # Prog. Photovolt. Res. Appl.2008, 16, 307–315
         eff_rel = (1 +
-                  (k1 * lng) +
-                  (k2 * (lng ** 2)) +
-                  (k3 * t) +
-                  (k4 * t * lng) +
-                  (k5 * t * (lng ** 2)) +
-                  (k6 * (t ** 2)))
+                   (k1 * lng) +
+                   (k2 * (lng ** 2)) +
+                   (k3 * t) +
+                   (k4 * t * lng) +
+                   (k5 * t * (lng ** 2)) +
+                   (k6 * (t ** 2)))
         eff_rel = eff_rel.fillna(0)
 
         # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
@@ -1389,7 +1389,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.soc_init_ph = self.soc_init
 
-        self.apriori_data = self.sc_init_ph =  None
+        self.apriori_data = self.sc_init_ph = None
 
         self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
@@ -1475,7 +1475,7 @@ class StationaryEnergyStorage(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_in @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_out_ch = horizon.results[(self.ess, self.bus_connected)]['sequences']['flow'][
             horizon.dti_ch]
@@ -1728,7 +1728,8 @@ class WindSource(RenewableInvestBlock):
             self.path_turbine_data_file = os.path.join(run.path_input_data, 'wind', 'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
-            self.turbine_data = self.turbine_data.loc[self.turbine_data['turbine_type'] == self.turbine_type].reset_index()
+            self.turbine_data = self.turbine_data.loc[
+                self.turbine_data['turbine_type'] == self.turbine_type].reset_index()
 
             self.data['power_original'] = windpowerlib.power_output.power_curve(
                 wind_speed=self.data['wind_speed_adj'],
