@@ -264,7 +264,7 @@ class PredictionHorizon:
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
-        scenario.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - Getting results')
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
