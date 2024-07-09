@@ -770,8 +770,7 @@ class ControllableSource(InvestBlock):
                                                )
         else:
             self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(nominal_value=1,
-                                                                                       max=self.size,
+                                               outputs={self.bus_connected: solph.Flow(nominal_value=self.size,
                                                                                        variable_costs=self.opex_spec)}
                                                )
         scenario.components.append(self.src)
@@ -824,8 +823,7 @@ class GridConnection(InvestBlock):
         else:
             self.src = solph.components.Source(label=f'{self.name}_src',
                                                outputs={self.bus_connected: solph.Flow(
-                                                   nominal_value=1,
-                                                   max=self.size_g2mg,
+                                                   nominal_value=self.size_g2mg,
                                                    variable_costs=self.opex_spec_g2mg)}
                                                )
         if self.opt_mg2g:
@@ -837,8 +835,7 @@ class GridConnection(InvestBlock):
         else:
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                              inputs={self.bus_connected: solph.Flow(
-                                                 nominal_value=1,
-                                                 max=self.size_mg2g,
+                                                 nominal_value=self.size_mg2g,
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         scenario.components.append(self.src)
@@ -1043,8 +1040,7 @@ class MobileCommodity:
                                                  inputs={
                                                      self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
                                                                                  variable_costs=scenario.cost_eps)},
-                                                 outputs={self.bus: solph.Flow(nominal_value=1,
-                                                                               max=self.pwr_chg * self.eff_chg)},
+                                                 outputs={self.bus: solph.Flow(nominal_value=self.pwr_chg * self.eff_chg)},
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
 
@@ -1094,14 +1090,14 @@ class MobileCommodity:
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
         # add external AC charger as new energy source
         self.ext_ac = solph.components.Source(label=f'{self.name}_ext_ac',
-                                              outputs={self.bus: solph.Flow(nominal_value=1,
+                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_ac,
                                                                             variable_costs=self.parent.opex_spec_ext_ac)}
                                               )
         scenario.components.append(self.ext_ac)
 
         # add external DC charger as new energy source
         self.ext_dc = solph.components.Source(label=f'{self.name}_ext_dc',
-                                              outputs={self.bus: solph.Flow(nominal_value=1,
+                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_dc,
                                                                             variable_costs=self.parent.opex_spec_ext_dc)}
                                               )
         scenario.components.append(self.ext_dc)
@@ -1251,9 +1247,9 @@ class MobileCommodity:
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
-            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
-            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc']
+            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'] / (self.pwr_chg * self.eff_chg)
+            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
 
             # ToDo: find solution for min_soc in input files, also in 'else' below
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
@@ -1267,8 +1263,8 @@ class MobileCommodity:
             self.snk.inputs[self.bus].fix = self.data_ph['consumption']
 
             # enable/disable ac and dc charging station dependent on input data
-            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int) * self.parent.pwr_ext_ac
-            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int) * self.parent.pwr_ext_dc
+            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int)
+            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int)
 
             # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
             # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
@@ -1429,12 +1425,10 @@ class StationaryEnergyStorage(InvestBlock):
         else:
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=1,
-                                                           max=self.size * self.crate_chg,
+                                                           nominal_value=self.size * self.crate_chg,
                                                            variable_costs=self.opex_spec)},
                                                        outputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=1,
-                                                           max=self.size * self.crate_dis,
+                                                           nominal_value=self.size * self.crate_dis,
                                                        )},
                                                        loss_rate=self.loss_rate,
                                                        balanced={'go': True, 'rh': False}[scenario.strategy],
@@ -1519,8 +1513,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.ess.initial_storage_level = self.soc_init_ph
 
         if self.apriori_data is not None:
-            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1)
-            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0)
+            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1) / (self.size * self.crate_chg)
+            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0) / (self.size * self.crate_dis)
 
 
 class SystemCore(InvestBlock):
@@ -1566,8 +1560,7 @@ class SystemCore(InvestBlock):
         else:
             self.ac_dc = solph.components.Converter(label='ac_dc',
                                                     inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=1,
-                                                                                    max=self.size_acdc)},
+                                                                                    nominal_value=self.size_acdc)},
                                                     outputs={self.dc_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.dc_bus: self.eff_acdc})
@@ -1583,8 +1576,7 @@ class SystemCore(InvestBlock):
         else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
                                                     inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=1,
-                                                                                    max=self.size_dcac)},
+                                                                                    nominal_value=self.size_dcac)},
                                                     outputs={self.ac_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
