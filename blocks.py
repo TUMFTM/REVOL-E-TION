@@ -981,6 +981,7 @@ class MobileCommodity:
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
         self.apriori_data = None
+        self.scenario_strategy = scenario.strategy
 
         self.data_ph = self.sc_init_ph = None  # placeholder, is filled in update_input_components
 
@@ -1247,6 +1248,8 @@ class MobileCommodity:
             self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
             self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
             self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc']
+            if self.scenario_strategy == 'rl':
+                self.snk.inputs[self.bus].fix = self.apriori_data['p_consumption']
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
