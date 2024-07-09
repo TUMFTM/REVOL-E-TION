@@ -1429,7 +1429,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                            max=self.size * self.crate_dis,
                                                        )},
                                                        loss_rate=self.loss_rate,
-                                                       balanced={'go': True, 'rl': True, 'rh': False}[scenario.strategy],
+                                                       balanced={'go': True, 'rl': False, 'rh': False}[scenario.strategy],
                                                        initial_storage_level=self.soc_init_ph,
                                                        inflow_conversion_factor=self.eff_chg,
                                                        outflow_conversion_factor=self.eff_dis,
