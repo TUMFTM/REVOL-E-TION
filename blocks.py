@@ -1247,7 +1247,9 @@ class MobileCommodity:
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'] / (self.pwr_chg * self.eff_chg)
+            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / (self.pwr_chg * self.eff_chg)
+            self.outflow.inputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
+
             self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
             self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
 
