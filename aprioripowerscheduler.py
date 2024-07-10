@@ -4,10 +4,10 @@ import statistics
 import blocks
 
 
-def get_bus(bus, which):
+def get_bus(bus, target):
     # Takes the bus the block is connected to and returns the specified bus
     return {'ac': {'same': 'ac', 'other': 'dc'},
-            'dc': {'same': 'dc', 'other': 'ac'}}[bus][which]
+            'dc': {'same': 'dc', 'other': 'ac'}}[bus][target]
 
 
 def get_block_system(block):
@@ -37,7 +37,7 @@ class AprioriPowerScheduler:
                                  cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
-        self.commodities = {name: EsmCommodity(commodity, self.scenario) for block in
+        self.commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
                             self.cs_uc + self.cs_apriori_lm + self.cs_apriori_unlim for name, commodity in
                             block.commodities.items()}
 
@@ -75,6 +75,7 @@ class AprioriPowerScheduler:
 
         for dtindex in self.horizon.dti_ph:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
+            # ToDo: rename p_cs_lim_uc as this is also static load management
             p_cs_lim_uc = {'ac': 0, 'dc': 0}
             for cs in self.cs_uc + self.cs_apriori_lm:
                 p_cs_lim_uc[cs.system] += self.calc_p_commodities(dtindex=dtindex,
@@ -134,6 +135,7 @@ class AprioriPowerScheduler:
                     return p_cs
                 # slicing creates a copy of the list. This is necessary to remove commodities from the list without an
                 # error in the for loop. Otherwise, the next element after the removed one is skipped.
+                # ToDo: copy()??
                 for commodity in commodities[:]:
                     # get maximum possible charging power for commodity, consider the power already assigned to the
                     # commodity in previous iterations
@@ -155,10 +157,6 @@ class AprioriPowerScheduler:
             # get a list of all available commodities and sort them according to the chosen strategy
             commodities = sorted(commodities, key=sort_key_funcs[int_lvl])
             for commodity in commodities:
-                # define bus priority and non-priority for the commodity
-                bus_prio = get_bus(commodity.system, 'same')
-                bus_non_prio = get_bus(commodity.system, 'other')
-
                 # get limitations of the system (available power on buses and converter or static load managment)
                 if int_lvl == 'uc':
                     # no limitation for charging power on CommoditySystem level for uncoordinated charging
@@ -167,6 +165,10 @@ class AprioriPowerScheduler:
                     # limitation for static load management is based on max power and already assigned power
                     p_sys_lim = p_avail_lm - p_cs
                 else:
+                    # define bus priority and non-priority for the commodity
+                    bus_prio = get_bus(commodity.system, 'same')
+                    bus_non_prio = get_bus(commodity.system, 'other')
+
                     # limitation for dynamic load management is based on available power on buses and converter
                     p_sys_lim = self.p_available.loc[dtindex, bus_prio] + \
                                 min(self.p_available.loc[dtindex, bus_non_prio],
@@ -212,7 +214,7 @@ class AprioriPowerScheduler:
                        'dc': 1}}[source][target]
 
 
-class EsmCommodity:
+class AprioriCommodity:
     def __init__(self, block, scenario):
         self.block = block
         self.scenario = scenario
