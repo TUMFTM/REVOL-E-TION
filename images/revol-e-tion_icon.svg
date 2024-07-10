@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Notepad -->
+<!-- (PD) January 25, 2006 - _Crotalus horridus_  -->
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   version="1.0"
+   width="40"
+   height="40"
+   id="Stylized Lightning Bolt on Circle">
+  <defs>
+    <radialGradient
+       id="CircleGradient"
+       gradientUnits="userSpaceOnUse"
+       cx="20"
+       cy="20"
+       fx="20"
+       fy="20"
+       r="13" >
+      <stop offset="0%" stop-color="#FFFF00" stop-opacity="1.0" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </radialGradient>
+  </defs>
+  <ellipse
+     fill="#FF8000"
+     stroke="#000000"
+     stroke-width="1"
+     cx="20"
+     cy="20"
+     rx="13"
+     ry="13"
+     id="Background Circle" />
+  <ellipse
+     fill="url(#CircleGradient)"
+     fill-opacity="1.0"
+     cx="20"
+     cy="20"
+     rx="13"
+     ry="13"
+     id="Shading Circle" />
+  <path
+     fill="#FFFF00"
+     stroke="#000000"
+     stroke-width="1"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     d="M 36,4 L 12,16 18,21 4,36 28,24 22,19 Z"
+     id="Lightning Bolt" />
+</svg>

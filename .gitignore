@@ -12,10 +12,11 @@ input/*
 !input/battery/sony_us26650.pkl
 
 !input/bev/bev_example.csv
+!input/bev/bev_example_processes.csv
 
 !input/brs/brs_example.csv
-!input/brs/brs_usecases.json
-!input/brs/use_case_list_gen.ipynb
+!input/brs/brs_example_processes.csv
+!input/brs/usecases_default.csv
 
 !input/dem/dem_example.csv
 
@@ -32,6 +33,7 @@ input/*
 !input/settings/default_seq.csv
 
 !input/wind/wind_example.csv
+!input/wind/turbine_data.pkl
 
 utils/*
 

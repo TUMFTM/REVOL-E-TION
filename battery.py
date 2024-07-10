@@ -192,9 +192,9 @@ class BatteryPackModel:
             self.calc_aging_naumann(horizon)
 
         # Update block / commodity storage size
-        commodity.soh = 1 - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
-        commodity.soc_min = (1 - commodity.soh) / 2
-        commodity.soc_max = 1 - ((1 - commodity.soh) / 2)
+        commodity.soh[horizon.ch_endtime] = commodity.soh_init - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
+        commodity.soc_min = (1 - commodity.soh[horizon.ch_endtime]) / 2
+        commodity.soc_max = 1 - ((1 - commodity.soh[horizon.ch_endtime]) / 2)
 
     def calc_aging_naumann(self, horizon):
 
@@ -262,8 +262,8 @@ class BatteryPackModel:
         # Schmalstieg aging model is not verified yet against aging data from original paper
 
         # Set global tuning factor
-        # k_tuning = 0.43  # Teichert for VW ID.3 cell
-        k_tuning = 1  # deactivation of tuning factor
+        k_tuning = 0.43  # Teichert for VW ID.3 cell
+        # k_tuning = 1  # deactivation of tuning factor
 
         #  Calculate calendric stress factor timeseries (from http://dx.doi.org/10.1016/j.jpowsour.2014.02.012)
         alpha_cap = (7.543 * self.ocv_hor - 23.75) * 1e6 * np.exp(-6976 / self.temp_hor_k)  # timeseries over all steps
@@ -285,7 +285,7 @@ class BatteryPackModel:
 
         # Calculate mean OCV of each detected cycle
         ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean']).reshape([-1,])
-        # TODO Schmalstieg states quadratic mean (rms) of voltage instead of arithmetic mean!
+        # Caution: Schmalstieg states quadratic mean (rms) of voltage instead of arithmetic mean!
 
         # Calculate cyclic stress factor series for each cycle
         beta_cap = 7.348E-3 * (ocv_cycles_mean - 3.667) ** 2 + 7.6E-4 + 4.081E-3 * self.cycles_hor['depth']

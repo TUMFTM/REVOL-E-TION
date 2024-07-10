@@ -462,7 +462,7 @@ class SinkBlock(EnergySystemModelBlock):
         return
 
     def calc_p(self):
-        return self.block.data_ph['power'] * -1
+        return self.block.data_ph['power_w'] * -1
 
 
 class StorageBlock(EnergySystemModelBlock):

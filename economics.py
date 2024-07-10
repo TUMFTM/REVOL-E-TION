@@ -89,28 +89,37 @@ def repllist(ls, hor):
     return repyrs
 
 
-def tce(ice, rce, ls, hor):
+def tce(ce, cdr, ls, hor):
     """
         This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor
+        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
     """
-    tce = ice + rce * len(repllist(ls, hor))
+    tce = ce + sum([ce * (cdr ** yr) for yr in repllist(ls, hor)])
     return tce
 
 
-def pce(ice, rce, ls, hor, discrate):
+def pce(ce, cdr, discrate, ls, hor):
     """
         This function calculates the present (discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor
+        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
     """
-    pce = ice + sum([discount(rce, x, discrate) for x in repllist(ls, hor)])
+    pce = ce + sum([discount(ce * (cdr ** yr), yr, discrate) for yr in repllist(ls, hor)])
     return pce
 
 
-def convert_sdr_to_timestep(sdr: float, timestep: pd.Timedelta) -> float:
+def convert_sdr_to_timestep(sdr: float) -> float:
     """
     This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
     """
-    tsr = timestep / pd.Timedelta('30 days')
+    # According to oemof documentation, the loss rate needs to be given for 1 hour neglecting the timestep of the model
+    tsr = pd.Timedelta(hours=1) / pd.Timedelta('30 days')
     lr = 1 - (1 - sdr) ** tsr
     return lr
+
+
+def scale_sim2year(value, scenario):
+    return value / scenario.sim_yr_rat
+
+
+def scale_year2prj(value, scenario):
+    return value * scenario.prj_duration_yrs
