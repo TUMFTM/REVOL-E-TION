@@ -51,6 +51,7 @@ gen,cdc,1,1,1,1
 gen,eff,1,1,1,1
 grid,size_g2mg,opt,11000,11000,opt
 grid,size_mg2g,equal,equal,equal,equal
+grid,opex_peakshaving,0,0,0,0
 grid,res_only,False,False,False,False
 grid,capex_spec,10,10,10,10
 grid,mntex_spec,0,0,0,0
