@@ -268,7 +268,7 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if run.print_results:
+        if run.debugmode:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
