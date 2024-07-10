@@ -1242,8 +1242,10 @@ class MobileCommodity:
             self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / (self.pwr_chg * self.eff_chg)
             self.outflow.inputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
 
-            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
-            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+            if self.parent.pwr_ext_ac > 0:
+                self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+            if self.parent.pwr_ext_dc > 0:
+                self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
 
             # ToDo: find solution for min_soc in input files, also in 'else' below
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
