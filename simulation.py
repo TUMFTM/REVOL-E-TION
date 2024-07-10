@@ -418,7 +418,7 @@ class Scenario:
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
-        self.lcoe = self.lcoe_dis = self.lcoe_wocs = 0
+        self.lcoe_total = self.lcoe_wocs = 0
         self.npv = self.irr = self.mirr = 0
 
         self.logger.debug(f'Scenario initialization completed')
@@ -457,10 +457,10 @@ class Scenario:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
-                self.lcoe = self.totex_dis / self.e_dis_del
+                self.lcoe_total = self.totex_dis / self.e_dis_del
                 self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
             except ZeroDivisionError:
-                self.lcoe = self.lcoe_wocs = None
+                self.lcoe_total = self.lcoe_wocs = None
                 self.logger.warning(f'LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
@@ -561,8 +561,7 @@ class Scenario:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        self.logger.info(f'Levelized cost of electricity:'
-                         f' {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_wocs, 2)) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
