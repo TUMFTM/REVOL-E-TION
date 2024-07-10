@@ -559,7 +559,7 @@ class CommoditySystem(InvestBlock):
 
         # static load management can only be activated for rulebased integration levels
         if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
-            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management only implemented for'
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
                                     f' {", ".join([x for x in self.apriori_lvls if x != "uc"])}'
                                     f' -> deactivated static load management')
             self.lm_static = None
@@ -598,14 +598,7 @@ class CommoditySystem(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value={'uc': 0,
-                                                                     'fcfs': 0,
-                                                                     'equal': 0,
-                                                                     'soc': 0,
-                                                                     'cc': 0,
-                                                                     'tc': 0,
-                                                                     'v2v': 0,
-                                                                     'v2mg': None}[self.int_lvl],
+                                                      nominal_value=(None if self.int_lvl in ['v2mg'] else 0),
                                                       variable_costs=self.opex_spec_sys_dis)},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
@@ -1044,10 +1037,9 @@ class MobileCommodity:
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
 
-        self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2mg'] else False
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
-                                                  inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable *
-                                                                                             self.pwr_dis,
+                                                  inputs={self.bus: solph.Flow(nominal_value=(
+                                                      self.pwr_dis if self.parent.int_lvl in ['v2v', 'v2mg'] else 0),
                                                                                variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
                                                   conversion_factors={self.parent.bus: self.eff_dis})
