@@ -97,20 +97,22 @@ def input_gui(directory):
     scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
     scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
                                                        filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not scenarios_filename: scenarios_filename = scenarios_default_filename
+    if not scenarios_filename:
+        scenarios_filename = scenarios_default_filename
 
     # get settings file
     settings_default_dir = os.path.join(directory, 'input', 'settings')
     settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
     settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
                                                       filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not settings_filename: settings_filename = settings_default_filename
+    if not settings_filename:
+        settings_filename = settings_default_filename
 
     # get result folder
     results_default_dir = os.path.join(directory, 'results')
-    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir,
-                                                    title="Select result storage folder")
-    if not results_foldername: results_foldername = results_default_dir
+    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result directory")
+    if not results_foldername:
+        results_foldername = results_default_dir
 
     return scenarios_filename, settings_filename, results_foldername
 
@@ -148,7 +150,8 @@ class PredictionHorizon:
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
                              f'Start: {self.starttime} - ' +
                              (f'CH end: {self.ch_endtime} - ' if self.ch_endtime != self.ph_endtime else '') +
-                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime else f'End: {self.ph_endtime}'))
+                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime
+                              else f'End: {self.ph_endtime}'))
 
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Initializing model build')
@@ -163,6 +166,8 @@ class PredictionHorizon:
             call_ensys_interface(scenario, run, 8, "DQN")
         # if apriori power scheduling is necessary, calculate power schedules:
         elif scenario.scheduler:
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                                 f'Calculating power schedules for commodities with rulebased charging strategies')
             scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():
@@ -189,8 +194,8 @@ class PredictionHorizon:
                               f'Creating optimization model')
 
         try:
-            self.model = solph.Model(self.es,
-                                     debug=run.debugmode)  # Build the mathematical linear optimization model with pyomo
+            # Build the mathematical linear optimization model with pyomo
+            self.model = solph.Model(self.es, debug=run.debugmode)
         except IndexError:
             msg = (f'Horizon {self.index + 1} of {scenario.nhorizons} -'
                    f'Input data not matching time index - check input data and time index consistency')
@@ -241,7 +246,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
             else:
-                scenario.logger.debug(f'Scenario: \"{scenario.name}"\ - System Node {nd.label} - Type {type(nd)} not recognized')
+                scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -264,7 +269,7 @@ class PredictionHorizon:
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
-        scenario.logger.debug(f'Horizon {self.index} of {scenario.nhorizons}: getting results')
+        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - Getting results')
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 

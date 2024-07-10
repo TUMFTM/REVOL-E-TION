@@ -19,6 +19,7 @@ import numpy as np
 import oemof.solph as solph
 import os
 import pandas as pd
+import pandas.errors
 import pvlib
 import pytz
 import statistics
@@ -215,8 +216,7 @@ class Block:
         df = self.resample_to_timestep(df, scenario)
         return df
 
-    @staticmethod
-    def resample_to_timestep(data: pd.DataFrame, scenario):
+    def resample_to_timestep(self, data: pd.DataFrame, scenario):
         """
         Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
         :param data: The input dataframe with DatetimeIndex
@@ -226,7 +226,13 @@ class Block:
 
         dti = data.index
         # Add one element to the dataframe to include the last timesteps
-        dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        try:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        except pandas.errors.NullFrequencyError:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
+            scenario.logger.warning(f'Block \"{self.name}\": Timestep of csv input data could not be inferred -'
+                                    f'using 15 min default')
+
         data_ext = data.reindex(dti_ext).ffill()
 
         def resample_column(column):
@@ -482,7 +488,7 @@ class RenewableInvestBlock(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         # flow values are powers
         self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -546,18 +552,21 @@ class CommoditySystem(InvestBlock):
 
         self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
+        self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
+
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
         # static load management can only be activated for rulebased integration levels
         if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
-            run.logger.warning(f'Scenario {scenario.name}: \"{self.name}\" static load management only implemented for'
-                               f' {[x for x in self.apriori_lvls if x != "uc"]} - deactivated static load management')
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
+                                    f' {", ".join([x for x in self.apriori_lvls if x != "uc"])}'
+                                    f' -> deactivated static load management')
             self.lm_static = None
 
         if self.opt and self.int_lvl in self.apriori_lvls:
-            run.logger.error(f'Scenario {scenario.name}: \"{self.name}\" optimization of commodity size not'
-                             f' implemented for integration levels {self.apriori_lvls}')
+            scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
+                                  f' implemented for integration levels {self.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
 
         # Creation of static energy system components --------------------------------
@@ -589,14 +598,7 @@ class CommoditySystem(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value={'uc': 0,
-                                                                     'fcfs': 0,
-                                                                     'equal': 0,
-                                                                     'soc': 0,
-                                                                     'cc': 0,
-                                                                     'tc': 0,
-                                                                     'v2v': 0,
-                                                                     'v2mg': None}[self.int_lvl],
+                                                      nominal_value=(None if self.int_lvl in ['v2mg'] else 0),
                                                       variable_costs=self.opex_spec_sys_dis)},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
@@ -670,8 +672,6 @@ class CommoditySystem(InvestBlock):
     def calc_opex_sim(self, scenario):
 
         self.opex_sys = self.flow_in @ self.opex_spec_sys_chg + self.flow_out @ self.opex_spec_sys_dis
-        self.opex_commodities = 0
-        self.opex_commodities_ext = 0
 
         for commodity in self.commodities.values():
             commodity.opex_sim = commodity.flow_in @ self.opex_spec * scenario.timestep_hours
@@ -763,8 +763,7 @@ class ControllableSource(InvestBlock):
                                                )
         else:
             self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(nominal_value=1,
-                                                                                       max=self.size,
+                                               outputs={self.bus_connected: solph.Flow(nominal_value=self.size,
                                                                                        variable_costs=self.opex_spec)}
                                                )
         scenario.components.append(self.src)
@@ -775,7 +774,7 @@ class ControllableSource(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
 
@@ -817,8 +816,7 @@ class GridConnection(InvestBlock):
         else:
             self.src = solph.components.Source(label=f'{self.name}_src',
                                                outputs={self.bus_connected: solph.Flow(
-                                                   nominal_value=1,
-                                                   max=self.size_g2mg,
+                                                   nominal_value=self.size_g2mg,
                                                    variable_costs=self.opex_spec_g2mg)}
                                                )
         if self.opt_mg2g:
@@ -830,8 +828,7 @@ class GridConnection(InvestBlock):
         else:
             self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                              inputs={self.bus_connected: solph.Flow(
-                                                 nominal_value=1,
-                                                 max=self.size_mg2g,
+                                                 nominal_value=self.size_mg2g,
                                                  variable_costs=self.opex_spec_mg2g)}
                                              )
         scenario.components.append(self.src)
@@ -860,7 +857,7 @@ class GridConnection(InvestBlock):
         self.opex_sim = self.flow_out @ self.opex_spec_g2mg * scenario.timestep_hours + \
                         self.flow_in @ self.opex_spec_mg2g * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -947,7 +944,7 @@ class FixedDemand(Block):
         self.crev_sim = (self.flow_in @ self.crev_spec) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev(scenario)
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
 
@@ -1037,15 +1034,13 @@ class MobileCommodity:
                                                  inputs={
                                                      self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
                                                                                  variable_costs=scenario.cost_eps)},
-                                                 outputs={self.bus: solph.Flow(nominal_value=1,
-                                                                               max=self.pwr_chg * self.eff_chg)},
+                                                 outputs={self.bus: solph.Flow(nominal_value=self.pwr_chg * self.eff_chg)},
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
 
-        self.outflow_enable = True if self.parent.int_lvl in ['v2v', 'v2mg'] else False
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
-                                                  inputs={self.bus: solph.Flow(nominal_value=self.outflow_enable *
-                                                                                             self.pwr_dis,
+                                                  inputs={self.bus: solph.Flow(nominal_value=(
+                                                      self.pwr_dis if self.parent.int_lvl in ['v2v', 'v2mg'] else 0),
                                                                                variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
                                                   conversion_factors={self.parent.bus: self.eff_dis})
@@ -1088,14 +1083,14 @@ class MobileCommodity:
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
         # add external AC charger as new energy source
         self.ext_ac = solph.components.Source(label=f'{self.name}_ext_ac',
-                                              outputs={self.bus: solph.Flow(nominal_value=1,
+                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_ac,
                                                                             variable_costs=self.parent.opex_spec_ext_ac)}
                                               )
         scenario.components.append(self.ext_ac)
 
         # add external DC charger as new energy source
         self.ext_dc = solph.components.Source(label=f'{self.name}_ext_dc',
-                                              outputs={self.bus: solph.Flow(nominal_value=1,
+                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_dc,
                                                                             variable_costs=self.parent.opex_spec_ext_dc)}
                                               )
         scenario.components.append(self.ext_dc)
@@ -1185,7 +1180,7 @@ class MobileCommodity:
 
         self.crev_sim = self.crev_time + self.crev_usage
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
         self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
@@ -1245,11 +1240,17 @@ class MobileCommodity:
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac']
-            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac']
-            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc']
-            if self.scenario_strategy == 'rl':
-                self.snk.inputs[self.bus].fix = self.apriori_data['p_consumption']
+            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / (self.pwr_chg * self.eff_chg)
+            self.outflow.inputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
+
+            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+        if self.scenario_strategy == 'rl':
+            self.snk.inputs[self.bus].fix = self.apriori_data['p_consumption']
+
+            # ToDo: find solution for min_soc in input files, also in 'else' below
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
@@ -1259,16 +1260,16 @@ class MobileCommodity:
             self.snk.inputs[self.bus].fix = self.data_ph['consumption']
 
             # enable/disable ac and dc charging station dependent on input data
-            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int) * self.parent.pwr_ext_ac
-            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int) * self.parent.pwr_ext_dc
+            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int)
+            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int)
 
             # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
             # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
             # relative to nominal capacity
+            # ToDo: find solution for min_soc in input files, also in 'if' above
             soc_min_clipped = self.data_ph['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
             self.ess.min_storage_level = soc_min_clipped
-        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
 
 
 class PVSource(RenewableInvestBlock):
@@ -1303,12 +1304,12 @@ class PVSource(RenewableInvestBlock):
         # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
         # Prog. Photovolt. Res. Appl.2008, 16, 307–315
         eff_rel = (1 +
-                  (k1 * lng) +
-                  (k2 * (lng ** 2)) +
-                  (k3 * t) +
-                  (k4 * t * lng) +
-                  (k5 * t * (lng ** 2)) +
-                  (k6 * (t ** 2)))
+                   (k1 * lng) +
+                   (k2 * (lng ** 2)) +
+                   (k3 * t) +
+                   (k4 * t * lng) +
+                   (k5 * t * (lng ** 2)) +
+                   (k6 * (t ** 2)))
         eff_rel = eff_rel.fillna(0)
 
         # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
@@ -1381,7 +1382,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.soc_init_ph = self.soc_init
 
-        self.apriori_data = self.sc_init_ph =  None
+        self.apriori_data = self.sc_init_ph = None
 
         self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
@@ -1421,12 +1422,10 @@ class StationaryEnergyStorage(InvestBlock):
         else:
             self.ess = solph.components.GenericStorage(label='ess',
                                                        inputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=1,
-                                                           max=self.size * self.crate_chg,
+                                                           nominal_value=self.size * self.crate_chg,
                                                            variable_costs=self.opex_spec)},
                                                        outputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=1,
-                                                           max=self.size * self.crate_dis,
+                                                           nominal_value=self.size * self.crate_dis,
                                                        )},
                                                        loss_rate=self.loss_rate,
                                                        balanced={'go': True, 'rl': False, 'rh': False}[scenario.strategy],
@@ -1467,7 +1466,7 @@ class StationaryEnergyStorage(InvestBlock):
     def calc_opex_sim(self, scenario):
         self.opex_sim = self.flow_in @ self.opex_spec * scenario.timestep_hours
 
-    def get_ch_results(self, horizon, scenario):
+    def get_ch_results(self, horizon, *_):
 
         self.flow_out_ch = horizon.results[(self.ess, self.bus_connected)]['sequences']['flow'][
             horizon.dti_ch]
@@ -1511,8 +1510,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.ess.initial_storage_level = self.soc_init_ph
 
         if self.apriori_data is not None:
-            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1)
-            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0)
+            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1) / (self.size * self.crate_chg)
+            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0) / (self.size * self.crate_dis)
 
 
 class SystemCore(InvestBlock):
@@ -1558,8 +1557,7 @@ class SystemCore(InvestBlock):
         else:
             self.ac_dc = solph.components.Converter(label='ac_dc',
                                                     inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=1,
-                                                                                    max=self.size_acdc)},
+                                                                                    nominal_value=self.size_acdc)},
                                                     outputs={self.dc_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.dc_bus: self.eff_acdc})
@@ -1575,8 +1573,7 @@ class SystemCore(InvestBlock):
         else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
                                                     inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=1,
-                                                                                    max=self.size_dcac)},
+                                                                                    nominal_value=self.size_dcac)},
                                                     outputs={self.ac_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
@@ -1720,7 +1717,8 @@ class WindSource(RenewableInvestBlock):
             self.path_turbine_data_file = os.path.join(run.path_input_data, 'wind', 'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
-            self.turbine_data = self.turbine_data.loc[self.turbine_data['turbine_type'] == self.turbine_type].reset_index()
+            self.turbine_data = self.turbine_data.loc[
+                self.turbine_data['turbine_type'] == self.turbine_type].reset_index()
 
             self.data['power_original'] = windpowerlib.power_output.power_curve(
                 wind_speed=self.data['wind_speed_adj'],
