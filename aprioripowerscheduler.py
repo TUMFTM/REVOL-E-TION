@@ -27,112 +27,111 @@ class AprioriPowerScheduler:
         self.dti_ph = None
 
         # remaining power available on the system core converter for the current timestep
-        self.p_avail_conv = {}
+        self.p_syscore_conv_avail = {}
 
         # get different lists of commodity systems according to the restrictions of the apriori integration level
-        self.cs_uc = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
-        self.cs_apriori_lm = [cs for cs in self.scenario.commodity_systems.values() if
+        self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
+        self.cs_lm_static = [cs for cs in self.scenario.commodity_systems.values() if
                               cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and cs.lm_static]
-        self.cs_apriori_unlim = [cs for cs in self.scenario.commodity_systems.values() if
+        self.cs_lm_dynamic = [cs for cs in self.scenario.commodity_systems.values() if
                                  cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
-        self.commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
-                            self.cs_uc + self.cs_apriori_lm + self.cs_apriori_unlim for name, commodity in
-                            block.commodities.items()}
+        self.apriori_commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
+                                    self.cs_unlim + self.cs_lm_static + self.cs_lm_dynamic for name, commodity in
+                                    block.commodities.items()}
 
         # initialize dataframe for available and fixed power for both the AC and the DC bus
-        self.p_available = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
-        self.p_fixed = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
+        self.p_esm_avail = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
+        self.p_esm_fixed = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
 
     def calc_ph_schedule(self, horizon):
         # Set timeindex of current prediction horizon
         self.horizon = horizon
 
-        # Initialize apriori_data dataframes for all apriori commodities (including index, column names, initial SOC
-        # value and additional information about the presence and absence of commodities)
-        for commodity in self.commodities.values():
+        # Initialize apriori_data dataframes for all apriori_commodities (including index, column names, initial SOC
+        # value and additional information about the presence and absence of apriori_commodities)
+        for commodity in self.apriori_commodities.values():
             commodity.init_ph(self.horizon.dti_ph)
 
         # Only necessary, if there are CommoditySystems with dynamic load management
-        if self.cs_apriori_unlim:
+        if self.cs_lm_dynamic:
             # Calculate available and fixed power for prediction horizon
             # reset available and fixed power for the current prediction horizon to zero
-            self.p_available = self.p_available.reindex(self.horizon.dti_ph)
-            self.p_available.loc[:] = 0
-            self.p_fixed = self.p_fixed.reindex(self.horizon.dti_ph)
-            self.p_fixed.loc[:] = 0
+            self.p_esm_avail = self.p_esm_avail.reindex(self.horizon.dti_ph)
+            self.p_esm_avail.loc[:] = 0
+            self.p_esm_fixed = self.p_esm_fixed.reindex(self.horizon.dti_ph)
+            self.p_esm_fixed.loc[:] = 0
 
             for block in self.scenario.blocks.values():
                 if isinstance(block, blocks.GridConnection):
-                    self.p_available.loc[:, get_block_system(block)] += block.size_g2mg * block.eff
+                    self.p_esm_avail.loc[:, get_block_system(block)] += block.size_g2mg * block.eff
                 elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
-                    self.p_available.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
+                    self.p_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
                 elif isinstance(block, blocks.ControllableSource):
-                    self.p_available.loc[:, get_block_system(block)] += block.size * block.eff
+                    self.p_esm_avail.loc[:, get_block_system(block)] += block.size * block.eff
                 elif isinstance(block, blocks.FixedDemand):
-                    self.p_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w'] * -1
+                    self.p_esm_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w']
 
         for dtindex in self.horizon.dti_ph:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
-            # ToDo: rename p_cs_lim_uc as this is also static load management
-            p_cs_lim_uc = {'ac': 0, 'dc': 0}
-            for cs in self.cs_uc + self.cs_apriori_lm:
-                p_cs_lim_uc[cs.system] += self.calc_p_commodities(dtindex=dtindex,
-                                                                  commodities=[self.commodities[key]
-                                                                               for key in cs.commodities.keys()],
-                                                                  int_lvl=cs.int_lvl,
-                                                                  p_avail_lm=cs.lm_static)
+            p_csc_unlim_static = {'ac': 0, 'dc': 0}
+            for cs in self.cs_unlim + self.cs_lm_static:
+                p_csc_unlim_static[cs.system] += self.calc_p_commodities(dtindex=dtindex,
+                                                                         commodities=[self.apriori_commodities[key]
+                                                                                      for key in cs.commodities.keys()],
+                                                                         int_lvl=cs.int_lvl,
+                                                                         p_csc_avail_total=cs.lm_static)
 
             # only execute optimization of the local grid if there are rulebased components
-            if self.cs_apriori_unlim:
+            if self.cs_lm_dynamic:
                 # reset available power on converter to maximum power
-                self.p_avail_conv = {'ac': self.sys_core.size_acdc,
-                                     'dc': self.sys_core.size_dcac}
+                self.p_syscore_conv_avail = {'ac': self.sys_core.size_acdc,
+                                             'dc': self.sys_core.size_dcac}
 
-                # Subtract demand from available power on AC bus (demand is specified as a negative power)
+                # Draw demand power (FixedDemand, cs_unlim, cs_lm_static) from available power on AC bus
                 for system in ['ac', 'dc']:
                     self.draw_power(bus_connected=system,
-                                    pwr=(-1) * self.p_fixed.loc[dtindex, system] + p_cs_lim_uc[system],
+                                    pwr=self.p_esm_fixed.loc[dtindex, system] + p_csc_unlim_static[system],
                                     dtindex=dtindex)
 
                 # Schedule at base charging of commodities (int_lvl has to be the same for all CommoditySystems -> [0])
                 self.calc_p_commodities(dtindex=dtindex,
-                                        commodities=[self.commodities[key] for cs in self.cs_apriori_unlim
+                                        commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
                                                      for key in cs.commodities.keys()],
-                                        int_lvl=self.cs_apriori_unlim[0].int_lvl,
-                                        p_avail_lm=None)
+                                        int_lvl=self.cs_lm_dynamic[0].int_lvl,
+                                        p_csc_avail_total=None)
 
             # Execute external charging of commodities based on the defined criteria
-            for commodity in self.commodities.values():
+            for commodity in self.apriori_commodities.values():
                 commodity.ext_charging(dtindex)
                 commodity.calc_new_soc(dtindex, self.scenario)
 
-    def calc_p_commodities(self, dtindex, commodities, int_lvl, p_avail_lm):
+    def calc_p_commodities(self, dtindex, commodities, int_lvl, p_csc_avail_total):
         # get all commodities which are ready for charging
         commodities = [commodity for commodity in commodities if commodity.block.data_ph.loc[dtindex, 'atbase']]
-        p_cs = 0
+        p_csc_assigned = 0
 
         if not commodities:
-            return p_cs  # no commodities to charge at base within the current timestep
+            return p_csc_assigned  # no commodities to charge at base within the current timestep
 
         if int_lvl == 'equal':
             # get maximum available power of dynamic load management if not limited by static load management
-            if not p_avail_lm:
+            if not p_csc_avail_total:
                 # define bus priority and non-priority
                 bus_prio = commodities[0].system
                 bus_non_prio = get_bus(bus_prio, 'other')
                 # calculate available power for dynamic load management
-                p_avail_lm = self.p_available.loc[dtindex, bus_prio] + min(self.p_available.loc[dtindex, bus_non_prio],
-                                                                           self.p_avail_conv[bus_non_prio]) * \
+                p_csc_avail_total = self.p_esm_avail.loc[dtindex, bus_prio] + min(self.p_esm_avail.loc[dtindex, bus_non_prio],
+                                                                           self.p_syscore_conv_avail[bus_non_prio]) * \
                              self.get_conv_eff(bus_non_prio, bus_prio)
 
-            while (p_avail_lm - p_cs) > 0 and len(commodities) > 0:
+            while (p_csc_avail_total - p_csc_assigned) > 0 and len(commodities) > 0:
                 # calculate possible power for each commodity
-                p_share = (p_avail_lm - p_cs) / len(commodities)
+                p_share = (p_csc_avail_total - p_csc_assigned) / len(commodities)
                 # necessary to avoid floating point errors and endless loops
                 if p_share < 1.00E-10:
-                    return p_cs
+                    return p_csc_assigned
                 # slicing creates a copy of the list. This is necessary to remove commodities from the list without an
                 # error in the for loop. Otherwise, the next element after the removed one is skipped.
                 # ToDo: copy()??
@@ -144,7 +143,7 @@ class AprioriPowerScheduler:
                     # set charging power -> consider the power already assigned to the commodity in previous iterations
                     commodity.set_p(dtindex=dtindex, power=p_chg + commodity.block.apriori_data.loc[
                         dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg, mode='int_ac')
-                    p_cs += p_chg
+                    p_csc_assigned += p_chg
                     if p_chg == 0:
                         commodities.remove(commodity)
         else:
@@ -160,48 +159,48 @@ class AprioriPowerScheduler:
                 # get limitations of the system (available power on buses and converter or static load managment)
                 if int_lvl == 'uc':
                     # no limitation for charging power on CommoditySystem level for uncoordinated charging
-                    p_sys_lim = np.inf
-                elif p_avail_lm:
+                    p_csc_avail_left = np.inf
+                elif p_csc_avail_total:
                     # limitation for static load management is based on max power and already assigned power
-                    p_sys_lim = p_avail_lm - p_cs
+                    p_csc_avail_left = p_csc_avail_total - p_csc_assigned
                 else:
                     # define bus priority and non-priority for the commodity
                     bus_prio = get_bus(commodity.system, 'same')
                     bus_non_prio = get_bus(commodity.system, 'other')
 
                     # limitation for dynamic load management is based on available power on buses and converter
-                    p_sys_lim = self.p_available.loc[dtindex, bus_prio] + \
-                                min(self.p_available.loc[dtindex, bus_non_prio],
-                                    self.p_avail_conv[bus_non_prio]) * self.get_conv_eff(bus_non_prio, bus_prio)
+                    p_csc_avail_left = self.p_esm_avail.loc[dtindex, bus_prio] + \
+                                min(self.p_esm_avail.loc[dtindex, bus_non_prio],
+                                    self.p_syscore_conv_avail[bus_non_prio]) * self.get_conv_eff(bus_non_prio, bus_prio)
 
                 # power for commodity considering limitations of the commodity and the system
-                pwr_chg = min(commodity.calc_p_chg(dtindex=dtindex, mode='int_ac'), p_sys_lim)
+                pwr_chg = min(commodity.calc_p_chg(dtindex=dtindex, mode='int_ac'), p_csc_avail_left)
 
                 # update available power of the system for dynamic load management
-                if not p_avail_lm and int_lvl != 'uc':
+                if not p_csc_avail_total and int_lvl != 'uc':
                     self.draw_power(bus_connected=bus_prio, pwr=pwr_chg, dtindex=dtindex)
 
                 # update power already assigned to commodities
-                p_cs += pwr_chg
+                p_csc_assigned += pwr_chg
 
                 # assign charging power to commodity
                 commodity.set_p(dtindex=dtindex, power=pwr_chg, mode='int_ac')
 
-        return p_cs
+        return p_csc_assigned
 
     def draw_power(self, bus_connected, pwr, dtindex):
         # deduct power from available power on the corresponding bus(es) and the converter
-        pwr_prio = min(self.p_available.loc[dtindex, bus_connected], pwr)
-        self.p_available.loc[dtindex, bus_connected] -= pwr_prio
+        pwr_prio = min(self.p_esm_avail.loc[dtindex, bus_connected], pwr)
+        self.p_esm_avail.loc[dtindex, bus_connected] -= pwr_prio
 
         pwr_non_prio = (pwr - pwr_prio) / self.get_conv_eff(get_bus(bus_connected, 'other'), bus_connected)
-        self.p_available.loc[dtindex, get_bus(bus_connected, 'other')] -= pwr_non_prio
-        self.p_avail_conv[get_bus(bus_connected, 'other')] -= pwr_non_prio
+        self.p_esm_avail.loc[dtindex, get_bus(bus_connected, 'other')] -= pwr_non_prio
+        self.p_syscore_conv_avail[get_bus(bus_connected, 'other')] -= pwr_non_prio
 
-        for location, value in {'AC bus': self.p_available.loc[dtindex, 'ac'],
-                                'DC bus': self.p_available.loc[dtindex, 'dc'],
-                                'AC/DC converter': self.p_avail_conv['ac'],
-                                'DC/AC converter': self.p_avail_conv['dc']}.items():
+        for location, value in {'AC bus': self.p_esm_avail.loc[dtindex, 'ac'],
+                                'DC bus': self.p_esm_avail.loc[dtindex, 'dc'],
+                                'AC/DC converter': self.p_syscore_conv_avail['ac'],
+                                'DC/AC converter': self.p_syscore_conv_avail['dc']}.items():
             if value < 0:
                 self.scenario.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
                                              f' {location} occurred in AprioriScheduler at {dtindex}!'
@@ -247,7 +246,7 @@ class AprioriCommodity:
         self.parking_charging = False
 
     def init_ph(self, dti_ph, *_):
-        # Initialize apriori_data DataFrame and set inital soc for horizon taking aging results into account
+        # Initialize apriori_data DataFrame and set initial soc for horizon taking aging results into account
         self.block.apriori_data = pd.DataFrame(0,
                                                index=dti_ph,
                                                columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
