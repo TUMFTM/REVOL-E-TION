@@ -577,6 +577,10 @@ class Scenario:
                 if block.opt_mg2g:
                     self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
                                      f' {round(block.size_mg2g / 1e3)} {unit}')
+                if block.peakshaving:
+                    for interval in block.peak_power.index:
+                        self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
+                                         f' {interval}: {round(block.peak_power[interval] / 1e3, 2)} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
@@ -616,6 +620,9 @@ class Scenario:
             if isinstance(block_obj, blocks.CommoditySystem):
                 for commodity_name, commodity_obj in block_obj.commodities.items():
                     write_values(commodity_name, commodity_obj)
+            if hasattr(block_obj, 'peak_power'):
+                for interval, value in block_obj.peak_power.items():
+                    self.result_summary.loc[(block_name, f'peak_power_{interval}'), self.name] = float(value)
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)

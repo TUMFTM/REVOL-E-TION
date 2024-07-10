@@ -794,6 +794,8 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        self.peakshaving = True if self.opex_peakshaving > 0 else False
+
         """
         x denotes the flow measurement point in results
 
@@ -850,20 +852,31 @@ class GridConnection(InvestBlock):
                                              'var2': {'in': self.bus, 'out': self.snk},
                                              'factor': 1})
 
-        if self.opex_peakshaving > 0:
-            self.inflow = []
-            self.outflow = []
+        if self.peakshaving:
+            bus_activation = pd.DataFrame({month: (scenario.dti_sim.strftime('%Y-%m') == month).astype(int) for
+                                           month in scenario.dti_sim.strftime('%Y-%m').unique()},
+                                          index=scenario.dti_sim)
+
+            self.peak_power = pd.Series(index=bus_activation.columns)
+
+            self.inflow = {f'{self.name}_xc_{month}': solph.components.Converter(label=f'{self.name}_xc_{month}',
+                                                                                 # ToDo: change eps_costs!!!!!!!!!
+                                                                                 inputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=1.2),
+                                                                                                              max=bus_activation[month])},
+                                                                                 outputs={self.bus_connected: solph.Flow()},
+                                                                                 conversion_factors={self.bus_connected: 1}) for month in bus_activation.columns}
         else:
-            self.inflow = [solph.components.Converter(label=f'{self.name}_xc',
-                                                      inputs={self.bus: solph.Flow()},
-                                                      outputs={self.bus_connected: solph.Flow()},
-                                                      conversion_factors={self.bus_connected: 1})]
-            self.outflow = [solph.components.Converter(label=f'xc_{self.name}',
-                                                       inputs={self.bus_connected: solph.Flow()},
-                                                       outputs={self.bus: solph.Flow()},
-                                                       conversion_factors={self.bus: 1})]
-        scenario.components.extend(self.inflow)
-        scenario.components.extend(self.outflow)
+            self.inflow = {f'{self.name}_xc': solph.components.Converter(label=f'{self.name}_xc',
+                                                                         inputs={self.bus: solph.Flow()},
+                                                                         outputs={self.bus_connected: solph.Flow()},
+                                                                         conversion_factors={self.bus_connected: 1})}
+        self.outflow = {f'xc_{self.name}': solph.components.Converter(label=f'xc_{self.name}',
+                                                                      inputs={self.bus_connected: solph.Flow()},
+                                                                      outputs={self.bus: solph.Flow()},
+                                                                      conversion_factors={self.bus: 1})}
+
+        scenario.components.extend(self.inflow.values())
+        scenario.components.extend(self.outflow.values())
 
     def calc_capex_init(self, scenario):
         """
@@ -899,6 +912,9 @@ class GridConnection(InvestBlock):
             self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
         if self.opt_mg2g:
             self.size_mg2g = horizon.results[(self.bus, self.snk)]['scalars']['invest']
+        if self.peakshaving:
+            for interval in self.peak_power.index:
+                self.peak_power[interval] = horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max()
 
     def set_init_size(self, scenario, run):
 
