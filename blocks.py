@@ -895,11 +895,10 @@ class GridConnection(InvestBlock):
                 f'{round(self.size_mg2g / 1e3)} kW to grid)')
 
     def get_opt_size(self, horizon):
-
         if self.opt_g2mg:
-            self.size_g2mg = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
+            self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
         if self.opt_mg2g:
-            self.size_mg2g = horizon.results[(self.bus_connected, self.snk)]['scalars']['invest']
+            self.size_mg2g = horizon.results[(self.bus, self.snk)]['scalars']['invest']
 
     def set_init_size(self, scenario, run):
 
