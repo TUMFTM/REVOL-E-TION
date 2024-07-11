@@ -163,7 +163,9 @@ class PredictionHorizon:
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if scenario.scheduler:
-            scenario.scheduler.calc_schedule(self.dti_ph)
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                                 f'Calculating power schedules for commodities with rulebased charging strategies')
+            scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():
             block.update_input_components()  # (re)define solph components that need input slices
@@ -393,6 +395,29 @@ class Scenario:
         for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+
+        # ToDo: put into extra function
+        # check input parameter configuration of rulebased charging for validity
+        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
+                                                                               x != 'uc'] and not cs.lm_static]:
+            if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
+                run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
+                                 f' without static load management (lm_static) is not compatible with size optimization')
+                exit()  # TODO exit scenario instead of run
+            if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryEnergyStorage)]:
+                run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
+                                 f' without static load management (lm_static) is not implemented for systems with'
+                                 f' stationary energy storage')
+                exit()  # TODO exit scenario instead of run
+            if len(set([cs.int_lvl for cs in cs_unlim])) > 1:
+                run.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
+                                 f' have to follow the same strategy. Different strategies are not possible')
+                exit()  # TODO exit scenario instead of run
+            if cs_unlim[0].int_lvl == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
+                run.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
+                                 f' dynamic load management, all CommoditySystems with dynamic load management have to'
+                                 f' be connected to the same bus')
+                exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
