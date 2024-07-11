@@ -567,25 +567,25 @@ class Scenario:
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
                     self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
-                                     f' {round(block.size_acdc / 1e3)} {unit}')
+                                     f' {block.size_acdc / 1e3:.1f} {unit}')
                 if block.opt_dcac:
                     self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
-                                     f' {round(block.size_dcac / 1e3)} {unit}')
+                                     f' {block.size_dcac / 1e3:.1f} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
                     self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\":'
-                                     f' {round(block.size_g2mg / 1e3)} {unit}')
+                                     f' {block.size_g2mg / 1e3:.1f} {unit}')
                 if block.opt_mg2g:
                     self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
-                                     f' {round(block.size_mg2g / 1e3)} {unit}')
+                                     f' {block.size_mg2g / 1e3:.1f} {unit}')
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
-                                     f' {round(commodity.size / 1e3, 1)} {unit}')
+                                     f' {commodity.size / 1e3:.1f} {unit}')
             else:
-                self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
+                self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
+        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
         self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_wocs, 2)) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh')
         print('#################')
 
