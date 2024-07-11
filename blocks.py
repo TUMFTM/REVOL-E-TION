@@ -554,19 +554,16 @@ class CommoditySystem(InvestBlock):
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
 
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
-
         # static load management can only be activated for rulebased integration levels
-        if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
+        if self.lm_static and self.int_lvl not in [x for x in run.apriori_lvls if x != 'uc']:
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
-                                    f' {", ".join([x for x in self.apriori_lvls if x != "uc"])}'
+                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
                                     f' -> deactivated static load management')
             self.lm_static = None
 
-        if self.opt and self.int_lvl in self.apriori_lvls:
+        if self.opt and self.int_lvl in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
-                                  f' implemented for integration levels {self.apriori_lvls}')
+                                  f' implemented for integration levels {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
 
         # Creation of static energy system components --------------------------------

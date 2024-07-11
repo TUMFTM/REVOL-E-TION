@@ -32,9 +32,9 @@ class AprioriPowerScheduler:
         # get different lists of commodity systems according to the restrictions of the apriori integration level
         self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
         self.cs_lm_static = [cs for cs in self.scenario.commodity_systems.values() if
-                              cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and cs.lm_static]
+                              cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and cs.lm_static]
         self.cs_lm_dynamic = [cs for cs in self.scenario.commodity_systems.values() if
-                                 cs.int_lvl in [x for x in cs.apriori_lvls if x != 'uc'] and not cs.lm_static]
+                                 cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and not cs.lm_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
         self.apriori_commodities = {name: AprioriCommodity(commodity, self.scenario) for block in

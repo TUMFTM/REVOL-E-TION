@@ -398,7 +398,7 @@ class Scenario:
 
         # ToDo: put into extra function
         # check input parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
+        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in self.run.apriori_lvls if
                                                                                x != 'uc'] and not cs.lm_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
@@ -420,7 +420,7 @@ class Scenario:
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
+        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in self.run.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
@@ -733,6 +733,9 @@ class SimulationRun:
             f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
             f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
         )
+
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
     def end_timing(self):
 
