@@ -441,8 +441,10 @@ class RenewableInvestBlock(InvestBlock):
                                                   conversion_factors={self.bus_connected: self.eff})
         scenario.components.append(self.outflow)
 
+        # cost_eps are set to force the optimizer to charge excess power into the storage although no direct use case
+        # for this energy can be seen within the current prediction horizon.
         self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow()})
+                                         inputs={self.bus: solph.Flow(variable_costs=self.scenario.cost_eps)})
         scenario.components.append(self.exc)
 
         if self.opt:
