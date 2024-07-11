@@ -436,7 +436,7 @@ class RenewableInvestBlock(InvestBlock):
         scenario.components.append(self.bus)
 
         self.outflow = solph.components.Converter(label=f'{self.name}_out',
-                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                  inputs={self.bus: solph.Flow()},
                                                   outputs={self.bus_connected: solph.Flow()},
                                                   conversion_factors={self.bus_connected: self.eff})
         scenario.components.append(self.outflow)
@@ -444,7 +444,7 @@ class RenewableInvestBlock(InvestBlock):
         # cost_eps are set to force the optimizer to charge excess power into the storage although no direct use case
         # for this energy can be seen within the current prediction horizon.
         self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow(variable_costs=self.scenario.cost_eps)})
+                                         inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)})
         scenario.components.append(self.exc)
 
         if self.opt:
@@ -591,8 +591,7 @@ class CommoditySystem(InvestBlock):
                                                      nominal_value=self.lm_static,
                                                      max=1 if self.lm_static else None
                                                  )},
-                                                 outputs={self.bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
+                                                 outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: 1})
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
@@ -1030,8 +1029,7 @@ class MobileCommodity:
 
         self.inflow = solph.components.Converter(label=f'mc_{self.name}',
                                                  inputs={
-                                                     self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
-                                                                                 variable_costs=scenario.cost_eps)},
+                                                     self.parent.bus: solph.Flow(nominal_value=self.pwr_chg)},
                                                  outputs={self.bus: solph.Flow(nominal_value=self.pwr_chg * self.eff_chg)},
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
@@ -1554,7 +1552,7 @@ class SystemCore(InvestBlock):
 
         else:
             self.ac_dc = solph.components.Converter(label='ac_dc',
-                                                    inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
+                                                    inputs={self.ac_bus: solph.Flow(variable_costs=self.opex_spec,
                                                                                     nominal_value=self.size_acdc)},
                                                     outputs={self.dc_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
@@ -1570,7 +1568,7 @@ class SystemCore(InvestBlock):
                                                     conversion_factors={self.ac_bus: self.eff_dcac})
         else:
             self.dc_ac = solph.components.Converter(label='dc_ac',
-                                                    inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
+                                                    inputs={self.dc_bus: solph.Flow(variable_costs=self.opex_spec,
                                                                                     nominal_value=self.size_dcac)},
                                                     outputs={self.ac_bus: solph.Flow(
                                                         variable_costs=scenario.cost_eps)},
