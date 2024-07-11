@@ -41,10 +41,12 @@ class AprioriPowerScheduler:
                                     self.cs_unlim + self.cs_lm_static + self.cs_lm_dynamic for name, commodity in
                                     block.commodities.items()}
 
+        # initialize dataframe for power drawn by unlimited (uc) or static load management CommoditySystems
+        self.pwr_csc_unlim_static = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
+
         # initialize dataframe for available and fixed power for both the AC and the DC bus
         self.pwr_esm_avail = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
         self.pwr_esm_fixed = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
-        self.pwr_csc_unlim_static = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
 
     def calc_ph_schedule(self, horizon):
         # Set timeindex of current prediction horizon
