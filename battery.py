@@ -316,8 +316,8 @@ class BatteryPackModel:
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell
         self.m_housing = self.m_cells * (1 - self.e_spec_grav_c2p)
-        self.c_th_cells = self.n_cells * self.c_th_cell
-        self.c_th_housing = self.c_th_spec_housing * self.m_housing
+        # self.c_th_cells = self.n_cells * self.c_th_cell
+        # self.c_th_housing = self.c_th_spec_housing * self.m_housing
 
     def rint_model(self, p_out):
         """
