@@ -46,10 +46,10 @@ class BatteryPackModel:
             self.chemistry = self.parent.chemistry.lower()
 
         # Thermal model parameters
-        self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
-        self.c_th_spec_cell = 1045  # Specific heat capacity of LI cells as per Teichert's dissertation in J/(kg K)
-        self.k_c2h = 0.899  # Thermal conductance between cell and housing as per Teichert's dissertation in W/K
-        self.k_h2a = 10.9  # Thermal conductance between housing and ambient as per Teichert's dissertation in W/K
+        # self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
+        # self.c_th_spec_cell = 1045  # Specific heat capacity of LI cells as per Teichert's dissertation in J/(kg K)
+        # self.k_c2h = 0.899  # Thermal conductance between cell and housing as per Teichert's dissertation in W/K
+        # self.k_h2a = 10.9  # Thermal conductance between housing and ambient as per Teichert's dissertation in W/K
 
         # Active thermal control system parameters
         # self.p_cool = 10e3  # System cooling power in W [Schimpe et al.]
@@ -130,7 +130,7 @@ class BatteryPackModel:
         self.e_cell = self.q_nom_cell * self.u_nom_cell  # Nominal energy content of the cell in Wh
         self.e_spec_grav_cell = self.e_cell / self.m_cell
         self.e_spec_vol_cell = self.e_cell / self.v_cell
-        self.c_th_cell = self.m_cell * self.c_th_spec_cell
+        # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
     def age(self, commodity, run, scenario, horizon):
         """
