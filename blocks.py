@@ -441,10 +441,11 @@ class RenewableInvestBlock(InvestBlock):
                                                   conversion_factors={self.bus_connected: self.eff})
         scenario.components.append(self.outflow)
 
-        # cost_eps are set to force the optimizer to charge excess power into the storage although no direct use case
-        # for this energy can be seen within the current prediction horizon.
+        # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
+        # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
+        # All other components such as converters and storages only have cost_eps in the output direction.
         self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)})
+                                         inputs={self.bus: solph.Flow(variable_costs=2 * scenario.cost_eps)})
         scenario.components.append(self.exc)
 
         self.src = solph.components.Source(label=f'{self.name}_src',
@@ -1031,7 +1032,7 @@ class MobileCommodity:
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(
                                                        variable_costs=self.parent.opex_spec)},
-                                                   outputs={self.bus: solph.Flow()},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=self.soc_init_ph,
@@ -1039,7 +1040,6 @@ class MobileCommodity:
                                                    inflow_conversion_factor=1,
                                                    # efficiency already modeled in Converters
                                                    outflow_conversion_factor=1,
-                                                   # incentivize charging of the battery
                                                    nominal_storage_capacity=(solph.Investment(ep_costs=self.parent.epc)
                                                                              if self.parent.opt else self.size)
                                                    )
@@ -1379,8 +1379,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                        variable_costs=self.opex_spec)},
                                                    outputs={self.bus_connected: solph.Flow(
                                                        nominal_value=(self.size * self.crate_dis
-                                                                      if not self.opt else None)
-                                                   )},
+                                                                      if not self.opt else None),
+                                                       variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=self.soc_init_ph,
