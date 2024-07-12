@@ -24,6 +24,7 @@ import simpy
 import numpy as np
 import pandas as pd
 import pytz
+import scipy as sp
 
 import blocks
 
@@ -137,7 +138,7 @@ class RentalSystem:
         self.processes['time_blocked_primary'] = self.processes['time_recharge_primary'] + self.time_buffer
         self.processes['steps_blocked_primary'] = dt2steps(self.processes['time_blocked_primary'], sc)
 
-        self.processes['time_blocked_secondary'] = self.processes[ 'time_recharge_secondary'] + self.time_buffer
+        self.processes['time_blocked_secondary'] = self.processes['time_recharge_secondary'] + self.time_buffer
         self.processes['steps_blocked_secondary'] = dt2steps(self.processes['time_blocked_secondary'], sc)
 
         # create the actual Simpy store and populate it with commodities
@@ -150,30 +151,18 @@ class RentalSystem:
         self.processes['year'] = self.processes['date'].apply(get_year)
         self.processes['month'] = self.processes['date'].apply(get_month)
         self.processes['day'] = self.processes['date'].apply(get_day)
-        self.processes['hour'] = (np.round(self.draw_departure_samples(n_processes) / self.sc.timestep_hours) *
-                                  self.sc.timestep_hours)  # round to nearest timestep
+        self.processes['hour'] = self.draw_departure_samples(n_processes)
 
         self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
 
         # Vectorized handling of time conversion to avoid slow for loop
-        try:
-            self.processes['time_req'] = self.processes['time_req'].dt.tz_localize(sc.timezone)
 
-        # If DST causes a sampled time to be invalid, loop over all processes (much slower)
-        # and advance the problematic one
-        except (pytz.exceptions.AmbiguousTimeError, pytz.exceptions.NonExistentTimeError):  # todo still fails to catch NonExistentTimeError
-            for idx, process in self.processes.iterrows():
-                try:
-                    self.processes.iloc[idx, 'time_req'] =\
-                        pd.to_datetime(self.processes.iloc[idx,['year', 'month', 'day', 'hour']])
-                    self.processes.iloc[idx, 'time_req'] =\
-                        self.processes.iloc[idx, 'time_req'].tz_localize(sc.timezone)
-                except (pytz.exceptions.AmbiguousTimeError, pytz.exceptions.NonExistentTimeError):
-                    self.processes.iloc[idx, 'time_req'] =\
-                         pd.to_datetime(self.processes.iloc[idx, ['year', 'month', 'day', 'hour']] +\
-                         pd.Timedelta(hours=1))
-                    self.processes.iloc[idx, 'time_req'] =\
-                        self.processes.iloc[idx, 'time_req'].tz_localize(sc.timezone)
+        self.processes['time_req'] = self.processes['time_req'].dt.tz_localize(sc.timezone,
+                                                                               ambiguous='NaT',  # fall
+                                                                               nonexistent='shift_forward')  # spring
+        self.processes.dropna(axis='index',
+                              subset=['time_req'],
+                              inplace=True)
 
         self.processes['step_req'] = dt2steps(self.processes['time_req'], sc)
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
@@ -279,43 +268,27 @@ class VehicleRentalSystem(RentalSystem):
 
         super().__init__(cs, sc)
 
-    def departure_pdf(self, x):
-        """
-        for a given time of day (given as a float of full hours), this function returns the probability of a trip
-        request.
-        :param x: time of day as float of full hours
-        :return: y: probability value
-        """
-        y = 0.6 * (1 / (self.cs.dep_stdev1 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mean1) ** 2 /
-                                                                          (2 * self.cs.dep_stdev1 ** 2))) + \
-            0.4 * (1 / (self.cs.dep_stdev2 * np.sqrt(2 * np.pi)) * np.exp(- (x - self.cs.dep_mean2) ** 2 /
-                                                                          (2 * self.cs.dep_stdev2 ** 2)))
-        return y
-
-    def departure_cdf(self):
-        """
-        Calculate the cumulative distribution function (CDF) based on the probability density function (PDF)
-        You can integrate the PDF from -infinity to x, or use numerical integration methods like np.cumsum
-        Here, we use numerical integration via np.cumsum for simplicity:
-        :return:
-        """
-        steps_per_day = int(24 / self.sc.timestep_hours)
-        x_vals = np.linspace(0, 24, num=steps_per_day)
-        y_vals = [self.departure_pdf(val) for val in x_vals]
-        cdf_vals = np.cumsum(y_vals)
-        cdf_vals /= cdf_vals[-1]  # Normalize the CDF to [0, 1]
-        return x_vals, cdf_vals
-
     def draw_departure_samples(self, n):
         """
-        Draw n samples from the departure_pdf using the inverse transform sampling method via the cumulativ function
-        :param n: number of samples
-        :return:
+        Calculate the cumulative distribution function of the departure times for the rental processes and sample
+        n values from it
         """
-        x_vals, cdf_vals = self.departure_cdf()
+
+        mean1 = np.median([self.cs.dep_mean1, 0, 24])
+        mean2 = np.median([self.cs.dep_mean2, 0, 24])
+
+        stdev1 = np.max([self.cs.dep_stdev1, 1e-8])
+        stdev2 = np.max([self.cs.dep_stdev2, 1e-8])
+
+        time_vals = np.arange(start=0, stop=24, step=self.sc.timestep_hours / 100)  # always sample finer than timestep
+        cdf_vals = [0.6 * sp.stats.norm.cdf(time, mean1, stdev1) + 0.4 * sp.stats.norm.cdf(time, mean2, stdev2)
+                    for time in time_vals]
+
         uniform_samples = np.random.rand(int(n))  # Generate n uniform random numbers between 0 and 1
-        samples = np.interp(uniform_samples, cdf_vals, x_vals)  # Interpolate to find the samples
-        return samples
+        time_samples = np.interp(uniform_samples, cdf_vals, time_vals)  # Interpolate to find the samples
+        time_samples = np.round(time_samples / self.sc.timestep_hours) * self.sc.timestep_hours  # round to timestep
+
+        return time_samples
 
     def generate_demand(self, sc):
         """
@@ -443,8 +416,9 @@ class BatteryRentalSystem(RentalSystem):
         return sample
 
     def draw_departure_samples(self, n):
-        list = self.processes.apply(self.draw_departure_sample, axis=1)
-        return list
+        time_samples = self.processes.apply(self.draw_departure_sample, axis=1)
+        time_samples = np.round(time_samples / self.sc.timestep_hours) * self.sc.timestep_hours  # round to timestep
+        return time_samples
 
     def generate_demand(self, sc):
         """
