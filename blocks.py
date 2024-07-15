@@ -784,8 +784,6 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.peakshaving = True if self.opex_peakshaving > 0 else False
-
         """
         x denotes the flow measurement point in results
 
@@ -810,27 +808,15 @@ class GridConnection(InvestBlock):
         scenario.components.append(self.bus)
 
         self.src = solph.components.Source(label=f'{self.name}_src',
-                                           outputs={self.bus: solph.Flow(
-                                               nominal_value=(solph.Investment(ep_costs=self.epc)
-                                                              if self.opt_g2mg else self.size_g2mg),
-                                               variable_costs=self.opex_spec_g2mg)}
+                                           outputs={self.bus: solph.Flow(variable_costs=self.opex_spec_g2mg)}
                                            )
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                         inputs={self.bus: solph.Flow(
-                                             nominal_value=(solph.Investment(ep_costs=self.epc)
-                                                            if self.opt_mg2g else self.size_mg2g),
-                                             variable_costs=self.opex_spec_mg2g)}
+                                         inputs={self.bus: solph.Flow(variable_costs=self.opex_spec_mg2g)}
                                          )
 
         scenario.components.append(self.src)
         scenario.components.append(self.snk)
-
-        if self.opt and self.equal:
-            # add a tuple of tuples to the list of equal variables of the scenario
-            scenario.equal_variables.append({'var1': {'in': self.src, 'out': self.bus},
-                                             'var2': {'in': self.bus, 'out': self.snk},
-                                             'factor': 1})
 
         if self.peakshaving:
             # Create functions to extract relevant property of datetimeindex for peakshaving intervals
@@ -841,34 +827,59 @@ class GridConnection(InvestBlock):
                             'year': lambda x: x.strftime('%Y')}
 
             # Assign the corresponding interval to each timestep
-            periods = scenario.dti_sim.to_series().apply(periods_func[self.period_peakshaving])
+            periods = scenario.dti_sim.to_series().apply(periods_func[self.peakshaving])
+            self.peakshaving_ints = periods.unique()
 
             # Activate the corresponding bus for each period
             bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                           for period_label in periods.unique()}, index=scenario.dti_sim)
+                                           for period_label in self.peakshaving_ints}, index=scenario.dti_sim)
 
-            # Create a series to store peak power values
-            self.peak_power = pd.Series(index=bus_activation.columns)
-
-            self.inflow = {f'{self.name}_xc_{interval}':
-                               solph.components.Converter(label=f'{self.name}_xc_{interval}',
-                                                          # ToDo: get the correct costs
-                                                          inputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=self.opex_peakshaving),
-                                                                                       max=bus_activation[interval])},
-                                                          outputs={self.bus_connected: solph.Flow()},
-                                                          conversion_factors={self.bus_connected: 1}) for interval in bus_activation.columns}
         else:
-            self.inflow = {f'{self.name}_xc': solph.components.Converter(label=f'{self.name}_xc',
-                                                                         inputs={self.bus: solph.Flow()},
-                                                                         outputs={self.bus_connected: solph.Flow()},
-                                                                         conversion_factors={self.bus_connected: 1})}
+            self.peakshaving_ints = ['sim_duration']
+
+        # Create a series to store peak power values
+        self.peak_power = pd.Series(index=self.peakshaving_ints)
+
+        self.inflow = {f'{self.name}_xc_{interval}': solph.components.Converter(
+            label=f'{self.name}_xc_{interval}',
+            # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
+            # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
+            inputs={self.bus: solph.Flow(
+                nominal_value=(solph.Investment(ep_costs=(self.epc if interval == self.peakshaving_ints[0] else 0))
+                               if self.opt_g2mg else self.size_g2mg),
+            )},
+            # Peakshaving
+            # ToDo: get the correct costs
+            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_peakshaving)
+                                                                   if self.peakshaving else None),
+                                                    max=(bus_activation[interval] if self.peakshaving else None))},
+            conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints}
+
         self.outflow = {f'xc_{self.name}': solph.components.Converter(label=f'xc_{self.name}',
+                                                                      # Peakshaving -> not implemented
                                                                       inputs={self.bus_connected: solph.Flow()},
-                                                                      outputs={self.bus: solph.Flow()},
+                                                                      # Size optimization
+                                                                      outputs={self.bus: solph.Flow(
+                                                                          nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                                                         if self.opt_mg2g else self.size_mg2g),
+                                                                      )},
                                                                       conversion_factors={self.bus: 1})}
 
         scenario.components.extend(self.inflow.values())
         scenario.components.extend(self.outflow.values())
+
+        if self.opt:
+            # The optimized sizes of the buses of all peakshaving intervals have to be the same as theytechnically
+            # represent the same grid connection
+            equal_investments = [{'in': self.bus, 'out': self.inflow[f'{self.name}_xc_{peakshaving_int}']} for
+                                 peakshaving_int in self.peakshaving_ints]
+
+            # If size of in- and outflow from and to the grid have to be the same size, add outflow investment
+            if self.equal:
+                equal_investments.append({'in': self.outflow[f'xc_{self.name}'], 'out': self.bus})
+
+            # add list of variables to the scenario constraints
+            scenario.constraints.add_equal_invests(equal_investments)
 
     def calc_capex_init(self, scenario):
         """
@@ -901,16 +912,16 @@ class GridConnection(InvestBlock):
 
     def get_opt_size(self, horizon):
         if self.opt_g2mg:
-            self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
+            # self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
+            self.size_g2mg = horizon.results[(self.bus, self.inflow[f'{self.name}_xc_{self.peakshaving_ints[0]}'])]['scalars']['invest']
         if self.opt_mg2g:
-            self.size_mg2g = horizon.results[(self.bus, self.snk)]['scalars']['invest']
+            self.size_mg2g = horizon.results[(self.outflow[f'xc_{self.name}'], self.bus)]['scalars']['invest']
 
     def get_peak_powers(self, horizon):
         for interval in self.peak_power.index:
             self.peak_power[interval] = \
-            horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['sequences']['flow'][
-                horizon.dti_ch].max()
-
+            horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['scalars']['invest']
+    #
     def set_init_size(self, scenario, run):
 
         if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
@@ -1583,9 +1594,9 @@ class SystemCore(InvestBlock):
 
         if self.opt and self.equal:
             # add a tuple of tuples to the list of equal variables of the scenario
-            scenario.equal_variables.append({'var1': {'in': self.dc_bus, 'out': self.dc_ac},
-                                             'var2': {'in': self.ac_bus, 'out': self.ac_dc},
-                                             'factor': 1})
+            scenario.constraints.add_equal_invests([{'in': self.dc_bus, 'out': self.dc_ac},
+                                                    {'in': self.ac_bus, 'out': self.ac_dc}
+                                                    ])
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'

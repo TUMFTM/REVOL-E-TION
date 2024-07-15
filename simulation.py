@@ -48,7 +48,7 @@ from plotly.subplots import make_subplots
 
 import blocks
 import commodity_des as des
-from additional_constraints import apply_additional_constraints
+from custom_constraints import CustomConstraints
 import tum_colors as col
 from aprioripowerscheduler import AprioriPowerScheduler
 
@@ -199,7 +199,8 @@ class PredictionHorizon:
             scenario.logger.error(msg)
             raise IndexError(msg)
 
-        apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
+        # Apply custom constraints
+        scenario.constraints.apply_constraints(model=self.model)
 
         if run.dump_model:
             if scenario.strategy == 'go':
@@ -384,7 +385,7 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
-        self.equal_variables = []
+        self.constraints = CustomConstraints(scenario=self)
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
