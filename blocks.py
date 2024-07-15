@@ -833,9 +833,27 @@ class GridConnection(InvestBlock):
                                              'factor': 1})
 
         if self.peakshaving:
-            bus_activation = pd.DataFrame({month: (scenario.dti_sim.strftime('%Y-%m') == month).astype(int) for
-                                           month in scenario.dti_sim.strftime('%Y-%m').unique()},
-                                          index=scenario.dti_sim)
+            # Define the format string based on the period
+            try:
+                period_format = {'day': '%Y-%m-%d', 'week': '%Y-CW%W', 'month': '%Y-%m', 'quarter': None, 'year': '%Y'}[
+                    self.period_peakshaving]
+            except KeyError:
+                raise ValueError("Invalid period. Choose from 'day', 'week', 'month', 'quarter', year'.")
+
+            # Create the activation DataFrame
+            if self.period_peakshaving == 'quarter':
+                # Special handling for quarter (not directly supported by strftime) -> calculate quarter manually
+                labels = scenario.dti_sim.to_series().apply(lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}")
+                bus_activation = pd.DataFrame(
+                    {quarter: (labels == quarter).astype(int) for quarter in labels.unique()},
+                    index=scenario.dti_sim
+                )
+            else:
+                bus_activation = pd.DataFrame(
+                    {period_label: (scenario.dti_sim.strftime(period_format) == period_label).astype(int)
+                     for period_label in scenario.dti_sim.strftime(period_format).unique()},
+                    index=scenario.dti_sim
+                )
 
             self.peak_power = pd.Series(index=bus_activation.columns)
 
@@ -892,9 +910,12 @@ class GridConnection(InvestBlock):
             self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
         if self.opt_mg2g:
             self.size_mg2g = horizon.results[(self.bus, self.snk)]['scalars']['invest']
-        if self.peakshaving:
-            for interval in self.peak_power.index:
-                self.peak_power[interval] = horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max()
+
+    def get_peak_powers(self, horizon):
+        for interval in self.peak_power.index:
+            self.peak_power[interval] = \
+            horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['sequences']['flow'][
+                horizon.dti_ch].max()
 
     def set_init_size(self, scenario, run):
 

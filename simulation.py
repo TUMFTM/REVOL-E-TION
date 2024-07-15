@@ -282,6 +282,10 @@ class PredictionHorizon:
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
             block.get_opt_size(self)
 
+        for block in [block for block in scenario.blocks.values()
+                      if isinstance(block, blocks.GridConnection) and block.peakshaving]:
+            block.get_peak_powers(self)
+
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
 
@@ -562,7 +566,7 @@ class Scenario:
 
     def print_results(self):
         print('#################')
-        for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
+        for block in [block for block in self.blocks.values() if hasattr(block, 'opt')]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
@@ -581,12 +585,12 @@ class Scenario:
                 if block.peakshaving:
                     for interval in block.peak_power.index:
                         self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
-                                         f' {interval}: {round(block.peak_power[interval] / 1e3, 2)} {unit}')
-            elif isinstance(block, blocks.CommoditySystem):
+                                         f' {interval}: {block.peak_power[interval] / 1e3:.2f} {unit}')
+            elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
                                      f' {commodity.size / 1e3:.1f} {unit}')
-            else:
+            elif block.opt:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
