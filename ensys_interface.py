@@ -4,11 +4,12 @@ import os
 import pandas as pd
 
 from blocks import VehicleCommoditySystem, StationaryEnergyStorage
+from scenario import Scenario
 
 
 # from revoletion_ensys_interface import predict_with_existing_model, build_model_and_train, map_flows_to_apriori_data
 
-def call_ensys_interface(scenario,
+def call_ensys_interface(scenario: Scenario,
                          input_config_dir: str,
                          forecast_length: int,
                          algorithm: str = "DQN",
