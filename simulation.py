@@ -270,7 +270,7 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if run.print_results:
+        if run.debugmode:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
@@ -396,8 +396,9 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
+        # ToDo: put into extra function
         # check input parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
+        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in self.run.apriori_lvls if
                                                                                x != 'uc'] and not cs.lm_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
@@ -419,7 +420,7 @@ class Scenario:
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
+        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in self.run.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
@@ -442,7 +443,7 @@ class Scenario:
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
-        self.lcoe = self.lcoe_dis = self.lcoe_wocs = 0
+        self.lcoe_total = self.lcoe_wocs = 0
         self.npv = self.irr = self.mirr = 0
 
         self.logger.debug(f'Scenario initialization completed')
@@ -481,10 +482,10 @@ class Scenario:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
-                self.lcoe = self.totex_dis / self.e_dis_del
+                self.lcoe_total = self.totex_dis / self.e_dis_del
                 self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
             except ZeroDivisionError:
-                self.lcoe = self.lcoe_wocs = None
+                self.lcoe_total = self.lcoe_wocs = None
                 self.logger.warning(f'LCOE calculation: division by zero')
 
         self.npv = self.crev_dis - self.totex_dis
@@ -566,17 +567,17 @@ class Scenario:
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
                     self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
-                                     f' {round(block.size_acdc / 1e3)} {unit}')
+                                     f' {block.size_acdc / 1e3:.1f} {unit}')
                 if block.opt_dcac:
                     self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
-                                     f' {round(block.size_dcac / 1e3)} {unit}')
+                                     f' {block.size_dcac / 1e3:.1f} {unit}')
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
                     self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\":'
-                                     f' {round(block.size_g2mg / 1e3)} {unit}')
+                                     f' {block.size_g2mg / 1e3:.1f} {unit}')
                 if block.opt_mg2g:
                     self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
-                                     f' {round(block.size_mg2g / 1e3)} {unit}')
+                                     f' {block.size_mg2g / 1e3:.1f} {unit}')
                 if block.peakshaving:
                     for interval in block.peak_power.index:
                         self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
@@ -584,13 +585,12 @@ class Scenario:
             elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
-                                     f' {round(commodity.size / 1e3, 1)} {unit}')
+                                     f' {commodity.size / 1e3:.1f} {unit}')
             else:
-                self.logger.info(f'Optimized size of component \"{block.name}\": {round(block.size / 1e3)} {unit}')
+                self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        self.logger.info(f'Total simulated cost: {str(round(self.totex_sim / 1e6, 2))} million {self.currency}')
-        self.logger.info(f'Levelized cost of electricity:'
-                         f' {str(round(1e5 * self.lcoe_dis, 2)) if self.lcoe_dis else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
+        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_wocs, 2)) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
@@ -740,6 +740,9 @@ class SimulationRun:
             f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
             f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
         )
+
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
     def end_timing(self):
 

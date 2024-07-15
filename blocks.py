@@ -189,7 +189,7 @@ class Block:
         """
         Standard legend entry for simple blocks using power as their size
         """
-        return f'{self.name} power (max. {round(self.size / 1e3)} kW)'
+        return f'{self.name} power (max. {self.size / 1e3:.1f} kW)'
 
     def get_timeseries_results(self, scenario):
         """
@@ -436,24 +436,23 @@ class RenewableInvestBlock(InvestBlock):
         scenario.components.append(self.bus)
 
         self.outflow = solph.components.Converter(label=f'{self.name}_out',
-                                                  inputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                  inputs={self.bus: solph.Flow()},
                                                   outputs={self.bus_connected: solph.Flow()},
                                                   conversion_factors={self.bus_connected: self.eff})
         scenario.components.append(self.outflow)
 
+        # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
+        # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
+        # All other components such as converters and storages only have cost_eps in the output direction.
         self.exc = solph.components.Sink(label=f'{self.name}_exc',
-                                         inputs={self.bus: solph.Flow()})
+                                         inputs={self.bus: solph.Flow(variable_costs=2 * scenario.cost_eps)})
         scenario.components.append(self.exc)
 
-        if self.opt:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(investment=solph.Investment(
-                                                   ep_costs=self.epc),
-                                                   variable_costs=self.opex_spec)})
-        else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(nominal_value=self.size,
-                                                                             variable_costs=self.opex_spec)})
+        self.src = solph.components.Source(label=f'{self.name}_src',
+                                           outputs={self.bus: solph.Flow(
+                                               nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                              if self.opt else self.size),
+                                               variable_costs=self.opex_spec)})
         scenario.components.append(self.src)
 
     def add_curtailment_trace(self, scenario):
@@ -500,7 +499,7 @@ class RenewableInvestBlock(InvestBlock):
         self.flow_curt = pd.concat([self.flow_curt, self.flow_curt_ch])
 
     def get_legend_entry(self):
-        return f'{self.name} power (nom. {round(self.size / 1e3)} kW)'
+        return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
 
     def get_opt_size(self, horizon):
         self.size = horizon.results[(self.src, self.bus)]['scalars']['invest']
@@ -554,19 +553,16 @@ class CommoditySystem(InvestBlock):
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
 
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
-
         # static load management can only be activated for rulebased integration levels
-        if self.lm_static and self.int_lvl not in [x for x in self.apriori_lvls if x != 'uc']:
+        if self.lm_static and self.int_lvl not in [x for x in run.apriori_lvls if x != 'uc']:
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
-                                    f' {", ".join([x for x in self.apriori_lvls if x != "uc"])}'
+                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
                                     f' -> deactivated static load management')
             self.lm_static = None
 
-        if self.opt and self.int_lvl in self.apriori_lvls:
+        if self.opt and self.int_lvl in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
-                                  f' implemented for integration levels {self.apriori_lvls}')
+                                  f' implemented for integration levels {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
 
         # Creation of static energy system components --------------------------------
@@ -592,8 +588,7 @@ class CommoditySystem(InvestBlock):
                                                      nominal_value=self.lm_static,
                                                      max=1 if self.lm_static else None
                                                  )},
-                                                 outputs={self.bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
+                                                 outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: 1})
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
@@ -697,7 +692,7 @@ class CommoditySystem(InvestBlock):
             commodity.get_ch_results(horizon, scenario)
 
     def get_legend_entry(self):
-        return f'{self.name} total power'
+        return f'{self.name} total power{f" (static load management {self.lm_static / 1e3:.1f} kW)" if self.lm_static else ""}'
 
     def get_opt_size(self, horizon):
         """
@@ -755,17 +750,12 @@ class ControllableSource(InvestBlock):
 
         self.bus_connected = scenario.blocks['core'].ac_bus
 
-        if self.opt:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(
-                                                   investment=solph.Investment(ep_costs=self.epc),
-                                                   variable_costs=self.opex_spec)}
-                                               )
-        else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus_connected: solph.Flow(nominal_value=self.size,
-                                                                                       variable_costs=self.opex_spec)}
-                                               )
+        self.src = solph.components.Source(label=f'{self.name}_src',
+                                           outputs={self.bus_connected: solph.Flow(
+                                               nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                              if self.opt else self.size),
+                                               variable_costs=self.opex_spec)})
+
         scenario.components.append(self.src)
 
     def calc_energy(self, scenario):
@@ -819,30 +809,20 @@ class GridConnection(InvestBlock):
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
 
-        if self.opt_g2mg:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(
-                                                   investment=solph.Investment(ep_costs=self.epc),
-                                                   variable_costs=self.opex_spec_g2mg)}
-                                               )
-        else:
-            self.src = solph.components.Source(label=f'{self.name}_src',
-                                               outputs={self.bus: solph.Flow(
-                                                   nominal_value=self.size_g2mg,
-                                                   variable_costs=self.opex_spec_g2mg)}
-                                               )
-        if self.opt_mg2g:
-            self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                             inputs={self.bus: solph.Flow(
-                                                 investment=solph.Investment(ep_costs=self.epc),
-                                                 variable_costs=self.opex_spec_mg2g)}
-                                             )
-        else:
-            self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                             inputs={self.bus: solph.Flow(
-                                                 nominal_value=self.size_mg2g,
-                                                 variable_costs=self.opex_spec_mg2g)}
-                                             )
+        self.src = solph.components.Source(label=f'{self.name}_src',
+                                           outputs={self.bus: solph.Flow(
+                                               nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                              if self.opt_g2mg else self.size_g2mg),
+                                               variable_costs=self.opex_spec_g2mg)}
+                                           )
+
+        self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                         inputs={self.bus: solph.Flow(
+                                             nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                            if self.opt_mg2g else self.size_mg2g),
+                                             variable_costs=self.opex_spec_mg2g)}
+                                         )
+
         scenario.components.append(self.src)
         scenario.components.append(self.snk)
 
@@ -904,8 +884,8 @@ class GridConnection(InvestBlock):
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {round(self.size_g2mg / 1e3)} kW from / '
-                f'{round(self.size_mg2g / 1e3)} kW to grid)')
+        return (f'{self.name} power (max. {self.size_g2mg / 1e3:.1f} kW from / '
+                f'{self.size_mg2g / 1e3:.1f} kW to grid)')
 
     def get_opt_size(self, horizon):
         if self.opt_g2mg:
@@ -1071,8 +1051,7 @@ class MobileCommodity:
 
         self.inflow = solph.components.Converter(label=f'mc_{self.name}',
                                                  inputs={
-                                                     self.parent.bus: solph.Flow(nominal_value=self.pwr_chg,
-                                                                                 variable_costs=scenario.cost_eps)},
+                                                     self.parent.bus: solph.Flow(nominal_value=self.pwr_chg)},
                                                  outputs={self.bus: solph.Flow(nominal_value=self.pwr_chg * self.eff_chg)},
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
@@ -1090,33 +1069,21 @@ class MobileCommodity:
         # actual values are set later in update_input_components for each prediction horizon
         scenario.components.append(self.snk)
 
-        if self.parent.opt:  # dispatch is optimized later --> commodity is modeled as storage and sink
-            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                       inputs={self.bus: solph.Flow(
-                                                           variable_costs=self.parent.opex_spec)},
-                                                       outputs={self.bus: solph.Flow()},
-                                                       loss_rate=self.parent.loss_rate,
-                                                       balanced=False,
-                                                       initial_storage_level=self.soc_init_ph,
-                                                       inflow_conversion_factor=1,
-                                                       # efficiency already modeled in Converters
-                                                       outflow_conversion_factor=1,
-                                                       # efficiency already modeled in Converters
-                                                       investment=solph.Investment(
-                                                           ep_costs=self.parent.epc))
-        else:
-            self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                       inputs={self.bus: solph.Flow(
-                                                           variable_costs=self.parent.opex_spec)},
-                                                       outputs={self.bus: solph.Flow()},
-                                                       loss_rate=self.parent.loss_rate,
-                                                       balanced=False,
-                                                       initial_storage_level=self.soc_init_ph,
-                                                       inflow_conversion_factor=1,
-                                                       # efficiency already modeled in Converters
-                                                       outflow_conversion_factor=1,
-                                                       # efficiency already modeled in Converters
-                                                       nominal_storage_capacity=self.size)
+        self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
+                                                   inputs={self.bus: solph.Flow(
+                                                       variable_costs=self.parent.opex_spec)},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                   loss_rate=self.parent.loss_rate,
+                                                   balanced=False,
+                                                   initial_storage_level=self.soc_init_ph,
+                                                   # efficiency already modeled in Converters
+                                                   inflow_conversion_factor=1,
+                                                   # efficiency already modeled in Converters
+                                                   outflow_conversion_factor=1,
+                                                   nominal_storage_capacity=(solph.Investment(ep_costs=self.parent.epc)
+                                                                             if self.parent.opt else self.size)
+                                                   )
+
         scenario.components.append(self.ess)
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
@@ -1138,9 +1105,7 @@ class MobileCommodity:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def add_power_trace(self, scenario):
-        power_charge_max = round(self.pwr_chg / 1e3, 1)
-        power_discharge_max = round(self.pwr_dis * self.parent.eff_chg / 1e3, 1)
-        legentry = f'{self.name} power (max. {power_charge_max} kW charge / {power_discharge_max} kW discharge)'
+        legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.parent.eff_chg / 1e3:.1f} kW discharge)'
         scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                              y=self.flow,
                                              mode='lines',
@@ -1152,13 +1117,15 @@ class MobileCommodity:
         scenario.figure.add_trace(go.Scatter(x=self.flow_ext_dc.index,
                                              y=self.flow_ext_dc + self.flow_ext_ac,
                                              mode='lines',
-                                             name=f'{self.name} external charging power (AC & DC)',
+                                             name=f'{self.name} external charging power'
+                                                  f' (AC max. {self.parent.pwr_ext_ac / 1e3:.1f} kW &'
+                                                  f' DC max. {self.parent.pwr_ext_dc / 1e3:.1f} kW)',
                                              line=dict(width=2, dash=None),
                                              visible='legendonly'),
                                   secondary_y=False)
 
     def add_soc_trace(self, scenario):
-        legentry = f"{self.name} SOC ({round(self.size/1e3,1)} kWh)"
+        legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
         scenario.figure.add_trace(go.Scatter(x=self.soc.index,
                                              y=self.soc,
                                              mode='lines',
@@ -1167,7 +1134,7 @@ class MobileCommodity:
                                              visible='legendonly'),
                                   secondary_y=True)
 
-        legentry = f"{self.name} SOH"
+        legentry = f'{self.name} SOH'
         data = self.soh.dropna()
         scenario.figure.add_trace(go.Scatter(x=data.index,
                                              y=data,
@@ -1282,8 +1249,10 @@ class MobileCommodity:
             self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / (self.pwr_chg * self.eff_chg)
             self.outflow.inputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
 
-            self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
-            self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+            if self.parent.pwr_ext_ac > 0:
+                self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+            if self.parent.pwr_ext_dc > 0:
+                self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
 
             # ToDo: find solution for min_soc in input files, also in 'else' below
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
@@ -1443,40 +1412,35 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.bus_connected = scenario.blocks['core'].dc_bus
 
-        if self.opt:
-            self.ess = solph.components.GenericStorage(label='ess',
-                                                       inputs={self.bus_connected: solph.Flow(
-                                                           variable_costs=self.opex_spec)},
-                                                       outputs={self.bus_connected: solph.Flow()},
-                                                       loss_rate=self.loss_rate,
-                                                       balanced={'go': True, 'rh': False}[scenario.strategy],
-                                                       initial_storage_level=self.soc_init_ph,
-                                                       invest_relation_input_capacity=self.crate_chg,
-                                                       invest_relation_output_capacity=self.crate_dis,
-                                                       inflow_conversion_factor=self.eff_chg,
-                                                       outflow_conversion_factor=self.eff_dis,
-                                                       investment=solph.Investment(ep_costs=self.epc))
-        else:
-            self.ess = solph.components.GenericStorage(label='ess',
-                                                       inputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=self.size * self.crate_chg,
-                                                           variable_costs=self.opex_spec)},
-                                                       outputs={self.bus_connected: solph.Flow(
-                                                           nominal_value=self.size * self.crate_dis,
-                                                       )},
-                                                       loss_rate=self.loss_rate,
-                                                       balanced={'go': True, 'rh': False}[scenario.strategy],
-                                                       initial_storage_level=self.soc_init_ph,
-                                                       inflow_conversion_factor=self.eff_chg,
-                                                       outflow_conversion_factor=self.eff_dis,
-                                                       nominal_storage_capacity=self.size)
+        self.ess = solph.components.GenericStorage(label='ess',
+                                                   inputs={self.bus_connected: solph.Flow(
+                                                       nominal_value=(self.size * self.crate_chg
+                                                                      if not self.opt else None),
+                                                       variable_costs=self.opex_spec)},
+                                                   outputs={self.bus_connected: solph.Flow(
+                                                       nominal_value=(self.size * self.crate_dis
+                                                                      if not self.opt else None),
+                                                       variable_costs=scenario.cost_eps)},
+                                                   loss_rate=self.loss_rate,
+                                                   balanced={'go': True, 'rh': False}[scenario.strategy],
+                                                   initial_storage_level=self.soc_init_ph,
+                                                   invest_relation_input_capacity=(self.crate_chg
+                                                                                   if self.opt else None),
+                                                   invest_relation_output_capacity=(self.crate_dis
+                                                                                    if self.opt else None),
+                                                   inflow_conversion_factor=self.eff_chg,
+                                                   outflow_conversion_factor=self.eff_dis,
+                                                   nominal_storage_capacity=(solph.Investment(ep_costs=self.epc)
+                                                                             if self.opt else self.size)
+                                                   )
+
         scenario.components.append(self.ess)
 
         if self.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def add_soc_trace(self, scenario):
-        legentry = f"{self.name} SOC ({round(self.size/1e3)} kWh)"
+        legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
         scenario.figure.add_trace(go.Scatter(x=self.soc.index,
                                              y=self.soc,
                                              mode='lines',
@@ -1529,9 +1493,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.size = horizon.results[(self.ess, None)]['scalars']['invest']
 
     def get_legend_entry(self):
-        power_charge = round(self.size * self.crate_chg / 1e3)
-        power_discharge = round(self.size * self.crate_dis * self.eff_dis / 1e3)
-        return f'{self.name} power (max. {power_charge} kW charge / {power_discharge} kW discharge)'
+        return (f'{self.name} power (max. {self.size * self.crate_chg / 1e3:.1f} kW charge /'
+                f' {self.size * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
 
     def get_timeseries_results(self, scenario):
         """
@@ -1582,38 +1545,23 @@ class SystemCore(InvestBlock):
         self.dc_bus = solph.Bus(label='dc_bus')
         scenario.components.append(self.dc_bus)
 
-        if self.opt_acdc:
-            self.ac_dc = solph.components.Converter(label='ac_dc',
-                                                    inputs={self.ac_bus: solph.Flow(investment=solph.Investment(
-                                                        ep_costs=self.epc),
-                                                        variable_costs=self.opex_spec)},
-                                                    outputs={self.dc_bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
-                                                    conversion_factors={self.dc_bus: self.eff_acdc})
+        self.ac_dc = solph.components.Converter(label='ac_dc',
+                                                inputs={self.ac_bus: solph.Flow(
+                                                    nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                                   if self.opt_acdc else self.size_acdc),
+                                                    variable_costs=self.opex_spec)},
+                                                outputs={self.dc_bus: solph.Flow(
+                                                    variable_costs=scenario.cost_eps)},
+                                                conversion_factors={self.dc_bus: self.eff_acdc})
 
-        else:
-            self.ac_dc = solph.components.Converter(label='ac_dc',
-                                                    inputs={self.ac_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=self.size_acdc)},
-                                                    outputs={self.dc_bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
-                                                    conversion_factors={self.dc_bus: self.eff_acdc})
-
-        if self.opt_dcac:
-            self.dc_ac = solph.components.Converter(label='dc_ac',
-                                                    inputs={self.dc_bus: solph.Flow(investment=solph.Investment(
-                                                        ep_costs=self.epc),
-                                                        variable_costs=self.opex_spec)},
-                                                    outputs={self.ac_bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
-                                                    conversion_factors={self.ac_bus: self.eff_dcac})
-        else:
-            self.dc_ac = solph.components.Converter(label='dc_ac',
-                                                    inputs={self.dc_bus: solph.Flow(variable_costs=scenario.cost_eps,
-                                                                                    nominal_value=self.size_dcac)},
-                                                    outputs={self.ac_bus: solph.Flow(
-                                                        variable_costs=scenario.cost_eps)},
-                                                    conversion_factors={self.ac_bus: self.eff_dcac})
+        self.dc_ac = solph.components.Converter(label='dc_ac',
+                                                inputs={self.dc_bus: solph.Flow(
+                                                    nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                                   if self.opt_dcac else self.size_dcac),
+                                                    variable_costs=self.opex_spec)},
+                                                outputs={self.ac_bus: solph.Flow(
+                                                    variable_costs=scenario.cost_eps)},
+                                                conversion_factors={self.ac_bus: self.eff_dcac})
 
         scenario.components.append(self.ac_dc)
         scenario.components.append(self.dc_ac)
@@ -1625,7 +1573,7 @@ class SystemCore(InvestBlock):
                                              'factor': 1})
 
     def add_power_trace(self, scenario):
-        legentry = f'{self.name} DC-AC power (max. {round(self.size_dcac/1e3)} kW)'
+        legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'
         scenario.figure.add_trace(go.Scatter(x=self.flow_dcac.index,
                                              y=self.flow_dcac,
                                              mode='lines',
@@ -1634,7 +1582,7 @@ class SystemCore(InvestBlock):
                                              visible='legendonly'),
                                   secondary_y=False)
 
-        legentry = f'{self.name} AC-DC power (max. {round(self.size_acdc/1e3)} kW)'
+        legentry = f'{self.name} AC-DC power (max. {self.size_acdc/1e3:.1f} kW)'
         scenario.figure.add_trace(go.Scatter(x=self.flow_acdc.index,
                                              y=self.flow_acdc,
                                              mode='lines',
