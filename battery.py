@@ -150,7 +150,10 @@ class BatteryPackModel:
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = commodity.soc_ch[:-1]  # omit last step as its effects reach into next horizon
+        self.soc_hor = commodity.soc_ch
+        # append SOC at the end of CH
+        self.soc_hor.loc[horizon.ch_endtime] = commodity.soc_init_ph
+
         self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
 
         # Calculate timespan of horizon in seconds
@@ -173,10 +176,16 @@ class BatteryPackModel:
 
         # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
         self.cycles_hor = {'depth': [], 'mean': [], 'type': []}
-        for range, mean, count, _, _ in rainflow.extract_cycles(self.soc_hor):
-            self.cycles_hor['depth'].append(range)  # depth of cycle expressed as SOC fraction
-            self.cycles_hor['mean'].append(mean)  # mean SOC of cycle
-            self.cycles_hor['type'].append(count)  # type of cycle 0.5 (half cycle) or 1 (full cycle)
+        if len(self.soc_hor) == 2:
+            # two timesteps are not enough to detect a cycle -> has to be half cycle by definition -> add manually
+            self.cycles_hor['depth'].append(abs(np.diff(self.soc_hor)[0]))  # diff of SOCs
+            self.cycles_hor['mean'].append(np.mean(self.soc_hor))  # mean SOC of cycle
+            self.cycles_hor['type'].append(0.5)  # has to be half cycle
+        else:
+            for range, mean, count, _, _ in rainflow.extract_cycles(self.soc_hor):
+                self.cycles_hor['depth'].append(range)  # depth of cycle expressed as SOC fraction
+                self.cycles_hor['mean'].append(mean)  # mean SOC of cycle
+                self.cycles_hor['type'].append(count)  # type of cycle 0.5 (half cycle) or 1 (full cycle)
         self.cycles_hor['depth'] = np.array(self.cycles_hor['depth'])
         self.cycles_hor['mean'] = np.array(self.cycles_hor['mean'])
         self.cycles_hor['type'] = np.array(self.cycles_hor['type'])

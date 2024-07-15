@@ -50,8 +50,8 @@ import blocks
 import commodity_des as des
 from additional_constraints import apply_additional_constraints
 import tum_colors as col
+from aprioripowerscheduler import AprioriPowerScheduler
 from ensys_interface import call_ensys_interface
-
 
 ###############################################################################
 # Functions
@@ -165,7 +165,7 @@ class PredictionHorizon:
         if scenario.strategy == 'rl':
             call_ensys_interface(scenario, run, 8, "DQN")
         # if apriori power scheduling is necessary, calculate power schedules:
-        elif scenario.scheduler:
+        if scenario.scheduler:
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                  f'Calculating power schedules for commodities with rulebased charging strategies')
             scenario.scheduler.calc_ph_schedule(self)
@@ -408,6 +408,9 @@ class SimulationRun:
             f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
             f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
         )
+
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
     def end_timing(self):
 
