@@ -369,29 +369,25 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes = self.processes.loc[mask, :].copy()
 
         # convert values for target BatteryRentalSystem
-        rex_processes['usecase_idx'] = -1
+        rex_processes['usecase_id'] = -1
         rex_processes['usecase_name'] = f'rex_{self.cs.name}'
-        rex_processes['num_resources'] = rex_processes['num_rex']
-        rex_processes['soc_return'] = self.cs.rex_cs.soc_dep - rex_processes['dsoc_secondary']
 
-        # set secondary recharge & reavailability times as primary values for BatteryRentalSystem
-        rex_processes['energy_req_pc_primary'] = rex_processes['energy_req_pc_secondary']
-        rex_processes['time_recharge_primary'] = rex_processes['time_recharge_secondary']
-        rex_processes['time_blocked_primary'] = rex_processes['time_recharge_primary'] + self.time_buffer
-        rex_processes['steps_blocked_primary'] = dt2steps(rex_processes['time_blocked_primary'], sc)
-        rex_processes['time_reavail_primary'] = rex_processes['time_reavail_secondary']
-        rex_processes['step_reavail_primary'] = rex_processes['step_reavail_secondary']
-
-        # swap primary and secondary commodities as target system has other promary commodity type
-        rex_processes['primary_commodity'] = rex_processes['secondary_commodity']
-        rex_processes['dsoc_primary'] = rex_processes['dsoc_secondary']
+        def swap_primary_secondary(col_name):
+            if 'primary' in col_name:
+                return col_name.replace('primary', 'secondary')
+            elif 'secondary' in col_name:
+                return col_name.replace('secondary', 'primary')
+            return col_name
+        rex_processes.columns = [swap_primary_secondary(col) for col in rex_processes.columns]
 
         # drop all secondary columns
-        rex_processes.drop([col for col in rex_processes.columns if 'secondary' in col], axis=1, inplace=True)
+        #rex_processes.drop([col for col in rex_processes.columns if 'secondary' in col], axis=1, inplace=True)
+        rex_processes['time_preblock_primary'] = rex_processes['time_req']
+        rex_processes['step_preblock_primary'] = rex_processes['step_req']
 
         # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
         self.cs.rex_cs.rs.processes = pd.concat([self.cs.rex_cs.rs.processes, rex_processes], join='inner')
-        self.cs.rex_cs.rs.processes.sort_values(by='time_req', inplace=True, ignore_index=True)
+        self.cs.rex_cs.rs.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
 
 
 class BatteryRentalSystem(RentalSystem):
