@@ -88,7 +88,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.59  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.39  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sanyo_ur18650e.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sanyo_ur18650e.pkl')
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -104,7 +104,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.71  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.55  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sony_us26650.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sony_us26650.pkl')
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
