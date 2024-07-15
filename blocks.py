@@ -833,36 +833,30 @@ class GridConnection(InvestBlock):
                                              'factor': 1})
 
         if self.peakshaving:
-            # Define the format string based on the period
-            try:
-                period_format = {'day': '%Y-%m-%d', 'week': '%Y-CW%W', 'month': '%Y-%m', 'quarter': None, 'year': '%Y'}[
-                    self.period_peakshaving]
-            except KeyError:
-                raise ValueError("Invalid period. Choose from 'day', 'week', 'month', 'quarter', year'.")
+            # Create functions to extract relevant property of datetimeindex for peakshaving intervals
+            periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
+                            'week': lambda x: x.strftime('%Y-CW%W'),
+                            'month': lambda x: x.strftime('%Y-%m'),
+                            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+                            'year': lambda x: x.strftime('%Y')}
 
-            # Create the activation DataFrame
-            if self.period_peakshaving == 'quarter':
-                # Special handling for quarter (not directly supported by strftime) -> calculate quarter manually
-                labels = scenario.dti_sim.to_series().apply(lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}")
-                bus_activation = pd.DataFrame(
-                    {quarter: (labels == quarter).astype(int) for quarter in labels.unique()},
-                    index=scenario.dti_sim
-                )
-            else:
-                bus_activation = pd.DataFrame(
-                    {period_label: (scenario.dti_sim.strftime(period_format) == period_label).astype(int)
-                     for period_label in scenario.dti_sim.strftime(period_format).unique()},
-                    index=scenario.dti_sim
-                )
+            # Assign the corresponding interval to each timestep
+            periods = scenario.dti_sim.to_series().apply(periods_func[self.period_peakshaving])
 
+            # Activate the corresponding bus for each period
+            bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
+                                           for period_label in periods.unique()}, index=scenario.dti_sim)
+
+            # Create a series to store peak power values
             self.peak_power = pd.Series(index=bus_activation.columns)
 
-            self.inflow = {f'{self.name}_xc_{month}': solph.components.Converter(label=f'{self.name}_xc_{month}',
-                                                                                 # ToDo: change eps_costs!!!!!!!!!
-                                                                                 inputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=1.2),
-                                                                                                              max=bus_activation[month])},
-                                                                                 outputs={self.bus_connected: solph.Flow()},
-                                                                                 conversion_factors={self.bus_connected: 1}) for month in bus_activation.columns}
+            self.inflow = {f'{self.name}_xc_{interval}':
+                               solph.components.Converter(label=f'{self.name}_xc_{interval}',
+                                                          # ToDo: get the correct costs
+                                                          inputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=self.opex_peakshaving),
+                                                                                       max=bus_activation[interval])},
+                                                          outputs={self.bus_connected: solph.Flow()},
+                                                          conversion_factors={self.bus_connected: 1}) for interval in bus_activation.columns}
         else:
             self.inflow = {f'{self.name}_xc': solph.components.Converter(label=f'{self.name}_xc',
                                                                          inputs={self.bus: solph.Flow()},
