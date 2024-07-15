@@ -197,7 +197,7 @@ class RentalSystem:
         commodities = list(self.cs.commodities.keys())
         column_names = []
         for commodity in commodities:
-            column_names.extend([(commodity,'atbase'), (commodity,'minsoc'), (commodity,'consumption'),
+            column_names.extend([(commodity,'atbase'), (commodity,'dsoc'), (commodity,'consumption'),
                                  (commodity,'atac'), (commodity,'atdc')])
             if isinstance(self, VehicleRentalSystem):
                 column_names.extend([(commodity,'tour_dist')])
@@ -221,13 +221,34 @@ class RentalSystem:
                                                (process['steps_rental'] * self.sc.timestep_hours))
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
-                self.data.loc[process['time_dep'], (commodity, 'minsoc')] = self.cs.soc_dep
+                try:
+                    self.data.loc[process['time_dep'], (commodity, 'dsoc')] = process['dsoc_primary']
+                except:
+                    pass
 
                 if isinstance(self, VehicleRentalSystem):
                     # set distance in first timestep of rental (for distance based revenue calculation)
                     self.data.loc[process['time_dep'], (commodity, 'tour_dist')] = process['distance']
 
         self.cs.data = self.data
+
+    def sample_daily_demand(self):
+        # draw total demand for every simulated ay from lognormal distribution
+        df = pd.DataFrame(index=np.unique(self.sc.dti_sim.date))
+        p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
+        df['num_total'] = np.round(self.rng.lognormal(p1, p2, df.shape[0])).astype(int)
+        return df
+
+    def sample_processes(self):
+        self.processes = pd.DataFrame(columns=['usecase_id', 'usecase_name',
+                                               'time_req', 'step_req',
+                                               'time_dep', 'step_dep',
+                                               'time_return', 'step_return',
+                                               'energy_req_total', 'energy_avail_total',
+                                               'rex_request', 'rex_num',
+                                               'dsoc_primary', 'dsoc_secondary',
+                                               'energy_req_pc_primary', 'energy_req_pc_secondary'])
+        self.sample_requests()
 
     def save_data(self, path, sc):
         """
@@ -401,8 +422,12 @@ class BatteryRentalSystem(RentalSystem):
     def __init__(self, env: simpy.Environment, sc, cs):
 
         self.usecase_file_name = cs.filename_usecases
-        self.usecase_file_path = os.path.join(os.getcwd(), 'input', 'brs', f'{self.usecase_file_name}.csv')
+        self.usecase_file_path = os.path.join(os.getcwd(),
+                                              'input',
+                                              'BatteryCommoditySystem',
+                                              f'{self.usecase_file_name}.csv')
         self.usecases = pd.read_csv(self.usecase_file_path, header=0)
+        self.usecases['rel_prob_norm'] = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
 
         super().__init__(cs, sc)
 
@@ -457,9 +482,11 @@ class BatteryRentalSystem(RentalSystem):
             p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
             self.processes['time_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, n_processes), unit='hour')
 
-            self.processes['energy_req_pc_primary'] = (self.cs.soc_dep- self.processes['soc_return']) * self.cs.size_pc
+            self.processes['energy_req_pc_primary'] = (self.cs.soc_dep - self.processes['soc_return']) * self.cs.size_pc
             self.processes['energy_req_primary'] = (self.processes['energy_req_pc_primary'] *
                                                     self.processes['num_resources'])
+
+            self.processes['dsoc_primary'] = self.processes['energy_req_pc_primary'] / self.cs.size_pc
 
             self.processes['time_recharge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
                                                                       (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')

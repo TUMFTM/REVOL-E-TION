@@ -531,39 +531,22 @@ class CommoditySystem(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        self.mode_dispatch = None
+        # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
+        self.get_dispatch_mode(scenario, run)
+
         if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
             self.data = None  # data will be generated in a joint DES run after model setup
         else:  # use pregenerated file
             self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
-            self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
-
-            if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-                scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
-                                        f' - resampling is experimental')
-                consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
-                bool_columns = self.data.columns.difference(consumption_columns)
-                # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-                df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
-                df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
-                self.data = df
+            self.read_input_log()
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
         self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
-
-        # static load management can only be activated for rulebased integration levels
-        if self.lm_static and self.int_lvl not in [x for x in run.apriori_lvls if x != 'uc']:
-            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
-                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
-                                    f' -> deactivated static load management')
-            self.lm_static = None
-
-        if self.opt and self.int_lvl in run.apriori_lvls:
-            scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
-                                  f' implemented for integration levels {run.apriori_lvls}')
-            exit()  # TODO exit scenario instead of run
+        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
         # Creation of static energy system components --------------------------------
 
@@ -605,8 +588,6 @@ class CommoditySystem(InvestBlock):
         # Generate individual commodity instances
         self.commodities = {f'{self.name}{str(i)}': MobileCommodity(self.name + str(i), self, scenario)
                             for i in range(self.num)}
-
-        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
     def add_power_trace(self, scenario):
         super().add_power_trace(scenario)
@@ -691,6 +672,33 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
 
+    def get_dispatch_mode(self, scenario, run):
+
+        if self.int_lvl in run.apriori_lvls:  # uc, equal, soc, fcfs
+            if self.int_lvl == 'uc':
+                self.mode_dispatch = 'apriori_unlimited'
+            elif isinstance(self.lm_static, (int, float)):
+                self.mode_dispatch = 'apriori_static'
+            elif self.lm_static is None:
+                self.mode_dispatch = 'apriori_dynamic'
+
+        elif scenario.strategy == 'rh':
+            self.mode_dispatch = 'opt_myopic'
+        elif scenario.strategy == 'go':
+            self.mode_dispatch = 'opt_global'
+
+        # static load management can only be activated for a priori integration levels
+        if self.lm_static and self.mode_dispatch != 'apriori_static':
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
+                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
+                                    f' -> deactivating static load management')
+            self.lm_static = None
+
+        if self.opt and self.int_lvl in run.apriori_lvls:
+            scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
+                                  f' implemented for a priori integration levels: {run.apriori_lvls}')
+            exit()  # TODO exit scenario instead of run
+
     def get_legend_entry(self):
         return f'{self.name} total power{f" (static load management {self.lm_static / 1e3:.1f} kW)" if self.lm_static else ""}'
 
@@ -713,6 +721,23 @@ class CommoditySystem(InvestBlock):
         super().get_timeseries_results(scenario)  # this goes up to the Block class
         for commodity in self.commodities.values():
             commodity.get_timeseries_results(scenario)
+
+    def read_input_log(self):
+        """
+        Read in a predetermined log file for the CommoditySystem behavior
+        """
+
+        self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
+
+        if pd.infer_freq(self.data.index).lower() != scenario.timestep:
+            scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
+                                    f' - resampling is experimental')
+            consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
+            bool_columns = self.data.columns.difference(consumption_columns)
+            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+            df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
+            df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
+            self.data = df
 
     def set_init_size(self, scenario, run):
         super().set_init_size(scenario, run)
@@ -940,9 +965,14 @@ class MobileCommodity:
 
     def __init__(self, name, parent, scenario):
 
+        self.dsoc_buffer_aging = 0.05  # Todo make this a parameter
+
         self.name = name
         self.parent = parent
         self.size = None if self.parent.opt else self.parent.size_pc
+        self.mode_dispatch = self.parent.mode_dispatch
+        self.soc_init = self.parent.soc_init
+        self.soh_init = self.parent.soh_init
         self.pwr_chg = self.parent.pwr_chg
         self.pwr_dis = self.parent.pwr_dis
         self.eff_chg = self.parent.eff_chg
@@ -961,10 +991,8 @@ class MobileCommodity:
 
         self.data_ph = self.sc_init_ph = None  # placeholder, is filled in update_input_components
 
-        self.soc_init = self.parent.soc_init
         self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh_init = self.parent.soh_init
         self.soh = pd.Series(index=scenario.dti_sim)
         self.soh.loc[scenario.starttime] = self.soh_init
 
@@ -1225,15 +1253,24 @@ class MobileCommodity:
             self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int)
             self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int)
 
-        # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
-        # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
-        # relative to nominal capacity. Disregard minsoc values from DES for any case except RH with optimized
-        # commodity dispatch (because of myopia and usecases longer than one prediction horizon))
-        if (scenario.strategy in ['rh']) and (self.apriori_data is None):
-            self.ess.min_storage_level = self.data_ph['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
-        else:
-            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
         self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+
+        # Adjust min storage levels based on state of health for the upcoming prediction horizon
+        # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
+        # relative to nominal capacity. Disregard minsoc values from DES for any case except myopic optimization.
+        if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
+            # VehicleCommoditySystems operate on the premise of not necessarily renting out at min SOC
+            dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] > 0,
+                                                     self.data_ph['dsoc'] + self.dsoc_buffer_aging)
+            self.ess.min_storage_level = self.soc_min + dsoc_dep_ph
+            self.ess.min_storage_level.clip(upper=self.soc_max)
+        elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
+            # BatteryCommoditySystems operate on the premise of renting out at max SOC
+            self.ess.min_storage_level = self.data_ph['dsoc'].where(self.data_ph['dsoc'] > 0,
+                                                                    self.parent.soc_dep)
+            self.ess.min_storage_level.clip(lower=self.soc_min, upper=self.soc_max)
+        else:  # opt_global or apriori cases
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
 
 class PVSource(RenewableInvestBlock):
