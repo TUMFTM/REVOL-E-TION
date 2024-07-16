@@ -848,14 +848,23 @@ class GridConnection(InvestBlock):
         # Create a series to store peak power values
         self.peak_power = pd.Series(index=self.peakshaving_ints)
 
-        self.inflow = {f'{self.name}_xc_{interval}': solph.components.Converter(
+        self.inflow = {f'xc_{self.name}': solph.components.Converter(
+            label=f'xc_{self.name}',
+            # Peakshaving -> not implemented
+            inputs={self.bus_connected: solph.Flow()},
+            # Size optimization
+            outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc)
+                                                         if self.opt_mg2g else self.size_mg2g),
+                                          variable_costs=scenario.cost_eps)},
+            conversion_factors={self.bus: 1})}
+
+        self.outflow = {f'{self.name}_xc_{interval}': solph.components.Converter(
             label=f'{self.name}_xc_{interval}',
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
                 nominal_value=(solph.Investment(ep_costs=(self.epc if interval == self.peakshaving_ints[0] else 0))
-                               if self.opt_g2mg else self.size_g2mg),
-            )},
+                               if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
             # ToDo: get the correct costs for peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_peakshaving)
@@ -863,29 +872,17 @@ class GridConnection(InvestBlock):
                                                     max=(bus_activation[interval] if self.peakshaving else None))},
             conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints}
 
-        self.outflow = {f'xc_{self.name}': solph.components.Converter(label=f'xc_{self.name}',
-                                                                      # Peakshaving -> not implemented
-                                                                      inputs={self.bus_connected: solph.Flow()},
-                                                                      # Size optimization
-                                                                      outputs={self.bus: solph.Flow(
-                                                                          nominal_value=(solph.Investment(ep_costs=self.epc)
-                                                                                         if self.opt_mg2g else self.size_mg2g),
-                                                                          variable_costs=scenario.cost_eps
-                                                                      )},
-                                                                      conversion_factors={self.bus: 1})}
-
         scenario.components.extend(self.inflow.values())
         scenario.components.extend(self.outflow.values())
 
         if self.opt:
-            # The optimized sizes of the buses of all peakshaving intervals have to be the same as theytechnically
+            # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
             # represent the same grid connection
-            equal_investments = [{'in': self.bus, 'out': self.inflow[f'{self.name}_xc_{peakshaving_int}']} for
-                                 peakshaving_int in self.peakshaving_ints]
+            equal_investments = [{'in': self.bus, 'out': outflow} for outflow in self.outflow.values()]
 
-            # If size of in- and outflow from and to the grid have to be the same size, add outflow investment
+            # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
             if self.equal:
-                equal_investments.append({'in': self.outflow[f'xc_{self.name}'], 'out': self.bus})
+                equal_investments.extend([{'in': inflow, 'out': self.bus} for inflow in self.inflow.values()])
 
             # add list of variables to the scenario constraints
             scenario.constraints.add_equal_invests(equal_investments)
@@ -926,11 +923,11 @@ class GridConnection(InvestBlock):
 
     def get_ch_results(self, horizon, *_):
         self.flow_in_ch = sum(
-            [horizon.results[(self.bus, self.inflow[f'{self.name}_xc_{interval}'])]['sequences']['flow'][horizon.dti_ch]
-             for interval in self.peakshaving_ints])
+            [horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
+             for inflow in self.inflow.values()])
         self.flow_out_ch = sum(
-            [horizon.results[(self.outflow[f'xc_{self.name}'], self.bus)]['sequences']['flow'][horizon.dti_ch]
-             for interval in self.peakshaving_ints])
+            [horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
+             for outflow in self.outflow.values()])
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
@@ -943,16 +940,16 @@ class GridConnection(InvestBlock):
                 f'{self.size_mg2g / 1e3:.1f} kW to grid)')
 
     def get_opt_size(self, horizon):
+        # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
         if self.opt_g2mg:
-            # self.size_g2mg = horizon.results[(self.src, self.bus)]['scalars']['invest']
-            self.size_g2mg = horizon.results[(self.bus, self.inflow[f'{self.name}_xc_{self.peakshaving_ints[0]}'])]['scalars']['invest']
+            self.size_g2mg = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
         if self.opt_mg2g:
-            self.size_mg2g = horizon.results[(self.outflow[f'xc_{self.name}'], self.bus)]['scalars']['invest']
+            self.size_mg2g = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
 
     def get_peak_powers(self, horizon):
-        for interval in self.peak_power.index:
-            self.peak_power[interval] = \
-            horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['scalars']['invest']
+        # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
+        for interval, converter in zip(self.peak_power.index, self.outflow.values()):
+            self.peak_power[interval] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
 
     def get_timeseries_results(self, scenario):
         """
@@ -998,17 +995,11 @@ class GridConnection(InvestBlock):
             market.update_input_components()
 
 
-
 class GridMarket:
     def __init__(self, name, scenario, run, parent, params):
 
         self.name = name
         self.parent = parent
-
-        # ToDo: add max power size: None, parent, value, (opt - ?)
-        #  None: infinite power, trading between
-        #  parent: max power is determined by GridConnection, sum of all markets needs to be limited to parent power
-        #  value: power limit for the specific market
 
         for param, value in params.items():
             setattr(self, param, value)
@@ -1017,9 +1008,10 @@ class GridMarket:
             self.transform_scalar_var(var_name, scenario, run)
 
         if '1' in self.name:
-            self.opex_spec_g2mg[scenario.dti_sim[0:50]] = self.opex_spec_g2mg[scenario.dti_sim[0:50]] + 2
+            self.opex_spec_g2mg[scenario.dti_sim[0:500]] = self.opex_spec_g2mg[scenario.dti_sim[0:500]] + 2
         else:
-            self.opex_spec_g2mg[scenario.dti_sim[50:]] = self.opex_spec_g2mg[scenario.dti_sim[50:]] + 2
+            self.opex_spec_g2mg[scenario.dti_sim[500:]] = self.opex_spec_g2mg[scenario.dti_sim[500:]] + 2
+            self.opex_spec_g2mg.loc[pd.to_datetime('2018-01-05 22:00+01:00')] = -1
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
@@ -1039,11 +1031,13 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
+                                               nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
                                                variable_costs=self.opex_spec_g2mg)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
+                                             nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
                                              variable_costs=self.opex_spec_mg2g)
                                          })
 

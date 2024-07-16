@@ -16,6 +16,9 @@ class CustomConstraints:
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
 
+        # Apply additional constraints to limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
+        self.limit_gridmarket_power(model)
+
         # Apply additional constraints to limit energy feed into the grid (and to energy storage) to renewable energies only
         self.renewables_only(model, self.scenario)
 
@@ -29,6 +32,35 @@ class CustomConstraints:
             self.equate_mult_vars(model=model,
                                   variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
                                              for var in var_list])
+
+    def limit_gridmarket_power(self, model):
+        # Add additional constraints to limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
+        for grid_connection in [block for block in self.scenario.blocks.values()
+                                if isinstance(block, blocks.GridConnection)]:
+            grid_g2mg_flows = [(grid_connection.bus, converter) for converter in grid_connection.outflow.values()]
+            grid_mg2g_flows = [(converter, grid_connection.bus) for converter in grid_connection.inflow.values()]
+
+            markets_g2mg_flows = [(market.src, grid_connection.bus) for market in grid_connection.markets.values()]
+            markets_mg2g_flows = [(grid_connection.bus, market.snk) for market in grid_connection.markets.values()]
+
+            self.limit_flows_to_flows(model=model, flows1=markets_g2mg_flows, flows2=grid_g2mg_flows)
+            self.limit_flows_to_flows(model=model, flows1=markets_mg2g_flows, flows2=grid_mg2g_flows)
+
+    def limit_flows_to_flows(self, model, flows1, flows2, name=None):
+        def _limit_flows_to_flow_rule(m):
+            for p, ts in m.TIMEINDEX:
+                sum1 = sum(m.flow[fi, fo, p, ts] for fi, fo in flows1)
+                sum2 = sum(m.flow[fi, fo, p, ts] for fi, fo in flows2)
+                expr = sum1 <= sum2
+                if expr is not True:
+                    getattr(m, name).add((p, ts), expr)
+
+        if name is None:
+            name = '_'.join(['limit_sum_of'] + [str(flow) for flow in flows1] +
+                            ['to_sum_of'] + [str(flow) for flow in flows2])
+
+        setattr(model, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
+        setattr(model, name + "_build", po.BuildAction(rule=_limit_flows_to_flow_rule))
 
     def renewables_only(self, model, scenario):
         # Apply additional constraints to limit energy feed into the grid to renewable energy generation
