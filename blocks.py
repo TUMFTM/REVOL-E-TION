@@ -26,7 +26,9 @@ import statistics
 import windpowerlib
 
 import battery as bat
+import blocks
 import economics as eco
+import utils
 
 import plotly.graph_objects as go
 
@@ -42,8 +44,10 @@ class Block:
             setattr(self, key, value)  # this sets all the parameters defined in the scenario file
 
         time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
-        for var in time_var_params:
-            self.transform_scalar_var(var, scenario, run)
+        # Don't transform variables for GridConnections, as the specified opex are passed to GridMarket
+        if not isinstance(self, blocks.GridConnection):
+            for var in time_var_params:
+                self.transform_scalar_var(var, scenario, run)
 
         # Empty result series
         self.flow = self.flow_ch = pd.Series(dtype='float64')
@@ -784,6 +788,8 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
+        self.opex_connection = self.opex_markets = 0
+
         """
         x denotes the flow measurement point in results
 
@@ -807,18 +813,23 @@ class GridConnection(InvestBlock):
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
 
-        self.src = solph.components.Source(label=f'{self.name}_src',
-                                           outputs={self.bus: solph.Flow(variable_costs=self.opex_spec_g2mg)}
-                                           )
+        if self.markets_file:
+            # ToDo: change path to class name instead of block name: self.__class__.__name__
+            markets = pd.read_csv(os.path.join(run.path_input_data, self.name, f'{self.markets_file}.csv'),
+                                  index_col=[0])
+            markets = markets.map(utils.infer_dtype)
+        else:
+            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2mg', 'opex_spec_mg2g', 'size_g2mg', 'size_mg2g'],
+                                   columns=['grid'],
+                                   data=[self.res_only, self.opex_spec_g2mg, self.opex_spec_mg2g, 'parent', 'parent'])
 
-        self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                         inputs={self.bus: solph.Flow(variable_costs=self.opex_spec_mg2g)}
-                                         )
+        # Generate individual GridMarkets instances
+        self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
+                        for market in markets.columns}
 
-        scenario.components.append(self.src)
-        scenario.components.append(self.snk)
-
-        if self.peakshaving:
+        if self.peakshaving is None:
+            self.peakshaving_ints = ['sim_duration']
+        else:
             # Create functions to extract relevant property of datetimeindex for peakshaving intervals
             periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
                             'week': lambda x: x.strftime('%Y-CW%W'),
@@ -834,9 +845,6 @@ class GridConnection(InvestBlock):
             bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
                                            for period_label in self.peakshaving_ints}, index=scenario.dti_sim)
 
-        else:
-            self.peakshaving_ints = ['sim_duration']
-
         # Create a series to store peak power values
         self.peak_power = pd.Series(index=self.peakshaving_ints)
 
@@ -849,7 +857,7 @@ class GridConnection(InvestBlock):
                                if self.opt_g2mg else self.size_g2mg),
             )},
             # Peakshaving
-            # ToDo: get the correct costs
+            # ToDo: get the correct costs for peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_peakshaving)
                                                                    if self.peakshaving else None),
                                                     max=(bus_activation[interval] if self.peakshaving else None))},
@@ -862,6 +870,7 @@ class GridConnection(InvestBlock):
                                                                       outputs={self.bus: solph.Flow(
                                                                           nominal_value=(solph.Investment(ep_costs=self.epc)
                                                                                          if self.opt_mg2g else self.size_mg2g),
+                                                                          variable_costs=scenario.cost_eps
                                                                       )},
                                                                       conversion_factors={self.bus: 1})}
 
@@ -881,6 +890,11 @@ class GridConnection(InvestBlock):
             # add list of variables to the scenario constraints
             scenario.constraints.add_equal_invests(equal_investments)
 
+    def add_power_trace(self, scenario):
+        super().add_power_trace(scenario)
+        for market in self.markets.values():
+            market.add_power_trace(scenario)
+
     def calc_capex_init(self, scenario):
         """
         Calculate initial capital expenses
@@ -888,23 +902,41 @@ class GridConnection(InvestBlock):
         self.capex_init = np.maximum(self.size_g2mg, self.size_mg2g) * self.capex_spec
 
     def calc_energy(self, scenario):
+        # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
+        for market in self.markets.values():
+            market.calc_results(scenario)
+
         self.calc_energy_source_sink(scenario)
 
     def calc_mntex_yrl(self):
         self.mntex_yrl = np.maximum(self.size_g2mg, self.size_mg2g) * self.mntex_spec
 
     def calc_opex_sim(self, scenario):
-        # @ is dot product (Skalarprodukt)
-        self.opex_sim = self.flow_out @ self.opex_spec_g2mg * scenario.timestep_hours + \
-                        self.flow_in @ self.opex_spec_mg2g * scenario.timestep_hours
+        # Calculate costs for grid peak power
+        self.opex_connection = self.opex_peakshaving * self.peak_power.sum()
+
+        # Calculate costs of different markets
+        for market in self.markets.values():
+            market.opex_sim = market.flow_out @ market.opex_spec_g2mg * scenario.timestep_hours + \
+                              market.flow_in @ market.opex_spec_mg2g * scenario.timestep_hours
+
+            self.opex_markets += market.opex_sim
+
+        self.opex_sim = self.opex_connection + self.opex_markets
 
     def get_ch_results(self, horizon, *_):
-
-        self.flow_in_ch = horizon.results[(self.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_out_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_in_ch = sum(
+            [horizon.results[(self.bus, self.inflow[f'{self.name}_xc_{interval}'])]['sequences']['flow'][horizon.dti_ch]
+             for interval in self.peakshaving_ints])
+        self.flow_out_ch = sum(
+            [horizon.results[(self.outflow[f'xc_{self.name}'], self.bus)]['sequences']['flow'][horizon.dti_ch]
+             for interval in self.peakshaving_ints])
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+
+        for market in self.markets.values():
+            market.get_ch_results(horizon)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.size_g2mg / 1e3:.1f} kW from / '
@@ -921,9 +953,16 @@ class GridConnection(InvestBlock):
         for interval in self.peak_power.index:
             self.peak_power[interval] = \
             horizon.results[(self.inflow[f'{self.name}_xc_{interval}'], self.bus_connected)]['scalars']['invest']
-    #
-    def set_init_size(self, scenario, run):
 
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the block in a scenario wide dataframe to be saved
+        """
+        super().get_timeseries_results(scenario)  # this goes up to the Block class
+        for market in self.markets.values():
+            market.get_timeseries_results(scenario)
+
+    def set_init_size(self, scenario, run):
         if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
             self.size_g2mg = self.size_mg2g = 'opt'
             scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
@@ -949,10 +988,167 @@ class GridConnection(InvestBlock):
             self.opt = self.opt_mg2g = True
 
     def update_input_components(self):
+        # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
             self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0)
             self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
+
+        for market in self.markets.values():
+            market.update_input_components()
+
+
+
+class GridMarket:
+    def __init__(self, name, scenario, run, parent, params):
+
+        self.name = name
+        self.parent = parent
+
+        # ToDo: add max power size: None, parent, value, (opt - ?)
+        #  None: infinite power, trading between
+        #  parent: max power is determined by GridConnection, sum of all markets needs to be limited to parent power
+        #  value: power limit for the specific market
+
+        for param, value in params.items():
+            setattr(self, param, value)
+
+        for var_name in [var for var in vars(self) if ('opex_spec' in var)]:
+            self.transform_scalar_var(var_name, scenario, run)
+
+        if '1' in self.name:
+            self.opex_spec_g2mg[scenario.dti_sim[0:50]] = self.opex_spec_g2mg[scenario.dti_sim[0:50]] + 2
+        else:
+            self.opex_spec_g2mg[scenario.dti_sim[50:]] = self.opex_spec_g2mg[scenario.dti_sim[50:]] + 2
+
+        self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
+        self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
+
+        # timeseries result initialization
+        self.flow_in_ch = self.flow_out_ch = self.flow_in = self.flow_out = self.flow = pd.Series(dtype='float64')
+
+        # Creation of permanent energy system components --------------------------------
+
+        """
+         grid_bus
+          |<---x----grid_src
+          |
+          |----x--->grid_snk
+          |
+        """
+
+        self.src = solph.components.Source(label=f'{self.name}_src',
+                                           outputs={self.parent.bus: solph.Flow(
+                                               variable_costs=self.opex_spec_g2mg)
+                                           })
+
+        self.snk = solph.components.Sink(label=f'{self.name}_snk',
+                                         inputs={self.parent.bus: solph.Flow(
+                                             variable_costs=self.opex_spec_mg2g)
+                                         })
+
+        scenario.components.append(self.src)
+        scenario.components.append(self.snk)
+
+    def add_power_trace(self, scenario):
+        # ToDo: adjust power
+        legentry = f'{self.name} power (max. {1000 / 1e3:.1f} kW)'
+        scenario.figure.add_trace(go.Scatter(x=self.flow.index,
+                                             y=self.flow,
+                                             mode='lines',
+                                             name=legentry,
+                                             line=dict(width=2, dash=None),
+                                             visible='legendonly'),
+                                  secondary_y=False)
+
+    def calc_results(self, scenario):
+        # energy result calculation does not count towards delivered/produced energy (already done at the system level)
+        self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
+        self.e_yrl_in = eco.scale_sim2year(self.e_sim_in, scenario)
+        self.e_yrl_out = eco.scale_sim2year(self.e_sim_out, scenario)
+        self.e_prj_in = eco.scale_year2prj(self.e_yrl_in, scenario)
+        self.e_prj_out = eco.scale_year2prj(self.e_yrl_out, scenario)
+        self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
+        self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
+
+        self.flow = self.flow_in - self.flow_out  # for plotting
+
+    def read_input_csv(self, path_input_file, scenario, multiheader=False):
+        """
+        Properly read in timezone-aware input csv files and form correct datetimeindex
+        """
+        if multiheader:
+            df = pd.read_csv(path_input_file, header=[0, 1])
+            df.sort_index(axis=1, sort_remaining=True, inplace=True)
+            df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
+        else:
+            df = pd.read_csv(path_input_file)
+            df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
+
+        # parser in to_csv does not create datetimeindex
+        df = df.tz_convert(scenario.timezone)
+        df = self.resample_to_timestep(df, scenario)
+        return df
+
+    def resample_to_timestep(self, data: pd.DataFrame, scenario):
+        """
+        Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
+        :param data: The input dataframe with DatetimeIndex
+        :param scenario: The current scenario object
+        :return: resampled dataframe
+        """
+
+        dti = data.index
+        # Add one element to the dataframe to include the last timesteps
+        try:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+        except pandas.errors.NullFrequencyError:
+            dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
+            scenario.logger.warning(f'Block \"{self.name}\": Timestep of csv input data could not be inferred -'
+                                    f'using 15 min default')
+
+        data_ext = data.reindex(dti_ext).ffill()
+
+        def resample_column(column):
+            if data_ext[column].dtype == bool:
+                return data_ext[column].resample(scenario.timestep).ffill().bfill()
+            else:
+                return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
+
+        resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
+        return resampled_data
+
+    def transform_scalar_var(self, var_name, scenario, run):
+        scenario_entry = getattr(self, var_name)
+        # In case of filename for operations cost read csv file
+        if isinstance(scenario_entry, str):
+            # Open csv file and use first column as index; also directly convert dates to DateTime objects
+            opex = self.read_input_csv(os.path.join(run.path_input_data, self.parent.name, f'{scenario_entry}.csv'), scenario)
+            opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
+            # Convert data column of cost DataFrame into Series
+            setattr(self, var_name, opex[opex.columns[0]])
+        else:  # opex_spec is given as a scalar directly in scenario file
+            # Use sequence of values for variable costs to unify computation of results
+            setattr(self, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
+
+    def get_ch_results(self, horizon, *_):
+        self.flow_in_ch = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_out_ch = horizon.results[(self.src, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
+
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+
+    def get_timeseries_results(self, scenario):
+        """
+        Collect timeseries results of the commodity in a scenario wide dataframe to be saved
+        """
+        market_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
+                                             f'{self.name}_flow_out': self.flow_out})
+        scenario.result_timeseries = pd.concat([scenario.result_timeseries, market_ts_results], axis=1)
+
+    def update_input_components(self):
+        pass
 
 
 class FixedDemand(Block):

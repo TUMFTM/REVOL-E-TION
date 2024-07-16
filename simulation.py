@@ -18,14 +18,11 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import ast
 import graphviz
 import logging
 import logging.handlers
 import math
-import numpy as np
 import os
-import pickle
 import pprint
 import psutil
 import pytz
@@ -39,7 +36,6 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
-import plotly.graph_objects as go
 import tkinter as tk
 import tkinter.filedialog
 
@@ -51,38 +47,12 @@ import commodity_des as des
 from custom_constraints import CustomConstraints
 import tum_colors as col
 from aprioripowerscheduler import AprioriPowerScheduler
+import utils
+
 
 ###############################################################################
 # Functions
 ###############################################################################
-
-
-def infer_dtype(value):
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    if value.lower() == 'true':
-        return True
-    elif value.lower() == 'false':
-        return False
-    elif value.lower() in ['none', 'null', 'nan']:
-        return None
-
-    try:
-        evaluated = ast.literal_eval(value)
-        if isinstance(evaluated, dict):
-            return evaluated
-    except (ValueError, SyntaxError):
-        pass
-
-    return value.lower()
 
 
 def input_gui(directory):
@@ -672,7 +642,7 @@ class SimulationRun:
                                          index_col=[0, 1],
                                          na_values=['NaN', 'nan'],  # this inhibits None/Null being read as float NaN
                                          keep_default_na=False)
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(infer_dtype)
+        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
@@ -684,7 +654,7 @@ class SimulationRun:
         self.commit_hash = self.get_git_commit_hash()
 
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings = settings.map(infer_dtype)
+        settings = settings.map(utils.infer_dtype)
 
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
