@@ -312,8 +312,8 @@ class Scenario:
         self.sim_duration = pd.Timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
         self.prj_duration_yrs = self.prj_duration
-        self.prj_duration = pd.Timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
-        self.prj_endtime = self.starttime + self.prj_duration
+        self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
+        self.prj_duration = self.prj_endtime - self.starttime
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
