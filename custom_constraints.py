@@ -1,3 +1,19 @@
+"""
+custom_constraints.py
+
+--- Description ---
+This script defines the energy system blocks for the REVOL-E-TION toolset.
+
+For further information, see readme
+
+--- Created by ---
+Brian Dietermann
+
+--- File Information ---
+coding:     utf-8
+license:    GPLv3
+"""
+
 import pyomo.environ as po
 import blocks
 

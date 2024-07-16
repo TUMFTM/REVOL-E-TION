@@ -832,7 +832,13 @@ class GridConnection(InvestBlock):
                                            for period_label in self.peakshaving_ints}, index=scenario.dti_sim)
 
         # Create a series to store peak power values
-        self.peak_power = pd.Series(index=self.peakshaving_ints)
+        self.peak_power = pd.DataFrame(index=self.peakshaving_ints, columns=['power', 'cost'])
+
+        for interval in self.peak_power.index:
+            period_fraction = utils.get_period_fraction(dti=bus_activation[bus_activation[interval] == 1].index,
+                                                        period=self.peakshaving,
+                                                        freq=scenario.timestep)
+            self.peak_power.loc[interval, 'cost'] = self.opex_peakshaving * period_fraction
 
         self.inflow = {f'xc_{self.name}': solph.components.Converter(
             label=f'xc_{self.name}',
@@ -853,7 +859,7 @@ class GridConnection(InvestBlock):
                                if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
             # ToDo: get the correct costs for peakshaving
-            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_peakshaving)
+            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peak_power.loc[interval, 'cost'])
                                                                    if self.peakshaving else None),
                                                     max=(bus_activation[interval] if self.peakshaving else None))},
             conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints}
@@ -911,7 +917,7 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_connection = self.opex_peakshaving * self.peak_power.sum()
+        self.opex_connection = self.opex_peakshaving * self.peak_power['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
@@ -948,7 +954,7 @@ class GridConnection(InvestBlock):
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
         for interval, converter in zip(self.peak_power.index, self.outflow.values()):
-            self.peak_power[interval] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
+            self.peak_power.loc[interval, 'power'] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
 
     def get_timeseries_results(self, scenario):
         """

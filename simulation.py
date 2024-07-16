@@ -556,7 +556,7 @@ class Scenario:
                 if block.peakshaving:
                     for interval in block.peak_power.index:
                         self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
-                                         f' {interval}: {block.peak_power[interval] / 1e3:.2f} {unit}')
+                                         f' {interval}: {block.peak_power.loc[interval, "power"] / 1e3:.2f} {unit}')
             elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
@@ -596,8 +596,10 @@ class Scenario:
                 for commodity_name, commodity_obj in block_obj.commodities.items():
                     write_values(commodity_name, commodity_obj)
             if hasattr(block_obj, 'peak_power'):
-                for interval, value in block_obj.peak_power.items():
-                    self.result_summary.loc[(block_name, f'peak_power_{interval}'), self.name] = float(value)
+                for col in block_obj.peak_power.columns:
+                    for interval in block_obj.peak_power.index:
+                        col_str = '' if col == 'power' else '_cost'
+                        self.result_summary.loc[(block_name, f'peak_power{col_str}_{interval}'), self.name] = float(block_obj.peak_power.loc[interval, col])
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
