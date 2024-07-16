@@ -813,20 +813,6 @@ class GridConnection(InvestBlock):
         self.bus = solph.Bus(label=f'{self.name}_bus')
         scenario.components.append(self.bus)
 
-        if self.markets_file:
-            # ToDo: change path to class name instead of block name: self.__class__.__name__
-            markets = pd.read_csv(os.path.join(run.path_input_data, self.name, f'{self.markets_file}.csv'),
-                                  index_col=[0])
-            markets = markets.map(utils.infer_dtype)
-        else:
-            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2mg', 'opex_spec_mg2g', 'size_g2mg', 'size_mg2g'],
-                                   columns=['grid'],
-                                   data=[self.res_only, self.opex_spec_g2mg, self.opex_spec_mg2g, 'parent', 'parent'])
-
-        # Generate individual GridMarkets instances
-        self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
-                        for market in markets.columns}
-
         if self.peakshaving is None:
             self.peakshaving_ints = ['sim_duration']
         else:
@@ -887,6 +873,21 @@ class GridConnection(InvestBlock):
             # add list of variables to the scenario constraints
             scenario.constraints.add_equal_invests(equal_investments)
 
+        # get information about GridMarkets specified in the scenario file
+        if self.markets_file:
+            # ToDo: change path to class name instead of block name: self.__class__.__name__
+            markets = pd.read_csv(os.path.join(run.path_input_data, self.name, f'{self.markets_file}.csv'),
+                                  index_col=[0])
+            markets = markets.map(utils.infer_dtype)
+        else:
+            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2mg', 'opex_spec_mg2g', 'size_g2mg', 'size_mg2g'],
+                                   columns=['grid'],
+                                   data=[self.res_only, self.opex_spec_g2mg, self.opex_spec_mg2g, None, None])
+
+        # Generate individual GridMarkets instances
+        self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
+                        for market in markets.columns}
+
     def add_power_trace(self, scenario):
         super().add_power_trace(scenario)
         for market in self.markets.values():
@@ -922,12 +923,10 @@ class GridConnection(InvestBlock):
         self.opex_sim = self.opex_connection + self.opex_markets
 
     def get_ch_results(self, horizon, *_):
-        self.flow_in_ch = sum(
-            [horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
-             for inflow in self.inflow.values()])
-        self.flow_out_ch = sum(
-            [horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
-             for outflow in self.outflow.values()])
+        self.flow_in_ch = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
+                               for inflow in self.inflow.values()])
+        self.flow_out_ch = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
+                                for outflow in self.outflow.values()])
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
@@ -1007,12 +1006,6 @@ class GridMarket:
         for var_name in [var for var in vars(self) if ('opex_spec' in var)]:
             self.transform_scalar_var(var_name, scenario, run)
 
-        if '1' in self.name:
-            self.opex_spec_g2mg[scenario.dti_sim[0:500]] = self.opex_spec_g2mg[scenario.dti_sim[0:500]] + 2
-        else:
-            self.opex_spec_g2mg[scenario.dti_sim[500:]] = self.opex_spec_g2mg[scenario.dti_sim[500:]] + 2
-            self.opex_spec_g2mg.loc[pd.to_datetime('2018-01-05 22:00+01:00')] = -1
-
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
 
@@ -1045,8 +1038,14 @@ class GridMarket:
         scenario.components.append(self.snk)
 
     def add_power_trace(self, scenario):
-        # ToDo: adjust power
-        legentry = f'{self.name} power (max. {1000 / 1e3:.1f} kW)'
+        # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
+        if self.parent.markets_file is None:
+            return
+
+        legentry = (f'{self.name} power (max.'
+                    f' {(self.parent.size_g2mg if pd.isna(self.size_g2mg) else self.size_g2mg) / 1e3:.1f} kW from /'
+                    f' {(self.parent.size_mg2g if pd.isna(self.size_mg2g) else self.size_mg2g) / 1e3:.1f} kW to grid)')
+
         scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                              y=self.flow,
                                              mode='lines',

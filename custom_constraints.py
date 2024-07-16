@@ -1,10 +1,5 @@
-import oemof.solph as solph
 import pyomo.environ as po
 import blocks
-
-###############################################################################
-# Constraints definitions
-###############################################################################
 
 
 class CustomConstraints:
@@ -16,10 +11,10 @@ class CustomConstraints:
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
 
-        # Apply additional constraints to limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
+        # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
         self.limit_gridmarket_power(model)
 
-        # Apply additional constraints to limit energy feed into the grid (and to energy storage) to renewable energies only
+        # Limit energy feed into the grid (and to energy storage) to renewable energies only
         self.renewables_only(model, self.scenario)
 
     def add_equal_invests(self, invests):
@@ -33,34 +28,84 @@ class CustomConstraints:
                                   variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
                                              for var in var_list])
 
+    @staticmethod
+    def equate_mult_vars(model, variables, name=None):
+        r"""
+        Adds a constraint to the given model that sets multiple variables to equal.
+
+        Parameters
+        ----------
+        variables : list of pyomo.environ.Var
+            List of variables which all should be set equal
+        name : str
+            Optional name for the equation e.g. in the LP file. By default the
+            name is: equate + string representation of variables.
+        model : oemof.solph._models.Model
+            Model to which the constraint is added.
+        """  # noqa: E501
+
+        if name is None:
+            name = "_".join(["equate"] + [str(var) for var in variables])
+
+        def equate_variables_rule(m):
+            return [variables[0] == var for var in variables[1:]]
+
+        setattr(model, name, po.ConstraintList(rule=equate_variables_rule))
+
     def limit_gridmarket_power(self, model):
-        # Add additional constraints to limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
+        # Add additional constraints to limit the sum of the power flows of different GridMarkets to the current power
+        # of the GridConnection
         for grid_connection in [block for block in self.scenario.blocks.values()
                                 if isinstance(block, blocks.GridConnection)]:
-            grid_g2mg_flows = [(grid_connection.bus, converter) for converter in grid_connection.outflow.values()]
-            grid_mg2g_flows = [(converter, grid_connection.bus) for converter in grid_connection.inflow.values()]
+            connection_g2mg = [(grid_connection.bus, converter) for converter in grid_connection.outflow.values()]
+            connection_mg2g = [(converter, grid_connection.bus) for converter in grid_connection.inflow.values()]
 
-            markets_g2mg_flows = [(market.src, grid_connection.bus) for market in grid_connection.markets.values()]
-            markets_mg2g_flows = [(grid_connection.bus, market.snk) for market in grid_connection.markets.values()]
+            markets_g2mg = [(market.src, grid_connection.bus) for market in grid_connection.markets.values()]
+            markets_mg2g = [(grid_connection.bus, market.snk) for market in grid_connection.markets.values()]
 
-            self.limit_flows_to_flows(model=model, flows1=markets_g2mg_flows, flows2=grid_g2mg_flows)
-            self.limit_flows_to_flows(model=model, flows1=markets_mg2g_flows, flows2=grid_mg2g_flows)
+            self.limit_flows(model=model, flows=markets_g2mg, upper_bound=connection_g2mg, name='limit_g2mg_markets')
 
-    def limit_flows_to_flows(self, model, flows1, flows2, name=None):
-        def _limit_flows_to_flow_rule(m):
+            self.limit_flows(model=model, flows=markets_mg2g, upper_bound=connection_mg2g, name='limit_mg2g_markets')
+
+    @staticmethod
+    def limit_flows(model, flows, upper_bound, name=None):
+        r"""
+            Adds a constraint to the given model that limits the sum of flows to upper bound.
+            Upper bound can be given as a scalar or a list of flows.
+            If a list is given all flows in the list are summed up to get the limit.
+    
+            Parameters
+            ----------
+            model : oemof.solph._models.Model
+                Model to which the constraint is added.
+            flows : list of Flows 
+                List of flows which sum is limited.
+            upper_bound: list of Flows or Scalar
+                List of flows which are summed up or a scalar. The sum or the scalar is then used to limit the sum of
+                the flows given in the argument flow
+            name : str
+                Optional name for the equation e.g. in the LP file.
+            """  # noqa: E501
+        def _limit_flows(m):
             for p, ts in m.TIMEINDEX:
-                sum1 = sum(m.flow[fi, fo, p, ts] for fi, fo in flows1)
-                sum2 = sum(m.flow[fi, fo, p, ts] for fi, fo in flows2)
-                expr = sum1 <= sum2
+                flows_sum = sum(m.flow[fi, fo, p, ts] for fi, fo in flows)
+                bound = sum(m.flow[fi, fo, p, ts] for fi, fo in upper_bound) if isinstance(upper_bound,
+                                                                                           list) else upper_bound
+                expr = flows_sum <= bound
+
                 if expr is not True:
                     getattr(m, name).add((p, ts), expr)
 
         if name is None:
-            name = '_'.join(['limit_sum_of'] + [str(flow) for flow in flows1] +
-                            ['to_sum_of'] + [str(flow) for flow in flows2])
+            name = '_'.join(
+                ['limit_sum_of'] + [str(flow) for flow in flows] +
+                ['to_upper_bound'] +
+                (['sum_of'] + [str(flow) for flow in upper_bound]
+                 if isinstance(upper_bound, list) else [str(upper_bound)])
+            )
 
         setattr(model, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
-        setattr(model, name + "_build", po.BuildAction(rule=_limit_flows_to_flow_rule))
+        setattr(model, name + "_build", po.BuildAction(rule=_limit_flows))
 
     def renewables_only(self, model, scenario):
         # Apply additional constraints to limit energy feed into the grid to renewable energy generation
@@ -97,30 +142,6 @@ class CustomConstraints:
                           ess_out_flows=ess_out_flows,
                           syscore_dcac_eff=sys_core.dcac_eff,
                           name='res_only')
-
-    @staticmethod
-    def equate_mult_vars(model, variables, name=None):
-        r"""
-        Adds a constraint to the given model that sets multiple variables to equal.
-
-        Parameters
-        ----------
-        variables : list of pyomo.environ.Var
-            List of variables which all should be set equal
-        name : str
-            Optional name for the equation e.g. in the LP file. By default the
-            name is: equate + string representation of variables.
-        model : oemof.solph._models.Model
-            Model to which the constraint is added.
-        """  # noqa: E501
-
-        if name is None:
-            name = "_".join(["equate"] + [str(var) for var in variables])
-
-        def equate_variables_rule(m):
-            return [variables[0] == var for var in variables[1:]]
-
-        setattr(model, name, po.ConstraintList(rule=equate_variables_rule))
 
     @staticmethod
     def set_flows_to_zero(model, flows, name='set_to_zero'):
