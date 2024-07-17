@@ -1251,7 +1251,7 @@ class MobileCommodity:
                                   secondary_y=True)
 
     def calc_aging(self, run, scenario, horizon):
-        self.aging_model.age(self, run, scenario, horizon)
+        self.aging_model.age(run, scenario, horizon)
 
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
@@ -1565,7 +1565,7 @@ class StationaryEnergyStorage(InvestBlock):
                                   secondary_y=True)
 
     def calc_aging(self, run, scenario, horizon):
-        self.aging_model.age(self, run, scenario, horizon)
+        self.aging_model.age(run, scenario, horizon)
 
     def calc_energy(self, scenario):
         self.calc_energy_bidi(scenario)
