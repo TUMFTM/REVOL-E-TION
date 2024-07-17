@@ -793,19 +793,19 @@ class GridConnection(InvestBlock):
                                           variable_costs=scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
-        self.outflow = {f'{self.name}_xc_{interval}': solph.components.Converter(
-            label=f'{self.name}_xc_{interval}',
+        self.outflow = {f'{self.name}_xc_{intv}': solph.components.Converter(
+            label=f'{self.name}_xc_{intv}',
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=(self.epc if interval == self.peakshaving_ints.index[0] else 0))
+                nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0))
                                if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
             # ToDo: get the correct costs for peakshaving
-            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[interval, 'opex_spec'])
+            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
                                                                    if self.peakshaving else None),
-                                                    max=(bus_activation[interval] if self.peakshaving else None))},
-            conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints.index}
+                                                    max=(bus_activation[intv] if self.peakshaving else None))},
+            conversion_factors={self.bus_connected: 1}) for intv in self.peakshaving_ints.index}
 
         scenario.components.extend(self.inflow.values())
         scenario.components.extend(self.outflow.values())
@@ -846,7 +846,7 @@ class GridConnection(InvestBlock):
         """
         Calculate initial capital expenses
         """
-        self.capex_init = np.maximum(self.size_g2mg, self.size_mg2g) * self.capex_spec
+        self.capex_init = (self.size_g2mg + self.size_mg2g) * self.capex_spec
 
     def calc_energy(self, scenario):
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
