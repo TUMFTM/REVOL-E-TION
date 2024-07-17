@@ -440,9 +440,9 @@ class RenewableInvestBlock(InvestBlock):
         self.flow_pot_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
         self.flow_curt_ch = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch]
 
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
-        self.flow_pot = pd.concat([self.flow_pot, self.flow_pot_ch])
-        self.flow_curt = pd.concat([self.flow_curt, self.flow_curt_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+        self.flow_pot = pd.concat([self.flow_pot if not self.flow_pot.empty else None, self.flow_pot_ch])
+        self.flow_curt = pd.concat([self.flow_curt if not self.flow_curt.empty else None, self.flow_curt_ch])
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
@@ -631,8 +631,8 @@ class CommoditySystem(InvestBlock):
         self.flow_in_ch = horizon.results[
             (self.bus_connected, self.inflow)]['sequences']['flow'][horizon.dti_ch]
 
-        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
@@ -712,7 +712,7 @@ class ControllableSource(InvestBlock):
 
     def get_ch_results(self, horizon, *_):
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_out = pd.concat([self.flow_out, self.flow_out_ch])
+        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
     def get_opt_size(self, horizon):
         self.size = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
@@ -1072,7 +1072,7 @@ class FixedDemand(Block):
 
     def get_ch_results(self, horizon, *_):
         self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_in = pd.concat([self.flow_in, self.flow_in_ch])
+        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
 
     def get_legend_entry(self):
         return f'{self.name} power'
@@ -1325,7 +1325,7 @@ class MobileCommodity:
         self.soc_ch = self.sc_ch / self.size
         self.soc_init_ph = self.sc_init_ph / self.size
 
-        self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
+        self.soc = pd.concat([self.soc if not self.soc.empty else None, self.soc_ch])  # tracking state of charge
 
     def get_timeseries_results(self, scenario):
         """
@@ -1593,7 +1593,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc_ch = self.sc_ch / self.size
         self.soc_init_ph = self.sc_init_ph / self.size
 
-        self.soc = pd.concat([self.soc, self.soc_ch])  # tracking state of charge
+        self.soc = pd.concat([self.soc if not self.soc.empty else None, self.soc_ch])  # tracking state of charge
 
     def get_opt_size(self, horizon):
         self.size = horizon.results[(self.ess, None)]['scalars']['invest']
@@ -1725,8 +1725,8 @@ class SystemCore(InvestBlock):
         self.flow_dcac_ch = horizon.results[(scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
             horizon.dti_ch]
 
-        self.flow_acdc = pd.concat([self.flow_acdc, self.flow_acdc_ch])
-        self.flow_dcac = pd.concat([self.flow_dcac, self.flow_dcac_ch])
+        self.flow_acdc = pd.concat([self.flow_acdc if not self.flow_acdc.empty else None, self.flow_acdc_ch])
+        self.flow_dcac = pd.concat([self.flow_dcac if not self.flow_dcac.empty else None, self.flow_dcac_ch])
 
     def get_opt_size(self, horizon):
 
