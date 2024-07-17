@@ -1,0 +1,2 @@
+name,demand_mean,demand_std,dep1_magnitude,dep1_time_mean,dep1_time_std,dep2_magnitude,dep2_time_mean,dep2_time_std,dist_mean,dist_std,idle_mean,idle_std,patience,patience_rex
+default,10,2,0.5,8,1.5,0.5,13,1.5,30,10,1.5,0.5,1,1
