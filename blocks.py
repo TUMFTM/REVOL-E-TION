@@ -880,8 +880,9 @@ class GridConnection(InvestBlock):
 
         # get information about GridMarkets specified in the scenario file
         if self.markets_file:
-            # ToDo: change path to class name instead of block name: self.__class__.__name__
-            markets = pd.read_csv(os.path.join(run.path_input_data, self.name, f'{self.markets_file}.csv'),
+            markets = pd.read_csv(os.path.join(run.path_input_data,
+                                               self.__class__.__name__,
+                                               f'{self.markets_file}.csv'),
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
