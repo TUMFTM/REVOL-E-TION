@@ -1534,8 +1534,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                                                    if self.opt else None),
                                                    invest_relation_output_capacity=(self.crate_dis
                                                                                     if self.opt else None),
-                                                   inflow_conversion_factor=self.eff_chg,
-                                                   outflow_conversion_factor=self.eff_dis,
+                                                   inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
+                                                   outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    nominal_storage_capacity=(solph.Investment(ep_costs=self.epc)
                                                                              if self.opt else self.size)
                                                    )
@@ -1600,7 +1600,7 @@ class StationaryEnergyStorage(InvestBlock):
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.size * self.crate_chg / 1e3:.1f} kW charge /'
-                f' {self.size * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
+                f' {self.size * self.crate_dis / 1e3:.1f} kW discharge)')
 
     def get_timeseries_results(self, scenario):
         """
