@@ -642,7 +642,7 @@ class SimulationRun:
         self.commit_hash = self.get_git_commit_hash()
 
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings = settings.map(infer_dtype)
+        settings = settings.map(utils.infer_dtype)
 
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
