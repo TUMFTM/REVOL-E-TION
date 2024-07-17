@@ -481,7 +481,7 @@ class CommoditySystem(InvestBlock):
             self.data = None  # data will be generated in a joint DES run after model setup
         else:  # use pregenerated file
             self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
-            self.data = utils.read_input_csv(self, self.path_input_file, scenario, multiheader=True)
+            self.data = utils.read_input_csv(self, self.path_input_file, scenario, multiheader=True, resampling=False)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
                 scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
