@@ -158,7 +158,7 @@ class RentalSystem:
     def generate_processes(self):
 
         self.processes = pd.DataFrame(columns=['timeframe',
-                                               'usecase_name',
+                                               'usecase',
                                                'time_preblock_primary', 'step_preblock_primary',
                                                'time_preblock_secondary', 'step_preblock_secondary',
                                                'time_req', 'step_req', 'dayofweek_req', 'status',
@@ -176,9 +176,7 @@ class RentalSystem:
                                                'rex_request', 'num_primary', 'num_secondary',
                                                'dsoc_primary', 'dsoc_secondary',
                                                'energy_req_pc_primary', 'energy_req_pc_secondary'])
-        self.sample_demand()
-        self.sample_usecases()
-        self.sample_request_times()
+        self.sample_requests()
         self.sample_request_data()
 
         # common calculations for both types of RentalSystem
@@ -192,20 +190,23 @@ class RentalSystem:
 
         self.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
 
-    def sample_demand(self):
+    def sample_requests(self):
 
         # draw total demand for every simulated day from a lognormal distribution
         self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim.date)))
         self.demand_daily['timeframe'], self.demand_daily['demand_mean'], self.demand_daily['demand_std'] = mtf.map_timeframes(self.demand_daily, self.cs.name)
         self.demand_daily['mu'], self.demand_daily['sigma'] = lognormal_params(self.demand_daily['demand_mean'], self.demand_daily['demand_std'])
 
-        def sample_day(row):
+        def sample_demand(row):
             return np.round(self.rng.lognormal(row['mu'], row['sigma'])).astype(int)
+        self.demand_daily['demand'] = self.demand_daily.apply(lambda row: sample_demand(row), axis=1)
 
-        self.demand_daily['demand'] = self.demand_daily.apply(lambda row: sample_day(row), axis=1)
         self.n_processes = self.demand_daily['demand'].sum(axis=0)
 
         self.processes['date'] = pd.to_datetime(np.repeat(self.demand_daily.index, self.demand_daily['demand']))
+        self.processes['year'] = self.processes['date'].dt.year
+        self.processes['month'] = self.processes['date'].dt.month
+        self.processes['day'] = self.processes['date'].dt.day
         self.processes['timeframe'] = self.demand_daily.loc[self.processes['date'], 'timeframe'].values
 
         def sample_usecases(group):
@@ -214,23 +215,41 @@ class RentalSystem:
                                               replace=True,
                                               p=self.cs.usecases.loc[:, (group.name, 'rel_prob_norm')]),
                              index=group.index)
+        self.processes['usecase'] = self.processes.groupby('timeframe')['usecase'].transform(sample_usecases)
 
-        self.processes['usecase_name'] = self.processes.groupby('timeframe')['usecase_name'].transform(sample_usecases)
+        time_vals = np.arange(start=0, stop=24, step=self.sc.timestep_hours / 100)  # always sample finer than timestep
 
-    def sample_request_times(self):
+        def sample_req_times(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
 
-        self.processes['dayofweek_req'] = self.processes['date'].dt.dayofweek
-        self.processes['year'] = self.processes['date'].dt.year
-        self.processes['month'] = self.processes['date'].dt.month
-        self.processes['day'] = self.processes['date'].dt.day
-        self.processes['hour'] = self.sample_request_hours()
+            mag1 = self.cs.usecases.loc[usecase, (timeframe, 'dep1_magnitude')]
+            mean1 = np.median([self.cs.usecases.loc[usecase, (timeframe, 'dep1_time_mean')], 0, 24])
+            std1 = np.max([self.cs.usecases.loc[usecase, (timeframe, 'dep1_time_std')], 1e-8])
+            cdf1_vals = sp.stats.norm.cdf(time_vals, mean1, std1)
+
+            mag2 = self.cs.usecases.loc[usecase, (timeframe, 'dep2_magnitude')]
+            mean2 = np.median([self.cs.usecases.loc[usecase, (timeframe, 'dep2_time_mean')], 0, 24])
+            std2 = np.max([self.cs.usecases.loc[usecase, (timeframe, 'dep2_time_std')], 1e-8])
+            cdf2_vals = sp.stats.norm.cdf(time_vals, mean2, std2)
+
+            cdf_vals = mag1 * cdf1_vals + mag2 * cdf2_vals
+            uniform_samples = np.random.rand(len(group))  # Generate n uniform random numbers between 0 and 1
+            time_samples = np.interp(uniform_samples, cdf_vals, time_vals)  # Interpolate to find the samples
+            time_samples = np.round(time_samples / self.sc.timestep_hours) * self.sc.timestep_hours  # round to timestep
+            return pd.DataFrame(data=time_samples, index=group.index)
+
+        self.processes['hour'] = (self.processes.groupby(['usecase', 'timeframe'])
+                                  .apply(sample_req_times).reset_index(level=[0,1],drop=True).sort_index())
 
         self.processes['time_req'] = pd.to_datetime(self.processes[['year', 'month', 'day', 'hour']])
         self.processes.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
+
         self.processes['time_req'] = self.processes['time_req'].dt.tz_localize(self.sc.timezone,
                                                                                ambiguous='NaT',  # fall
                                                                                nonexistent='shift_forward')  # spring
         self.processes.dropna(axis='index', subset=['time_req'], inplace=True)
+
         self.n_processes = self.processes.shape[0]  # update n_processes after possibly dropping NaT values
 
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.sc)
@@ -357,27 +376,6 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_req_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
-    def sample_request_hours(self):
-        """
-        Calculate the cumulative distribution function of the departure times for the rental processes and sample
-        n values from it
-        """
-
-        mean1 = np.median([self.cs.dep_mean1, 0, 24])
-        mean2 = np.median([self.cs.dep_mean2, 0, 24])
-
-        stdev1 = np.max([self.cs.dep_stdev1, 1e-8])
-        stdev2 = np.max([self.cs.dep_stdev2, 1e-8])
-
-        time_vals = np.arange(start=0, stop=24, step=self.sc.timestep_hours / 100)  # always sample finer than timestep
-        cdf_vals = [0.6 * sp.stats.norm.cdf(time, mean1, stdev1) + 0.4 * sp.stats.norm.cdf(time, mean2, stdev2)
-                    for time in time_vals]
-
-        uniform_samples = np.random.rand(int(self.n_processes))  # Generate n uniform random numbers between 0 and 1
-        time_samples = np.interp(uniform_samples, cdf_vals, time_vals)  # Interpolate to find the samples
-        time_samples = np.round(time_samples / self.sc.timestep_hours) * self.sc.timestep_hours  # round to timestep
-
-        return time_samples
 
     def transfer_rex_processes(self, sc):
         """
@@ -462,34 +460,6 @@ class BatteryRentalSystem(RentalSystem):
         self.processes['dtime_charge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
                                                                  (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
-    def sample_request_hours(self):
-        """
-        Calculate the cumulative distribution function of the departure times for each use case and sample
-        request time values from it
-        """
-        time_vals = np.arange(start=0, stop=24, step=self.sc.timestep_hours / 100)  # always sample finer than timestep
-
-        def sample_uc_hours(group):
-            usecase_id = group.name
-            n_samples = len(group)
-            mean = np.median([self.cs.usecases.loc[usecase_id, 'dep_mean'], 0, 24])
-            stdev = np.max([self.cs.usecases.loc[usecase_id, 'dep_stdev'], 1e-8])
-            cdf_vals = sp.stats.norm.cdf(time_vals, mean, stdev)
-            uniform_samples = np.random.rand(n_samples)  # Generate n uniform random numbers between 0 and 1
-            time_samples = np.interp(uniform_samples, cdf_vals, time_vals)  # Interpolate to find the samples
-            time_samples = np.round(time_samples / self.sc.timestep_hours) * self.sc.timestep_hours  # round to timestep
-            return pd.Series(time_samples, index=group.index)
-
-        return self.processes.groupby('usecase_id').apply(sample_uc_hours).reset_index(level=0, drop=True).sort_index()
-
-    def sample_usecases(self):
-        self.processes['usecase_id'] = np.random.choice(self.cs.usecases.index.values,
-                                                        self.n_processes,
-                                                        replace=True,
-                                                        p=self.cs.usecases['rel_prob_norm']).astype(int)
-        self.processes['usecase_name'] = self.processes.apply(lambda row:
-                                                              self.cs.usecases.loc[row['usecase_id'], 'name'],
-                                                              axis=1)
 
 class RentalProcess:
 
