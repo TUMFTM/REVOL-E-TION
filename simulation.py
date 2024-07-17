@@ -597,8 +597,8 @@ class Scenario:
                     write_values(commodity_name, commodity_obj)
             if hasattr(block_obj, 'peakshaving_ints') and block_obj.peakshaving:
                 for interval in block_obj.peakshaving_ints.index:
-                    self.result_summary.loc[(block_name, f'peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
-                    self.result_summary.loc[(block_name, f'peak_power_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
+                    self.result_summary.loc[(block_name, f'peakshaving_peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
+                    self.result_summary.loc[(block_name, f'peakshaving_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
