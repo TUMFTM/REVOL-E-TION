@@ -389,10 +389,10 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
+        if any([cs.data_source == 'des' for cs in self.commodity_systems.values()]):
             des.execute_des(self, run.save_des_results, run.path_result_folder)
 
-        for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
+        for cs in [cs for cs in self.commodity_systems.values() if cs.data_source == 'des']:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 

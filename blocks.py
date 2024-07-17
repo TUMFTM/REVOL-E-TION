@@ -535,11 +535,15 @@ class CommoditySystem(InvestBlock):
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode(scenario, run)
 
-        if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
-            self.data = None  # data will be generated in a joint DES run after model setup
-        else:  # use pregenerated file
-            self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
+        self.data = None
+        if self.data_source == 'des':
+            self.usecases = self.read_usecase_file(run)
+        elif self.data_source == 'log':
             self.read_input_log()
+        else:
+            raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
+
+        self.eff_chg = self.eff_dis = np.sqrt(self.eff_roundtrip)
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
@@ -568,8 +572,8 @@ class CommoditySystem(InvestBlock):
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
                                                      variable_costs=self.opex_spec_sys_chg,
-                                                     nominal_value=self.lm_static,
-                                                     max=1 if self.lm_static else None
+                                                     nominal_value=self.power_lim_static,
+                                                     max=1 if self.power_lim_static else None
                                                  )},
                                                  outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: 1})
@@ -677,9 +681,9 @@ class CommoditySystem(InvestBlock):
         if self.int_lvl in run.apriori_lvls:  # uc, equal, soc, fcfs
             if self.int_lvl == 'uc':
                 self.mode_dispatch = 'apriori_unlimited'
-            elif isinstance(self.lm_static, (int, float)):
+            elif isinstance(self.power_lim_static, (int, float)):
                 self.mode_dispatch = 'apriori_static'
-            elif self.lm_static is None:
+            elif self.power_lim_static is None:
                 self.mode_dispatch = 'apriori_dynamic'
 
         elif scenario.strategy == 'rh':
@@ -688,11 +692,11 @@ class CommoditySystem(InvestBlock):
             self.mode_dispatch = 'opt_global'
 
         # static load management can only be activated for a priori integration levels
-        if self.lm_static and self.mode_dispatch != 'apriori_static':
+        if self.power_lim_static and self.mode_dispatch != 'apriori_static':
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
                                     f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
                                     f' -> deactivating static load management')
-            self.lm_static = None
+            self.power_lim_static = None
 
         if self.opt and self.int_lvl in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
@@ -700,7 +704,8 @@ class CommoditySystem(InvestBlock):
             exit()  # TODO exit scenario instead of run
 
     def get_legend_entry(self):
-        return f'{self.name} total power{f" (static load management {self.lm_static / 1e3:.1f} kW)" if self.lm_static else ""}'
+        return (f'{self.name} total power'
+                f'{f" (static load management {self.power_lim_static / 1e3:.1f} kW)" if self.power_lim_static else ""}')
 
     def get_opt_size(self, horizon):
         """
@@ -724,10 +729,13 @@ class CommoditySystem(InvestBlock):
 
     def read_input_log(self):
         """
-        Read in a predetermined log file for the CommoditySystem behavior
+        Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
+        consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
-        self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
+        self.data = self.read_input_csv(os.path.join(run.path_input_data,
+                                                     self.__class__.__name__,
+                                                     self.filename + '.csv'))
 
         if pd.infer_freq(self.data.index).lower() != scenario.timestep:
             scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
@@ -738,6 +746,29 @@ class CommoditySystem(InvestBlock):
             df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
             df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
             self.data = df
+
+    def read_usecase_file(self, run):
+        """
+        Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe
+        """
+
+        df = pd.read_csv(os.path.join(run.path_input_data, self.__class__.__name__, f'{self.filename}.csv'),
+                         header=[0, 1], index_col=0)
+        for timeframe in df.columns.levels[0]:
+            df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
+                                                       df.loc[:, (timeframe, 'rel_prob')].sum())
+            df.loc[:, (timeframe, 'sum_dep_magn')] = (df.loc[:, (timeframe, 'dep1_magnitude')] +
+                                                      df.loc[:, (timeframe, 'dep2_magnitude')])
+
+            # catch cases where the sum of both departure magnitudes is not one
+            df.loc[:, (timeframe, 'dep1_magnitude')] = (df.loc[:, (timeframe, 'dep1_magnitude')] /
+                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
+            df.loc[:, (timeframe, 'dep2_magnitude')] = (df.loc[:, (timeframe, 'dep2_magnitude')] /
+                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
+
+            df.drop(columns=[(timeframe, 'sum_dep_magn')], inplace=True)
+
+        return df
 
     def set_init_size(self, scenario, run):
         super().set_init_size(scenario, run)
@@ -920,7 +951,9 @@ class FixedDemand(Block):
 
         super().__init__(name, scenario, run)
 
-        self.path_input_file = os.path.join(run.path_input_data, 'dem', f'{self.filename}.csv')
+        self.path_input_file = os.path.join(run.path_input_data,
+                                            self.__class__.__name__,
+                                            f'{self.filename}.csv')
         self.data = self.read_input_csv(self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
@@ -982,10 +1015,12 @@ class MobileCommodity:
         self.ext_ac = None  # prepare for external chargers
         self.ext_dc = None  # prepare for external chargers
 
-        if self.parent.filename == 'run_des':
+        if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
-        else:  # predetermined files
+        elif self.parent.data_source == 'log':  # predetermined log file
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        else:
+            raise ValueError(f'Commodity \"{self.name}\" data source not recognized - exiting scenario')
 
         self.apriori_data = None
 
@@ -1708,5 +1743,7 @@ class WindSource(RenewableInvestBlock):
 
         else:  # input from file instead of PV block
 
-            self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
+            self.path_input_file = os.path.join(run.path_input_data,
+                                                self.__class__.__name__,
+                                                f'{self.filename}.csv')
             self.data = self.read_input_csv(self.path_input_file, scenario)

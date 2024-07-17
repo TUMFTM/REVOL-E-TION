@@ -23,6 +23,7 @@ import pytz
 import scipy as sp
 
 import blocks
+import mapper_timeframe as mtf
 
 
 class MultiStoreGet(simpy.resources.base.Get):
@@ -77,10 +78,12 @@ class RentalSystem:
         self.rng = np.random.default_rng()
 
         # calculate usable energy to expect
-        self.dsoc_usable = self.cs.soc_dep - self.cs.soc_return_min
-        self.energy_usable_pc = self.dsoc_usable * self.cs.size_pc
+        self.dsoc_usable_high = self.cs.soc_target_high - self.cs.soc_return
+        self.dsoc_usable_low = self.cs.soc_target_low - self.cs.soc_return
+        self.energy_usable_pc_high = self.dsoc_usable_high * self.cs.size_pc
+        self.energy_usable_pc_low = self.dsoc_usable_low * self.cs.size_pc
 
-        self.n_processes = self.processes = self.store = None
+        self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
 
     def create_store(self):
@@ -152,7 +155,8 @@ class RentalSystem:
 
     def generate_processes(self):
 
-        self.processes = pd.DataFrame(columns=['usecase_id', 'usecase_name',
+        self.processes = pd.DataFrame(columns=['timeframe',
+                                               'usecase_name',
                                                'time_preblock_primary', 'step_preblock_primary',
                                                'time_preblock_secondary', 'step_preblock_secondary',
                                                'time_req', 'step_req', 'dayofweek_req', 'status',
@@ -170,7 +174,7 @@ class RentalSystem:
                                                'rex_request', 'num_primary', 'num_secondary',
                                                'dsoc_primary', 'dsoc_secondary',
                                                'energy_req_pc_primary', 'energy_req_pc_secondary'])
-        self.sample_n_processes()
+        self.sample_demand()
         self.sample_usecases()
         self.sample_request_times()
         self.sample_request_data()
@@ -186,17 +190,30 @@ class RentalSystem:
 
         self.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
 
-    def sample_daily_demand(self):
-        # draw total demand for every simulated day from a lognormal distribution
-        df = pd.DataFrame(index=np.unique(self.sc.dti_sim.date))
-        p1, p2 = lognormal_params(self.cs.daily_mean, self.cs.daily_stdev)
-        df['num_total'] = np.round(self.rng.lognormal(p1, p2, df.shape[0])).astype(int)
-        return df
+    def sample_demand(self):
 
-    def sample_n_processes(self):
-        self.demand_daily = self.sample_daily_demand()
-        self.n_processes = self.demand_daily['num_total'].sum(axis=0)
-        self.processes['date'] = pd.to_datetime(np.repeat(self.demand_daily.index, self.demand_daily['num_total']))
+        # draw total demand for every simulated day from a lognormal distribution
+        self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim.date)))
+        self.demand_daily['timeframe'], self.demand_daily['demand_mean'], self.demand_daily['demand_std'] = mtf.map_timeframes(self.demand_daily, self.cs.name)
+        self.demand_daily['mu'], self.demand_daily['sigma'] = lognormal_params(self.demand_daily['demand_mean'], self.demand_daily['demand_std'])
+
+        def sample_day(row):
+            return np.round(self.rng.lognormal(row['mu'], row['sigma'])).astype(int)
+
+        self.demand_daily['demand'] = self.demand_daily.apply(lambda row: sample_day(row), axis=1)
+        self.n_processes = self.demand_daily['demand'].sum(axis=0)
+
+        self.processes['date'] = pd.to_datetime(np.repeat(self.demand_daily.index, self.demand_daily['demand']))
+        self.processes['timeframe'] = self.demand_daily.loc[self.processes['date'], 'timeframe'].values
+
+        def sample_usecases(group):
+            return pd.Series(np.random.choice(self.cs.usecases.index.values,
+                                              size=len(group),
+                                              replace=True,
+                                              p=self.cs.usecases.loc[:, (group.name, 'rel_prob_norm')]),
+                             index=group.index)
+
+        self.processes['usecase_name'] = self.processes.groupby('timeframe')['usecase_name'].transform(sample_usecases)
 
     def sample_request_times(self):
 
@@ -240,9 +257,14 @@ class VehicleRentalSystem(RentalSystem):
             self.check_rex_inputs()
             cs.rex_cs = sc.blocks[cs.rex_cs]
 
-        self.range_usable = self.energy_usable_pc / self.cs.consumption
-        self.dsoc_usable_rex = self.cs.rex_cs.soc_dep - self.cs.soc_return_min if self.cs.rex_cs else 0
-        self.energy_usable_rex_pc = self.dsoc_usable_rex * self.cs.rex_cs.size_pc if self.cs.rex_cs else 0
+        self.range_usable_high = self.energy_usable_pc_high / self.cs.consumption
+        self.range_usable_low = self.energy_usable_pc_low / self.cs.consumption
+
+        self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
+        self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
+
+        self.energy_usable_rex_pc_high = self.dsoc_usable_rex_high * self.cs.rex_cs.size_pc if self.cs.rex_cs else 0
+        self.energy_usable_rex_pc_low = self.dsoc_usable_rex_low * self.cs.rex_cs.size_pc if self.cs.rex_cs else 0
 
         self.generate_processes()
         self.create_store()
@@ -355,10 +377,6 @@ class VehicleRentalSystem(RentalSystem):
 
         return time_samples
 
-    def sample_usecases(self):
-        self.processes['usecase_id'] = 0
-        self.processes['usecase_name'] = 'default'
-
     def transfer_rex_processes(self, sc):
         """
         This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
@@ -396,13 +414,7 @@ class BatteryRentalSystem(RentalSystem):
 
         super().__init__(cs, sc)
 
-        self.usecase_file_name = cs.filename_usecases
-        self.usecase_file_path = os.path.join(os.getcwd(),
-                                              'input',
-                                              'BatteryCommoditySystem',
-                                              f'{self.usecase_file_name}.csv')
-        self.usecases = pd.read_csv(self.usecase_file_path, header=0)
-        self.usecases['rel_prob_norm'] = self.usecases['rel_prob'] / self.usecases['rel_prob'].sum(axis=0)
+        self.cs.usecases['rel_prob_norm'] = self.cs.usecases['rel_prob'] / self.cs.usecases['rel_prob'].sum(axis=0)
 
         self.cs.rex_cs = None  # needs to be set for later check
 
@@ -427,7 +439,7 @@ class BatteryRentalSystem(RentalSystem):
                                                   self.cs.soc_return_min,
                                                   self.cs.soc_dep))
         self.processes['num_primary'] = self.processes.apply(
-            lambda row: self.usecases.loc[row['usecase_id'], 'num_bat'], axis=1).astype(int)
+            lambda row: self.cs.usecases.loc[row['usecase_id'], 'num_bat'], axis=1).astype(int)
 
         self.processes['energy_total_both'] = self.processes['num_primary'] * self.cs.size_pc
         self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc
@@ -437,7 +449,8 @@ class BatteryRentalSystem(RentalSystem):
         self.processes['energy_req_primary'] = self.processes['energy_req_pc_primary'] * self.processes['num_primary']
 
         self.processes['dtime_active'] = pd.to_timedelta(self.processes.apply(
-            lambda row: row['dsoc_primary'] * row['energy_usable_both'] / self.usecases.loc[row['usecase_id'], 'power'],
+            lambda row: row['dsoc_primary'] * row['energy_usable_both'] /
+                        self.cs.usecases.loc[row['usecase_id'], 'power'],
             axis=1),
             unit='hour')
 
@@ -457,8 +470,8 @@ class BatteryRentalSystem(RentalSystem):
         def sample_uc_hours(group):
             usecase_id = group.name
             n_samples = len(group)
-            mean = np.median([self.usecases.loc[usecase_id, 'dep_mean'], 0, 24])
-            stdev = np.max([self.usecases.loc[usecase_id, 'dep_stdev'], 1e-8])
+            mean = np.median([self.cs.usecases.loc[usecase_id, 'dep_mean'], 0, 24])
+            stdev = np.max([self.cs.usecases.loc[usecase_id, 'dep_stdev'], 1e-8])
             cdf_vals = sp.stats.norm.cdf(time_vals, mean, stdev)
             uniform_samples = np.random.rand(n_samples)  # Generate n uniform random numbers between 0 and 1
             time_samples = np.interp(uniform_samples, cdf_vals, time_vals)  # Interpolate to find the samples
@@ -468,12 +481,12 @@ class BatteryRentalSystem(RentalSystem):
         return self.processes.groupby('usecase_id').apply(sample_uc_hours).reset_index(level=0, drop=True).sort_index()
 
     def sample_usecases(self):
-        self.processes['usecase_id'] = np.random.choice(self.usecases.index.values,
+        self.processes['usecase_id'] = np.random.choice(self.cs.usecases.index.values,
                                                         self.n_processes,
                                                         replace=True,
-                                                        p=self.usecases['rel_prob_norm']).astype(int)
+                                                        p=self.cs.usecases['rel_prob_norm']).astype(int)
         self.processes['usecase_name'] = self.processes.apply(lambda row:
-                                                              self.usecases.loc[row['usecase_id'], 'name'],
+                                                              self.cs.usecases.loc[row['usecase_id'], 'name'],
                                                               axis=1)
 
 class RentalProcess:
@@ -599,12 +612,12 @@ def execute_des(sc, save=False, path=None):
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
-    for commodity_system in [sys for sys in sc.commodity_systems.values() if sys.filename == 'run_des']:
-        if isinstance(commodity_system, blocks.VehicleCommoditySystem):
-            commodity_system.rs = VehicleRentalSystem(commodity_system, sc)
-        elif isinstance(commodity_system, blocks.BatteryCommoditySystem):
-            commodity_system.rs = BatteryRentalSystem(commodity_system, sc)
-        sc.rental_systems[commodity_system.name] = commodity_system.rs
+    for cs in [cs for cs in sc.commodity_systems.values() if cs.data_source == 'des']:
+        if isinstance(cs, blocks.VehicleCommoditySystem):
+            commodity_system.rs = VehicleRentalSystem(cs, sc)
+        elif isinstance(cs, blocks.BatteryCommoditySystem):
+            commodity_system.rs = BatteryRentalSystem(cs, sc)
+        sc.rental_systems[cs.name] = cs.rs
 
     # generate individual RentalProcess instances for every pregenerated process
     for rs in sc.rental_systems.values():
@@ -636,20 +649,9 @@ def execute_des(sc, save=False, path=None):
 
 
 def lognormal_params(mean, stdev):
-    if mean == 0 and stdev == 0:
-        return 0, 0  # todo these parameters will not result in a dominant value of 0, but 1
-    else:
-        mu = np.log(mean ** 2 / math.sqrt((mean ** 2) + (stdev ** 2)))
-        sig = math.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
-        return mu, sig
+    mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
+    sig = np.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
+    return mu, sig
 
 
-# Execution for example file generation
-if __name__ == '__main__':
-    import simulation as sim
-    rn = sim.SimulationRun()
-    sc = sim.Scenario('des',rn)
-    for rs in sc.rental_systems.values():
-        folderpath = os.path.join(os.getcwd(), 'input', rs.cs.name, f'{rs.cs.name}_example.csv')
-        rs.save_data(folderpath, sc)
-        print(f'{folderpath} created')
+
