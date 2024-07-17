@@ -215,7 +215,9 @@ class RentalSystem:
         column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
-        self.data = pd.DataFrame(0, index=self.sc.dti_des, columns=column_index)
+        self.data = pd.DataFrame(data=0, index=self.sc.dti_des, columns=column_index)
+        for col, dtype in {(com, col): ('bool' if 'at' in col else 'float') for com, col in column_index}.items():
+            self.data[col] = self.data[col].astype(dtype)
         self.data.loc[:, (slice(None), 'atbase')] = True
         self.data.loc[:, (slice(None), 'atac')] = False
         self.data.loc[:, (slice(None), 'atdc')] = False
