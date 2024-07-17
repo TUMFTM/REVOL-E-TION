@@ -30,6 +30,8 @@ import economics as eco
 
 import plotly.graph_objects as go
 
+import utils
+
 
 class Block:
 
@@ -43,7 +45,7 @@ class Block:
 
         time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
         for var in time_var_params:
-            self.transform_scalar_var(var, scenario, run)
+            utils.transform_scalar_var(self, var, scenario, run)
 
         # Empty result series
         self.flow = self.flow_ch = pd.Series(dtype='float64')
@@ -72,8 +74,8 @@ class Block:
         crev_sim is calculated beforehand for the individual blocks
         """
 
-        self.crev_yrl = eco.scale_sim2year(self.crev_sim, scenario)
-        self.crev_prj = eco.scale_year2prj(self.crev_yrl, scenario)
+        self.crev_yrl = utils.scale_sim2year(self.crev_sim, scenario)
+        self.crev_prj = utils.scale_year2prj(self.crev_yrl, scenario)
         self.crev_dis = eco.acc_discount(self.crev_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
         scenario.crev_sim += self.crev_sim
@@ -114,8 +116,8 @@ class Block:
 
         if self.e_sim_in > self.e_sim_out:
             self.e_sim_del = self.e_sim_in - self.e_sim_out
-            self.e_yrl_del = eco.scale_sim2year(self.e_sim_del, scenario)
-            self.e_prj_del = eco.scale_year2prj(self.e_yrl_del, scenario)
+            self.e_yrl_del = utils.scale_sim2year(self.e_sim_del, scenario)
+            self.e_prj_del = utils.scale_year2prj(self.e_yrl_del, scenario)
             self.e_dis_del = eco.acc_discount(self.e_yrl_del, scenario.prj_duration_yrs, scenario.wacc)
 
             scenario.e_sim_del += self.e_sim_del
@@ -125,8 +127,8 @@ class Block:
 
         else:  # storage was emptied
             self.e_sim_pro = self.e_sim_out - self.e_sim_in
-            self.e_yrl_pro = eco.scale_sim2year(self.e_sim_pro, scenario)
-            self.e_prj_pro = eco.scale_year2prj(self.e_yrl_pro, scenario)
+            self.e_yrl_pro = utils.scale_sim2year(self.e_sim_pro, scenario)
+            self.e_prj_pro = utils.scale_year2prj(self.e_yrl_pro, scenario)
             self.e_dis_pro = eco.acc_discount(self.e_yrl_pro, scenario.prj_duration_yrs, scenario.wacc)
 
             scenario.e_sim_pro += self.e_sim_pro
@@ -157,10 +159,10 @@ class Block:
 
         self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
-        self.e_yrl_in = eco.scale_sim2year(self.e_sim_in, scenario)
-        self.e_yrl_out = eco.scale_sim2year(self.e_sim_out, scenario)
-        self.e_prj_in = eco.scale_year2prj(self.e_yrl_in, scenario)
-        self.e_prj_out = eco.scale_year2prj(self.e_yrl_out, scenario)
+        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, scenario)
+        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, scenario)
+        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, scenario)
+        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
@@ -198,64 +200,6 @@ class Block:
         block_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
                                          f'{self.name}_flow_out': self.flow_out})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
-
-    def read_input_csv(self, path_input_file, scenario, multiheader=False):
-        """
-        Properly read in timezone-aware input csv files and form correct datetimeindex
-        """
-        if multiheader:
-            df = pd.read_csv(path_input_file, header=[0, 1])
-            df.sort_index(axis=1, sort_remaining=True, inplace=True)
-            df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
-        else:
-            df = pd.read_csv(path_input_file)
-            df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
-
-        # parser in to_csv does not create datetimeindex
-        df = df.tz_convert(scenario.timezone)
-        df = self.resample_to_timestep(df, scenario)
-        return df
-
-    def resample_to_timestep(self, data: pd.DataFrame, scenario):
-        """
-        Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-        :param data: The input dataframe with DatetimeIndex
-        :param scenario: The current scenario object
-        :return: resampled dataframe
-        """
-
-        dti = data.index
-        # Add one element to the dataframe to include the last timesteps
-        try:
-            dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
-        except pandas.errors.NullFrequencyError:
-            dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-            scenario.logger.warning(f'Block \"{self.name}\": Timestep of csv input data could not be inferred -'
-                                    f'using 15 min default')
-
-        data_ext = data.reindex(dti_ext).ffill()
-
-        def resample_column(column):
-            if data_ext[column].dtype == bool:
-                return data_ext[column].resample(scenario.timestep).ffill().bfill()
-            else:
-                return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
-
-        resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
-        return resampled_data
-
-    def transform_scalar_var(self, var_name, scenario, run):
-        scenario_entry = getattr(self, var_name)
-        # In case of filename for operations cost read csv file
-        if isinstance(scenario_entry, str):
-            # Open csv file and use first column as index; also directly convert dates to DateTime objects
-            opex = self.read_input_csv(os.path.join(run.path_input_data, self.name, f'{scenario_entry}.csv'), scenario)
-            opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
-            # Convert data column of cost DataFrame into Series
-            setattr(self, var_name, opex[opex.columns[0]])
-        else:  # opex_spec is given as a scalar directly in scenario file
-            # Use sequence of values for variable costs to unify computation of results
-            setattr(self, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
 
 
 class InvestBlock(Block):
@@ -342,7 +286,7 @@ class InvestBlock(Block):
         self.calc_mntex_yrl()  # maintenance expenses are defined differently depending on the block type
 
         self.mntex_sim = self.mntex_yrl * scenario.sim_yr_rat
-        self.mntex_prj = eco.scale_year2prj(self.mntex_yrl, scenario)
+        self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, scenario)
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
                                           scenario.prj_duration_yrs,
                                           scenario.wacc)
@@ -371,8 +315,8 @@ class InvestBlock(Block):
 
         self.calc_opex_sim(scenario)  # opex is defined differently depending on the block type
 
-        self.opex_yrl = eco.scale_sim2year(self.opex_sim, scenario)
-        self.opex_prj = eco.scale_year2prj(self.opex_yrl, scenario)
+        self.opex_yrl = utils.scale_sim2year(self.opex_sim, scenario)
+        self.opex_prj = utils.scale_year2prj(self.opex_yrl, scenario)
         self.opex_dis = eco.acc_discount(self.opex_yrl,
                                          scenario.prj_duration_yrs,
                                          scenario.wacc)
@@ -535,7 +479,7 @@ class CommoditySystem(InvestBlock):
             self.data = None  # data will be generated in a joint DES run after model setup
         else:  # use pregenerated file
             self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
-            self.data = self.read_input_csv(self.path_input_file, scenario, multiheader=True)
+            self.data = utils.read_input_csv(self, self.path_input_file, scenario, multiheader=True)
 
             if pd.infer_freq(self.data.index).lower() != scenario.timestep:
                 scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
@@ -549,7 +493,7 @@ class CommoditySystem(InvestBlock):
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
-        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
 
@@ -647,8 +591,8 @@ class CommoditySystem(InvestBlock):
         """
         Cost calculation for external charging
         """
-        self.opex_yrl_ext = eco.scale_sim2year(self.opex_sim_ext, scenario)
-        self.opex_prj_ext = eco.scale_year2prj(self.opex_yrl_ext, scenario)
+        self.opex_yrl_ext = utils.scale_sim2year(self.opex_sim_ext, scenario)
+        self.opex_prj_ext = utils.scale_year2prj(self.opex_yrl_ext, scenario)
         self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
                                              scenario.prj_duration_yrs,
                                              scenario.wacc)
@@ -896,7 +840,7 @@ class FixedDemand(Block):
         super().__init__(name, scenario, run)
 
         self.path_input_file = os.path.join(run.path_input_data, 'dem', f'{self.filename}.csv')
-        self.data = self.read_input_csv(self.path_input_file, scenario)
+        self.data = utils.read_input_csv(self, self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
 
@@ -1113,20 +1057,20 @@ class MobileCommodity:
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
         self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
-        self.e_yrl_in = eco.scale_sim2year(self.e_sim_in, scenario)
-        self.e_yrl_out = eco.scale_sim2year(self.e_sim_out, scenario)
-        self.e_prj_in = eco.scale_year2prj(self.e_yrl_in, scenario)
-        self.e_prj_out = eco.scale_year2prj(self.e_yrl_out, scenario)
+        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, scenario)
+        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, scenario)
+        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, scenario)
+        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
         # energy results for external chargers
         self.e_ext_ac_sim = self.flow_ext_ac.sum() * scenario.timestep_hours
         self.e_ext_dc_sim = self.flow_ext_dc.sum() * scenario.timestep_hours
-        self.e_ext_ac_yrl = eco.scale_sim2year(self.e_ext_ac_sim, scenario)
-        self.e_ext_dc_yrl = eco.scale_sim2year(self.e_ext_dc_sim, scenario)
-        self.e_ext_ac_prj = eco.scale_year2prj(self.e_ext_ac_yrl, scenario)
-        self.e_ext_dc_prj = eco.scale_year2prj(self.e_ext_dc_yrl, scenario)
+        self.e_ext_ac_yrl = utils.scale_sim2year(self.e_ext_ac_sim, scenario)
+        self.e_ext_dc_yrl = utils.scale_sim2year(self.e_ext_dc_sim, scenario)
+        self.e_ext_ac_prj = utils.scale_year2prj(self.e_ext_ac_yrl, scenario)
+        self.e_ext_dc_prj = utils.scale_year2prj(self.e_ext_dc_yrl, scenario)
         self.e_ext_ac_dis = eco.acc_discount(self.e_ext_ac_yrl, scenario.prj_duration_yrs, scenario.wacc)
         self.e_ext_dc_dis = eco.acc_discount(self.e_ext_dc_yrl, scenario.prj_duration_yrs, scenario.wacc)
 
@@ -1350,7 +1294,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.apriori_data = self.sc_init_ph = None
 
-        self.loss_rate = eco.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
@@ -1559,10 +1503,10 @@ class SystemCore(InvestBlock):
         # energy result calculation is different from any other block as there is no in/out definition of flow
         self.e_sim_dcac = self.flow_dcac.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
         self.e_sim_acdc = self.flow_acdc.sum() * scenario.timestep_hours
-        self.e_yrl_dcac = eco.scale_sim2year(self.e_sim_dcac, scenario)
-        self.e_yrl_acdc = eco.scale_sim2year(self.e_sim_acdc, scenario)
-        self.e_prj_dcac = eco.scale_year2prj(self.e_yrl_dcac, scenario)
-        self.e_prj_acdc = eco.scale_year2prj(self.e_yrl_acdc, scenario)
+        self.e_yrl_dcac = utils.scale_sim2year(self.e_sim_dcac, scenario)
+        self.e_yrl_acdc = utils.scale_sim2year(self.e_sim_acdc, scenario)
+        self.e_prj_dcac = utils.scale_year2prj(self.e_yrl_dcac, scenario)
+        self.e_prj_acdc = utils.scale_year2prj(self.e_yrl_acdc, scenario)
         self.e_dis_dcac = eco.acc_discount(self.e_yrl_dcac, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_acdc = eco.acc_discount(self.e_yrl_acdc, scenario.prj_duration_yrs, scenario.wacc)
 
@@ -1675,4 +1619,4 @@ class WindSource(RenewableInvestBlock):
         else:  # input from file instead of PV block
 
             self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
-            self.data = self.read_input_csv(self.path_input_file, scenario)
+            self.data = utils.read_input_csv(self, self.path_input_file, scenario)
