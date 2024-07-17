@@ -407,9 +407,9 @@ class Scenario:
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
-        self.e_eta = 0
-        self.renewable_curtailment = self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
-        self.renewable_share = 0
+        self.e_eta = None
+        self.renewable_curtailment = self.renewable_share = None
+        self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
 
         # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
@@ -418,8 +418,8 @@ class Scenario:
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
-        self.lcoe_total = self.lcoe_wocs = 0
-        self.npv = self.irr = self.mirr = 0
+        self.lcoe_total = self.lcoe_wocs = None
+        self.npv = self.irr = self.mirr = None
 
         self.logger.debug(f'Scenario initialization completed')
 
@@ -468,14 +468,14 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
-                         f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
-                         f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
-                         f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+        self.logger.info(f'NPC {f"{self.totex_dis:,.2f}" if pd.notna(self.totex_dis) else "-"} {self.currency} -'
+                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
+                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.1f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
+                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
                          f' Renewable Share:'
-                         f' {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                         f' {f"{self.renewable_share * 100:.1f}" if pd.notna(self.renewable_share) else "-"} % -'
                          f' Renewable Curtailment:'
-                         f' {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
+                         f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -564,8 +564,9 @@ class Scenario:
             elif block.opt:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
-        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_wocs, 2)) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Total simulated cost at local site: {self.totex_sim / 1e6:.2f} million {self.currency}')
+        self.logger.info(f'Total simulated cost for external charging: {self.opex_sim_ext:.2f} {self.currency}')
+        self.logger.info(f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
