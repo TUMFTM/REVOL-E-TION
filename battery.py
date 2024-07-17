@@ -28,22 +28,19 @@ import scipy.interpolate as spip
 
 import blocks
 
-###############################################################################
-# Class definitions
-###############################################################################
 
 class BatteryPackModel:
 
     def __init__(self, scenario, commodity):
 
-        self.parent = commodity
+        self.commodity = commodity
 
-        if isinstance(commodity, blocks.MobileCommodity):
-            self.opt = self.parent.parent.opt
-            self.chemistry = self.parent.parent.chemistry.lower()  # 'lfp' or 'nmc'
+        if isinstance(self.commodity, blocks.MobileCommodity):
+            self.opt = self.commodity.parent.opt
+            self.chemistry = self.commodity.parent.chemistry.lower()  # 'lfp' or 'nmc'
         else:  # StationaryEnergyStorage
-            self.opt = self.parent.opt
-            self.chemistry = self.parent.chemistry.lower()
+            self.opt = self.commodity.opt
+            self.chemistry = self.commodity.chemistry.lower()
 
         # Thermal model parameters
         # self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
@@ -132,7 +129,7 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-    def age(self, commodity, run, scenario, horizon):
+    def age(self, run, scenario, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
@@ -143,16 +140,16 @@ class BatteryPackModel:
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
-        if isinstance(commodity, blocks.MobileCommodity):
-            self.p_cell_hor = (commodity.flow_bat_in_ch - commodity.flow_bat_out_ch) / self.n_cells
+        if isinstance(self.commodity, blocks.MobileCommodity):
+            self.p_cell_hor = (self.commodity.flow_bat_in_ch - self.commodity.flow_bat_out_ch) / self.n_cells
         else:  # StationaryStorage
-            self.p_cell_hor = (commodity.flow_in_ch - commodity.flow_out_ch) / self.n_cells
+            self.p_cell_hor = (self.commodity.flow_in_ch - self.commodity.flow_out_ch) / self.n_cells
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = commodity.soc_ch
+        self.soc_hor = self.commodity.soc_ch
         # append SOC at the end of CH
-        self.soc_hor.loc[horizon.ch_endtime] = commodity.soc_init_ph
+        self.soc_hor.loc[horizon.ch_endtime] = self.commodity.soc_init_ph
 
         self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
 
@@ -160,15 +157,15 @@ class BatteryPackModel:
         self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
 
         # Get temperature timeseries
-        if isinstance(commodity.temp_battery, str):
+        if isinstance(self.commodity.temp_battery, str):
             try:
-                self.temp_hor_c = scenario.blocks[commodity.temp_battery].data_ph.loc[horizon.dti_ch, 'temp_air']
+                self.temp_hor_c = scenario.blocks[self.commodity.temp_battery].data_ph.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
-                run.logger.warning(f'Scenario {scenario.name}: Battery temp source for storage {self.parent.name}'
+                run.logger.warning(f'Scenario {scenario.name}: Battery temp source for storage {self.commodity.name}'
                                    f' not found, using 25°C default')
                 self.temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
-        elif isinstance(commodity.temp_battery, (int, float)):
-            self.temp_hor_c = pd.Series(data=commodity.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
+        elif isinstance(self.commodity.temp_battery, (int, float)):
+            self.temp_hor_c = pd.Series(data=self.commodity.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
         else:
            ValueError('Battery temperature must be the name of a PVSource block or numeric')
 
@@ -201,9 +198,9 @@ class BatteryPackModel:
             self.calc_aging_naumann(horizon)
 
         # Update block / commodity storage size
-        commodity.soh[horizon.ch_endtime] = commodity.soh_init - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
-        commodity.soc_min = (1 - commodity.soh[horizon.ch_endtime]) / 2
-        commodity.soc_max = 1 - ((1 - commodity.soh[horizon.ch_endtime]) / 2)
+        self.commodity.soh[horizon.ch_endtime] = self.commodity.soh_init - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
+        self.commodity.soc_min = (1 - self.commodity.soh[horizon.ch_endtime]) / 2
+        self.commodity.soc_max = 1 - ((1 - self.commodity.soh[horizon.ch_endtime]) / 2)
 
     def calc_aging_naumann(self, horizon):
 
@@ -320,7 +317,7 @@ class BatteryPackModel:
             q_eq = 0
 
     def get_pack_parameters(self):
-        self.size = self.parent.size
+        self.size = self.commodity.size
         # Calculate number of cells as a float to correctly represent power split with nonreal cells
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell

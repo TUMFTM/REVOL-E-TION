@@ -25,7 +25,6 @@ none
 coding:     utf-8
 license:    GPLv3
 '''
-import pandas as pd
 
 
 def discount(value, deltat, discrate):
@@ -105,21 +104,3 @@ def pce(ce, cdr, discrate, ls, hor):
     """
     pce = ce + sum([discount(ce * (cdr ** yr), yr, discrate) for yr in repllist(ls, hor)])
     return pce
-
-
-def convert_sdr_to_timestep(sdr: float) -> float:
-    """
-    This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
-    """
-    # According to oemof documentation, the loss rate needs to be given for 1 hour neglecting the timestep of the model
-    tsr = pd.Timedelta(hours=1) / pd.Timedelta('30 days')
-    lr = 1 - (1 - sdr) ** tsr
-    return lr
-
-
-def scale_sim2year(value, scenario):
-    return value / scenario.sim_yr_rat
-
-
-def scale_year2prj(value, scenario):
-    return value * scenario.prj_duration_yrs

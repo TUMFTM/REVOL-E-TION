@@ -18,14 +18,11 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import ast
 import graphviz
 import logging
 import logging.handlers
 import math
-import numpy as np
 import os
-import pickle
 import pprint
 import psutil
 import pytz
@@ -39,7 +36,6 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
-import plotly.graph_objects as go
 import tkinter as tk
 import tkinter.filedialog
 
@@ -48,41 +44,15 @@ from plotly.subplots import make_subplots
 
 import blocks
 import commodity_des as des
-from additional_constraints import apply_additional_constraints
+from custom_constraints import CustomConstraints
 import tum_colors as col
 from aprioripowerscheduler import AprioriPowerScheduler
+import utils
+
 
 ###############################################################################
 # Functions
 ###############################################################################
-
-
-def infer_dtype(value):
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    if value.lower() == 'true':
-        return True
-    elif value.lower() == 'false':
-        return False
-    elif value.lower() in ['none', 'null', 'nan']:
-        return None
-
-    try:
-        evaluated = ast.literal_eval(value)
-        if isinstance(evaluated, dict):
-            return evaluated
-    except (ValueError, SyntaxError):
-        pass
-
-    return value.lower()
 
 
 def input_gui(directory):
@@ -199,7 +169,8 @@ class PredictionHorizon:
             scenario.logger.error(msg)
             raise IndexError(msg)
 
-        apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
+        # Apply custom constraints
+        scenario.constraints.apply_constraints(model=self.model)
 
         if run.dump_model:
             if scenario.strategy == 'go':
@@ -282,6 +253,10 @@ class PredictionHorizon:
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
             block.get_opt_size(self)
 
+        for block in [block for block in scenario.blocks.values()
+                      if isinstance(block, blocks.GridConnection) and block.peakshaving]:
+            block.get_peak_powers(self)
+
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
 
@@ -337,15 +312,15 @@ class Scenario:
         self.sim_duration = pd.Timedelta(days=self.sim_duration)
         self.sim_endtime = self.starttime + self.sim_duration
         self.prj_duration_yrs = self.prj_duration
-        self.prj_duration = pd.Timedelta(days=self.prj_duration * 365)  # todo: no leap years accounted for
-        self.prj_endtime = self.starttime + self.prj_duration
+        self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
+        self.prj_duration = self.prj_endtime - self.starttime
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
 
         # generate variables for calculations
-        self.timestep_hours = self.dti_sim.freq.nanos / 1e9 / 3600
-        self.timestep_td = pd.Timedelta(hours=self.timestep_hours)
+        self.timestep_td = pd.Timedelta(self.dti_sim.freq)
+        self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
 
@@ -380,7 +355,7 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
-        self.equal_variables = []
+        self.constraints = CustomConstraints(scenario=self)
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
@@ -432,9 +407,9 @@ class Scenario:
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
-        self.e_eta = 0
-        self.renewable_curtailment = self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
-        self.renewable_share = 0
+        self.e_eta = None
+        self.renewable_curtailment = self.renewable_share = None
+        self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
 
         # Result variables - Cost
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
@@ -443,8 +418,8 @@ class Scenario:
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
-        self.lcoe_total = self.lcoe_wocs = 0
-        self.npv = self.irr = self.mirr = 0
+        self.lcoe_total = self.lcoe_wocs = None
+        self.npv = self.irr = self.mirr = None
 
         self.logger.debug(f'Scenario initialization completed')
 
@@ -493,14 +468,14 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {round(self.totex_dis) if self.totex_dis else "-":,} {self.currency} -'
-                         f' NPV {round(self.npv) if self.npv else "-":,} {self.currency} -'
-                         f' LCOE {round(self.lcoe_wocs * 1e5, 1) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh -'
-                         f' mIRR {round(self.mirr * 100, 1) if self.mirr else "-"} % -'
+        self.logger.info(f'NPC {f"{self.totex_dis:,.2f}" if pd.notna(self.totex_dis) else "-"} {self.currency} -'
+                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
+                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.1f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
+                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
                          f' Renewable Share:'
-                         f' {round(self.renewable_share * 100, 1) if self.renewable_share else "-"} % -'
+                         f' {f"{self.renewable_share * 100:.1f}" if pd.notna(self.renewable_share) else "-"} % -'
                          f' Renewable Curtailment:'
-                         f' {round(self.renewable_curtailment * 100, 1) if self.renewable_curtailment else "-"} %')
+                         f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} %')
 
     def create_block_objects(self, class_dict, run):
         objects = {}
@@ -562,7 +537,7 @@ class Scenario:
 
     def print_results(self):
         print('#################')
-        for block in [block for block in self.blocks.values() if hasattr(block, 'opt') and block.opt]:
+        for block in [block for block in self.blocks.values() if hasattr(block, 'opt')]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
@@ -578,15 +553,20 @@ class Scenario:
                 if block.opt_mg2g:
                     self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
                                      f' {block.size_mg2g / 1e3:.1f} {unit}')
-            elif isinstance(block, blocks.CommoditySystem):
+                if block.peakshaving:
+                    for interval in block.peakshaving_ints.index:
+                        self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
+                                         f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.2f} {unit}')
+            elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
                                      f' {commodity.size / 1e3:.1f} {unit}')
-            else:
+            elif block.opt:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
-        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
-        self.logger.info(f'Levelized cost of electricity: {str(round(1e5 * self.lcoe_wocs, 2)) if self.lcoe_wocs else "-"} {self.currency}-ct/kWh')
+        self.logger.info(f'Total simulated cost at local site: {self.totex_sim / 1e6:.2f} million {self.currency}')
+        self.logger.info(f'Total simulated cost for external charging: {self.opex_sim_ext:.2f} {self.currency}')
+        self.logger.info(f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
@@ -616,6 +596,10 @@ class Scenario:
             if isinstance(block_obj, blocks.CommoditySystem):
                 for commodity_name, commodity_obj in block_obj.commodities.items():
                     write_values(commodity_name, commodity_obj)
+            if hasattr(block_obj, 'peakshaving_ints') and block_obj.peakshaving:
+                for interval in block_obj.peakshaving_ints.index:
+                    self.result_summary.loc[(block_name, f'peakshaving_peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
+                    self.result_summary.loc[(block_name, f'peakshaving_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
@@ -660,7 +644,7 @@ class SimulationRun:
                                          index_col=[0, 1],
                                          na_values=['NaN', 'nan'],  # this inhibits None/Null being read as float NaN
                                          keep_default_na=False)
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(infer_dtype)
+        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
@@ -672,7 +656,7 @@ class SimulationRun:
         self.commit_hash = self.get_git_commit_hash()
 
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings = settings.map(infer_dtype)
+        settings = settings.map(utils.infer_dtype)
 
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
