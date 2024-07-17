@@ -2,7 +2,7 @@
 aprioripowerscheduler.py
 
 --- Description ---
-This script defines the energy system blocks for the REVOL-E-TION toolset.
+This script defines the apriori charging strategies for commodities within the REVOL-E-TION toolset.
 
 For further information, see readme
 

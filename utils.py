@@ -54,6 +54,7 @@ def get_period_fraction(dti, period, freq):
 
     return period_fraction
 
+
 def convert_sdr_to_timestep(sdr: float) -> float:
     """
     This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
@@ -72,7 +73,7 @@ def scale_year2prj(value, scenario):
     return value * scenario.prj_duration_yrs
 
 
-def read_input_csv(block, path_input_file, scenario, multiheader=False):
+def read_input_csv(block, path_input_file, scenario, multiheader=False, resampling=True):
     """
     Properly read in timezone-aware input csv files and form correct datetimeindex
     """
@@ -86,7 +87,8 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False):
 
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(scenario.timezone)
-    df = resample_to_timestep(df, block, scenario)
+    if resampling:
+        df = resample_to_timestep(df, block, scenario)
     return df
 
 
@@ -125,8 +127,9 @@ def transform_scalar_var(block, var_name, scenario, run):
     # In case of filename for operations cost read csv file
     if isinstance(scenario_entry, str):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
+        rel_dir = block.parent.name if hasattr(block, 'parent') else block.name
         opex = read_input_csv(block,
-                              os.path.join(run.path_input_data, block.name, f'{scenario_entry}.csv'),
+                              os.path.join(run.path_input_data, rel_dir, f'{scenario_entry}.csv'),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series

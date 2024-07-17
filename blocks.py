@@ -756,7 +756,7 @@ class GridConnection(InvestBlock):
         scenario.components.append(self.bus)
 
         if self.peakshaving is None:
-            self.peakshaving_ints = ['sim_duration']
+            peakshaving_ints = ['sim_duration']
         else:
             # Create functions to extract relevant property of datetimeindex for peakshaving intervals
             periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
@@ -767,20 +767,21 @@ class GridConnection(InvestBlock):
 
             # Assign the corresponding interval to each timestep
             periods = scenario.dti_sim.to_series().apply(periods_func[self.peakshaving])
-            self.peakshaving_ints = periods.unique()
+            peakshaving_ints = periods.unique()
 
             # Activate the corresponding bus for each period
             bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                           for period_label in self.peakshaving_ints}, index=scenario.dti_sim)
+                                           for period_label in peakshaving_ints}, index=scenario.dti_sim)
 
         # Create a series to store peak power values
-        self.peak_power = pd.DataFrame(index=self.peakshaving_ints, columns=['power', 'cost'])
+        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints, columns=['power', 'opex_spec'])
 
-        for interval in self.peak_power.index:
-            period_fraction = utils.get_period_fraction(dti=bus_activation[bus_activation[interval] == 1].index,
-                                                        period=self.peakshaving,
-                                                        freq=scenario.timestep)
-            self.peak_power.loc[interval, 'cost'] = self.opex_peakshaving * period_fraction
+        for interval in self.peakshaving_ints.index:
+            if self.peakshaving is not None:
+                period_fraction = utils.get_period_fraction(dti=bus_activation[bus_activation[interval] == 1].index,
+                                                            period=self.peakshaving,
+                                                            freq=scenario.timestep)
+                self.peakshaving_ints.loc[interval, 'opex_spec'] = self.opex_peakshaving * period_fraction
 
         self.inflow = {f'xc_{self.name}': solph.components.Converter(
             label=f'xc_{self.name}',
@@ -797,14 +798,14 @@ class GridConnection(InvestBlock):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=(self.epc if interval == self.peakshaving_ints[0] else 0))
+                nominal_value=(solph.Investment(ep_costs=(self.epc if interval == self.peakshaving_ints.index[0] else 0))
                                if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
             # ToDo: get the correct costs for peakshaving
-            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peak_power.loc[interval, 'cost'])
+            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[interval, 'opex_spec'])
                                                                    if self.peakshaving else None),
                                                     max=(bus_activation[interval] if self.peakshaving else None))},
-            conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints}
+            conversion_factors={self.bus_connected: 1}) for interval in self.peakshaving_ints.index}
 
         scenario.components.extend(self.inflow.values())
         scenario.components.extend(self.outflow.values())
@@ -859,7 +860,7 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_connection = self.opex_peakshaving * self.peak_power['power'].sum()
+        self.opex_connection = self.opex_peakshaving * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
@@ -895,8 +896,8 @@ class GridConnection(InvestBlock):
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
-        for interval, converter in zip(self.peak_power.index, self.outflow.values()):
-            self.peak_power.loc[interval, 'power'] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
+        for interval, converter in zip(self.peakshaving_ints.index, self.outflow.values()):
+            self.peakshaving_ints.loc[interval, 'power'] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
 
     def get_timeseries_results(self, scenario):
         """
@@ -952,7 +953,7 @@ class GridMarket:
             setattr(self, param, value)
 
         for var_name in [var for var in vars(self) if ('opex_spec' in var)]:
-            self.transform_scalar_var(var_name, scenario, run)
+            utils.transform_scalar_var(self, var_name, scenario, run)
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
@@ -1006,72 +1007,14 @@ class GridMarket:
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
         self.e_sim_in = self.flow_in.sum() * scenario.timestep_hours  # flow values are powers --> conversion to Wh
         self.e_sim_out = self.flow_out.sum() * scenario.timestep_hours
-        self.e_yrl_in = eco.scale_sim2year(self.e_sim_in, scenario)
-        self.e_yrl_out = eco.scale_sim2year(self.e_sim_out, scenario)
-        self.e_prj_in = eco.scale_year2prj(self.e_yrl_in, scenario)
-        self.e_prj_out = eco.scale_year2prj(self.e_yrl_out, scenario)
+        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, scenario)
+        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, scenario)
+        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, scenario)
+        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in, scenario.prj_duration_yrs, scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out, scenario.prj_duration_yrs, scenario.wacc)
 
         self.flow = self.flow_in - self.flow_out  # for plotting
-
-    def read_input_csv(self, path_input_file, scenario, multiheader=False):
-        """
-        Properly read in timezone-aware input csv files and form correct datetimeindex
-        """
-        if multiheader:
-            df = pd.read_csv(path_input_file, header=[0, 1])
-            df.sort_index(axis=1, sort_remaining=True, inplace=True)
-            df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
-        else:
-            df = pd.read_csv(path_input_file)
-            df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
-
-        # parser in to_csv does not create datetimeindex
-        df = df.tz_convert(scenario.timezone)
-        df = self.resample_to_timestep(df, scenario)
-        return df
-
-    def resample_to_timestep(self, data: pd.DataFrame, scenario):
-        """
-        Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-        :param data: The input dataframe with DatetimeIndex
-        :param scenario: The current scenario object
-        :return: resampled dataframe
-        """
-
-        dti = data.index
-        # Add one element to the dataframe to include the last timesteps
-        try:
-            dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
-        except pandas.errors.NullFrequencyError:
-            dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-            scenario.logger.warning(f'Block \"{self.name}\": Timestep of csv input data could not be inferred -'
-                                    f'using 15 min default')
-
-        data_ext = data.reindex(dti_ext).ffill()
-
-        def resample_column(column):
-            if data_ext[column].dtype == bool:
-                return data_ext[column].resample(scenario.timestep).ffill().bfill()
-            else:
-                return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
-
-        resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
-        return resampled_data
-
-    def transform_scalar_var(self, var_name, scenario, run):
-        scenario_entry = getattr(self, var_name)
-        # In case of filename for operations cost read csv file
-        if isinstance(scenario_entry, str):
-            # Open csv file and use first column as index; also directly convert dates to DateTime objects
-            opex = self.read_input_csv(os.path.join(run.path_input_data, self.parent.name, f'{scenario_entry}.csv'), scenario)
-            opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
-            # Convert data column of cost DataFrame into Series
-            setattr(self, var_name, opex[opex.columns[0]])
-        else:  # opex_spec is given as a scalar directly in scenario file
-            # Use sequence of values for variable costs to unify computation of results
-            setattr(self, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
 
     def get_ch_results(self, horizon, *_):
         self.flow_in_ch = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]

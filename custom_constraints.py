@@ -2,7 +2,7 @@
 custom_constraints.py
 
 --- Description ---
-This script defines the energy system blocks for the REVOL-E-TION toolset.
+This script defines additional constraints for the REVOL-E-TION toolset.
 
 For further information, see readme
 
