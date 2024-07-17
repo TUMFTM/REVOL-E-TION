@@ -319,7 +319,7 @@ class Scenario:
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
 
         # generate variables for calculations
-        self.timestep_td = self.dti_sim.freq.delta
+        self.timestep_td = pd.Timedelta(self.dti_sim.freq)
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
