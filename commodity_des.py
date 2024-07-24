@@ -322,7 +322,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['num_primary'] = 1  # always one vehicle per rental process
         self.processes['distance'] = np.nan  # distance column is only used for VehicleRentalSystems
 
-        # draw distance and active time
+        # sample distance and active time
         def draw_usecase_distance(group):
             usecase = group.name[0]
             timeframe = group.name[1]
@@ -331,15 +331,23 @@ class VehicleRentalSystem(RentalSystem):
             p1, p2 = lognormal_params(uc_dist_mean, uc_dist_stdev)
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
-        self.processes['distance'] = self.processes.groupby(['usecase', 'timeframe'])['distance'].transform(draw_usecase_distance)
-
+        self.processes['distance'] = self.processes.groupby(['usecase',
+                                                             'timeframe'])['distance'].transform(draw_usecase_distance)
 
         self.processes['dtime_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         self.processes['energy_req_both'] = self.processes['distance'] * self.cs.consumption
 
         # sample idle time
-        p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
-        self.processes['dtime_idle'] = pd.to_timedelta(self.rng.lognormal(p1, p2, self.n_processes), unit='hour')
+        def draw_usecase_idle(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            uc_idle_mean = self.cs.usecases.loc[usecase, (timeframe, 'idle_mean')]
+            uc_idle_stdev = self.cs.usecases.loc[usecase, (timeframe, 'idle_std')]
+            p1, p2 = lognormal_params(uc_idle_mean, uc_idle_stdev)
+            idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
+            return pd.Series(idle, index=group.index)
+        self.processes['dtime_idle'] = self.processes.groupby(['usecase',
+                                                               'timeframe'])['dtime_idle'].transform(draw_usecase_idle)
 
         if self.cs.rex_cs:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
