@@ -195,6 +195,38 @@ class RentalSystem:
 
         self.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
 
+    def get_patience(self):
+
+        def get_usecase_patience(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            patience_primary = pd.to_timedelta(
+                self.cs.usecases.loc[usecase, (timeframe, 'patience')],
+                unit='hour')
+            patience_secondary = pd.to_timedelta(
+                self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')],
+                unit='hour') if self.cs.rex_cs else pd.Timedelta(0)
+            return pd.DataFrame({'patience_primary': [patience_primary] * len(group),
+                                 'patience_secondary': [patience_secondary] * len(group)},
+                                index=group.index)
+        self.processes[['dtime_patience_primary','dtime_patience_secondary']] = (self.processes.groupby(['usecase','timeframe'])
+                                                        .apply(get_usecase_patience)
+                                                        .reset_index(level=[0,1],drop=True)
+                                                        .sort_index())
+
+    def sample_idle_time(self):
+        def sample_usecase_idle(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            uc_idle_mean = self.cs.usecases.loc[usecase, (timeframe, 'idle_mean')]
+            uc_idle_stdev = self.cs.usecases.loc[usecase, (timeframe, 'idle_std')]
+            p1, p2 = lognormal_params(uc_idle_mean, uc_idle_stdev)
+            idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
+            return pd.Series(idle, index=group.index)
+        self.processes['dtime_idle'] = (self.processes
+                                        .groupby(['usecase', 'timeframe'])['dtime_idle']
+                                        .transform(sample_usecase_idle))
+
     def sample_requests(self):
 
         # draw total demand for every simulated day from a lognormal distribution
@@ -312,7 +344,7 @@ class VehicleRentalSystem(RentalSystem):
                        f' \"{self.cs.name}\" in scenario \"{self.sc.name}\" is not a BatteryCommoditySystem')
             self.sc.exception = message
             raise ValueError(message)
-        elif not self.sc.blocks[self.cs.rex_cs].filename == 'run_des':
+        elif not self.sc.blocks[self.cs.rex_cs].data_source == 'des':
             message = (f'Selected range extender system \"{self.cs.rex_cs}\" for VehicleCommoditySystem'
                        f' \"{self.cs.name}\" in scenario \"{self.sc.name}\" is not set to run DES itself')
             self.sc.exception = message
@@ -336,47 +368,22 @@ class VehicleRentalSystem(RentalSystem):
             p1, p2 = lognormal_params(uc_dist_mean, uc_dist_stdev)
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
-        self.processes['distance'] = self.processes.groupby(['usecase',
-                                                             'timeframe'])['distance'].transform(sample_usecase_distance)
+        self.processes['distance'] = (self.processes.groupby(['usecase',
+                                                             'timeframe'])['distance']
+                                      .transform(sample_usecase_distance))
 
         self.processes['dtime_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         self.processes['energy_req_both'] = self.processes['distance'] * self.cs.consumption
 
-        # sample idle time
-        def sample_usecase_idle(group):
-            usecase = group.name[0]
-            timeframe = group.name[1]
-            uc_idle_mean = self.cs.usecases.loc[usecase, (timeframe, 'idle_mean')]
-            uc_idle_stdev = self.cs.usecases.loc[usecase, (timeframe, 'idle_std')]
-            p1, p2 = lognormal_params(uc_idle_mean, uc_idle_stdev)
-            idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
-            return pd.Series(idle, index=group.index)
-        self.processes['dtime_idle'] = self.processes.groupby(['usecase',
-                                                               'timeframe'])['dtime_idle'].transform(sample_usecase_idle)
-
-        def get_usecase_patience(group):
-            usecase = group.name[0]
-            timeframe = group.name[1]
-            patience_primary = pd.to_timedelta(self.cs.usecases.loc[usecase, (timeframe, 'patience')],
-                                               unit='hour')
-            patience_secondary = pd.to_timedelta(self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')],
-                                                 unit='hour')
-            return pd.DataFrame({'patience_primary': [patience_primary] * len(group),
-                                 'patience_secondary': [patience_secondary] * len(group)},
-                                index=group.index)
-        self.processes[['dtime_patience_primary',
-                        'dtime_patience_secondary']] = (self.processes.groupby(['usecase',
-                                                                                'timeframe'])
-                                                        .apply(get_usecase_patience)
-                                                        .reset_index(level=[0,1],drop=True)
-                                                        .sort_index())
+        self.sample_idle_time()
+        self.get_patience()
 
         if self.cs.rex_cs:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
-            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_usable)
+            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_usable_high)
             self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
             self.processes['num_secondary'] = np.ceil(self.processes['energy_missing'] /
-                                                      self.energy_usable_rex_pc).astype(int)
+                                                      self.energy_usable_rex_pc_high).astype(int)
             self.processes['rex_request'] = self.processes['num_secondary'] > 0
 
             self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
@@ -451,8 +458,6 @@ class BatteryRentalSystem(RentalSystem):
 
         super().__init__(cs, sc)
 
-        self.cs.usecases['rel_prob_norm'] = self.cs.usecases['rel_prob'] / self.cs.usecases['rel_prob'].sum(axis=0)
-
         self.cs.rex_cs = None  # needs to be set for later check
 
         self.generate_processes()
@@ -470,32 +475,44 @@ class BatteryRentalSystem(RentalSystem):
         """
         self.processes['rex_request'] = False
 
-        p1, p2 = lognormal_params(self.cs.soc_return_mean, self.cs.soc_return_stdev)
-        self.processes['dsoc_primary'] = (self.cs.soc_dep -
-                                          np.clip(np.random.lognormal(p1, p2, self.n_processes),
-                                                  self.cs.soc_return_min,
-                                                  self.cs.soc_dep))
-        self.processes['num_primary'] = self.processes.apply(
-            lambda row: self.cs.usecases.loc[row['usecase_id'], 'num_bat'], axis=1).astype(int)
+        def sample_usecase_energy(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            uc_energy_mean = self.cs.usecases.loc[usecase, (timeframe, 'energy_mean')]
+            uc_energy_stdev = self.cs.usecases.loc[usecase, (timeframe, 'energy_std')]
+            p1, p2 = lognormal_params(uc_energy_mean, uc_energy_stdev)
+            dist = self.rng.lognormal(p1, p2, len(group))
+            return pd.Series(dist, index=group.index)
+        self.processes['energy_req_both'] = (self.processes
+                                             .groupby(['usecase', 'timeframe'])['energy_req_both']
+                                             .transform(sample_usecase_energy))
 
+        self.sample_idle_time()
+        self.get_patience()
+
+        self.processes['num_primary'] = (np.ceil(self.processes['energy_req_both'] / self.energy_usable_pc_high)
+                                         .astype(int))
         self.processes['energy_total_both'] = self.processes['num_primary'] * self.cs.size_pc
-        self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc
-        self.processes['energy_req_both'] = self.processes['dsoc_primary'] * self.processes['energy_total_both']
-
+        self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc_high
+        self.processes['dsoc_primary'] = self.processes['energy_req_both'] / self.processes['energy_total_both']
         self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
         self.processes['energy_req_primary'] = self.processes['energy_req_pc_primary'] * self.processes['num_primary']
 
-        self.processes['dtime_active'] = pd.to_timedelta(self.processes.apply(
-            lambda row: row['dsoc_primary'] * row['energy_usable_both'] /
-                        self.cs.usecases.loc[row['usecase_id'], 'power'],
-            axis=1),
+        def get_usecase_dtime_active(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            power = self.cs.usecases.loc[usecase, (timeframe, 'power_avg')]
+            dtime_active = pd.to_timedelta(group['energy_req_both'] / power, unit='hour')
+            return pd.Series(dtime_active, index=group.index)
+        self.processes['dtime_active'] = (self.processes
+                                          .groupby(['usecase', 'timeframe'])
+                                          .apply(get_usecase_dtime_active)
+                                          .reset_index(level=[0, 1], drop=True)
+                                          .sort_index())
+
+        self.processes['dtime_charge_primary'] = pd.to_timedelta(
+            self.processes['energy_req_pc_primary'] / (self.cs.pwr_chg * self.cs.eff_chg),
             unit='hour')
-
-        p1, p2 = lognormal_params(self.cs.idle_mean, self.cs.idle_stdev)
-        self.processes['dtime_idle'] = pd.to_timedelta(np.random.lognormal(p1, p2, self.n_processes), unit='hour')
-
-        self.processes['dtime_charge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
-                                                                 (self.cs.pwr_chg * self.cs.eff_chg), unit='hour')
 
 
 class RentalProcess:

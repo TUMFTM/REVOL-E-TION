@@ -1447,9 +1447,9 @@ class MobileCommodity:
             self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
-            self.ess.min_storage_level = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                                    self.parent.soc_dep).clip(lower=self.soc_min,
-                                                                                              upper=self.soc_max)
+            self.ess.min_storage_level = (self.data_ph['dsoc']
+                                          .where(self.data_ph['dsoc'] == 0, self.parent.soc_target_high)
+                                          .clip(lower=self.soc_min, upper=self.soc_max))
         else:  # opt_global or apriori cases
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
