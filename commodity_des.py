@@ -296,7 +296,6 @@ class VehicleRentalSystem(RentalSystem):
                                                            self.sc,
                                                            absolute=True)
 
-
     def check_rex_inputs(self):
         if self.cs.rex_cs not in self.sc.blocks.keys():
             message = (f'Selected range extender system \"{self.cs.rex_cs}\" for VehicleCommoditySystem'
@@ -321,10 +320,20 @@ class VehicleRentalSystem(RentalSystem):
         :return: None
         """
         self.processes['num_primary'] = 1  # always one vehicle per rental process
+        self.processes['distance'] = np.nan  # distance column is only used for VehicleRentalSystems
 
         # draw distance and active time
-        p1, p2 = lognormal_params(self.cs.dist_mean, self.cs.dist_stdev)
-        self.processes['distance'] = self.rng.lognormal(p1, p2, self.n_processes)
+        def draw_usecase_distance(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            uc_dist_mean = self.cs.usecases.loc[usecase, (timeframe, 'dist_mean')]
+            uc_dist_stdev = self.cs.usecases.loc[usecase, (timeframe, 'dist_std')]
+            p1, p2 = lognormal_params(uc_dist_mean, uc_dist_stdev)
+            dist = self.rng.lognormal(p1, p2, len(group))
+            return pd.Series(dist, index=group.index)
+        self.processes['distance'] = self.processes.groupby(['usecase', 'timeframe'])['distance'].transform(draw_usecase_distance)
+
+
         self.processes['dtime_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         self.processes['energy_req_both'] = self.processes['distance'] * self.cs.consumption
 
