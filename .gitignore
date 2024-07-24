@@ -17,7 +17,7 @@ input/*
 
 !input/BatteryCommoditySystem/brs_example.csv
 !input/BatteryCommoditySystem/brs_example_processes.csv
-!input/BatteryCommoditySystem/usecases_default.csv
+!input/BatteryCommoditySystem/brs_usecases_default.csv
 
 !input/FixedDemand/dem_example.csv
 
