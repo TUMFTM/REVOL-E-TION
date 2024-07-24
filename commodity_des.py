@@ -162,6 +162,8 @@ class RentalSystem:
                                                'time_preblock_primary', 'step_preblock_primary',
                                                'time_preblock_secondary', 'step_preblock_secondary',
                                                'time_req', 'step_req', 'dayofweek_req', 'status',
+                                               'dtime_patience_primary', 'steps_patience_primary',
+                                               'dtime_patience_secondary', 'steps_patience_secondary',
                                                'commodities_primary', 'commodities_secondary',
                                                'time_dep', 'step_dep',
                                                'dtime_active',
@@ -185,6 +187,9 @@ class RentalSystem:
 
         self.processes['steps_charge_primary'] = dt2steps(self.processes['dtime_charge_primary'], self.sc)
         self.processes['steps_charge_secondary'] = dt2steps(self.processes['dtime_charge_secondary'], self.sc)
+
+        self.processes['steps_patience_primary'] = dt2steps(self.processes['dtime_patience_primary'], self.sc)
+        self.processes['steps_patience_secondary'] = dt2steps(self.processes['dtime_patience_secondary'], self.sc)
 
         self.block_charge_time()  # block charge time pre-rental for vehicles
 
@@ -323,7 +328,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['distance'] = np.nan  # distance column is only used for VehicleRentalSystems
 
         # sample distance and active time
-        def draw_usecase_distance(group):
+        def sample_usecase_distance(group):
             usecase = group.name[0]
             timeframe = group.name[1]
             uc_dist_mean = self.cs.usecases.loc[usecase, (timeframe, 'dist_mean')]
@@ -332,13 +337,13 @@ class VehicleRentalSystem(RentalSystem):
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
         self.processes['distance'] = self.processes.groupby(['usecase',
-                                                             'timeframe'])['distance'].transform(draw_usecase_distance)
+                                                             'timeframe'])['distance'].transform(sample_usecase_distance)
 
         self.processes['dtime_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
         self.processes['energy_req_both'] = self.processes['distance'] * self.cs.consumption
 
         # sample idle time
-        def draw_usecase_idle(group):
+        def sample_usecase_idle(group):
             usecase = group.name[0]
             timeframe = group.name[1]
             uc_idle_mean = self.cs.usecases.loc[usecase, (timeframe, 'idle_mean')]
@@ -347,7 +352,24 @@ class VehicleRentalSystem(RentalSystem):
             idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
             return pd.Series(idle, index=group.index)
         self.processes['dtime_idle'] = self.processes.groupby(['usecase',
-                                                               'timeframe'])['dtime_idle'].transform(draw_usecase_idle)
+                                                               'timeframe'])['dtime_idle'].transform(sample_usecase_idle)
+
+        def get_usecase_patience(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            patience_primary = pd.to_timedelta(self.cs.usecases.loc[usecase, (timeframe, 'patience')],
+                                               unit='hour')
+            patience_secondary = pd.to_timedelta(self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')],
+                                                 unit='hour')
+            return pd.DataFrame({'patience_primary': [patience_primary] * len(group),
+                                 'patience_secondary': [patience_secondary] * len(group)},
+                                index=group.index)
+        self.processes[['dtime_patience_primary',
+                        'dtime_patience_secondary']] = (self.processes.groupby(['usecase',
+                                                                                'timeframe'])
+                                                        .apply(get_usecase_patience)
+                                                        .reset_index(level=[0,1],drop=True)
+                                                        .sort_index())
 
         if self.cs.rex_cs:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
@@ -357,8 +379,8 @@ class VehicleRentalSystem(RentalSystem):
                                                       self.energy_usable_rex_pc).astype(int)
             self.processes['rex_request'] = self.processes['num_secondary'] > 0
 
-            self.processes['energy_usable_both'] = (self.energy_usable_pc +
-                                                    (self.processes['num_secondary'] * self.energy_usable_rex_pc))
+            self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
+                                                    (self.processes['num_secondary'] * self.energy_usable_rex_pc_high))
             self.processes['energy_total_both'] = (self.cs.size_pc +
                                                    (self.processes['num_secondary'] * self.cs.rex_cs.size_pc))
 
@@ -366,16 +388,15 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['num_secondary'] = 0
             self.processes['rex_request'] = False
 
-            self.processes['energy_usable_both'] = self.energy_usable_pc
+            self.processes['energy_usable_both'] = self.energy_usable_pc_high
             self.processes['energy_total_both'] = self.cs.size_pc
             # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
-            self.processes['energy_req_both'] = self.processes['energy_req_both'].clip(upper=self.energy_usable_pc)
-
+            self.processes['energy_req_both'] = self.processes['energy_req_both'].clip(upper=self.energy_usable_pc_high)
 
         # calculate different delta SOC for primary and secondary commodity due to different start SOCs (linear)
-        self.processes['dsoc_primary'] = (self.dsoc_usable * self.processes['energy_req_both'] /
+        self.processes['dsoc_primary'] = (self.dsoc_usable_high * self.processes['energy_req_both'] /
                                           self.processes['energy_usable_both'])
-        self.processes['dsoc_secondary'] = (self.dsoc_usable_rex * self.processes['energy_req_both'] /
+        self.processes['dsoc_secondary'] = (self.dsoc_usable_rex_high * self.processes['energy_req_both'] /
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
         self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
@@ -392,7 +413,6 @@ class VehicleRentalSystem(RentalSystem):
         else:
             self.processes['energy_req_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
-
 
     def transfer_rex_processes(self, sc):
         """
@@ -500,7 +520,8 @@ class RentalProcess:
 
         # request primary resource(s) from (Multi)Store
         with self.rs.store.get(self.data['num_primary']) as self.primary_request:
-            self.primary_result = yield self.primary_request | self.env.timeout(self.rs.cs.patience)
+            self.primary_result = yield self.primary_request | self.env.timeout(
+                self.data['steps_patience_primary'])
 
         # wait until actual request time (leaving time to charge vehicle)
         if isinstance(self.rs, VehicleRentalSystem):
@@ -508,8 +529,9 @@ class RentalProcess:
 
         # request secondary resources from other MultiStore
         if self.data['num_secondary'] > 0:
-            with self.rs.cs.rex_cs.rs.store.get(self.data['num_secondary']) as self.secondary_request:
-                self.secondary_result = yield self.secondary_request | self.env.timeout(self.rs.cs.patience_rex)
+            with (self.rs.cs.rex_cs.rs.store.get(self.data['num_secondary']) as self.secondary_request):
+                self.secondary_result = yield self.secondary_request | self.env.timeout(
+                    self.data['steps_patience_secondary'])
 
         # if request(s) successful
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
@@ -603,9 +625,9 @@ def execute_des(sc, save=False, path=None):
     sc.rental_systems = dict()
     for cs in [cs for cs in sc.commodity_systems.values() if cs.data_source == 'des']:
         if isinstance(cs, blocks.VehicleCommoditySystem):
-            commodity_system.rs = VehicleRentalSystem(cs, sc)
+            cs.rs = VehicleRentalSystem(cs, sc)
         elif isinstance(cs, blocks.BatteryCommoditySystem):
-            commodity_system.rs = BatteryRentalSystem(cs, sc)
+            cs.rs = BatteryRentalSystem(cs, sc)
         sc.rental_systems[cs.name] = cs.rs
 
     # generate individual RentalProcess instances for every pregenerated process
