@@ -1098,10 +1098,10 @@ class FixedDemand(Block):
 
         super().__init__(name, scenario, run)
 
-        self.data = utils.read_input_csv(self, self.path_input_file, scenario)
         self.path_input_file = os.path.join(run.path_input_data,
                                             self.__class__.__name__,
                                             f'{self.filename}.csv')
+        self.data = utils.read_input_csv(self, self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
 

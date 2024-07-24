@@ -127,9 +127,9 @@ def transform_scalar_var(block, var_name, scenario, run):
     # In case of filename for operations cost read csv file
     if isinstance(scenario_entry, str):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
-        rel_dir = block.parent.name if hasattr(block, 'parent') else block.name
+        dirname = block.parent.__class__.__name__ if hasattr(block, 'parent') else block.__class__.__name__
         opex = read_input_csv(block,
-                              os.path.join(run.path_input_data, rel_dir, f'{scenario_entry}.csv'),
+                              os.path.join(run.path_input_data, dirname, f'{scenario_entry}.csv'),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series

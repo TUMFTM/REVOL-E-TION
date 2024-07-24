@@ -46,11 +46,16 @@ class AprioriPowerScheduler:
         self.pwr_syscore_conv_avail = {}
 
         # get different lists of commodity systems according to the restrictions of the apriori integration level
-        self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
+        self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if
+                         cs.int_lvl == 'uc']
         self.cs_lm_static = [cs for cs in self.scenario.commodity_systems.values() if
-                              cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and cs.lm_static]
+                             (cs.int_lvl in self.scenario.run.apriori_lvls)
+                             and (cs.int_lvl != 'uc')
+                             and cs.power_lim_static]
         self.cs_lm_dynamic = [cs for cs in self.scenario.commodity_systems.values() if
-                                 cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and not cs.lm_static]
+                              (cs.int_lvl in self.scenario.run.apriori_lvls)
+                              and (cs.int_lvl != 'uc')
+                              and not cs.power_lim_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
         self.apriori_commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
@@ -103,7 +108,7 @@ class AprioriPowerScheduler:
                                                                                            commodities=[self.apriori_commodities[key]
                                                                                                         for key in cs.commodities.keys()],
                                                                                            int_lvl=cs.int_lvl,
-                                                                                           pwr_csc_avail_total=cs.lm_static)
+                                                                                           pwr_csc_avail_total=cs.power_lim_static)
 
             # only execute optimization of the local grid if there are rulebased components
             if self.cs_lm_dynamic:
@@ -247,8 +252,8 @@ class AprioriCommodity:
         # define loss_rate
         self.loss_rate = 1 - (1 - self.block.parent.loss_rate) ** (self.scenario.timestep_td / pd.Timedelta('1h'))
 
-        # get the indices of all nonzero minsoc rows in the data
-        self.minsoc_dti = self.block.data.index[self.block.data['minsoc'] != 0]
+        # get the indices of all nonzero target soc rows in the data
+        self.dsoc_dti = self.block.data.index[self.block.data['dsoc'] != 0]
 
         # get first timesteps, where vehicle has left the base
         self.dep_base_dti = self.block.data.index[~self.block.data['atbase'] & self.block.data['atbase'].shift(1, fill_value=False)]

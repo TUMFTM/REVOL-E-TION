@@ -373,8 +373,10 @@ class Scenario:
 
         # ToDo: put into extra function
         # check input parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in self.run.apriori_lvls if
-                                                                               x != 'uc'] and not cs.lm_static]:
+        if cs_unlim := [cs for cs in self.commodity_systems.values() if
+                        (cs.int_lvl in self.run.apriori_lvls)
+                        and cs.int_lvl != 'uc'
+                        and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
                                  f' without static load management (lm_static) is not compatible with size optimization')
