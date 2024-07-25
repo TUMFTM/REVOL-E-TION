@@ -347,10 +347,12 @@ class AprioriCommodity:
 
     def get_soc_target(self, dtindex):
         # check if there are any departures after current timestep within forecast period
-        if (departures := self.dep_base_dti[(self.dep_base_dti >= dtindex) &
-                                            (self.dep_base_dti <= dtindex + pd.Timedelta(hours=self.block.parent.forecast_hours)
-                                            if self.block.parent.forecast_hours else True)]).empty:
-            return self.block.parent.soc_target
+        departures = self.dep_base_dti[(self.dep_base_dti >= dtindex) &
+                                       (self.dep_base_dti <= dtindex + pd.Timedelta(hours=self.block.parent.forecast_hours)
+                                        if self.block.parent.forecast_hours else True)]
+
+        if departures.empty:
+            return self.block.parent.soc_target_low
 
         #  get start and end of next trip
         dep_nxt = departures.min()
@@ -358,14 +360,20 @@ class AprioriCommodity:
         #  sum up energy between trip start and end
         if arr_nxt <= dep_nxt:
             # Destination charging -> sum up remaining energy of ongoing trip until end of trip
-            e_con = self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
+            e_con = (self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
+                     * self.scenario.timestep_hours)
         else:
             # Charging at base -> sum up energy for next trip
-            e_con = self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
+            e_con = (self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
+                     * self.scenario.timestep_hours)
+
         #  Convert energy consumption to delta soc taking the current soh into account
-        soc_delta = e_con / (self.block.size * self.soh)
+        soc_delta = e_con / self.block.size
         #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
-        soc_target = 1 if soc_delta > (self.block.parent.soc_target - self.block.parent.soc_return) else self.block.parent.soc_target
+        if soc_delta > (self.block.parent.soc_target_low - self.block.parent.soc_return):
+            soc_target = self.block.parent.soc_target_high
+        else:
+            soc_target = self.block.parent.soc_target_low
         return soc_target
 
     def ext_charging(self, dtindex):
