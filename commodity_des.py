@@ -99,7 +99,7 @@ class RentalSystem:
         processes_exploded = self.processes.explode('commodities_primary')
 
         # calculate percentage of DES (not sim, the latter is shorter) time
-        # occupied by active, idle, recharge and buffer times
+        # occupied by active, idle & recharge times
         for commodity in list(self.cs.commodities.keys()):
             processes = processes_exploded.loc[processes_exploded['commodities_primary'] == commodity, :]
             steps_blocked = processes['steps_charge_primary'].sum() + processes['steps_rental'].sum()
