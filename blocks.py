@@ -684,8 +684,7 @@ class CommoditySystem(InvestBlock):
                                                      self.filename + '.csv'), scenario, multiheader=True, resampling=False)
 
         if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-            scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
-                                    f' - resampling is experimental')
+            scenario.logger.warning(f'\"{self.name}\" input data does not match timestep')
             consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
             bool_columns = self.data.columns.difference(consumption_columns)
             # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
@@ -1522,7 +1521,9 @@ class PVSource(RenewableInvestBlock):
             self.data.index = self.data.index.round('h')
 
         else:  # input from file instead of API
-            self.path_input_file = os.path.join(run.path_input_data, 'pv', f'{self.filename}.csv')
+            self.path_input_file = os.path.join(run.path_input_data,
+                                                self.__class__.__name__,
+                                                f'{self.filename}.csv')
 
             if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
@@ -1875,7 +1876,9 @@ class WindSource(RenewableInvestBlock):
             self.data = scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
-            self.path_turbine_data_file = os.path.join(run.path_input_data, 'wind', 'turbine_data.pkl')
+            self.path_turbine_data_file = os.path.join(run.path_input_data,
+                                                       self.__class__.__name__,
+                                                       'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
             self.turbine_data = self.turbine_data.loc[

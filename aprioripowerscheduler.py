@@ -354,16 +354,17 @@ class AprioriCommodity:
         if departures.empty:
             return self.block.parent.soc_target_low
 
-        #  get start and end of next trip
-        dep_nxt = departures.min()
-        arr_nxt = self.arr_base_dti[self.arr_base_dti >= dtindex].min()
+        arrivals = self.arr_base_dti[self.arr_base_dti >= dtindex]
+
+        if arrivals.empty:
+            return self.block.parent.soc_target_low
+
         #  sum up energy between trip start and end
-        if arr_nxt <= dep_nxt:
+        if (arr_nxt := arrivals.min()) <= (dep_nxt := departures.min()):  # trip currently ongoing
             # Destination charging -> sum up remaining energy of ongoing trip until end of trip
             e_con = (self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
                      * self.scenario.timestep_hours)
-        else:
-            # Charging at base -> sum up energy for next trip
+        else:  # vehicle currently rechargeable at base
             e_con = (self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
                      * self.scenario.timestep_hours)
 
