@@ -485,7 +485,7 @@ class CommoditySystem(InvestBlock):
         if self.data_source == 'des':
             self.usecases = self.read_usecase_file(run)
         elif self.data_source == 'log':
-            self.read_input_log()
+            self.read_input_log(run)
         else:
             raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
 
@@ -673,15 +673,19 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities.values():
             commodity.get_timeseries_results(scenario)
 
-    def read_input_log(self):
+    def read_input_log(self, run):
         """
         Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
         consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
-        self.data = utils.read_input_csv(self, os.path.join(run.path_input_data,
-                                                     self.__class__.__name__,
-                                                     self.filename + '.csv'), scenario, multiheader=True, resampling=False)
+        self.data = utils.read_input_csv(self,
+                                         os.path.join(run.path_input_data,
+                                                      self.__class__.__name__,
+                                                      self.filename + '.csv'),
+                                         scenario,
+                                         multiheader=True,
+                                         resampling=False)
 
         if pd.infer_freq(self.data.index).lower() != scenario.timestep:
             scenario.logger.warning(f'\"{self.name}\" input data does not match timestep')

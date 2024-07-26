@@ -291,16 +291,18 @@ class RentalSystem:
 
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.sc)
 
-    def save_data(self, path):
+    def save_data(self, run):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        processes_path = os.path.join(path, f'{self.sc.name}_{self.cs.name}_processes.csv')
+        processes_path = os.path.join(run.path_result_folder,
+                                      f'{run.runtimestamp}_{self.sc.name}_{self.cs.name}_processes.csv')
         self.processes.to_csv(processes_path)
 
-        log_path = os.path.join(path, f'{self.sc.name}_{self.cs.name}_log.csv')
+        log_path = os.path.join(run.path_result_folder,
+                                f'{run.runtimestamp}_{self.sc.name}_{self.cs.name}_log.csv')
         self.data.to_csv(log_path)
 
 
@@ -627,7 +629,7 @@ def steps2dt(series, sc, absolute=False):
     return out
 
 
-def execute_des(sc, save=False, path=None):
+def execute_des(sc, run):
 
     # define a DES environment
     sc.env_des = simpy.Environment()
@@ -672,8 +674,8 @@ def execute_des(sc, save=False, path=None):
     for rs in sc.rental_systems.values():
         rs.convert_process_log()
         rs.calc_performance_metrics()
-        if save:
-            rs.save_data(path)
+        if run.save_des_results:
+            rs.save_data(run)
 
 
 def lognormal_params(mean, stdev):
