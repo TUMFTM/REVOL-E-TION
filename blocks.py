@@ -1444,7 +1444,7 @@ class MobileCommodity:
         # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
         # relative to nominal capacity. Disregard minsoc values from DES for any case except myopic optimization.
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
-            # VehicleCommoditySystems operate on the premise of not necessarily renting out at min SOC
+            # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
                                                      self.data_ph['dsoc'] + self.dsoc_buffer_aging)
             self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
