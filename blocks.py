@@ -738,11 +738,11 @@ class GridConnection(InvestBlock):
         ac_bus           grid_bus
           |                   |
           |<--xc_grid_1--x----|
-          |---grid_xc_1--x--->|<-x-grid source
-          |                   |
-          |<--xc_grid_2--x----|-x->grid sink
+          |---grid_xc_1--x--->|
+          |                   |---(GridMarket Instance)
+          |<--xc_grid_2--x----|
           |---grid_xc_2--x--->|
-          |                   |
+          |                   |---(GridMarket Instance)
           |         .         |
                     .
           |         .         |
