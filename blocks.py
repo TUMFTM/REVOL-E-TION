@@ -1470,7 +1470,7 @@ class PVSource(RenewableInvestBlock):
 
         u0 = 26.9  # W/(˚C.m2) - cSi Free standing
         u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-        mod_temp = self.data['temp_air'] + (self.data['GtiFixedTilt'] / (u0 + (u1 * self.data['WindSpeed10m'])))
+        mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['wind_speed'])))
 
         # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
         # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
@@ -1481,7 +1481,7 @@ class PVSource(RenewableInvestBlock):
         k4 = 0.000149
         k5 = 0.000170
         k6 = 0.000005
-        g = self.data['GtiFixedTilt'] / 1000
+        g = self.data['gti'] / 1000
         t = mod_temp - 25
         lng = np.zeros_like(g)
         lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
@@ -1498,7 +1498,7 @@ class PVSource(RenewableInvestBlock):
         eff_rel = eff_rel.fillna(0)
 
         # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-        self.data['P'] = np.maximum(0, eff_rel * self.data['GtiFixedTilt'])
+        self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
     def get_timeseries_data(self, scenario, run):
 
@@ -1541,11 +1541,12 @@ class PVSource(RenewableInvestBlock):
                 #                         parse_dates=True,
                 #                         index_col='PeriodStart')
                 self.data = pd.read_csv(self.path_input_file)
-                self.data['PeriodStart'] = pd.to_datetime(self.data['PeriodStart'])
-                self.data['PeriodEnd'] = pd.to_datetime(self.data['PeriodEnd'])
-                self.data.set_index(pd.DatetimeIndex(self.data['PeriodStart']), inplace=True)
-                self.data['wind_speed'] = self.data['WindSpeed10m']
-                self.data.rename(columns={'AirTemp': 'temp_air'}, inplace=True)  # compatibility with aging model
+                self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
+                self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
+                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                self.data['wind_speed'] = self.data['wind_speed_10m']
+                self.data.rename(columns={'air_temp': 'temp_air'}, inplace=True)  # compatibility with aging model
+                self.data = self.data[['temp_air', 'wind_speed', 'gti']]
                 self.calc_power_solcast()
             else:
                 scenario.logger.warning('No usable PV input type specified - exiting')
