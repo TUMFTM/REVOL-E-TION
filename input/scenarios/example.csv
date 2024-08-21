@@ -112,6 +112,7 @@ bev,pwr_chg,11000,11000,11000,11000
 bev,pwr_dis,11000,11000,11000,11000
 bev,pwr_ext_ac,0,0,0,0
 bev,pwr_ext_dc,0,0,0,0
+bev,factor_pwr_des,0.95,0.95,0.95,0.95
 bev,eff_conv,1,1,1,1
 bev,eff_roundtrip,0.95,0.95,0.95,0.95
 bev,cdc,1,1,1,1
@@ -145,6 +146,7 @@ brs,pwr_chg,1500,1500,1500,1500
 brs,pwr_dis,1500,1500,1500,1500
 brs,pwr_ext_ac,0,0,0,0
 brs,pwr_ext_dc,0,0,0,0
+brs,factor_pwr_des,0.95,0.95,0.95,0.95
 brs,eff_conv,1,1,1,1
 brs,eff_roundtrip,0.95,0.95,0.95,0.95
 brs,cdc,1,1,1,1

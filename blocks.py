@@ -493,7 +493,11 @@ class CommoditySystem(InvestBlock):
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
-        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
+
+        if self.data_source == 'des':
+            self.pwr_loss_max = utils.convert_sdr(self.sdr, scenario.timestep_td) * self.size * scenario.timestep_hours
+            self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
@@ -1447,7 +1451,8 @@ class MobileCommodity:
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
                                                      self.data_ph['dsoc'] + self.dsoc_buffer_aging)
-            self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
+            #self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
             self.ess.min_storage_level = (self.data_ph['dsoc']
@@ -1572,7 +1577,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.apriori_data = self.sc_init_ph = None
 
-        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')

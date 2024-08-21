@@ -409,16 +409,15 @@ class VehicleRentalSystem(RentalSystem):
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
         self.processes['energy_req_pc_primary'] = self.processes['dsoc_primary'] * self.cs.size_pc
-        self.processes['dtime_charge_primary'] = pd.to_timedelta(self.processes['energy_req_pc_primary'] /
-                                                                 (self.cs.pwr_chg * self.cs.eff_chg),
-                                                                 unit='hour')
+        self.processes['dtime_charge_primary'] = pd.to_timedelta(
+            self.processes['energy_req_pc_primary'] / self.cs.pwr_chg_des,
+            unit='hour')
 
         if self.cs.rex_cs:
             self.processes['energy_req_pc_secondary'] = self.processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
-            self.processes['dtime_charge_secondary'] = pd.to_timedelta(self.processes['energy_req_pc_secondary'] /
-                                                                       (self.cs.rex_cs.pwr_chg *
-                                                                        self.cs.rex_cs.eff_chg),
-                                                                       unit='hour')
+            self.processes['dtime_charge_secondary'] = pd.to_timedelta(
+                self.processes['energy_req_pc_secondary'] / self.cs.pwr_chg_des,
+                unit='hour')
         else:
             self.processes['energy_req_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
