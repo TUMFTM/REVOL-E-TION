@@ -485,7 +485,7 @@ class CommoditySystem(InvestBlock):
         if self.data_source == 'des':
             self.usecases = self.read_usecase_file(run)
         elif self.data_source == 'log':
-            self.read_input_log(run)
+            self.read_input_log(scenario, run)
         else:
             raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
 
@@ -673,7 +673,7 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities.values():
             commodity.get_timeseries_results(scenario)
 
-    def read_input_log(self, run):
+    def read_input_log(self,scenario, run):
         """
         Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
         consumption must be meaned, while booleans, distances and dsocs must not.
