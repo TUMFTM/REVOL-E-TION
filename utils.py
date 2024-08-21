@@ -55,12 +55,12 @@ def get_period_fraction(dti, period, freq):
     return period_fraction
 
 
-def convert_sdr_to_timestep(sdr: float) -> float:
+def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     """
     This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
     """
     # According to oemof documentation, the loss rate needs to be given for 1 hour neglecting the timestep of the model
-    tsr = pd.Timedelta(hours=1) / pd.Timedelta('30 days')
+    tsr = ts / pd.Timedelta('30 days')
     lr = 1 - (1 - sdr) ** tsr
     return lr
 
