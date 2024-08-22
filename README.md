@@ -72,12 +72,16 @@ Alternatively, the names of the files can be specified in the terminal execution
 ```
 python main.py <scenario_file_name>.csv <settings_file_name>.csv <relative_path_to_result_parent_directory>
 ```
+In case no settings file is given, the ```default.csv``` file distributed through git is used.
+In case no result directory is given, the ```./results``` directory is used.
 Example scenario and settings files are provided in the respective directories.
 The results will be saved in the specified directory in a subfolder named after the scenario file with a run-time.
-Formatting of the scenario and settings files can be taken from the example files and is explained below.
+Formatting of the scenario and settings files can be taken from the example files and is explained in tabular form below.
 Some parameters in the scenario files reference to other files specified by file name within ```./input/<name of block class>```.
 This mostly applies to timeseries data.
 Furthermore, to describe the mapping of different timeframes defining behavior of CommoditySystems (see below), modification of the ```mapper_timeframe.py``` code file might be necessary to fit the scenario as this is not simply and flexibly done in parameter files.
+
+Concerning computational effort, REVOL-E-TION relies heavily on single core computing power for each scenario and especially in 'go' strategy uses significant memory. To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed in the settings file depending on the hardware used.
 
 ## General Terms & Definitions
 The following table details common terms occuring in further descriptions and the code:
@@ -116,6 +120,7 @@ The following table specifies each parameter for each possible block class in th
 If and only if a block of a certain class exists within the scenario are these parameters required and read in. 
 Therefore not every scenario file contains all possible parameters.
 The first column of the scenario file defines the name of the block the parameter in the second column applies to.
+An example scenario file is provided in the ```./input/scenarios``` directory.
 
 | Block                     | Key                 | Name                                                         | Type               | Description                                                                                                                                                                                                                        | Valid values or format                                              |
 |---------------------------|---------------------|--------------------------------------------------------------|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
@@ -273,23 +278,33 @@ The first column of the scenario file defines the name of the block the paramete
 |                           | sdr                 | Self discharge rate                                          | float              | Self discharge rate of storage components per month (30 days)                                                                                                                                                                      | [0, inf[                                                            |
 |
 
-The required timeseries must be provided as csv files in the following formats:
+## Settings Input Parameters
+The settings file defines all common parameters for the scenarios in a simulation run.
+Its structure is much simpler than with the scenario file.
+The following table specifies each parameter of a complete settings file, all of which are required for every run.
 
-- FixedDemand blocks: A csv file with one or two columns, one of which must be labeled "power_w" and contain values in W.
-	If a second is contained, it must be labeled "time" and contain datetime values in a pandas-readable format
-- PVSource block: Depending on the input type selected in the scenario definition csv file  
-- Mobile commodity system: csv file containing columns "X_misoc", "X_consumption" and "X_atbase" with X being the name of the commodity. In the case of VehicleCommoditySystem, the column "X_tour_dist" is also required.
-
-#### Model output
-<mark>enter description here</mark>
-
-## Requirements
-
-REVOL-E-TION relies heavily on single core computing power for each scenario and especially in 'go' strategy uses a lot of memory. To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed in the settings file depending on the hardware used. 
+| Parameter         | Type | Description                                                                                                                                                                                                                                                                                                                                                                                                     | Valid values or format            |
+|-------------------|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------|
+| solver            | str  | Name of the solver to be used by pyomo for linear optimization                                                                                                                                                                                                                                                                                                                                                  | Tested: ['cbc', 'gurobi', 'gplk'] |
+| parallel          | bool | Trigger whether to use parallelization through python's multiprocessing library or work through the scenarios sequentially on a single core. If "paralllel" is True with only one scenario, sequential mode is selected automatically and a corresponding warning is logged. The benefit of parallelization of scenarios is naturally greatest in runs with many scenarios defined.                             | ['True', 'False']                 |
+| max_process_num   | int  | Maximum number of processes to be used in case "parallel" is True. This should not exceed the number of threads of the processor(s) used to ensure computational efficiency. Especially in the "go" strategy, REVOL-E-TION is RAM heavy, therefore an even lower setting might make sense in runs with many "go" scenarios. Parameter is ignored if "parallel" is False.                                        | [0,inf[                           |
+| save_results      | bool | Trigger whether to save the result summary (covering all scenarios) and timeseries (separately for every scenario) into the selected or default result directory.                                                                                                                                                                                                                                               | ['True', 'False']                 |
+| save_des_results  | bool | Trigger whether to save the DES results (i.e. the resulting log and process dataframe) as separate csv files per CommoditySystem and scenario into the selected or default result directory for later usage in other simulations.                                                                                                                                                                               | ['True', 'False']                 |
+| print_results     | bool | Trigger whether to print core result values of a scenario (e.g. the LCOE) and each block (e.g. the optimum size) to the terminal after the scenario has successfully completed.                                                                                                                                                                                                                                 | ['True', 'False']                 |
+| save_plots        | bool | Trigger whether to save the dispatch plot of each scenario (containing roughly the same information as the timeseries results in visual form) as a separate html file into the selected or default result directory. Since the resulting files are easily in the megabyte range, setting this option to True results in considerable storage requirements. This option is independent of the show_plots option. | ['True', 'False']                 |
+| show_plots        | bool | Trigger whether to open each shenario's dispatch plot immediately upon generation using the default web browser. This option is independent of the save_plots option.                                                                                                                                                                                                                                           | ['True', 'False']                 |
+| save_system_graph | bool | Trigger whether to save a separate pdf file of a graph representation of every scenario's energy system in the selected or default result directory. Mainly useful for debugging purposes of block definitions.                                                                                                                                                                                                 | ['True', 'False']                 |
+| dump_model        | bool | Trigger whether to save a .lp file containing the mathematical optimization model for later solving through pyomo.                                                                                                                                                                                                                                                                                              | ['True', 'False']                 |
+| debugmode         | bool | Trigger whether to log and print solver progress information during the solving process. This is resource intensive and should therefore be avoided unless explicitly necessary.                                                                                                                                                                                                                                | ['True', 'False']                 |
 
 ## Discrete Event Simulation (DES)
 RentalSystem           | The mother class for execution of the Discrete Event Simulation (DES) simulating the mobility/energy demand and its allocation to different commodities within a service system.                                                                                                                                                                                                                                                                       |
 | RentalProcess          | A single rental of a vehicle or battery manifesting in blocking one or more primary (within the own CommoditySystem) and/or secondary commodities (in a linked CommoditySystem through range extension).
+
+## Model output
+<mark>enter description here</mark>
+
+
 
 
 
