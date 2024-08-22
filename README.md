@@ -1,12 +1,14 @@
 # REVOL-E-TION
-Resilient Electric Vehicle Optimization model for Local Energy TransitION
+### Resilient Electric Vehicle Optimization model for Local Energy TransitION
 
-This toolset is designed to optimize and estimate technoeconomic potentials of electric vehicle integration into 
-local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes.
+REVOL-E-TION is an energy system model toolset designed to optimize integration of electric vehicle fleets into 
+local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes and estimate
+the resulting technoeconomic potentials in terms of costs and revenues within the energy (and optionally also the
+mobility system). It is built as a wrapper on top of the [oemof](https://oemof.org) energy system model framework. 
 
-#### Originally created by 
-Philipp Rosner, M.Sc.
-Research Associate Institute of Automotive Technology
+#### Created by 
+Philipp Rosner, M.Sc. and Brian Dietermann, M.Sc.  
+Institute of Automotive Technology  
 Department of Mobility Systems Engineering  
 TUM School of Engineering and Design  
 Technical University of Munich  
@@ -14,7 +16,6 @@ philipp.rosner@tum.de
 September 2nd, 2021
 
 #### Contributors
-Brian Dietermann, M.Sc. - Research Associate 06/2022-  
 Marcel Brödel, M.Sc. - Research Associate 01/2024-
 
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
@@ -26,54 +27,51 @@ Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023
 Hannes Henglein, B.Sc. - Master's Thesis ongoing  
 Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023
 
-## Installation
-
-This toolset was designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 14 Sonoma.
-While portability is generally built in, other operating systems are untested.
-
-#### Source Code, licensing & Distribution
-The toolset is developed and internally distributed via LRZ Gitlab prior to being published open source via the FTM EV Lab's GitLab. It is easiest to clone the respective repository at https://gitlab.lrz.de/ftm-electric-powertrain/mg_ev_opti to obtain a working copy of the source code.
+## Licensing
+REVOL-E-TION is licensed under the <mark> License still to be chosen </mark>.  
+The full license text can be found in the LICENSE file in the root directory of the repository.
 
 <mark> Prior to open source publication of the toolset, any distribution outside FTM researchers or their immediately affiliated students is prohibited. </mark> 
 
-#### Environment & Packages
-The toolset was developed using Python 3.11, which is recommended to use with a clean virtual environment to start with.
-All required packages are listed in ```requirements.txt``` and can be installed by entering ```pip install -r requirements.txt``` into a terminal for the correct environment.
+## Compatibility
+REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 14 Sonoma, each with Python 3.11.
+While portability is generally built in, other operating systems are untested.
 
-#### MILP Solver
-The toolset is distributed with the open-source CBC solver for mixed integer linear programming (MILP) problems by 
-default. All other solvers supported by pyomo are also applicable in it. On windows, this should work right out of the
-box, while on Linux, an installation is required, e.g. using ```sudo apt-get install coinor-cbc coinor-libcbc-dev```
-might be necessary (command is for Debian based distibutions - others on https://github.com/coin-or/Cbc). While CBC 
-does work flawlessly, the commercial Gurobi solver enables a significant speed advantage, especially when working with
-a large number of enabled system blocks or long term simulation. It is available at https://www.gurobi.com/ with a free
-academic license model.
+## Installation
+#### Step 1: Getting the source code
+REVOL-E-TION is available at the institute's [GitHub](https://github.com/TUMFTM/REVOL-E-TION) and can be cloned from there.
 
-#### Plotly Server Handling
-The toolset is using plotly to visualize the dispatch of the energy systems. However, once plotly is configured to open
-the plots directly, it fails to close the handler properly (tested with plotly 5.14.1). To fix the resulting warning,
-modify the last few lines of the ```open_html_in_browser``` function within the ```_base_renderers.py``` script in plotly/io
-contained in your environment files:
+#### Step 2: Environment & Packages
+REVOL-E-TION is developed and tested with Python 3.11, which is recommended to use with a clean virtual or conda environment to start with.
+All required packages are listed in ```requirements.txt``` and can be installed through ```pip install -r requirements.txt```, given the correct environment is active.
+
+#### Step 3: MILP Solver
+REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
+The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
+The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
+
+#### Step 4: Basic Usage
+Running REVOL-E-TION requires closely defined scenario(s) to simulate and simulation settings to operate on as well as a target directory for the results.
+The former two are to be given as two .csv-files within the ```./input/scenarios``` and ```./input/settings``` directories respectively when starting a simulation.
+To define the parameters, a Graphical User Interface (GUI) comes up automatically when executing ```main.py``` without any parameters given.
+Alternatively, the names of the files can be specified in the terminal execution command as follows, given the base directory is selected:
 ```
-with HTTPServer(("127.0.0.1", 0), OneShotRequestHandler) as server:
-    browser.open("http://127.0.0.1:%s" % server.server_port, new=new, autoraise=autoraise)
-    server.handle_request()
+python main.py <scenario_file_name>.csv <settings_file_name>.csv <relative_path_to_result_parent_directory>
 ```
-in order to properly close the server handler
+Example scenario and settings files are provided in the respective directories.
+The results will be saved in the specified directory in a subfolder named after the scenario file with a run-time.
+Formatting of the scenario and settings files can be taken from the example files and is explained below.
 
-## Basic Usage
+## Description  
+REVOL-E-TION is a scalable generator for (mixed integer) linear energy system models of local energy systems with or without electric vehicle fleets.
+It can be used to optimize component sizes and/or dispatch behavior of the system to achieve least cost in the simulation timeframe.
+Simulation results are later extrapolated and discounted to a project timeframe to estimate the technoeconomic potential of the system in the long run.
+Please note that this split between simulation and extrapolation improves computational effort, but creates possibly unwanted incentives for the optimizer (e.g. preferring low initial cost but operationally expensive power sources), especially when sizing components.
 
-Running the toolset needs closely defined scenarios to simulate and simulation settings to operate on. These are provided in two separate .csv-files to be specified when starting a simulation, either via a Graphical User Interface (GUI, this variant also enables a path choice of where to store results) automatically coming up when starting the toolset without any parameters given. Alternatively, the names of the files can be specified in the terminal command as follows, given the base folder is selected:
-```
-python main.py <scenario_file_name>.csv <settings_file_name>.csv
-```
-Formatting of the scenario and settings files can be taken from the example files. It is recommended to mostly use the parallel computing option for multiple rolling horizon scenarios.
-
-
-## Detailed Description  
-This is a toolset to simulate electric vehicles operating in minigrids for rural electrification in emerging economies such as sub-saharan
-Africa and optimize component sizes to show least-cost and/or least-emission options. It models a stand-alone minigrid using graph-based
-representation, generates a pyomo model and hands it to a solver. Results are summarized in the
+REVOL-E-TION groups oemof components and buses into blocks representing real-world systems (e.g. a PV array) for easy application.
+Electric vehicles (in fact any mobile storage devices) are modeled individually within a block called a CommoditySystem.
+Their behavior (i.e. when they depart and arrive again, how much energy they use in between and whether they can be charged externally) is described in a so called log file.
+Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through a Battery CommoditySystem as well as multiple use cases in different time frames (e.g. summer/winter) for the commoditites.
 
 ![System diagram](./images/system_diagram.png)
 
