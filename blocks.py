@@ -801,11 +801,11 @@ class GridConnection(InvestBlock):
         ac_bus           grid_bus
           |                   |
           |<--xc_grid_1--x----|
-          |---grid_xc_1--x--->|<-x-grid source
-          |                   |
-          |<--xc_grid_2--x----|-x->grid sink
+          |---grid_xc_1--x--->|
+          |                   |---(GridMarket Instance)
+          |<--xc_grid_2--x----|
           |---grid_xc_2--x--->|
-          |                   |
+          |                   |---(GridMarket Instance)
           |         .         |
                     .
           |         .         |
@@ -1016,8 +1016,14 @@ class GridMarket:
         for param, value in params.items():
             setattr(self, param, value)
 
-        for var_name in [var for var in vars(self) if ('opex_spec' in var)]:
-            utils.transform_scalar_var(self, var_name, scenario, run)
+        self.equal_prices = True if self.opex_spec_mg2g == 'equal' else False
+
+        # use sorted to ensure that opex_spec_g2mg is processed before opex_spec_mg2g
+        for var_name in sorted([var for var in vars(self) if ('opex_spec' in var)]):
+            if var_name == 'opex_spec_mg2g' and self.equal_prices:
+                self.opex_spec_mg2g = -1 * self.opex_spec_g2mg
+            else:
+                utils.transform_scalar_var(self, var_name, scenario, run)
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
@@ -1044,7 +1050,7 @@ class GridMarket:
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
                                              nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
-                                             variable_costs=self.opex_spec_mg2g)
+                                             variable_costs=self.opex_spec_mg2g + scenario.cost_eps * self.equal_prices)
                                          })
 
         scenario.components.append(self.src)
