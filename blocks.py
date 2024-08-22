@@ -1219,14 +1219,6 @@ class MobileCommodity:
           |                   |
           |                   |<--mc1_ext_dc (external charging DC)
           |
-          |                 mc2_bus
-          |<---------mc2_mc---|<->mc2_ess
-          |                   |
-          |---mc_mc2--------->|-->mc2_snk
-          |                   |
-          |                   |<--mc2_ext_ac (external charging AC)
-          |                   |
-          |                   |<--mc2_ext_dc (external charging DC)
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
