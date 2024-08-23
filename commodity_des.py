@@ -209,7 +209,7 @@ class RentalSystem:
             return pd.DataFrame({'patience_primary': [patience_primary] * len(group),
                                  'patience_secondary': [patience_secondary] * len(group)},
                                 index=group.index)
-        self.processes[['dtime_patience_primary','dtime_patience_secondary']] = (self.processes.groupby(['usecase','timeframe'])
+        self.processes[['dtime_patience_primary', 'dtime_patience_secondary']] = (self.processes.groupby(['usecase','timeframe'])
                                                         .apply(get_usecase_patience)
                                                         .reset_index(level=[0,1],drop=True)
                                                         .sort_index())
@@ -319,9 +319,6 @@ class VehicleRentalSystem(RentalSystem):
             self.check_rex_inputs()
             cs.rex_cs = sc.blocks[cs.rex_cs]
 
-        self.range_usable_high = self.energy_usable_pc_high / self.cs.consumption
-        self.range_usable_low = self.energy_usable_pc_low / self.cs.consumption
-
         self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
         self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
 
@@ -354,6 +351,22 @@ class VehicleRentalSystem(RentalSystem):
             self.sc.exception = message
             raise ValueError(message)
 
+    def get_consumption_speed(self):
+
+        def get_usecase_values(group):
+            usecase = group.name[0]
+            timeframe = group.name[1]
+            consumption = self.cs.usecases.loc[usecase, (timeframe, 'consumption')]
+            speed_avg = self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')]
+            return pd.DataFrame(data={'consumption': [consumption] * len(group),
+                                      'speed_avg': [speed_avg] * len(group)},
+                                index=group.index)
+
+        self.processes[['consumption', 'speed_avg']] = (self.processes.groupby(['usecase', 'timeframe'])
+                                                        .apply(get_usecase_values)
+                                                        .reset_index(level=[0,1],drop=True)
+                                                        .sort_index())
+
     def sample_request_data(self):
         """
         This function fills the demand dataframe with stochastically generated values describing the rental
@@ -372,20 +385,27 @@ class VehicleRentalSystem(RentalSystem):
             p1, p2 = lognormal_params(uc_dist_mean, uc_dist_stdev)
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
-        self.processes['distance'] = (self.processes.groupby(['usecase',
-                                                             'timeframe'])['distance']
-                                      .transform(sample_usecase_distance))
 
-        self.processes['dtime_active'] = pd.to_timedelta((self.processes['distance'] / self.cs.speed_avg), unit='hour')
-        self.processes['energy_req_both'] = self.processes['distance'] * self.cs.consumption
+        self.processes['distance'] = (self.processes.groupby(
+            ['usecase', 'timeframe'])['distance'].transform(sample_usecase_distance))
 
         self.sample_idle_time()
         self.get_patience()
+        self.get_consumption_speed()
+
+        self.processes['dtime_active'] = pd.to_timedelta(
+            (self.processes['distance'] / self.processes['speed_avg']),
+            unit='hour')
+        self.processes['energy_req_both'] = self.processes['distance'] * self.processes['consumption']
+        self.processes['range_usable_high'] = self.energy_usable_pc_high / self.processes['consumption']
+        self.processes['range_usable_low'] = self.energy_usable_pc_low / self.processes['consumption']
 
         if self.cs.rex_cs:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
-            self.processes['distance_missing'] = np.maximum(0, self.processes['distance'] - self.range_usable_high)
-            self.processes['energy_missing'] = self.processes['distance_missing'] * self.cs.consumption
+            self.processes['distance_missing'] = np.maximum(
+                0,
+                self.processes['distance'] - self.processes['range_usable_high'])
+            self.processes['energy_missing'] = self.processes['distance_missing'] * self.processes['consumption']
             self.processes['num_secondary'] = np.ceil(self.processes['energy_missing'] /
                                                       self.energy_usable_rex_pc_high).astype(int)
             self.processes['rex_request'] = self.processes['num_secondary'] > 0
