@@ -184,7 +184,7 @@ class PredictionHorizon:
     def draw_energy_system(self, scenario, run):
 
         # Creates the Directed-Graph
-        dot = graphviz.Digraph(filename=run.path_system_graph_file, format='pdf')
+        dot = graphviz.Digraph(filename=scenario.path_system_graph_file, format='pdf')
 
         dot.node("Bus", shape='rectangle', fontsize="10", color='red')
         dot.node("Sink", shape='trapezium', fontsize="10")
@@ -323,6 +323,11 @@ class Scenario:
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
+
+        # prepare for system graph saving later on
+        self.path_system_graph_file = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_system_graph.pdf')
 
         # prepare for dispatch plot saving later on
         self.plot_file_path = os.path.join(run.path_result_folder, f'{run.runtimestamp}_'
@@ -676,8 +681,6 @@ class SimulationRun:
                                            f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_folder,
                                           f'{self.runtimestamp}_{self.scenario_file_name}.log')
-        self.path_system_graph_file = os.path.join(self.path_result_folder,
-                                                   f'{self.runtimestamp}_{self.scenario_file_name}_system')
 
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 
