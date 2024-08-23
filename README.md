@@ -297,18 +297,40 @@ The following table specifies each parameter of a complete settings file, all of
 | dump_model        | bool | Trigger whether to save a .lp file containing the mathematical optimization model for later solving through pyomo.                                                                                                                                                                                                                                                                                              | ['True', 'False']                 |
 | debugmode         | bool | Trigger whether to log and print solver progress information during the solving process. This is resource intensive and should therefore be avoided unless explicitly necessary.                                                                                                                                                                                                                                | ['True', 'False']                 |
 
-
-
 ## EV-Specific submodules
 Since REVOL-E-TION's main purpose is optimum EV integration, this is where focus lies in modelling detail, resulting in the DES and a priori power scheduling submodules.
 The following sections give more detail on these submodules:
 
 ###  Discrete Event Simulation (DES)
-The DES takes stochastic mobility or energy demand in multiple use cases and timeframes and assigns is to a fleet of MobileCommoditites 
-RentalSystem           | The mother class for execution of the Discrete Event Simulation (DES) simulating the mobility/energy demand and its allocation to different commodities within a service system.                                                                                                                                                                                                                                                                       |
-| RentalProcess          | A single rental of a vehicle or battery manifesting in blocking one or more primary (within the own CommoditySystem) and/or secondary commodities (in a linked CommoditySystem through range extension).
+The DES takes stochastically defined mobility or energy demand in multiple use cases and timeframes, samples an actual demand and assigns it to a CommoditySystem (more specifically to the individual MobileCommodities within it) in a first-come-first-serve approach.
+This enables to model the mobility/energy demand independently from the commodity fleet size.
+However, the DES is run a priori to the dispatch/sizing optimization, so no consideration of whether the resulting commodity dispatch is beneficial to the energy system is taken and limitations through battery aging and/or other limitations have to be covered by safety margins in dispatch to achieve a feasible energy system.
+Through the sampling, the DES also makes REVOL-E-TION outputs non-deterministic once it is activated even though the actual core optimization is deterministic.
+The DES is run separately for every scenario in a simulation run, but only once per scenario, as some CommoditySystems might be linked and can therefore not be simulated independently.
+It is built on the [simpy](https://simpy.readthedocs.io/en/latest/) library and is implemented in the ```commodity_des.py``` file.
+A modification is made to simpy in order to enable processes to require multiple resources at once, which is necessary for battery commodity use cases requiring high energy.
+
+The core element of the DES is a so called environment which is populated with processes that each represent one rental of a commodity from a store holding those commodities.
+The request time for each rental is sampled from a dual normal distribution over time of day defined for each timeframe and use case in the use case definition csv file.
+An example usecase file is distributed with REVOL-E-TION for both VehicleCommoditySystems and BatteryCommoditySystems (explanation see chapter "Classes of Blocks") in the respective input directories.
+Inside the code for the DES, RentalSystem instances are created for each CommoditySystem in the scenario as well as a RentalProcess instance for each process.
+
+Each process not only covers the actual rental time (which itself is made up of an active part and idle time, both of which are sampled stochastically), but also a block time to give the energy system enough time to recharge before renting the commodity out again to a new request.
+For VehicleCommoditySystems, this block time is placed before each rental, while for BatteryCommoditySystems it is placed after.
+<mark>explanation of block time placement not clear</mark>.
+
+Since VehicleCommoditySystems can be linked to BatteryCommoditySystems through the scenario parameter "rex_cs" for range extension, VehicleRentalSystems can also populate BatteryRentalSystems with additional processes representing range extension as a use case.
+Such a process then has a primary and secondary commodity, both of which need to be available for the process to be successful.
+For each RentalSystem, the primary commodity is the one from that RentalSystem, while the secondary is from the linked one.
+This results in range extension batteries being treated as primary in the BatteryRentalSystem and as secondary in the VehicleRentalSystem.
+
+Once all stores have been populated with commodities and all processes have been created, the environment is run and determines which processes are successful (i.e. get their required commodities) and which ones fail.
+The successful processes are then converted to a time based log format for the core energy system optimization to use as input.
 
 ### A Priori Power Scheduling
+
+### Aging Model (also available for StationaryEnergyStorage)
+
 
 ## Model output
 
