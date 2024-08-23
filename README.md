@@ -330,15 +330,33 @@ This results in range extension batteries being treated as primary in the Batter
 
 Once all stores have been populated with commodities and all processes have been created, the environment is run and determines which processes are successful (i.e. get their required commodities) and which ones fail.
 The successful processes are then converted to a time based log format for the core energy system optimization to use as input.
+This contains columns of availability in the energy system(called "<commodity_name>_atbase"), energy consumption while not at base, availability of external AC and DC charging and the Delta SOC ("<commodity_name>_dsoc") of a rental for every commodity and timestep.
+For VehicleCommoditySystems, this is expanded by a column with the trip distance, as even with a constant consumption this is no more traceable from the energy consumption due to the possibility of range extension.
+Only if the dispatch of the commodities is left to the optimizer (as opposed to the a priori power scheduling) myopically (i.e. in the "rh" strategy"), the dsoc column is actually transferred to a hard minimum SOC constraint for the optimizer, as all other cases handle this intrinsically.
 
 ### A Priori Power Scheduling
+<mark>Brian</mark>
 
-### Aging Model (also available for StationaryEnergyStorage)
+### A Posteriori Aging Model (also available for StationaryEnergyStorage)
+Simple semi-empirical aging models are implemented for the BatteryCommoditySystem and StationaryEnergyStorage classes.
+More specifically, these are the Naumann model ([publication 1](https://doi.org/10.1016/j.est.2018.01.019) and [publication 2](https://doi.org/10.1016/j.jpowsour.2019.227666)) for LFP batteries and the [Schmalstieg model](https://doi.org/10.1016/j.jpowsour.2014.02.012) for NMC batteries.
+They are both contained within the ```battery.py``` file and work on superposing calendric and cycle aging.
+The latter is based on cycling parameters (e.g. depths of discharge) determined using a rainflow algorithm for each horizon.
 
+Results of the aging model (if activated through the scenario file parameter "aging") are evaluated and the capacity degradation applied as a restricted usable SOC window after every horizon.
+This results in a dependency of the aging model output on the horizon resolution (i.e. length) with the extreme case of the "go" strategy, where only the State of Health at the end of the simulation timeframe is evaluated.
+Please note that the lifetime used for economic extrapolation of simulation results is not connected to the aging model and sizing the battery block on its results is infeasible due to it being run a posteriori and nonlinearly.
+Therefore, the aging model's output does not have any influence on the economic results of the simulation, but is only of an informative character.
 
 ## Model output
-
-
+REVOL-E-TION creates a uniquely named (containing the runtimestamp and the scenario file name) result directory for every run.
+There, the following files are saved (some of them optionally):
+- The log file of the run named ```<runtimestamp>_<scenario_file_name>_log.csv```. This contains all terminal log messages of the run, including errors and warnings.
+- (Optional) A single result summary file named ```<runtimestamp>_<scenario_file_name>_summary.csv``` if the setting "save_results" is True in the settings file. This contains all noncomplex (int, float, bool or string) attributes of the SimulationRun, Scenario, and all blocks in the scenario for quick overview of results.
+- (Optional) One result timeseries file named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_results.csv``` for every scenario in the run if the setting "save_results" is True in the settings file. This contains all timeseries results of the energy system for every timestep, facilitating easy plotting.
+- (Optional) One DES processes and one log file named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_<commodity_system_name>_processes.csv``` and ```<runtimestamp>_<scenario_name>_<commodity_system_name>_log.csv``` for every CommoditySystem of every scenario if the DES is executed for it and the setting "save_des_results" is True in the settings file. This facilitates debugging and reuse as an input for another scenario that is then deterministically run on that behavior.
+- (Optional) One dispatch plot file named ```<runtimestamp>_<scenario_file_name>_<scenario_name>.html``` for every scenario if the setting "save_plots" is True in the settings file. This file contains an interactive line plot of the dispatch and state variables (i.e. SOCs and SOHs) of every block in the scenario.
+- (Optional) One system graph file named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_system_graph.pdf``` for every scenario if the setting "save_system_graph" is True in the settings file. This file contains a graph representation of the energy system, showing the connections between blocks and the energy flow.
 
 
 
