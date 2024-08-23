@@ -348,7 +348,7 @@ This results in a dependency of the aging model output on the horizon resolution
 Please note that the lifetime used for economic extrapolation of simulation results is not connected to the aging model and sizing the battery block on its results is infeasible due to it being run a posteriori and nonlinearly.
 Therefore, the aging model's output does not have any influence on the economic results of the simulation, but is only of an informative character.
 
-## Model output
+## REVOL-E-TION Outputs
 REVOL-E-TION creates a uniquely named (containing the runtimestamp and the scenario file name) result directory for every run.
 There, the following files are saved (some of them optionally):
 - The log file of the run named ```<runtimestamp>_<scenario_file_name>_log.csv```. This contains all terminal log messages of the run, including errors and warnings.
