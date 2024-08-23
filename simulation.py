@@ -332,10 +332,14 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
-        self.path_result_summary_tempfile = os.path.join(run.path_result_folder, f'{self.name}_tempresults.csv')
+        self.path_result_summary_tempfile = os.path.join(
+            run.path_result_folder,
+            f'{self.name}_tempresults.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim)
-        self.path_result_file = os.path.join(run.path_result_folder, f'{run.runtimestamp}_{self.name}_results.csv')
+        self.path_result_file = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
