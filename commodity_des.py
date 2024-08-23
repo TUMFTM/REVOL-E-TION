@@ -297,12 +297,14 @@ class RentalSystem:
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        processes_path = os.path.join(run.path_result_folder,
-                                      f'{run.runtimestamp}_{self.sc.name}_{self.cs.name}_processes.csv')
+        processes_path = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
         self.processes.to_csv(processes_path)
 
-        log_path = os.path.join(run.path_result_folder,
-                                f'{run.runtimestamp}_{self.sc.name}_{self.cs.name}_log.csv')
+        log_path = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
         self.data.to_csv(log_path)
 
 
