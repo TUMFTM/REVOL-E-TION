@@ -1,7 +1,7 @@
 block,key,grid_only,dispatch_go,dispatch_rh,sizing
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,365,365,365,365
+scenario,sim_duration,5,365,365,365
 scenario,prj_duration,25,25,25,25
 scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
@@ -83,7 +83,8 @@ bev,data_source,des,des,des,des
 bev,filename,bev_usecases_default,bev_usecases_default,bev_usecases_default,bev_usecases_default
 bev,num,5,5,5,5
 bev,size,30000.0,30000.0,30000.0,30000.0
-bev,int_lvl,v2mg,v2mg,v2mg,v2mg
+bev,lvl_int,v2mg,v2mg,v2mg,v2mg
+bev,lvl_opt,oc,oc,oc,oc
 bev,forecast_hours,None,None,None,None
 bev,power_lim_static,None,None,None,None
 bev,system,ac,ac,ac,ac
@@ -120,7 +121,8 @@ bev,sdr,0.02,0.02,0.02,0.02
 brs,data_source,des,des,des,des
 brs,filename,brs_usecases_default,brs_usecases_default,brs_usecases_default,brs_usecases_default
 brs,num,10,10,10,10
-brs,int_lvl,fcfs,fcfs,fcfs,fcfs
+brs,lvl_int,ud,ud,ud,ud
+brs,lvl_opt,fcfs,fcfs,fcfs,fcfs
 brs,forecast_hours,None,None,None,None
 brs,power_lim_static,11000,11000,11000,11000
 brs,system,ac,ac,ac,ac
