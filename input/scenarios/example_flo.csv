@@ -1,7 +1,7 @@
 block,key,dispatch_go
 scenario,starttime,1.1.2018
 scenario,timestep,15min
-scenario,sim_duration,364
+scenario,sim_duration,10
 scenario,prj_duration,25
 scenario,strategy,rl
 scenario,len_ph,48
@@ -68,13 +68,12 @@ ess,capex_spec,0.25
 ess,mntex_spec,0.00625
 ess,opex_spec,0
 ess,ls,10
-ess,eff_chg,0.95
-ess,eff_dis,0.95
+ess,eff_roundtrip,0.9
 ess,crate_chg,0.8
 ess,crate_dis,0.8
 ess,soc_init,0.5
 ess,soh_init,1
-ess,sdr,0.02
+ess,sdr,0.00
 ess,cdc,1
 ess,eff,1
 bev,size,30000.0
