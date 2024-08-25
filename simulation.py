@@ -18,14 +18,11 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import ast
 import graphviz
 import logging
 import logging.handlers
 import math
-import numpy as np
 import os
-import pickle
 import pprint
 import psutil
 import pytz
@@ -39,7 +36,6 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
-import plotly.graph_objects as go
 import tkinter as tk
 import tkinter.filedialog
 
@@ -48,42 +44,15 @@ from plotly.subplots import make_subplots
 
 import blocks
 import commodity_des as des
-from additional_constraints import apply_additional_constraints
+from custom_constraints import CustomConstraints
 import tum_colors as col
 from aprioripowerscheduler import AprioriPowerScheduler
+import utils
 from ensys_interface import call_ensys_interface
 
 ###############################################################################
 # Functions
 ###############################################################################
-
-
-def infer_dtype(value):
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    if value.lower() == 'true':
-        return True
-    elif value.lower() == 'false':
-        return False
-    elif value.lower() in ['none', 'null', 'nan']:
-        return None
-
-    try:
-        evaluated = ast.literal_eval(value)
-        if isinstance(evaluated, dict):
-            return evaluated
-    except (ValueError, SyntaxError):
-        pass
-
-    return value.lower()
 
 
 def input_gui(directory):
@@ -202,7 +171,8 @@ class PredictionHorizon:
             scenario.logger.error(msg)
             raise IndexError(msg)
 
-        apply_additional_constraints(model=self.model, prediction_horizon=self, scenario=scenario, run=run)
+        # Apply custom constraints
+        scenario.constraints.apply_constraints(model=self.model)
 
         if run.dump_model:
             if scenario.strategy in ['go', 'rl']:
@@ -285,6 +255,10 @@ class PredictionHorizon:
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
             block.get_opt_size(self)
 
+        for block in [block for block in scenario.blocks.values()
+                      if isinstance(block, blocks.GridConnection) and block.peakshaving]:
+            block.get_peak_powers(self)
+
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
 
@@ -335,7 +309,7 @@ class SimulationRun:
                                          index_col=[0, 1],
                                          na_values=['NaN', 'nan'],  # this inhibits None/Null being read as float NaN
                                          keep_default_na=False)
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(infer_dtype)
+        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
@@ -347,7 +321,7 @@ class SimulationRun:
         self.commit_hash = self.get_git_commit_hash()
 
         settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings = settings.map(infer_dtype)
+        settings = settings.map(utils.infer_dtype)
 
         for key, value in settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
