@@ -110,8 +110,10 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
+        if self.strategy == 'rl':
+            pass
         # check input parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
+        elif cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in cs.apriori_lvls if
                                                                                        x != 'uc'] and not cs.lm_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
@@ -133,7 +135,9 @@ class Scenario:
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
+        if self.strategy == 'rl':
+            pass
+        elif any([cs for cs in self.commodity_systems.values() if cs.int_lvl in cs.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
