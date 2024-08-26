@@ -99,7 +99,7 @@ class Block:
         capex[0] = self.capex_init
         if hasattr(self, 'ls'):
             for year in eco.repllist(self.ls, scenario.prj_duration_yrs):
-                capex[year] = self.capex_init * (self.cdc ** year)
+                capex[year] = self.capex_init * (self.ccr ** year)
         self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
         self.cashflows[f'mntex_{self.name}'] = -1 * self.mntex_yrl
@@ -224,7 +224,7 @@ class InvestBlock(Block):
         # ace = adjusted capital expenses (including maintenance)
         self.ace = eco.adj_ce(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
         # epc = equivalent present cost
-        self.epc = eco.ann_recur(self.ace, self.ls, scenario.prj_duration_yrs, scenario.wacc, self.cdc)
+        self.epc = eco.ann_recur(self.ace, self.ls, scenario.prj_duration_yrs, scenario.wacc, self.ccr)
 
     def calc_capex(self, scenario):
         """
@@ -234,11 +234,11 @@ class InvestBlock(Block):
         self.calc_capex_init(scenario)  # initial investment references to different parameters depending on block type
 
         self.capex_prj = eco.tce(self.capex_init,
-                                 self.cdc,
+                                 self.ccr,
                                  self.ls,
                                  scenario.prj_duration_yrs)
         self.capex_dis = eco.pce(self.capex_init,
-                                 self.cdc,
+                                 self.ccr,
                                  scenario.wacc,
                                  self.ls,
                                  scenario.prj_duration_yrs)
@@ -246,7 +246,7 @@ class InvestBlock(Block):
                                        self.ls,
                                        scenario.prj_duration_yrs,
                                        scenario.wacc,
-                                       self.cdc)
+                                       self.ccr)
 
         scenario.capex_init += self.capex_init
         scenario.capex_prj += self.capex_prj
