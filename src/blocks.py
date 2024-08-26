@@ -1063,7 +1063,7 @@ class GridMarket:
 
     def add_power_trace(self, scenario):
         # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
-        if self.parent.markets_file is None:
+        if self.parent.filename_markets is None:
             return
 
         legentry = (f'{self.name} power (max.'
