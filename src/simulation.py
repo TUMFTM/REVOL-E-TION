@@ -283,7 +283,6 @@ class Scenario:
         self.run = run
         self.logger = logger
         self.logger.propagate = False
-        pass
 
         # General Information --------------------------------
 
@@ -300,7 +299,7 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
-        self.currency = self.currency.upper()
+        self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.tzfinder = timezonefinder.TimezoneFinder()
         self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))

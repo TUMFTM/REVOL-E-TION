@@ -21,12 +21,12 @@ core,ls,20,20,20,20
 core,cdc,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
-dem,filename,dem_example,dem_example,dem_example,dem_example
+dem,filename,dem_example.csv,dem_example.csv,dem_example.csv,dem_example.csv
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size,0,15000,15000,opt
 wind,data_source,None,pv,pv,pv
 wind,height,50,50,50,50
-wind,filename,wind_example,wind_example,wind_example,wind_example
+wind,filename,wind_example.csv,wind_example.csv,wind_example.csv,wind_example.csv
 wind,capex_spec,2.8,2.8,2.8,2.8
 wind,mntex_spec,0.084,0.084,0.084,0.084
 wind,opex_spec,0,0,0,0
@@ -35,7 +35,7 @@ wind,cdc,1,1,1,1
 wind,eff,0.95,0.95,0.95,0.95
 pv,size,0,105000,105000,opt
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
-pv,filename,pv_example,pv_example,pv_example,pv_example
+pv,filename,pv_example,pv_example.csv,pv_example.csv,pv_example.csv
 pv,capex_spec,0.250,0.250,0.250,0.250
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
 pv,opex_spec,0,0,0,0
@@ -58,10 +58,10 @@ grid,mntex_spec,0,0,0,0
 grid,ls,10,10,10,10
 grid,cdc,1,1,1,1
 grid,eff,1,1,1,1
-grid,markets_file,None,None,None,None
+grid,filename_markets,None,None,None,None
 grid,res_only,False,False,False,False
-grid,opex_spec_g2mg,grid_buy_example,grid_buy_example,grid_buy_example,grid_buy_example
-grid,opex_spec_mg2g,grid_sell_example,grid_sell_example,grid_sell_example,grid_sell_example
+grid,opex_spec_g2mg,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
+grid,opex_spec_mg2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
 ess,size,0,115000,115000,opt
 ess,pv_only,False,False,False,False
 ess,aging,True,True,True,True
@@ -80,7 +80,7 @@ ess,sdr,0.02,0.02,0.02,0.02
 ess,cdc,1,1,1,1
 ess,eff,1,1,1,1
 bev,data_source,des,des,des,des
-bev,filename,bev_usecases_default,bev_usecases_default,bev_usecases_default,bev_usecases_default
+bev,filename,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv
 bev,num,5,5,5,5
 bev,size,30000.0,30000.0,30000.0,30000.0
 bev,lvl_int,v2mg,v2mg,v2mg,v2mg
@@ -117,7 +117,7 @@ bev,eff_roundtrip,0.95,0.95,0.95,0.95
 bev,cdc,1,1,1,1
 bev,sdr,0.02,0.02,0.02,0.02
 brs,data_source,des,des,des,des
-brs,filename,brs_usecases_default,brs_usecases_default,brs_usecases_default,brs_usecases_default
+brs,filename,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv
 brs,num,10,10,10,10
 brs,lvl_int,ud,ud,ud,ud
 brs,lvl_opt,fcfs,fcfs,fcfs,fcfs
