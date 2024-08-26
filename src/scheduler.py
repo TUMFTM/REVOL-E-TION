@@ -1,5 +1,5 @@
 """
-aprioripowerscheduler.py
+scheduler.py
 
 --- Description ---
 This script defines the apriori charging strategies for commodities within the REVOL-E-TION toolset.
@@ -17,7 +17,8 @@ license:    GPLv3
 import numpy as np
 import pandas as pd
 import statistics
-import blocks
+
+from src import blocks
 
 
 def get_bus(bus, target):

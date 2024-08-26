@@ -25,10 +25,9 @@ import pytz
 import statistics
 import windpowerlib
 
-import battery as bat
-import blocks
-import economics as eco
-import utils
+from src import battery as bat
+from src import economics as eco
+from src import utils
 
 import plotly.graph_objects as go
 
@@ -45,7 +44,7 @@ class Block:
 
         time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
         # Don't transform variables for GridConnections, as the specified opex are passed to GridMarket
-        if not isinstance(self, blocks.GridConnection):
+        if not isinstance(self, GridConnection):
             for var in time_var_params:
                 utils.transform_scalar_var(self, var, scenario, run)
 

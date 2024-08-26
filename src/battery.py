@@ -26,7 +26,7 @@ import pandas as pd
 import rainflow
 import scipy.interpolate as spip
 
-import blocks
+from src import blocks
 
 
 class BatteryPackModel:

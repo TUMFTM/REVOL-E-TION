@@ -15,7 +15,8 @@ license:    GPLv3
 """
 
 import pyomo.environ as po
-import blocks
+
+from src import blocks
 
 
 class CustomConstraints:

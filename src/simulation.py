@@ -42,13 +42,12 @@ import tkinter.filedialog
 from pathlib import Path
 from plotly.subplots import make_subplots
 
-import blocks
-import commodity_des as des
-from custom_constraints import CustomConstraints
-import tum_colors as col
-from aprioripowerscheduler import AprioriPowerScheduler
-import utils
-
+from src import blocks
+from src import commodity_des as des
+from src import custom_constraints as cc
+from src import tum_colors as col
+from src import scheduler
+from src import utils
 
 ###############################################################################
 # Functions
@@ -364,7 +363,7 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
-        self.constraints = CustomConstraints(scenario=self)
+        self.constraints = cc.CustomConstraints(scenario=self)
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
@@ -407,7 +406,7 @@ class Scenario:
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.lvl_opt in self.run.apriori_lvls]):
-            self.scheduler = AprioriPowerScheduler(scenario=self)
+            self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting

@@ -22,8 +22,8 @@ import pandas as pd
 import pytz
 import scipy as sp
 
-import blocks
-import mapper_timeframe as mtf
+from src import blocks
+from src import mapper_timeframe as mtf
 
 
 class MultiStoreGet(simpy.resources.base.Get):

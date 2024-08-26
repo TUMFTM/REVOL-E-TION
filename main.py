@@ -26,7 +26,7 @@ import warnings
 import multiprocessing as mp
 
 from itertools import repeat
-from simulation import PredictionHorizon, Scenario, SimulationRun
+from src import simulation as sim
 
 # raise UserWarnings about infeasibility as errors to catch them properly
 warnings.simplefilter(action='error', category=UserWarning)
@@ -69,15 +69,15 @@ def read_mplogger_queue(queue):
         main_logger.handle(record)
 
 
-def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be a function for starpool
+def simulate_scenario(name: str, run: sim.SimulationRun, log_queue):  # needs to be a function for starpool
     logger = setup_logger(name, log_queue, run)
 
     run.process = mp.current_process() if run.parallel else None
 
-    scenario = Scenario(name, run, logger)  # Create scenario instance
+    scenario = sim.Scenario(name, run, logger)  # Create scenario instance
 
     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-        horizon = PredictionHorizon(horizon_index, scenario, run)
+        horizon = sim.PredictionHorizon(horizon_index, scenario, run)
 
         if scenario.strategy in ['go', 'rh']:
             horizon.run_optimization(scenario, run)
@@ -123,7 +123,7 @@ def simulate_scenario(name: str, run: SimulationRun, log_queue):  # needs to be 
 
 if __name__ == '__main__':
 
-    run = SimulationRun()  # get all global information about the run
+    run = sim.SimulationRun()  # get all global information about the run
 
     # parallelization activated in settings file
     if run.parallel:
