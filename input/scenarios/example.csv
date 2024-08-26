@@ -129,8 +129,7 @@ brs,temp_battery,25,pv,pv,pv
 brs,ls,10,10,10,10
 brs,soh_init,1,1,1,1
 brs,soc_init,0.5,0.5,0.5,0.5
-brs,soc_target_high,1.0,1.0,1.0,1.0
-brs,soc_target_low,0.8,0.8,0.8,0.8
+brs,soc_target,1.0,1.0,1.0,1.0
 brs,soc_return,0.15,0.15,0.15,0.15
 brs,capex_spec,0,0,0,0
 brs,mntex_spec,0,0,0,0

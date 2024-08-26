@@ -741,6 +741,11 @@ class BatteryCommoditySystem(CommoditySystem):
     def __init__(self, name, scenario, run):
         super().__init__(name, scenario, run)
 
+        # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
+        # to one SOC before rental
+        self.soc_target_high = self.soc_target
+        self.soc_target_low = self.soc_target
+
 
 class ControllableSource(InvestBlock):
 
@@ -1453,9 +1458,9 @@ class MobileCommodity:
             self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
-            self.ess.min_storage_level = (self.data_ph['dsoc']
-                                          .where(self.data_ph['dsoc'] == 0, self.parent.soc_target_high)
-                                          .clip(lower=self.soc_min, upper=self.soc_max))
+            self.ess.min_storage_level = self.data_ph['dsoc'].where(
+                self.data_ph['dsoc'] == 0,
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
         else:  # opt_global or apriori cases
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
