@@ -337,45 +337,48 @@ For VehicleCommoditySystems, this is expanded by a column with the trip distance
 Only if the dispatch of the commodities is left to the optimizer (as opposed to the a priori power scheduling) myopically (i.e. in the "rh" strategy"), the dsoc column is actually transferred to a hard minimum SOC constraint for the optimizer, as all other cases handle this intrinsically.
 
 ### A Priori Power Scheduling
-<mark>Brian</mark>
-Charging schedulues (i.e. timeseries specifying the charging power) of commodities in rulebased commodity systems are calculated a priori.
-Rulebased commodity systems are commodity systems with integration levels 'uc' (uncoordinated charging), 'equal', 'fcfs' (first come first served) and 'soc'.
-In order to compute the charging schedules, all commodities within rulebased commodity systems which are plugged in to the local energy system are considered.
-In addition, a rulebased power schedule for external charging of commodities within rulebased commodity systems is calculated.  
-The precalculated charging schedules are then used as fixed power inputs for the core optimization.
+Dependent on the chosen optimization level (*lvl_opt*) of a commodity system a charging schedule for the commodity system's commodities is calculated before the linear optimization starts (a priori).
+This approach is applied to commodities in commodity systems with optimization level of all types of uncoordinated charging ('uc') and rulebased strategies ('equal', 'fcfs', 'soc').
+All optimization levels causing an a priori calculation of the commodity's charging power require a unidirectional ('ud') integration level (*lvl_int*).  
+In addition to the optimization level, a static load management can be applied to rulebased commodity systems.
+The maximum power available for the commodity system is set using *power_lim_static*.
+If this parameter is set to 'None', the static load management system is deactivated for the specific commodity system and a dynamic load management is applied.
+For all commodities within uncoordinated or rulebased commodity systems in addition to the charging power when being plugged in at the local energy system the required charging power on-route at external charging infrastructure is calculated.
+All precalculated charging schedules are set as new condition to the linear optimization model by applying them as fixed powers to the appropriate flows of the model.
+
+#### General Approach of A Priori Power Scheduling
+The a priori power schedules are calculated iteratively for each timestep as the SOC which results from the calculated power of each timestep has to be taken into account as input parameter for calculating the next timestep's charging power.
+Within a single timestep in a first step the charging powers for all commodities plugged in to the local energy system (column 'atbase' in log file is set to True) are calculated.
+Afterward, the power for all commodities with available external charging infrastructure (column 'atac' or 'atdc' in log file is set to True) is calculated.
+The charging power calculation for commodities connected to the local energy system starts with all uncoordinated commodities followed by rulebased commodity systems with static load management.
+In the next step the available power within the local energy system is calculated subtracting the required power of FixedDemand blocks and the powers already assigned to unccordinated and rulebased (with static load management) commodity systems from the maximum power offered by blocks of type GridConnection, PVSource, WindSource, and ControllableSource.
+This power than can be distributed to all commodities being part of the dynamic load management. The use of possible excess power then is subject to the linear optimization algorithm. 
 
 #### Load management system: static vs. dynamic
-For rulebased commodity systems (except for integration level 'uc') a static power limit can be defined in the scenario file.
-If a static power limit is set, this limit is applied as static load management for the commodity system.
+For rulebased commodity systems a static power limit can be defined in the scenario file.
 Therefore, the specified power must not be exceeded by the sum of all commodities' charging power.
 On the other hand, at the same time the local energy system is responsible for providing the required power.
 If no static power limit is set, the commodity system's commodities will be part of a dynamic load management.
-In this case, the power available within the local energy system after satisfying the power demand of FixedDemand blocks, 'uc' commodities and all commodity systems with a static load management is distributed among all commodities which are part of the dynamic load management.
-Therefore, all rulebased (except for 'uc') commodity systems without a static power limit have to be of the same integration level.
+In this case, the power available within the local energy system after satisfying the power demand of FixedDemand blocks, uncoordinated commodities and all commodity systems with a static load management is distributed among all commodities which are part of the dynamic load management.
+Therefore, all rulebased commodity systems without a static power limit have to be of the same integration level.
 If this integration level is supposed to be 'equal' furthermore all commodity systems have to be connected to the same bus.
-
-
+As a dynamic load management system requires knowledge about the available power within the local energy system for each timestep, it is not possible to combine a dynamic load management system with a StationaryEnergyStorage block as this would require an a priori calculation of the StationaryEnergyStorage's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
 
 #### Charging Integration Levels
-- 'uc':
-  - Once plugged in to the local energy system, the commodity will charge at the maximum charging power specified for the commodity in the scenario file until the target SOC is reached.
-  - Charging power limiting factor: The commodity's maximum charging power. The chosen load management strategy has no influence on this strategy.
-- 'equal': All considered Commodities are charged in parallel with the available charging power distributed equally among all commodities. If there is leftover power (e.g. caused by power reduction of a commodity as it reached 100 % SOC), the leftover power is distributed among the remaining commodities. This is repeated until all commodities have reached their power limit or the available power is exhausted.
-  - 'equal':
+- uncoordinated charging: only a single commodity neglecting effects caused by other commodities is taken into account to determine its charging power.
+  - 'uc':
+    - Once plugged in to the local energy system, the commodity will charge at the maximum charging power specified for the commodity in the scenario file until the target SOC is reached.
+    - Charging power limiting factor: The commodity's maximum charging power. The chosen load management strategy (static or dynamic) has no effect on this strategy.
+- rulebased charging:  
+  - 'equal': All considered Commodities are charged in parallel with the available charging power distributed equally among all commodities. If there is leftover power (e.g. caused by power reduction of a commodity as it reached 100 % SOC), the leftover power is distributed among the remaining commodities. This is repeated until all commodities have reached their power limit or the available power is exhausted.
     - The available power specified by the static power limit is distributed equally among all available commodities in the commodity system. If a commodity has reached its power limit (e.g. caused by 100 % SOC) it drops out of the list of available commodities.
     - If there is leftover power (e.g. caused by power reduction of a commodity as it reached 100 % SOC), the leftover power is distributed among the remaining commodities. This is repeated until all commodities have reached their power limit or the available power is exhausted.
-  - 'fcfs':
+  - 'fcfs': dummy
+  - 'soc': dummy
 
+#### External charging
+dummy
 
-
-
-Charging integration levels 'uc' (uncoordinated charging), 'equal', 'fcfs' (first come first served) and 'soc' will lead to a priori power scheduling following simple heuristics and therefore are called rulebased charging strategies.
-- 'uc': Once plugged in to the local energy system, the commodity will charge at the maximum charging power specified for the commodity in the scenario file. The energy local system is responsible for providing the required power.
-- 
-- 'fcfs': Commodities are assigned a charging priority based on the time of plugging in to the local energy system. Starting with the commodity with the highest priority, the commodities are charged in sequence until the available charging power is exhausted.
-- 'soc': Commodities are charged in sequence based on their SOC. Commodities with the lowest SOC are assigned the highest priority. The charging power then is distributed as for 'fcfs'.
-If a static power limit is set for a commodity system and the system's integration level is of type 'equal', 'fcfs' or 'soc', this power limit is used as the maximum power available for the system's commodities. The local energy system is responsible for providing the required power.
-If no static power limit is set for a commodity system and the system's integration level is of type 'equal', 'fcfs' or 'soc', the available power within the local energy system is distributed among all commodities in commodity systems with these characteristics.  Therefore, to all commodity systems without static power limit, which are not of integration level 'uc' but of any other rulebased integration level, the same integration level has to be assigned. If this integration level is supposed to be 'equal' furthermore all commodity systems have to be connected to the same bus.
 
 ### A Posteriori Aging Model (also available for StationaryEnergyStorage)
 Simple semi-empirical aging models are implemented for the BatteryCommoditySystem and StationaryEnergyStorage classes.
