@@ -299,6 +299,9 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
+        # add SystemCore to blocks ensuring SystemCore is the first component to be built
+        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
+
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.tzfinder = timezonefinder.TimezoneFinder()
