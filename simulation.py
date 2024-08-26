@@ -184,7 +184,7 @@ class PredictionHorizon:
     def draw_energy_system(self, scenario, run):
 
         # Creates the Directed-Graph
-        dot = graphviz.Digraph(filename=run.path_system_graph_file, format='pdf')
+        dot = graphviz.Digraph(filename=scenario.path_system_graph_file, format='pdf')
 
         dot.node("Bus", shape='rectangle', fontsize="10", color='red')
         dot.node("Sink", shape='trapezium', fontsize="10")
@@ -324,6 +324,11 @@ class Scenario:
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
 
+        # prepare for system graph saving later on
+        self.path_system_graph_file = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_system_graph.pdf')
+
         # prepare for dispatch plot saving later on
         self.plot_file_path = os.path.join(run.path_result_folder, f'{run.runtimestamp}_'
                                                                    f'{run.scenario_file_name}_'
@@ -332,10 +337,14 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
-        self.path_result_summary_tempfile = os.path.join(run.path_result_folder, f'{self.name}_tempresults.csv')
+        self.path_result_summary_tempfile = os.path.join(
+            run.path_result_folder,
+            f'{self.name}_tempresults.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim)
-        self.path_result_file = os.path.join(run.path_result_folder, f'{run.runtimestamp}_{self.name}_results.csv')
+        self.path_result_file = os.path.join(
+            run.path_result_folder,
+            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -364,17 +373,19 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([cs.filename == 'run_des' for cs in self.commodity_systems.values()]):
-            des.execute_des(self, run.save_des_results, run.path_result_folder)
+        if any([cs.data_source == 'des' for cs in self.commodity_systems.values()]):
+            des.execute_des(self, run)
 
-        for cs in [cs for cs in self.commodity_systems.values() if cs.filename == 'run_des']:
+        for cs in [cs for cs in self.commodity_systems.values() if cs.data_source == 'des']:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
         # ToDo: put into extra function
         # check input parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if cs.int_lvl in [x for x in self.run.apriori_lvls if
-                                                                               x != 'uc'] and not cs.lm_static]:
+        if cs_unlim := [cs for cs in self.commodity_systems.values() if
+                        (cs.lvl_opt in self.run.apriori_lvls)
+                        and cs.lvl_opt != 'uc'
+                        and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
                                  f' without static load management (lm_static) is not compatible with size optimization')
@@ -384,18 +395,18 @@ class Scenario:
                                  f' without static load management (lm_static) is not implemented for systems with'
                                  f' stationary energy storage')
                 exit()  # TODO exit scenario instead of run
-            if len(set([cs.int_lvl for cs in cs_unlim])) > 1:
+            if len(set([cs.lvl_opt for cs in cs_unlim])) > 1:
                 run.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
                                  f' have to follow the same strategy. Different strategies are not possible')
                 exit()  # TODO exit scenario instead of run
-            if cs_unlim[0].int_lvl == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
+            if cs_unlim[0].lvl_opt == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
                 run.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
                                  f' dynamic load management, all CommoditySystems with dynamic load management have to'
                                  f' be connected to the same bus')
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in self.run.apriori_lvls]):
+        if any([cs for cs in self.commodity_systems.values() if cs.lvl_opt in self.run.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
@@ -670,8 +681,6 @@ class SimulationRun:
                                            f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_folder,
                                           f'{self.runtimestamp}_{self.scenario_file_name}.log')
-        self.path_system_graph_file = os.path.join(self.path_result_folder,
-                                                   f'{self.runtimestamp}_{self.scenario_file_name}_system')
 
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
 

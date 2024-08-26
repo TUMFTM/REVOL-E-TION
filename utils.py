@@ -55,12 +55,12 @@ def get_period_fraction(dti, period, freq):
     return period_fraction
 
 
-def convert_sdr_to_timestep(sdr: float) -> float:
+def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     """
     This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
     """
     # According to oemof documentation, the loss rate needs to be given for 1 hour neglecting the timestep of the model
-    tsr = pd.Timedelta(hours=1) / pd.Timedelta('30 days')
+    tsr = ts / pd.Timedelta('30 days')
     lr = 1 - (1 - sdr) ** tsr
     return lr
 
@@ -127,9 +127,9 @@ def transform_scalar_var(block, var_name, scenario, run):
     # In case of filename for operations cost read csv file
     if isinstance(scenario_entry, str):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
-        rel_dir = block.parent.name if hasattr(block, 'parent') else block.name
+        dirname = block.parent.__class__.__name__ if hasattr(block, 'parent') else block.__class__.__name__
         opex = read_input_csv(block,
-                              os.path.join(run.path_input_data, rel_dir, f'{scenario_entry}.csv'),
+                              os.path.join(run.path_input_data, dirname, f'{scenario_entry}.csv'),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series

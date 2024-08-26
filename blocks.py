@@ -477,39 +477,30 @@ class CommoditySystem(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        if self.filename == 'run_des':  # if commodity system shall use a predefined behavior file
-            self.data = None  # data will be generated in a joint DES run after model setup
-        else:  # use pregenerated file
-            self.path_input_file = os.path.join(run.path_input_data, self.name, self.filename + '.csv')
-            self.data = utils.read_input_csv(self, self.path_input_file, scenario, multiheader=True, resampling=False)
+        self.mode_dispatch = None
+        # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
+        self.get_dispatch_mode(scenario, run)
 
-            if pd.infer_freq(self.data.index).lower() != scenario.timestep:
-                scenario.logger.warning(f'\"{self.name}\" input data does not match timestep'
-                                        f' - resampling is experimental')
-                consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
-                bool_columns = self.data.columns.difference(consumption_columns)
-                # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-                df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
-                df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
-                self.data = df
+        self.data = None
+        if self.data_source == 'des':
+            self.usecases = self.read_usecase_file(run)
+        elif self.data_source == 'log':
+            self.read_input_log(scenario, run)
+        else:
+            raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
+
+        self.eff_chg = self.eff_dis = np.sqrt(self.eff_roundtrip)
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
-        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
+
+        if self.data_source == 'des':
+            self.pwr_loss_max = utils.convert_sdr(self.sdr, scenario.timestep_td) * self.size * scenario.timestep_hours
+            self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
-
-        # static load management can only be activated for rulebased integration levels
-        if self.lm_static and self.int_lvl not in [x for x in run.apriori_lvls if x != 'uc']:
-            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
-                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
-                                    f' -> deactivated static load management')
-            self.lm_static = None
-
-        if self.opt and self.int_lvl in run.apriori_lvls:
-            scenario.logger.error(f'CommoditySystem \"{self.name}\": optimization of commodity size not'
-                                  f' implemented for integration levels {run.apriori_lvls}')
-            exit()  # TODO exit scenario instead of run
+        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
         # Creation of static energy system components --------------------------------
 
@@ -531,15 +522,15 @@ class CommoditySystem(InvestBlock):
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
                                                      variable_costs=self.opex_spec_sys_chg,
-                                                     nominal_value=self.lm_static,
-                                                     max=1 if self.lm_static else None
+                                                     nominal_value=self.power_lim_static,
+                                                     max=1 if self.power_lim_static else None
                                                  )},
                                                  outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: 1})
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value=(None if self.int_lvl in ['v2mg'] else 0),
+                                                      nominal_value=(None if self.lvl_int in ['v2mg'] else 0),
                                                       variable_costs=self.opex_spec_sys_dis)},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
@@ -551,8 +542,6 @@ class CommoditySystem(InvestBlock):
         # Generate individual commodity instances
         self.commodities = {f'{self.name}{str(i)}': MobileCommodity(self.name + str(i), self, scenario)
                             for i in range(self.num)}
-
-        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
     def add_power_trace(self, scenario):
         super().add_power_trace(scenario)
@@ -637,8 +626,36 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
 
+    def get_dispatch_mode(self, scenario, run):
+
+        if self.lvl_opt in run.apriori_lvls:  # uc, equal, soc, fcfs
+            if self.lvl_opt == 'uc':
+                self.mode_dispatch = 'apriori_unlimited'
+            elif isinstance(self.power_lim_static, (int, float)):
+                self.mode_dispatch = 'apriori_static'
+            elif self.power_lim_static is None:
+                self.mode_dispatch = 'apriori_dynamic'
+
+        elif scenario.strategy == 'rh':
+            self.mode_dispatch = 'opt_myopic'
+        elif scenario.strategy == 'go':
+            self.mode_dispatch = 'opt_global'
+
+        # static load management can only be activated for a priori integration levels
+        if self.power_lim_static and self.mode_dispatch != 'apriori_static':
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
+                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
+                                    f' -> deactivating static load management')
+            self.power_lim_static = None
+
+        if self.opt and self.lvl_opt in run.apriori_lvls:
+            scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
+                                  f' implemented for a priori integration levels: {run.apriori_lvls}')
+            exit()  # TODO exit scenario instead of run
+
     def get_legend_entry(self):
-        return f'{self.name} total power{f" (static load management {self.lm_static / 1e3:.1f} kW)" if self.lm_static else ""}'
+        return (f'{self.name} total power'
+                f'{f" (static load management {self.power_lim_static / 1e3:.1f} kW)" if self.power_lim_static else ""}')
 
     def get_opt_size(self, horizon):
         """
@@ -660,6 +677,52 @@ class CommoditySystem(InvestBlock):
         for commodity in self.commodities.values():
             commodity.get_timeseries_results(scenario)
 
+    def read_input_log(self,scenario, run):
+        """
+        Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
+        consumption must be meaned, while booleans, distances and dsocs must not.
+        """
+
+        self.data = utils.read_input_csv(self,
+                                         os.path.join(run.path_input_data,
+                                                      self.__class__.__name__,
+                                                      self.filename + '.csv'),
+                                         scenario,
+                                         multiheader=True,
+                                         resampling=False)
+
+        if pd.infer_freq(self.data.index).lower() != scenario.timestep:
+            scenario.logger.warning(f'\"{self.name}\" input data does not match timestep')
+            consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
+            bool_columns = self.data.columns.difference(consumption_columns)
+            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+            df = self.data[consumption_columns].resample(scenario.timestep).mean().ffill().bfill()
+            df[bool_columns] = self.data[bool_columns].resample(scenario.timestep).ffill().bfill()
+            self.data = df
+
+    def read_usecase_file(self, run):
+        """
+        Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe
+        """
+
+        df = pd.read_csv(os.path.join(run.path_input_data, self.__class__.__name__, f'{self.filename}.csv'),
+                         header=[0, 1], index_col=0)
+        for timeframe in df.columns.levels[0]:
+            df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
+                                                       df.loc[:, (timeframe, 'rel_prob')].sum())
+            df.loc[:, (timeframe, 'sum_dep_magn')] = (df.loc[:, (timeframe, 'dep1_magnitude')] +
+                                                      df.loc[:, (timeframe, 'dep2_magnitude')])
+
+            # catch cases where the sum of both departure magnitudes is not one
+            df.loc[:, (timeframe, 'dep1_magnitude')] = (df.loc[:, (timeframe, 'dep1_magnitude')] /
+                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
+            df.loc[:, (timeframe, 'dep2_magnitude')] = (df.loc[:, (timeframe, 'dep2_magnitude')] /
+                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
+
+            df.drop(columns=[(timeframe, 'sum_dep_magn')], inplace=True)
+
+        return df
+
     def set_init_size(self, scenario, run):
         super().set_init_size(scenario, run)
         self.size_pc = self.size  # pc = per commodity
@@ -677,6 +740,11 @@ class BatteryCommoditySystem(CommoditySystem):
 
     def __init__(self, name, scenario, run):
         super().__init__(name, scenario, run)
+
+        # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
+        # to one SOC before rental
+        self.soc_target_high = self.soc_target
+        self.soc_target_low = self.soc_target
 
 
 class ControllableSource(InvestBlock):
@@ -824,8 +892,9 @@ class GridConnection(InvestBlock):
 
         # get information about GridMarkets specified in the scenario file
         if self.markets_file:
-            # ToDo: change path to class name instead of block name: self.__class__.__name__
-            markets = pd.read_csv(os.path.join(run.path_input_data, self.name, f'{self.markets_file}.csv'),
+            markets = pd.read_csv(os.path.join(run.path_input_data,
+                                               self.__class__.__name__,
+                                               f'{self.markets_file}.csv'),
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
@@ -1047,7 +1116,9 @@ class FixedDemand(Block):
 
         super().__init__(name, scenario, run)
 
-        self.path_input_file = os.path.join(run.path_input_data, 'dem', f'{self.filename}.csv')
+        self.path_input_file = os.path.join(run.path_input_data,
+                                            self.__class__.__name__,
+                                            f'{self.filename}.csv')
         self.data = utils.read_input_csv(self, self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
@@ -1092,9 +1163,14 @@ class MobileCommodity:
 
     def __init__(self, name, parent, scenario):
 
+        self.dsoc_buffer_aging = 0.05  # Todo make this a parameter
+
         self.name = name
         self.parent = parent
         self.size = None if self.parent.opt else self.parent.size_pc
+        self.mode_dispatch = self.parent.mode_dispatch
+        self.soc_init = self.parent.soc_init
+        self.soh_init = self.parent.soh_init
         self.pwr_chg = self.parent.pwr_chg
         self.pwr_dis = self.parent.pwr_dis
         self.eff_chg = self.parent.eff_chg
@@ -1104,19 +1180,19 @@ class MobileCommodity:
         self.ext_ac = None  # prepare for external chargers
         self.ext_dc = None  # prepare for external chargers
 
-        if self.parent.filename == 'run_des':
+        if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
-        else:  # predetermined files
+        elif self.parent.data_source == 'log':  # predetermined log file
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        else:
+            raise ValueError(f'Commodity \"{self.name}\" data source not recognized - exiting scenario')
 
         self.apriori_data = None
 
         self.data_ph = self.sc_init_ph = None  # placeholder, is filled in update_input_components
 
-        self.soc_init = self.parent.soc_init
         self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh_init = self.parent.soh_init
         self.soh = pd.Series(index=scenario.dti_sim)
         self.soh.loc[scenario.starttime] = self.soh_init
 
@@ -1148,14 +1224,6 @@ class MobileCommodity:
           |                   |
           |                   |<--mc1_ext_dc (external charging DC)
           |
-          |                 mc2_bus
-          |<---------mc2_mc---|<->mc2_ess
-          |                   |
-          |---mc_mc2--------->|-->mc2_snk
-          |                   |
-          |                   |<--mc2_ext_ac (external charging AC)
-          |                   |
-          |                   |<--mc2_ext_dc (external charging DC)
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
@@ -1170,7 +1238,7 @@ class MobileCommodity:
 
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
                                                   inputs={self.bus: solph.Flow(nominal_value=(
-                                                      self.pwr_dis if self.parent.int_lvl in ['v2v', 'v2mg'] else 0),
+                                                      self.pwr_dis if self.parent.lvl_int in ['v2v', 'v2mg'] else 0),
                                                                                variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
                                                   conversion_factors={self.parent.bus: self.eff_dis})
@@ -1365,10 +1433,6 @@ class MobileCommodity:
                 self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
             if self.parent.pwr_ext_dc > 0:
                 self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
-
-            # ToDo: find solution for min_soc in input files, also in 'else' below
-            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
-            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
@@ -1381,13 +1445,24 @@ class MobileCommodity:
             self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int)
             self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int)
 
-            # Adjust min/max storage levels based on state of health for the upcoming prediction horizon
-            # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
-            # relative to nominal capacity
-            # ToDo: find solution for min_soc in input files, also in 'if' above
-            soc_min_clipped = self.data_ph['minsoc'].clip(lower=self.soc_min, upper=self.soc_max)
-            self.ess.min_storage_level = soc_min_clipped
-            self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+
+        # Adjust min storage levels based on state of health for the upcoming prediction horizon
+        # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
+        # relative to nominal capacity. Disregard minsoc values from DES for any case except myopic optimization.
+        if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
+            # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
+            dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
+                                                     self.data_ph['dsoc'] + self.dsoc_buffer_aging)
+            #self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
+        elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
+            # BatteryCommoditySystems operate on the premise of renting out at max SOC
+            self.ess.min_storage_level = self.data_ph['dsoc'].where(
+                self.data_ph['dsoc'] == 0,
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
+        else:  # opt_global or apriori cases
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
 
 class PVSource(RenewableInvestBlock):
@@ -1458,7 +1533,9 @@ class PVSource(RenewableInvestBlock):
             self.data.index = self.data.index.round('h')
 
         else:  # input from file instead of API
-            self.path_input_file = os.path.join(run.path_input_data, 'pv', f'{self.filename}.csv')
+            self.path_input_file = os.path.join(run.path_input_data,
+                                                self.__class__.__name__,
+                                                f'{self.filename}.csv')
 
             if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
@@ -1503,7 +1580,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.apriori_data = self.sc_init_ph = None
 
-        self.loss_rate = utils.convert_sdr_to_timestep(self.sdr)
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
@@ -1812,7 +1889,9 @@ class WindSource(RenewableInvestBlock):
             self.data = scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
-            self.path_turbine_data_file = os.path.join(run.path_input_data, 'wind', 'turbine_data.pkl')
+            self.path_turbine_data_file = os.path.join(run.path_input_data,
+                                                       self.__class__.__name__,
+                                                       'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
             self.turbine_data = self.turbine_data.loc[
@@ -1827,5 +1906,7 @@ class WindSource(RenewableInvestBlock):
 
         else:  # input from file instead of PV block
 
-            self.path_input_file = os.path.join(run.path_input_data, 'wind', f'{self.filename}.csv')
+            self.path_input_file = os.path.join(run.path_input_data,
+                                                self.__class__.__name__,
+                                                f'{self.filename}.csv')
             self.data = utils.read_input_csv(self, self.path_input_file, scenario)

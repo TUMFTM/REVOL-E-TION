@@ -43,10 +43,10 @@ class BatteryPackModel:
             self.chemistry = self.commodity.chemistry.lower()
 
         # Thermal model parameters
-        self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
-        self.c_th_spec_cell = 1045  # Specific heat capacity of LI cells as per Teichert's dissertation in J/(kg K)
-        self.k_c2h = 0.899  # Thermal conductance between cell and housing as per Teichert's dissertation in W/K
-        self.k_h2a = 10.9  # Thermal conductance between housing and ambient as per Teichert's dissertation in W/K
+        # self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
+        # self.c_th_spec_cell = 1045  # Specific heat capacity of LI cells as per Teichert's dissertation in J/(kg K)
+        # self.k_c2h = 0.899  # Thermal conductance between cell and housing as per Teichert's dissertation in W/K
+        # self.k_h2a = 10.9  # Thermal conductance between housing and ambient as per Teichert's dissertation in W/K
 
         # Active thermal control system parameters
         # self.p_cool = 10e3  # System cooling power in W [Schimpe et al.]
@@ -85,7 +85,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.59  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.39  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sanyo_ur18650e.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sanyo_ur18650e.pkl')
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -101,7 +101,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.71  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.55  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery', 'sony_us26650.pkl')
+            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sony_us26650.pkl')
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
@@ -127,7 +127,7 @@ class BatteryPackModel:
         self.e_cell = self.q_nom_cell * self.u_nom_cell  # Nominal energy content of the cell in Wh
         self.e_spec_grav_cell = self.e_cell / self.m_cell
         self.e_spec_vol_cell = self.e_cell / self.v_cell
-        self.c_th_cell = self.m_cell * self.c_th_spec_cell
+        # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
     def age(self, run, scenario, horizon):
         """
@@ -322,8 +322,8 @@ class BatteryPackModel:
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell
         self.m_housing = self.m_cells * (1 - self.e_spec_grav_c2p)
-        self.c_th_cells = self.n_cells * self.c_th_cell
-        self.c_th_housing = self.c_th_spec_housing * self.m_housing
+        # self.c_th_cells = self.n_cells * self.c_th_cell
+        # self.c_th_housing = self.c_th_spec_housing * self.m_housing
 
     def rint_model(self, p_out):
         """

@@ -46,11 +46,16 @@ class AprioriPowerScheduler:
         self.pwr_syscore_conv_avail = {}
 
         # get different lists of commodity systems according to the restrictions of the apriori integration level
-        self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if cs.int_lvl in 'uc']
+        self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if
+                         cs.lvl_opt == 'uc']
         self.cs_lm_static = [cs for cs in self.scenario.commodity_systems.values() if
-                              cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and cs.lm_static]
+                             (cs.lvl_opt in self.scenario.run.apriori_lvls)
+                             and (cs.lvl_opt != 'uc')
+                             and cs.power_lim_static]
         self.cs_lm_dynamic = [cs for cs in self.scenario.commodity_systems.values() if
-                                 cs.int_lvl in [x for x in self.scenario.run.apriori_lvls if x != 'uc'] and not cs.lm_static]
+                              (cs.lvl_opt in self.scenario.run.apriori_lvls)
+                              and (cs.lvl_opt != 'uc')
+                              and not cs.power_lim_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
         self.apriori_commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
@@ -102,8 +107,8 @@ class AprioriPowerScheduler:
                 self.pwr_csc_unlim_static.loc[dtindex, cs.system] += self.calc_pwr_commodities(dtindex=dtindex,
                                                                                            commodities=[self.apriori_commodities[key]
                                                                                                         for key in cs.commodities.keys()],
-                                                                                           int_lvl=cs.int_lvl,
-                                                                                           pwr_csc_avail_total=cs.lm_static)
+                                                                                           lvl_opt=cs.lvl_opt,
+                                                                                           pwr_csc_avail_total=cs.power_lim_static)
 
             # only execute optimization of the local grid if there are rulebased components
             if self.cs_lm_dynamic:
@@ -117,11 +122,11 @@ class AprioriPowerScheduler:
                                     pwr=self.pwr_esm_fixed.loc[dtindex, system] + self.pwr_csc_unlim_static.loc[dtindex, system],
                                     dtindex=dtindex)
 
-                # Schedule at base charging of commodities (int_lvl has to be the same for all CommoditySystems -> [0])
+                # Schedule at base charging of commodities (lvl_opt has to be the same for all CommoditySystems -> [0])
                 self.calc_pwr_commodities(dtindex=dtindex,
                                         commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
                                                      for key in cs.commodities.keys()],
-                                        int_lvl=self.cs_lm_dynamic[0].int_lvl,
+                                        lvl_opt=self.cs_lm_dynamic[0].lvl_opt,
                                         pwr_csc_avail_total=None)
 
             # Execute external charging of commodities based on the defined criteria
@@ -129,7 +134,7 @@ class AprioriPowerScheduler:
                 commodity.ext_charging(dtindex)
                 commodity.calc_new_soc(dtindex, self.scenario)
 
-    def calc_pwr_commodities(self, dtindex, commodities, int_lvl, pwr_csc_avail_total):
+    def calc_pwr_commodities(self, dtindex, commodities, lvl_opt, pwr_csc_avail_total):
         # get all commodities which are ready for charging
         commodities = [commodity for commodity in commodities if commodity.block.data_ph.loc[dtindex, 'atbase']]
         pwr_csc_assigned = 0
@@ -137,9 +142,9 @@ class AprioriPowerScheduler:
         if not commodities:
             return pwr_csc_assigned  # no commodities to charge at base within the current timestep
 
-        if int_lvl == 'equal':
+        if lvl_opt == 'equal':
             # get maximum available power of dynamic load management if not limited by static load management
-            if not pwr_csc_avail_total and int_lvl != 'uc':
+            if not pwr_csc_avail_total and lvl_opt != 'uc':
                 # define bus priority and non-priority
                 bus_connected = commodities[0].system
                 bus_non_connected = get_bus(bus_connected, 'other')
@@ -175,10 +180,10 @@ class AprioriPowerScheduler:
                 'soc': lambda x: x.block.apriori_data.loc[dtindex, 'soc']
             }
             # get a list of all available commodities and sort them according to the chosen strategy
-            commodities = sorted(commodities, key=sort_key_funcs[int_lvl])
+            commodities = sorted(commodities, key=sort_key_funcs[lvl_opt])
             for commodity in commodities:
                 # get limitations of the system (available power on buses and converter or static load managment)
-                if int_lvl == 'uc':
+                if lvl_opt == 'uc':
                     # no limitation for charging power on CommoditySystem level for uncoordinated charging
                     pwr_csc_avail_left = np.inf
                 elif pwr_csc_avail_total:
@@ -198,7 +203,7 @@ class AprioriPowerScheduler:
                 pwr_chg = min(commodity.calc_pwr_chg(dtindex=dtindex, mode='int_ac'), pwr_csc_avail_left)
 
                 # update available power of the system for dynamic load management
-                if not pwr_csc_avail_total and int_lvl != 'uc':
+                if not pwr_csc_avail_total and lvl_opt != 'uc':
                     self.draw_power(bus_connected=bus_connected, pwr=pwr_chg, dtindex=dtindex)
 
                 # update power already assigned to commodities
@@ -247,8 +252,8 @@ class AprioriCommodity:
         # define loss_rate
         self.loss_rate = 1 - (1 - self.block.parent.loss_rate) ** (self.scenario.timestep_td / pd.Timedelta('1h'))
 
-        # get the indices of all nonzero minsoc rows in the data
-        self.minsoc_dti = self.block.data.index[self.block.data['minsoc'] != 0]
+        # get the indices of all nonzero target soc rows in the data
+        self.dsoc_dti = self.block.data.index[self.block.data['dsoc'] != 0]
 
         # get first timesteps, where vehicle has left the base
         self.dep_base_dti = self.block.data.index[~self.block.data['atbase'] & self.block.data['atbase'].shift(1, fill_value=False)]
@@ -342,25 +347,34 @@ class AprioriCommodity:
 
     def get_soc_target(self, dtindex):
         # check if there are any departures after current timestep within forecast period
-        if (departures := self.dep_base_dti[(self.dep_base_dti >= dtindex) &
-                                            (self.dep_base_dti <= dtindex + pd.Timedelta(hours=self.block.parent.forecast_hours)
-                                            if self.block.parent.forecast_hours else True)]).empty:
-            return self.block.parent.soc_target
+        departures = self.dep_base_dti[(self.dep_base_dti >= dtindex) &
+                                       (self.dep_base_dti <= dtindex + pd.Timedelta(hours=self.block.parent.forecast_hours)
+                                        if self.block.parent.forecast_hours else True)]
 
-        #  get start and end of next trip
-        dep_nxt = departures.min()
-        arr_nxt = self.arr_base_dti[self.arr_base_dti >= dtindex].min()
+        if departures.empty:
+            return self.block.parent.soc_target_low
+
+        arrivals = self.arr_base_dti[self.arr_base_dti >= dtindex]
+
+        if arrivals.empty:
+            return self.block.parent.soc_target_low
+
         #  sum up energy between trip start and end
-        if arr_nxt <= dep_nxt:
+        if (arr_nxt := arrivals.min()) <= (dep_nxt := departures.min()):  # trip currently ongoing
             # Destination charging -> sum up remaining energy of ongoing trip until end of trip
-            e_con = self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
-        else:
-            # Charging at base -> sum up energy for next trip
-            e_con = self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum() * self.scenario.timestep_hours
+            e_con = (self.block.data.loc[dtindex:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
+                     * self.scenario.timestep_hours)
+        else:  # vehicle currently rechargeable at base
+            e_con = (self.block.data.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'consumption'].sum()
+                     * self.scenario.timestep_hours)
+
         #  Convert energy consumption to delta soc taking the current soh into account
-        soc_delta = e_con / (self.block.size * self.soh)
+        soc_delta = e_con / self.block.size
         #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
-        soc_target = 1 if soc_delta > (self.block.parent.soc_target - self.block.parent.soc_return) else self.block.parent.soc_target
+        if soc_delta > (self.block.parent.soc_target_low - self.block.parent.soc_return):
+            soc_target = self.block.parent.soc_target_high
+        else:
+            soc_target = self.block.parent.soc_target_low
         return soc_target
 
     def ext_charging(self, dtindex):

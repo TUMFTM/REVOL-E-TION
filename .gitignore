@@ -8,32 +8,33 @@ results/*
 
 input/*
 
-!input/battery/sanyo_ur18650e.pkl
-!input/battery/sony_us26650.pkl
+!input/battery_cells/sanyo_ur18650e.pkl
+!input/battery_cells/sony_us26650.pkl
 
-!input/bev/bev_example.csv
-!input/bev/bev_example_processes.csv
+!input/VehicleCommoditySystem/bev_example.csv
+!input/VehicleCommoditySystem/bev_example_processes.csv
+!input/VehicleCommoditySystem/bev_usecases_default.csv
 
-!input/brs/brs_example.csv
-!input/brs/brs_example_processes.csv
-!input/brs/usecases_default.csv
+!input/BatteryCommoditySystem/brs_example.csv
+!input/BatteryCommoditySystem/brs_example_processes.csv
+!input/BatteryCommoditySystem/brs_usecases_default.csv
 
-!input/dem/dem_example.csv
+!input/FixedDemand/dem_example.csv
 
-!input/grid/grid_buy_example.csv
-!input/grid/grid_sell_example.csv
+!input/GridConnection/grid_buy_example.csv
+!input/GridConnection/grid_sell_example.csv
 
-!input/pv/pv_example.csv
+!input/PVSource/pv_example.csv
 
-!input/pv/wind_example.csv
+!input/PVSource/wind_example.csv
 
 !input/scenarios/example.csv
 
 !input/settings/default.csv
 !input/settings/default_seq.csv
 
-!input/wind/wind_example.csv
-!input/wind/turbine_data.pkl
+!input/WindSource/wind_example.csv
+!input/WindSource/turbine_data.pkl
 
 utils/*
 
