@@ -530,7 +530,7 @@ class CommoditySystem(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value=(None if self.int_lvl in ['v2mg'] else 0),
+                                                      nominal_value=(None if self.lvl_int in ['v2mg'] else 0),
                                                       variable_costs=self.opex_spec_sys_dis)},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
@@ -628,8 +628,8 @@ class CommoditySystem(InvestBlock):
 
     def get_dispatch_mode(self, scenario, run):
 
-        if self.int_lvl in run.apriori_lvls:  # uc, equal, soc, fcfs
-            if self.int_lvl == 'uc':
+        if self.lvl_opt in run.apriori_lvls:  # uc, equal, soc, fcfs
+            if self.lvl_opt == 'uc':
                 self.mode_dispatch = 'apriori_unlimited'
             elif isinstance(self.power_lim_static, (int, float)):
                 self.mode_dispatch = 'apriori_static'
@@ -648,7 +648,7 @@ class CommoditySystem(InvestBlock):
                                     f' -> deactivating static load management')
             self.power_lim_static = None
 
-        if self.opt and self.int_lvl in run.apriori_lvls:
+        if self.opt and self.lvl_opt in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
                                   f' implemented for a priori integration levels: {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
@@ -1238,7 +1238,7 @@ class MobileCommodity:
 
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
                                                   inputs={self.bus: solph.Flow(nominal_value=(
-                                                      self.pwr_dis if self.parent.int_lvl in ['v2v', 'v2mg'] else 0),
+                                                      self.pwr_dis if self.parent.lvl_int in ['v2v', 'v2mg'] else 0),
                                                                                variable_costs=scenario.cost_eps)},
                                                   outputs={self.parent.bus: solph.Flow()},
                                                   conversion_factors={self.parent.bus: self.eff_dis})

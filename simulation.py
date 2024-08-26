@@ -383,8 +383,8 @@ class Scenario:
         # ToDo: put into extra function
         # check input parameter configuration of rulebased charging for validity
         if cs_unlim := [cs for cs in self.commodity_systems.values() if
-                        (cs.int_lvl in self.run.apriori_lvls)
-                        and cs.int_lvl != 'uc'
+                        (cs.lvl_opt in self.run.apriori_lvls)
+                        and cs.lvl_opt != 'uc'
                         and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
@@ -395,18 +395,18 @@ class Scenario:
                                  f' without static load management (lm_static) is not implemented for systems with'
                                  f' stationary energy storage')
                 exit()  # TODO exit scenario instead of run
-            if len(set([cs.int_lvl for cs in cs_unlim])) > 1:
+            if len(set([cs.lvl_opt for cs in cs_unlim])) > 1:
                 run.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
                                  f' have to follow the same strategy. Different strategies are not possible')
                 exit()  # TODO exit scenario instead of run
-            if cs_unlim[0].int_lvl == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
+            if cs_unlim[0].lvl_opt == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
                 run.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
                                  f' dynamic load management, all CommoditySystems with dynamic load management have to'
                                  f' be connected to the same bus')
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.int_lvl in self.run.apriori_lvls]):
+        if any([cs for cs in self.commodity_systems.values() if cs.lvl_opt in self.run.apriori_lvls]):
             self.scheduler = AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
