@@ -129,7 +129,7 @@ def transform_scalar_var(block, var_name, scenario, run):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
         dirname = block.parent.__class__.__name__ if hasattr(block, 'parent') else block.__class__.__name__
         opex = read_input_csv(block,
-                              os.path.join(run.path_input_data, dirname, f'{scenario_entry}.csv'),
+                              os.path.join(run.path_input_data, dirname, set_extension(scenario_entry)),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series
@@ -137,4 +137,13 @@ def transform_scalar_var(block, var_name, scenario, run):
     else:  # opex_spec is given as a scalar directly in scenario file
         # Use sequence of values for variable costs to unify computation of results
         setattr(block, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
+
+
+def set_extension(filename):
+    default_ext = '.csv'
+    base, ext = os.path.splitext(filename)
+    if not ext:
+        filename = base + default_ext
+    return filename
+
 

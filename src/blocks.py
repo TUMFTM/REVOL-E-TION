@@ -682,10 +682,9 @@ class CommoditySystem(InvestBlock):
         consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
+        log_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename)),
         self.data = utils.read_input_csv(self,
-                                         os.path.join(run.path_input_data,
-                                                      self.__class__.__name__,
-                                                      self.filename + '.csv'),
+                                         log_path,
                                          scenario,
                                          multiheader=True,
                                          resampling=False)
@@ -704,8 +703,10 @@ class CommoditySystem(InvestBlock):
         Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe
         """
 
-        df = pd.read_csv(os.path.join(run.path_input_data, self.__class__.__name__, f'{self.filename}.csv'),
-                         header=[0, 1], index_col=0)
+        usecase_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename))
+        df = pd.read_csv(usecase_path,
+                         header=[0, 1],
+                         index_col=0)
         for timeframe in df.columns.levels[0]:
             df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
                                                        df.loc[:, (timeframe, 'rel_prob')].sum())
@@ -890,10 +891,10 @@ class GridConnection(InvestBlock):
             scenario.constraints.add_equal_invests(equal_investments)
 
         # get information about GridMarkets specified in the scenario file
-        if self.markets_file:
+        if self.filename_markets:
             markets = pd.read_csv(os.path.join(run.path_input_data,
                                                self.__class__.__name__,
-                                               f'{self.markets_file}.csv'),
+                                               utils.set_extension(self.filename_markets)),
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
@@ -1117,7 +1118,7 @@ class FixedDemand(Block):
 
         self.path_input_file = os.path.join(run.path_input_data,
                                             self.__class__.__name__,
-                                            f'{self.filename}.csv')
+                                            utils.set_extension(self.filename))
         self.data = utils.read_input_csv(self, self.path_input_file, scenario)
 
         self.data_ph = None  # placeholder
@@ -1534,7 +1535,7 @@ class PVSource(RenewableInvestBlock):
         else:  # input from file instead of API
             self.path_input_file = os.path.join(run.path_input_data,
                                                 self.__class__.__name__,
-                                                f'{self.filename}.csv')
+                                                utils.set_extension(self.filename))
 
             if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
@@ -1907,5 +1908,5 @@ class WindSource(RenewableInvestBlock):
 
             self.path_input_file = os.path.join(run.path_input_data,
                                                 self.__class__.__name__,
-                                                f'{self.filename}.csv')
+                                                utils.set_extension(self.filename))
             self.data = utils.read_input_csv(self, self.path_input_file, scenario)
