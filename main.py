@@ -17,13 +17,12 @@ coding:     utf-8
 # Module imports
 ###############################################################################
 
+import itertools
 import logging
-import logging.handlers
 import threading
 import warnings
 import multiprocessing as mp
 
-from itertools import repeat
 from src import simulation as sim
 
 # raise UserWarnings about infeasibility as errors to catch them properly
@@ -131,7 +130,9 @@ if __name__ == '__main__':
             log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
-                pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
+                pool.starmap(
+                    simulate_scenario,
+                    zip(run.scenario_names, itertools.repeat(run), itertools.repeat(log_queue)))
             log_queue.put(None)
             log_thread.join()
     else:
