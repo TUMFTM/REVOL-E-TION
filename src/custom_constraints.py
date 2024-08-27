@@ -11,7 +11,6 @@ Brian Dietermann
 
 --- File Information ---
 coding:     utf-8
-license:    GPLv3
 """
 
 import pyomo.environ as po

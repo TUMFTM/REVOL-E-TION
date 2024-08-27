@@ -11,7 +11,6 @@ Philipp Rosner
 
 --- File Information ---
 coding:     utf-8
-license:    GPLv3
 """
 
 ###############################################################################
