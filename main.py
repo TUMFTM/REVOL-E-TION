@@ -19,7 +19,6 @@ coding:     utf-8
 
 import logging
 import logging.handlers
-from logging.handlers import QueueHandler
 import threading
 import warnings
 import multiprocessing as mp
@@ -46,7 +45,7 @@ def setup_logger(name, log_queue, run):
         logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
         formatter = logging.Formatter('%(message)s')
 
-        queue_handler = QueueHandler(log_queue)
+        queue_handler = logging.handlers.QueueHandler(log_queue)
         queue_handler.setFormatter(formatter)
         logger.addHandler(queue_handler)
 
