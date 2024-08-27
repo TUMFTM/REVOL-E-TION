@@ -25,6 +25,8 @@ class CustomConstraints:
         self.equal_invests = []
 
     def apply_constraints(self, model):
+
+        model.CUSTOM_CONSTRAINTS = po.Block()
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
 
@@ -32,211 +34,183 @@ class CustomConstraints:
         self.limit_gridmarket_power(model)
 
         # Limit energy feed into the grid (and to energy storage) to renewable energies only
-        self.renewables_only(model, self.scenario)
+        self.renewables_only(model)
 
     def add_equal_invests(self, invests):
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
         self.equal_invests.append(invests)
 
     def equate_invests(self, model):
+        model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS = po.Block()
+
+        def _equate_invest_variables(m, block, name, variables):
+            def _equate_invest_variables_rule(block):
+                expr = (variables[0] == variables[1])
+                for var in variables[2:]:
+                    expr = expr & (variables[0] == var)
+                return expr
+
+            setattr(block, name, po.Constraint(rule=_equate_invest_variables_rule))
+
         # Add additional user-specific constraints for investment variables
         for var_list in self.equal_invests:
-            self.equate_mult_vars(model=model,
-                                  variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
-                                             for var in var_list])
-
-    @staticmethod
-    def equate_mult_vars(model, variables, name=None):
-        r"""
-        Adds a constraint to the given model that sets multiple variables to equal.
-
-        Parameters
-        ----------
-        variables : list of pyomo.environ.Var
-            List of variables which all should be set equal
-        name : str
-            Optional name for the equation e.g. in the LP file. By default the
-            name is: equate + string representation of variables.
-        model : oemof.solph._models.Model
-            Model to which the constraint is added.
-        """  # noqa: E501
-
-        if name is None:
-            name = "_".join(["equate"] + [str(var) for var in variables])
-
-        def equate_variables_rule(m):
-            return [variables[0] == var for var in variables[1:]]
-
-        setattr(model, name, po.ConstraintList(rule=equate_variables_rule))
+            _equate_invest_variables(m=model,
+                                     block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
+                                     name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in var_list]),
+                                     variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
+                                                for var in var_list])
 
     def limit_gridmarket_power(self, model):
+        model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER = po.Block()
+
+        def _limit_flows(m, block, name, flows_markets, flows_grid):
+            def _limit_flows_rule(block):
+                for p, ts in m.TIMEINDEX:
+                    pwr_market = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_markets)
+                    pwr_grid = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_grid)
+                    expr = pwr_market == pwr_grid
+
+                    if expr is not True:
+                        getattr(block, name).add((p, ts), expr)
+
+            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_limit_flows_rule))
+
         # Add additional constraints to limit the sum of the power flows of different GridMarkets to the current power
         # of the GridConnection
-        for grid_connection in [block for block in self.scenario.blocks.values()
+        for grid in [block for block in self.scenario.blocks.values()
                                 if isinstance(block, blocks.GridConnection)]:
-            connection_g2mg = [(grid_connection.bus, converter) for converter in grid_connection.outflow.values()]
-            connection_mg2g = [(converter, grid_connection.bus) for converter in grid_connection.inflow.values()]
 
-            markets_g2mg = [(market.src, grid_connection.bus) for market in grid_connection.markets.values()]
-            markets_mg2g = [(grid_connection.bus, market.snk) for market in grid_connection.markets.values()]
+            _limit_flows(m=model,
+                         block=model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER,
+                         name=f'limit_{grid.name}_g2mg_markets',
+                         flows_markets=[(market.src, grid.bus) for market in grid.markets.values()],
+                         flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
 
-            self.limit_flows(model=model, flows=markets_g2mg, upper_bound=connection_g2mg, name='limit_g2mg_markets')
+            _limit_flows(m=model,
+                         block=model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER,
+                         name=f'limit_{grid.name}_mg2g_markets',
+                         flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
+                         flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
 
-            self.limit_flows(model=model, flows=markets_mg2g, upper_bound=connection_mg2g, name='limit_mg2g_markets')
 
-    @staticmethod
-    def limit_flows(model, flows, upper_bound, name=None):
-        r"""
-            Adds a constraint to the given model that limits the sum of flows to upper bound.
-            Upper bound can be given as a scalar or a list of flows.
-            If a list is given all flows in the list are summed up to get the limit.
-    
-            Parameters
-            ----------
-            model : oemof.solph._models.Model
-                Model to which the constraint is added.
-            flows : list of Flows 
-                List of flows which sum is limited.
-            upper_bound: list of Flows or Scalar
-                List of flows which are summed up or a scalar. The sum or the scalar is then used to limit the sum of
-                the flows given in the argument flow
-            name : str
-                Optional name for the equation e.g. in the LP file.
-            """  # noqa: E501
-        def _limit_flows(m):
-            for p, ts in m.TIMEINDEX:
-                flows_sum = sum(m.flow[fi, fo, p, ts] for fi, fo in flows)
-                bound = sum(m.flow[fi, fo, p, ts] for fi, fo in upper_bound) if isinstance(upper_bound,
-                                                                                           list) else upper_bound
-                expr = flows_sum <= bound
+    def renewables_only(self, model):
+        # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
+        # Definition:   Renewable energy is energy generated by PV and wind sources and energy generated by those
+        #               blocks which is stored in a storage which only allows renewable energy to be stored
+        # Approach:     1.  Sum up all power originating renewable energy blocks flowing into both SystemCore buses
+        #               2.  Split those sums into power remaining on the bus and power converted to the other bus
+        #               3.  Limit the converted renewable power to the power converted at the converter
+        #               4.  Limit the sum of renewable power fed into all restricted components connected to each bus
+        #                   to the sum of renewable power present on each bus (renewable power directly fed into the bus
+        #                   and renewable power converted to the bus multiplied by the SystemCore converter efficiency)
 
-                if expr is not True:
-                    getattr(m, name).add((p, ts), expr)
+        # Add new block within the CUSTOM_CONSTRAINTS block to store all constraints related to renewable energy only
+        model.CUSTOM_CONSTRAINTS.RES_ONLY = po.Block()
+        # Add the variables to store the renewable power flows (format: res_[from bus][to bus])
+        for var_name in ['res_acac', 'res_acdc', 'res_dcac', 'res_dcdc']:
+            setattr(model.CUSTOM_CONSTRAINTS.RES_ONLY, var_name, po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
-        if name is None:
-            name = '_'.join(
-                ['limit_sum_of'] + [str(flow) for flow in flows] +
-                ['to_upper_bound'] +
-                (['sum_of'] + [str(flow) for flow in upper_bound]
-                 if isinstance(upper_bound, list) else [str(upper_bound)])
-            )
+        # Get discharging flows of all StationaryEnergyStorages which only allow storing renewable energy
+        # (DC connection is hardcoded -> has to be modified if StationaryEnergySystem.bus_connected is changed)
+        storage_flows = [(block.ess, block.bus_connected) for block in self.scenario.blocks.values() if
+                         isinstance(block, blocks.StationaryEnergyStorage) and block.res_only]
 
-        setattr(model, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
-        setattr(model, name + "_build", po.BuildAction(rule=_limit_flows))
+        # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
+        flows_res_from_bus = {
+            'ac': [(market.parent.bus, market.snk) for block in self.scenario.blocks.values() if
+                   isinstance(block, blocks.GridConnection) for market in block.markets.values() if
+                   market.res_only],
+            'dc': [(fo, fi) for fi, fo in storage_flows]  # invert discharging flows to charging flows
+        }
 
-    def renewables_only(self, model, scenario):
-        # Apply additional constraints to limit energy feed into the grid to renewable energy generation
-        grid_flows = [(block.bus_connected, block.snk) for block in scenario.blocks.values() if
-                      isinstance(block, blocks.GridConnection) and getattr(block, 'res_only', False)]
-        pv_flows = [(block.outflow, block.bus_connected) for block in scenario.blocks.values() if
-                    isinstance(block, (blocks.PVSource))]
-        wind_flows = [(block.outflow, block.bus_connected) for block in scenario.blocks.values() if
-                      isinstance(block, (blocks.WindSource))]
-        ess_in_flows = [(block.bus_connected, block.ess) for block in scenario.blocks.values() if
-                        isinstance(block, (blocks.StationaryEnergyStorage)) and getattr(block, 'pv_only', False)]
-        ess_out_flows = [(block.ess, block.bus_connected) for block in scenario.blocks.values() if
-                         isinstance(block, (blocks.StationaryEnergyStorage)) and getattr(block, 'pv_only', False)]
-        sys_core = [block for block in scenario.blocks.values() if isinstance(block, blocks.SystemCore)][0]
-        if grid_flows:
-            if ess_in_flows:
-                # ensure that no commodity system is connected to the DC bus
-                if any([getattr(block, 'bus_connected', False) == sys_core.dc_bus for block in scenario.blocks.values()
-                        if
-                        isinstance(block, blocks.CommoditySystem)]):
-                    # ToDo: only exit scenario, not the whole execution
-                    print('Error: Commodity systems are connected to the DC bus. This is not allowed if "pv_only" is '
-                          'activated for a stationary storage. Exiting.')
-                    quit()
-                # force AC/DC to be 0 for all timesteps
-                self.set_flows_to_zero(model=model,
-                                       flows=[(sys_core.ac_bus, sys_core.ac_dc)],
-                                       name='set_acdc_to_zero')
-            self.res_only(model=model,
-                          grid_flows=grid_flows,
-                          pv_flows=pv_flows,
-                          wind_flows=wind_flows,
-                          ess_in_flows=ess_in_flows,
-                          ess_out_flows=ess_out_flows,
-                          syscore_dcac_eff=sys_core.dcac_eff,
-                          name='res_only')
+        # Get all renewable power flows
+        flows_res_to_bus = {
+            'ac': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
+                   isinstance(block, blocks.RenewableInvestBlock) and 'ac' in block.bus_connected.label],
+            'dc': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
+                   isinstance(block, blocks.RenewableInvestBlock) and 'dc' in block.bus_connected.label] + storage_flows
+        }
 
-    @staticmethod
-    def set_flows_to_zero(model, flows, name='set_to_zero'):
-        r"""
-        Adds a constraint to the given model that ensures that the sum of a group of
-        flows multiplied with a factor is equal or less than the sum of another group of flows for each timestep.
-        Modified from the original equate_flows() function.
+        def _sum_res(m, block, name, sum_flow, split_flows):
+            def _sum_res_rule(block):  # not sure why m is not passed but block, but now it works
+                for p, ts in m.TIMEINDEX:
+                    res_sum = sum(m.flow[fi, fo, p, ts] for fi, fo in sum_flow)
+                    res_summands = sum(var[p, ts] for var in split_flows)
+                    expr = res_sum == res_summands
 
-        Parameters
-        ----------
-        model : oemof.solph.Model
-            Model to which the constraint is added.
-        flows : iterable
-            Group of flows that should be set to zero for every timestep.
-        name : str, default='res_only'
-            Name for the equation e.g. in the LP file.
-
-        Returns
-        -------
-        the updated model.
-        """ # noqa: E501
-
-        def _set_to_zero_rule(m):
-            for p, ts in m.TIMEINDEX:
-                for fi, fo in flows:
-                    expr = m.flow[fi, fo, p, ts] == 0
                     if expr is not True:
-                        getattr(m, name).add((p, ts), expr)
+                        getattr(block, name).add((p, ts), expr)
 
-        setattr(model, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
-        setattr(model, name + "_build", po.BuildAction(rule=_set_to_zero_rule))
+            setattr(block, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_sum_res_rule))
 
-        return model
+        # define res_ac as sum of res_acac and res_acdc
+        _sum_res(m=model,
+                 block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                 name='sum_res_ac',
+                 sum_flow=flows_res_to_bus['ac'],
+                 split_flows=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acdc])
+        # define res_dc as sum of res_dcac and res_dcdc
+        _sum_res(m=model,
+                 block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                 name='sum_res_dc',
+                 sum_flow=flows_res_to_bus['dc'],
+                 split_flows=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc])
 
-    @staticmethod
-    def res_only(model, grid_flows, pv_flows, wind_flows, ess_in_flows, ess_out_flows, syscore_dcac_eff,
-                 name='res_only'):
-        r"""
-        Adds a constraint to the given model that ensures that the sum of a group of
-        flows multiplied with a factor is equal or less than the sum of another group of flows for each timestep.
-        Modified from the original equate_flows() function.
+        def _limit_res_to_conv(m, block, name, conv_flow, res_flow):
+            def _limit_res2conv_rule(block):
+                for p, ts in m.TIMEINDEX:
+                    expr = m.flow[conv_flow[0], conv_flow[1], p, ts] >= res_flow[p, ts]
 
-        Parameters
-        ----------
-        model : oemof.solph.Model
-            Model to which the constraint is added.
-        grid_flows : iterable
-            Group of flows that feed energy into the grid.
-        pv_flows : iterable
-            Group of DC-connected pv flows.
-        wind_flows : iterable
-            Group of AC-connected wind flows.
-        ess_in_flows : iterable
-            Group of flows from DC-connected stationary energy storage systems into the local mini-grid.
-        ess_out_flows : iterable
-            Group of flows from the local mini-grid into DC-connected stationary energy storage systems.
-        syscore_dcac_eff : float
-            Efficiency of the DC/AC conversion in the system core.
-        name : str, default='res_only'
-            Name for the equation e.g. in the LP file.
+                    if expr is not True:
+                        getattr(block, name).add((p, ts), expr)
 
-        Returns
-        -------
-        the updated model.
-        """ # noqa: E501
+            setattr(block, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_limit_res2conv_rule))
 
-        def _limit_grid_to_res_only_rule(m):
-            for p, ts in m.TIMEINDEX:
-                sum_grid = sum(m.flow[fi, fo, p, ts] for fi, fo in grid_flows)
-                sum_pv = sum(m.flow[fi, fo, p, ts] for fi, fo in pv_flows)
-                sum_wind = sum(m.flow[fi, fo, p, ts] for fi, fo in wind_flows)
-                sum_ess_in = sum(m.flow[fi, fo, p, ts] for fi, fo in ess_in_flows)
-                sum_ess_out = sum(m.flow[fi, fo, p, ts] for fi, fo in ess_out_flows)
-                expr = sum_grid <= syscore_dcac_eff * (sum_pv + sum_ess_in - sum_ess_out) + sum_wind
-                if expr is not True:
-                    getattr(m, name).add((p, ts), expr)
+        # limit flow of renewable power from AC to DC to the maximum power of the AC/DC converter in SystemCore
+        _limit_res_to_conv(m=model,
+                           block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                           name='limit_res_acdc_to_conv',
+                           conv_flow=(self.scenario.blocks['core'].ac_bus, self.scenario.blocks['core'].ac_dc),
+                           res_flow=model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acdc)
+        # limit flow of renewable power from DC to AC to the maximum power of the DC/AC converter in SystemCore
+        _limit_res_to_conv(m=model,
+                           block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                           name='limit_res_dcac_to_conv',
+                           conv_flow=(self.scenario.blocks['core'].dc_bus, self.scenario.blocks['core'].dc_ac),
+                           res_flow=model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac)
 
-        setattr(model, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
-        setattr(model, name + "_build", po.BuildAction(rule=_limit_grid_to_res_only_rule))
+        def _limit_feed_in(m, block, name, flows_feed_in, flows_res, eff_conv):
+            def _limit_feed_in_rule(block):
+                for p, ts in m.TIMEINDEX:
+                    power_res_feed_in = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_feed_in)
+                    power_res_available = sum(flow_res[p, ts] * eff for flow_res, eff in zip(flows_res, eff_conv))
+                    expr = power_res_feed_in <= power_res_available
 
-        return model
+                    if expr is not True:
+                        getattr(block, name).add((p, ts), expr)
+
+            setattr(block, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_limit_feed_in_rule))
+
+        # limit feed-in of renewable power from the AC bus to components connected to the AC-bus considering the
+        # SystemCore's converter efficiency
+        _limit_feed_in(m=model,
+                       block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                       name='limit_res_ac_feed_in',
+                       flows_feed_in=flows_res_from_bus['ac'],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac],
+                       eff_conv=[1, self.scenario.blocks['core'].eff_dcac])
+
+        # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
+        # SystemCore's converter efficiency
+        _limit_feed_in(m=model,
+                       block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                       name='limit_res_dc_feed_in',
+                       flows_feed_in=flows_res_from_bus['dc'],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc],
+                       eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
+
+        pass
