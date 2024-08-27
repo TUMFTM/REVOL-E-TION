@@ -849,7 +849,7 @@ class GridConnection(InvestBlock):
                 period_fraction = utils.get_period_fraction(dti=bus_activation[bus_activation[interval] == 1].index,
                                                             period=self.peakshaving,
                                                             freq=scenario.timestep)
-                self.peakshaving_ints.loc[interval, 'opex_spec'] = self.opex_peakshaving * period_fraction
+                self.peakshaving_ints.loc[interval, 'opex_spec'] = self.opex_peak_spec * period_fraction
 
         self.inflow = {f'xc_{self.name}': solph.components.Converter(
             label=f'xc_{self.name}',
@@ -869,7 +869,6 @@ class GridConnection(InvestBlock):
                 nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0))
                                if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
-            # ToDo: get the correct costs for peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
                                                                    if self.peakshaving else None),
                                                     max=(bus_activation[intv] if self.peakshaving else None))},
@@ -929,7 +928,7 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_connection = self.opex_peakshaving * self.peakshaving_ints['power'].sum()
+        self.opex_connection = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
@@ -960,8 +959,12 @@ class GridConnection(InvestBlock):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
         if self.opt_g2mg:
             self.size_g2mg = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
+            for market in self.markets.values():
+                market.set_size('size_g2mg')
         if self.opt_mg2g:
             self.size_mg2g = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
+            for market in self.markets.values():
+                market.set_size('size_mg2g')
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
@@ -1020,6 +1023,8 @@ class GridMarket:
 
         for param, value in params.items():
             setattr(self, param, value)
+
+        self.set_init_size()
 
         self.equal_prices = True if self.opex_spec_mg2g == 'equal' else False
 
@@ -1105,6 +1110,17 @@ class GridMarket:
         market_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
                                              f'{self.name}_flow_out': self.flow_out})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, market_ts_results], axis=1)
+
+    def set_init_size(self):
+        for size in ['size_g2mg', 'size_mg2g']:
+            # if grid size is 'opt', size is set after the optimization as it is only used for plotting purposes
+            if getattr(self.parent, size) != 'opt':
+                self.set_size(size)
+
+    def set_size(self, size_var_name):
+        # limit max power of the grid market to the size of the (physical) grid connection
+        # If no size for the market is given, the size of the grid connection is used
+        setattr(self, size_var_name, min(getattr(self, size_var_name) or np.inf, getattr(self.parent, size_var_name)))
 
     def update_input_components(self):
         pass
