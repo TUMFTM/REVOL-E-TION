@@ -63,7 +63,7 @@ grid,res_only,False,False,False,False
 grid,opex_spec_g2mg,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
 grid,opex_spec_mg2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
 ess,size,0,115000,115000,opt
-ess,pv_only,False,False,False,False
+ess,res_only,False,False,False,False
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
 ess,temp_battery,25,pv,pv,pv
