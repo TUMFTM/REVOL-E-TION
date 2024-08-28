@@ -24,7 +24,7 @@ class CustomConstraints:
         self.equal_invests = []
 
     def apply_constraints(self, model):
-
+        # Add pyomo block to model to store custom constraints
         model.CUSTOM_CONSTRAINTS = po.Block()
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
