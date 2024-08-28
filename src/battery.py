@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""
-battery.py
-
---- Description ---
-This script implements the Battery Aging Model for the degradation simulation in the mg_ev toolset.
-
-For further information, see readme
-
---- Created by ---
-Philipp Rosner
-
---- File Information ---
-coding:     utf-8
-"""
-
-###############################################################################
-# Module imports
-###############################################################################
 
 import numpy as np
 import os

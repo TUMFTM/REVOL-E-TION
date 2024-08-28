@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""
-commodity_des.py
-
---- Description ---
-This file contains the Discrete Event Simulation to generate behavioral data of mobile commodity systems in the
-energy system model framework. For more info, see readme.
-
---- Created by ---
-Hannes Henglein
-
---- File Information ---
-coding:     utf-8
-"""
 
 import os
 import math
@@ -703,6 +690,3 @@ def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
     sig = np.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
     return mu, sig
-
-
-

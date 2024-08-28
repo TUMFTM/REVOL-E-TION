@@ -1,17 +1,4 @@
-"""
-scheduler.py
-
---- Description ---
-This script defines the apriori charging strategies for commodities within the REVOL-E-TION toolset.
-
-For further information, see readme
-
---- Created by ---
-Brian Dietermann
-
---- File Information ---
-coding:     utf-8
-"""
+#!/usr/bin/env python3
 
 import numpy as np
 import pandas as pd

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 def map_timeframes(df, name):
     cs_map = {'bev': map_timeframes_bev, 'brs': map_timeframes_brs}
     return cs_map[name](df)

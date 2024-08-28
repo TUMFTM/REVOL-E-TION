@@ -1,30 +1,4 @@
-'''
---- Tool name ---
-Minigrid (MG) & Electric Vehicle (EV) Interaction optimizer - MGEVOpti
-
---- Created by ---
-Philipp Rosner, M.Sc.
-Institute of Automotive Technology
-Technical University of Munich
-philipp.rosner@tum.de
-September 19th, 2021
-
---- Contributors ---
-none
-
---- Detailed Description ---
-This script defines various functions used by main.py for economic calculations
-
---- Input & Output ---
-see individual functions
-
---- Requirements ---
-none
-
---- File Information ---
-coding:     utf-8
-'''
-
+#!/usr/bin/env python3
 
 def discount(value, deltat, discrate):
     """

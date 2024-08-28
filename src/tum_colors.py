@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # primary colors
 tum_p300 = 'rgb(0,101,189)'
 tum_black = 'rgb(0,0,0)'

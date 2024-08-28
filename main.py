@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""
-main.py
-
---- Description ---
-This script is the main executable for the REVOL-E-TION toolset.
-For further information, see readme.md
-
---- Created by ---
-Philipp Rosner
-
---- File Information ---
-coding:     utf-8
-"""
-
-###############################################################################
-# Module imports
-###############################################################################
 
 import itertools
 import logging
@@ -25,6 +8,7 @@ import multiprocessing as mp
 
 from src import simulation as sim
 
+
 # raise UserWarnings about infeasibility as errors to catch them properly
 warnings.simplefilter(action='error', category=UserWarning)
 
@@ -32,10 +16,6 @@ warnings.simplefilter(action='error', category=UserWarning)
 # Set to 'ignore' to suppress all FutureWarnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=RuntimeWarning)
-
-###############################################################################
-# Function definitions
-###############################################################################
 
 
 def setup_logger(name, log_queue, run):

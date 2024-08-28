@@ -1,17 +1,4 @@
-"""
-blocks.py
-
---- Description ---
-This script defines the energy system blocks for the REVOL-E-TION toolset.
-
-For further information, see readme
-
---- Created by ---
-Philipp Rosner
-
---- File Information ---
-coding:     utf-8
-"""
+#!/usr/bin/env python3
 
 import ast
 import numpy as np

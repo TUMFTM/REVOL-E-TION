@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""
-simulation.py
-
---- Description ---
-This script provides the main simulation procedure classes for the REVOL-E-TION toolset.
-For further information, see readme.md
-
---- Created by ---
-Philipp Rosner
-
---- File Information ---
-coding:     utf-8
-"""
-
-###############################################################################
-# Imports
-###############################################################################
 
 import graphviz
 import logging
@@ -48,10 +31,6 @@ from src import tum_colors as col
 from src import scheduler
 from src import utils
 
-###############################################################################
-# Functions
-###############################################################################
-
 
 def input_gui(directory):
     # create a Tkinter window to select files and folders
@@ -82,11 +61,6 @@ def input_gui(directory):
         results_foldername = results_default_dir
 
     return scenarios_filename, settings_filename, results_foldername
-
-
-###############################################################################
-# Class definitions
-###############################################################################
 
 
 class OptimizationSuccessfulFilter(logging.Filter):

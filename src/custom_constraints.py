@@ -1,17 +1,4 @@
-"""
-custom_constraints.py
-
---- Description ---
-This script defines additional constraints for the REVOL-E-TION toolset.
-
-For further information, see readme
-
---- Created by ---
-Brian Dietermann
-
---- File Information ---
-coding:     utf-8
-"""
+#!/usr/bin/env python3
 
 import pyomo.environ as po
 
