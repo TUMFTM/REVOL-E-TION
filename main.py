@@ -11,21 +11,18 @@ Philipp Rosner
 
 --- File Information ---
 coding:     utf-8
-license:    GPLv3
 """
 
 ###############################################################################
 # Module imports
 ###############################################################################
 
+import itertools
 import logging
-import logging.handlers
-from logging.handlers import QueueHandler
 import threading
 import warnings
 import multiprocessing as mp
 
-from itertools import repeat
 from src import simulation as sim
 
 # raise UserWarnings about infeasibility as errors to catch them properly
@@ -47,7 +44,7 @@ def setup_logger(name, log_queue, run):
         logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
         formatter = logging.Formatter('%(message)s')
 
-        queue_handler = QueueHandler(log_queue)
+        queue_handler = logging.handlers.QueueHandler(log_queue)
         queue_handler.setFormatter(formatter)
         logger.addHandler(queue_handler)
 
@@ -133,7 +130,9 @@ if __name__ == '__main__':
             log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
-                pool.starmap(simulate_scenario, zip(run.scenario_names, repeat(run), repeat(log_queue)))
+                pool.starmap(
+                    simulate_scenario,
+                    zip(run.scenario_names, itertools.repeat(run), itertools.repeat(log_queue)))
             log_queue.put(None)
             log_thread.join()
     else:
