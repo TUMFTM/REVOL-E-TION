@@ -1,7 +1,7 @@
 block,key,dispatch_go
 scenario,starttime,1.1.2018
 scenario,timestep,15min
-scenario,sim_duration,10
+scenario,sim_duration,1
 scenario,prj_duration,25
 scenario,strategy,rl
 scenario,len_ph,48
@@ -11,7 +11,7 @@ scenario,currency,USD
 scenario,latitude,48.2652
 scenario,longitude,11.6686
 scenario,cost_eps,1.00E-8
-scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem'}"
+scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem'}"
 core,size_dcac,22000
 core,size_acdc,22000
 core,capex_spec,0.08
@@ -23,16 +23,6 @@ core,eff_dcac,0.95
 core,eff_acdc,0.95
 dem,filename,dem_example
 dem,crev_spec,3e-05
-wind,size,15000
-wind,data_source,pv
-wind,height,50
-wind,filename,wind_example
-wind,capex_spec,2.8
-wind,mntex_spec,0.084
-wind,opex_spec,0
-wind,ls,20
-wind,cdc,1
-wind,eff,0.95
 pv,size,105000
 pv,data_source,solcast file
 pv,filename,pv_example_solcast
@@ -42,15 +32,11 @@ pv,opex_spec,0
 pv,ls,25
 pv,cdc,1
 pv,eff,0.95
-gen,size,5000
-gen,capex_spec,0.261
-gen,mntex_spec,0.02088
-gen,opex_spec,0.00065
-gen,ls,10
-gen,cdc,1
-gen,eff,1
 grid,size_g2mg,55000
 grid,size_mg2g,equal
+grid,peakshaving,None
+grid,opex_peakshaving,0
+grid,markets_file,None
 grid,res_only,False
 grid,capex_spec,10
 grid,mntex_spec,0
