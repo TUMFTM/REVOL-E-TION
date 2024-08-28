@@ -32,7 +32,7 @@ class CustomConstraints:
         # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
         self.limit_gridmarket_power(model)
 
-        # Limit energy feed into the grid (and to energy storage) to renewable energies only
+        # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
         self.renewables_only(model)
 
     def add_equal_invests(self, invests):
@@ -40,6 +40,9 @@ class CustomConstraints:
         self.equal_invests.append(invests)
 
     def equate_invests(self, model):
+        # Goal:     Several sizes (e.g. SystemCore's AC/DC and DC/AC converter, GridConnection sizes) can be forced to
+        #           have the same value despite being optimized by independent Investment objects
+        # Approach: Add a constraint to force a specified list of values to be equal
         model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS = po.Block()
 
         def _equate_invest_variables(m, block, name, variables):
@@ -60,6 +63,17 @@ class CustomConstraints:
                                                 for var in var_list])
 
     def limit_gridmarket_power(self, model):
+        # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
+        #               GridConnection. This ensures that all power being bought or sold has to reach the local energy
+        #               system and avoids unlimited trading with energy on the different markets without any power
+        #               limitations. As this model focuses on modeling a local energy system, trading without any
+        #               physical power flow is not considered.
+        # Approach:     1.  For each direction (buy/sell = g2mg/mg2g) sum up all power flows of different GridMarkets
+        #                   connected to the same GridConnection.
+        #               2.  Constrain the sum of GridMarkets' power flows in each direction to not exceed the current
+        #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
+        #                   grid bus to the main bus to allow peakshaving.
+
         model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER = po.Block()
 
         def _limit_flows(m, block, name, flows_markets, flows_grid):
@@ -75,11 +89,8 @@ class CustomConstraints:
             setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
             setattr(block, name + "_build", po.BuildAction(rule=_limit_flows_rule))
 
-        # Add additional constraints to limit the sum of the power flows of different GridMarkets to the current power
-        # of the GridConnection
-        for grid in [block for block in self.scenario.blocks.values()
-                                if isinstance(block, blocks.GridConnection)]:
-
+        # Apply constraints for every GridConnection
+        for grid in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.GridConnection)]:
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER,
                          name=f'limit_{grid.name}_g2mg_markets',
@@ -91,7 +102,6 @@ class CustomConstraints:
                          name=f'limit_{grid.name}_mg2g_markets',
                          flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
                          flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
-
 
     def renewables_only(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
@@ -108,7 +118,9 @@ class CustomConstraints:
         model.CUSTOM_CONSTRAINTS.RES_ONLY = po.Block()
         # Add the variables to store the renewable power flows (format: res_[from bus][to bus])
         for var_name in ['res_acac', 'res_acdc', 'res_dcac', 'res_dcdc']:
-            setattr(model.CUSTOM_CONSTRAINTS.RES_ONLY, var_name, po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
+            setattr(model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                    var_name,
+                    po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
         # Get discharging flows of all StationaryEnergyStorages which only allow storing renewable energy
         # (DC connection is hardcoded -> has to be modified if StationaryEnergySystem.bus_connected is changed)
@@ -200,7 +212,8 @@ class CustomConstraints:
                        block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
                        name='limit_res_ac_feed_in',
                        flows_feed_in=flows_res_from_bus['ac'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac,
+                                  model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac],
                        eff_conv=[1, self.scenario.blocks['core'].eff_dcac])
 
         # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
@@ -209,7 +222,6 @@ class CustomConstraints:
                        block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
                        name='limit_res_dc_feed_in',
                        flows_feed_in=flows_res_from_bus['dc'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac,
+                                  model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc],
                        eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
-
-        pass
