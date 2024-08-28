@@ -30,7 +30,7 @@ class CustomConstraints:
         self.equate_invests(model)
 
         # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
-        self.limit_gridmarket_power(model)
+        self.limit_pwr_gridmarket(model)
 
         # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
         self.renewables_only(model)
@@ -62,7 +62,7 @@ class CustomConstraints:
                                      variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
                                                 for var in var_list])
 
-    def limit_gridmarket_power(self, model):
+    def limit_pwr_gridmarket(self, model):
         # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
         #               GridConnection. This ensures that all power being bought or sold has to reach the local energy
         #               system and avoids unlimited trading with energy on the different markets without any power
@@ -74,7 +74,7 @@ class CustomConstraints:
         #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
         #                   grid bus to the main bus to allow peakshaving.
 
-        model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER = po.Block()
+        model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET = po.Block()
 
         def _limit_flows(m, block, name, flows_markets, flows_grid):
             def _limit_flows_rule(block):
@@ -92,13 +92,13 @@ class CustomConstraints:
         # Apply constraints for every GridConnection
         for grid in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.GridConnection)]:
             _limit_flows(m=model,
-                         block=model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER,
+                         block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_g2mg_markets',
                          flows_markets=[(market.src, grid.bus) for market in grid.markets.values()],
                          flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
 
             _limit_flows(m=model,
-                         block=model.CUSTOM_CONSTRAINTS.LIMIT_GRIDMARKET_POWER,
+                         block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_mg2g_markets',
                          flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
                          flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
@@ -115,10 +115,10 @@ class CustomConstraints:
         #                   and renewable power converted to the bus multiplied by the SystemCore converter efficiency)
 
         # Add new block within the CUSTOM_CONSTRAINTS block to store all constraints related to renewable energy only
-        model.CUSTOM_CONSTRAINTS.RES_ONLY = po.Block()
+        model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY = po.Block()
         # Add the variables to store the renewable power flows (format: res_[from bus][to bus])
-        for var_name in ['res_acac', 'res_acdc', 'res_dcac', 'res_dcdc']:
-            setattr(model.CUSTOM_CONSTRAINTS.RES_ONLY,
+        for var_name in ['pwr_res_acac', 'pwr_res_acdc', 'pwr_res_dcac', 'pwr_res_dcdc']:
+            setattr(model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                     var_name,
                     po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
@@ -156,18 +156,20 @@ class CustomConstraints:
             setattr(block, name, po.Constraint(model.TIMEINDEX, noruleinit=True))
             setattr(block, name + "_build", po.BuildAction(rule=_sum_res_rule))
 
-        # define res_ac as sum of res_acac and res_acdc
+        # define res_ac as sum of pwr_res_acac and pwr_res_acdc
         _sum_res(m=model,
-                 block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                 block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                  name='sum_res_ac',
                  sum_flow=flows_res_to_bus['ac'],
-                 split_flows=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acdc])
-        # define res_dc as sum of res_dcac and res_dcdc
+                 split_flows=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
+                              model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc])
+        # define res_dc as sum of pwr_res_dcac and pwr_res_dcdc
         _sum_res(m=model,
-                 block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                 block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                  name='sum_res_dc',
                  sum_flow=flows_res_to_bus['dc'],
-                 split_flows=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac, model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc])
+                 split_flows=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+                              model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc])
 
         def _limit_res_to_conv(m, block, name, conv_flow, res_flow):
             def _limit_res2conv_rule(block):
@@ -182,23 +184,23 @@ class CustomConstraints:
 
         # limit flow of renewable power from AC to DC to the maximum power of the AC/DC converter in SystemCore
         _limit_res_to_conv(m=model,
-                           block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
-                           name='limit_res_acdc_to_conv',
+                           block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+                           name='limit_pwr_res_acdc_to_conv',
                            conv_flow=(self.scenario.blocks['core'].ac_bus, self.scenario.blocks['core'].ac_dc),
-                           res_flow=model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acdc)
+                           res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc)
         # limit flow of renewable power from DC to AC to the maximum power of the DC/AC converter in SystemCore
         _limit_res_to_conv(m=model,
-                           block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
-                           name='limit_res_dcac_to_conv',
+                           block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+                           name='limit_pwr_res_dcac_to_conv',
                            conv_flow=(self.scenario.blocks['core'].dc_bus, self.scenario.blocks['core'].dc_ac),
-                           res_flow=model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac)
+                           res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac)
 
         def _limit_feed_in(m, block, name, flows_feed_in, flows_res, eff_conv):
             def _limit_feed_in_rule(block):
                 for p, ts in m.TIMEINDEX:
-                    power_res_feed_in = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_feed_in)
-                    power_res_available = sum(flow_res[p, ts] * eff for flow_res, eff in zip(flows_res, eff_conv))
-                    expr = power_res_feed_in <= power_res_available
+                    pwr_res_feed_in = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_feed_in)
+                    pwr_res_available = sum(flow_res[p, ts] * eff for flow_res, eff in zip(flows_res, eff_conv))
+                    expr = pwr_res_feed_in <= pwr_res_available
 
                     if expr is not True:
                         getattr(block, name).add((p, ts), expr)
@@ -209,19 +211,19 @@ class CustomConstraints:
         # limit feed-in of renewable power from the AC bus to components connected to the AC-bus considering the
         # SystemCore's converter efficiency
         _limit_feed_in(m=model,
-                       block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                       block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                        name='limit_res_ac_feed_in',
                        flows_feed_in=flows_res_from_bus['ac'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_acac,
-                                  model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
+                                  model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac],
                        eff_conv=[1, self.scenario.blocks['core'].eff_dcac])
 
         # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
         # SystemCore's converter efficiency
         _limit_feed_in(m=model,
-                       block=model.CUSTOM_CONSTRAINTS.RES_ONLY,
+                       block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                        name='limit_res_dc_feed_in',
                        flows_feed_in=flows_res_from_bus['dc'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcac,
-                                  model.CUSTOM_CONSTRAINTS.RES_ONLY.res_dcdc],
+                       flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+                                  model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc],
                        eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
