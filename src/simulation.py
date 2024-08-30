@@ -149,11 +149,8 @@ class PredictionHorizon:
         # Apply custom constraints
         scenario.constraints.apply_constraints(model=self.model)
 
-        if run.dump_model:
-            if scenario.strategy == 'go':
-                self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
-            elif scenario.strategy == 'rh':
-                scenario.logger.warning('Model file dump not implemented for RH operating strategy - no file created')
+        if run.dump_model and scenario.strategy != 'rh':
+            self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
 
         scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                               f'Model build completed')
@@ -360,6 +357,11 @@ class Scenario:
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
         # ToDo: put into extra function
+        # check input parameter configuration for model dump
+        if run.dump_model and self.strategy == 'rh':
+            self.logger.warning('Model file dump not implemented for RH operating strategy - ' +
+                                'File dump deactivated for current scenario')
+
         # check input parameter configuration of rulebased charging for validity
         if cs_unlim := [cs for cs in self.commodity_systems.values() if
                         (cs.lvl_opt in self.run.apriori_lvls)
