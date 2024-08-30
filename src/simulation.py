@@ -81,18 +81,23 @@ class PredictionHorizon:
         self.ph_endtime = self.starttime + scenario.len_ph
         self.timestep = scenario.timestep
 
-        if self.ph_endtime > scenario.sim_endtime:
-            self.ph_endtime = scenario.sim_endtime
+        # Display logger message if PH exceeds simulation end time and has to be truncated
+        if self.ph_endtime > scenario.sim_endtime and scenario.truncate_ph:
+            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
+                                 f'Prediction Horizon truncated to simulation end time')
+
+        # Truncate PH and CH to simulation end time if necessary
+        self.ph_endtime = min(self.ph_endtime, scenario.sim_endtime) if scenario.truncate_ph else self.ph_endtime
+        self.ch_endtime = min(self.ch_endtime, scenario.sim_endtime)
+
+        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
+                             f'Start: {self.starttime} - ' +
+                             f'CH end: {self.ch_endtime} - ' +
+                             f'PH end: {self.ph_endtime}')
 
         # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
-
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
-                             f'Start: {self.starttime} - ' +
-                             (f'CH end: {self.ch_endtime} - ' if self.ch_endtime != self.ph_endtime else '') +
-                             (f'PH end: {self.ph_endtime}' if self.ch_endtime != self.ph_endtime
-                              else f'End: {self.ph_endtime}'))
 
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Initializing model build')
@@ -329,7 +334,7 @@ class Scenario:
             self.ph_nsteps = math.ceil(self.len_ph.total_seconds() / 3600 / self.timestep_hours)
             # number of timesteps for CH
             self.ch_nsteps = math.ceil(self.len_ch.total_seconds() / 3600 / self.timestep_hours)
-            self.nhorizons = int(self.sim_duration // self.len_ch)  # number of timeslices to run
+            self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.len_ph = self.sim_duration
             self.len_ch = self.sim_duration
