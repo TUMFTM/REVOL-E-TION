@@ -8,7 +8,6 @@ import os
 import pandas as pd
 import pandas.errors
 import pvlib
-import pytz
 import requests
 import statistics
 import windpowerlib
@@ -1515,8 +1514,8 @@ class PVSource(RenewableInvestBlock):
     def get_timeseries_data(self, scenario, run):
 
         if self.data_source == 'pvgis api':  # PVGIS API input selected
-            self.api_startyear = scenario.starttime.tz_convert(pytz.utc).year
-            self.api_endyear = scenario.sim_endtime.tz_convert(pytz.utc).year
+            self.api_startyear = scenario.starttime.tz_convert('utc').year
+            self.api_endyear = scenario.sim_endtime.tz_convert('utc').year
             self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
                                                                      scenario.longitude,
                                                                      start=self.api_startyear,
