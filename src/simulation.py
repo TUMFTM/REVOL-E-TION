@@ -327,10 +327,6 @@ class Scenario:
         if self.strategy == 'rh':
             self.len_ph = pd.Timedelta(hours=self.len_ph)
             self.len_ch = pd.Timedelta(hours=self.len_ch)
-            # number of timesteps for PH
-            self.ph_nsteps = math.ceil(self.len_ph.total_seconds() / 3600 / self.timestep_hours)
-            # number of timesteps for CH
-            self.ch_nsteps = math.ceil(self.len_ch.total_seconds() / 3600 / self.timestep_hours)
             self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
         elif self.strategy in ['go', 'lfs']:
             self.len_ph = self.sim_duration
