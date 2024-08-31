@@ -25,6 +25,7 @@ input/*
 !input/GridConnection/grid_sell_example.csv
 
 !input/PVSource/pv_example.csv
+!input/PVSource/api_solcast_template.conf
 
 !input/PVSource/wind_example.csv
 
