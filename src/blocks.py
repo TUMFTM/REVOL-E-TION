@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import ast
+import io
 import numpy as np
 import oemof.solph as solph
 import os
@@ -8,6 +9,7 @@ import pandas as pd
 import pandas.errors
 import pvlib
 import pytz
+import requests
 import statistics
 import windpowerlib
 
@@ -1512,7 +1514,7 @@ class PVSource(RenewableInvestBlock):
 
     def get_timeseries_data(self, scenario, run):
 
-        if self.data_source == 'pvgis api':  # API input selected
+        if self.data_source == 'pvgis api':  # PVGIS API input selected
             self.api_startyear = scenario.starttime.tz_convert(pytz.utc).year
             self.api_endyear = scenario.sim_endtime.tz_convert(pytz.utc).year
             self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
@@ -1533,6 +1535,46 @@ class PVSource(RenewableInvestBlock):
 
             # PVGIS gives time slots as XX:06h - round to full hour
             self.data.index = self.data.index.round('h')
+
+        elif self.data_source.lower() == 'solcast api':  # solcast API input selected
+            # read api key
+            with open(os.path.join(run.path_input_data, self.__class__.__name__, 'api_solcast.conf'), 'r') as file:
+                api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
+
+            # set api key as bearer token
+            headers = {'Authorization': f'Bearer {api_key}'}
+
+            params = {
+                'latitude': scenario.latitude,
+                'longitude': scenario.longitude,
+                # 'azimuth': 44,
+                # 'tilt': 90,
+                # 'array_type': 'fixed',
+                'period': 'PT5M',
+                'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
+                'start': scenario.starttime,
+                'end': scenario.sim_endtime,
+                'format': 'csv',
+                # 'include_metadata': True,
+                'time_zone': 'utc',
+                # 'terrain_shading': True,
+            }
+
+            url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
+
+            # get data from Solcast API
+            response = requests.get(url, headers=headers, params=params)
+            # convert to csv
+            self.data = pd.read_csv(io.StringIO(response.text))
+            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
+            self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
+            self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+            self.data = self.data.tz_convert('Europe/Berlin')
+            self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+            # rename columns according to further processing steps
+            self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+            # calculate specific pv power
+            self.calc_power_solcast()
 
         else:  # input from file instead of API
             self.path_input_file = os.path.join(run.path_input_data,
@@ -1558,6 +1600,7 @@ class PVSource(RenewableInvestBlock):
                 self.data.rename(columns={'air_temp': 'temp_air'}, inplace=True)  # compatibility with aging model
                 self.data = self.data[['temp_air', 'wind_speed', 'gti']]
                 self.calc_power_solcast()
+
             else:
                 scenario.logger.warning('No usable PV input type specified - exiting')
                 exit()  # TODO exit scenario instead of entire execution
