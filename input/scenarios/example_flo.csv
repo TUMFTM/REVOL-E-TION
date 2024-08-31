@@ -1,7 +1,7 @@
 block,key,dispatch_go
 scenario,starttime,1.1.2018
 scenario,timestep,15min
-scenario,sim_duration,1
+scenario,sim_duration,364
 scenario,prj_duration,25
 scenario,strategy,rl
 scenario,len_ph,48
@@ -12,8 +12,8 @@ scenario,latitude,48.2652
 scenario,longitude,11.6686
 scenario,cost_eps,1.00E-8
 scenario,blocks,"{'core': 'SystemCore', 'dem': 'FixedDemand', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem'}"
-core,size_dcac,22000
-core,size_acdc,22000
+core,size_dcac,220000
+core,size_acdc,220000
 core,capex_spec,0.08
 core,mntex_spec,0.0024
 core,opex_spec,0
