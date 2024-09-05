@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytz
 import scipy as sp
+import importlib
 
 from src import blocks
-from src import mapper_timeframe as mtf
 from src import utils
 
 
@@ -215,6 +215,8 @@ class RentalSystem:
                                         .transform(sample_usecase_idle))
 
     def sample_requests(self):
+        # import selected timeframe mapper file
+        mtf = importlib.import_module(f'input.TimeframeMapper.{self.sc.filename_mapper}')
 
         # draw total demand for every simulated day from a lognormal distribution
         self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim_extd.date)))

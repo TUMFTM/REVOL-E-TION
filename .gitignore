@@ -34,6 +34,8 @@ input/*
 !input/settings/default.csv
 !input/settings/default_seq.csv
 
+!input/TimeframeMapper/timeframe_mapper_example.csv
+
 !input/WindSource/wind_example.csv
 !input/WindSource/turbine_data.pkl
 
