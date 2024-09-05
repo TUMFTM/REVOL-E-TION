@@ -417,7 +417,7 @@ class RenewableInvestBlock(InvestBlock):
         scenario.e_renewable_curt += self.e_curt
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_out @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
 
@@ -587,12 +587,12 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self, scenario):
 
-        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg + self.flow_out @ self.opex_spec_sys_dis
+        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
 
         for commodity in self.commodities.values():
-            commodity.opex_sim = commodity.flow_in @ self.opex_spec * scenario.timestep_hours
-            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac) +
-                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc)) * scenario.timestep_hours
+            commodity.opex_sim = commodity.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
+            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac[scenario.dti_sim]) +
+                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc[scenario.dti_sim])) * scenario.timestep_hours
             self.opex_commodities += commodity.opex_sim
             self.opex_commodities_ext += commodity.opex_sim_ext
 
@@ -669,7 +669,7 @@ class CommoditySystem(InvestBlock):
         consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
-        log_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename)),
+        log_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename))
         self.data = utils.read_input_csv(self,
                                          log_path,
                                          scenario,
@@ -763,7 +763,7 @@ class ControllableSource(InvestBlock):
         self.calc_energy_source_sink(scenario)
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_out @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -919,8 +919,8 @@ class GridConnection(InvestBlock):
 
         # Calculate costs of different markets
         for market in self.markets.values():
-            market.opex_sim = market.flow_out @ market.opex_spec_g2mg * scenario.timestep_hours + \
-                              market.flow_in @ market.opex_spec_mg2g * scenario.timestep_hours
+            market.opex_sim = market.flow_out @ market.opex_spec_g2mg[scenario.dti_sim] * scenario.timestep_hours + \
+                              market.flow_in @ market.opex_spec_mg2g[scenario.dti_sim] * scenario.timestep_hours
 
             self.opex_markets += market.opex_sim
 
@@ -1147,7 +1147,7 @@ class FixedDemand(Block):
         self.calc_energy_source_sink(scenario)
 
     def calc_revenue(self, scenario):
-        self.crev_sim = (self.flow_in @ self.crev_spec) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
+        self.crev_sim = (self.flow_in @ self.crev_spec[scenario.dti_sim]) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev(scenario)
 
     def get_ch_results(self, horizon, *_):
@@ -1196,7 +1196,7 @@ class MobileCommodity:
 
         self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
 
         self.soc_min = (1 - self.soh_init) / 2
@@ -1358,12 +1358,12 @@ class MobileCommodity:
     def calc_revenue(self, scenario):
 
         # rental time based revenue
-        self.crev_time = ((~self.data.loc[scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time) *
+        self.crev_time = ((~self.data.loc[scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[scenario.dti_sim]) *
                           scenario.timestep_hours)
 
         # usage based revenue
         if isinstance(self.parent, VehicleCommoditySystem):
-            self.crev_usage = self.data.loc[scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist
+            self.crev_usage = self.data.loc[scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[scenario.dti_sim]
         else:  # BatteryCommoditySystems have no usage based revenue
             self.crev_usage = 0  # Battery rental is a fixed time based price, irrespective of energy consumption
 
@@ -1515,7 +1515,7 @@ class PVSource(RenewableInvestBlock):
 
         if self.data_source == 'pvgis api':  # PVGIS API input selected
             self.api_startyear = scenario.starttime.tz_convert('utc').year
-            self.api_endyear = scenario.sim_endtime.tz_convert('utc').year
+            self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
             self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
                                                                      scenario.longitude,
                                                                      start=self.api_startyear,
@@ -1552,7 +1552,7 @@ class PVSource(RenewableInvestBlock):
                 'period': 'PT5M',
                 'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
                 'start': scenario.starttime,
-                'end': scenario.sim_endtime,
+                'end': scenario.sim_extd_endtime,
                 'format': 'csv',
                 # 'include_metadata': True,
                 'time_zone': 'utc',
@@ -1632,7 +1632,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
         self.soc = pd.Series()
 
-        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
 
         """
@@ -1699,7 +1699,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.calc_energy_bidi(scenario)
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_in @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
 
@@ -1844,7 +1844,7 @@ class SystemCore(InvestBlock):
         self.mntex_yrl = (self.size_acdc + self.size_dcac) * self.mntex_spec
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, scenario):
 

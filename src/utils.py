@@ -133,12 +133,12 @@ def transform_scalar_var(block, var_name, scenario, run):
         opex = read_input_csv(block,
                               os.path.join(run.path_input_data, dirname, set_extension(scenario_entry)),
                               scenario)
-        opex = opex[scenario.starttime:(scenario.sim_endtime - scenario.timestep_td)]
+        opex = opex[scenario.starttime:(scenario.sim_extd_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series
         setattr(block, var_name, opex[opex.columns[0]])
     else:  # opex_spec is given as a scalar directly in scenario file
         # Use sequence of values for variable costs to unify computation of results
-        setattr(block, var_name, pd.Series(scenario_entry, index=scenario.dti_sim))
+        setattr(block, var_name, pd.Series(scenario_entry, index=scenario.dti_sim_extd))
 
 
 def set_extension(filename):
