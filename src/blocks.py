@@ -1472,7 +1472,7 @@ class PVSource(RenewableInvestBlock):
 
     def __init__(self, name, scenario, run):
 
-        self.api_startyear = self.api_endyear = self.meta = None
+        self.api_startyear = self.api_endyear = self.api_shift = self.api_length = self.meta = None
         self.bus_connected = scenario.blocks['core'].dc_bus
 
         super().__init__(name, scenario, run)
@@ -1516,6 +1516,23 @@ class PVSource(RenewableInvestBlock):
         if self.data_source == 'pvgis api':  # PVGIS API input selected
             self.api_startyear = scenario.starttime.tz_convert('utc').year
             self.api_endyear = scenario.sim_endtime.tz_convert('utc').year
+            self.api_length = self.api_endyear - self.api_startyear
+            self.api_shift = pd.to_timedelta('0 days')
+
+            if self.api_length > 15:
+                raise ValueError('PVGIS API only allows a maximum of 15 years of data')
+            elif self.api_endyear > 2020:  # PVGIS-SARAH2 only has data up to 2020
+                self.api_shift = (pd.to_datetime('2020-01-01 00:00:00+00:00') -
+                                  pd.to_datetime(f'{self.api_endyear}-01-01 00:00:00+00:00'))
+                self.api_endyear = 2020
+                self.api_startyear = 2020 - self.api_length
+            elif self.api_startyear < 2005:  # PVGIS-SARAH2 only has data from 2005
+                self.api_shift = (pd.to_datetime('2005-01-01 00:00:00+00:00') -
+                                  pd.to_datetime(f'{self.api_startyear}-01-01 00:00:00+00:00'))
+                self.api_startyear = 2005
+                self.api_endyear = 2005 + self.api_length
+            # Todo leap years can result in data shifting not landing at the same point in time
+
             self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
                                                                      scenario.longitude,
                                                                      start=self.api_startyear,
@@ -1534,6 +1551,8 @@ class PVSource(RenewableInvestBlock):
 
             # PVGIS gives time slots as XX:06h - round to full hour
             self.data.index = self.data.index.round('h')
+            self.data.index = self.data.index - self.api_shift
+            pass
 
         elif self.data_source.lower() == 'solcast api':  # solcast API input selected
             # read api key
