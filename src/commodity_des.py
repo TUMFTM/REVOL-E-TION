@@ -97,7 +97,6 @@ class RentalSystem:
         n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
         self.fail_rate = self.cs.fail_rate = 1 - (n_success / n_total)
-        pass
 
     def convert_process_log(self):
         """
