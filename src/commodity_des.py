@@ -346,7 +346,7 @@ class VehicleRentalSystem(RentalSystem):
             usecase = group.name[0]
             timeframe = group.name[1]
             consumption = self.cs.usecases.loc[usecase, (timeframe, 'consumption')]
-            speed_avg = self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')]
+            speed_avg = self.cs.usecases.loc[usecase, (timeframe, 'speed_avg')]
             return pd.DataFrame(data={'consumption': [consumption] * len(group),
                                       'speed_avg': [speed_avg] * len(group)},
                                 index=group.index)
