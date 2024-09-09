@@ -21,7 +21,7 @@ def infer_dtype(value):
         return True
     elif value.lower() == 'false':
         return False
-    elif value.lower() in ['none', 'null', 'nan']:
+    elif value.lower() in ['none', 'null', 'nan', '']:
         return None
 
     try:

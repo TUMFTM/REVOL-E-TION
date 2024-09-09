@@ -1552,7 +1552,6 @@ class PVSource(RenewableInvestBlock):
             # PVGIS gives time slots as XX:06h - round to full hour
             self.data.index = self.data.index.round('h')
             self.data.index = self.data.index - self.api_shift
-            pass
 
         elif self.data_source.lower() == 'solcast api':  # solcast API input selected
             # read api key

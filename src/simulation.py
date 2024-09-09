@@ -630,7 +630,6 @@ class SimulationRun:
         self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
         self.scenario_data = pd.read_csv(self.scenarios_file_path,
                                          index_col=[0, 1],
-                                         na_values=['NaN', 'nan'],  # this inhibits None/Null being read as float NaN
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
