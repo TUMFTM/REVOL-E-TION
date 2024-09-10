@@ -18,37 +18,27 @@ license:    GPLv3
 # Imports
 ###############################################################################
 
-import graphviz
 import logging
 import logging.handlers
-import math
 import os
 import pprint
-import psutil
-import pytz
 import subprocess
 import sys
 import time
-import timezonefinder
-import traceback
-
-import multiprocessing as mp
-import numpy_financial as npf
-import oemof.solph as solph
-import pandas as pd
 import tkinter as tk
 import tkinter.filedialog
-
+import traceback
 from pathlib import Path
-from plotly.subplots import make_subplots
+
+import graphviz
+import oemof.solph as solph
+import pandas as pd
+import psutil
 
 import blocks
-import commodity_des as des
-from custom_constraints import CustomConstraints
-import tum_colors as col
-from aprioripowerscheduler import AprioriPowerScheduler
 import utils
 from ensys_interface import call_ensys_interface
+
 
 ###############################################################################
 # Functions
@@ -132,9 +122,9 @@ class PredictionHorizon:
                     commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
 
         if scenario.strategy == 'rl':
-            call_ensys_interface(scenario, run, 8, "DQN")
+            call_ensys_interface(scenario=scenario, forecast_length=8, algorithm="PPO")
         # if apriori power scheduling is necessary, calculate power schedules:
-        if scenario.scheduler:
+        elif scenario.scheduler:
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                  f'Calculating power schedules for commodities with rulebased charging strategies')
             scenario.scheduler.calc_ph_schedule(self)
