@@ -1606,15 +1606,15 @@ class PVSource(RenewableInvestBlock):
                 self.data.index = self.data.index.round('h')
             elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
-                # self.data = pd.read_csv(self.path_input_file,
-                #                         parse_dates=True,
-                #                         index_col='PeriodStart')
                 self.data = pd.read_csv(self.path_input_file)
+                self.data.rename(columns={'PeriodStart': 'period_start',
+                                          'PeriodEnd': 'period_end',
+                                          'AirTemp': 'temp_air',
+                                          'GtiFixedTilt': 'gti',
+                                          'WindSpeed10m': 'wind_speed'}, inplace=True)
                 self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
                 self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
                 self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-                self.data['wind_speed'] = self.data['wind_speed_10m']
-                self.data.rename(columns={'air_temp': 'temp_air'}, inplace=True)  # compatibility with aging model
                 self.data = self.data[['temp_air', 'wind_speed', 'gti']]
                 self.calc_power_solcast()
 
