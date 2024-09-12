@@ -1040,13 +1040,13 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
-                                               nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
+                                               nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
                                                variable_costs=self.opex_spec_g2mg)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
-                                             nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
+                                             nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
                                              variable_costs=self.opex_spec_mg2g + scenario.cost_eps * self.equal_prices)
                                          })
 
@@ -1107,7 +1107,16 @@ class GridMarket:
     def set_size(self, size_var_name):
         # limit max power of the grid market to the size of the (physical) grid connection
         # If no size for the market is given, the size of the grid connection is used
-        setattr(self, size_var_name, min(getattr(self, size_var_name) or np.inf, getattr(self.parent, size_var_name)))
+        # if pd.isna(getattr(self, size_var_name)):
+        #     size_market = np.inf
+        # else:
+        #     size_market = getattr(self, size_var_name)
+        #
+        # setattr(self, size_var_name, min(size_market, getattr(self.parent, size_var_name)))
+
+        setattr(self, size_var_name,
+                min(np.inf if pd.isna(getattr(self, size_var_name)) else getattr(self, size_var_name),
+                    getattr(self.parent, size_var_name)))
 
     def update_input_components(self):
         pass
