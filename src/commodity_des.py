@@ -72,6 +72,7 @@ class RentalSystem:
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
+        self.process_objs = []
 
     def create_store(self):
         self.store = MultiStore(self.sc.env_des, capacity=self.cs.num)
@@ -534,6 +535,8 @@ class RentalProcess:
         self.rs = rs
         self.env = sc.env_des
         self.id = id
+
+        self.rs.process_objs.append(self)
 
         self.primary_result = self.secondary_result = [False]  # defaults equal to insuccessful request
         self.primary_request = self.secondary_request = False
