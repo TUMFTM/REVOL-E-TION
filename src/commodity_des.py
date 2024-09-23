@@ -97,7 +97,6 @@ class RentalSystem:
         n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
         self.fail_rate = self.cs.fail_rate = 1 - (n_success / n_total)
-        pass
 
     def convert_process_log(self):
         """
@@ -346,7 +345,7 @@ class VehicleRentalSystem(RentalSystem):
             usecase = group.name[0]
             timeframe = group.name[1]
             consumption = self.cs.usecases.loc[usecase, (timeframe, 'consumption')]
-            speed_avg = self.cs.usecases.loc[usecase, (timeframe, 'patience_rex')]
+            speed_avg = self.cs.usecases.loc[usecase, (timeframe, 'speed_avg')]
             return pd.DataFrame(data={'consumption': [consumption] * len(group),
                                       'speed_avg': [speed_avg] * len(group)},
                                 index=group.index)
