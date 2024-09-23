@@ -49,7 +49,6 @@ class Block:
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
-        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
@@ -460,6 +459,7 @@ class CommoditySystem(InvestBlock):
     def __init__(self, name, scenario, run):
 
         self.size_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
+        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
 
         super().__init__(name, scenario, run)
 
