@@ -785,7 +785,7 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.opex_connection = self.opex_markets = 0
+        self.opex_sim_power = self.opex_sim_energy = 0
 
         """
         x denotes the flow measurement point in results
@@ -915,16 +915,16 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_connection = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
+        self.opex_sim_power = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
             market.opex_sim = market.flow_out @ market.opex_spec_g2mg[scenario.dti_sim] * scenario.timestep_hours + \
                               market.flow_in @ market.opex_spec_mg2g[scenario.dti_sim] * scenario.timestep_hours
 
-            self.opex_markets += market.opex_sim
+            self.opex_sim_energy += market.opex_sim
 
-        self.opex_sim = self.opex_connection + self.opex_markets
+        self.opex_sim = self.opex_sim_power + self.opex_sim_energy
 
     def get_ch_results(self, horizon, *_):
         self.flow_in_ch = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
