@@ -598,6 +598,7 @@ class Scenario:
                 for interval in block_obj.peakshaving_ints.index:
                     self.result_summary.loc[(block_name, f'peakshaving_peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
                     self.result_summary.loc[(block_name, f'peakshaving_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
+                    self.result_summary.loc[(block_name, f'peakshaving_opex_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']) * float(block_obj.peakshaving_ints.loc[interval, 'power'])
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
