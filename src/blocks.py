@@ -821,12 +821,12 @@ class GridConnection(InvestBlock):
                             'year': lambda x: x.strftime('%Y')}
 
             # Assign the corresponding interval to each timestep
-            periods = scenario.dti_sim.to_series().apply(periods_func[self.peakshaving])
+            periods = scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
             peakshaving_ints = periods.unique()
 
             # Activate the corresponding bus for each period
             bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                           for period_label in peakshaving_ints}, index=scenario.dti_sim)
+                                           for period_label in peakshaving_ints}, index=scenario.dti_sim_extd)
 
         # Create a series to store peak power values
         self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints, columns=['power', 'opex_spec'])
