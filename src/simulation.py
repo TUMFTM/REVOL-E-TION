@@ -115,7 +115,7 @@ class PredictionHorizon:
             scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():
-            block.update_input_components()  # (re)define solph components that need input slices
+            block.update_input_components(self)  # (re)define solph components that need input slices
 
         self.results = None
         self.meta_results = None

@@ -445,7 +445,7 @@ class RenewableInvestBlock(InvestBlock):
                                          f'{self.name}_flow_curt': self.flow_curt})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
 
         self.src.outputs[self.bus].fix = self.data_ph['power_spec']
 
@@ -715,9 +715,9 @@ class CommoditySystem(InvestBlock):
         self.size_pc = self.size  # pc = per commodity
         self.size = self.size_pc * self.num if not self.opt else None
 
-    def update_input_components(self):
+    def update_input_components(self, horizon):
         for commodity in self.commodities.values():
-            commodity.update_input_components()
+            commodity.update_input_components(horizon)
 
 
 class BatteryCommoditySystem(CommoditySystem):
@@ -772,7 +772,7 @@ class ControllableSource(InvestBlock):
     def get_opt_size(self, horizon):
         self.size = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
             self.src.outputs[self.bus_connected].fix = self.apriori_data['p']
@@ -991,7 +991,7 @@ class GridConnection(InvestBlock):
         if self.size_mg2g == 'opt':
             self.opt = self.opt_mg2g = True
 
-    def update_input_components(self):
+    def update_input_components(self, horizon):
         # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
@@ -999,7 +999,7 @@ class GridConnection(InvestBlock):
             self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
 
         for market in self.markets.values():
-            market.update_input_components()
+            market.update_input_components(horizon)
 
 
 class GridMarket:
@@ -1118,7 +1118,7 @@ class GridMarket:
                 min(np.inf if pd.isna(getattr(self, size_var_name)) else getattr(self, size_var_name),
                     getattr(self.parent, size_var_name)))
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
         pass
 
 
@@ -1166,7 +1166,7 @@ class FixedDemand(Block):
     def get_legend_entry(self):
         return f'{self.name} power'
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
         # new ph data slice is created during initialization of the PredictionHorizon
         self.snk.inputs[self.bus_connected].fix = self.data_ph['power_w']
 
@@ -1427,7 +1427,7 @@ class MobileCommodity:
                                              f'{self.name}_soh': self.soh})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, commodity_ts_results], axis=1)
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
 
         # set vehicle consumption data for sink
         self.snk.inputs[self.bus].fix = self.data_ph['consumption']
@@ -1766,7 +1766,7 @@ class StationaryEnergyStorage(InvestBlock):
         block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc, f'{self.name}_soh': self.soh})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
 
         self.ess.initial_storage_level = self.soc_init_ph
 
@@ -1923,7 +1923,7 @@ class SystemCore(InvestBlock):
         if self.size_dcac == 'opt':
             self.opt = self.opt_dcac = True
 
-    def update_input_components(self):
+    def update_input_components(self, *_):
         pass  # function needs to be callable
 
 
