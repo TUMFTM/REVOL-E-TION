@@ -715,9 +715,9 @@ class CommoditySystem(InvestBlock):
         self.size_pc = self.size  # pc = per commodity
         self.size = self.size_pc * self.num if not self.opt else None
 
-    def update_input_components(self, horizon):
+    def update_input_components(self, scenario, horizon):
         for commodity in self.commodities.values():
-            commodity.update_input_components(horizon)
+            commodity.update_input_components(scenario, horizon)
 
 
 class BatteryCommoditySystem(CommoditySystem):
@@ -991,7 +991,7 @@ class GridConnection(InvestBlock):
         if self.size_mg2g == 'opt':
             self.opt = self.opt_mg2g = True
 
-    def update_input_components(self, horizon):
+    def update_input_components(self, scenario, horizon):
         # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
@@ -999,7 +999,7 @@ class GridConnection(InvestBlock):
             self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
 
         for market in self.markets.values():
-            market.update_input_components(horizon)
+            market.update_input_components(scenario, horizon)
 
 
 class GridMarket:
