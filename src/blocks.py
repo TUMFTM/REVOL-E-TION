@@ -669,7 +669,7 @@ class CommoditySystem(InvestBlock):
         consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
-        log_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename)),
+        log_path = os.path.join(run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename))
         self.data = utils.read_input_csv(self,
                                          log_path,
                                          scenario,
