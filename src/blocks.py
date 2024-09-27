@@ -562,7 +562,7 @@ class CommoditySystem(InvestBlock):
         self.calc_energy_bidi(scenario)  # bidirectional block
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_yrl
+        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
 
     def calc_opex_ext(self, scenario):
         """
