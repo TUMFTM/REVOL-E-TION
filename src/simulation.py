@@ -227,10 +227,6 @@ class PredictionHorizon:
                       if isinstance(block, blocks.InvestBlock) and block.opt]:
             block.get_opt_size(self)
 
-        for block in [block for block in scenario.blocks.values()
-                      if isinstance(block, blocks.GridConnection) and block.peakshaving]:
-            block.get_peak_powers(self)
-
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
 
@@ -553,8 +549,11 @@ class Scenario:
                                      f' {block.size_mg2g / 1e3:.1f} {unit}')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
-                        self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
-                                         f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.2f} {unit}')
+                        if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
+                            self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
+                                             f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.2f} {unit}'
+                                             f' - OPEX: {block.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod():.2f} {self.currency}')
+
             elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
@@ -596,9 +595,11 @@ class Scenario:
                     write_values(commodity_name, commodity_obj)
             if hasattr(block_obj, 'peakshaving_ints') and block_obj.peakshaving:
                 for interval in block_obj.peakshaving_ints.index:
-                    self.result_summary.loc[(block_name, f'peakshaving_peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
-                    self.result_summary.loc[(block_name, f'peakshaving_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
-                    self.result_summary.loc[(block_name, f'peakshaving_opex_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']) * float(block_obj.peakshaving_ints.loc[interval, 'power'])
+                    if block_obj.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
+                        self.result_summary.loc[(block_name, f'power_peak_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
+                        self.result_summary.loc[(block_name, f'power_period_fraction_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'period_fraction'])
+                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
+                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod()
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)

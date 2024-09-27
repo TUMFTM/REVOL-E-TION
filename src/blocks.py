@@ -825,22 +825,30 @@ class GridConnection(InvestBlock):
             peakshaving_ints = periods.unique()
 
             # Activate the corresponding bus for each period
-            bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                           for period_label in peakshaving_ints}, index=scenario.dti_sim_extd)
+            self.bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
+                                                for period_label in peakshaving_ints}, index=scenario.dti_sim_extd)
 
         # Create a series to store peak power values
-        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints, columns=['power', 'opex_spec'])
+        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints, columns=['power', 'period_fraction', 'opex_spec', 'start', 'end'])
+        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
+        self.peakshaving_ints.loc[:, 'power'] = 0
+        self.peakshaving_ints.loc[:, 'opex_spec'] = self.opex_peak_spec
 
-        for interval in self.peakshaving_ints.index:
-            if self.peakshaving is not None:
-                period_fraction = utils.get_period_fraction(dti=bus_activation[bus_activation[interval] == 1].index,
-                                                            period=self.peakshaving,
-                                                            freq=scenario.timestep)
-                self.peakshaving_ints.loc[interval, 'opex_spec'] = self.opex_peak_spec * period_fraction
+        if self.peakshaving is not None:
+            # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
+            for interval in self.peakshaving_ints.index:
+                self.peakshaving_ints.loc[interval, 'period_fraction'] = utils.get_period_fraction(
+                    dti=self.bus_activation.loc[scenario.dti_sim][self.bus_activation.loc[scenario.dti_sim, interval] == 1].index,
+                    period=self.peakshaving,
+                    freq=scenario.timestep)
+
+                # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
+                self.peakshaving_ints.loc[interval, 'start'] = self.bus_activation[self.bus_activation[interval] == 1].index[0]
+                self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[-1]
 
         self.inflow = {f'xc_{self.name}': solph.components.Converter(
             label=f'xc_{self.name}',
-            # Peakshaving -> not implemented
+            # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
             outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc)
@@ -858,7 +866,7 @@ class GridConnection(InvestBlock):
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
                                                                    if self.peakshaving else None),
-                                                    max=(bus_activation[intv] if self.peakshaving else None))},
+                                                    max=(self.bus_activation[intv] if self.peakshaving else None))},
             conversion_factors={self.bus_connected: 1}) for intv in self.peakshaving_ints.index}
 
         scenario.components.extend(self.inflow.values())
@@ -938,6 +946,14 @@ class GridConnection(InvestBlock):
         for market in self.markets.values():
             market.get_ch_results(horizon)
 
+        if self.peakshaving:
+            for interval in self.peakshaving_ints.index:
+                converter = self.outflow[f'{self.name}_xc_{interval}']
+                if converter.outputs[self.bus_connected].investment is not None:
+                    self.peakshaving_ints.loc[interval, 'power'] = max(self.peakshaving_ints.loc[interval, 'power'],
+                                                                       horizon.results[(converter, self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
+
+
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.size_g2mg / 1e3:.1f} kW from / '
                 f'{self.size_mg2g / 1e3:.1f} kW to grid)')
@@ -1000,6 +1016,37 @@ class GridConnection(InvestBlock):
 
         for market in self.markets.values():
             market.update_input_components(scenario, horizon)
+
+        if self.peakshaving is not None and scenario.strategy == 'rh':
+            for interval in self.peakshaving_ints.index:
+                converter = self.outflow[f'{self.name}_xc_{interval}']
+                # set maximum flow power to correct time series for current horizon
+                converter.outputs[self.bus_connected].max = self.bus_activation.loc[horizon.dti_ph, interval]
+
+                # for all intervals starting after or at the start of the current horizon:
+                #   - set investment to investment object with the correct opex_spec for the interval
+                #   - set nominal_value to None
+                if self.peakshaving_ints.loc[interval, 'start'] >= min(horizon.dti_ph):
+                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints[interval, 'opex_spec'])
+                    converter.outputs[self.bus_connected].nominal_value = None
+                    # set value in dataframe to 0 to avoid summing up the peak power over following horizons
+                    self.peakshaving_ints.loc[interval, 'power'] = 0
+
+                # for all intervals starting and ending before the start of the current horizon:
+                #   - set investment to None
+                #   - set nominal_value to the value determined in the previous horizons
+                elif self.peakshaving_ints.loc[interval, 'end'] <= min(horizon.dti_ph):
+                    converter.outputs[self.bus_connected].investment = None
+                    converter.outputs[self.bus_connected].nominal_value = self.peakshaving_ints.loc[interval, 'power']
+
+                # for all intervals starting before and ending after the start of the current horizon:
+                #   - set investment to None
+                #   - set nominal_value to the value determined in the previous horizons
+                #   - use add_pwr_ph to size additional peak power
+                elif self.peakshaving_ints.loc[interval, 'start'] < min(horizon.dti_ph) <= self.peakshaving_ints.loc[interval, 'end']:
+                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints[interval, 'opex_spec'],
+                                                                                        existing=self.peakshaving_ints.loc[interval, 'power'])
+                    converter.outputs[self.bus_connected].nominal_value = None
 
 
 class GridMarket:
