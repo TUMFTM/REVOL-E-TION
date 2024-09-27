@@ -767,7 +767,7 @@ class SimulationRun:
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
-        joined_results = pd.concat(scenario_frames, axis=1)
+        joined_results = pd.concat(scenario_frames, axis=1)[self.scenario_names]
         joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
         joined_results.to_csv(self.path_result_summary_file)
         self.logger.info("Technoeconomic output file created")
