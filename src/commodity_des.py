@@ -427,7 +427,7 @@ class VehicleRentalSystem(RentalSystem):
         if self.cs.rex_cs:
             self.processes['energy_req_pc_secondary'] = self.processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
-                self.processes['energy_req_pc_secondary'] / self.cs.pwr_chg_des,
+                self.processes['energy_req_pc_secondary'] / self.cs.rex_cs.pwr_chg_des,
                 unit='hour')
         else:
             self.processes['energy_req_pc_secondary'] = 0
