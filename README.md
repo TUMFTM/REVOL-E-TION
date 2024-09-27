@@ -29,10 +29,8 @@ Hannes Henglein, B.Sc. - Master's Thesis ongoing
 Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023
 
 ## Licensing
-REVOL-E-TION is licensed under the <mark> License still to be chosen </mark>.  
+REVOL-E-TION is licensed under the Apache 2.0 open source license.  
 The full license text can be found in the LICENSE file in the root directory of the repository.
-
-<mark> Prior to open source publication of the toolset, any distribution outside FTM researchers or their immediately affiliated students is prohibited. </mark>
 
 ## Related publications
 - P. Rosner and M. Lienkamp, "Unlocking the Joint Potential of Electric Mobility and Rural Electrification - A Concept for Improved Integration using Modular Batteries," 2022 IEEE PES/IAS PowerAfrica, Kigali, Rwanda, 2022, pp. 1-5, https://doi.org/10.1109/PowerAfrica53997.2022.9905305.

@@ -72,6 +72,7 @@ class RentalSystem:
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
+        self.process_objs = []
 
     def create_store(self):
         self.store = MultiStore(self.sc.env_des, capacity=self.cs.num)
@@ -426,7 +427,7 @@ class VehicleRentalSystem(RentalSystem):
         if self.cs.rex_cs:
             self.processes['energy_req_pc_secondary'] = self.processes['dsoc_secondary'] * self.cs.rex_cs.size_pc
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
-                self.processes['energy_req_pc_secondary'] / self.cs.pwr_chg_des,
+                self.processes['energy_req_pc_secondary'] / self.cs.rex_cs.pwr_chg_des,
                 unit='hour')
         else:
             self.processes['energy_req_pc_secondary'] = 0
@@ -534,6 +535,8 @@ class RentalProcess:
         self.rs = rs
         self.env = sc.env_des
         self.id = id
+
+        self.rs.process_objs.append(self)
 
         self.primary_result = self.secondary_result = [False]  # defaults equal to insuccessful request
         self.primary_request = self.secondary_request = False
