@@ -86,8 +86,8 @@ class PredictionHorizon:
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
                                  f'Prediction Horizon truncated to simulation end time')
 
-        # Truncate PH and CH to simulation end time if necessary
-        self.ph_endtime = min(self.ph_endtime, scenario.sim_endtime) if scenario.truncate_ph else self.ph_endtime
+        # Truncate PH and CH to simulation or eval end time
+        self.ph_endtime = min(self.ph_endtime, scenario.sim_extd_endtime)
         self.ch_endtime = min(self.ch_endtime, scenario.sim_endtime)
 
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
@@ -284,18 +284,37 @@ class Scenario:
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
+        # simulation vs. extended simulation: for rh strategy and truncate_ph = False, the extended simulation timeframe
+        # is longer than the simulation timeframe defined by the input parameter duration. Otherwise, they are the same.
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y').tz_localize(self.timezone)
         self.sim_duration = pd.Timedelta(days=self.sim_duration)
+        self.sim_extd_duration = self.sim_duration
         self.sim_endtime = self.starttime + self.sim_duration
+        self.sim_extd_endtime = self.sim_endtime
         self.prj_duration_yrs = self.prj_duration
         self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
         self.prj_duration = self.prj_endtime - self.starttime
 
+        if self.strategy == 'rh':
+            self.len_ph = pd.Timedelta(hours=self.len_ph)
+            self.len_ch = pd.Timedelta(hours=self.len_ch)
+            self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
+            if not self.truncate_ph:
+                # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
+                self.sim_extd_duration = self.len_ch * (self.nhorizons - 1) + self.len_ph
+                self.sim_extd_endtime = self.starttime + self.sim_extd_duration
+        elif self.strategy in ['go']:
+            self.len_ph = self.sim_duration
+            self.len_ch = self.sim_duration
+            self.nhorizons = 1
+
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
+        self.dti_sim_extd = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
+                                          inclusive='left')
 
         # generate variables for calculations
-        self.timestep_td = pd.Timedelta(self.dti_sim.freq)
+        self.timestep_td = pd.Timedelta(self.dti_sim_extd.freq)
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
         self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
@@ -317,21 +336,12 @@ class Scenario:
             run.path_result_folder,
             f'{self.name}_tempresults.csv')
 
-        self.result_timeseries = pd.DataFrame(index=self.dti_sim)
+        self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_file = os.path.join(
             run.path_result_folder,
             f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
-
-        if self.strategy == 'rh':
-            self.len_ph = pd.Timedelta(hours=self.len_ph)
-            self.len_ch = pd.Timedelta(hours=self.len_ch)
-            self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
-        elif self.strategy in ['go', 'lfs']:
-            self.len_ph = self.sim_duration
-            self.len_ch = self.sim_duration
-            self.nhorizons = 1
 
         # Energy System Blocks --------------------------------
 
@@ -588,6 +598,7 @@ class Scenario:
                 for interval in block_obj.peakshaving_ints.index:
                     self.result_summary.loc[(block_name, f'peakshaving_peak_power_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
                     self.result_summary.loc[(block_name, f'peakshaving_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
+                    self.result_summary.loc[(block_name, f'peakshaving_opex_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']) * float(block_obj.peakshaving_ints.loc[interval, 'power'])
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)

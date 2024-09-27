@@ -49,7 +49,6 @@ class Block:
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
-        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
@@ -417,7 +416,7 @@ class RenewableInvestBlock(InvestBlock):
         scenario.e_renewable_curt += self.e_curt
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_out @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
 
@@ -460,6 +459,7 @@ class CommoditySystem(InvestBlock):
     def __init__(self, name, scenario, run):
 
         self.size_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
+        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
 
         super().__init__(name, scenario, run)
 
@@ -587,12 +587,12 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self, scenario):
 
-        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg + self.flow_out @ self.opex_spec_sys_dis
+        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
 
         for commodity in self.commodities.values():
-            commodity.opex_sim = commodity.flow_in @ self.opex_spec * scenario.timestep_hours
-            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac) +
-                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc)) * scenario.timestep_hours
+            commodity.opex_sim = commodity.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
+            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac[scenario.dti_sim]) +
+                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc[scenario.dti_sim])) * scenario.timestep_hours
             self.opex_commodities += commodity.opex_sim
             self.opex_commodities_ext += commodity.opex_sim_ext
 
@@ -763,7 +763,7 @@ class ControllableSource(InvestBlock):
         self.calc_energy_source_sink(scenario)
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_out @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_out @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
         self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -785,7 +785,7 @@ class GridConnection(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.opex_connection = self.opex_markets = 0
+        self.opex_sim_power = self.opex_sim_energy = 0
 
         """
         x denotes the flow measurement point in results
@@ -915,16 +915,16 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_connection = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
+        self.opex_sim_power = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
-            market.opex_sim = market.flow_out @ market.opex_spec_g2mg * scenario.timestep_hours + \
-                              market.flow_in @ market.opex_spec_mg2g * scenario.timestep_hours
+            market.opex_sim = market.flow_out @ market.opex_spec_g2mg[scenario.dti_sim] * scenario.timestep_hours + \
+                              market.flow_in @ market.opex_spec_mg2g[scenario.dti_sim] * scenario.timestep_hours
 
-            self.opex_markets += market.opex_sim
+            self.opex_sim_energy += market.opex_sim
 
-        self.opex_sim = self.opex_connection + self.opex_markets
+        self.opex_sim = self.opex_sim_power + self.opex_sim_energy
 
     def get_ch_results(self, horizon, *_):
         self.flow_in_ch = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
@@ -1040,13 +1040,13 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
-                                               nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
+                                               nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
                                                variable_costs=self.opex_spec_g2mg)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
-                                             nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
+                                             nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
                                              variable_costs=self.opex_spec_mg2g + scenario.cost_eps * self.equal_prices)
                                          })
 
@@ -1107,7 +1107,16 @@ class GridMarket:
     def set_size(self, size_var_name):
         # limit max power of the grid market to the size of the (physical) grid connection
         # If no size for the market is given, the size of the grid connection is used
-        setattr(self, size_var_name, min(getattr(self, size_var_name) or np.inf, getattr(self.parent, size_var_name)))
+        # if pd.isna(getattr(self, size_var_name)):
+        #     size_market = np.inf
+        # else:
+        #     size_market = getattr(self, size_var_name)
+        #
+        # setattr(self, size_var_name, min(size_market, getattr(self.parent, size_var_name)))
+
+        setattr(self, size_var_name,
+                min(np.inf if pd.isna(getattr(self, size_var_name)) else getattr(self, size_var_name),
+                    getattr(self.parent, size_var_name)))
 
     def update_input_components(self):
         pass
@@ -1147,7 +1156,7 @@ class FixedDemand(Block):
         self.calc_energy_source_sink(scenario)
 
     def calc_revenue(self, scenario):
-        self.crev_sim = (self.flow_in @ self.crev_spec) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
+        self.crev_sim = (self.flow_in @ self.crev_spec[scenario.dti_sim]) * scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev(scenario)
 
     def get_ch_results(self, horizon, *_):
@@ -1196,7 +1205,7 @@ class MobileCommodity:
 
         self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
 
         self.soc_min = (1 - self.soh_init) / 2
@@ -1358,12 +1367,12 @@ class MobileCommodity:
     def calc_revenue(self, scenario):
 
         # rental time based revenue
-        self.crev_time = ((~self.data.loc[scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time) *
+        self.crev_time = ((~self.data.loc[scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[scenario.dti_sim]) *
                           scenario.timestep_hours)
 
         # usage based revenue
         if isinstance(self.parent, VehicleCommoditySystem):
-            self.crev_usage = self.data.loc[scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist
+            self.crev_usage = self.data.loc[scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[scenario.dti_sim]
         else:  # BatteryCommoditySystems have no usage based revenue
             self.crev_usage = 0  # Battery rental is a fixed time based price, irrespective of energy consumption
 
@@ -1515,7 +1524,7 @@ class PVSource(RenewableInvestBlock):
 
         if self.data_source == 'pvgis api':  # PVGIS API input selected
             self.api_startyear = scenario.starttime.tz_convert('utc').year
-            self.api_endyear = scenario.sim_endtime.tz_convert('utc').year
+            self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
             self.api_length = self.api_endyear - self.api_startyear
             self.api_shift = pd.to_timedelta('0 days')
 
@@ -1570,7 +1579,7 @@ class PVSource(RenewableInvestBlock):
                 'period': 'PT5M',
                 'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
                 'start': scenario.starttime,
-                'end': scenario.sim_endtime,
+                'end': scenario.sim_extd_endtime,
                 'format': 'csv',
                 # 'include_metadata': True,
                 'time_zone': 'utc',
@@ -1650,7 +1659,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
         self.soc = pd.Series()
 
-        self.soh = pd.Series(index=scenario.dti_sim)
+        self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
 
         """
@@ -1717,7 +1726,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.calc_energy_bidi(scenario)
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = self.flow_in @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = self.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
 
@@ -1862,7 +1871,7 @@ class SystemCore(InvestBlock):
         self.mntex_yrl = (self.size_acdc + self.size_dcac) * self.mntex_spec
 
     def calc_opex_sim(self, scenario):
-        self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec * scenario.timestep_hours
+        self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, scenario):
 

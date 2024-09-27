@@ -219,7 +219,7 @@ class RentalSystem:
         mtf = importlib.import_module(f'input.TimeframeMapper.{self.sc.filename_mapper}')
 
         # draw total demand for every simulated day from a lognormal distribution
-        self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim.date)))
+        self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim_extd.date)))
         self.demand_daily['timeframe'], self.demand_daily['demand_mean'], self.demand_daily['demand_std'] = mtf.map_timeframes(self.demand_daily, self.cs.name)
         self.demand_daily['mu'], self.demand_daily['sigma'] = lognormal_params(self.demand_daily['demand_mean'], self.demand_daily['demand_std'])
 
@@ -647,10 +647,10 @@ def execute_des(sc, run):
     sc.env_des = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    sc.dti_des = sc.dti_sim.union(
-        pd.date_range(start=sc.dti_sim[-1] + sc.dti_sim.freq,
+    sc.dti_des = sc.dti_sim_extd.union(
+        pd.date_range(start=sc.dti_sim_extd[-1] + sc.dti_sim_extd.freq,
                       periods=200,
-                      freq=sc.dti_sim.freq))
+                      freq=sc.dti_sim_extd.freq))
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     sc.rental_systems = dict()
