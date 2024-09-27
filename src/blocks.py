@@ -1027,7 +1027,7 @@ class GridConnection(InvestBlock):
                 #   - set investment to investment object with the correct opex_spec for the interval
                 #   - set nominal_value to None
                 if self.peakshaving_ints.loc[interval, 'start'] >= min(horizon.dti_ph):
-                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints[interval, 'opex_spec'])
+                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints.loc[interval, 'opex_spec'])
                     converter.outputs[self.bus_connected].nominal_value = None
                     # set value in dataframe to 0 to avoid summing up the peak power over following horizons
                     self.peakshaving_ints.loc[interval, 'power'] = 0
@@ -1040,11 +1040,10 @@ class GridConnection(InvestBlock):
                     converter.outputs[self.bus_connected].nominal_value = self.peakshaving_ints.loc[interval, 'power']
 
                 # for all intervals starting before and ending after the start of the current horizon:
-                #   - set investment to None
-                #   - set nominal_value to the value determined in the previous horizons
-                #   - use add_pwr_ph to size additional peak power
+                #   - set investment to investment object and add previous peak power as existing value
+                #   - set nominal_value to None
                 elif self.peakshaving_ints.loc[interval, 'start'] < min(horizon.dti_ph) <= self.peakshaving_ints.loc[interval, 'end']:
-                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints[interval, 'opex_spec'],
+                    converter.outputs[self.bus_connected].investment = solph.Investment(ep_costs=self.peakshaving_ints.loc[interval, 'opex_spec'],
                                                                                         existing=self.peakshaving_ints.loc[interval, 'power'])
                     converter.outputs[self.bus_connected].nominal_value = None
 
