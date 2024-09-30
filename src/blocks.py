@@ -475,7 +475,12 @@ class CommoditySystem(InvestBlock):
         else:
             raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
 
-        self.eff_chg = self.eff_dis = np.sqrt(self.eff_roundtrip)
+        if self.system == 'ac':
+            self.eff_chg = self.eff_chg_ac
+            self.eff_dis = self.eff_dis_ac
+        else:
+            self.eff_chg = self.eff_chg_dc
+            self.eff_dis = self.eff_dis_dc
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
@@ -1233,6 +1238,7 @@ class MobileCommodity:
         self.pwr_dis = self.parent.pwr_dis
         self.eff_chg = self.parent.eff_chg
         self.eff_dis = self.parent.eff_dis
+        self.eff_storage_roundtrip = self.parent.eff_storage_roundtrip
         self.temp_battery = self.parent.temp_battery
 
         self.ext_ac = None  # prepare for external chargers
@@ -1274,9 +1280,9 @@ class MobileCommodity:
 
         """
          bus               mc1_bus
-          |<---------mc1_mc-x-|<->mc1_ess
+          |<--x------mc1_mc---|<->mc1_ess
           |                   |
-          |---mc_mc1-------x->|-->mc1_snk
+          |---x--mc_mc1------>|-->mc1_snk
           |                   |
           |                   |<--mc1_ext_ac (external charging AC)
           |                   |
@@ -1288,17 +1294,18 @@ class MobileCommodity:
         scenario.components.append(self.bus)
 
         self.inflow = solph.components.Converter(label=f'mc_{self.name}',
-                                                 inputs={
-                                                     self.parent.bus: solph.Flow(nominal_value=self.pwr_chg)},
-                                                 outputs={self.bus: solph.Flow(nominal_value=self.pwr_chg * self.eff_chg)},
+                                                 inputs={self.parent.bus: solph.Flow(nominal_value=self.pwr_chg)},
+                                                 outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: self.eff_chg})
         scenario.components.append(self.inflow)
 
         self.outflow = solph.components.Converter(label=f'{self.name}_mc',
-                                                  inputs={self.bus: solph.Flow(nominal_value=(
-                                                      self.pwr_dis if self.parent.lvl_int in ['v2v', 'v2mg'] else 0),
-                                                                               variable_costs=scenario.cost_eps)},
-                                                  outputs={self.parent.bus: solph.Flow()},
+                                                  inputs={self.bus: solph.Flow()},
+                                                  outputs={
+                                                      self.parent.bus: solph.Flow(
+                                                          nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_int in ['v2v', 'v2mg'] else 0),
+                                                          variable_costs=scenario.cost_eps)
+                                                  },
                                                   conversion_factors={self.parent.bus: self.eff_dis})
         scenario.components.append(self.outflow)
 
@@ -1308,16 +1315,13 @@ class MobileCommodity:
         scenario.components.append(self.snk)
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                   inputs={self.bus: solph.Flow(
-                                                       variable_costs=self.parent.opex_spec)},
+                                                   inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_spec)},
                                                    outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=self.soc_init_ph,
-                                                   # efficiency already modeled in Converters
-                                                   inflow_conversion_factor=1,
-                                                   # efficiency already modeled in Converters
-                                                   outflow_conversion_factor=1,
+                                                   inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
+                                                   outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=(solph.Investment(ep_costs=self.parent.epc)
                                                                              if self.parent.opt else self.size)
                                                    )
@@ -1326,24 +1330,48 @@ class MobileCommodity:
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
         # add external AC charger as new energy source
-        self.ext_ac = solph.components.Source(label=f'{self.name}_ext_ac',
-                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_ac,
-                                                                            variable_costs=self.parent.opex_spec_ext_ac)}
-                                              )
-        scenario.components.append(self.ext_ac)
+        self.bus_ext_ac = solph.Bus(label=f'{self.name}_bus_ext_ac')
+
+        self.src_ext_ac = solph.components.Source(label=f'{self.name}_src_ext_ac',
+                                                  outputs={self.bus_ext_ac: solph.Flow(
+                                                      nominal_value=self.parent.pwr_ext_ac,
+                                                      variable_costs=self.parent.opex_spec_ext_ac)}
+                                                  )
+
+        self.conv_ext_ac = solph.components.Converter(label=f'{self.name}_conv_ext_ac',
+                                                      inputs={self.bus_ext_ac: solph.Flow()},
+                                                      outputs={self.bus: solph.Flow()},
+                                                      conversion_factors={self.bus: self.parent.eff_chg_ac}
+                                                      )
+
+        scenario.components.append(self.bus_ext_ac)
+        scenario.components.append(self.src_ext_ac)
+        scenario.components.append(self.conv_ext_ac)
 
         # add external DC charger as new energy source
-        self.ext_dc = solph.components.Source(label=f'{self.name}_ext_dc',
-                                              outputs={self.bus: solph.Flow(nominal_value=self.parent.pwr_ext_dc,
-                                                                            variable_costs=self.parent.opex_spec_ext_dc)}
-                                              )
-        scenario.components.append(self.ext_dc)
+        self.bus_ext_dc = solph.Bus(label=f'{self.name}_bus_ext_dc')
+
+        self.src_ext_dc = solph.components.Source(label=f'{self.name}_src_ext_dc',
+                                                  outputs={self.bus_ext_dc: solph.Flow(
+                                                      nominal_value=self.parent.pwr_ext_dc,
+                                                      variable_costs=self.parent.opex_spec_ext_dc)}
+                                                  )
+
+        self.conv_ext_dc = solph.components.Converter(label=f'{self.name}_conv_ext_dc',
+                                                      inputs={self.bus_ext_dc: solph.Flow()},
+                                                      outputs={self.bus: solph.Flow()},
+                                                      conversion_factors={self.bus: 1}
+                                                      )
+
+        scenario.components.append(self.bus_ext_dc)
+        scenario.components.append(self.src_ext_dc)
+        scenario.components.append(self.conv_ext_dc)
 
         if self.parent.aging:
             self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def add_power_trace(self, scenario):
-        legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.parent.eff_chg / 1e3:.1f} kW discharge)'
+        legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.eff_dis / 1e3:.1f} kW discharge)'
         scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                              y=self.flow,
                                              mode='lines',
@@ -1432,15 +1460,15 @@ class MobileCommodity:
         self.flow_bat_in = pd.concat([self.flow_bat_in if not self.flow_bat_in.empty else None, self.flow_bat_in_ch])
         self.flow_bat_out = pd.concat([self.flow_bat_out if not self.flow_bat_out.empty else None, self.flow_bat_out_ch])
 
-        self.flow_out_ch = horizon.results[(self.bus, self.outflow)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_in_ch = horizon.results[(self.inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_out_ch = horizon.results[(self.outflow, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_in_ch = horizon.results[(self.parent.bus, self.inflow)]['sequences']['flow'][horizon.dti_ch]
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         # Get results of external chargers
-        self.flow_ext_ac_ch = horizon.results[(self.ext_ac, self.bus)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_ext_dc_ch = horizon.results[(self.ext_dc, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_ext_ac_ch = horizon.results[(self.src_ext_ac, self.bus_ext_ac)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_ext_dc_ch = horizon.results[(self.src_ext_dc, self.bus_ext_dc)]['sequences']['flow'][horizon.dti_ch]
 
         self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
         self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
@@ -1484,24 +1512,24 @@ class MobileCommodity:
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.outputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / (self.pwr_chg * self.eff_chg)
-            self.outflow.inputs[self.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
+            self.inflow.inputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / self.pwr_chg
+            self.outflow.outputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
 
             if self.parent.pwr_ext_ac > 0:
-                self.ext_ac.outputs[self.bus].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+                self.src_ext_ac.outputs[self.bus_ext_ac].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
             if self.parent.pwr_ext_dc > 0:
-                self.ext_dc.outputs[self.bus].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+                self.src_ext_dc.outputs[self.bus_ext_dc].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
             self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
-            self.outflow.inputs[self.bus].max = self.data_ph['atbase'].astype(int)
+            self.outflow.outputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
 
             # define consumption data for sink (only enabled when detached from base)
             self.snk.inputs[self.bus].fix = self.data_ph['consumption']
 
             # enable/disable ac and dc charging station dependent on input data
-            self.ext_ac.outputs.data[self.bus].max = self.data_ph['atac'].astype(int)
-            self.ext_dc.outputs.data[self.bus].max = self.data_ph['atdc'].astype(int)
+            self.src_ext_ac.outputs[self.bus_ext_ac].max = self.data_ph['atac'].astype(int)
+            self.src_ext_dc.outputs[self.bus_ext_dc].max = self.data_ph['atdc'].astype(int)
 
         self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
 

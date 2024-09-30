@@ -101,7 +101,7 @@ class AprioriPowerScheduler:
             if self.cs_lm_dynamic:
                 # reset available power on converter to maximum power
                 self.pwr_syscore_conv_avail = {'ac': self.sys_core.size_acdc,
-                                             'dc': self.sys_core.size_dcac}
+                                               'dc': self.sys_core.size_dcac}
 
                 # Draw demand power (FixedDemand, cs_unlim, cs_lm_static) from available power on AC bus
                 for system in ['ac', 'dc']:
@@ -135,7 +135,7 @@ class AprioriPowerScheduler:
                 # define bus priority and non-priority
                 bus_connected = commodities[0].system
                 bus_non_connected = get_bus(bus_connected, 'other')
-                # calculate available power for dynamic load management
+                # calculate available power at the connected bus for dynamic load management
                 pwr_csc_avail_total = self.pwr_esm_avail.loc[dtindex, bus_connected] + min(
                     self.pwr_esm_avail.loc[dtindex, bus_non_connected], self.pwr_syscore_conv_avail[bus_non_connected]) * \
                                     self.get_conv_eff(bus_non_connected, bus_connected)
@@ -152,10 +152,11 @@ class AprioriPowerScheduler:
                     # get maximum possible charging power for commodity, consider the power already assigned to the
                     # commodity in previous iterations
                     pwr_chg = min(pwr_share, commodity.calc_pwr_chg(dtindex, mode='int_ac') -
-                                commodity.block.apriori_data.loc[dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg)
+                                commodity.block.apriori_data.loc[dtindex, 'p_int_ac'])
                     # set charging power -> consider the power already assigned to the commodity in previous iterations
-                    commodity.set_p(dtindex=dtindex, power=pwr_chg + commodity.block.apriori_data.loc[
-                        dtindex, 'p_int_ac'] / commodity.block.parent.eff_chg, mode='int_ac')
+                    commodity.set_p(dtindex=dtindex,
+                                    power=pwr_chg + commodity.block.apriori_data.loc[dtindex, 'p_int_ac'],
+                                    mode='int_ac')
                     pwr_csc_assigned += pwr_chg
                     if pwr_chg == 0:
                         commodities.remove(commodity)
@@ -197,7 +198,9 @@ class AprioriPowerScheduler:
                 pwr_csc_assigned += pwr_chg
 
                 # assign charging power to commodity
-                commodity.set_p(dtindex=dtindex, power=pwr_chg, mode='int_ac')
+                commodity.set_p(dtindex=dtindex,
+                                power=pwr_chg,
+                                mode='int_ac')
 
         return pwr_csc_assigned
 
@@ -274,16 +277,20 @@ class AprioriCommodity:
         # get soh for current prediction horizon
         self.soh = self.block.soh.dropna().loc[self.block.soh.dropna().index.max()]
 
+    def get_eff(self, mode):
+        eff = {'int_ac': (self.block.eff_chg * np.sqrt(self.block.eff_storage_roundtrip)),
+               'ext_ac': self.block.parent.eff_chg_ac,
+               'ext_dc': 1,
+               'consumption': np.sqrt(self.block.eff_storage_roundtrip)}[mode]
+        return eff
+
     def get_latest_arr(self, dtindex):
         # get latest arrival before current timestep
         return self.arr_base_dti[self.arr_base_dti <= dtindex].max()
 
     def set_p(self, dtindex, power, mode='int_ac'):
-        p = {'int_ac': self.block.parent.eff_chg,
-             'ext_ac': 1,
-             'ext_dc': 1}[mode] * power
-
-        self.block.apriori_data.loc[dtindex, f'p_{mode}'] = p
+        # set specified type of power for specified timestep in apriori_data DataFrame of block
+        self.block.apriori_data.loc[dtindex, f'p_{mode}'] = power
 
     def convert_soc_ui2internal(self, soc_ui):
         # convert the soc the displayed soc (UI) to the soc of the oemof storage taking aging effects into account
@@ -295,24 +302,21 @@ class AprioriCommodity:
         # apply aging boundaries to soc_target
         soc_target = self.convert_soc_ui2internal(soc_target)
         soc_threshold = 0
-        pwr_maxchg = {'int_ac': self.block.pwr_chg * self.block.parent.eff_chg,
-                    'ext_ac': self.block.parent.pwr_ext_ac,
-                    'ext_dc': self.block.parent.pwr_ext_dc}[mode]
-        eff = {'int_ac': self.block.parent.eff_chg,
-               'ext_ac': 1,
-               'ext_dc': 1}[mode]
+        pwr_maxchg = {'int_ac': self.block.pwr_chg,
+                      'ext_ac': self.block.parent.pwr_ext_ac,
+                      'ext_dc': self.block.parent.pwr_ext_dc}[mode]
 
         # Only charge if SOC falls below threshold (soc_max - soc_threshold)
         if (soc_current := self.block.apriori_data.loc[dtindex, 'soc']) > soc_target - soc_threshold * self.soh:
             return 0
 
         # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta
-        pwr_tosoc = ((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size /
-                   self.scenario.timestep_hours) - self.block.apriori_data.loc[dtindex, 'p_consumption']
+        pwr_tosoc = ((((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size / self.scenario.timestep_hours) +
+                     self.block.apriori_data.loc[dtindex, 'p_consumption'] / self.get_eff('consumption'))) / self.get_eff(mode)
 
         # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
-        if (pwr_chg := min(pwr_maxchg, pwr_tosoc) / eff) < 0:
-            self.scenario.logger.warning('Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
+        if (pwr_chg := min(pwr_maxchg, pwr_tosoc)) < 0:
+            self.scenario.logger.warning(f'Charging power below 0 W for commodity {self.block.name} at {dtindex}!')
 
         # avoid negative powers which can be caused by aging at the start of a new PH, if soc_target is already reached
         # but new soc_target which is decreased compared to the old soc_target due to aging.
@@ -320,7 +324,10 @@ class AprioriCommodity:
 
     def calc_new_soc(self, dtindex, scenario):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption']
-        power = self.block.apriori_data.loc[dtindex, columns].sum()
+        power = 0
+        for column in columns:
+            power += self.block.apriori_data.loc[dtindex, column] * self.get_eff(column[2:])
+
         # calculate new soc value
         new_soc = power / self.block.size * self.scenario.timestep_hours + \
                   self.block.apriori_data.loc[dtindex, 'soc'] * (1 - self.loss_rate)
