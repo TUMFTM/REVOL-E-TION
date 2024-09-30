@@ -22,6 +22,9 @@ class CustomConstraints:
         # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
         self.renewables_only(model)
 
+        # Force all charged energy into the commodity's storage
+        self.external_charging_to_storage(model)
+
     def add_equal_invests(self, invests):
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
         self.equal_invests.append(invests)
@@ -214,3 +217,34 @@ class CustomConstraints:
                        flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
                                   model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc],
                        eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
+
+    def external_charging_to_storage(self, model):
+        # Goal:         Force all external charged power to flow into the commodity's storage.
+        #               This is necessary to ensure that the external charged power is not consumed without .
+        # Approach:     For each commodity ensure that the sum of all three charging powers is equal to the storage inflow
+
+        model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE = po.Block()
+
+        def _equal_flows(m, block, name, flows_charging, flows_storage):
+            def _equal_flows_rule(block):
+                for p, ts in m.TIMEINDEX:
+                    pwr_charging = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_charging)
+                    pwr_storage = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_storage)
+                    expr = pwr_charging == pwr_storage
+
+                    if expr is not True:
+                        getattr(block, name).add((p, ts), expr)
+
+            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
+
+        # Apply constraints for every MobileCommodity
+        for cs in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
+            for commodity in cs.commodities.values():
+                _equal_flows(m=model,
+                             block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
+                             name=f'limit_{commodity.name}_external_charging_to_storage',
+                             flows_charging=[(commodity.inflow, commodity.bus),
+                                            (commodity.conv_ext_ac, commodity.bus),
+                                            (commodity.conv_ext_dc, commodity.bus)],
+                             flows_storage=[(commodity.bus, commodity.ess)])
