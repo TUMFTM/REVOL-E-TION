@@ -886,8 +886,10 @@ class GridConnection(InvestBlock):
             if self.equal:
                 equal_investments.extend([{'in': inflow, 'out': self.bus} for inflow in self.inflow.values()])
 
-            # add list of variables to the scenario constraints
-            scenario.constraints.add_equal_invests(equal_investments)
+            # add list of variables to the scenario constraints if list contains more than one element
+            # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
+            if len(equal_investments) > 1:
+                scenario.constraints.add_equal_invests(equal_investments)
 
         # get information about GridMarkets specified in the scenario file
         if self.filename_markets:
