@@ -144,9 +144,8 @@ def transform_scalar_var(block, var_name, scenario, run):
         setattr(block, var_name, pd.Series(scenario_entry, index=scenario.dti_sim_extd))
 
 
-def set_extension(filename):
-    default_ext = '.csv'
+def set_extension(filename, default_extension='.csv'):
     base, ext = os.path.splitext(filename)
     if not ext:
-        filename = base + default_ext
+        filename = base + default_extension
     return filename
