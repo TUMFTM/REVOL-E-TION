@@ -607,7 +607,7 @@ class SimulationRun:
         self.runtime_start = time.perf_counter()
         self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         self.runtime_end = self.runtime_len = None
-        self.commit_hash = self.get_git_commit_hash()
+        self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
         self.scenario_data = pd.read_csv(self.scenarios_file_path,
@@ -701,25 +701,6 @@ class SimulationRun:
         self.runtime_end = time.perf_counter()
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
-
-    @staticmethod
-    def get_git_commit_hash():
-        """
-        Get commit hash of current HEAD. Caution: does not consider work in progress
-        """
-        try:
-            result = subprocess.run(['git', 'rev-parse', 'HEAD'],
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    text=True)
-
-            if result.returncode == 0:  # success
-                return result.stdout.strip()
-            else:  # error case
-                return result.stderr
-
-        except Exception as e:
-            return e
 
     def get_process_num(self):
         if self.max_process_num == 'max':
