@@ -30,7 +30,7 @@ class Block:
             setattr(self, key, value)  # this sets all the parameters defined in the scenario file
 
         time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
-        # Don't transform variables for GridConnections, as the specified opex are passed to GridMarket
+        # Don't transform variables for GridConnections, as the GridMarket opex defined specifically
         if not isinstance(self, GridConnection):
             for var in time_var_params:
                 utils.transform_scalar_var(self, var, scenario, run)
