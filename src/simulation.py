@@ -5,6 +5,8 @@ import logging
 import logging.handlers
 import math
 import os
+import pathlib
+import plotly.subplots
 import pprint
 import psutil
 import pytz
@@ -21,46 +23,13 @@ import pandas as pd
 import tkinter as tk
 import tkinter.filedialog
 
-from pathlib import Path
-from plotly.subplots import make_subplots
-
 from src import blocks
 from src import commodity_des as des
-from src import custom_constraints as cc
-from src import tum_colors as col
+from src import constraints
+from src import colors
+from src import dispatch
 from src import scheduler
 from src import utils
-
-
-def input_gui(directory):
-    # create a Tkinter window to select files and folders
-    root = tk.Tk()
-    root.withdraw()  # hide small tk-window
-    root.lift()  # make sure all tk windows appear in front of other windows
-
-    # get scenario file
-    scenarios_default_dir = os.path.join(directory, 'input', 'scenarios')
-    scenarios_default_filename = os.path.join(scenarios_default_dir, 'example.csv')
-    scenarios_filename = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir, title="Select scenario file",
-                                                       filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not scenarios_filename:
-        scenarios_filename = scenarios_default_filename
-
-    # get settings file
-    settings_default_dir = os.path.join(directory, 'input', 'settings')
-    settings_default_filename = os.path.join(settings_default_dir, 'default.csv')
-    settings_filename = tk.filedialog.askopenfilename(initialdir=settings_default_dir, title="Select settings file",
-                                                      filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
-    if not settings_filename:
-        settings_filename = settings_default_filename
-
-    # get result folder
-    results_default_dir = os.path.join(directory, 'results')
-    results_foldername = tk.filedialog.askdirectory(initialdir=results_default_dir, title="Select result directory")
-    if not results_foldername:
-        results_foldername = results_default_dir
-
-    return scenarios_filename, settings_filename, results_foldername
 
 
 class OptimizationSuccessfulFilter(logging.Filter):
@@ -132,7 +101,7 @@ class PredictionHorizon:
             self.es.add(component)  # add components to this horizon's energy system
 
         if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
-            self.draw_energy_system(scenario, run)
+            self.draw_energy_system(scenario)
 
         scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                               f'Creating optimization model')
@@ -155,7 +124,7 @@ class PredictionHorizon:
         scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                               f'Model build completed')
 
-    def draw_energy_system(self, scenario, run):
+    def draw_energy_system(self, scenario):
 
         # Creates the Directed-Graph
         dot = graphviz.Digraph(filename=scenario.path_system_graph_file, format='pdf')
@@ -317,11 +286,11 @@ class Scenario:
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
-            run.path_result_folder,
+            run.path_result_dir,
             f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_system_graph.pdf')
 
         # prepare for dispatch plot saving later on
-        self.plot_file_path = os.path.join(run.path_result_folder, f'{run.runtimestamp}_'
+        self.plot_file_path = os.path.join(run.path_result_dir, f'{run.runtimestamp}_'
                                                                    f'{run.scenario_file_name}_'
                                                                    f'{self.name}.html')
 
@@ -329,12 +298,12 @@ class Scenario:
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
         self.path_result_summary_tempfile = os.path.join(
-            run.path_result_folder,
+            run.path_result_dir,
             f'{self.name}_tempresults.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_file = os.path.join(
-            run.path_result_folder,
+            run.path_result_dir,
             f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
@@ -342,7 +311,7 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         self.components = []  # placeholder
-        self.constraints = cc.CustomConstraints(scenario=self)
+        self.constraints = constraints.CustomConstraints(scenario=self)
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
@@ -352,7 +321,7 @@ class Scenario:
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         if any([cs.data_source == 'des' for cs in self.commodity_systems.values()]):
-            des.execute_des(self, run)
+            dispatch.execute_des(self, run)
 
         for cs in [cs for cs in self.commodity_systems.values() if cs.data_source == 'des']:
             for commodity in cs.commodities.values():
@@ -488,7 +457,7 @@ class Scenario:
 
     def generate_plots(self):
 
-        self.figure = make_subplots(specs=[[{'secondary_y': True}]])
+        self.figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
         for block in self.blocks.values():
             block.add_power_trace(self)
@@ -497,15 +466,15 @@ class Scenario:
             if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
                 block.add_curtailment_trace(self)
 
-        self.figure.update_layout(plot_bgcolor=col.tum_white)
+        self.figure.update_layout(plot_bgcolor=colors.tum_white)
         self.figure.update_xaxes(title='Local Time',
                                  showgrid=True,
-                                 linecolor=col.tum_grey_20,
-                                 gridcolor=col.tum_grey_20, )
+                                 linecolor=colors.tum_grey_20,
+                                 gridcolor=colors.tum_grey_20, )
         self.figure.update_yaxes(title='Power in W',
                                  showgrid=True,
-                                 linecolor=col.tum_grey_20,
-                                 gridcolor=col.tum_grey_20,
+                                 linecolor=colors.tum_grey_20,
+                                 gridcolor=colors.tum_grey_20,
                                  secondary_y=False, )
         self.figure.update_yaxes(title='State of Charge',
                                  showgrid=False,
@@ -563,7 +532,8 @@ class Scenario:
         # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
         self.logger.info(f'Total simulated cost at local site: {self.totex_sim / 1e6:.2f} million {self.currency}')
         self.logger.info(f'Total simulated cost for external charging: {self.opex_sim_ext:.2f} {self.currency}')
-        self.logger.info(f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
+        self.logger.info(
+            f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
         print('#################')
 
     def save_plots(self):
@@ -596,10 +566,14 @@ class Scenario:
             if hasattr(block_obj, 'peakshaving_ints') and block_obj.peakshaving:
                 for interval in block_obj.peakshaving_ints.index:
                     if block_obj.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
-                        self.result_summary.loc[(block_name, f'power_peak_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'power'])
-                        self.result_summary.loc[(block_name, f'power_period_fraction_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'period_fraction'])
-                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = float(block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
-                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod()
+                        self.result_summary.loc[(block_name, f'power_peak_{interval}'), self.name] = float(
+                            block_obj.peakshaving_ints.loc[interval, 'power'])
+                        self.result_summary.loc[(block_name, f'power_period_fraction_{interval}'), self.name] = float(
+                            block_obj.peakshaving_ints.loc[interval, 'period_fraction'])
+                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = float(
+                            block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
+                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = \
+                        block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod()
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
@@ -621,25 +595,21 @@ class SimulationRun:
         self.cwd = os.getcwd()
         self.process = None
 
-        # make sure that errors are logged to logfile
-        sys.excepthook = self.handle_exception
+        self.scenarios_file_path = self.settings_file_path = None
+        if len(sys.argv) == 1:  # no arguments passed
+            self.select_arguments()
+        elif len(sys.argv) == 3:  # two arguments passed
+            self.read_arguments()
+        else:
+            raise ValueError('Invalid number of arguments - please provide either none (GUI input) '
+                             'or two arguments: scenarios file name or path and settings file name or path')
 
-        if len(sys.argv) == 1:  # if no arguments have been passed
-            self.scenarios_file_path, self.settings_file_path, self.result_path = input_gui(self.cwd)
-        elif len(sys.argv) == 2:  # only one argument, default result storage
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
-            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', 'default.csv')
-            self.result_path = os.path.join(self.cwd, 'results')
-        elif len(sys.argv) == 3:
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
-            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
-            self.result_path = os.path.join(self.cwd, 'results')
-        else:  # more than three inputs
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
-            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
-            self.result_path = sys.argv[3]
+        self.runtime_start = time.perf_counter()
+        self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
+        self.runtime_end = self.runtime_len = None
+        self.commit_hash = self.get_git_commit_hash()
 
-        self.scenario_file_name = Path(self.scenarios_file_path).stem  # Gives file name without extension
+        self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
         self.scenario_data = pd.read_csv(self.scenarios_file_path,
                                          index_col=[0, 1],
                                          keep_default_na=False)
@@ -647,33 +617,21 @@ class SimulationRun:
         self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
-        self.runtime_start = time.perf_counter()
-        self.runtime_end = None  # placeholder
-        self.runtime_len = None  # placeholder
-        self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')  # create str of runtime_start
-
-        self.commit_hash = self.get_git_commit_hash()
-
-        settings = pd.read_csv(self.settings_file_path, index_col=[0])
-        settings = settings.map(utils.infer_dtype)
-
-        for key, value in settings['value'].items():
+        self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
+        self.settings = self.settings.map(utils.infer_dtype)
+        for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
-        self.path_input_data = os.path.join(self.cwd, 'input')
-        self.path_result_folder = os.path.join(self.result_path,
-                                               f'{self.runtimestamp}_{self.scenario_file_name}')
-        self.path_result_summary_file = os.path.join(self.path_result_folder,
-                                                     f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
-        self.path_dump_file = os.path.join(self.path_result_folder,
-                                           f'{self.runtimestamp}_{self.scenario_file_name}.lp')
-        self.path_log_file = os.path.join(self.path_result_folder,
-                                          f'{self.runtimestamp}_{self.scenario_file_name}.log')
+        self.define_paths()
+        self.get_process_num()
 
+        self.define_logger()
+
+        # integration levels at which power consumption is determined a priori
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
-        if self.save_results or self.save_des_results:
-            os.mkdir(self.path_result_folder)
+    def define_logger(self):
 
         self.logger = logging.getLogger()
         log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s'
@@ -684,20 +642,11 @@ class SimulationRun:
         log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.path_log_file))
         log_file_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_stream_handler)
-        self.logger.addHandler(log_file_handler)  # TODO global messages not getting through to logs in parallel mode
+        self.logger.addHandler(log_file_handler)
 
         # Adding the custom filter to prevent root logger messages
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
-
-        # set number of processes based on specified settings and available CPUs
-        self.max_process_num = os.cpu_count() if self.max_process_num == 'max' else psutil.cpu_count(
-            logical=False) if self.max_process_num == 'physical' else int(self.max_process_num)
-        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
-
-        if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
-            self.logger.warning('Single scenario or process: Parallel mode not possible - switching to sequential mode')
-            self.parallel = False
 
         if self.parallel:
             log_stream_handler.setLevel(logging.INFO)
@@ -710,13 +659,42 @@ class SimulationRun:
                 self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
                 log_stream_handler.setLevel(logging.INFO)
 
+        # plural extensions
+        pe1 = 's' if self.scenario_num > 1 else ''
+        pe2 = 'es' if self.process_num > 1 else ''
+
+        mode = f'parallel mode with {self.process_num} process{pe2}' if self.parallel else 'sequential mode'
         self.logger.info(
-            f'Global settings read - simulating {self.scenario_num} scenario{"s" if self.scenario_num > 1 else ""} '
-            f'{"in parallel mode with " + str(self.process_num) + (" process" + ("es" if self.process_num > 1 else "")) if self.parallel else "in sequential mode"}'
+            f'Global settings read - running {self.scenario_num} scenario{pe1} in {mode}'
         )
 
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
+        # make sure that errors are logged to logfile
+        sys.excepthook = self.handle_exception
+
+    def define_paths(self):
+
+        if self.path_input_data == 'project':
+            self.path_input_data = os.path.join(self.cwd, 'input')
+        elif os.path.isdir(self.path_input_data):
+            pass  # no modification of path necessary
+        else:
+            raise NotADirectoryError(f'Input directory not found: {self.path_input_data}')
+
+        if self.path_output_data == 'project':
+            self.path_output_data = os.path.join(self.cwd, 'results')
+        elif os.path.isdir(self.path_output_data):
+            pass  # no modification of path necessary
+        else:
+            raise NotADirectoryError(f'Output directory not found: {self.path_output_data}')
+
+        self.path_result_dir = os.path.join(self.path_output_data,
+                                            f'{self.runtimestamp}_{self.scenario_file_name}')
+        os.mkdir(self.path_result_dir)
+
+        self.path_result_summary_file = os.path.join(self.path_result_dir,
+                                                     f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
+        self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
+        self.path_log_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.log')
 
     def end_timing(self):
 
@@ -743,6 +721,19 @@ class SimulationRun:
         except Exception as e:
             return e
 
+    def get_process_num(self):
+        if self.max_process_num == 'max':
+            self.max_process_num = os.cpu_count()
+        elif self.max_process_num == 'physical':
+            self.max_process_num = psutil.cpu_count(logical=False)
+        else:
+            self.max_process_num = int(self.max_process_num)
+        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
+
+        if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
+            print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
+            self.parallel = False
+
     def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -758,12 +749,12 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.path_result_folder) if filename.endswith('_tempresults.csv')]
+        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_tempresults.csv')]
 
         scenario_frames = []
 
         for file in files:
-            file_path = os.path.join(self.path_result_folder, file)
+            file_path = os.path.join(self.path_result_dir, file)
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
@@ -774,5 +765,45 @@ class SimulationRun:
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
-            file_path = os.path.join(self.path_result_folder, file)
+            file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
+
+    def read_arguments(self):
+
+        if os.path.isfile(sys.argv[1]):
+            self.scenarios_file_path = sys.argv[1]
+        elif os.path.isfile(os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])):
+            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
+        else:
+            raise FileNotFoundError(f'Scenario file or path not found: {sys.argv[1]}')
+
+        if os.path.isfile(sys.argv[2]):
+            self.settings_file_path = sys.argv[2]
+        elif os.path.isfile(os.path.join(self.cwd, 'input', 'settings', sys.argv[2])):
+            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
+        else:
+            raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
+
+    def select_arguments(self):
+
+        root = tk.Tk()
+        root.withdraw()  # hide small tk-window
+        root.lift()  # make sure all tk windows appear in front of other windows
+
+        # get scenarios file
+        scenarios_default_dir = os.path.join(self.cwd, 'input', 'scenarios')
+        self.scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
+                                                                 title="Select scenario file",
+                                                                 filetypes=(("CSV files", "*.csv"),
+                                                                            ("All files", "*.*")))
+        if not self.scenarios_file_path:
+            raise FileNotFoundError('No scenario file selected')
+
+        # get settings file
+        settings_default_dir = os.path.join(self.cwd, 'input', 'settings')
+        self.settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
+                                                                title="Select settings file",
+                                                                filetypes=(("CSV files", "*.csv"),
+                                                                           ("All files", "*.*")))
+        if not self.settings_file_path:
+            raise FileNotFoundError('No settings file selected')
