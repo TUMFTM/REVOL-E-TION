@@ -1,7 +1,7 @@
 block,key,grid_only,dispatch_go,dispatch_rh,sizing
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,365,365,365,365
+scenario,sim_duration,5,5,5,5
 scenario,prj_duration,25,25,25,25
 scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
@@ -84,7 +84,7 @@ bev,data_source,des,des,des,des
 bev,filename,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv
 bev,num,5,5,5,5
 bev,size,30000.0,30000.0,30000.0,30000.0
-bev,lvl_int,v2mg,v2mg,v2mg,v2mg
+bev,lvl_int,v2s,v2s,v2s,v2s
 bev,lvl_opt,oc,oc,oc,oc
 bev,forecast_hours,None,None,None,None
 bev,power_lim_static,None,None,None,None

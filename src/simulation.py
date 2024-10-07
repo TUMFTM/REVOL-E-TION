@@ -419,7 +419,7 @@ class Scenario:
 
     def calc_meta_results(self):
 
-        # TODO implement commodity v2mg usage share
+        # TODO implement commodity v2s usage share
         # TODO implement energy storage usage share
 
         if self.e_sim_pro == 0:
