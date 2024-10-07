@@ -1,6 +1,9 @@
 .idea/
 .idea/*
 
+.run/
+.run/*
+
 analysis/*
 !analysis/.gitignore
 results/*
