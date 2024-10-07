@@ -24,7 +24,7 @@ import tkinter as tk
 import tkinter.filedialog
 
 from src import blocks
-from src import commodity_des as des
+from src import checker
 from src import constraints
 from src import colors
 from src import dispatch
@@ -621,7 +621,7 @@ class SimulationRun:
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
-
+        checker.check_settings_complete(self)
         self.define_paths()
         self.get_process_num()
 
