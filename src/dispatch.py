@@ -287,12 +287,12 @@ class RentalSystem:
         delivery through execute_des.
         """
         processes_path = os.path.join(
-            run.path_result_folder,
+            run.path_result_dir,
             f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
         self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
-            run.path_result_folder,
+            run.path_result_dir,
             f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
         self.data.to_csv(log_path)
 
