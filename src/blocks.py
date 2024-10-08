@@ -787,6 +787,7 @@ class GridConnection(InvestBlock):
     def __init__(self, name, scenario, run):
 
         self.size_g2mg = self.opt_g2mg = self.size_mg2g = self.opt_mg2g = self.equal = None
+        self.size_g2mg_additional = self.size_mg2g_additional = 0
 
         super().__init__(name, scenario, run)
 
@@ -856,7 +857,8 @@ class GridConnection(InvestBlock):
             # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
-            outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc)
+            outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc,
+                                                                          existing=self.size_mg2g_existing)
                                                          if self.opt_mg2g else self.size_mg2g),
                                           variable_costs=scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
@@ -866,7 +868,8 @@ class GridConnection(InvestBlock):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0))
+                nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0),
+                                                existing=self.size_g2mg_existing)
                                if self.opt_g2mg else self.size_g2mg))},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
@@ -968,11 +971,13 @@ class GridConnection(InvestBlock):
     def get_opt_size(self, horizon):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
         if self.opt_g2mg:
-            self.size_g2mg = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
+            self.size_g2mg_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
+            self.size_g2mg = self.size_g2mg_existing + self.size_g2mg_additional
             for market in self.markets.values():
                 market.set_size('size_g2mg')
         if self.opt_mg2g:
-            self.size_mg2g = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
+            self.size_mg2g_additional = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
+            self.size_mg2g = self.size_mg2g_existing + self.size_mg2g_additional
             for market in self.markets.values():
                 market.set_size('size_mg2g')
 

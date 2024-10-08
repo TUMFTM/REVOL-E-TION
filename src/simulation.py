@@ -543,10 +543,14 @@ class Scenario:
             elif isinstance(block, blocks.GridConnection):
                 if block.opt_g2mg:
                     self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\":'
-                                     f' {block.size_g2mg / 1e3:.1f} {unit}')
+                                     f' {block.size_g2mg / 1e3:.1f} {unit}' + \
+                                     f' (existing: {block.size_g2mg_existing / 1e3:.1f} kWh'
+                                     f' - additional: {block.size_g2mg_additional / 1e3:.1f} kWh)')
                 if block.opt_mg2g:
                     self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
-                                     f' {block.size_mg2g / 1e3:.1f} {unit}')
+                                     f' {block.size_mg2g / 1e3:.1f} {unit}'
+                                     f' (existing: {block.size_mg2g_existing / 1e3:.1f} kWh'
+                                     f' - additional: {block.size_mg2g_additional / 1e3:.1f} kWh)')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
