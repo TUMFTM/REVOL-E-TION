@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import pyomo.environ as po
+from pyomo import environ as po2
 
 from src import blocks
 
@@ -37,20 +38,19 @@ class CustomConstraints:
 
         def _equate_invest_variables(m, block, name, variables):
             def _equate_invest_variables_rule(block):
-                expr = (variables[0] == variables[1])
-                for var in variables[2:]:
-                    expr = expr & (variables[0] == var)
-                return expr
+                return variables[0] == variables[1]
 
             setattr(block, name, po.Constraint(rule=_equate_invest_variables_rule))
 
         # Add additional user-specific constraints for investment variables
         for var_list in self.equal_invests:
-            _equate_invest_variables(m=model,
-                                     block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
-                                     name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in var_list]),
-                                     variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
-                                                for var in var_list])
+            for var_equal in var_list[1:]:
+                _equate_invest_variables(
+                    m=model,
+                    block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
+                    name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in [var_list[0], var_equal]]),
+                    variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
+                               for var in [var_list[0], var_equal]])
 
     def limit_pwr_gridmarket(self, model):
         # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
