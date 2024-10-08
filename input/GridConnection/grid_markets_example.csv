@@ -1,6 +1,6 @@
 parameter,grid1,grid2
 res_only,False,False
-opex_spec_g2mg,grid_buy_example,grid_buy_example
-opex_spec_mg2g,grid_sell_example,grid_sell_example
-size_g2mg,30000,None
-size_mg2g,30000,None
+opex_spec_g2s,grid_buy_example,grid_buy_example
+opex_spec_s2g,grid_sell_example,grid_sell_example
+size_g2s,30000,None
+size_s2g,30000,None

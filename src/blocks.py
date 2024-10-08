@@ -786,8 +786,8 @@ class ControllableSource(InvestBlock):
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario, run):
 
-        self.size_g2mg = self.opt_g2mg = self.size_mg2g = self.opt_mg2g = self.equal = None
-        self.size_g2mg_additional = self.size_mg2g_additional = 0
+        self.size_g2s = self.opt_g2s = self.size_s2g = self.opt_s2g = self.equal = None
+        self.size_g2s_additional = self.size_s2g_additional = 0
 
         super().__init__(name, scenario, run)
 
@@ -858,8 +858,8 @@ class GridConnection(InvestBlock):
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
             outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                          existing=self.size_mg2g_existing)
-                                                         if self.opt_mg2g else self.size_mg2g),
+                                                                          existing=self.size_s2g_existing)
+                                                         if self.opt_s2g else self.size_s2g),
                                           variable_costs=scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
@@ -869,8 +869,8 @@ class GridConnection(InvestBlock):
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
                 nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0),
-                                                existing=self.size_g2mg_existing)
-                               if self.opt_g2mg else self.size_g2mg))},
+                                                existing=self.size_g2s_existing)
+                               if self.opt_g2s else self.size_g2s))},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
                                                                    if self.peakshaving else None),
@@ -902,9 +902,9 @@ class GridConnection(InvestBlock):
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
-            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2mg', 'opex_spec_mg2g', 'size_g2mg', 'size_mg2g'],
+            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'size_g2s', 'size_s2g'],
                                    columns=['grid'],
-                                   data=[self.res_only, self.opex_spec_g2mg, self.opex_spec_mg2g, None, None])
+                                   data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
 
         # Generate individual GridMarkets instances
         self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
@@ -919,7 +919,7 @@ class GridConnection(InvestBlock):
         """
         Calculate initial capital expenses
         """
-        self.capex_init = (self.size_g2mg + self.size_mg2g) * self.capex_spec
+        self.capex_init = (self.size_g2s + self.size_s2g) * self.capex_spec
 
     def calc_energy(self, scenario):
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
@@ -929,7 +929,7 @@ class GridConnection(InvestBlock):
         self.calc_energy_source_sink(scenario)
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = np.maximum(self.size_g2mg, self.size_mg2g) * self.mntex_spec
+        self.mntex_yrl = np.maximum(self.size_g2s, self.size_s2g) * self.mntex_spec
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
@@ -937,8 +937,8 @@ class GridConnection(InvestBlock):
 
         # Calculate costs of different markets
         for market in self.markets.values():
-            market.opex_sim = market.flow_out @ market.opex_spec_g2mg[scenario.dti_sim] * scenario.timestep_hours + \
-                              market.flow_in @ market.opex_spec_mg2g[scenario.dti_sim] * scenario.timestep_hours
+            market.opex_sim = market.flow_out @ market.opex_spec_g2s[scenario.dti_sim] * scenario.timestep_hours + \
+                              market.flow_in @ market.opex_spec_s2g[scenario.dti_sim] * scenario.timestep_hours
 
             self.opex_sim_energy += market.opex_sim
 
@@ -965,21 +965,21 @@ class GridConnection(InvestBlock):
 
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.size_g2mg / 1e3:.1f} kW from / '
-                f'{self.size_mg2g / 1e3:.1f} kW to grid)')
+        return (f'{self.name} power (max. {self.size_g2s / 1e3:.1f} kW from / '
+                f'{self.size_s2g / 1e3:.1f} kW to grid)')
 
     def get_opt_size(self, horizon):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
-        if self.opt_g2mg:
-            self.size_g2mg_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
-            self.size_g2mg = self.size_g2mg_existing + self.size_g2mg_additional
+        if self.opt_g2s:
+            self.size_g2s_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
+            self.size_g2s = self.size_g2s_existing + self.size_g2s_additional
             for market in self.markets.values():
-                market.set_size('size_g2mg')
-        if self.opt_mg2g:
-            self.size_mg2g_additional = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
-            self.size_mg2g = self.size_mg2g_existing + self.size_mg2g_additional
+                market.set_size('size_g2s')
+        if self.opt_s2g:
+            self.size_s2g_additional = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
+            self.size_s2g = self.size_s2g_existing + self.size_s2g_additional
             for market in self.markets.values():
-                market.set_size('size_mg2g')
+                market.set_size('size_s2g')
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
@@ -995,29 +995,29 @@ class GridConnection(InvestBlock):
             market.get_timeseries_results(scenario)
 
     def set_init_size(self, scenario, run):
-        if self.size_g2mg == 'equal' and self.size_mg2g == 'equal':
-            self.size_g2mg = self.size_mg2g = 'opt'
+        if self.size_g2s == 'equal' and self.size_s2g == 'equal':
+            self.size_g2s = self.size_s2g = 'opt'
             scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
-                                    f' the size of g2mg and mg2g. This was changed to optimization of the size of both'
+                                    f' the size of g2s and s2g. This was changed to optimization of the size of both'
                                     f' components with an additional "equal" constraint')
             self.equal = False
-        elif self.size_g2mg == 'equal':
-            self.size_g2mg = self.size_mg2g
+        elif self.size_g2s == 'equal':
+            self.size_g2s = self.size_s2g
             self.equal = True
-        elif self.size_mg2g == 'equal':
-            self.size_mg2g = self.size_g2mg
+        elif self.size_s2g == 'equal':
+            self.size_s2g = self.size_g2s
             self.equal = True
         else:
             self.equal = False
 
-        if (self.size_g2mg != 'opt') and (self.size_mg2g != 'opt'):
-            self.opt = self.opt_g2mg = self.opt_mg2g = False
+        if (self.size_g2s != 'opt') and (self.size_s2g != 'opt'):
+            self.opt = self.opt_g2s = self.opt_s2g = False
 
-        if self.size_g2mg == 'opt':
-            self.opt = self.opt_g2mg = True
+        if self.size_g2s == 'opt':
+            self.opt = self.opt_g2s = True
 
-        if self.size_mg2g == 'opt':
-            self.opt = self.opt_mg2g = True
+        if self.size_s2g == 'opt':
+            self.opt = self.opt_s2g = True
 
     def update_input_components(self, scenario, horizon):
         # ToDo: modify and adjust to new structure
@@ -1071,12 +1071,12 @@ class GridMarket:
 
         self.set_init_size()
 
-        self.equal_prices = True if self.opex_spec_mg2g == 'equal' else False
+        self.equal_prices = True if self.opex_spec_s2g == 'equal' else False
 
-        # use sorted to ensure that opex_spec_g2mg is processed before opex_spec_mg2g
+        # use sorted to ensure that opex_spec_g2s is processed before opex_spec_s2g
         for var_name in sorted([var for var in vars(self) if ('opex_spec' in var)]):
-            if var_name == 'opex_spec_mg2g' and self.equal_prices:
-                self.opex_spec_mg2g = -1 * self.opex_spec_g2mg
+            if var_name == 'opex_spec_s2g' and self.equal_prices:
+                self.opex_spec_s2g = -1 * self.opex_spec_g2s
             else:
                 utils.transform_scalar_var(self, var_name, scenario, run)
 
@@ -1098,14 +1098,14 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
-                                               nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
-                                               variable_costs=self.opex_spec_g2mg)
+                                               nominal_value=(self.size_g2s if not pd.isna(self.size_g2s) else None),
+                                               variable_costs=self.opex_spec_g2s)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
-                                             nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
-                                             variable_costs=self.opex_spec_mg2g + scenario.cost_eps * self.equal_prices)
+                                             nominal_value=(self.size_s2g if not pd.isna(self.size_s2g) else None),
+                                             variable_costs=self.opex_spec_s2g + scenario.cost_eps * self.equal_prices)
                                          })
 
         scenario.components.append(self.src)
@@ -1117,8 +1117,8 @@ class GridMarket:
             return
 
         legentry = (f'{self.name} power (max.'
-                    f' {(self.parent.size_g2mg if pd.isna(self.size_g2mg) else self.size_g2mg) / 1e3:.1f} kW from /'
-                    f' {(self.parent.size_mg2g if pd.isna(self.size_mg2g) else self.size_mg2g) / 1e3:.1f} kW to grid)')
+                    f' {(self.parent.size_g2s if pd.isna(self.size_g2s) else self.size_g2s) / 1e3:.1f} kW from /'
+                    f' {(self.parent.size_s2g if pd.isna(self.size_s2g) else self.size_s2g) / 1e3:.1f} kW to grid)')
 
         scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                              y=self.flow,
@@ -1157,7 +1157,7 @@ class GridMarket:
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, market_ts_results], axis=1)
 
     def set_init_size(self):
-        for size in ['size_g2mg', 'size_mg2g']:
+        for size in ['size_g2s', 'size_s2g']:
             # if grid size is 'opt', size is set after the optimization as it is only used for plotting purposes
             if getattr(self.parent, size) != 'opt':
                 self.set_size(size)

@@ -58,7 +58,7 @@ class CustomConstraints:
         #               system and avoids unlimited trading with energy on the different markets without any power
         #               limitations. As this model focuses on modeling a local energy system, trading without any
         #               physical power flow is not considered.
-        # Approach:     1.  For each direction (buy/sell = g2mg/mg2g) sum up all power flows of different GridMarkets
+        # Approach:     1.  For each direction (buy/sell = g2s/s2g) sum up all power flows of different GridMarkets
         #                   connected to the same GridConnection.
         #               2.  Constrain the sum of GridMarkets' power flows in each direction to not exceed the current
         #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
@@ -83,13 +83,13 @@ class CustomConstraints:
         for grid in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.GridConnection)]:
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_g2mg_markets',
+                         name=f'limit_{grid.name}_g2s_markets',
                          flows_markets=[(market.src, grid.bus) for market in grid.markets.values()],
                          flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
 
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_mg2g_markets',
+                         name=f'limit_{grid.name}_s2g_markets',
                          flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
                          flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
 

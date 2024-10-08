@@ -51,8 +51,10 @@ gen,opex_spec,0.0009,0.00065,0.00065,0.0009
 gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
 gen,eff,1,1,1,1
-grid,size_g2mg,opt,11000,11000,opt
-grid,size_mg2g,equal,equal,equal,equal
+grid,size_g2s,opt,11000,11000,opt
+grid,size_g2s_existing,0,0,0,0
+grid,size_s2g,equal,equal,equal,equal
+grid,size_s2g_existing,0,0,0,0
 grid,peakshaving,None,None,None,None
 grid,opex_peak_spec,0,0,0,0
 grid,capex_spec,10,10,10,10
@@ -62,8 +64,8 @@ grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
 grid,filename_markets,None,None,None,None
 grid,res_only,False,False,False,False
-grid,opex_spec_g2mg,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
-grid,opex_spec_mg2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
+grid,opex_spec_g2s,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
+grid,opex_spec_s2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
 ess,size,0,115000,115000,opt
 ess,res_only,False,False,False,False
 ess,aging,True,True,True,True
