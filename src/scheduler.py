@@ -80,7 +80,7 @@ class AprioriPowerScheduler:
 
             for block in self.scenario.blocks.values():
                 if isinstance(block, blocks.GridConnection):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_g2mg * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_g2s * block.eff
                 elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
                     self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
                 elif isinstance(block, blocks.ControllableSource):

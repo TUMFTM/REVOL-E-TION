@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import pyomo.environ as po
+from pyomo import environ as po2
 
 from src import blocks
 
@@ -37,20 +38,19 @@ class CustomConstraints:
 
         def _equate_invest_variables(m, block, name, variables):
             def _equate_invest_variables_rule(block):
-                expr = (variables[0] == variables[1])
-                for var in variables[2:]:
-                    expr = expr & (variables[0] == var)
-                return expr
+                return variables[0] == variables[1]
 
             setattr(block, name, po.Constraint(rule=_equate_invest_variables_rule))
 
         # Add additional user-specific constraints for investment variables
         for var_list in self.equal_invests:
-            _equate_invest_variables(m=model,
-                                     block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
-                                     name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in var_list]),
-                                     variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
-                                                for var in var_list])
+            for var_equal in var_list[1:]:
+                _equate_invest_variables(
+                    m=model,
+                    block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
+                    name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in [var_list[0], var_equal]]),
+                    variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
+                               for var in [var_list[0], var_equal]])
 
     def limit_pwr_gridmarket(self, model):
         # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
@@ -58,7 +58,7 @@ class CustomConstraints:
         #               system and avoids unlimited trading with energy on the different markets without any power
         #               limitations. As this model focuses on modeling a local energy system, trading without any
         #               physical power flow is not considered.
-        # Approach:     1.  For each direction (buy/sell = g2mg/mg2g) sum up all power flows of different GridMarkets
+        # Approach:     1.  For each direction (buy/sell = g2s/s2g) sum up all power flows of different GridMarkets
         #                   connected to the same GridConnection.
         #               2.  Constrain the sum of GridMarkets' power flows in each direction to not exceed the current
         #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
@@ -83,13 +83,13 @@ class CustomConstraints:
         for grid in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.GridConnection)]:
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_g2mg_markets',
+                         name=f'limit_{grid.name}_g2s_markets',
                          flows_markets=[(market.src, grid.bus) for market in grid.markets.values()],
                          flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
 
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_mg2g_markets',
+                         name=f'limit_{grid.name}_s2g_markets',
                          flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
                          flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
 

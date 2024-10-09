@@ -505,17 +505,25 @@ class Scenario:
             if isinstance(block, blocks.SystemCore):
                 if block.opt_acdc:
                     self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
-                                     f' {block.size_acdc / 1e3:.1f} {unit}')
+                                     f' {block.size_acdc / 1e3:.1f} {unit}'
+                                     f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_acdc_additional / 1e3:.1f} {unit})')
                 if block.opt_dcac:
                     self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
-                                     f' {block.size_dcac / 1e3:.1f} {unit}')
+                                     f' {block.size_dcac / 1e3:.1f} {unit}'
+                                     f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
             elif isinstance(block, blocks.GridConnection):
-                if block.opt_g2mg:
-                    self.logger.info(f'Optimized size of g2mg power in component \"{block.name}\":'
-                                     f' {block.size_g2mg / 1e3:.1f} {unit}')
-                if block.opt_mg2g:
-                    self.logger.info(f'Optimized size of mg2g power in component \"{block.name}\":'
-                                     f' {block.size_mg2g / 1e3:.1f} {unit}')
+                if block.opt_g2s:
+                    self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
+                                     f' {block.size_g2s / 1e3:.1f} {unit}' + \
+                                     f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
+                if block.opt_s2g:
+                    self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
+                                     f' {block.size_s2g / 1e3:.1f} {unit}'
+                                     f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
@@ -526,10 +534,15 @@ class Scenario:
             elif isinstance(block, blocks.CommoditySystem) and block.opt:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
-                                     f' {commodity.size / 1e3:.1f} {unit}')
+                                     f' {commodity.size / 1e3:.1f} {unit}'
+                                     f' (existing: {commodity.size_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {commodity.size_additional / 1e3:.1f} {unit})')
             elif block.opt:
-                self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}')
-        # ToDo: state that these results are internal costs of minigrid only neglecting costs for external charging
+                self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}'
+                                 f' (existing: {block.size_existing / 1e3:.1f} {unit}'
+                                 f' - additional: {block.size_additional / 1e3:.1f} {unit})')
+
+        # ToDo: state that these results are internal costs of local site only neglecting costs for external charging
         self.logger.info(f'Total simulated cost at local site: {self.totex_sim / 1e6:.2f} million {self.currency}')
         self.logger.info(f'Total simulated cost for external charging: {self.opex_sim_ext:.2f} {self.currency}')
         self.logger.info(
