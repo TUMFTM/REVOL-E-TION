@@ -9,8 +9,8 @@ import pytz
 import scipy as sp
 import importlib
 
-from src import blocks
-from src import utils
+from revoletion import blocks
+from revoletion import utils
 
 
 class MultiStoreGet(simpy.resources.base.Get):
@@ -63,6 +63,10 @@ class RentalSystem:
         self.name = self.cs.name
 
         self.rng = np.random.default_rng()
+
+        self.path_mapper = os.path.join(sc.run.path_input_data, 'TimeframeMapper', f'{sc.filename_mapper}.py')
+        self.mtf = utils.import_module_from_path(module_name=sc.filename_mapper,
+                                                 file_path=self.path_mapper)
 
         # calculate usable energy to expect
         self.dsoc_usable_high = self.cs.soc_target_high - self.cs.soc_return
@@ -215,12 +219,10 @@ class RentalSystem:
                                         .transform(sample_usecase_idle))
 
     def sample_requests(self):
-        # import selected timeframe mapper file
-        mtf = importlib.import_module(f'input.TimeframeMapper.{self.sc.filename_mapper}')
 
         # draw total demand for every simulated day from a lognormal distribution
         self.demand_daily = pd.DataFrame(index=pd.to_datetime(np.unique(self.sc.dti_sim_extd.date)))
-        self.demand_daily['timeframe'], self.demand_daily['demand_mean'], self.demand_daily['demand_std'] = mtf.map_timeframes(self.demand_daily, self.cs.name)
+        self.demand_daily['timeframe'], self.demand_daily['demand_mean'], self.demand_daily['demand_std'] = self.mtf.map_timeframes(self.demand_daily, self.cs.name)
         self.demand_daily['mu'], self.demand_daily['sigma'] = lognormal_params(self.demand_daily['demand_mean'], self.demand_daily['demand_std'])
 
         def sample_demand(row):

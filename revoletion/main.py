@@ -6,7 +6,7 @@ import threading
 import warnings
 import multiprocessing as mp
 
-from src import simulation as sim
+from revoletion import simulation as sim
 
 
 # raise UserWarnings about infeasibility as errors to catch them properly
@@ -93,12 +93,8 @@ def simulate_scenario(name: str, run: sim.SimulationRun, log_queue):  # needs to
     # make sure to clear up memory space
     del scenario
 
-###############################################################################
-# Execution code
-###############################################################################
 
-
-if __name__ == '__main__':
+def main():
 
     run = sim.SimulationRun()  # get all global information about the run
 
@@ -124,3 +120,7 @@ if __name__ == '__main__':
 
     run.end_timing()
     # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
+
+
+if __name__ == '__main__':
+    main()

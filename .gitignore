@@ -4,6 +4,9 @@
 .run/
 .run/*
 
+.revoletion.egg-info/
+.revoletion.egg-info/*
+
 analysis/*
 !analysis/.gitignore
 results/*

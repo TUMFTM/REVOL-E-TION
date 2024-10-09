@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "revoletion"
+version = "0.9.0"
+description = "Resilient Electric Vehicle Optimization model for Local Energy TransitION"
+authors = [
+    { name = "Philipp Rosner", email = "philipp.rosner@tum.de" },
+    { name = "Brian Dietermann", email = "brian.dietermann@tum.de"}
+]
+dependencies = [
+    "datetime",
+    "graphviz",
+    "gurobipy",
+    "numpy",
+    "numpy_financial",
+    "oemof.solph==0.5.2",
+    "pandas==2.2.0",
+    "plotly",
+    "psutil",
+    "pvlib",
+    "pylightxl",
+    "pyomo==6.7.0",
+    "pytz",
+    "rainflow",
+    "simpy",
+    "timezonefinder",
+    "tk",
+    "windpowerlib"
+]
+
+[tool.setuptools]
+packages = ["revoletion"]
+
+[project.scripts]
+revoletion = "revoletion.main:main"

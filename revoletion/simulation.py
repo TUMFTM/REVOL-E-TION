@@ -23,14 +23,13 @@ import pandas as pd
 import tkinter as tk
 import tkinter.filedialog
 
-from src import blocks
-from src import checker
-from src import constraints
-from src import colors
-from src import dispatch
-from src import scheduler
-from src import utils
-
+from revoletion import blocks
+from revoletion import checker
+from revoletion import constraints
+from revoletion import colors
+from revoletion import dispatch
+from revoletion import scheduler
+from revoletion import utils
 
 class OptimizationSuccessfulFilter(logging.Filter):
     def filter(self, record):

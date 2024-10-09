@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import ast
+import importlib.util
 import pandas as pd
 import pandas.errors
 import os
@@ -68,6 +69,26 @@ def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     tsr = ts / pd.Timedelta('30 days')
     lr = 1 - (1 - sdr) ** tsr
     return lr
+
+
+def import_module_from_path(module_name, file_path):
+    """
+    Import a Python module from a specific file path.
+
+    Args:
+        module_name (str): The name to assign to the module.
+        file_path (str): The path to the Python file.
+
+    Returns:
+        module: The imported module.
+    """
+    # Create a module spec from the file path
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    # Create a new module based on the spec
+    module = importlib.util.module_from_spec(spec)
+    # Load and execute the module
+    spec.loader.exec_module(module)
+    return module
 
 
 def scale_sim2year(value, scenario):

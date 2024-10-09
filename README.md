@@ -51,38 +51,59 @@ The following system diagram shows the basic structure including one example of 
 ![System diagram](./images/system_diagram.png)
 
 ## Installation
-REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 14 Sonoma, each with Python 3.11.
+REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 Sequoia, each with Python 3.11.
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
-REVOL-E-TION is available at the institute's [GitHub](https://github.com/TUMFTM/REVOL-E-TION) and can be cloned from there.
+REVOL-E-TION is available at the institute's [GitHub](https://github.com/TUMFTM/REVOL-E-TION) and can be cloned from there using 
+```
+git clone https://github.com/TUMFTM/REVOL-E-TION.git
+```
 
-#### Step 2: Environment & Packages
-REVOL-E-TION is developed and tested with Python 3.11, which is recommended to use with a clean virtual or conda environment to start with.
-All required packages are listed in ```requirements.txt``` and can be installed through ```pip install -r requirements.txt```, given the correct environment is active.
+#### Step 2: Create a clean virtual environment
+It is recommended to create and activate a clean virtual environment for the installation of REVOL-E-TION.
+This can be done using the following command:
+```
+python -m venv <path_to_virtual_environment>
+source <path_to_virtual_environment>/bin/activate
+```
+or alternatively with conda:
+```
+conda create -n <name_of_virtual_environment> python=3.11
+conda activate <name_of_virtual_environment>
+```
 
-#### Step 3: MILP Solver
+#### Step 3: Install package and dependencies locally
+Navigate to the root directory of the cloned repository and install the package and its dependencies using pip:
+```
+pip install -e .
+```
+This will install the ```revoletion``` package in editable mode, meaning that changes to the source code will be reflected in the installed package without reinstalling it.
+
+#### Step 4: MILP Solver
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
 The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
 The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
 
-#### Step 4: Basic Usage
-Running REVOL-E-TION requires closely defined scenario(s) to simulate and common simulation settings to operate on as well as a target directory for the results.
-The former two are to be given as two .csv-files within the ```./input/scenarios``` and ```./input/settings``` directories respectively when starting a simulation.
-To select the files, a Graphical User Interface (GUI) comes up automatically when executing ```main.py``` without any parameters given.
-Alternatively, the names of the files can be specified in the terminal execution command as follows, given the base directory is selected:
-```
-python main.py <scenario_file_name>.csv <settings_file_name>.csv <relative_path_to_result_parent_directory>
-```
-In case no settings file is given, the ```default.csv``` file distributed through git is used.
-In case no result directory is given, the ```./results``` directory is used.
+#### Step 5: Basic Usage
+Running REVOL-E-TION requires closely defined scenario(s) to simulate and common simulation settings to operate on.
+Both are to be given as .csv-files specified as parameters in the terminal execution command using one of three options:
+
+1. No parameters passed: graphical selection dialogs open automatically for scenario and settings files. (simple option)
+2. Only filenames passed: scenario and settings files are searched in the ./input/scenarios and ./input/settings directories respectively. (best for local execution on host machine)
+3. Valid paths to files passed: scenario and settings files are searched in the specified directories (best for remote execution on a server)
+
+The actual terminal command can also be given in multiple forms:
+
+1. Direct execution of the package's main module, e.g. ```python -m revoletion.main <scenario_file_parameter> <settings_file_parameter> ``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
+2. Call to the package's entry point, e.g. ```revoletion <scenario_file_parameter> <settings_file_parameter>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
+
 Example scenario and settings files are provided in the respective directories.
-The results will be saved in the specified directory in a subfolder named after the scenario file with a run-time.
 Formatting of the scenario and settings files can be taken from the example files and is explained in tabular form below.
-Some parameters in the scenario files reference to other files specified by file name within ```./input/<name of block class>```.
+Some parameters in the scenario files reference to other files specified by file name within the input directory specified in the settings file.
 This mostly applies to timeseries data.
 Furthermore, to describe the mapping of different timeframes defining behavior of CommoditySystems (see below), modification of the ```mapper_timeframe_example.py``` code file might be necessary to fit the scenario as this is not simply and flexibly done in parameter files.
-The filename of the modified file has to be given in the scenario file under the key ```filename_mapper``` and the file has to be placed in ```./input/TimeframeMapper```.
+The filename of the modified file has to be given in the scenario file under the key ```filename_mapper``` and the file has to be placed in the respective input directory specified in the settings file.
 
 Concerning computational effort, REVOL-E-TION relies heavily on single core computing power for each scenario and especially in 'go' strategy uses significant memory. To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed in the settings file depending on the hardware used.
 

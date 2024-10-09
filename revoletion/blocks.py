@@ -12,9 +12,9 @@ import requests
 import statistics
 import windpowerlib
 
-from src import battery as bat
-from src import economics as eco
-from src import utils
+from revoletion import battery as bat
+from revoletion import economics as eco
+from revoletion import utils
 
 import plotly.graph_objects as go
 
