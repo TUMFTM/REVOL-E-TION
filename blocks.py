@@ -979,13 +979,13 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
-                                               nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
+                                               nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
                                                variable_costs=self.opex_spec_g2mg)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
-                                             nominal_value=(self.size_g2mg if not pd.isna(self.size_g2mg) else None),
+                                             nominal_value=(self.size_mg2g if not pd.isna(self.size_mg2g) else None),
                                              variable_costs=self.opex_spec_mg2g + scenario.cost_eps * self.equal_prices)
                                          })
 
