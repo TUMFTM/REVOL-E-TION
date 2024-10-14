@@ -71,8 +71,8 @@ class RentalSystem:
         # calculate usable energy to expect
         self.dsoc_usable_high = self.cs.soc_target_high - self.cs.soc_return
         self.dsoc_usable_low = self.cs.soc_target_low - self.cs.soc_return
-        self.energy_usable_pc_high = self.dsoc_usable_high * self.cs.size_pc
-        self.energy_usable_pc_low = self.dsoc_usable_low * self.cs.size_pc
+        self.energy_usable_pc_high = self.dsoc_usable_high * self.cs.size_pc * np.sqrt(self.cs.eff_storage_roundtrip)
+        self.energy_usable_pc_low = self.dsoc_usable_low * self.cs.size_pc * np.sqrt(self.cs.eff_storage_roundtrip)
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
@@ -313,8 +313,16 @@ class VehicleRentalSystem(RentalSystem):
         self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
         self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
 
-        self.energy_usable_rex_pc_high = self.dsoc_usable_rex_high * self.cs.rex_cs.size_pc if self.cs.rex_cs else 0
-        self.energy_usable_rex_pc_low = self.dsoc_usable_rex_low * self.cs.rex_cs.size_pc if self.cs.rex_cs else 0
+        if self.cs.rex_cs: # system can extend range
+            self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
+                                              self.cs.rex_cs.size_pc *
+                                              np.sqrt(self.cs.rex_cs.eff_storage_roundtrip))
+            self.energy_usable_rex_pc_low = (self.dsoc_usable_rex_low *
+                                             self.cs.rex_cs.size_pc *
+                                             np.sqrt(self.cs.rex_cs.eff_storage_roundtrip))
+        else:  # no rex defined
+            self.energy_usable_rex_pc_high = 0
+            self.energy_usable_rex_pc_low = 0
 
         self.generate_processes()
         self.create_store()
@@ -525,7 +533,10 @@ class BatteryRentalSystem(RentalSystem):
                                           .sort_index())
 
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_req_pc_primary'] / (self.cs.pwr_chg * self.cs.eff_chg),
+            self.processes['energy_req_pc_primary'] / (self.cs.pwr_chg *
+                                                       self.cs.eff_chg *  # charger efficiency (into commodity's bus)
+                                                       # storage component efficiency (both ways)
+                                                       self.cs.eff_storage_roundtrip),
             unit='hour')
 
 
