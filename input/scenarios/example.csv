@@ -25,7 +25,7 @@ core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
-dem,filename,dem_example.csv,dem_example.csv,dem_example.csv,dem_example.csv
+dem,load_profile,dem_example.csv,dem_example.csv,dem_example.csv,dem_example.csv
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size,0,15000,15000,opt
 wind,size_existing,0,0,0,0
