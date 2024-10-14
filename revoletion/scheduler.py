@@ -281,7 +281,7 @@ class AprioriCommodity:
         eff = {'int_ac': (self.block.eff_chg * np.sqrt(self.block.eff_storage_roundtrip)),
                'ext_ac': self.block.parent.eff_chg_ac,
                'ext_dc': 1,
-               'consumption': np.sqrt(self.block.eff_storage_roundtrip)}[mode]
+               'consumption': 1 / np.sqrt(self.block.eff_storage_roundtrip)}[mode]
         return eff
 
     def get_latest_arr(self, dtindex):
