@@ -1775,6 +1775,9 @@ class StationaryEnergyStorage(InvestBlock):
         self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
         self.soc = pd.Series()
 
+        self.soc_min = (1 - self.soh_init) / 2
+        self.soc_max = 1 - ((1 - self.soh_init) / 2)
+
         self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
 
@@ -1886,7 +1889,17 @@ class StationaryEnergyStorage(InvestBlock):
 
     def update_input_components(self, scenario, horizon):
 
-        self.ess.initial_storage_level = self.soc_init_ph
+        # TODO FAPC
+        # Extension is needed as workaround for dti_ph being too short for indexing
+        # as soon as dti_ph elongation is checked, this can use dti_ph again
+        dti_ph_extended = pd.date_range(start=horizon.starttime,
+                                        end=horizon.ph_endtime,
+                                        freq=scenario.timestep,
+                                        inclusive='both')
+
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended)
+        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended)
 
         self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph]
 

@@ -313,7 +313,7 @@ class VehicleRentalSystem(RentalSystem):
         self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
         self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
 
-        if self.cs.rex_cs: # system can extend range
+        if self.cs.rex_cs:  # system can extend range
             self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
                                               self.cs.rex_cs.size_pc *
                                               np.sqrt(self.cs.rex_cs.eff_storage_roundtrip))
