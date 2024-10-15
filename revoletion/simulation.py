@@ -192,7 +192,7 @@ class PredictionHorizon:
 
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
-                      if isinstance(block, blocks.InvestBlock) and block.opt]:
+                      if isinstance(block, blocks.InvestBlock) and block.invest]:
             block.get_opt_size(self)
 
         for block in scenario.blocks.values():
@@ -337,7 +337,7 @@ class Scenario:
                         (cs.lvl_opt in self.run.apriori_lvls)
                         and cs.lvl_opt != 'uc'
                         and not cs.power_lim_static]:
-            if [block for block in self.blocks.values() if getattr(block, 'opt', False)]:
+            if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
                 run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
                                  f' without static load management (lm_static) is not compatible with size optimization')
                 exit()  # TODO exit scenario instead of run
@@ -499,44 +499,40 @@ class Scenario:
 
     def print_results(self):
         print('#################')
-        for block in [block for block in self.blocks.values() if hasattr(block, 'opt')]:
+        for block in [block for block in self.blocks.values() if hasattr(block, 'invest') and block.invest]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore):
-                if block.opt_acdc:
-                    self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
-                                     f' {block.size_acdc / 1e3:.1f} {unit}'
-                                     f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_acdc_additional / 1e3:.1f} {unit})')
-                if block.opt_dcac:
-                    self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
-                                     f' {block.size_dcac / 1e3:.1f} {unit}'
-                                     f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
+                self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
+                                 f' {block.size_acdc / 1e3:.1f} {unit}'
+                                 f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
+                                 f' - additional: {block.size_acdc_additional / 1e3:.1f} {unit})')
+                self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
+                                 f' {block.size_dcac / 1e3:.1f} {unit}'
+                                 f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
+                                 f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
             elif isinstance(block, blocks.GridConnection):
-                if block.opt_g2s:
-                    self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
-                                     f' {block.size_g2s / 1e3:.1f} {unit}' + \
-                                     f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
-                if block.opt_s2g:
-                    self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
-                                     f' {block.size_s2g / 1e3:.1f} {unit}'
-                                     f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
+                self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
+                                 f' {block.size_g2s / 1e3:.1f} {unit}' + \
+                                 f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
+                                 f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
+                self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
+                                 f' {block.size_s2g / 1e3:.1f} {unit}'
+                                 f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
+                                 f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
                             self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
-                                             f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.2f} {unit}'
+                                             f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} {unit}'
                                              f' - OPEX: {block.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod():.2f} {self.currency}')
 
-            elif isinstance(block, blocks.CommoditySystem) and block.opt:
+            elif isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
                                      f' {commodity.size / 1e3:.1f} {unit}'
                                      f' (existing: {commodity.size_existing / 1e3:.1f} {unit}'
                                      f' - additional: {commodity.size_additional / 1e3:.1f} {unit})')
-            elif block.opt:
+            else:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_additional / 1e3:.1f} {unit})')

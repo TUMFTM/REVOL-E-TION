@@ -195,15 +195,14 @@ class InvestBlock(Block):
     """
 
     def __init__(self, name, scenario, run):
-
-        self.opt = self.size = None
-        self.size_additional = 0  # placeholder for additional size in optimization
-
+        self.invest=False
         super().__init__(name, scenario, run)
+        self.size = self.size_additional = 0  # placeholder for additional size in optimization
 
         self.set_init_size(scenario, run)
 
-        if self.opt and scenario.strategy != 'go':
+        # ToDo: move to checker.py
+        if self.invest and scenario.strategy != 'go':
             scenario.logger.warning(f'\"{self.name}\" component size optimization not implemented'
                                     f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of run
@@ -330,17 +329,8 @@ class InvestBlock(Block):
         """
         Default function for components with a single size (i.e. not GridConnection and SystemCore)
         """
-
-        if self.size == 'opt':  # size will be set when getting results
-            self.opt = True
-            self.size = None
-
-        elif self.size_existing > 0:
-            self.size += self.size_existing
-            self.size_existing = 0
-
-        elif isinstance(self.size, (float, int)):  # fixed size
-            self.opt = False
+        if not self.invest:
+            self.size = self.size_existing
 
 
 class RenewableInvestBlock(InvestBlock):
@@ -386,9 +376,9 @@ class RenewableInvestBlock(InvestBlock):
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.bus: solph.Flow(
-                                               nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                               existing=self.size_existing)
-                                                              if self.opt else self.size),
+                                               nominal_value=solph.Investment(ep_costs=self.epc,
+                                                                              existing=self.size_existing,
+                                                                              maximum=None if self.invest else 0),
                                                variable_costs=self.opex_spec)})
         scenario.components.append(self.src)
 
@@ -495,7 +485,7 @@ class CommoditySystem(InvestBlock):
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         if self.data_source == 'des':
-            self.pwr_loss_max = utils.convert_sdr(self.sdr, scenario.timestep_td) * self.size * scenario.timestep_hours
+            self.pwr_loss_max = utils.convert_sdr(self.sdr, scenario.timestep_td) * self.size_existing * scenario.timestep_hours
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
@@ -539,7 +529,7 @@ class CommoditySystem(InvestBlock):
         scenario.components.append(self.outflow)
 
         # Generate individual commodity instances
-        self.commodities = {f'{self.name}{str(i)}': MobileCommodity(self.name + str(i), self, scenario)
+        self.commodities = {f'{self.name}{str(i)}': MobileCommodity(self.name + str(i), self, scenario, run)
                             for i in range(self.num)}
 
     def add_power_trace(self, scenario):
@@ -647,7 +637,8 @@ class CommoditySystem(InvestBlock):
                                     f' -> deactivating static load management')
             self.power_lim_static = None
 
-        if self.opt and self.lvl_opt in run.apriori_lvls:
+        # ToDo: move to checker.py
+        if self.invest and self.lvl_opt in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
                                   f' implemented for a priori integration levels: {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
@@ -661,9 +652,13 @@ class CommoditySystem(InvestBlock):
         Size for the commodity system is the sum of all commodity sizes in results
         """
 
+        self.size = self.size_additional = 0
         for commodity in self.commodities.values():
             commodity.size_additional = horizon.results[(commodity.ess, None)]['scalars']['invest']
             commodity.size = commodity.size_additional + commodity.size_existing
+            self.size += commodity.size
+            self.size_additional += commodity.size_additional
+
             if self.aging:
                 commodity.aging_model.size = commodity.size
                 # Calculate number of cells as a float to correctly represent power split with nonreal cells
@@ -725,17 +720,10 @@ class CommoditySystem(InvestBlock):
         return df
 
     def set_init_size(self, scenario, run):
-        super().set_init_size(scenario, run)
-        self.size_pc = self.size  # pc = per commodity
         self.size_existing_pc = self.size_existing
-        if self.opt:
-            self.size = None
-        else:
-            if self.size_existing > 0:
-                self.size_pc += self.size_existing
-                self.size_existing_pc = 0
-            self.size = self.size_pc * self.num
-
+        self.size_existing = self.size_existing_pc * self.num
+        if not self.invest:
+            self.size = self.size_existing
 
     def update_input_components(self, scenario, horizon):
         self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph]
@@ -778,9 +766,9 @@ class ControllableSource(InvestBlock):
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.bus_connected: solph.Flow(
-                                               nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                               existing=self.size_existing)
-                                                              if self.opt else self.size),
+                                               nominal_value=solph.Investment(ep_costs=self.epc,
+                                                                              existing=self.size_existing,
+                                                                              maximum=None if self.invest else 0),
                                                variable_costs=self.opex_spec)})
 
         scenario.components.append(self.src)
@@ -809,9 +797,8 @@ class ControllableSource(InvestBlock):
 
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario, run):
-
-        self.size_g2s = self.opt_g2s = self.size_s2g = self.opt_s2g = self.equal = None
-        self.size_g2s_additional = self.size_s2g_additional = 0
+        self.size_g2s = self.size_s2g = self.size_g2s_additional = self.size_s2g_additional = 0
+        self.equal = None
 
         super().__init__(name, scenario, run)
 
@@ -881,10 +868,10 @@ class GridConnection(InvestBlock):
             # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
-            outputs={self.bus: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                          existing=self.size_s2g_existing)
-                                                         if self.opt_s2g else self.size_s2g),
-                                          variable_costs=scenario.cost_eps)},
+            outputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=self.epc,
+                                                                         existing=self.size_s2g_existing,
+                                                                         maximum=None if self.invest_s2g else 0),
+                                            variable_costs=scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
         self.outflow = {f'{self.name}_xc_{intv}': solph.components.Converter(
@@ -892,9 +879,10 @@ class GridConnection(InvestBlock):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0),
-                                                existing=self.size_g2s_existing)
-                               if self.opt_g2s else self.size_g2s))},
+                nominal_value=solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0),
+                                               existing=self.size_g2s_existing,
+                                               maximum=None if self.invest_g2s else 0)
+            )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'])
                                                                    if self.peakshaving else None),
@@ -904,19 +892,18 @@ class GridConnection(InvestBlock):
         scenario.components.extend(self.inflow.values())
         scenario.components.extend(self.outflow.values())
 
-        if self.opt_g2s:
-            # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
-            # represent the same grid connection
-            equal_investments = [{'in': self.bus, 'out': outflow} for outflow in self.outflow.values()]
+        # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
+        # represent the same grid connection
+        equal_investments = [{'in': self.bus, 'out': outflow} for outflow in self.outflow.values()]
 
-            # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
-            if self.equal:
-                equal_investments.extend([{'in': inflow, 'out': self.bus} for inflow in self.inflow.values()])
+        # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
+        if self.equal:
+            equal_investments.extend([{'in': inflow, 'out': self.bus} for inflow in self.inflow.values()])
 
-            # add list of variables to the scenario constraints if list contains more than one element
-            # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
-            if len(equal_investments) > 1:
-                scenario.constraints.add_equal_invests(equal_investments)
+        # add list of variables to the scenario constraints if list contains more than one element
+        # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
+        if len(equal_investments) > 1:
+            scenario.constraints.add_equal_invests(equal_investments)
 
         # get information about GridMarkets specified in the scenario file
         if self.filename_markets:
@@ -926,7 +913,7 @@ class GridConnection(InvestBlock):
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
-            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'size_g2s', 'size_s2g'],
+            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'pwr_g2s', 'pwr_s2g'],
                                    columns=['grid'],
                                    data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
 
@@ -994,16 +981,14 @@ class GridConnection(InvestBlock):
 
     def get_opt_size(self, horizon):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
-        if self.opt_g2s:
-            self.size_g2s_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
-            self.size_g2s = self.size_g2s_existing + self.size_g2s_additional
-            for market in self.markets.values():
-                market.set_size('size_g2s')
-        if self.opt_s2g:
-            self.size_s2g_additional = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
-            self.size_s2g = self.size_s2g_existing + self.size_s2g_additional
-            for market in self.markets.values():
-                market.set_size('size_s2g')
+        self.size_g2s_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
+        self.size_g2s = self.size_g2s_existing + self.size_g2s_additional
+        self.size_s2g_additional = horizon.results[(list(self.inflow.values())[0]), self.bus]['scalars']['invest']
+        self.size_s2g = self.size_s2g_existing + self.size_s2g_additional
+
+        for market in self.markets.values():
+            market.set_size('g2s')
+            market.set_size('s2g')
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
@@ -1019,35 +1004,35 @@ class GridConnection(InvestBlock):
             market.get_timeseries_results(scenario)
 
     def set_init_size(self, scenario, run):
-        if self.size_g2s == 'equal' and self.size_s2g == 'equal':
-            self.size_g2s = self.size_s2g = 'opt'
-            scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
-                                    f' the size of g2s and s2g. This was changed to optimization of the size of both'
-                                    f' components with an additional "equal" constraint')
-            self.equal = False
-        elif self.size_g2s == 'equal':
-            self.size_g2s = self.size_s2g
-            self.equal = True
-        elif self.size_s2g == 'equal':
-            self.size_s2g = self.size_g2s
-            self.equal = True
-        else:
-            self.equal = False
+        self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
 
-        if (self.size_g2s != 'opt') and (self.size_s2g != 'opt'):
-            self.opt = self.opt_g2s = self.opt_s2g = False
+        if (self.invest_g2s == 'equal') and (self.invest_s2g == 'equal'):
+            self.invest_g2s = self.invest_s2g = True
+            scenario.logger.warning(f'\"{self.name}\" investment option was defined as "equal" for'
+                                    f' maximum selling and buying power. This is not supported and leads to enabling'
+                                    f' investments for both directions while ensuring the same investment for both.')
+        elif self.invest_g2s == 'equal':
+            self.invest_g2s = self.invest_s2g
+        elif self.invest_s2g == 'equal':
+            self.invest_s2g = self.invest_g2s
 
-        if self.size_g2s == 'opt':
-            self.opt = self.opt_g2s = True
-        elif self.size_g2s_existing > 0:
-            self.size_g2s += self.size_g2s_existing
-            self.size_g2s_existing = 0
+        if self.invest_g2s or self.invest_s2g:
+            self.invest = True
 
-        if self.size_s2g == 'opt':
-            self.opt = self.opt_s2g = True
-        elif self.size_s2g_existing > 0:
-            self.size_s2g += self.size_s2g_existing
-            self.size_s2g_existing = 0
+        if (self.size_g2s_existing == 'equal') and (self.size_s2g_existing == 'equal'):
+            self.size_g2s_existing = self.size_s2g_existing = 0
+            scenario.logger.warning(f'\"{self.name}\" Existing size was defined as "equal" for'
+                                    f' maximum selling and buying power. This is not supported and leads to setting'
+                                    f' the existing size for both directions to 0.')
+        elif self.size_g2s_existing == 'equal':
+            self.size_g2s_existing = self.size_s2g_existing
+        elif self.size_s2g_existing == 'equal':
+            self.size_s2g_existing = self.size_g2s_existing
+
+        if not self.invest_g2s:
+            self.size_g2s = self.size_g2s_existing
+        if not self.invest_s2g:
+            self.size_s2g = self.size_s2g_existing
 
     def update_input_components(self, scenario, horizon):
         # ToDo: modify and adjust to new structure
@@ -1128,13 +1113,13 @@ class GridMarket:
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
-                                               nominal_value=(self.size_g2s if not pd.isna(self.size_g2s) else None),
+                                               nominal_value=(self.pwr_g2s if not pd.isna(self.pwr_g2s) else None),
                                                variable_costs=self.opex_spec_g2s)
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
-                                             nominal_value=(self.size_s2g if not pd.isna(self.size_s2g) else None),
+                                             nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
                                              variable_costs=self.opex_spec_s2g + scenario.cost_eps * self.equal_prices)
                                          })
 
@@ -1147,8 +1132,8 @@ class GridMarket:
             return
 
         legentry = (f'{self.name} power (max.'
-                    f' {(self.parent.size_g2s if pd.isna(self.size_g2s) else self.size_g2s) / 1e3:.1f} kW from /'
-                    f' {(self.parent.size_s2g if pd.isna(self.size_s2g) else self.size_s2g) / 1e3:.1f} kW to grid)')
+                    f' {(self.parent.size_g2s if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
+                    f' {(self.parent.size_s2g if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
 
         scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                              y=self.flow,
@@ -1187,24 +1172,16 @@ class GridMarket:
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, market_ts_results], axis=1)
 
     def set_init_size(self):
-        for size in ['size_g2s', 'size_s2g']:
-            # if grid size is 'opt', size is set after the optimization as it is only used for plotting purposes
-            if getattr(self.parent, size) != 'opt':
-                self.set_size(size)
+        for dir in ['g2s', 's2g']:
+            # if grid size has an additional invest option, size is set after the optimization as it is only used for plotting purposes
+            if not getattr(self.parent, f'invest_{dir}'):
+                self.set_size(dir)
 
-    def set_size(self, size_var_name):
-        # limit max power of the grid market to the size of the (physical) grid connection
-        # If no size for the market is given, the size of the grid connection is used
-        # if pd.isna(getattr(self, size_var_name)):
-        #     size_market = np.inf
-        # else:
-        #     size_market = getattr(self, size_var_name)
-        #
-        # setattr(self, size_var_name, min(size_market, getattr(self.parent, size_var_name)))
-
-        setattr(self, size_var_name,
-                min(np.inf if pd.isna(getattr(self, size_var_name)) else getattr(self, size_var_name),
-                    getattr(self.parent, size_var_name)))
+    def set_size(self, dir):
+        # limit grid market power to given value if specified, otherwise use the size of the (physical) grid connection
+        setattr(self, f'pwr_{dir}',
+                min(np.inf if pd.isna(getattr(self, f'pwr_{dir}')) else getattr(self, f'pwr_{dir}'),
+                    getattr(self.parent, f'size_{dir}_existing')))
 
     def update_input_components(self, scenario, horizon):
         self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph]
@@ -1260,15 +1237,15 @@ class FixedDemand(Block):
 
 class MobileCommodity:
 
-    def __init__(self, name, parent, scenario):
+    def __init__(self, name, parent, scenario, run):
 
         self.dsoc_buffer_aging = 0.05  # Todo make this a parameter
 
         self.name = name
         self.parent = parent
-        self.size = None if self.parent.opt else self.parent.size_pc
-        self.size_existing = self.parent.size_existing
-        self.size_additional = 0
+        self.invest = self.parent.invest
+        self.size = self.size_additional = 0
+        self.size_existing = self.parent.size_existing_pc
         self.mode_dispatch = self.parent.mode_dispatch
         self.soc_init = self.parent.soc_init
         self.soh_init = self.parent.soh_init
@@ -1281,6 +1258,8 @@ class MobileCommodity:
 
         self.ext_ac = None  # prepare for external chargers
         self.ext_dc = None  # prepare for external chargers
+
+        self.set_init_size(scenario, run)
 
         if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
@@ -1360,9 +1339,9 @@ class MobileCommodity:
                                                    initial_storage_level=self.soc_init_ph,
                                                    inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
-                                                   nominal_storage_capacity=(solph.Investment(ep_costs=self.parent.epc,
-                                                                                              existing=self.size_existing)
-                                                                             if self.parent.opt else self.size)
+                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.parent.epc,
+                                                                                             existing=self.size_existing,
+                                                                                             maximum=None if self.invest else 0)
                                                    )
 
         scenario.components.append(self.ess)
@@ -1540,6 +1519,10 @@ class MobileCommodity:
                                              f'{self.name}_soh': self.soh})
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, commodity_ts_results], axis=1)
 
+    def set_init_size(self, *_):
+        if not self.invest:
+            self.size = self.size_existing
+
     def update_input_components(self, scenario, horizon):
 
         # set vehicle consumption data for sink
@@ -1588,9 +1571,15 @@ class MobileCommodity:
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
             self.ess.min_storage_level = self.data_ph['dsoc'].where(
                 self.data_ph['dsoc'] == 0,
-                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)  # 0.974679433 # * 0.98407
         else:  # opt_global or apriori cases
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+
+        # A bug in oemof shifts the storage's energy content by one timestep, if an Investment opject is defined.
+        # Therefore, the minimum and maximum storage level need to be shifted by one timestep, too.
+        # ToDo: Remove this workaround once the bug in oemof is fixed
+        # self.ess.min_storage_level = self.ess.min_storage_level.shift(-1).fillna(self.soc_min)
+        # self.ess.max_storage_level = self.ess.max_storage_level.shift(-1).fillna(self.soc_max)
 
 
 class PVSource(RenewableInvestBlock):
@@ -1791,25 +1780,19 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.ess = solph.components.GenericStorage(label='ess',
                                                    inputs={self.bus_connected: solph.Flow(
-                                                       nominal_value=(self.size * self.crate_chg
-                                                                      if not self.opt else None),
                                                        variable_costs=self.opex_spec)},
                                                    outputs={self.bus_connected: solph.Flow(
-                                                       nominal_value=(self.size * self.crate_dis
-                                                                      if not self.opt else None),
                                                        variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=self.soc_init_ph,
-                                                   invest_relation_input_capacity=(self.crate_chg
-                                                                                   if self.opt else None),
-                                                   invest_relation_output_capacity=(self.crate_dis
-                                                                                    if self.opt else None),
+                                                   invest_relation_input_capacity=(self.crate_chg),
+                                                   invest_relation_output_capacity=(self.crate_dis),
                                                    inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
-                                                   nominal_storage_capacity=(solph.Investment(ep_costs=self.epc,
-                                                                                              existing=self.size_existing)
-                                                                             if self.opt else self.size)
+                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.epc,
+                                                                                             existing=self.size_existing,
+                                                                                             maximum=None if self.invest else 0)
                                                    )
 
         scenario.components.append(self.ess)
@@ -1898,9 +1881,9 @@ class StationaryEnergyStorage(InvestBlock):
 class SystemCore(InvestBlock):
 
     def __init__(self, name, scenario, run):
-
-        self.size_acdc = self.opt_acdc = self.size_dcac = self.opt_dcac = 0  # might be set in super().__init__
+        self.size_acdc = self.size_dcac = 0
         self.size_acdc_additional = self.size_dcac_additional = 0
+        self.equal = None
 
         super().__init__(name, scenario, run)
 
@@ -1908,8 +1891,6 @@ class SystemCore(InvestBlock):
         self.e_prj_acdc = self.e_prj_dcac = self.e_dis_acdc = self.e_dis_dcac = 0
 
         self.flow_acdc = self.flow_dcac = self.flow_acdc_ch = self.flow_dcac_ch = pd.Series(dtype='float64')
-
-        self.equal = None
 
         """
         x denotes the flow measurement point in results
@@ -1929,9 +1910,9 @@ class SystemCore(InvestBlock):
 
         self.ac_dc = solph.components.Converter(label='ac_dc',
                                                 inputs={self.ac_bus: solph.Flow(
-                                                    nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                                    existing=self.size_acdc_existing)
-                                                                   if self.opt_acdc else self.size_acdc + self.size_acdc_existing),
+                                                    nominal_value=solph.Investment(ep_costs=self.epc,
+                                                                                   existing=self.size_acdc_existing,
+                                                                                   maximum=None if self.invest_acdc else 0),
                                                     variable_costs=self.opex_spec)},
                                                 outputs={self.dc_bus: solph.Flow(
                                                     variable_costs=scenario.cost_eps)},
@@ -1939,9 +1920,9 @@ class SystemCore(InvestBlock):
 
         self.dc_ac = solph.components.Converter(label='dc_ac',
                                                 inputs={self.dc_bus: solph.Flow(
-                                                    nominal_value=(solph.Investment(ep_costs=self.epc,
-                                                                                    existing=self.size_dcac_existing)
-                                                                   if self.opt_dcac else self.size_dcac + self.size_dcac_existing),
+                                                    nominal_value=solph.Investment(ep_costs=self.epc,
+                                                                                   existing=self.size_dcac_existing,
+                                                                                   maximum=None if self.invest_dcac else 0),
                                                     variable_costs=self.opex_spec)},
                                                 outputs={self.ac_bus: solph.Flow(
                                                     variable_costs=scenario.cost_eps)},
@@ -1950,11 +1931,10 @@ class SystemCore(InvestBlock):
         scenario.components.append(self.ac_dc)
         scenario.components.append(self.dc_ac)
 
-        if self.opt and self.equal:
+        if self.equal:
             # add a tuple of tuples to the list of equal variables of the scenario
             scenario.constraints.add_equal_invests([{'in': self.dc_bus, 'out': self.dc_ac},
-                                                    {'in': self.ac_bus, 'out': self.ac_dc}
-                                                    ])
+                                                    {'in': self.ac_bus, 'out': self.ac_dc}])
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'
@@ -2007,12 +1987,10 @@ class SystemCore(InvestBlock):
         self.flow_dcac = pd.concat([self.flow_dcac if not self.flow_dcac.empty else None, self.flow_dcac_ch])
 
     def get_opt_size(self, horizon):
-        if self.opt_acdc:
-            self.size_acdc_additional = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
-            self.size_acdc = self.size_acdc_existing + self.size_acdc_additional
-        if self.opt_dcac:
-            self.size_dcac_additional = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
-            self.size_dcac = self.size_dcac_existing + self.size_dcac_additional
+        self.size_acdc_additional = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
+        self.size_acdc = self.size_acdc_existing + self.size_acdc_additional
+        self.size_dcac_additional = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
+        self.size_dcac = self.size_dcac_existing + self.size_dcac_additional
 
     def get_timeseries_results(self, scenario):
         """
@@ -2023,35 +2001,35 @@ class SystemCore(InvestBlock):
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
     def set_init_size(self, scenario, run):
+        self.equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
-        if (self.size_acdc == 'equal') and (self.size_dcac == 'equal'):
-            self.size_acdc = self.size_dcac = 'opt'
-            scenario.logger.warning(f'\"{self.name}\" component size was defined as "equal" for'
-                                    f' AC/DC and DC/AC converter. This was changed to optimization of the size of both'
-                                    f' components with an additional "equal" constraint')
-        elif self.size_acdc == 'equal':
-            self.size_acdc = self.size_dcac
-            self.equal = True
-        elif self.size_dcac == 'equal':
-            self.size_dcac = self.size_acdc
-            self.equal = True
-        else:
-            self.equal = False
+        if (self.invest_acdc == 'equal') and (self.invest_dcac == 'equal'):
+            self.invest_acdc = self.invest_dcac = True
+            scenario.logger.warning(f'\"{self.name}\" investment option was defined as "equal" for'
+                                    f' AC/DC and DC/AC converter. This is not supported and leads to enabling'
+                                    f' investments for both converters while ensuring the same investment for both.')
+        elif self.invest_acdc == 'equal':
+            self.invest_acdc = self.invest_dcac
+        elif self.invest_dcac == 'equal':
+            self.invest_dcac = self.invest_acdc
 
-        if (self.size_acdc != 'opt') and (self.size_dcac != 'opt'):
-            self.opt = self.opt_acdc = self.opt_dcac = False
+        if self.invest_acdc or self.invest_dcac:
+            self.invest = True
 
-        if self.size_acdc == 'opt':
-            self.opt = self.opt_acdc = True
-        elif self.size_acdc_existing > 0:
-            self.size_acdc += self.size_acdc_existing
-            self.size_acdc_existing = 0
+        if (self.size_acdc_existing == 'equal') and (self.size_dcac_existing == 'equal'):
+            self.size_acdc_existing = self.size_dcac_existing = 0
+            scenario.logger.warning(f'\"{self.name}\" Existing size was defined as "equal" for'
+                                    f' maximum selling and buying power. This is not supported and leads to setting'
+                                    f' the existing size for both directions to 0.')
+        elif self.size_acdc_existing == 'equal':
+            self.size_acdc_existing = self.size_dcac_existing
+        elif self.size_dcac_existing == 'equal':
+            self.size_dcac_existing = self.size_acdc_existing
 
-        if self.size_dcac == 'opt':
-            self.opt = self.opt_dcac = True
-        elif self.size_dcac_existing > 0:
-            self.size_dcac += self.size_dcac_existing
-            self.size_dcac_existing = 0
+        if not self.invest_acdc:
+            self.size_acdc = self.size_acdc_existing
+        if not self.invest_dcac:
+            self.size_dcac = self.size_dcac_existing
 
     def update_input_components(self, scenario, horizon):
         self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph]

@@ -17,10 +17,8 @@ class BatteryPackModel:
         self.commodity = commodity
 
         if isinstance(self.commodity, blocks.MobileCommodity):
-            self.opt = self.commodity.parent.opt
             self.chemistry = self.commodity.parent.chemistry.lower()  # 'lfp' or 'nmc'
         else:  # StationaryEnergyStorage
-            self.opt = self.commodity.opt
             self.chemistry = self.commodity.chemistry.lower()
 
         # Thermal model parameters

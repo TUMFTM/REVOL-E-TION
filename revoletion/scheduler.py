@@ -80,11 +80,11 @@ class AprioriPowerScheduler:
 
             for block in self.scenario.blocks.values():
                 if isinstance(block, blocks.GridConnection):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_g2s * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_g2s_existing * block.eff
                 elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size_existing * block.eff
                 elif isinstance(block, blocks.ControllableSource):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_existing * block.eff
                 elif isinstance(block, blocks.FixedDemand):
                     self.pwr_esm_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w']
 
@@ -100,8 +100,8 @@ class AprioriPowerScheduler:
             # only execute optimization of the local grid if there are rulebased components
             if self.cs_lm_dynamic:
                 # reset available power on converter to maximum power
-                self.pwr_syscore_conv_avail = {'ac': self.sys_core.size_acdc,
-                                               'dc': self.sys_core.size_dcac}
+                self.pwr_syscore_conv_avail = {'ac': self.sys_core.size_acdc_existing,
+                                               'dc': self.sys_core.size_dcac_existing}
 
                 # Draw demand power (FixedDemand, cs_unlim, cs_lm_static) from available power on AC bus
                 for system in ['ac', 'dc']:
@@ -311,7 +311,7 @@ class AprioriCommodity:
             return 0
 
         # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta
-        pwr_tosoc = ((((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size / self.scenario.timestep_hours) +
+        pwr_tosoc = ((((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size_existing / self.scenario.timestep_hours) +
                      self.block.apriori_data.loc[dtindex, 'p_consumption'] / self.get_eff('consumption'))) / self.get_eff(mode)
 
         # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
@@ -329,7 +329,7 @@ class AprioriCommodity:
             power += self.block.apriori_data.loc[dtindex, column] * self.get_eff(column[2:])
 
         # calculate new soc value
-        new_soc = power / self.block.size * self.scenario.timestep_hours + \
+        new_soc = power / self.block.size_existing * self.scenario.timestep_hours + \
                   self.block.apriori_data.loc[dtindex, 'soc'] * (1 - self.loss_rate)
 
         if new_soc < self.block.soc_min:
@@ -363,7 +363,7 @@ class AprioriCommodity:
                      * self.scenario.timestep_hours)
 
         #  Convert energy consumption to delta soc taking the current soh into account
-        soc_delta = e_con / self.block.size
+        soc_delta = e_con / self.block.size_existing
         #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
         if soc_delta > (self.block.parent.soc_target_low - self.block.parent.soc_return):
             soc_target = self.block.parent.soc_target_high
@@ -381,7 +381,7 @@ class AprioriCommodity:
 
                 # set charging to True, if charging is necessary
                 if e_trip_remaining > ((self.block.apriori_data.loc[dtindex, 'soc'] - self.block.parent.soc_return) *
-                                       self.block.size * self.soh):
+                                       self.block.size_existing * self.soh):
                     self.parking_charging = True
                 else:
                     self.parking_charging = False
@@ -395,7 +395,7 @@ class AprioriCommodity:
             chg_nxt = self.chg_avail_dti[self.chg_avail_dti > dtindex].min()
             soc_chg_nxt = self.block.apriori_data.loc[dtindex, 'soc'] - \
                           self.block.data_ph.loc[dtindex:chg_nxt - self.scenario.timestep_td,
-                          'consumption'].sum() * self.scenario.timestep_hours / self.block.size
+                          'consumption'].sum() * self.scenario.timestep_hours / self.block.size_existing
             if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
                 # fast-charging only up to SOC of 80 %
                 self.set_p(dtindex=dtindex,
