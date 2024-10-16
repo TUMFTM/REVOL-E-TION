@@ -720,10 +720,16 @@ class CommoditySystem(InvestBlock):
         return df
 
     def set_init_size(self, scenario, run):
+        if self.invest and self.data_source == 'des':
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data source'
+                                    f' DES is not possible. Deactivated invest.')
+            self.invest = False
+
         self.size_existing_pc = self.size_existing
         self.size_existing = self.size_existing_pc * self.num
         if not self.invest:
             self.size = self.size_existing
+            self.size_pc = self.size_existing_pc
 
     def update_input_components(self, scenario, horizon):
         self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph]
