@@ -1581,12 +1581,6 @@ class MobileCommodity:
         else:  # opt_global or apriori cases
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
-        # A bug in oemof shifts the storage's energy content by one timestep, if an Investment opject is defined.
-        # Therefore, the minimum and maximum storage level need to be shifted by one timestep, too.
-        # ToDo: Remove this workaround once the bug in oemof is fixed
-        # self.ess.min_storage_level = self.ess.min_storage_level.shift(-1).fillna(self.soc_min)
-        # self.ess.max_storage_level = self.ess.max_storage_level.shift(-1).fillna(self.soc_max)
-
 
 class PVSource(RenewableInvestBlock):
 
