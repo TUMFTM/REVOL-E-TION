@@ -195,7 +195,7 @@ class InvestBlock(Block):
     """
 
     def __init__(self, name, scenario, run):
-        self.invest=False
+        self.invest = False  # not every block has input parameter invest without extension -> default: False
         super().__init__(name, scenario, run)
         self.size = self.size_additional = 0  # placeholder for additional size in optimization
 
@@ -720,6 +720,7 @@ class CommoditySystem(InvestBlock):
         return df
 
     def set_init_size(self, scenario, run):
+        #  ToDo: move to checker.py
         if self.invest and self.data_source == 'des':
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data source'
                                     f' DES is not possible. Deactivated invest.')
@@ -1252,6 +1253,9 @@ class MobileCommodity:
         self.invest = self.parent.invest
         self.size = self.size_additional = 0
         self.size_existing = self.parent.size_existing_pc
+
+        self.set_init_size(scenario, run)
+
         self.mode_dispatch = self.parent.mode_dispatch
         self.soc_init = self.parent.soc_init
         self.soh_init = self.parent.soh_init
@@ -1264,8 +1268,6 @@ class MobileCommodity:
 
         self.ext_ac = None  # prepare for external chargers
         self.ext_dc = None  # prepare for external chargers
-
-        self.set_init_size(scenario, run)
 
         if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
@@ -1577,7 +1579,7 @@ class MobileCommodity:
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
             self.ess.min_storage_level = self.data_ph['dsoc'].where(
                 self.data_ph['dsoc'] == 0,
-                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)  # 0.974679433 # * 0.98407
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
         else:  # opt_global or apriori cases
             self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
 
