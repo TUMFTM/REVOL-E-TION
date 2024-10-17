@@ -1597,7 +1597,7 @@ class PVSource(RenewableInvestBlock):
 
     def __init__(self, name, scenario, run):
 
-        self.api_startyear = self.api_endyear = self.api_shift = self.api_length = self.meta = None
+        self.api_startyear = self.api_endyear = self.api_shift = self.api_length = self.api_params = self.meta = None
         self.bus_connected = scenario.blocks['core'].dc_bus
 
         super().__init__(name, scenario, run)
@@ -1637,99 +1637,122 @@ class PVSource(RenewableInvestBlock):
         self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
     def get_timeseries_data(self, scenario, run):
+        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API input selected
+            if self.filename:
+                try:
+                    self.api_params = pd.read_csv(os.path.join(run.path_input_data,
+                                                           self.__class__.__name__,
+                                                           utils.set_extension(self.filename)),
+                                              index_col=[0],
+                                              na_filter=False)
+                    self.api_params = self.api_params.map(utils.infer_dtype)['value'].to_dict() if self.api_params.index.name == 'parameter' and all(self.api_params.columns == 'value') else {}
+                except FileNotFoundError:
+                    self.api_params = {}
+            else:
+                self.api_params = {}
 
-        if self.data_source == 'pvgis api':  # PVGIS API input selected
-            self.api_startyear = scenario.starttime.tz_convert('utc').year
-            self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
-            self.api_length = self.api_endyear - self.api_startyear
-            self.api_shift = pd.to_timedelta('0 days')
+            if self.data_source == 'pvgis api':  # PVGIS API input selected
+                self.api_startyear = scenario.starttime.tz_convert('utc').year
+                self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
+                self.api_length = self.api_endyear - self.api_startyear
+                self.api_shift = pd.to_timedelta('0 days')
 
-            if self.api_length > 15:
-                raise ValueError('PVGIS API only allows a maximum of 15 years of data')
-            elif self.api_endyear > 2020:  # PVGIS-SARAH2 only has data up to 2020
-                self.api_shift = (pd.to_datetime('2020-01-01 00:00:00+00:00') -
-                                  pd.to_datetime(f'{self.api_endyear}-01-01 00:00:00+00:00'))
-                self.api_endyear = 2020
-                self.api_startyear = 2020 - self.api_length
-            elif self.api_startyear < 2005:  # PVGIS-SARAH2 only has data from 2005
-                self.api_shift = (pd.to_datetime('2005-01-01 00:00:00+00:00') -
-                                  pd.to_datetime(f'{self.api_startyear}-01-01 00:00:00+00:00'))
-                self.api_startyear = 2005
-                self.api_endyear = 2005 + self.api_length
-            # Todo leap years can result in data shifting not landing at the same point in time
+                if self.api_length > 15:
+                    raise ValueError('PVGIS API only allows a maximum of 15 years of data')
+                elif self.api_endyear > 2020:  # PVGIS-SARAH2 only has data up to 2020
+                    self.api_shift = (pd.to_datetime('2020-01-01 00:00:00+00:00') -
+                                      pd.to_datetime(f'{self.api_endyear}-01-01 00:00:00+00:00'))
+                    self.api_endyear = 2020
+                    self.api_startyear = 2020 - self.api_length
+                elif self.api_startyear < 2005:  # PVGIS-SARAH2 only has data from 2005
+                    self.api_shift = (pd.to_datetime('2005-01-01 00:00:00+00:00') -
+                                      pd.to_datetime(f'{self.api_startyear}-01-01 00:00:00+00:00'))
+                    self.api_startyear = 2005
+                    self.api_endyear = 2005 + self.api_length
+                # Todo leap years can result in data shifting not landing at the same point in time
 
-            self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
-                                                                     scenario.longitude,
-                                                                     start=self.api_startyear,
-                                                                     end=self.api_endyear,
-                                                                     url='https://re.jrc.ec.europa.eu/api/v5_3/',
-                                                                     raddatabase='PVGIS-SARAH3',
-                                                                     components=False,
-                                                                     outputformat='json',
-                                                                     pvcalculation=True,
-                                                                     peakpower=1,
-                                                                     pvtechchoice='crystSi',
-                                                                     mountingplace='free',
-                                                                     loss=0,
-                                                                     optimalangles=True,
-                                                                     map_variables=True)
+                # revert lower() in reading data as pvgis is case-sensitive
+                # ToDo: move to checker.py
+                self.api_params['raddatabase'] = self.api_params.get('raddatabase', 'PVGIS-SARAH3').upper()
+                self.api_params['pvtechchoice'] = {'crystsi': 'crystSi',
+                                               'cis': 'CIS',
+                                               'cdte': 'CdTe',
+                                               'unknown': 'Unknown'}[self.api_params.get('pvtechchoice', 'crystsi')]
 
-            # PVGIS gives time slots as XX:06h - round to full hour
-            self.data.index = self.data.index.round('h')
-            self.data.index = self.data.index - self.api_shift
+                self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(
+                    scenario.latitude,
+                    scenario.longitude,
+                    start=self.api_startyear,
+                    end=self.api_endyear,
+                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                    components=False,
+                    outputformat='json',
+                    pvcalculation=True,
+                    peakpower=1,
+                    map_variables=True,
+                    loss=0,
+                    raddatabase=self.api_params['raddatabase'],  # conversion above ensures that the parameter exists
+                    pvtechchoice=self.api_params['pvtechchoice'],  # conversion above ensures that the parameter exists
+                    mountingplace=self.api_params.get('mountingplace', 'free'),
+                    optimalangles=self.api_params.get('optimalangles', True),
+                    optimal_surface_tilt=self.api_params.get('optimal_surface_tilt', False),
+                    surface_azimuth=self.api_params.get('surface_azimuth', 180),
+                    surface_tilt=self.api_params.get('surface_tilt', 0),
+                    trackingtype=self.api_params.get('trackingtype', 0),
+                    usehorizon=self.api_params.get('usehorizon', True),
+                    userhorizon=self.api_params.get('userhorizon', None),
+                )
+                # PVGIS gives time slots not as full hours - round to full hour
+                self.data.index = self.data.index.round('h')
+                self.data.index = self.data.index - self.api_shift
 
-        elif self.data_source.lower() == 'solcast api':  # solcast API input selected
-            # read api key
-            with open(os.path.join(run.path_input_data, self.__class__.__name__, 'api_solcast.conf'), 'r') as file:
-                api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
+            elif self.data_source == 'solcast api':  # solcast API input selected
+                # read api key
+                with open(os.path.join(run.path_input_data, self.__class__.__name__, 'solcast_api_key.conf'), 'r') as file:
+                    api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
 
-            # set api key as bearer token
-            headers = {'Authorization': f'Bearer {api_key}'}
+                # set api key as bearer token
+                headers = {'Authorization': f'Bearer {api_key}'}
 
-            params = {
-                'latitude': scenario.latitude,
-                'longitude': scenario.longitude,
-                # 'azimuth': 44,
-                # 'tilt': 90,
-                # 'array_type': 'fixed',
-                'period': 'PT5M',
-                'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
-                'start': scenario.starttime,
-                'end': scenario.sim_extd_endtime,
-                'format': 'csv',
-                # 'include_metadata': True,
-                'time_zone': 'utc',
-                # 'terrain_shading': True,
-            }
+                params = {**{'latitude': scenario.latitude,  # unmetered location for testing 41.89021,
+                             'longitude': scenario.longitude,  # unmetered location for testing 12.492231,
+                             'period': 'PT5M',
+                             'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
+                             'start': scenario.starttime,
+                             'end': scenario.sim_extd_endtime,
+                             'format': 'csv',
+                             'time_zone': 'utc',
+                             },
+                          **{parameter: value for parameter, value in self.api_params.items() if value is not None}}
 
-            url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
+                url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
 
-            # get data from Solcast API
-            response = requests.get(url, headers=headers, params=params)
-            # convert to csv
-            self.data = pd.read_csv(io.StringIO(response.text))
-            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-            self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
-            self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-            self.data = self.data.tz_convert('Europe/Berlin')
-            self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
-            # rename columns according to further processing steps
-            self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
-            # calculate specific pv power
-            self.calc_power_solcast()
+                # get data from Solcast API
+                response = requests.get(url, headers=headers, params=params)
+                # convert to csv
+                self.data = pd.read_csv(io.StringIO(response.text))
+                # calculate period_start as only period_end is given, set as index and remove unnecessary columns
+                self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
+                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                self.data = self.data.tz_convert('Europe/Berlin')
+                self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+                # rename columns according to further processing steps
+                self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+                # calculate specific pv power
+                self.calc_power_solcast()
 
         else:  # input from file instead of API
             self.path_input_file = os.path.join(run.path_input_data,
                                                 self.__class__.__name__,
                                                 utils.set_extension(self.filename))
 
-            if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
+            if self.data_source == 'pvgis file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
                 scenario.latitude = self.meta['latitude']
                 scenario.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('h')
-            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
+            elif self.data_source == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
                 self.data = pd.read_csv(self.path_input_file)
                 self.data.rename(columns={'PeriodStart': 'period_start',

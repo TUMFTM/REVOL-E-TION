@@ -1,0 +1,5 @@
+parameter,value
+azimuth,180
+tilt,23
+array_type,fixed
+terrain_shading,false
