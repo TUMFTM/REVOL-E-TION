@@ -8,6 +8,7 @@ import rainflow
 import scipy.interpolate as spip
 
 from revoletion import blocks
+from revoletion import utils
 
 
 class BatteryPackModel:
@@ -128,9 +129,7 @@ class BatteryPackModel:
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = self.commodity.soc_ch
-        # append SOC at the end of CH
-        self.soc_hor.loc[horizon.ch_endtime] = self.commodity.soc_init_ph
+        self.soc_hor = self.commodity.soc[utils.extend_dti(horizon.dti_ch)]
 
         self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
 

@@ -1293,7 +1293,7 @@ class MobileCommodity:
 
         self.data_ph = self.sc_init_ph = None  # placeholder, is filled in update_input_components
 
-        self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
+        # self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
         self.soh = pd.Series(index=scenario.dti_sim_extd)
         self.soh.loc[scenario.starttime] = self.soh_init
@@ -1312,7 +1312,8 @@ class MobileCommodity:
         self.flow_bat_in = self.flow_bat_out = self.flow_bat_in_ch = self.flow_bat_out_ch = pd.Series(dtype='float64')
         self.flow_ext_ac = self.flow_ext_dc = self.flow_ext_ac_ch = self.flow_ext_dc_ch = pd.Series(dtype='float64')
 
-        self.sc_ch = self.soc_ch = self.soc = pd.Series(dtype='float64')
+        self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
+        self.soc[scenario.starttime] = self.soc_init
 
         # Creation of permanent energy system components --------------------------------
 
@@ -1359,7 +1360,7 @@ class MobileCommodity:
                                                                                  else 0)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
-                                                   initial_storage_level=self.soc_init_ph,
+                                                   initial_storage_level=self.soc_init,
                                                    inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=(solph.Investment(ep_costs=self.parent.epc,
@@ -1514,19 +1515,10 @@ class MobileCommodity:
         self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
         self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
 
-        # storage content during PH (does not include endtime)
-        self.sc_ch = solph.views.node(
-            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'),
-                                                               'storage_content')][horizon.dti_ch]
-        # storage content at end of ph to initialize next PH
-        self.sc_init_ph = solph.views.node(
-            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'),
-                                                               'storage_content')][horizon.ch_endtime]
-
-        self.soc_ch = self.sc_ch / self.size
-        self.soc_init_ph = self.sc_init_ph / self.size
-
-        self.soc = pd.concat([self.soc if not self.soc.empty else None, self.soc_ch])  # tracking state of charge
+        # storage content during PH (including endtime)
+        self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(
+            horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
+                                                         utils.extend_dti(horizon.dti_ch)] / self.size
 
     def get_timeseries_results(self, scenario):
         """
@@ -1549,7 +1541,7 @@ class MobileCommodity:
 
         # set initial storage levels for coming prediction horizon
         # limit and set initial storage level to min and max soc from aging
-        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc[horizon.starttime], self.soc_max])
 
         self.src_ext_ac.outputs[self.bus_ext_ac].variable_costs = self.parent.opex_spec_ext_ac[horizon.dti_ph].values
         self.src_ext_dc.outputs[self.bus_ext_dc].variable_costs = self.parent.opex_spec_ext_dc[horizon.dti_ph].values
@@ -1791,17 +1783,15 @@ class StationaryEnergyStorage(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.soc_init_ph = self.soc_init
-
-        self.apriori_data = self.sc_init_ph = None
+        self.apriori_data = None
 
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
         self.flow_in = self.flow_out = pd.Series(dtype='float64')
 
-        self.sc_ch = self.soc_ch = pd.Series(dtype='float64')  # result data
-        self.soc = pd.Series()
+        self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
+        self.soc[scenario.starttime] = self.soc_init
 
         self.soc_min = (1 - self.soh_init) / 2
         self.soc_max = 1 - ((1 - self.soh_init) / 2)
@@ -1832,7 +1822,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                        if self.eff_roundtrip == 1 else 0)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
-                                                   initial_storage_level=self.soc_init_ph,
+                                                   initial_storage_level=self.soc_init,
                                                    invest_relation_input_capacity=(self.crate_chg
                                                                                    if self.opt else None),
                                                    invest_relation_output_capacity=(self.crate_dis
@@ -1887,17 +1877,9 @@ class StationaryEnergyStorage(InvestBlock):
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
         self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
-        # storage content during PH (does not include endtime)
-        self.sc_ch = solph.views.node(horizon.results, self.name)['sequences'][
-            ((self.name, 'None'), 'storage_content')][horizon.dti_ch]
-        # storage content at end of ph to initialize next PH
-        self.sc_init_ph = solph.views.node(horizon.results, self.name)['sequences'][
-            ((self.name, 'None'), 'storage_content')][horizon.ch_endtime]
-
-        self.soc_ch = self.sc_ch / self.size
-        self.soc_init_ph = self.sc_init_ph / self.size
-
-        self.soc = pd.concat([self.soc if not self.soc.empty else None, self.soc_ch])  # tracking state of charge
+        # storage content during PH (including endtime)
+        self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(horizon.results, self.name)['sequences'][
+            ((self.name, 'None'), 'storage_content')][utils.extend_dti(horizon.dti_ch)] / self.size
 
     def get_opt_size(self, horizon):
         self.size_additional = horizon.results[(self.ess, None)]['scalars']['invest']
@@ -1918,17 +1900,9 @@ class StationaryEnergyStorage(InvestBlock):
 
     def update_input_components(self, scenario, horizon):
 
-        # TODO FAPC
-        # Extension is needed as workaround for dti_ph being too short for indexing
-        # as soon as dti_ph elongation is checked, this can use dti_ph again
-        dti_ph_extended = pd.date_range(start=horizon.starttime,
-                                        end=horizon.ph_endtime,
-                                        freq=scenario.timestep,
-                                        inclusive='both')
-
-        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max]).values
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended).values
-        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended).values
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc[horizon.starttime], self.soc_max])
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=utils.extend_dti(horizon.dti_ph)).values
+        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=utils.extend_dti(horizon.dti_ph)).values
 
         self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph].values
 
