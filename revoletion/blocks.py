@@ -519,7 +519,7 @@ class CommoditySystem(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value=(None if self.lvl_int in ['v2s'] else 0),
+                                                      nominal_value=(None if self.lvl_cap in ['v2s'] else 0),
                                                       variable_costs=self.opex_spec_sys_dis)},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
@@ -617,8 +617,8 @@ class CommoditySystem(InvestBlock):
 
     def get_dispatch_mode(self, scenario, run):
 
-        if self.lvl_opt in run.apriori_lvls:  # uc, equal, soc, fcfs
-            if self.lvl_opt == 'uc':
+        if self.mode_scheduling in run.apriori_lvls:  # uc, equal, soc, fcfs
+            if self.mode_scheduling == 'uc':
                 self.mode_dispatch = 'apriori_unlimited'
             elif isinstance(self.power_lim_static, (int, float)):
                 self.mode_dispatch = 'apriori_static'
@@ -638,7 +638,7 @@ class CommoditySystem(InvestBlock):
             self.power_lim_static = None
 
         # ToDo: move to checker.py
-        if self.invest and self.lvl_opt in run.apriori_lvls:
+        if self.invest and self.mode_scheduling in run.apriori_lvls:
             scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
                                   f' implemented for a priori integration levels: {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
@@ -1334,7 +1334,7 @@ class MobileCommodity:
                                                   inputs={self.bus: solph.Flow()},
                                                   outputs={
                                                       self.parent.bus: solph.Flow(
-                                                          nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_int in ['v2v', 'v2s'] else 0),
+                                                          nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_cap in ['v2v', 'v2s'] else 0),
                                                           variable_costs=scenario.cost_eps)
                                                   },
                                                   conversion_factors={self.parent.bus: self.eff_dis})

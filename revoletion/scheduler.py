@@ -34,14 +34,14 @@ class AprioriPowerScheduler:
 
         # get different lists of commodity systems according to the restrictions of the apriori integration level
         self.cs_unlim = [cs for cs in self.scenario.commodity_systems.values() if
-                         cs.lvl_opt == 'uc']
+                         cs.mode_scheduling == 'uc']
         self.cs_lm_static = [cs for cs in self.scenario.commodity_systems.values() if
-                             (cs.lvl_opt in self.scenario.run.apriori_lvls)
-                             and (cs.lvl_opt != 'uc')
+                             (cs.mode_scheduling in self.scenario.run.apriori_lvls)
+                             and (cs.mode_scheduling != 'uc')
                              and cs.power_lim_static]
         self.cs_lm_dynamic = [cs for cs in self.scenario.commodity_systems.values() if
-                              (cs.lvl_opt in self.scenario.run.apriori_lvls)
-                              and (cs.lvl_opt != 'uc')
+                              (cs.mode_scheduling in self.scenario.run.apriori_lvls)
+                              and (cs.mode_scheduling != 'uc')
                               and not cs.power_lim_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
@@ -94,7 +94,7 @@ class AprioriPowerScheduler:
                 self.pwr_csc_unlim_static.loc[dtindex, cs.system] += self.calc_pwr_commodities(dtindex=dtindex,
                                                                                            commodities=[self.apriori_commodities[key]
                                                                                                         for key in cs.commodities.keys()],
-                                                                                           lvl_opt=cs.lvl_opt,
+                                                                                           mode_scheduling=cs.mode_scheduling,
                                                                                            pwr_csc_avail_total=cs.power_lim_static)
 
             # only execute optimization of the local grid if there are rulebased components
@@ -109,11 +109,11 @@ class AprioriPowerScheduler:
                                     pwr=self.pwr_esm_fixed.loc[dtindex, system] + self.pwr_csc_unlim_static.loc[dtindex, system],
                                     dtindex=dtindex)
 
-                # Schedule at base charging of commodities (lvl_opt has to be the same for all CommoditySystems -> [0])
+                # Schedule at base charging of commodities (mode_scheduling has to be the same for all CommoditySystems -> [0])
                 self.calc_pwr_commodities(dtindex=dtindex,
                                         commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
                                                      for key in cs.commodities.keys()],
-                                        lvl_opt=self.cs_lm_dynamic[0].lvl_opt,
+                                        mode_scheduling=self.cs_lm_dynamic[0].mode_scheduling,
                                         pwr_csc_avail_total=None)
 
             # Execute external charging of commodities based on the defined criteria
@@ -121,7 +121,7 @@ class AprioriPowerScheduler:
                 commodity.ext_charging(dtindex)
                 commodity.calc_new_soc(dtindex, self.scenario)
 
-    def calc_pwr_commodities(self, dtindex, commodities, lvl_opt, pwr_csc_avail_total):
+    def calc_pwr_commodities(self, dtindex, commodities, mode_scheduling, pwr_csc_avail_total):
         # get all commodities which are ready for charging
         commodities = [commodity for commodity in commodities if commodity.block.data_ph.loc[dtindex, 'atbase']]
         pwr_csc_assigned = 0
@@ -129,9 +129,9 @@ class AprioriPowerScheduler:
         if not commodities:
             return pwr_csc_assigned  # no commodities to charge at base within the current timestep
 
-        if lvl_opt == 'equal':
+        if mode_scheduling == 'equal':
             # get maximum available power of dynamic load management if not limited by static load management
-            if not pwr_csc_avail_total and lvl_opt != 'uc':
+            if not pwr_csc_avail_total and mode_scheduling != 'uc':
                 # define bus priority and non-priority
                 bus_connected = commodities[0].system
                 bus_non_connected = get_bus(bus_connected, 'other')
@@ -168,10 +168,10 @@ class AprioriPowerScheduler:
                 'soc': lambda x: x.block.apriori_data.loc[dtindex, 'soc']
             }
             # get a list of all available commodities and sort them according to the chosen strategy
-            commodities = sorted(commodities, key=sort_key_funcs[lvl_opt])
+            commodities = sorted(commodities, key=sort_key_funcs[mode_scheduling])
             for commodity in commodities:
                 # get limitations of the system (available power on buses and converter or static load managment)
-                if lvl_opt == 'uc':
+                if mode_scheduling == 'uc':
                     # no limitation for charging power on CommoditySystem level for uncoordinated charging
                     pwr_csc_avail_left = np.inf
                 elif pwr_csc_avail_total:
@@ -191,7 +191,7 @@ class AprioriPowerScheduler:
                 pwr_chg = min(commodity.calc_pwr_chg(dtindex=dtindex, mode='int_ac'), pwr_csc_avail_left)
 
                 # update available power of the system for dynamic load management
-                if not pwr_csc_avail_total and lvl_opt != 'uc':
+                if not pwr_csc_avail_total and mode_scheduling != 'uc':
                     self.draw_power(bus_connected=bus_connected, pwr=pwr_chg, dtindex=dtindex)
 
                 # update power already assigned to commodities
