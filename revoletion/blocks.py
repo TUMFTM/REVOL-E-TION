@@ -735,6 +735,7 @@ class CommoditySystem(InvestBlock):
     def update_input_components(self, scenario, horizon):
         self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph].values
         self.outflow.inputs[self.bus].variable_costs = self.opex_spec_sys_dis[horizon.dti_ph].values
+        self.outflow.outputs[self.bus_bus_connected].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
 
         for commodity in self.commodities.values():
             commodity.update_input_components(scenario, horizon)
@@ -1042,6 +1043,9 @@ class GridConnection(InvestBlock):
             self.size_s2g = self.size_s2g_existing
 
     def update_input_components(self, scenario, horizon):
+
+        self.inflow.outputs[self.bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
+
         # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
@@ -1193,6 +1197,7 @@ class GridMarket:
     def update_input_components(self, scenario, horizon):
         self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph].values
         self.snk.inputs[self.parent.bus].variable_costs = self.opex_spec_s2g[horizon.dti_ph].values
+        self.snk.inputs[self.parent.bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
 
 
 class FixedDemand(Block):
@@ -1342,9 +1347,7 @@ class MobileCommodity:
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_spec)},
-                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps
-                                                                                 if self.eff_storage_roundtrip == 1
-                                                                                 else 0)},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=self.soc_init,
@@ -1526,6 +1529,8 @@ class MobileCommodity:
             self.size = self.size_existing
 
     def update_input_components(self, scenario, horizon):
+        self.outflow.outputs[self.parent.bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
+        self.ess.outputs[self.bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
 
         # set vehicle consumption data for sink
         self.snk.inputs[self.bus].fix = self.data_ph['consumption'].values
@@ -1805,8 +1810,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    inputs={self.bus_connected: solph.Flow(
                                                        variable_costs=self.opex_spec)},
                                                    outputs={self.bus_connected: solph.Flow(
-                                                       variable_costs=scenario.cost_eps
-                                                       if self.eff_roundtrip == 1 else 0)},
+                                                       variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=self.soc_init,
@@ -1884,7 +1888,7 @@ class StationaryEnergyStorage(InvestBlock):
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
     def update_input_components(self, scenario, horizon):
-
+        self.ess.outputs[self.bus_connected].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
         self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc[horizon.starttime], self.soc_max])
         self.ess.max_storage_level = pd.Series(data=self.soc_max, index=utils.extend_dti(horizon.dti_ph)).values
         self.ess.min_storage_level = pd.Series(data=self.soc_min, index=utils.extend_dti(horizon.dti_ph)).values
@@ -2054,6 +2058,8 @@ class SystemCore(InvestBlock):
     def update_input_components(self, scenario, horizon):
         self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
         self.dc_ac.inputs[self.dc_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
+        self.acdc.outputs[self.dc_bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
+        self.dcac.outputs[self.ac_bus].variable_costs = pd.Series(scenario.cost_eps, index=horizon.dti_ph).values
 
 class VehicleCommoditySystem(CommoditySystem):
     """
