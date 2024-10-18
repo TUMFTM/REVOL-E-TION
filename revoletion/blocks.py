@@ -1347,6 +1347,7 @@ class MobileCommodity:
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_spec)},
+                                                   # cost_eps are needed to prevent storage from being emptied in RH
                                                    outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
@@ -1809,6 +1810,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.ess = solph.components.GenericStorage(label='ess',
                                                    inputs={self.bus_connected: solph.Flow(
                                                        variable_costs=self.opex_spec)},
+                                                   # cost_eps are needed to prevent storage from being emptied in RH
                                                    outputs={self.bus_connected: solph.Flow(
                                                        variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.loss_rate,
