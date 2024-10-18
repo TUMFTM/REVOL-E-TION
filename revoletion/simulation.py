@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import graphviz
+import importlib.metadata
 import logging
 import logging.handlers
 import math
@@ -621,7 +622,8 @@ class SimulationRun:
         self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         self.runtime_end = self.runtime_len = None
 
-        self.solph_version = solph.__version__
+        self.version_solph = solph.__version__
+        self.version_revoletion = importlib.metadata.version('revoletion')
         self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
