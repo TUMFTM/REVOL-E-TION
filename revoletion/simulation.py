@@ -10,6 +10,7 @@ import plotly.subplots
 import pprint
 import psutil
 import pytz
+import shutil
 import subprocess
 import sys
 import time
@@ -619,6 +620,8 @@ class SimulationRun:
         self.runtime_start = time.perf_counter()
         self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         self.runtime_end = self.runtime_len = None
+
+        self.solph_version = solph.__version__
         self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
@@ -636,12 +639,16 @@ class SimulationRun:
         checker.check_settings_complete(self)
         self.define_paths()
         self.get_process_num()
+        self.copy_scenario_file()
 
         self.define_logger()
 
         # integration levels at which power consumption is determined a priori
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
+
+    def copy_scenario_file(self):
+        shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)
 
     def define_logger(self):
 
@@ -703,6 +710,8 @@ class SimulationRun:
                                             f'{self.runtimestamp}_{self.scenario_file_name}')
         os.mkdir(self.path_result_dir)
 
+        self.path_result_scenario_file = os.path.join(self.path_result_dir,
+                                                      f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
         self.path_result_summary_file = os.path.join(self.path_result_dir,
                                                      f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
         self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
