@@ -16,7 +16,7 @@ dependencies = [
     "gurobipy",
     "numpy",
     "numpy_financial",
-    "oemof.solph==0.5.2",
+    "oemof.solph==0.6.0a2",
     "pandas==2.2.0",
     "plotly",
     "psutil",

@@ -63,7 +63,7 @@ class AprioriPowerScheduler:
         # Initialize apriori_data dataframes for all apriori_commodities (including index, column names, initial SOC
         # value and additional information about the presence and absence of apriori_commodities)
         for commodity in self.apriori_commodities.values():
-            commodity.init_ph(self.horizon.dti_ph)
+            commodity.init_ph(self.horizon)
 
         # Initialize power drawn by unlimited (uc) or static load management CommoditySystems for current PH
         self.pwr_csc_unlim_static = self.pwr_esm_avail.reindex(self.horizon.dti_ph)
@@ -261,18 +261,18 @@ class AprioriCommodity:
         # initialize variable for charging during single parking process
         self.parking_charging = False
 
-    def init_ph(self, dti_ph, *_):
+    def init_ph(self, horizon, *_):
         # Initialize apriori_data DataFrame and set initial soc for horizon taking aging results into account
         self.block.apriori_data = pd.DataFrame(0,
-                                               index=dti_ph,
+                                               index=horizon.dti_ph,
                                                columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
                                                dtype=float)
 
         self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
 
-        self.block.apriori_data.loc[dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
-                                                                              self.block.soc_init_ph,
-                                                                              self.block.soc_max])
+        self.block.apriori_data.loc[horizon.dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
+                                                                                      self.block.soc[horizon.starttime],
+                                                                                      self.block.soc_max])
 
         # get soh for current prediction horizon
         self.soh = self.block.soh.dropna().loc[self.block.soh.dropna().index.max()]
