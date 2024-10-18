@@ -454,12 +454,12 @@ class RenewableInvestBlock(InvestBlock):
 
     def update_input_components(self, scenario, horizon):
 
-        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
-        self.src.outputs[self.bus].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.src.outputs[self.bus].fix = self.data_ph['power_spec'].values
+        self.src.outputs[self.bus].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p']
+            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p'].values
 
 
 class CommoditySystem(InvestBlock):
@@ -738,8 +738,8 @@ class CommoditySystem(InvestBlock):
 
 
     def update_input_components(self, scenario, horizon):
-        self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph]
-        self.outflow.inputs[self.bus].variable_costs = self.opex_spec_sys_dis[horizon.dti_ph]
+        self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph].values
+        self.outflow.inputs[self.bus].variable_costs = self.opex_spec_sys_dis[horizon.dti_ph].values
 
         for commodity in self.commodities.values():
             commodity.update_input_components(scenario, horizon)
@@ -800,11 +800,11 @@ class ControllableSource(InvestBlock):
         self.size = self.size_additional + self.size_existing
 
     def update_input_components(self, scenario, horizon):
-        self.src.outputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.src.outputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus_connected].fix = self.apriori_data['p']
+            self.src.outputs[self.bus_connected].fix = self.apriori_data['p'].values
 
 
 class GridConnection(InvestBlock):
@@ -1053,8 +1053,8 @@ class GridConnection(InvestBlock):
         # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0)
-            self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
+            self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0).values
+            self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0).values * -1
 
         for market in self.markets.values():
             market.update_input_components(scenario, horizon)
@@ -1207,8 +1207,8 @@ class GridMarket:
                     getattr(self.parent, size_var_name)))
 
     def update_input_components(self, scenario, horizon):
-        self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph]
-        self.snk.inputs[self.parent.bus].variable_costs = self.opex_spec_s2g[horizon.dti_ph]
+        self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph].values
+        self.snk.inputs[self.parent.bus].variable_costs = self.opex_spec_s2g[horizon.dti_ph].values
 
 
 class FixedDemand(Block):
@@ -1255,7 +1255,7 @@ class FixedDemand(Block):
 
     def update_input_components(self, *_):
         # new ph data slice is created during initialization of the PredictionHorizon
-        self.snk.inputs[self.bus_connected].fix = self.data_ph
+        self.snk.inputs[self.bus_connected].fix = self.data_ph.values
 
 
 class MobileCommodity:
@@ -1354,7 +1354,9 @@ class MobileCommodity:
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_spec)},
-                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps
+                                                                                 if self.eff_storage_roundtrip == 1
+                                                                                 else 0)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=self.soc_init_ph,
@@ -1543,37 +1545,40 @@ class MobileCommodity:
     def update_input_components(self, scenario, horizon):
 
         # set vehicle consumption data for sink
-        self.snk.inputs[self.bus].fix = self.data_ph['consumption']
+        self.snk.inputs[self.bus].fix = self.data_ph['consumption'].values
 
         # set initial storage levels for coming prediction horizon
         # limit and set initial storage level to min and max soc from aging
         self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
 
-        self.src_ext_ac.outputs[self.bus_ext_ac].variable_costs = self.parent.opex_spec_ext_ac[horizon.dti_ph]
-        self.src_ext_dc.outputs[self.bus_ext_dc].variable_costs = self.parent.opex_spec_ext_dc[horizon.dti_ph]
+        self.src_ext_ac.outputs[self.bus_ext_ac].variable_costs = self.parent.opex_spec_ext_ac[horizon.dti_ph].values
+        self.src_ext_dc.outputs[self.bus_ext_dc].variable_costs = self.parent.opex_spec_ext_dc[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.inputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / self.pwr_chg
-            self.outflow.outputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
+            self.inflow.inputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0).values / self.pwr_chg
+            self.outflow.outputs[self.parent.bus].fix = (self.apriori_data['p_int_ac'].clip(upper=0).values * (-1) /
+                                                         self.pwr_dis)
 
             if self.parent.pwr_ext_ac > 0:
-                self.src_ext_ac.outputs[self.bus_ext_ac].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+                self.src_ext_ac.outputs[self.bus_ext_ac].fix = (self.apriori_data['p_ext_ac'].values /
+                                                                self.parent.pwr_ext_ac)
             if self.parent.pwr_ext_dc > 0:
-                self.src_ext_dc.outputs[self.bus_ext_dc].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+                self.src_ext_dc.outputs[self.bus_ext_dc].fix = (self.apriori_data['p_ext_dc'].values /
+                                                                self.parent.pwr_ext_dc)
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
-            self.outflow.outputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
+            self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int).values
+            self.outflow.outputs[self.parent.bus].max = self.data_ph['atbase'].astype(int).values
 
             # define consumption data for sink (only enabled when detached from base)
-            self.snk.inputs[self.bus].fix = self.data_ph['consumption']
+            self.snk.inputs[self.bus].fix = self.data_ph['consumption'].values
 
             # enable/disable ac and dc charging station dependent on input data
-            self.src_ext_ac.outputs[self.bus_ext_ac].max = self.data_ph['atac'].astype(int)
-            self.src_ext_dc.outputs[self.bus_ext_dc].max = self.data_ph['atdc'].astype(int)
+            self.src_ext_ac.outputs[self.bus_ext_ac].max = self.data_ph['atac'].astype(int).values
+            self.src_ext_dc.outputs[self.bus_ext_dc].max = self.data_ph['atdc'].astype(int).values
 
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index).values
 
         # Adjust min storage levels based on state of health for the upcoming prediction horizon
         # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
@@ -1583,14 +1588,14 @@ class MobileCommodity:
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
                                                      self.data_ph['dsoc'] + self.dsoc_buffer_aging)
             #self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
-            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max).values
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
             self.ess.min_storage_level = self.data_ph['dsoc'].where(
                 self.data_ph['dsoc'] == 0,
-                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max).values
         else:  # opt_global or apriori cases
-            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index).values
 
 
 class PVSource(RenewableInvestBlock):
@@ -1800,7 +1805,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                    outputs={self.bus_connected: solph.Flow(
                                                        nominal_value=(self.size * self.crate_dis
                                                                       if not self.opt else None),
-                                                       variable_costs=scenario.cost_eps)},
+                                                       variable_costs=scenario.cost_eps
+                                                       if self.eff_roundtrip == 1 else 0)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=self.soc_init_ph,
@@ -1897,15 +1903,17 @@ class StationaryEnergyStorage(InvestBlock):
                                         freq=scenario.timestep,
                                         inclusive='both')
 
-        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended)
-        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended)
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max]).values
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended).values
+        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended).values
 
-        self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
-            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1) / (self.size * self.crate_chg)
-            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0) / (self.size * self.crate_dis)
+            self.ess.inputs[self.bus_connected].fix = (self.apriori_data['p'].clip(upper=0).values * (-1) /
+                                                       (self.size * self.crate_chg))
+            self.ess.outputs[self.bus_connected].fix = (self.apriori_data['p'].clip(lower=0).values /
+                                                        (self.size * self.crate_dis))
 
 
 class SystemCore(InvestBlock):
@@ -2067,8 +2075,8 @@ class SystemCore(InvestBlock):
             self.size_dcac_existing = 0
 
     def update_input_components(self, scenario, horizon):
-        self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph]
-        self.dc_ac.inputs[self.dc_bus].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
+        self.dc_ac.inputs[self.dc_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
 
 class VehicleCommoditySystem(CommoditySystem):
     """
