@@ -444,12 +444,12 @@ class RenewableInvestBlock(InvestBlock):
 
     def update_input_components(self, scenario, horizon):
 
-        self.src.outputs[self.bus].fix = self.data_ph['power_spec']
-        self.src.outputs[self.bus].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.src.outputs[self.bus].fix = self.data_ph['power_spec'].values
+        self.src.outputs[self.bus].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p']
+            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p'].values
 
 
 class CommoditySystem(InvestBlock):
@@ -733,8 +733,8 @@ class CommoditySystem(InvestBlock):
             self.size_pc = self.size_existing_pc
 
     def update_input_components(self, scenario, horizon):
-        self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph]
-        self.outflow.inputs[self.bus].variable_costs = self.opex_spec_sys_dis[horizon.dti_ph]
+        self.inflow.inputs[self.bus_connected].variable_costs = self.opex_spec_sys_chg[horizon.dti_ph].values
+        self.outflow.inputs[self.bus].variable_costs = self.opex_spec_sys_dis[horizon.dti_ph].values
 
         for commodity in self.commodities.values():
             commodity.update_input_components(scenario, horizon)
@@ -795,11 +795,11 @@ class ControllableSource(InvestBlock):
         self.size = self.size_additional + self.size_existing
 
     def update_input_components(self, scenario, horizon):
-        self.src.outputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.src.outputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus_connected].fix = self.apriori_data['p']
+            self.src.outputs[self.bus_connected].fix = self.apriori_data['p'].values
 
 
 class GridConnection(InvestBlock):
@@ -1045,8 +1045,8 @@ class GridConnection(InvestBlock):
         # ToDo: modify and adjust to new structure
         if self.apriori_data is not None:
             # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0)
-            self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0) * -1
+            self.src.outputs[self.bus].fix = self.apriori_data['p'].clip(lower=0).values
+            self.snk.inputs[self.bus].fix = self.apriori_data['p'].clip(upper=0).values * -1
 
         for market in self.markets.values():
             market.update_input_components(scenario, horizon)
@@ -1191,8 +1191,8 @@ class GridMarket:
                     getattr(self.parent, f'size_{dir}_existing')))
 
     def update_input_components(self, scenario, horizon):
-        self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph]
-        self.snk.inputs[self.parent.bus].variable_costs = self.opex_spec_s2g[horizon.dti_ph]
+        self.src.outputs[self.parent.bus].variable_costs = self.opex_spec_g2s[horizon.dti_ph].values
+        self.snk.inputs[self.parent.bus].variable_costs = self.opex_spec_s2g[horizon.dti_ph].values
 
 
 class FixedDemand(Block):
@@ -1239,7 +1239,7 @@ class FixedDemand(Block):
 
     def update_input_components(self, *_):
         # new ph data slice is created during initialization of the PredictionHorizon
-        self.snk.inputs[self.bus_connected].fix = self.data_ph
+        self.snk.inputs[self.bus_connected].fix = self.data_ph.values
 
 
 class MobileCommodity:
@@ -1341,7 +1341,9 @@ class MobileCommodity:
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_spec)},
-                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps
+                                                                                 if self.eff_storage_roundtrip == 1
+                                                                                 else 0)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=self.soc_init_ph,
@@ -1534,37 +1536,40 @@ class MobileCommodity:
     def update_input_components(self, scenario, horizon):
 
         # set vehicle consumption data for sink
-        self.snk.inputs[self.bus].fix = self.data_ph['consumption']
+        self.snk.inputs[self.bus].fix = self.data_ph['consumption'].values
 
         # set initial storage levels for coming prediction horizon
         # limit and set initial storage level to min and max soc from aging
         self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
 
-        self.src_ext_ac.outputs[self.bus_ext_ac].variable_costs = self.parent.opex_spec_ext_ac[horizon.dti_ph]
-        self.src_ext_dc.outputs[self.bus_ext_dc].variable_costs = self.parent.opex_spec_ext_dc[horizon.dti_ph]
+        self.src_ext_ac.outputs[self.bus_ext_ac].variable_costs = self.parent.opex_spec_ext_ac[horizon.dti_ph].values
+        self.src_ext_dc.outputs[self.bus_ext_dc].variable_costs = self.parent.opex_spec_ext_dc[horizon.dti_ph].values
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
-            self.inflow.inputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0) / self.pwr_chg
-            self.outflow.outputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(upper=0) * (-1) / self.pwr_dis
+            self.inflow.inputs[self.parent.bus].fix = self.apriori_data['p_int_ac'].clip(lower=0).values / self.pwr_chg
+            self.outflow.outputs[self.parent.bus].fix = (self.apriori_data['p_int_ac'].clip(upper=0).values * (-1) /
+                                                         self.pwr_dis)
 
             if self.parent.pwr_ext_ac > 0:
-                self.src_ext_ac.outputs[self.bus_ext_ac].fix = self.apriori_data['p_ext_ac'] / self.parent.pwr_ext_ac
+                self.src_ext_ac.outputs[self.bus_ext_ac].fix = (self.apriori_data['p_ext_ac'].values /
+                                                                self.parent.pwr_ext_ac)
             if self.parent.pwr_ext_dc > 0:
-                self.src_ext_dc.outputs[self.bus_ext_dc].fix = self.apriori_data['p_ext_dc'] / self.parent.pwr_ext_dc
+                self.src_ext_dc.outputs[self.bus_ext_dc].fix = (self.apriori_data['p_ext_dc'].values /
+                                                                self.parent.pwr_ext_dc)
         else:
             # enable/disable Converters to mcx_bus depending on whether the commodity is at base
-            self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
-            self.outflow.outputs[self.parent.bus].max = self.data_ph['atbase'].astype(int)
+            self.inflow.inputs[self.parent.bus].max = self.data_ph['atbase'].astype(int).values
+            self.outflow.outputs[self.parent.bus].max = self.data_ph['atbase'].astype(int).values
 
             # define consumption data for sink (only enabled when detached from base)
-            self.snk.inputs[self.bus].fix = self.data_ph['consumption']
+            self.snk.inputs[self.bus].fix = self.data_ph['consumption'].values
 
             # enable/disable ac and dc charging station dependent on input data
-            self.src_ext_ac.outputs[self.bus_ext_ac].max = self.data_ph['atac'].astype(int)
-            self.src_ext_dc.outputs[self.bus_ext_dc].max = self.data_ph['atdc'].astype(int)
+            self.src_ext_ac.outputs[self.bus_ext_ac].max = self.data_ph['atac'].astype(int).values
+            self.src_ext_dc.outputs[self.bus_ext_dc].max = self.data_ph['atdc'].astype(int).values
 
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index)
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=self.data_ph.index).values
 
         # Adjust min storage levels based on state of health for the upcoming prediction horizon
         # nominal_storage_capacity is retained for accurate state of charge tracking and cycle depth
@@ -1574,21 +1579,21 @@ class MobileCommodity:
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
                                                      self.data_ph['dsoc'] + self.dsoc_buffer_aging)
             #self.ess.min_storage_level = (self.soc_min + dsoc_dep_ph).clip(lower=self.soc_min, upper=self.soc_max)
-            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
+            self.ess.min_storage_level = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max).values
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
             self.ess.min_storage_level = self.data_ph['dsoc'].where(
                 self.data_ph['dsoc'] == 0,
-                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
+                self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max).values
         else:  # opt_global or apriori cases
-            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index)
+            self.ess.min_storage_level = pd.Series(data=self.soc_min, index=self.data_ph.index).values
 
 
 class PVSource(RenewableInvestBlock):
 
     def __init__(self, name, scenario, run):
 
-        self.api_startyear = self.api_endyear = self.api_shift = self.api_length = self.meta = None
+        self.api_startyear = self.api_endyear = self.api_shift = self.api_length = self.api_params = self.meta = None
         self.bus_connected = scenario.blocks['core'].dc_bus
 
         super().__init__(name, scenario, run)
@@ -1628,99 +1633,122 @@ class PVSource(RenewableInvestBlock):
         self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
     def get_timeseries_data(self, scenario, run):
+        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API input selected
+            if self.filename:
+                try:
+                    self.api_params = pd.read_csv(os.path.join(run.path_input_data,
+                                                           self.__class__.__name__,
+                                                           utils.set_extension(self.filename)),
+                                              index_col=[0],
+                                              na_filter=False)
+                    self.api_params = self.api_params.map(utils.infer_dtype)['value'].to_dict() if self.api_params.index.name == 'parameter' and all(self.api_params.columns == 'value') else {}
+                except FileNotFoundError:
+                    self.api_params = {}
+            else:
+                self.api_params = {}
 
-        if self.data_source == 'pvgis api':  # PVGIS API input selected
-            self.api_startyear = scenario.starttime.tz_convert('utc').year
-            self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
-            self.api_length = self.api_endyear - self.api_startyear
-            self.api_shift = pd.to_timedelta('0 days')
+            if self.data_source == 'pvgis api':  # PVGIS API input selected
+                self.api_startyear = scenario.starttime.tz_convert('utc').year
+                self.api_endyear = scenario.sim_extd_endtime.tz_convert('utc').year
+                self.api_length = self.api_endyear - self.api_startyear
+                self.api_shift = pd.to_timedelta('0 days')
 
-            if self.api_length > 15:
-                raise ValueError('PVGIS API only allows a maximum of 15 years of data')
-            elif self.api_endyear > 2020:  # PVGIS-SARAH2 only has data up to 2020
-                self.api_shift = (pd.to_datetime('2020-01-01 00:00:00+00:00') -
-                                  pd.to_datetime(f'{self.api_endyear}-01-01 00:00:00+00:00'))
-                self.api_endyear = 2020
-                self.api_startyear = 2020 - self.api_length
-            elif self.api_startyear < 2005:  # PVGIS-SARAH2 only has data from 2005
-                self.api_shift = (pd.to_datetime('2005-01-01 00:00:00+00:00') -
-                                  pd.to_datetime(f'{self.api_startyear}-01-01 00:00:00+00:00'))
-                self.api_startyear = 2005
-                self.api_endyear = 2005 + self.api_length
-            # Todo leap years can result in data shifting not landing at the same point in time
+                if self.api_length > 15:
+                    raise ValueError('PVGIS API only allows a maximum of 15 years of data')
+                elif self.api_endyear > 2023:  # PVGIS-SARAH3 only has data up to 2023
+                    self.api_shift = (pd.to_datetime('2023-01-01 00:00:00+00:00') -
+                                      pd.to_datetime(f'{self.api_endyear}-01-01 00:00:00+00:00'))
+                    self.api_endyear = 2023
+                    self.api_startyear = 2023 - self.api_length
+                elif self.api_startyear < 2005:  # PVGIS-SARAH3 only has data from 2005
+                    self.api_shift = (pd.to_datetime('2005-01-01 00:00:00+00:00') -
+                                      pd.to_datetime(f'{self.api_startyear}-01-01 00:00:00+00:00'))
+                    self.api_startyear = 2005
+                    self.api_endyear = 2005 + self.api_length
+                # Todo leap years can result in data shifting not landing at the same point in time
 
-            self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(scenario.latitude,
-                                                                     scenario.longitude,
-                                                                     start=self.api_startyear,
-                                                                     end=self.api_endyear,
-                                                                     url='https://re.jrc.ec.europa.eu/api/v5_3/',
-                                                                     raddatabase='PVGIS-SARAH3',
-                                                                     components=False,
-                                                                     outputformat='json',
-                                                                     pvcalculation=True,
-                                                                     peakpower=1,
-                                                                     pvtechchoice='crystSi',
-                                                                     mountingplace='free',
-                                                                     loss=0,
-                                                                     optimalangles=True,
-                                                                     map_variables=True)
+                # revert lower() in reading data as pvgis is case-sensitive
+                # ToDo: move to checker.py
+                self.api_params['raddatabase'] = self.api_params.get('raddatabase', 'PVGIS-SARAH3').upper()
+                self.api_params['pvtechchoice'] = {'crystsi': 'crystSi',
+                                               'cis': 'CIS',
+                                               'cdte': 'CdTe',
+                                               'unknown': 'Unknown'}[self.api_params.get('pvtechchoice', 'crystsi')]
 
-            # PVGIS gives time slots as XX:06h - round to full hour
-            self.data.index = self.data.index.round('h')
-            self.data.index = self.data.index - self.api_shift
+                self.data, self.meta, _ = pvlib.iotools.get_pvgis_hourly(
+                    scenario.latitude,
+                    scenario.longitude,
+                    start=self.api_startyear,
+                    end=self.api_endyear,
+                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                    components=False,
+                    outputformat='json',
+                    pvcalculation=True,
+                    peakpower=1,
+                    map_variables=True,
+                    loss=0,
+                    raddatabase=self.api_params['raddatabase'],  # conversion above ensures that the parameter exists
+                    pvtechchoice=self.api_params['pvtechchoice'],  # conversion above ensures that the parameter exists
+                    mountingplace=self.api_params.get('mountingplace', 'free'),
+                    optimalangles=self.api_params.get('optimalangles', True),
+                    optimal_surface_tilt=self.api_params.get('optimal_surface_tilt', False),
+                    surface_azimuth=self.api_params.get('surface_azimuth', 180),
+                    surface_tilt=self.api_params.get('surface_tilt', 0),
+                    trackingtype=self.api_params.get('trackingtype', 0),
+                    usehorizon=self.api_params.get('usehorizon', True),
+                    userhorizon=self.api_params.get('userhorizon', None),
+                )
+                # PVGIS gives time slots not as full hours - round to full hour
+                self.data.index = self.data.index.round('h')
+                self.data.index = self.data.index - self.api_shift
 
-        elif self.data_source.lower() == 'solcast api':  # solcast API input selected
-            # read api key
-            with open(os.path.join(run.path_input_data, self.__class__.__name__, 'api_solcast.conf'), 'r') as file:
-                api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
+            elif self.data_source == 'solcast api':  # solcast API input selected
+                # read api key
+                with open(os.path.join(run.path_input_data, self.__class__.__name__, 'solcast_api_key.conf'), 'r') as file:
+                    api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
 
-            # set api key as bearer token
-            headers = {'Authorization': f'Bearer {api_key}'}
+                # set api key as bearer token
+                headers = {'Authorization': f'Bearer {api_key}'}
 
-            params = {
-                'latitude': scenario.latitude,
-                'longitude': scenario.longitude,
-                # 'azimuth': 44,
-                # 'tilt': 90,
-                # 'array_type': 'fixed',
-                'period': 'PT5M',
-                'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
-                'start': scenario.starttime,
-                'end': scenario.sim_extd_endtime,
-                'format': 'csv',
-                # 'include_metadata': True,
-                'time_zone': 'utc',
-                # 'terrain_shading': True,
-            }
+                params = {**{'latitude': scenario.latitude,  # unmetered location for testing 41.89021,
+                             'longitude': scenario.longitude,  # unmetered location for testing 12.492231,
+                             'period': 'PT5M',
+                             'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
+                             'start': scenario.starttime,
+                             'end': scenario.sim_extd_endtime,
+                             'format': 'csv',
+                             'time_zone': 'utc',
+                             },
+                          **{parameter: value for parameter, value in self.api_params.items() if value is not None}}
 
-            url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
+                url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
 
-            # get data from Solcast API
-            response = requests.get(url, headers=headers, params=params)
-            # convert to csv
-            self.data = pd.read_csv(io.StringIO(response.text))
-            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-            self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
-            self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-            self.data = self.data.tz_convert('Europe/Berlin')
-            self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
-            # rename columns according to further processing steps
-            self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
-            # calculate specific pv power
-            self.calc_power_solcast()
+                # get data from Solcast API
+                response = requests.get(url, headers=headers, params=params)
+                # convert to csv
+                self.data = pd.read_csv(io.StringIO(response.text))
+                # calculate period_start as only period_end is given, set as index and remove unnecessary columns
+                self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
+                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                self.data = self.data.tz_convert('Europe/Berlin')
+                self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+                # rename columns according to further processing steps
+                self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+                # calculate specific pv power
+                self.calc_power_solcast()
 
         else:  # input from file instead of API
             self.path_input_file = os.path.join(run.path_input_data,
                                                 self.__class__.__name__,
                                                 utils.set_extension(self.filename))
 
-            if self.data_source.lower() == 'pvgis file':  # data input from fixed PVGIS csv file
+            if self.data_source == 'pvgis file':  # data input from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
                 scenario.latitude = self.meta['latitude']
                 scenario.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('h')
-            elif self.data_source.lower() == 'solcast file':  # data input from fixed Solcast csv file
+            elif self.data_source == 'solcast file':  # data input from fixed Solcast csv file
                 # no lat/lon contained in solcast files
                 self.data = pd.read_csv(self.path_input_file)
                 self.data.rename(columns={'PeriodStart': 'period_start',
@@ -1787,7 +1815,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                    inputs={self.bus_connected: solph.Flow(
                                                        variable_costs=self.opex_spec)},
                                                    outputs={self.bus_connected: solph.Flow(
-                                                       variable_costs=scenario.cost_eps)},
+                                                       variable_costs=scenario.cost_eps
+                                                       if self.eff_roundtrip == 1 else 0)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=self.soc_init_ph,
@@ -1882,15 +1911,17 @@ class StationaryEnergyStorage(InvestBlock):
                                         freq=scenario.timestep,
                                         inclusive='both')
 
-        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max])
-        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended)
-        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended)
+        self.ess.initial_storage_level = statistics.median([self.soc_min, self.soc_init_ph, self.soc_max]).values
+        self.ess.max_storage_level = pd.Series(data=self.soc_max, index=dti_ph_extended).values
+        self.ess.min_storage_level = pd.Series(data=self.soc_min, index=dti_ph_extended).values
 
-        self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.ess.inputs[self.bus_connected].variable_costs = self.opex_spec[horizon.dti_ph].values
 
         if self.apriori_data is not None:
-            self.ess.inputs[self.bus_connected].fix = self.apriori_data['p'].clip(upper=0) * (-1) / (self.size * self.crate_chg)
-            self.ess.outputs[self.bus_connected].fix = self.apriori_data['p'].clip(lower=0) / (self.size * self.crate_dis)
+            self.ess.inputs[self.bus_connected].fix = (self.apriori_data['p'].clip(upper=0).values * (-1) /
+                                                       (self.size * self.crate_chg))
+            self.ess.outputs[self.bus_connected].fix = (self.apriori_data['p'].clip(lower=0).values /
+                                                        (self.size * self.crate_dis))
 
 
 class SystemCore(InvestBlock):
@@ -2047,8 +2078,8 @@ class SystemCore(InvestBlock):
             self.size_dcac = self.size_dcac_existing
 
     def update_input_components(self, scenario, horizon):
-        self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph]
-        self.dc_ac.inputs[self.dc_bus].variable_costs = self.opex_spec[horizon.dti_ph]
+        self.ac_dc.inputs[self.ac_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
+        self.dc_ac.inputs[self.dc_bus].variable_costs = self.opex_spec[horizon.dti_ph].values
 
 class VehicleCommoditySystem(CommoditySystem):
     """

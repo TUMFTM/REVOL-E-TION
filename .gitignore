@@ -31,9 +31,9 @@ input/*
 !input/GridConnection/grid_sell_example.csv
 
 !input/PVSource/pv_example.csv
-!input/PVSource/api_solcast_template.conf
-
-!input/PVSource/wind_example.csv
+!input/PVSource/pvgis_api_params_example.csv
+!input/PVSource/solcast_api_key_template.conf
+!input/PVSource/solcast_api_params_example.csv
 
 !input/scenarios/example.csv
 

@@ -8,7 +8,7 @@ save_results,True
 save_des_results,True
 print_results,False
 save_plots,True
-show_plots,False
+show_plots,True
 save_system_graphs,True
 dump_model,False
 debugmode,False

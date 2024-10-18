@@ -41,7 +41,7 @@ wind,eff,0.95,0.95,0.95,0.95
 pv,size_existing,0,105000,105000,0
 pv,invest,False,False,False,True
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
-pv,filename,pv_example,pv_example.csv,pv_example.csv,pv_example.csv
+pv,filename,None,None,None,None
 pv,capex_spec,0.250,0.250,0.250,0.250
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
 pv,opex_spec,0,0,0,0

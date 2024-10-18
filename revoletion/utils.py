@@ -29,6 +29,8 @@ def infer_dtype(value):
         evaluated = ast.literal_eval(value)
         if isinstance(evaluated, dict):
             return evaluated
+        elif isinstance(evaluated, list):
+            return evaluated
     except (ValueError, SyntaxError):
         pass
 

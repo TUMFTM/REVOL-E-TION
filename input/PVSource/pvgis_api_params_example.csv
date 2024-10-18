@@ -1,0 +1,11 @@
+parameter,value
+raddatabase,PVGIS-SARAH3
+pvtechchoice,crystSi
+mountingplace,free
+optimalangles,True
+optimal_surface_tilt,True
+surface_azimuth,0
+surface_tilt,0
+trackingtype,0
+usehorizon,False
+userhorizon,"[80,80,80,80]"
