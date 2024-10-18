@@ -73,6 +73,11 @@ def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     return lr
 
 
+def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+    return dti_ext
+
+
 def import_module_from_path(module_name, file_path):
     """
     Import a Python module from a specific file path.
