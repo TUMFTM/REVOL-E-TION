@@ -51,6 +51,9 @@ class PredictionHorizon:
         self.ph_endtime = self.starttime + scenario.len_ph
         self.timestep = scenario.timestep
 
+        self.components = []  # empty list to store all oemof-solph components
+        self.constraints = constraints.CustomConstraints(scenario=self)
+
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph_endtime > scenario.sim_endtime and scenario.truncate_ph:
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
@@ -98,7 +101,7 @@ class PredictionHorizon:
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
 
-        for component in scenario.components:
+        for component in self.components:
             self.es.add(component)  # add components to this horizon's energy system
 
         if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
@@ -117,7 +120,7 @@ class PredictionHorizon:
             raise IndexError(msg)
 
         # Apply custom constraints
-        scenario.constraints.apply_constraints(model=self.model)
+        self.constraints.apply_constraints(model=self.model)
 
         if run.dump_model and scenario.strategy != 'rh':
             self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
@@ -310,9 +313,6 @@ class Scenario:
         self.exception = None  # placeholder for possible infeasibility
 
         # Energy System Blocks --------------------------------
-
-        self.components = []  # placeholder
-        self.constraints = constraints.CustomConstraints(scenario=self)
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects(self.blocks, run)
