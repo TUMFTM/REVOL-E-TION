@@ -93,8 +93,8 @@ bev,filename,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_defa
 bev,num,5,5,5,5
 bev,size,30000.0,30000.0,30000.0,30000.0
 bev,size_existing,0,0,0,0
-bev,lvl_int,v2s,v2s,v2s,v2s
-bev,lvl_opt,oc,oc,oc,oc
+bev,lvl_cap,v2s,v2s,v2s,v2s
+bev,mode_scheduling,oc,oc,oc,oc
 bev,forecast_hours,None,None,None,None
 bev,power_lim_static,None,None,None,None
 bev,system,ac,ac,ac,ac
@@ -132,8 +132,8 @@ bev,sdr,0.02,0.02,0.02,0.02
 brs,data_source,des,des,des,des
 brs,filename,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv
 brs,num,10,10,10,10
-brs,lvl_int,ud,ud,ud,ud
-brs,lvl_opt,fcfs,fcfs,fcfs,fcfs
+brs,lvl_cap,ud,ud,ud,ud
+brs,mode_scheduling,fcfs,fcfs,fcfs,fcfs
 brs,forecast_hours,None,None,None,None
 brs,power_lim_static,11000,11000,11000,11000
 brs,system,ac,ac,ac,ac
