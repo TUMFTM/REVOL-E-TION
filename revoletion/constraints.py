@@ -113,24 +113,25 @@ class CustomConstraints:
                     po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
         # Get discharging flows of all StationaryEnergyStorages which only allow storing renewable energy
-        # (DC connection is hardcoded -> has to be modified if StationaryEnergySystem.bus_connected is changed)
-        storage_flows = [(block.ess, block.bus_connected) for block in self.scenario.blocks.values() if
-                         isinstance(block, blocks.StationaryEnergyStorage) and block.res_only]
+        storage_flows_ac = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
+                            isinstance(block, blocks.StationaryEnergyStorage) and block.res_only and block.system == 'ac']
+        storage_flows_dc = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
+                            isinstance(block, blocks.StationaryEnergyStorage) and block.res_only and block.system == 'dc']
 
         # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
         flows_res_from_bus = {
             'ac': [(market.parent.bus, market.snk) for block in self.scenario.blocks.values() if
                    isinstance(block, blocks.GridConnection) for market in block.markets.values() if
-                   market.res_only],
-            'dc': [(fo, fi) for fi, fo in storage_flows]  # invert discharging flows to charging flows
+                   market.res_only] + [(fo, fi) for fi, fo in storage_flows_ac],
+            'dc': [(fo, fi) for fi, fo in storage_flows_dc]  # invert discharging flows to charging flows
         }
 
         # Get all renewable power flows
         flows_res_to_bus = {
             'ac': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableInvestBlock) and 'ac' in block.bus_connected.label],
+                   isinstance(block, blocks.RenewableInvestBlock) and 'ac' in block.bus_connected.label] + storage_flows_ac,
             'dc': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableInvestBlock) and 'dc' in block.bus_connected.label] + storage_flows
+                   isinstance(block, blocks.RenewableInvestBlock) and 'dc' in block.bus_connected.label] + storage_flows_dc
         }
 
         def _sum_res(m, block, name, sum_flow, split_flows):

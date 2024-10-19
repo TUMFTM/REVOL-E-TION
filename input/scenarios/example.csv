@@ -42,6 +42,7 @@ pv,size_existing,0,105000,105000,0
 pv,invest,False,False,False,True
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
 pv,filename,None,None,None,None
+pv,system,dc,dc,dc,dc
 pv,capex_spec,0.250,0.250,0.250,0.250
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
 pv,opex_spec,0,0,0,0
@@ -73,6 +74,7 @@ grid,opex_spec_g2s,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.cs
 grid,opex_spec_s2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
 ess,size_existing,0,115000,115000,0
 ess,invest,False,False,False,True
+ess,system,dc,dc,dc,dc
 ess,res_only,False,False,False,False
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
@@ -82,6 +84,8 @@ ess,mntex_spec,0.00625,0.00625,0.00625,0.00625
 ess,opex_spec,0,0,0,0
 ess,ls,10,10,10,10
 ess,eff_roundtrip,0.9,0.9,0.9,0.9
+ess,eff_acdc,0.95,0.95,0.95,0.95
+ess,eff_dcac,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8
 ess,crate_dis,0.8,0.8,0.8,0.8
 ess,soc_init,0.5,0.5,0.5,0.5

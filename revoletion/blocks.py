@@ -1714,7 +1714,7 @@ class PVSource(RenewableInvestBlock):
         self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
 
     def update_input_components(self, scenario, horizon):
-        self.bus_connected = scenario.blocks['core'].dc_bus
+        self.bus_connected = scenario.blocks['core'].dc_bus if self.system == 'dc' else scenario.blocks['core'].ac_bus
         super().update_input_components(scenario, horizon)
 
 
@@ -1724,10 +1724,13 @@ class StationaryEnergyStorage(InvestBlock):
 
         super().__init__(name, scenario, run)
 
-        self.bus_connected = self.ess = None  # initialization of oemof-solph components
+        # initialization of oemof-solph components
+        self.bus = self.bus_connected = self.inflow = self.outflow = self.ess = None
 
         self.apriori_data = None
 
+        self.eff_chg = self.eff_acdc if self.system == 'ac' else 1
+        self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
@@ -1775,9 +1778,9 @@ class StationaryEnergyStorage(InvestBlock):
 
     def get_ch_results(self, horizon, *_):
 
-        self.flow_out_ch = horizon.results[(self.ess, self.bus_connected)]['sequences']['flow'][
+        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][
             horizon.dti_ch]
-        self.flow_in_ch = horizon.results[(self.bus_connected, self.ess)]['sequences']['flow'][
+        self.flow_in_ch = horizon.results[(self.bus_connected, self.inflow)]['sequences']['flow'][
             horizon.dti_ch]
 
         self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
@@ -1792,8 +1795,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.size = self.size_existing + self.size_additional
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.size * self.crate_chg / 1e3:.1f} kW charge /'
-                f' {self.size * self.crate_dis / 1e3:.1f} kW discharge)')
+        return (f'{self.name} power (max. {self.size * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
+                f' {self.size * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
 
     def get_timeseries_results(self, scenario):
         """
@@ -1808,25 +1811,43 @@ class StationaryEnergyStorage(InvestBlock):
         """
         x denotes the flow measurement point in results
 
-        dc_bus
+        xc_bus
           |
           |<-x->ess
           |
         """
 
-        self.bus_connected = scenario.blocks['core'].dc_bus
+        self.bus_connected = scenario.blocks['core'].dc_bus if self.system == 'dc' else scenario.blocks['core'].ac_bus
+
+        self.bus = solph.Bus(label=f'{self.name}_bus')
+
+        self.inflow = solph.components.Converter(label=f'xc_{self.name}',
+                                                 inputs={self.bus_connected: solph.Flow(
+                                                     nominal_value=self.size_existing * self.crate_chg,
+                                                     fix=(self.apriori_data['p'].clip(upper=0).values * (-1) /
+                                                       (self.size * self.crate_chg)) if self.apriori_data is not None else None,
+                                                     variable_costs=self.opex_spec[horizon.dti_ph])},
+                                                 outputs={self.bus: solph.Flow()},
+                                                 conversion_factors={self.bus: self.eff_chg})
+
+        self.outflow = solph.components.Converter(label=f'{self.name}_xc',
+                                                  inputs={self.bus: solph.Flow()},
+                                                  # cost_eps are needed to prevent storage from being emptied in RH
+                                                  outputs={self.bus_connected: solph.Flow(
+                                                      nominal_value=(self.size_existing * self.crate_dis * self.eff_dis),
+                                                       variable_costs=scenario.cost_eps)},
+                                                  conversion_factors={self.bus_connected: self.eff_dis})
 
         self.ess = solph.components.GenericStorage(label='ess',
-                                                   inputs={self.bus_connected: solph.Flow(
-                                                       variable_costs=self.opex_spec[horizon.dti_ph])},
-                                                   # cost_eps are needed to prevent storage from being emptied in RH
-                                                   outputs={self.bus_connected: solph.Flow(
-                                                       variable_costs=scenario.cost_eps)},
+                                                   inputs={self.bus: solph.Flow()},
+                                                   outputs={self.bus: solph.Flow(variable_costs=scenario.cost_eps)},
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=statistics.median(
                                                        [self.soc_min, self.soc[horizon.starttime], self.soc_max]),
                                                    invest_relation_input_capacity=(self.crate_chg),
+                                                   # crate measured at outflow, neglecting outflow_conversion_factor
+                                                   # p_max at outputs is size * crate_dis
                                                    invest_relation_output_capacity=(self.crate_dis),
                                                    inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
@@ -1839,14 +1860,10 @@ class StationaryEnergyStorage(InvestBlock):
                                                                                index=utils.extend_dti(horizon.dti_ph))
                                                    )
 
+        horizon.components.append(self.bus)
+        horizon.components.append(self.inflow)
+        horizon.components.append(self.outflow)
         horizon.components.append(self.ess)
-
-        # ToDo: add to converter, which needs to be added, when the system to which the storage is connected is introduced as parameter
-        if self.apriori_data is not None:
-            self.ess.inputs[self.bus_connected].fix = (self.apriori_data['p'].clip(upper=0).values * (-1) /
-                                                       (self.size * self.crate_chg))
-            self.ess.outputs[self.bus_connected].fix = (self.apriori_data['p'].clip(lower=0).values /
-                                                        (self.size * self.crate_dis))
 
 
 class SystemCore(InvestBlock):
