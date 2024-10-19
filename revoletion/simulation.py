@@ -52,7 +52,7 @@ class PredictionHorizon:
         self.timestep = scenario.timestep
 
         self.components = []  # empty list to store all oemof-solph components
-        self.constraints = constraints.CustomConstraints(scenario=self)
+        self.constraints = constraints.CustomConstraints(scenario=scenario)
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph_endtime > scenario.sim_endtime and scenario.truncate_ph:
@@ -501,9 +501,9 @@ class Scenario:
 
     def print_results(self):
         print('#################')
-        for block in [block for block in self.blocks.values() if hasattr(block, 'invest') and block.invest]:
+        for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
-            if isinstance(block, blocks.SystemCore):
+            if isinstance(block, blocks.SystemCore) and block.invest:
                 self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
                                  f' {block.size_acdc / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
@@ -513,14 +513,15 @@ class Scenario:
                                  f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
             elif isinstance(block, blocks.GridConnection):
-                self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
-                                 f' {block.size_g2s / 1e3:.1f} {unit}' + \
-                                 f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
-                                 f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
-                self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
-                                 f' {block.size_s2g / 1e3:.1f} {unit}'
-                                 f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
-                                 f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
+                if block.invest:
+                    self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
+                                     f' {block.size_g2s / 1e3:.1f} {unit}' + \
+                                     f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
+                    self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
+                                     f' {block.size_s2g / 1e3:.1f} {unit}'
+                                     f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
+                                     f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
@@ -528,13 +529,13 @@ class Scenario:
                                              f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} {unit}'
                                              f' - OPEX: {block.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod():.2f} {self.currency}')
 
-            elif isinstance(block, blocks.CommoditySystem):
+            elif isinstance(block, blocks.CommoditySystem) and block.invest:
                 for commodity in block.commodities.values():
                     self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
                                      f' {commodity.size / 1e3:.1f} {unit}'
                                      f' (existing: {commodity.size_existing / 1e3:.1f} {unit}'
                                      f' - additional: {commodity.size_additional / 1e3:.1f} {unit})')
-            else:
+            elif hasattr(block, 'invest') and block.invest:
                 self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_additional / 1e3:.1f} {unit})')

@@ -444,10 +444,6 @@ class RenewableInvestBlock(InvestBlock):
                                                variable_costs=self.opex_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
 
-        if self.apriori_data is not None:
-            # Use power calculated in apriori_data for fixed output of block
-            self.outflow.outputs[self.bus_connected].fix = self.apriori_data['p'].values
-
 
 class CommoditySystem(InvestBlock):
 
@@ -791,10 +787,6 @@ class ControllableSource(InvestBlock):
 
         horizon.components.append(self.src)
 
-        if self.apriori_data is not None:
-            # Use power calculated in apriori_data for fixed output of block
-            self.src.outputs[self.bus_connected].fix = self.apriori_data['p'].values
-
 
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario, run):
@@ -1136,7 +1128,7 @@ class GridMarket:
           |----x--->grid_snk
           |
         """
-        # ToDo: add apriori data
+
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
                                                nominal_value=(self.pwr_g2s if not pd.isna(self.pwr_g2s) else None),
@@ -1146,7 +1138,8 @@ class GridMarket:
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
                                              nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
-                                             variable_costs=self.opex_spec_s2g[horizon.dti_ph] + scenario.cost_eps * self.equal_prices)
+                                             variable_costs=self.opex_spec_s2g[horizon.dti_ph] +
+                                                            scenario.cost_eps * self.equal_prices)
                                          })
 
         horizon.components.append(self.src)
@@ -1430,9 +1423,6 @@ class MobileCommodity:
                 self.parent.soc_target_high).clip(lower=self.soc_min, upper=self.soc_max)
         else:  # opt_global or apriori cases
             soc_min = pd.Series(data=self.soc_min, index=self.data_ph.index)
-
-
-
 
         """
          bus               mc1_bus
@@ -1851,6 +1841,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         horizon.components.append(self.ess)
 
+        # ToDo: add to converter, which needs to be added, when the system to which the storage is connected is introduced as parameter
         if self.apriori_data is not None:
             self.ess.inputs[self.bus_connected].fix = (self.apriori_data['p'].clip(upper=0).values * (-1) /
                                                        (self.size * self.crate_chg))

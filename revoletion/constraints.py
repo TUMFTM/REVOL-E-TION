@@ -69,8 +69,8 @@ class CustomConstraints:
         def _limit_flows(m, block, name, flows_markets, flows_grid):
             def _limit_flows_rule(block):
                 for p, ts in m.TIMEINDEX:
-                    pwr_market = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_markets)
-                    pwr_grid = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_grid)
+                    pwr_market = sum(m.flow[fi, fo, ts] for fi, fo in flows_markets)
+                    pwr_grid = sum(m.flow[fi, fo, ts] for fi, fo in flows_grid)
                     expr = pwr_market == pwr_grid
 
                     if expr is not True:
@@ -136,7 +136,7 @@ class CustomConstraints:
         def _sum_res(m, block, name, sum_flow, split_flows):
             def _sum_res_rule(block):  # not sure why m is not passed but block, but now it works
                 for p, ts in m.TIMEINDEX:
-                    res_sum = sum(m.flow[fi, fo, p, ts] for fi, fo in sum_flow)
+                    res_sum = sum(m.flow[fi, fo, ts] for fi, fo in sum_flow)
                     res_summands = sum(var[p, ts] for var in split_flows)
                     expr = res_sum == res_summands
 
@@ -164,7 +164,7 @@ class CustomConstraints:
         def _limit_res_to_conv(m, block, name, conv_flow, res_flow):
             def _limit_res2conv_rule(block):
                 for p, ts in m.TIMEINDEX:
-                    expr = m.flow[conv_flow[0], conv_flow[1], p, ts] >= res_flow[p, ts]
+                    expr = m.flow[conv_flow[0], conv_flow[1], ts] >= res_flow[p, ts]
 
                     if expr is not True:
                         getattr(block, name).add((p, ts), expr)
@@ -188,7 +188,7 @@ class CustomConstraints:
         def _limit_feed_in(m, block, name, flows_feed_in, flows_res, eff_conv):
             def _limit_feed_in_rule(block):
                 for p, ts in m.TIMEINDEX:
-                    pwr_res_feed_in = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_feed_in)
+                    pwr_res_feed_in = sum(m.flow[fi, fo, ts] for fi, fo in flows_feed_in)
                     pwr_res_available = sum(flow_res[p, ts] * eff for flow_res, eff in zip(flows_res, eff_conv))
                     expr = pwr_res_feed_in <= pwr_res_available
 
@@ -228,8 +228,8 @@ class CustomConstraints:
         def _equal_flows(m, block, name, flows_charging, flows_storage):
             def _equal_flows_rule(block):
                 for p, ts in m.TIMEINDEX:
-                    pwr_charging = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_charging)
-                    pwr_storage = sum(m.flow[fi, fo, p, ts] for fi, fo in flows_storage)
+                    pwr_charging = sum(m.flow[fi, fo, ts] for fi, fo in flows_charging)
+                    pwr_storage = sum(m.flow[fi, fo, ts] for fi, fo in flows_storage)
                     expr = pwr_charging == pwr_storage
 
                     if expr is not True:
