@@ -256,7 +256,8 @@ class Scenario:
         # simulation vs. extended simulation: for rh strategy and truncate_ph = False, the extended simulation timeframe
         # is longer than the simulation timeframe defined by the input parameter duration. Otherwise, they are the same.
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y').tz_localize(self.timezone)
-        self.sim_duration = pd.Timedelta(days=self.sim_duration)
+        self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
+                             else pd.Timedelta(self.sim_duration)).floor(self.timestep)
         self.sim_extd_duration = self.sim_duration
         self.sim_endtime = self.starttime + self.sim_duration
         self.sim_extd_endtime = self.sim_endtime
