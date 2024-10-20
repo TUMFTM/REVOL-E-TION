@@ -444,6 +444,10 @@ class RenewableInvestBlock(InvestBlock):
                                                variable_costs=self.opex_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
 
+        horizon.constraints.add_invest_costs(invest=(self.src, self.bus),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
+
 
 class CommoditySystem(InvestBlock):
 
@@ -787,6 +791,10 @@ class ControllableSource(InvestBlock):
 
         horizon.components.append(self.src)
 
+        horizon.constraints.add_invest_costs(invest=(self.src, self.bus_connected),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
+
 
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario, run):
@@ -1017,6 +1025,14 @@ class GridConnection(InvestBlock):
 
         horizon.components.extend(self.inflow.values())
         horizon.components.extend(self.outflow.values())
+
+        horizon.constraints.add_invest_costs(invest=(self.inflow[f'xc_{self.name}'], self.bus),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(invest=(self.bus,
+                                                     self.outflow[f'{self.name}_xc_{self.peakshaving_ints.index[0]}']),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
 
         # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
         # represent the same grid connection
@@ -1527,6 +1543,10 @@ class MobileCommodity:
         horizon.components.append(self.src_ext_dc)
         horizon.components.append(self.conv_ext_dc)
 
+        horizon.constraints.add_invest_costs(invest=(self.ess,),
+                                             capex_spec=self.parent.capex_spec,
+                                             invest_type='storage')
+
 
 class PVSource(RenewableInvestBlock):
 
@@ -1865,6 +1885,10 @@ class StationaryEnergyStorage(InvestBlock):
         horizon.components.append(self.outflow)
         horizon.components.append(self.ess)
 
+        horizon.constraints.add_invest_costs(invest=(self.ess,),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='storage')
+
 
 class SystemCore(InvestBlock):
 
@@ -2015,6 +2039,13 @@ class SystemCore(InvestBlock):
 
         horizon.components.append(self.ac_dc)
         horizon.components.append(self.dc_ac)
+
+        horizon.constraints.add_invest_costs(invest=(self.ac_bus, self.ac_dc),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(invest=(self.dc_bus, self.dc_ac),
+                                             capex_spec=self.capex_spec,
+                                             invest_type='flow')
 
         if self.equal:
             # add a tuple of tuples to the list of equal variables of the scenario

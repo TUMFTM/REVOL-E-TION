@@ -7,6 +7,7 @@ scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
 scenario,len_ch,12,12,12,12
 scenario,truncate_ph,True,True,True,True
+scenario,invest_max,None,None,None,None
 scenario,wacc,0.09,0.09,0.09,0.09
 scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652

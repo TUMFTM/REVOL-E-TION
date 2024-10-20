@@ -10,6 +10,7 @@ class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
         self.equal_invests = []
+        self.invest_costs = {'flow': [], 'storage': []}
 
     def apply_constraints(self, model):
         # Add pyomo block to model to store custom constraints
@@ -26,9 +27,19 @@ class CustomConstraints:
         # Force all charged energy into the commodity's storage
         self.external_charging_to_storage(model)
 
+        # Limit initial investment costs
+        self.limit_invest_costs(model)
+
     def add_equal_invests(self, invests):
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
         self.equal_invests.append(invests)
+
+    def add_invest_costs(self, invest, capex_spec, invest_type):
+        # needs to be a custom solution, as peakshaving also uses investement objects but should not be considered
+        if invest_type == 'flow':
+            self.invest_costs[invest_type].append({'fi': invest[0], 'fo': invest[1], 'capex_spec': capex_spec})
+        elif invest_type == 'storage':
+            self.invest_costs[invest_type].append({'so': invest[0], 'capex_spec': capex_spec})
 
     def equate_invests(self, model):
         # Goal:     Several sizes (e.g. SystemCore's AC/DC and DC/AC converter, GridConnection sizes) can be forced to
@@ -249,3 +260,30 @@ class CustomConstraints:
                                             (commodity.conv_ext_ac, commodity.bus),
                                             (commodity.conv_ext_dc, commodity.bus)],
                              flows_storage=[(commodity.bus, commodity.ess)])
+
+    def limit_invest_costs(self, model):
+        # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)
+        # Approach: Add a constraint adding all initial investment costs and limiting the sum to the specified value
+        model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS = po.Block()
+
+        def _limit_invests(m, block, name):
+            def _limit_invest_rule(block):
+                expr = 0
+
+                # Add investment costs for all flow objects
+                expr += sum(m.InvestmentFlowBlock.invest[invest_flow['fi'], invest_flow['fo'], 0] *
+                            invest_flow['capex_spec'] for invest_flow in self.invest_costs['flow'])
+
+                # Add investment costs for all storage objects
+                expr += sum(m.GenericInvestmentStorageBlock.invest[invest_storage['so'], 0] *
+                            invest_storage['capex_spec'] for invest_storage in self.invest_costs['storage'])
+
+                return expr <= self.scenario.invest_max
+
+            setattr(block, name, po.Constraint(rule=_limit_invest_rule))
+
+        # Add additional user-specific constraints for investment cost limit
+        if self.scenario.invest_max is not None:
+            _limit_invests(m=model,
+                          block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
+                          name='limit_invest_costs')
