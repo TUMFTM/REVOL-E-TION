@@ -439,7 +439,7 @@ class RenewableInvestBlock(InvestBlock):
                                            outputs={self.bus: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.epc,
                                                                               existing=self.size_existing,
-                                                                              maximum=None if self.invest else 0),
+                                                                              maximum=self.invest_max if self.invest else 0),
                                                fix=self.data_ph['power_spec'],
                                                variable_costs=self.opex_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
@@ -786,7 +786,7 @@ class ControllableSource(InvestBlock):
                                            outputs={self.bus_connected: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.epc,
                                                                               existing=self.size_existing,
-                                                                              maximum=None if self.invest else 0),
+                                                                              maximum=self.invest_max if self.invest else 0),
                                                variable_costs=self.opex_spec[horizon.dti_ph])})
 
         horizon.components.append(self.src)
@@ -972,6 +972,16 @@ class GridConnection(InvestBlock):
         if not self.invest_s2g:
             self.size_s2g = self.size_s2g_existing
 
+        if (self.invest_g2s_max == 'equal') and (self.invest_s2g_max == 'equal'):
+            self.invest_g2s_max = self.invest_s2g_max = None
+            scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
+                                    f' maximum investment into selling and buying power. This is not supported.'
+                                    f' The maximum invest was set to None (unlimited) for both directions.')
+        elif self.invest_g2s_max == 'equal':
+            self.invest_g2s_max = self.invest_s2g_max
+        elif self.invest_s2g_max == 'equal':
+            self.invest_s2g_max = self.invest_g2s_max
+
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
@@ -1001,10 +1011,11 @@ class GridConnection(InvestBlock):
             # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
-            outputs={self.bus: solph.Flow(nominal_value=solph.Investment(ep_costs=self.epc,
-                                                                         existing=self.size_s2g_existing,
-                                                                         maximum=None if self.invest_s2g else 0),
-                                            variable_costs=scenario.cost_eps)},
+            outputs={self.bus: solph.Flow(
+                nominal_value=solph.Investment(ep_costs=self.epc,
+                                               existing=self.size_s2g_existing,
+                                               maximum=self.invest_s2g_max if self.invest_s2g else 0),
+                variable_costs=scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
         self.outflow = {f'{self.name}_xc_{intv}': solph.components.Converter(
@@ -1014,7 +1025,7 @@ class GridConnection(InvestBlock):
             inputs={self.bus: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=(self.epc if intv == self.peakshaving_ints.index[0] else 0),
                                                existing=self.size_g2s_existing,
-                                               maximum=None if self.invest_g2s else 0)
+                                               maximum=self.invest_g2s_max if self.invest_g2s else 0)
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.peakshaving_ints.loc[intv, 'opex_spec'],
@@ -1493,7 +1504,7 @@ class MobileCommodity:
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.parent.epc,
                                                                                              existing=self.size_existing,
-                                                                                             maximum=None if self.invest else 0),
+                                                                                             maximum=self.parent.invest_max if self.invest else 0),
                                                    min_storage_level=soc_min,
                                                    max_storage_level=soc_max
                                                    )
@@ -1873,7 +1884,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.epc,
                                                                                              existing=self.size_existing,
-                                                                                             maximum=None if self.invest else 0),
+                                                                                             maximum=self.invest_max if self.invest else 0),
                                                    max_storage_level=pd.Series(data=self.soc_max,
                                                                                index=utils.extend_dti(horizon.dti_ph)),
                                                    min_storage_level=pd.Series(data=self.soc_min,
@@ -2000,6 +2011,16 @@ class SystemCore(InvestBlock):
         if not self.invest_dcac:
             self.size_dcac = self.size_dcac_existing
 
+        if (self.invest_acdc_max == 'equal') and (self.invest_dcac_max == 'equal'):
+            self.invest_acdc_max = self.invest_dcac_max = None
+            scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
+                                    f' maximum investment into AC/DC and DC/AC converter. This is not supported.'
+                                    f' The maximum invest was set to None (unlimited) for both converters.')
+        elif self.invest_acdc_max == 'equal':
+            self.invest_acdc_max = self.invest_dcac_max
+        elif self.invest_dcac_max == 'equal':
+            self.invest_dcac_max = self.invest_acdc_max
+
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
@@ -2021,7 +2042,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.ac_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.epc,
                                                                                    existing=self.size_acdc_existing,
-                                                                                   maximum=None if self.invest_acdc else 0),
+                                                                                   maximum=self.invest_acdc_max if self.invest_acdc else 0),
                                                     variable_costs=self.opex_spec[horizon.dti_ph])},
                                                 outputs={self.dc_bus: solph.Flow(
                                                     variable_costs=scenario.cost_eps)},
@@ -2031,7 +2052,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.dc_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.epc,
                                                                                    existing=self.size_dcac_existing,
-                                                                                   maximum=None if self.invest_dcac else 0),
+                                                                                   maximum=self.invest_dcac_max if self.invest_dcac else 0),
                                                     variable_costs=self.opex_spec[horizon.dti_ph])},
                                                 outputs={self.ac_bus: solph.Flow(
                                                     variable_costs=scenario.cost_eps)},
