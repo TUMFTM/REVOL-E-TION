@@ -776,7 +776,7 @@ class ControllableSource(InvestBlock):
           |
         """
 
-        self.bus_connected = scenario.blocks['core'].ac_bus
+        self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.bus_connected: solph.Flow(
@@ -984,7 +984,7 @@ class GridConnection(InvestBlock):
           |                   |
         """
 
-        self.bus_connected = scenario.blocks['core'].ac_bus
+        self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
         self.bus = solph.Bus(label=f'{self.name}_bus')
         horizon.components.append(self.bus)
 
@@ -1183,7 +1183,7 @@ class FixedDemand(Block):
           |
         """
 
-        self.bus_connected = scenario.blocks['core'].ac_bus
+        self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
 
         self.snk = solph.components.Sink(label='dem_snk',
                                          inputs={self.bus_connected: solph.Flow(nominal_value=1,
@@ -2077,5 +2077,5 @@ class WindSource(RenewableInvestBlock):
             self.data = utils.read_input_csv(self, self.path_input_file, scenario)
 
     def update_input_components(self, scenario, horizon):
-        self.bus_connected = scenario.blocks['core'].ac_bus
+        self.bus_connected = scenario.blocks['core'].ac_bus if self.system == 'ac' else scenario.blocks['core'].dc_bus
         super().update_input_components(scenario, horizon)
