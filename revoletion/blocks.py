@@ -36,9 +36,9 @@ class Block:
                 utils.transform_scalar_var(self, var, scenario, run)
 
         # Empty result series
-        self.flow = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_in = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
         # flow direction is specified with respect to the block -> flow_in is from energy system into block
 
         # Empty result scalar variables
@@ -344,8 +344,8 @@ class RenewableInvestBlock(InvestBlock):
 
         self.data = self.data_ph = self.input_file_name = self.path_input_file = None  # placeholders, are filled later
 
-        self.flow_pot = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_curt = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow_pot = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_curt = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
         self.e_pot = self.e_curt = 0
 
         self.get_timeseries_data(scenario, run)
@@ -1079,9 +1079,9 @@ class GridMarket:
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
 
         # timeseries result initialization
-        self.flow_in = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
     def add_power_trace(self, scenario):
         # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
@@ -1262,13 +1262,13 @@ class MobileCommodity:
         self.crev_time = self.crev_usage = self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
         # timeseries result initialization
-        self.flow_in = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_bat_in = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_bat_out = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_ext_ac = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_ext_dc = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_bat_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_bat_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_ext_ac = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_ext_dc = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
@@ -1748,8 +1748,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
-        self.flow_in = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
@@ -1895,8 +1895,8 @@ class SystemCore(InvestBlock):
         self.e_sim_acdc = self.e_sim_dcac = self.e_yrl_acdc = self.e_yrl_dcac = 0
         self.e_prj_acdc = self.e_prj_dcac = self.e_dis_acdc = self.e_dis_dcac = 0
 
-        self.flow_acdc = pd.Series(index=scenario.dti_sim, dtype='float64')
-        self.flow_dcac = pd.Series(index=scenario.dti_sim, dtype='float64')
+        self.flow_acdc = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_dcac = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'
