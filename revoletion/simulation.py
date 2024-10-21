@@ -11,6 +11,7 @@ import plotly.subplots
 import pprint
 import psutil
 import pytz
+import re
 import shutil
 import subprocess
 import sys
@@ -255,7 +256,10 @@ class Scenario:
         # simulation and project timeframe start simultaneously
         # simulation vs. extended simulation: for rh strategy and truncate_ph = False, the extended simulation timeframe
         # is longer than the simulation timeframe defined by the input parameter duration. Otherwise, they are the same.
-        self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y').tz_localize(self.timezone)
+        # ToDo: check for format not only len of string
+        self.starttime = self.starttime if len(self.starttime) > 10 else self.starttime + ' 00:00'
+        self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y %H:%M').floor(self.timestep).tz_localize(self.timezone)
+
         self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
                              else pd.Timedelta(self.sim_duration)).floor(self.timestep)
         self.sim_extd_duration = self.sim_duration
@@ -286,8 +290,8 @@ class Scenario:
         # generate variables for calculations
         self.timestep_td = pd.Timedelta(self.dti_sim_extd.freq)
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
-        self.sim_yr_rat = self.sim_duration.days / 365  # no leap years
-        self.sim_prj_rat = self.sim_duration.days / self.prj_duration.days
+        self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
+        self.sim_prj_rat = self.sim_duration / self.prj_duration
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
