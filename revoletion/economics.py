@@ -26,21 +26,13 @@ def adj_ce(ce: float, me: float, ls: int, discrate: float) -> float:
     return ace
 
 
-def ann(ce, hor, discrate):
+def ann(pv, hor, discrate):
     """
-        This function calculates the annuity of an initial investment ce (the equivalent yearly sum to generate the same
-        NPV) over a horizon of hor years
+        This function calculates the annuity due (the equivalent yearly sum to generate the same
+        NPV) of an initial investment of present value pv over a horizon of hor years
     """
-    a = ce * (discrate * (1 + discrate) ** hor) / ((1 + discrate) ** hor - 1)
-    return a
-
-
-def ann_recur(ce, ls, hor, discrate, cost_decr):
-    """
-        This function calculates the annuity of a recurring (every ls years) and cheapening (annual ratio cost_decr <1)
-        investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
-    """
-    a = ann(ce, hor, discrate) * ((1 - ((1-cost_decr)/(1+discrate))**hor) / (1 - ((1-cost_decr)/(1+discrate))**ls))
+    q = 1 + discrate
+    a = pv / (((1 - (q ** -hor)) / discrate) * q)  # fails at discrate 0 --> Todo: replace zero by eps
     return a
 
 
@@ -57,7 +49,7 @@ def repllist(ls, hor):
             repyrs.append(year)
             rul = ls
         rul -= 1
-        year +=1
+        year += 1
     return repyrs
 
 
@@ -77,3 +69,17 @@ def pce(ce, cdr, discrate, ls, hor):
     """
     pce = ce + sum([discount(ce * (cdr ** yr), yr, discrate) for yr in repllist(ls, hor)])
     return pce
+
+
+def ann_recur(ce, ls, hor, discrate, ccr):
+    """
+        This function calculates the annuity due of a recurring (every ls years) and price changing (annual ratio ccr)
+        investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
+    """
+    replacements = repllist(ls, hor)
+    npc_repl = ce  # initial value, first capital expense is at BEGINNING of year 0, i.e. without discounting
+    for repl in replacements:
+        ce_repl = ce * (ccr ** repl)
+        npc_repl += discount(ce_repl, repl, discrate)
+    a = ann(npc_repl, hor, discrate)
+    return a
