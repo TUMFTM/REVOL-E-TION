@@ -389,12 +389,12 @@ class RenewableInvestBlock(InvestBlock):
         self.flow_pot[horizon.dti_ch] = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
         self.flow_curt[horizon.dti_ch] = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch]
 
-    def get_legend_entry(self):
-        return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
-
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         self.size_additional = horizon.results[(self.src, self.bus)]['scalars']['invest']
         self.size = self.size_additional + self.size_existing
+
+    def get_legend_entry(self):
+        return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
 
     def get_timeseries_results(self, scenario):
         """
@@ -600,11 +600,7 @@ class CommoditySystem(InvestBlock):
                                   f' implemented for a priori integration levels: {run.apriori_lvls}')
             exit()  # TODO exit scenario instead of run
 
-    def get_legend_entry(self):
-        return (f'{self.name} total power'
-                f'{f" (static load management {self.power_lim_static / 1e3:.1f} kW)" if self.power_lim_static else ""}')
-
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         """
         Size for the commodity system is the sum of all commodity sizes in results
         """
@@ -620,6 +616,10 @@ class CommoditySystem(InvestBlock):
                 commodity.aging_model.size = commodity.size
                 # Calculate number of cells as a float to correctly represent power split with nonreal cells
                 commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
+
+    def get_legend_entry(self):
+        return (f'{self.name} total power'
+                f'{f" (static load management {self.power_lim_static / 1e3:.1f} kW)" if self.power_lim_static else ""}')
 
     def get_timeseries_results(self, scenario):
         """
@@ -760,7 +760,7 @@ class ControllableSource(InvestBlock):
     def get_ch_results(self, horizon, *_):
         self.flow_out[horizon.dti_ch] = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
 
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         self.size_additional = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
         self.size = self.size_additional + self.size_existing
 
@@ -903,12 +903,7 @@ class GridConnection(InvestBlock):
                 self.peakshaving_ints.loc[interval, 'power'] = max(self.peakshaving_ints.loc[interval, 'power'],
                                                                    horizon.results[(converter, self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
 
-
-    def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.size_g2s / 1e3:.1f} kW from / '
-                f'{self.size_s2g / 1e3:.1f} kW to grid)')
-
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
         self.size_g2s_additional = horizon.results[(self.bus, list(self.outflow.values())[0])]['scalars']['invest']
         self.size_g2s = self.size_g2s_existing + self.size_g2s_additional
@@ -918,6 +913,10 @@ class GridConnection(InvestBlock):
         for market in self.markets.values():
             market.set_size('g2s')
             market.set_size('s2g')
+
+    def get_legend_entry(self):
+        return (f'{self.name} power (max. {self.size_g2s / 1e3:.1f} kW from / '
+                f'{self.size_s2g / 1e3:.1f} kW to grid)')
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
@@ -1802,7 +1801,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][utils.extend_dti(horizon.dti_ch)] / self.size
 
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         self.size_additional = horizon.results[(self.ess, None)]['scalars']['invest']
         self.size = self.size_existing + self.size_additional
 
@@ -1943,7 +1942,7 @@ class SystemCore(InvestBlock):
         self.flow_dcac[horizon.dti_ch] = horizon.results[(scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
             horizon.dti_ch]
 
-    def get_opt_size(self, horizon):
+    def get_invest_size(self, horizon):
         self.size_acdc_additional = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']
         self.size_acdc = self.size_acdc_existing + self.size_acdc_additional
         self.size_dcac_additional = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']

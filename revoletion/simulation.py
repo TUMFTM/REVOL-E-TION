@@ -199,7 +199,7 @@ class PredictionHorizon:
         # get optimum component sizes for optimized blocks
         for block in [block for block in scenario.blocks.values()
                       if isinstance(block, blocks.InvestBlock) and block.invest]:
-            block.get_opt_size(self)
+            block.get_invest_size(self)
 
         for block in scenario.blocks.values():
             block.get_ch_results(self, scenario)
