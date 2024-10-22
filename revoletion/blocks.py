@@ -1876,10 +1876,10 @@ class StationaryEnergyStorage(InvestBlock):
                                                    balanced={'go': True, 'rh': False}[scenario.strategy],
                                                    initial_storage_level=statistics.median(
                                                        [self.soc_min, self.soc[horizon.starttime], self.soc_max]),
-                                                   invest_relation_input_capacity=(self.crate_chg),
+                                                   invest_relation_input_capacity=self.crate_chg,
                                                    # crate measured at outflow, neglecting outflow_conversion_factor
                                                    # p_max at outputs is size * crate_dis
-                                                   invest_relation_output_capacity=(self.crate_dis),
+                                                   invest_relation_output_capacity=self.crate_dis,
                                                    inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.epc,
