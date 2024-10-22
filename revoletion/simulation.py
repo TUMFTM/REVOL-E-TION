@@ -215,6 +215,8 @@ class PredictionHorizon:
             self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                  f'Optimization completed, getting results')
+            if scenario.strategy != 'rh':
+                scenario.objective_opt = self.model.objective()
         except UserWarning as exc:
             scenario.logger.warning(f'Scenario failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
@@ -371,6 +373,8 @@ class Scenario:
         self.figure = None  # placeholder for plotting
 
         self.cashflows = pd.DataFrame()
+
+        self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
         # Result variables - Energy
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
