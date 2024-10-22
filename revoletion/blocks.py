@@ -1854,10 +1854,12 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     nominal_value=self.size_existing * self.crate_chg,
-                                                     fix=(self.apriori_data['p'].clip(upper=0).values * (-1) /
-                                                       (self.size * self.crate_chg)) if self.apriori_data is not None else None,
-                                                     variable_costs=self.opex_spec[horizon.dti_ph])},
+                                                     nominal_value=(None if self.invest else self.size_existing * self.crate_chg),
+                                                     fix=(None if self.apriori_data is None else
+                                                          (self.apriori_data['p'].clip(upper=0).values * (-1) /
+                                                           (self.size * self.crate_chg))),
+                                                     variable_costs=self.opex_spec[horizon.dti_ph]
+                                                 )},
                                                  outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: self.eff_chg})
 
@@ -1865,8 +1867,9 @@ class StationaryEnergyStorage(InvestBlock):
                                                   inputs={self.bus: solph.Flow()},
                                                   # cost_eps are needed to prevent storage from being emptied in RH
                                                   outputs={self.bus_connected: solph.Flow(
-                                                      nominal_value=(self.size_existing * self.crate_dis * self.eff_dis),
-                                                       variable_costs=scenario.cost_eps)},
+                                                      nominal_value=(None if self.invest else self.size_existing * self.crate_dis * self.eff_dis),
+                                                      variable_costs=scenario.cost_eps
+                                                  )},
                                                   conversion_factors={self.bus_connected: self.eff_dis})
 
         self.ess = solph.components.GenericStorage(label='ess',
