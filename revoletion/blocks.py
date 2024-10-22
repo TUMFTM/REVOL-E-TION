@@ -1854,10 +1854,6 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     nominal_value=(None if self.invest else self.size_existing * self.crate_chg),
-                                                     fix=(None if self.apriori_data is None else
-                                                          (self.apriori_data['p'].clip(upper=0).values * (-1) /
-                                                           (self.size * self.crate_chg))),
                                                      variable_costs=self.opex_spec[horizon.dti_ph]
                                                  )},
                                                  outputs={self.bus: solph.Flow()},
@@ -1867,7 +1863,6 @@ class StationaryEnergyStorage(InvestBlock):
                                                   inputs={self.bus: solph.Flow()},
                                                   # cost_eps are needed to prevent storage from being emptied in RH
                                                   outputs={self.bus_connected: solph.Flow(
-                                                      nominal_value=(None if self.invest else self.size_existing * self.crate_dis * self.eff_dis),
                                                       variable_costs=scenario.cost_eps
                                                   )},
                                                   conversion_factors={self.bus_connected: self.eff_dis})
@@ -1880,8 +1875,8 @@ class StationaryEnergyStorage(InvestBlock):
                                                    initial_storage_level=statistics.median(
                                                        [self.soc_min, self.soc[horizon.starttime], self.soc_max]),
                                                    invest_relation_input_capacity=self.crate_chg,
-                                                   # crate measured at outflow, neglecting outflow_conversion_factor
-                                                   # p_max at outputs is size * crate_dis
+                                                   # crate measured "outside" of conversion factor (efficiency)
+                                                   # p_max at outputs is size * crate_dis (not incl. eff)
                                                    invest_relation_output_capacity=self.crate_dis,
                                                    inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
