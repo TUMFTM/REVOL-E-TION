@@ -205,8 +205,7 @@ class PredictionHorizon:
             block.get_ch_results(self, scenario)
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'aging')]:
-            if block.aging:
-                block.calc_aging(run, scenario, self)
+            block.calc_aging(run, scenario, self)
 
     def run_optimization(self, scenario, run):
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
