@@ -36,8 +36,9 @@ class Block:
                 utils.transform_scalar_var(self, var, scenario, run)
 
         # Empty result series
-        self.flow = self.flow_ch = pd.Series(dtype='float64')
-        self.flow_in_ch = self.flow_out_ch = self.flow_in = self.flow_out = pd.Series(dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
         # flow direction is specified with respect to the block -> flow_in is from energy system into block
 
         # Empty result scalar variables
@@ -343,7 +344,8 @@ class RenewableInvestBlock(InvestBlock):
 
         self.data = self.data_ph = self.input_file_name = self.path_input_file = None  # placeholders, are filled later
 
-        self.flow_pot = self.flow_pot_ch = self.flow_curt = self.flow_curt_ch = pd.Series(dtype='float64')
+        self.flow_pot = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_curt = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
         self.e_pot = self.e_curt = 0
 
         self.get_timeseries_data(scenario, run)
@@ -383,13 +385,9 @@ class RenewableInvestBlock(InvestBlock):
     def get_ch_results(self, horizon, *_):
 
         # flow values are powers
-        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_pot_ch = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_curt_ch = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch]
-
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
-        self.flow_pot = pd.concat([self.flow_pot if not self.flow_pot.empty else None, self.flow_pot_ch])
-        self.flow_curt = pd.concat([self.flow_curt if not self.flow_curt.empty else None, self.flow_curt_ch])
+        self.flow_out[horizon.dti_ch] = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_pot[horizon.dti_ch] = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_curt[horizon.dti_ch] = horizon.results[(self.bus, self.exc)]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
@@ -566,13 +564,10 @@ class CommoditySystem(InvestBlock):
 
     def get_ch_results(self, horizon, scenario):
 
-        self.flow_out_ch = horizon.results[
+        self.flow_out[horizon.dti_ch] = horizon.results[
             (self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_in_ch = horizon.results[
+        self.flow_in[horizon.dti_ch] = horizon.results[
             (self.bus_connected, self.inflow)]['sequences']['flow'][horizon.dti_ch]
-
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         for commodity in self.commodities.values():
             commodity.get_ch_results(horizon, scenario)
@@ -763,8 +758,7 @@ class ControllableSource(InvestBlock):
         self.opex_sim = self.flow_out @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
-        self.flow_out_ch = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+        self.flow_out[horizon.dti_ch] = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
 
     def get_opt_size(self, horizon):
         self.size_additional = horizon.results[(self.src, self.bus_connected)]['scalars']['invest']
@@ -895,13 +889,10 @@ class GridConnection(InvestBlock):
         self.opex_sim = self.opex_sim_power + self.opex_sim_energy
 
     def get_ch_results(self, horizon, *_):
-        self.flow_in_ch = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
-                               for inflow in self.inflow.values()])
-        self.flow_out_ch = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
-                                for outflow in self.outflow.values()])
-
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+        self.flow_in[horizon.dti_ch] = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
+                                            for inflow in self.inflow.values()])
+        self.flow_out[horizon.dti_ch] = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
+                                             for outflow in self.outflow.values()])
 
         for market in self.markets.values():
             market.get_ch_results(horizon)
@@ -1088,7 +1079,9 @@ class GridMarket:
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
 
         # timeseries result initialization
-        self.flow_in_ch = self.flow_out_ch = self.flow_in = self.flow_out = self.flow = pd.Series(dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
     def add_power_trace(self, scenario):
         # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
@@ -1121,11 +1114,8 @@ class GridMarket:
         self.flow = self.flow_in - self.flow_out  # for plotting
 
     def get_ch_results(self, horizon, *_):
-        self.flow_in_ch = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_out_ch = horizon.results[(self.src, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
-
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+        self.flow_in[horizon.dti_ch] = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_out[horizon.dti_ch] = horizon.results[(self.src, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
 
     def get_timeseries_results(self, scenario):
         """
@@ -1193,8 +1183,7 @@ class FixedDemand(Block):
         self.accumulate_crev(scenario)
 
     def get_ch_results(self, horizon, *_):
-        self.flow_in_ch = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
+        self.flow_in[horizon.dti_ch] = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
         return f'{self.name} power'
@@ -1260,7 +1249,7 @@ class MobileCommodity:
 
         # self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh = pd.Series(index=scenario.dti_sim_extd)
+        self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.soh.loc[scenario.starttime] = self.soh_init
 
         self.soc_min = (1 - self.soh_init) / 2
@@ -1273,9 +1262,13 @@ class MobileCommodity:
         self.crev_time = self.crev_usage = self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
         # timeseries result initialization
-        self.flow_in_ch = self.flow_out_ch = self.flow_in = self.flow_out = self.flow = pd.Series(dtype='float64')
-        self.flow_bat_in = self.flow_bat_out = self.flow_bat_in_ch = self.flow_bat_out_ch = pd.Series(dtype='float64')
-        self.flow_ext_ac = self.flow_ext_dc = self.flow_ext_ac_ch = self.flow_ext_dc_ch = pd.Series(dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_bat_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_bat_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_ext_ac = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_ext_dc = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
@@ -1367,24 +1360,15 @@ class MobileCommodity:
 
     def get_ch_results(self, horizon, *_):
 
-        self.flow_bat_out_ch = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_bat_in_ch = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_bat_out[horizon.dti_ch] = horizon.results[(self.ess, self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_bat_in[horizon.dti_ch] = horizon.results[(self.bus, self.ess)]['sequences']['flow'][horizon.dti_ch]
 
-        self.flow_bat_in = pd.concat([self.flow_bat_in if not self.flow_bat_in.empty else None, self.flow_bat_in_ch])
-        self.flow_bat_out = pd.concat([self.flow_bat_out if not self.flow_bat_out.empty else None, self.flow_bat_out_ch])
-
-        self.flow_out_ch = horizon.results[(self.outflow, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_in_ch = horizon.results[(self.parent.bus, self.inflow)]['sequences']['flow'][horizon.dti_ch]
-
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
+        self.flow_out[horizon.dti_ch] = horizon.results[(self.outflow, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_in[horizon.dti_ch] = horizon.results[(self.parent.bus, self.inflow)]['sequences']['flow'][horizon.dti_ch]
 
         # Get results of external chargers
-        self.flow_ext_ac_ch = horizon.results[(self.src_ext_ac, self.bus_ext_ac)]['sequences']['flow'][horizon.dti_ch]
-        self.flow_ext_dc_ch = horizon.results[(self.src_ext_dc, self.bus_ext_dc)]['sequences']['flow'][horizon.dti_ch]
-
-        self.flow_ext_ac = pd.concat([self.flow_ext_ac if not self.flow_ext_ac.empty else None, self.flow_ext_ac_ch])
-        self.flow_ext_dc = pd.concat([self.flow_ext_dc if not self.flow_ext_dc.empty else None, self.flow_ext_dc_ch])
+        self.flow_ext_ac[horizon.dti_ch] = horizon.results[(self.src_ext_ac, self.bus_ext_ac)]['sequences']['flow'][horizon.dti_ch]
+        self.flow_ext_dc[horizon.dti_ch] = horizon.results[(self.src_ext_dc, self.bus_ext_dc)]['sequences']['flow'][horizon.dti_ch]
 
         # storage content during PH (including endtime)
         self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(
@@ -1764,8 +1748,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
-        self.flow_in_ch = self.flow_out_ch = pd.Series(dtype='float64')  # result data
-        self.flow_in = self.flow_out = pd.Series(dtype='float64')
+        self.flow_in = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
@@ -1773,7 +1757,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc_min = (1 - self.soh_init) / 2
         self.soc_max = 1 - ((1 - self.soh_init) / 2)
 
-        self.soh = pd.Series(index=scenario.dti_sim_extd)
+        self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.soh.loc[scenario.starttime] = self.soh_init
 
         if self.aging:
@@ -1809,13 +1793,10 @@ class StationaryEnergyStorage(InvestBlock):
 
     def get_ch_results(self, horizon, *_):
 
-        self.flow_out_ch = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][
+        self.flow_out[horizon.dti_ch] = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][
             horizon.dti_ch]
-        self.flow_in_ch = horizon.results[(self.bus_connected, self.inflow)]['sequences']['flow'][
+        self.flow_in[horizon.dti_ch] = horizon.results[(self.bus_connected, self.inflow)]['sequences']['flow'][
             horizon.dti_ch]
-
-        self.flow_in = pd.concat([self.flow_in if not self.flow_in.empty else None, self.flow_in_ch])
-        self.flow_out = pd.concat([self.flow_out if not self.flow_out.empty else None, self.flow_out_ch])
 
         # storage content during PH (including endtime)
         self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(horizon.results, self.name)['sequences'][
@@ -1912,7 +1893,8 @@ class SystemCore(InvestBlock):
         self.e_sim_acdc = self.e_sim_dcac = self.e_yrl_acdc = self.e_yrl_dcac = 0
         self.e_prj_acdc = self.e_prj_dcac = self.e_dis_acdc = self.e_dis_dcac = 0
 
-        self.flow_acdc = self.flow_dcac = self.flow_acdc_ch = self.flow_dcac_ch = pd.Series(dtype='float64')
+        self.flow_acdc = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
+        self.flow_dcac = pd.Series(data=0, index=scenario.dti_sim, dtype='float64')
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'
@@ -1956,13 +1938,10 @@ class SystemCore(InvestBlock):
 
     def get_ch_results(self, horizon, scenario):
 
-        self.flow_acdc_ch = horizon.results[(scenario.blocks['core'].ac_bus, self.ac_dc)]['sequences']['flow'][
+        self.flow_acdc[horizon.dti_ch] = horizon.results[(scenario.blocks['core'].ac_bus, self.ac_dc)]['sequences']['flow'][
             horizon.dti_ch]
-        self.flow_dcac_ch = horizon.results[(scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
+        self.flow_dcac[horizon.dti_ch] = horizon.results[(scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
             horizon.dti_ch]
-
-        self.flow_acdc = pd.concat([self.flow_acdc if not self.flow_acdc.empty else None, self.flow_acdc_ch])
-        self.flow_dcac = pd.concat([self.flow_dcac if not self.flow_dcac.empty else None, self.flow_dcac_ch])
 
     def get_opt_size(self, horizon):
         self.size_acdc_additional = horizon.results[(self.ac_bus, self.ac_dc)]['scalars']['invest']

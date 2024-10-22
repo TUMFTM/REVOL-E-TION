@@ -267,7 +267,7 @@ class Scenario:
         self.sim_extd_endtime = self.sim_endtime
         self.prj_duration_yrs = self.prj_duration
         self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
-        self.prj_duration = self.prj_endtime - self.starttime
+        self.prj_duration = self.prj_endtime - self.starttime  # takes leap years into account
 
         if self.strategy == 'rh':
             self.len_ph = pd.Timedelta(hours=self.len_ph)
