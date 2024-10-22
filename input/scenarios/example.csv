@@ -126,6 +126,7 @@ bev,soc_init,1,1,1,1
 bev,soc_target_high,1.0,1.0,1.0,1.0
 bev,soc_target_low,0.8,0.8,0.8,0.8
 bev,soc_return,0.15,0.15,0.15,0.15
+bev,dsoc_buffer,0.05,0.05,0.05,0.05
 bev,capex_spec,0,0,0,0
 bev,mntex_spec,0,0,0,0
 bev,opex_spec,0,0,0,0

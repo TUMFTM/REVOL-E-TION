@@ -735,6 +735,8 @@ class BatteryCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario, run):
+        self.dsoc_buffer = None  # necessary as only VehicleCommoditySystem has this as input parameter
+
         super().__init__(name, scenario, run)
 
         # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
@@ -1215,8 +1217,6 @@ class MobileCommodity:
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
         self.bus_ext_dc = self.conv_ext_dc = self.src_ext_dc = None
 
-        self.dsoc_buffer_aging = 0.05  # Todo make this a parameter
-
         self.name = name
         self.parent = parent
         self.invest = self.parent.invest
@@ -1225,6 +1225,7 @@ class MobileCommodity:
 
         self.set_init_size(scenario, run)
 
+        self.dsoc_buffer = self.parent.dsoc_buffer
         self.mode_dispatch = self.parent.mode_dispatch
         self.soc_init = self.parent.soc_init
         self.soh_init = self.parent.soh_init
@@ -1424,7 +1425,7 @@ class MobileCommodity:
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                     self.data_ph['dsoc'] + self.dsoc_buffer_aging)
+                                                     self.data_ph['dsoc'] + self.dsoc_buffer)
             soc_min = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
