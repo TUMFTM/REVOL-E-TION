@@ -25,8 +25,8 @@ Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022
 Marc Alsina Planelles, B.Sc. - Master's Thesis submitted 10/2022  
 Juan Forero Yacaman - Bachelor's Thesis submitted 04/2023  
 Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023  
-Hannes Henglein, B.Sc. - Master's Thesis ongoing  
 Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023
+Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024  
 
 ## Licensing
 REVOL-E-TION is licensed under the Apache 2.0 open source license.  
