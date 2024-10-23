@@ -130,14 +130,23 @@ class Block:
         """
         self.calc_energy_common(scenario)
 
-        scenario.e_sim_pro += self.e_sim_out
-        scenario.e_sim_del += self.e_sim_in
-        scenario.e_yrl_pro += self.e_yrl_out
-        scenario.e_yrl_del += self.e_yrl_in
-        scenario.e_prj_pro += self.e_prj_out
-        scenario.e_prj_del += self.e_prj_in
-        scenario.e_dis_pro += self.e_dis_out
-        scenario.e_dis_del += self.e_dis_in
+        self.e_sim_pro = self.e_sim_out
+        self.e_sim_del = self.e_sim_in
+        self.e_yrl_pro = self.e_yrl_out
+        self.e_yrl_del = self.e_yrl_in
+        self.e_prj_pro = self.e_prj_out
+        self.e_prj_del = self.e_prj_in
+        self.e_dis_pro = self.e_dis_out
+        self.e_dis_del = self.e_dis_in
+
+        scenario.e_sim_pro += self.e_sim_pro
+        scenario.e_sim_del += self.e_sim_del
+        scenario.e_yrl_pro += self.e_yrl_pro
+        scenario.e_yrl_del += self.e_yrl_del
+        scenario.e_prj_pro += self.e_prj_pro
+        scenario.e_prj_del += self.e_prj_del
+        scenario.e_dis_pro += self.e_dis_pro
+        scenario.e_dis_del += self.e_dis_del
 
     def calc_energy_common(self, scenario):
 
