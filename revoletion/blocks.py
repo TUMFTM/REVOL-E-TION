@@ -611,11 +611,10 @@ class CommoditySystem(InvestBlock):
         elif scenario.strategy == 'go':
             self.mode_dispatch = 'opt_global'
 
-        # static load management can only be activated for a priori integration levels
-        if self.power_lim_static and self.mode_dispatch != 'apriori_static':
-            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is only implemented for'
-                                    f' {", ".join([x for x in run.apriori_lvls if x != "uc"])}'
-                                    f' -> deactivating static load management')
+        # static load management is deactivated for 'uc' mode
+        if self.power_lim_static and self.mode_scheduling == 'uc':
+            scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented for'
+                                    f' scheduling mode \"uc\" -> deactivating static load management')
             self.power_lim_static = None
 
         # ToDo: move to checker.py
@@ -738,7 +737,8 @@ class CommoditySystem(InvestBlock):
 
         self.outflow = solph.components.Converter(label=f'{self.name}_xc',
                                                   inputs={self.bus: solph.Flow(
-                                                      nominal_value=(None if self.lvl_cap in ['v2s'] else 0),
+                                                      nominal_value=(self.power_lim_static if self.lvl_cap in ['v2s'] else 0),
+                                                      max=(1 if self.power_lim_static is not None else None),
                                                       variable_costs=self.opex_ep_spec_sys_dis[horizon.dti_ph])},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=scenario.cost_eps)},
