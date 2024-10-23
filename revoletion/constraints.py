@@ -4,6 +4,7 @@ import pyomo.environ as po
 from pyomo import environ as po2
 
 from revoletion import blocks
+from revoletion import utils
 
 
 class CustomConstraints:
@@ -311,10 +312,10 @@ class CustomConstraints:
         set_ts = pd.date_range(start=self.scenario.starttime,
                                end=self.scenario.sim_endtime,
                                freq=pd.Timedelta(days=len_horizon_days),
-                               inclusive='left')
+                               inclusive='both')
 
         # get the index numbers of set_ts elements in scenario.sim_dti
-        set_ts_idx = self.scenario.dti_sim.get_indexer(set_ts)
+        set_ts_idx = utils.extend_dti(self.scenario.dti_sim).get_indexer(set_ts)
         storage_components = {}
         for block in self.scenario.blocks.values():
             if isinstance(block, blocks.StationaryEnergyStorage):
