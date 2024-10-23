@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import pandas as pd
 import pyomo.environ as po
 from pyomo import environ as po2
 
@@ -29,6 +29,9 @@ class CustomConstraints:
 
         # Limit initial investment costs
         self.limit_invest_costs(model)
+
+        # Ensure, that each horizon within the sim_duration has the same starting conditions
+        self.equal_horizon_start(model, len_horizon_days=5)
 
     def add_equal_invests(self, invests):
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
@@ -287,3 +290,44 @@ class CustomConstraints:
             _limit_invests(m=model,
                           block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
                           name='limit_invest_costs')
+
+    def equal_horizon_start(self, model, len_horizon_days):
+
+        model.CUSTOM_CONSTRAINTS.EQUATE_HORIZON_START = po.Block()
+
+        def _equate_horizon_start(m, block, name, storage, soc_set, ts):
+            p=0
+            def _equate_horizon_start_rule(block):
+                expr = m.GenericInvestmentStorageBlock.storage_content[storage, ts] == m.GenericInvestmentStorageBlock.invest[storage, 0] * soc_set
+
+                if expr is not True:
+                    getattr(block, name).add((p, ts), expr)
+
+            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
+            setattr(block, name + "_build", po.BuildAction(rule=_equate_horizon_start_rule))
+
+
+        # get all starting timepoints of the scenario
+        set_ts = pd.date_range(start=self.scenario.starttime,
+                               end=self.scenario.sim_endtime,
+                               freq=pd.Timedelta(days=len_horizon_days),
+                               inclusive='left')
+
+        # get the index numbers of set_ts elements in scenario.sim_dti
+        set_ts_idx = self.scenario.dti_sim.get_indexer(set_ts)
+        storage_components = {}
+        for block in self.scenario.blocks.values():
+            if isinstance(block, blocks.StationaryEnergyStorage):
+                storage_components[block.ess] = block.soc_init
+            elif isinstance(block, blocks.CommoditySystem):
+                for commodity in block.commodities.values():
+                    storage_components[commodity.ess] = block.soc_init
+
+        for storage, soc_set in storage_components.items():
+            for ts in set_ts_idx:
+                _equate_horizon_start(m=model,
+                                      block=model.CUSTOM_CONSTRAINTS.EQUATE_HORIZON_START,
+                                      name=f'equal_start_{storage.label}_{ts}',
+                                      storage=storage,
+                                      soc_set=soc_set,
+                                      ts=ts)
