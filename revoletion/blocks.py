@@ -424,12 +424,13 @@ class RenewableInvestBlock(InvestBlock):
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        bus_connected      self.bus
+        xc_bus             self.bus
           |                   |
           |<--x----self_out---|<--self_src
           |                   |
-                              |-->self_exc
+          |                   |-->self_exc
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
@@ -714,14 +715,13 @@ class CommoditySystem(InvestBlock):
 
     def update_input_components(self, scenario, horizon):
         """
-        x denotes the flow measurement point in results (?c denotes ac or dc, depending on the parameter 'system')
+        x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        ac/dc_bus            bus
-          |<-x--------mc_xc---|---(MobileCommodity Instance)
-          |                   |
-          |-x-xc_mc---------->|---(MobileCommodity Instance)
-                              |
-                              |---(MobileCommodity Instance)
+        xc_bus         self.bus
+          |<-x---cs_xc---|---(MobileCommodity Instance)
+          |              |
+          |-x----xc_cs-->|---(MobileCommodity Instance)
         """
 
         self.bus = solph.Bus(label=f'{self.name}_bus')
@@ -792,8 +792,9 @@ class ControllableSource(InvestBlock):
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        ac_bus
+        xc_bus
           |
           |<-x-gen
           |
@@ -1002,20 +1003,21 @@ class GridConnection(InvestBlock):
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        ac_bus           grid_bus
+        xc_bus             self.bus
           |                   |
-          |<--xc_grid_1--x----|
-          |---grid_xc_1--x--->|
+          |---xc_grid_1--x--->|
+          |<--grid_xc_1--x----|
           |                   |---(GridMarket Instance)
-          |<--xc_grid_2--x----|
-          |---grid_xc_2--x--->|
+          |---xc_grid_2--x--->|
+          |<--grid_xc_2--x----|
           |                   |---(GridMarket Instance)
           |         .         |
                     .
           |         .         |
-          |<--xc_grid_n--x----|
-          |---grid_xc_n--x--->|
+          |---xc_grid_n--x--->|
+          |<--grid_xc_n--x----|
           |                   |
         """
 
@@ -1224,8 +1226,9 @@ class FixedDemand(Block):
         # new ph data slice is created during initialization of the PredictionHorizon
         """
         x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        ac_bus
+        xc_bus
           |
           |-x->dem_snk
           |
@@ -1853,11 +1856,15 @@ class StationaryEnergyStorage(InvestBlock):
     def update_input_components(self, scenario, horizon):
         """
         x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        xc_bus
-          |
-          |<-x->ess
-          |
+        xc_bus      self.bus
+          |            |
+          |<-x-ess_xc--|
+          |            |<--->ess
+          |-x-xc_ess-->|
+          |            |
+
         """
 
         self.bus_connected = scenario.blocks['core'].dc_bus if self.system == 'dc' else scenario.blocks['core'].ac_bus
@@ -2033,11 +2040,10 @@ class SystemCore(InvestBlock):
         """
         x denotes the flow measurement point in results
 
-        dc_bus              ac_bus
-          |                   |
-          |-x-dc_ac---------->|
-          |                   |
-          |<----------ac_dc-x-|
+        dc_bus       ac_bus
+          |-x--dc_ac-->|
+          |            |
+          |<---ac_dc-x-|
         """
 
         self.ac_bus = solph.Bus(label='ac_bus')
