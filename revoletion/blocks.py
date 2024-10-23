@@ -544,11 +544,11 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_ep_spec(self):
         # Opex is uprated in importance for short simulations
-        self.opex_ep_spec = self.opex_spec * factor_opex
-        self.opex_ep_spec_sys_chg = self.opex_spec_sys_chg * factor_opex
-        self.opex_ep_spec_sys_dis = self.opex_spec_sys_dis * factor_opex
-        self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * factor_opex
-        self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * factor_opex
+        self.opex_ep_spec = self.opex_spec * self.factor_opex
+        self.opex_ep_spec_sys_chg = self.opex_spec_sys_chg * self.factor_opex
+        self.opex_ep_spec_sys_dis = self.opex_spec_sys_dis * self.factor_opex
+        self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * self.factor_opex
+        self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
     def calc_opex_ext(self, scenario):
         """
@@ -899,7 +899,7 @@ class GridConnection(InvestBlock):
         self.mntex_yrl = np.maximum(self.size_g2s, self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_peak = self.opex_peak_spec * factor_opex
+        self.opex_ep_spec_peak = self.opex_peak_spec * self.factor_opex
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
@@ -1128,8 +1128,8 @@ class GridMarket:
                                   secondary_y=False)
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_g2s = self.opex_spec_g2s / self.parent.factor_capex
-        self.opex_ep_spec_s2g = self.opex_spec_s2g / self.parent.factor_capex
+        self.opex_ep_spec_g2s = self.opex_spec_g2s / self.parent.factor_opex
+        self.opex_ep_spec_s2g = self.opex_spec_s2g / self.parent.factor_opex
 
     def calc_results(self, scenario):
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
