@@ -115,6 +115,12 @@ class BatteryPackModel:
         and derate block for next horizon
         """
 
+        # If aging is disabled, keep initial SOH
+        if ((isinstance(self.commodity, blocks.MobileCommodity) and not self.commodity.parent.aging) or
+            (isinstance(self.commodity, blocks.StationaryEnergyStorage) and not self.commodity.aging)):
+            self.commodity.soh[horizon.ch_endtime] = self.commodity.soh_init
+            return
+
         if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
             self.get_pack_parameters()
 

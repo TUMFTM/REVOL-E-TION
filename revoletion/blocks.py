@@ -545,11 +545,11 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_ep_spec(self):
         # Opex is uprated in importance for short simulations
-        self.opex_ep_spec = self.opex_spec * factor_opex
-        self.opex_ep_spec_sys_chg = self.opex_spec_sys_chg * factor_opex
-        self.opex_ep_spec_sys_dis = self.opex_spec_sys_dis * factor_opex
-        self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * factor_opex
-        self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * factor_opex
+        self.opex_ep_spec = self.opex_spec * self.factor_opex
+        self.opex_ep_spec_sys_chg = self.opex_spec_sys_chg * self.factor_opex
+        self.opex_ep_spec_sys_dis = self.opex_spec_sys_dis * self.factor_opex
+        self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * self.factor_opex
+        self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
     def calc_opex_ext(self, scenario):
         """
@@ -636,10 +636,9 @@ class CommoditySystem(InvestBlock):
             self.size += commodity.size
             self.size_additional += commodity.size_additional
 
-            if self.aging:
-                commodity.aging_model.size = commodity.size
-                # Calculate number of cells as a float to correctly represent power split with nonreal cells
-                commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
+            commodity.aging_model.size = commodity.size
+            # Calculate number of cells as a float to correctly represent power split with nonreal cells
+            commodity.aging_model.n_cells = commodity.size / commodity.aging_model.e_cell
 
     def get_legend_entry(self):
         return (f'{self.name} total power'
@@ -901,7 +900,7 @@ class GridConnection(InvestBlock):
         self.mntex_yrl = np.maximum(self.size_g2s, self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_peak = self.opex_peak_spec * factor_opex
+        self.opex_ep_spec_peak = self.opex_peak_spec * self.factor_opex
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
@@ -1131,8 +1130,8 @@ class GridMarket:
                                   secondary_y=False)
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_g2s = self.opex_spec_g2s / self.parent.factor_capex
-        self.opex_ep_spec_s2g = self.opex_spec_s2g / self.parent.factor_capex
+        self.opex_ep_spec_g2s = self.opex_spec_g2s / self.parent.factor_opex
+        self.opex_ep_spec_s2g = self.opex_spec_s2g / self.parent.factor_opex
 
     def calc_results(self, scenario):
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
@@ -1307,8 +1306,7 @@ class MobileCommodity:
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
 
-        if self.parent.aging:
-            self.aging_model = bat.BatteryPackModel(scenario, self)
+        self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.eff_dis / 1e3:.1f} kW discharge)'
@@ -1794,8 +1792,7 @@ class StationaryEnergyStorage(InvestBlock):
         self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.soh.loc[scenario.starttime] = self.soh_init
 
-        if self.aging:
-            self.aging_model = bat.BatteryPackModel(scenario, self)
+        self.aging_model = bat.BatteryPackModel(scenario, self)
 
     def add_soc_trace(self, scenario):
         legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
@@ -1806,7 +1803,7 @@ class StationaryEnergyStorage(InvestBlock):
                                              line=dict(width=2, dash=None)),
                                   secondary_y=True)
 
-        legentry = f"{self.name} SOH"
+        legentry = f'{self.name} SOH'
         data = self.soh.dropna()
         scenario.figure.add_trace(go.Scatter(x=data.index,
                                              y=data,
