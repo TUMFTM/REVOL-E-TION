@@ -259,8 +259,6 @@ class InvestBlock(Block):
         self.calc_capex(scenario)
         self.calc_mntex(scenario)
         self.calc_opex(scenario)
-        if isinstance(self, CommoditySystem):
-            self.calc_opex_ext(scenario)
 
         self.totex_sim = self.capex_init + self.mntex_sim + self.opex_sim
         self.totex_prj = self.capex_prj + self.mntex_prj + self.opex_prj
@@ -551,10 +549,22 @@ class CommoditySystem(InvestBlock):
         self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * self.factor_opex
         self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
-    def calc_opex_ext(self, scenario):
-        """
-        Cost calculation for external charging
-        """
+
+    def calc_opex_sim(self, scenario):
+
+        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
+
+        for commodity in self.commodities.values():
+            commodity.opex_sim = commodity.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
+            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac[scenario.dti_sim]) +
+                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc[scenario.dti_sim])) * scenario.timestep_hours
+            self.opex_commodities += (commodity.opex_sim + commodity.opex_sim_ext)
+            self.opex_commodities_ext += commodity.opex_sim_ext
+
+        self.opex_sim = self.opex_sys + self.opex_commodities
+        self.opex_sim_ext = self.opex_commodities_ext
+
+        # Calc opex for external charging
         self.opex_yrl_ext = utils.scale_sim2year(self.opex_sim_ext, scenario)
         self.opex_prj_ext = utils.scale_year2prj(self.opex_yrl_ext, scenario)
         self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
@@ -571,20 +581,6 @@ class CommoditySystem(InvestBlock):
         scenario.opex_prj_ext += self.opex_prj_ext
         scenario.opex_dis_ext += self.opex_dis_ext
         scenario.opex_ann_ext += self.opex_ann_ext
-
-    def calc_opex_sim(self, scenario):
-
-        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
-
-        for commodity in self.commodities.values():
-            commodity.opex_sim = commodity.flow_in @ self.opex_spec[scenario.dti_sim] * scenario.timestep_hours
-            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac[scenario.dti_sim]) +
-                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc[scenario.dti_sim])) * scenario.timestep_hours
-            self.opex_commodities += commodity.opex_sim
-            self.opex_commodities_ext += commodity.opex_sim_ext
-
-        self.opex_sim = self.opex_sys + self.opex_commodities
-        self.opex_sim_ext = self.opex_commodities_ext
 
     def get_ch_results(self, horizon, scenario):
 

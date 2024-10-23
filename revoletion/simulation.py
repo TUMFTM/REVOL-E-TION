@@ -548,9 +548,7 @@ class Scenario:
                                  f' (existing: {block.size_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_additional / 1e3:.1f} {unit})')
 
-        # ToDo: state that these results are internal costs of local site only neglecting costs for external charging
-        self.logger.info(f'Total simulated cost at local site: {self.totex_sim / 1e6:.2f} million {self.currency}')
-        self.logger.info(f'Total simulated cost for external charging: {self.opex_sim_ext:.2f} {self.currency}')
+        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
         self.logger.info(
             f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
         print('#################')
