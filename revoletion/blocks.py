@@ -861,9 +861,11 @@ class GridConnection(InvestBlock):
 
         # Create a series to store peak power values
         self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints,
-                                             columns=['power', 'period_fraction', 'start', 'end'])
+                                             columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
         # initialize power to 0 as for rh this value will be used to initialize the existing peak power
         self.peakshaving_ints.loc[:, 'power'] = 0
+
+        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # todo crosscheck
 
         if self.peakshaving is not None:
             # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)

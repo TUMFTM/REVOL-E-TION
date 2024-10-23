@@ -587,10 +587,10 @@ class Scenario:
                             block_obj.peakshaving_ints.loc[interval, 'power'])
                         self.result_summary.loc[(block_name, f'power_period_fraction_{interval}'), self.name] = float(
                             block_obj.peakshaving_ints.loc[interval, 'period_fraction'])
-                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = float(
-                            block_obj.peakshaving_ints.loc[interval, 'opex_spec'])
-                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = \
-                        block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod()
+                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = (
+                            float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']))
+                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = (
+                            block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod())
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
