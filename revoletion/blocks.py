@@ -476,11 +476,21 @@ class CommoditySystem(InvestBlock):
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode(scenario, run)
 
+
+        com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
         self.data = None
         if self.data_source == 'des':
             self.usecases = self.read_usecase_file(run)
         elif self.data_source == 'log':
             self.read_input_log(scenario, run)
+            # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
+            # system + number), the names specified in the log file names are used, with the commodity system name added
+            # for unique identification.
+            com_names_log = sorted(self.data.columns.get_level_values(0).unique()[:self.num].tolist())
+            if com_names != com_names_log:
+                com_names_rename = {com_name: f'{com_name} (in {self.name})' for com_name in com_names_log}
+                self.data.columns = self.data.columns.map(lambda x: (com_names_rename.get(x[0], x[0]), *x[1:]))
+                com_names = com_names_rename.values()
         else:
             raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
 
@@ -503,8 +513,8 @@ class CommoditySystem(InvestBlock):
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
         # Generate individual commodity instances
-        self.commodities = {f'{self.name}{str(i)}': MobileCommodity(self.name + str(i), self, scenario, run)
-                            for i in range(self.num)}
+        self.commodities = {com_name: MobileCommodity(com_name, self, scenario, run)
+                            for com_name in com_names}
 
     def add_power_trace(self, scenario):
         super().add_power_trace(scenario)
