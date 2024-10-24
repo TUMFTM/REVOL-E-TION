@@ -102,7 +102,8 @@ ess,eff_dcac,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8
 ess,crate_dis,0.8,0.8,0.8,0.8
 ess,soc_init,0.5,0.5,0.5,0.5
-ess,soh_init,1,1,1,1
+ess,q_loss_cal_init,0,0,0,0
+ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
 bev,data_source,des,des,des,des
@@ -121,7 +122,8 @@ bev,aging,True,True,True,True
 bev,chemistry,nmc,nmc,nmc,nmc
 bev,temp_battery,25,pv,pv,pv
 bev,ls,10,10,10,10
-bev,soh_init,1,1,1,1
+bev,q_loss_cal_init,0,0,0,0
+bev,q_loss_cyc_init,0,0,0,0
 bev,soc_init,1,1,1,1
 bev,soc_target_high,1.0,1.0,1.0,1.0
 bev,soc_target_low,0.8,0.8,0.8,0.8
@@ -163,7 +165,8 @@ brs,aging,True,True,True,True
 brs,chemistry,nmc,nmc,nmc,nmc
 brs,temp_battery,25,pv,pv,pv
 brs,ls,10,10,10,10
-brs,soh_init,1,1,1,1
+brs,q_loss_cal_init,0,0,0,0
+brs,q_loss_cyc_init,0,0,0,0
 brs,soc_init,0.5,0.5,0.5,0.5
 brs,soc_target,1.0,1.0,1.0,1.0
 brs,soc_return,0.15,0.15,0.15,0.15

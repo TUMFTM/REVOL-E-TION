@@ -1275,10 +1275,13 @@ class MobileCommodity:
 
         self.set_init_size(scenario, run)
 
+        self.aging = self.parent.aging
         self.dsoc_buffer = self.parent.dsoc_buffer
         self.mode_dispatch = self.parent.mode_dispatch
         self.soc_init = self.parent.soc_init
-        self.soh_init = self.parent.soh_init
+        self.chemistry = self.parent.chemistry
+        self.q_loss_cal_init = self.parent.q_loss_cal_init
+        self.q_loss_cyc_init = self.parent.q_loss_cyc_init
         self.pwr_chg = self.parent.pwr_chg
         self.pwr_dis = self.parent.pwr_dis
         self.eff_chg = self.parent.eff_chg
@@ -1299,12 +1302,6 @@ class MobileCommodity:
 
         # self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
-        self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
-        self.soh.loc[scenario.starttime] = self.soh_init
-
-        self.soc_min = (1 - self.soh_init) / 2
-        self.soc_max = 1 - ((1 - self.soh_init) / 2)
-
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
         self.e_ext_ac_sim = self.e_ext_ac_yrl = self.e_ext_ac_prj = self.e_ext_ac_dis = 0
@@ -1323,7 +1320,10 @@ class MobileCommodity:
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
 
+        self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.aging_model = bat.BatteryPackModel(scenario, self)
+        self.soc_min = (1 - self.soh[scenario.starttime]) / 2
+        self.soc_max = 1 - ((1 - self.soh[scenario.starttime]) / 2)
 
     def add_power_trace(self, scenario):
         legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.eff_dis / 1e3:.1f} kW discharge)'
@@ -1803,13 +1803,10 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc = pd.Series(index=utils.extend_dti(scenario.dti_sim), dtype='float64')
         self.soc[scenario.starttime] = self.soc_init
 
-        self.soc_min = (1 - self.soh_init) / 2
-        self.soc_max = 1 - ((1 - self.soh_init) / 2)
-
         self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
-        self.soh.loc[scenario.starttime] = self.soh_init
-
         self.aging_model = bat.BatteryPackModel(scenario, self)
+        self.soc_min = (1 - self.soh[scenario.starttime]) / 2
+        self.soc_max = 1 - ((1 - self.soh[scenario.starttime]) / 2)
 
     def add_soc_trace(self, scenario):
         legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'

@@ -17,10 +17,7 @@ class BatteryPackModel:
 
         self.commodity = commodity
 
-        if isinstance(self.commodity, blocks.MobileCommodity):
-            self.chemistry = self.commodity.parent.chemistry.lower()  # 'lfp' or 'nmc'
-        else:  # StationaryEnergyStorage
-            self.chemistry = self.commodity.chemistry.lower()
+        self.chemistry = self.commodity.chemistry.lower()
 
         # Thermal model parameters
         # self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
@@ -39,10 +36,16 @@ class BatteryPackModel:
         # self.t_heat_off = 15 # Heating deactivation threshold in °C
 
         # Initial values for aging state tracking
-        self.q_loss_cal = np.zeros(scenario.nhorizons)
-        self.r_inc_cal = np.zeros(scenario.nhorizons)
-        self.q_loss_cyc = np.zeros(scenario.nhorizons)
-        self.r_inc_cyc = np.zeros(scenario.nhorizons)
+        self.q_loss_cal = np.zeros(scenario.nhorizons + 1)
+        self.r_inc_cal = np.zeros(scenario.nhorizons + 1)
+        self.q_loss_cyc = np.zeros(scenario.nhorizons + 1)
+        self.r_inc_cyc = np.zeros(scenario.nhorizons + 1)
+
+        # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
+        self.q_loss_cal[0] = self.commodity.q_loss_cal_init
+        self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
+
+        self.commodity.soh[scenario.starttime] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
 
         # Placeholders for aging variables to be filled every aging evaluation
         self.soc_hor = self.ocv_hor = self.cycles_hor = None
@@ -116,8 +119,7 @@ class BatteryPackModel:
         """
 
         # If aging is disabled, keep initial SOH
-        if ((isinstance(self.commodity, blocks.MobileCommodity) and not self.commodity.parent.aging) or
-            (isinstance(self.commodity, blocks.StationaryEnergyStorage) and not self.commodity.aging)):
+        if not self.commodity.aging:
             self.commodity.soh[horizon.ch_endtime] = self.commodity.soh_init
             return
 
@@ -182,7 +184,7 @@ class BatteryPackModel:
             self.calc_aging_naumann(horizon)
 
         # Update block / commodity storage size
-        self.commodity.soh[horizon.ch_endtime] = self.commodity.soh_init - sum(self.q_loss_cyc) - sum(self.q_loss_cal)
+        self.commodity.soh[horizon.ch_endtime] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
         self.commodity.soc_min = (1 - self.commodity.soh[horizon.ch_endtime]) / 2
         self.commodity.soc_max = 1 - ((1 - self.commodity.soh[horizon.ch_endtime]) / 2)
 
@@ -207,14 +209,14 @@ class BatteryPackModel:
         t_eq = (np.sum(self.q_loss_cal) / ((k_tuning * k_soc_q_cal * k_temp_q_cal) ** 2))
 
         # Calculate calendric aging within this horizon
-        self.q_loss_cal[horizon.index] = (k_tuning *
-                                          k_temp_q_cal *
-                                          k_soc_q_cal *
-                                          (np.sqrt(t_eq + self.t_hor) - np.sqrt(t_eq)))
-        self.r_inc_cal[horizon.index] = (k_tuning *
-                                         k_temp_r_cal *
-                                         k_soc_r_cal *
-                                         self.t_hor)  # linear - no equivalent time needed
+        self.q_loss_cal[horizon.index + 1] = (k_tuning *
+                                              k_temp_q_cal *
+                                              k_soc_q_cal *
+                                              (np.sqrt(t_eq + self.t_hor) - np.sqrt(t_eq)))
+        self.r_inc_cal[horizon.index + 1] = (k_tuning *
+                                             k_temp_r_cal *
+                                             k_soc_r_cal *
+                                             self.t_hor)  # linear - no equivalent time needed
 
         # Calculate cyclic stress factor series (DOD for each detected cycle, C-rate over time)
         # Methodology from https://doi.org/10.1016/j.jpowsour.2019.227666
@@ -236,12 +238,12 @@ class BatteryPackModel:
             fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
 
             # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
-            self.q_loss_cyc[horizon.index] = (0.01 *
-                                              (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
-                                              (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
-            self.r_inc_cyc[horizon.index] = (0.01 *
-                                             (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
-                                             self.fec_hor)  # linear, not fec_eq needed
+            self.q_loss_cyc[horizon.index + 1] = (0.01 *
+                                                  (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
+                                                  (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
+            self.r_inc_cyc[horizon.index + 1] = (0.01 *
+                                                 (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
+                                                 self.fec_hor)  # linear, not fec_eq needed
         else:  # technically not necessary to set values here as no aging happens, eases debugging
             beta_cap = 0
             beta_res = 0
@@ -270,8 +272,8 @@ class BatteryPackModel:
 
         # Calculate calendric aging in this horizon
         t_hor_days = self.t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
-        self.q_loss_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
-        self.r_inc_cal[horizon.index] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
+        self.q_loss_cal[horizon.index + 1] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
+        self.r_inc_cal[horizon.index + 1] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
 
         # Calculate mean OCV of each detected cycle
         ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean']).reshape([-1,])
@@ -292,8 +294,8 @@ class BatteryPackModel:
             q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
 
             # Calculate cyclic aging
-            self.q_loss_cyc[horizon.index] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
-            self.r_inc_cyc[horizon.index] = k_tuning * beta_res * self.q_tot_hor
+            self.q_loss_cyc[horizon.index + 1] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
+            self.r_inc_cyc[horizon.index + 1] = k_tuning * beta_res * self.q_tot_hor
 
         else:  # technically not necessary to set values here as no aging happens, eases debugging
             beta_cap = 0
