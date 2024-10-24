@@ -1298,7 +1298,7 @@ class MobileCommodity:
 
         self.apriori_data = None
 
-        self.data_ph = self.sc_init_ph = None  # placeholder, is filled in update_input_components
+        self.data_ph = None  # placeholder, is filled in update_input_components
 
         # self.soc_init_ph = self.soc_init  # set first PH's initial state variables (only SOC)
 
