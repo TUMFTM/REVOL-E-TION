@@ -1110,14 +1110,14 @@ class GridMarket:
 
         self.set_init_size()
 
-        self.equal_prices = True if self.opex_spec_s2g == 'equal' else False
+        utils.transform_scalar_var(self, 'opex_spec_g2s', scenario, run)
 
-        # use sorted to ensure that opex_spec_g2s is processed before opex_spec_s2g
-        for var_name in sorted([var for var in vars(self) if ('opex_spec' in var)]):
-            if var_name == 'opex_spec_s2g' and self.equal_prices:
-                self.opex_spec_s2g = -1 * self.opex_spec_g2s
-            else:
-                utils.transform_scalar_var(self, var_name, scenario, run)
+        if self.opex_spec_s2g == 'equal':
+            self.equal_prices = True
+            self.opex_spec_s2g = -1 * self.opex_spec_g2s
+        else:
+            self.equal_prices = False
+            utils.transform_scalar_var(self, 'opex_spec_s2g', scenario, run)
 
         self.calc_opex_ep_spec()
 
