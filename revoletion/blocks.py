@@ -85,7 +85,8 @@ class Block:
         capex = pd.Series(dtype='float64', index=range(scenario.prj_duration_yrs), data=0)
         capex[0] = self.capex_init
         if hasattr(self, 'ls'):
-            for year in eco.repllist(self.ls, scenario.prj_duration_yrs):
+            for year in eco.invest_periods(lifespan=self.ls,
+                                           observation_horizon=scenario.prj_duration_yrs):
                 capex[year] = self.capex_init * (self.ccr ** year)
         self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
@@ -217,13 +218,15 @@ class InvestBlock(Block):
                                     f' for any other strategy than \"GO\" - exiting')
             exit()  # TODO exit scenario instead of run
 
-        # ace = adjusted capital expenses (including maintenance)
-        self.ace = eco.adj_ce(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
-
+        self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
         # annuity factor to factor the difference between simulation and project time into component sizing
+        self.factor_capex = eco.annuity_due_capex(capex_init=1,
+                                                  lifespan=self.ls,
+                                                  observation_horizon=scenario.prj_duration_yrs,
+                                                  discount_rate=scenario.wacc,
+                                                  cost_change_ratio=self.ccr)
         # ep = equivalent present (i.e. specific values prediscounted)
-        self.factor_capex = eco.ann_recur(1, self.ls, scenario.prj_duration_yrs, scenario.wacc, self.ccr)
-        self.capex_ep_spec = self.ace * self.factor_capex  # Capex is downrated in importance for short simulations
+        self.capex_ep_spec = self.capex_joined * self.factor_capex  # Capex is downrated for short simulations
 
         self.factor_opex = 1 / scenario.sim_prj_rat
         self.opex_ep_spec = None  # initial value
@@ -236,20 +239,20 @@ class InvestBlock(Block):
 
         self.calc_capex_init(scenario)  # initial investment references to different parameters depending on block type
 
-        self.capex_prj = eco.tce(self.capex_init,
-                                 self.ccr,
-                                 self.ls,
-                                 scenario.prj_duration_yrs)
-        self.capex_dis = eco.pce(self.capex_init,
-                                 self.ccr,
-                                 scenario.wacc,
-                                 self.ls,
-                                 scenario.prj_duration_yrs)
-        self.capex_ann = eco.ann_recur(self.capex_init,
+        self.capex_prj = eco.capex_sum(self.capex_init,
+                                       self.ccr,
                                        self.ls,
-                                       scenario.prj_duration_yrs,
-                                       scenario.wacc,
-                                       self.ccr)
+                                       scenario.prj_duration_yrs)
+        self.capex_dis = eco.capex_present(self.capex_init,
+                                           self.ccr,
+                                           scenario.wacc,
+                                           self.ls,
+                                           scenario.prj_duration_yrs)
+        self.capex_ann = eco.annuity_due_capex(self.capex_init,
+                                               self.ls,
+                                               scenario.prj_duration_yrs,
+                                               scenario.wacc,
+                                               self.ccr)
 
         scenario.capex_init += self.capex_init
         scenario.capex_prj += self.capex_prj
@@ -292,11 +295,11 @@ class InvestBlock(Block):
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
                                           scenario.prj_duration_yrs,
                                           scenario.wacc)
-        self.mntex_ann = eco.ann_recur(self.mntex_yrl,
-                                       1,  # lifespan of 1 yr -> mntex happening yearly
-                                       scenario.prj_duration_yrs,
-                                       scenario.wacc,
-                                       1)  # no cost decrease in mntex
+        self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
+                                               1,  # lifespan of 1 yr -> mntex happening yearly
+                                               scenario.prj_duration_yrs,
+                                               scenario.wacc,
+                                               1)  # no cost decrease in mntex
 
         scenario.mntex_yrl += self.mntex_yrl
         scenario.mntex_prj += self.mntex_prj
@@ -322,11 +325,11 @@ class InvestBlock(Block):
         self.opex_dis = eco.acc_discount(self.opex_yrl,
                                          scenario.prj_duration_yrs,
                                          scenario.wacc)
-        self.opex_ann = eco.ann_recur(self.opex_yrl,
-                                      1,  # lifespan of 1 yr -> opex happening yearly
-                                      scenario.prj_duration_yrs,
-                                      scenario.wacc,
-                                      1)  # no cost decrease in opex
+        self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
+                                              1,  # lifespan of 1 yr -> opex happening yearly
+                                              scenario.prj_duration_yrs,
+                                              scenario.wacc,
+                                              1)  # no cost decrease in opex
 
         scenario.opex_sim += self.opex_sim
         scenario.opex_yrl += self.opex_yrl
@@ -588,7 +591,7 @@ class CommoditySystem(InvestBlock):
         self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
                                              scenario.prj_duration_yrs,
                                              scenario.wacc)
-        self.opex_ann_ext = eco.ann_recur(self.opex_yrl_ext,
+        self.opex_ann_ext = eco.annuity_due_capex(self.opex_yrl_ext,
                                           1,  # lifespan of 1 yr -> opex happening yearly
                                           scenario.prj_duration_yrs,
                                           scenario.wacc,

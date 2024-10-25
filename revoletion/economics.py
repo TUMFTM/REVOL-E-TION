@@ -1,85 +1,105 @@
 #!/usr/bin/env python3
 
-def discount(value, deltat, discrate):
+def discount(future_value: float,
+             periods: int,
+             discount_rate: float) -> float:
     """
-    This function calculates the present value of an actual cost in the future (in year deltat)
+    This function calculates the present value of a future value in some periods at a discount rate per period
     """
-    pc = value / ((1 + discrate) ** deltat)  # used to be (deltat + 1) - why?
-    return pc
+    q = 1 + discount_rate
+    present_value = future_value / (q ** periods)
+    return present_value
 
 
-def acc_discount(value, ts, discrate):
+def acc_discount(nominal_value: float,
+                 observation_horizon: int,
+                 discount_rate: float) -> float:
     """
-    This function calculates the accumulated present cost of a yearly cost in the future (from now to ts years ahead)
+    This function calculates the accumulated present value of a peridical, nominally repeating cashflow in the future
+    (from present to the observation horizon) at a discount rate per period
     """
-    apc = 0
-    for year in range(0, int(ts)):
-        apc += discount(value, year, discrate)
-    return apc
+    present_value = sum([discount(nominal_value, period, discount_rate)
+                         for period in range(observation_horizon)])
+    return present_value
 
 
-def adj_ce(ce: float, me: float, ls: int, discrate: float) -> float:
+def join_capex_mntex(capex: float,
+                     mntex: float,
+                     lifespan: int,
+                     discount_rate: float) -> float:
     """
-    This function adjusts a component's capex (ce) to include discounted present cost for time based maintenance (pme)
+    This function adjusts a component's capex to include accumulated present maintenance cost for time based maintenance
     """
-    ace = ce + acc_discount(me, ls, discrate)
-    return ace
+    capex_adjusted = capex + acc_discount(mntex, lifespan, discount_rate)
+    return capex_adjusted
 
 
-def ann(pv, hor, discrate):
+def annuity_due(present_value: float,
+        observation_horizon: int,
+        discount_rate: float) -> float:
     """
-        This function calculates the annuity due (the equivalent yearly sum to generate the same
-        NPV) of an initial investment of present value pv over a horizon of hor years
+    This function calculates the annuity due (the equivalent periodial, nominally recurring value to generate the same
+    NPV) of a present value pv over an observation horizon at a discount rate per period
     """
-    q = 1 + discrate
-    a = pv / (((1 - (q ** -hor)) / discrate) * q)  # fails at discrate 0 --> Todo: replace zero by eps
-    return a
+    q = 1 + discount_rate
+    try:
+        annuity_due = present_value / (q * ((1 - (q ** -observation_horizon)) / discount_rate))
+    except ZeroDivisionError:
+        annuity_due = present_value / periods
+    return annuity_due
 
 
-def repllist(ls, hor):
+def invest_periods(lifespan: int,
+                   observation_horizon: int) -> list:
     """
-        This function calculates a list of years to replace the component in, given its lifespan ls and the observation
-        horizon hor
+    This function returns a list of period numbers to invest into a component (i.e. buy or replace it),
+    given its lifespan and the observation horizon
     """
-    year = 0
-    rul = ls
-    repyrs = []
-    while year < hor:
-        if rul == 0:
-            repyrs.append(year)
-            rul = ls
-        rul -= 1
-        year += 1
-    return repyrs
+    return [period for period in range(observation_horizon) if period % lifespan == 0]
 
 
-def tce(ce, cdr, ls, hor):
+def capex_sum(capex_init: float,
+              cost_change_ratio: float,
+              lifespan: int,
+              observation_horizon: int) -> float:
     """
-        This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
+    This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
+    after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
     """
-    tce = ce + sum([ce * (cdr ** yr) for yr in repllist(ls, hor)])
-    return tce
+    capex_total = sum([capex_init * (cost_change_ratio ** period)
+                       for period in invest_periods(lifespan, observation_horizon)])
+    return capex_total
 
 
-def pce(ce, cdr, discrate, ls, hor):
+def capex_present(capex_init: float,
+                  cost_change_ratio: float,
+                  discount_rate: float,
+                  lifespan: int,
+                  observation_horizon: int) -> float:
     """
-        This function calculates the present (discounted) capital expenses for a component that has to be replaced
-        every ls years during the observation horizon hor and varies in price at a ratio (cdr) every year.
+    This function calculates the present (discounted) capital expenses for a component that has to be replaced
+    after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
     """
-    pce = ce + sum([discount(ce * (cdr ** yr), yr, discrate) for yr in repllist(ls, hor)])
-    return pce
+    capex_present = sum([discount(capex_init * (cost_change_ratio ** period), period, discount_rate)
+                         for period in invest_periods(lifespan, observation_horizon)])
+    return capex_present
 
 
-def ann_recur(ce, ls, hor, discrate, ccr):
+def annuity_due_capex(capex_init: float,
+                      lifespan: int,
+                      observation_horizon: int,
+                      discount_rate: float,
+                      cost_change_ratio: float) -> float:
     """
-        This function calculates the annuity due of a recurring (every ls years) and price changing (annual ratio ccr)
-        investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
+    This function calculates the annuity due of a recurring (every ls years) and price changing (annual ratio ccr)
+    investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
     """
-    replacements = repllist(ls, hor)
-    npc_repl = ce  # initial value, first capital expense is at BEGINNING of year 0, i.e. without discounting
-    for repl in replacements:
-        ce_repl = ce * (ccr ** repl)
-        npc_repl += discount(ce_repl, repl, discrate)
-    a = ann(npc_repl, hor, discrate)
-    return a
+    present_value = capex_present(capex_init=capex_init,
+                                  cost_change_ratio=cost_change_ratio,
+                                  discount_rate=discount_rate,
+                                  lifespan=lifespan,
+                                  observation_horizon=observation_horizon)
+    annuity_due_capex = annuity_due(present_value=present_value,
+                                    observation_horizon=observation_horizon,
+                                    discount_rate=discount_rate)
+    return annuity_due_capex
