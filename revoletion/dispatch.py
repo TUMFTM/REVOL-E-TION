@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import scipy as sp
+import statistics
 import importlib
 
 from revoletion import blocks
@@ -68,8 +69,8 @@ class RentalSystem:
         self.mtf = utils.import_module_from_path(module_name=sc.filename_mapper,
                                                  file_path=self.path_mapper)
 
-        self.soc_max_init = min([smax for smax in self.cs.commodities.values().soc_max])
-        self.soc_min_init = max([smin for smin in self.cs.commodities.values().soc_min])
+        self.soc_max_init = min([commodity.soc_max for commodity in self.cs.commodities.values()])
+        self.soc_min_init = max([commodity.soc_min for commodity in self.cs.commodities.values()])
 
         # calculate usable energy to expect
 
