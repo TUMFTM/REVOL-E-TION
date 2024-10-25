@@ -23,8 +23,6 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
-import tkinter as tk
-import tkinter.filedialog
 
 from revoletion import blocks
 from revoletion import checker
@@ -606,21 +604,15 @@ class Scenario:
 
 class SimulationRun:
 
-    def __init__(self):
+    def __init__(self, path_scenario, path_settings, execute=False):
 
         self.name = 'run'
         # pathing like this will not work with calling revoletion as a package in the future
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.process = None
 
-        self.scenarios_file_path = self.settings_file_path = None
-        if len(sys.argv) == 1:  # no arguments passed
-            self.select_arguments()
-        elif len(sys.argv) == 3:  # two arguments passed
-            self.read_arguments()
-        else:
-            raise ValueError('Invalid number of arguments - please provide either none (GUI input) '
-                             'or two arguments: scenarios file name or path and settings file name or path')
+        self.scenarios_file_path = path_scenario
+        self.settings_file_path = path_settings
 
         self.runtime_start = time.perf_counter()
         self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
@@ -784,43 +776,3 @@ class SimulationRun:
         for file in files:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
-
-    def read_arguments(self):
-
-        if os.path.isfile(sys.argv[1]):
-            self.scenarios_file_path = sys.argv[1]
-        elif os.path.isfile(os.path.join(self.path_pkg, 'input', 'scenarios', sys.argv[1])):
-            self.scenarios_file_path = os.path.join(self.path_pkg, 'input', 'scenarios', sys.argv[1])
-        else:
-            raise FileNotFoundError(f'Scenario file or path not found: {sys.argv[1]}')
-
-        if os.path.isfile(sys.argv[2]):
-            self.settings_file_path = sys.argv[2]
-        elif os.path.isfile(os.path.join(self.path_pkg, 'input', 'settings', sys.argv[2])):
-            self.settings_file_path = os.path.join(self.path_pkg, 'input', 'settings', sys.argv[2])
-        else:
-            raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
-
-    def select_arguments(self):
-
-        root = tk.Tk()
-        root.withdraw()  # hide small tk-window
-        root.lift()  # make sure all tk windows appear in front of other windows
-
-        # get scenarios file
-        scenarios_default_dir = os.path.join(self.path_pkg, 'input', 'scenarios')
-        self.scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
-                                                                 title="Select scenario file",
-                                                                 filetypes=(("CSV files", "*.csv"),
-                                                                            ("All files", "*.*")))
-        if not self.scenarios_file_path:
-            raise FileNotFoundError('No scenario file selected')
-
-        # get settings file
-        settings_default_dir = os.path.join(self.path_pkg, 'input', 'settings')
-        self.settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
-                                                                title="Select settings file",
-                                                                filetypes=(("CSV files", "*.csv"),
-                                                                           ("All files", "*.*")))
-        if not self.settings_file_path:
-            raise FileNotFoundError('No settings file selected')

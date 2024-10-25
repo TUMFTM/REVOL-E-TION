@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
 import itertools
-import logging
+import os
+import sys
 import threading
+import tkinter as tk
+import tkinter.filedialog
 import warnings
 import multiprocessing as mp
 
 from revoletion import simulation as sim
+from revoletion import logger as logger_fcs
 
 
 # raise UserWarnings about infeasibility as errors to catch them properly
@@ -18,36 +22,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=RuntimeWarning)
 
 
-def setup_logger(name, log_queue, run):
-    logger = logging.getLogger(name)
-    if log_queue:
-        logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
-        formatter = logging.Formatter('%(message)s')
-
-        queue_handler = logging.handlers.QueueHandler(log_queue)
-        queue_handler.setFormatter(formatter)
-        logger.addHandler(queue_handler)
-
-    else:
-        logger.setLevel(run.logger.level)
-        for handler in run.logger.handlers:
-            logger.addHandler(handler)
-
-    return logger
-
-
-def read_mplogger_queue(queue):
-    main_logger = logging.getLogger('main')
-
-    while True:
-        record = queue.get()
-        if record is None:
-            break
-        main_logger.handle(record)
-
-
 def simulate_scenario(name: str, run: sim.SimulationRun, log_queue):  # needs to be a function for starpool
-    logger = setup_logger(name, log_queue, run)
+    logger = logger_fcs.setup_logger(name, log_queue, run)
 
     run.process = mp.current_process() if run.parallel else None
 
@@ -93,17 +69,72 @@ def simulate_scenario(name: str, run: sim.SimulationRun, log_queue):  # needs to
     # make sure to clear up memory space
     del scenario
 
+def read_arguments(cwd):
+
+    if os.path.isfile(sys.argv[1]):
+        scenarios_file_path = sys.argv[1]
+    elif os.path.isfile(os.path.join(cwd, 'input', 'scenarios', sys.argv[1])):
+        scenarios_file_path = os.path.join(cwd, 'input', 'scenarios', sys.argv[1])
+    else:
+        raise FileNotFoundError(f'Scenario file or path not found: {sys.argv[1]}')
+
+    if os.path.isfile(sys.argv[2]):
+        settings_file_path = sys.argv[2]
+    elif os.path.isfile(os.path.join(cwd, 'input', 'settings', sys.argv[2])):
+        settings_file_path = os.path.join(cwd, 'input', 'settings', sys.argv[2])
+    else:
+        raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
+
+    return scenarios_file_path, settings_file_path
+
+
+def select_arguments(cwd):
+
+    root = tk.Tk()
+    root.withdraw()  # hide small tk-window
+    root.lift()  # make sure all tk windows appear in front of other windows
+
+    # get scenarios file
+    scenarios_default_dir = os.path.join(cwd, 'input', 'scenarios')
+    scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
+                                                        title="Select scenario file",
+                                                        filetypes=(("CSV files", "*.csv"),
+                                                                   ("All files", "*.*")))
+    if not scenarios_file_path:
+        raise FileNotFoundError('No scenario file selected')
+
+    # get settings file
+    settings_default_dir = os.path.join(cwd, 'input', 'settings')
+    settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
+                                                       title="Select settings file",
+                                                       filetypes=(("CSV files", "*.csv"),
+                                                                  ("All files", "*.*")))
+    if not settings_file_path:
+        raise FileNotFoundError('No settings file selected')
+
+    return scenarios_file_path, settings_file_path
+
 
 def main():
+    cwd = os.getcwd()
+    if len(sys.argv) == 1:  # no arguments passed
+        path_scenario, path_settings = select_arguments(cwd)
+    elif len(sys.argv) == 3:  # two arguments passed
+        path_scenario, path_settings = read_arguments(cwd)
+    else:
+        raise ValueError('Invalid number of arguments - please provide either none (GUI input) '
+                         'or two arguments: scenarios file name or path and settings file name or path')
 
-    run = sim.SimulationRun()  # get all global information about the run
+    run = sim.SimulationRun(path_scenario=path_scenario,
+                            path_settings=path_settings,
+                            execute=False)
 
     # parallelization activated in settings file
     if run.parallel:
         with mp.Manager() as manager:
             log_queue = manager.Queue()
 
-            log_thread = threading.Thread(target=read_mplogger_queue, args=(log_queue,))
+            log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
             log_thread.start()
             with mp.Pool(processes=run.process_num) as pool:
                 pool.starmap(
