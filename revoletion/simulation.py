@@ -634,7 +634,7 @@ class SimulationRun:
                                          index_col=[0, 1],
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
-        self.scenario_names = self.scenario_data.columns  # Get list of column names, each column is one scenario
+        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
         self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
@@ -740,9 +740,12 @@ class SimulationRun:
             self.max_process_num = int(self.max_process_num)
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
-        if (len(self.scenario_names) == 1 or self.process_num == 1) and self.parallel:
+        if (len(self.scenario_names) <= 1 or self.process_num == 1) and self.parallel:
             print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
             self.parallel = False
+
+        if (len(self.scenario_names) <= 0):
+            raise ValueError('No executable scenarios found in scenario file')
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):

@@ -143,6 +143,9 @@ Complex (multidimensional) parameters are mostly defined through links to other 
 The following table specifies each parameter for each possible block class in the scenario file.
 If and only if a block of a certain class exists within the scenario are these parameters required and read in. 
 Therefore not every scenario file contains all possible parameters.
+Multiple scenarios can be defined as multiple columns.
+The first row (header) of each scenario column defines the scenarios name.
+By adding a '#' to the start of the name of a scenario column, the scenario is ignored during the simulation process.
 The first column of the scenario file defines the name of the block the parameter in the second column applies to.
 An example scenario file is provided in the ```./input/scenarios``` directory.
 As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
