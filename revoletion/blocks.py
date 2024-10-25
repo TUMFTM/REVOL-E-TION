@@ -2130,9 +2130,7 @@ class WindSource(RenewableInvestBlock):
             self.data = scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
-            self.path_turbine_data_file = os.path.join(run.path_input_data,
-                                                       self.__class__.__name__,
-                                                       'turbine_data.pkl')
+            self.path_turbine_data_file = os.path.join(run.path_data_immut, 'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
             self.turbine_data = self.turbine_data.loc[

@@ -716,6 +716,8 @@ class SimulationRun:
         else:
             raise NotADirectoryError(f'Output directory not found: {self.path_output_data}')
 
+        self.path_data_immut = os.path.join(self.path_pkg, 'data')
+
         self.path_result_dir = os.path.join(self.path_output_data,
                                             f'{self.runtimestamp}_{self.scenario_file_name}')
         os.mkdir(self.path_result_dir)
