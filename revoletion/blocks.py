@@ -568,7 +568,6 @@ class CommoditySystem(InvestBlock):
         self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * self.factor_opex
         self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
-
     def calc_opex_sim(self, scenario):
 
         self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
@@ -1474,7 +1473,7 @@ class MobileCommodity:
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                     self.data_ph['dsoc'] + self.dsoc_buffer)
+                                                     self.data_ph['dsoc'] + self.soc_min + self.dsoc_buffer)
             soc_min = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
