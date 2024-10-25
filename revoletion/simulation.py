@@ -649,6 +649,7 @@ class SimulationRun:
         self.get_process_num()
         self.copy_scenario_file()
 
+        self.logger = None
         self.define_logger()
 
         # integration levels at which power consumption is determined a priori
