@@ -9,8 +9,10 @@ from io import StringIO
 
 class InputChecker:
 
-    def __init__(self):
-        self.path_readme = os.path.join(os.getcwd(), 'README.md')
+    def __init__(self, run):
+
+        self.run = run
+        self.path_readme = os.path.join(run.path_pkg, 'README.md')
         self.settings_target = self.read_settings_from_readme()
         self.scenarios_target = self.read_scenarios_from_readme()
 
@@ -67,16 +69,16 @@ class InputChecker:
 
         return df
 
-    def check_settings(self, run):
+    def check_settings(self):
 
         # Check for completeness
-        missing_params = [attr for attr in self.settings_target['Parameter'] if not hasattr(run, attr)]
+        missing_params = [attr for attr in self.settings_target['Parameter'] if not hasattr(self.run, attr)]
         if len(missing_params) > 0:
             raise AttributeError(f'Not all required settings defined. Missing: {", ".join(missing_params)}')
 
         # Individual parameter checks
         for param in self.settings_target['Parameter']:
-            value = getattr(run, param)
+            value = getattr(self.run, param)
 
             # check for correct dtypes
             dtype_target_str = self.settings_target.loc[self.settings_target['Parameter'] == param, 'Type'].values[0]
