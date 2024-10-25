@@ -611,7 +611,6 @@ class SimulationRun:
     def __init__(self, path_scenario, path_settings, execute=False):
 
         self.name = 'run'
-        # pathing like this will not work with calling revoletion as a package in the future
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.process = None
 
@@ -817,45 +816,54 @@ class SimulationRun:
 
         self.process = mp.current_process() if self.parallel else None
 
-        scenario = Scenario(name, self, logger)  # Create scenario instance
+        try:
 
-        for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-            horizon = PredictionHorizon(horizon_index, scenario, self)
+            scenario = Scenario(name, self, logger)  # Create scenario instance
 
-            # ToDo: move to checker.py
-            if scenario.strategy in ['go', 'rh']:
-                horizon.run_optimization(scenario, self)
-            else:
-                logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
-                break
+            for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
+                horizon = PredictionHorizon(horizon_index, scenario, self)
 
-            if scenario.exception and self.save_results:
-                scenario.save_result_summary()
-                break
-            else:
-                horizon.get_results(scenario, self)
+                # ToDo: move to checker.py
+                if scenario.strategy in ['go', 'rh']:
+                    horizon.run_optimization(scenario, self)
+                else:
+                    logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
+                    break
 
-            # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
-            del horizon
-
-        scenario.end_timing()
-
-        if not scenario.exception:
-            if self.save_results or self.print_results:
-                scenario.get_results()
-                scenario.calc_meta_results()
-                if self.save_results:
+                if scenario.exception and self.save_results:
                     scenario.save_result_summary()
-                    scenario.save_result_timeseries()
-                if self.print_results:
-                    scenario.print_results()
+                    break
+                else:
+                    horizon.get_results(scenario, self)
 
-            if self.save_plots or self.show_plots:
-                scenario.generate_plots()
-                if self.save_plots:
-                    scenario.save_plots()
-                if self.show_plots:
-                    scenario.show_plots()
+                # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
+                del horizon
 
-        # make sure to clear up memory space
-        del scenario
+            scenario.end_timing()
+
+            if not scenario.exception:
+                if self.save_results or self.print_results:
+                    scenario.get_results()
+                    scenario.calc_meta_results()
+                    if self.save_results:
+                        scenario.save_result_summary()
+                        scenario.save_result_timeseries()
+                    if self.print_results:
+                        scenario.print_results()
+
+                if self.save_plots or self.show_plots:
+                    scenario.generate_plots()
+                    if self.save_plots:
+                        scenario.save_plots()
+                    if self.show_plots:
+                        scenario.show_plots()
+
+            # make sure to clear up memory space
+            del scenario
+
+        except Exception as e:
+            logger.error(f"Exception in scenario {name}: {str(e)}")
+            logger.error("Traceback:", exc_info=True)
+
+        finally:
+            logging.shutdown()
