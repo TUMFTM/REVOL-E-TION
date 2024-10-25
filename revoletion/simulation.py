@@ -620,7 +620,11 @@ class SimulationRun:
 
         self.version_solph = solph.__version__
         self.version_revoletion = importlib.metadata.version('revoletion')
-        self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
+        
+        try:
+            self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
+        except subprocess.CalledProcessError:
+            self.commit_hash = 'unknown'
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
         self.scenario_data = pd.read_csv(self.scenarios_file_path,
