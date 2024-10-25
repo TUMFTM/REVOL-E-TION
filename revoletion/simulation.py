@@ -2,6 +2,7 @@
 
 import graphviz
 import importlib.metadata
+import itertools
 import logging
 import logging.handlers
 import math
@@ -15,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import timezonefinder
 import traceback
@@ -29,8 +31,10 @@ from revoletion import checker
 from revoletion import constraints
 from revoletion import colors
 from revoletion import dispatch
+from revoletion import logger as logger_fcs
 from revoletion import scheduler
 from revoletion import utils
+
 
 class OptimizationSuccessfulFilter(logging.Filter):
     def filter(self, record):
@@ -653,6 +657,9 @@ class SimulationRun:
         self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
+        if execute:
+            self.execute_simulation()
+
     def copy_scenario_file(self):
         shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)
 
@@ -731,6 +738,30 @@ class SimulationRun:
         self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
         self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
 
+    def execute_simulation(self):
+        # parallelization activated in settings file
+        if self.parallel:
+            with mp.Manager() as manager:
+                log_queue = manager.Queue()
+
+                log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
+                log_thread.start()
+                with mp.Pool(processes=self.process_num) as pool:
+                    pool.starmap(
+                        self.simulate_scenario,
+                        zip(self.scenario_names, itertools.repeat(log_queue)))
+                log_queue.put(None)
+                log_thread.join()
+        else:
+            for scenario_name in self.scenario_names:
+                self.simulate_scenario(scenario_name, None)
+
+        if self.save_results:
+            self.join_results()
+
+        self.end_timing()
+        # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
+
     def get_process_num(self):
         if self.max_process_num == 'max':
             self.max_process_num = os.cpu_count()
@@ -780,3 +811,51 @@ class SimulationRun:
         for file in files:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
+
+    def simulate_scenario(self, name: str, log_queue):
+        logger = logger_fcs.setup_logger(name, log_queue, self)
+
+        self.process = mp.current_process() if self.parallel else None
+
+        scenario = Scenario(name, self, logger)  # Create scenario instance
+
+        for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
+            horizon = PredictionHorizon(horizon_index, scenario, self)
+
+            # ToDo: move to checker.py
+            if scenario.strategy in ['go', 'rh']:
+                horizon.run_optimization(scenario, self)
+            else:
+                logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
+                break
+
+            if scenario.exception and self.save_results:
+                scenario.save_result_summary()
+                break
+            else:
+                horizon.get_results(scenario, self)
+
+            # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
+            del horizon
+
+        scenario.end_timing()
+
+        if not scenario.exception:
+            if self.save_results or self.print_results:
+                scenario.get_results()
+                scenario.calc_meta_results()
+                if self.save_results:
+                    scenario.save_result_summary()
+                    scenario.save_result_timeseries()
+                if self.print_results:
+                    scenario.print_results()
+
+            if self.save_plots or self.show_plots:
+                scenario.generate_plots()
+                if self.save_plots:
+                    scenario.save_plots()
+                if self.show_plots:
+                    scenario.show_plots()
+
+        # make sure to clear up memory space
+        del scenario
