@@ -609,7 +609,8 @@ class SimulationRun:
     def __init__(self):
 
         self.name = 'run'
-        self.cwd = os.getcwd()
+        # pathing like this will not work with calling revoletion as a package in the future
+        self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.process = None
 
         self.scenarios_file_path = self.settings_file_path = None
@@ -642,8 +643,8 @@ class SimulationRun:
         for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
-        self.input_checker = checker.InputChecker()
-        self.input_checker.check_settings(self)
+        self.input_checker = checker.InputChecker(self)
+        self.input_checker.check_settings()
 
         self.define_paths()
         self.get_process_num()
@@ -702,14 +703,14 @@ class SimulationRun:
     def define_paths(self):
 
         if self.path_input_data == 'project':
-            self.path_input_data = os.path.join(self.cwd, 'input')
+            self.path_input_data = os.path.join(self.path_pkg, 'input')
         elif os.path.isdir(self.path_input_data):
             pass  # no modification of path necessary
         else:
             raise NotADirectoryError(f'Input directory not found: {self.path_input_data}')
 
         if self.path_output_data == 'project':
-            self.path_output_data = os.path.join(self.cwd, 'results')
+            self.path_output_data = os.path.join(self.path_pkg, 'results')
         elif os.path.isdir(self.path_output_data):
             pass  # no modification of path necessary
         else:
@@ -786,15 +787,15 @@ class SimulationRun:
 
         if os.path.isfile(sys.argv[1]):
             self.scenarios_file_path = sys.argv[1]
-        elif os.path.isfile(os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])):
-            self.scenarios_file_path = os.path.join(self.cwd, 'input', 'scenarios', sys.argv[1])
+        elif os.path.isfile(os.path.join(self.path_pkg, 'input', 'scenarios', sys.argv[1])):
+            self.scenarios_file_path = os.path.join(self.path_pkg, 'input', 'scenarios', sys.argv[1])
         else:
             raise FileNotFoundError(f'Scenario file or path not found: {sys.argv[1]}')
 
         if os.path.isfile(sys.argv[2]):
             self.settings_file_path = sys.argv[2]
-        elif os.path.isfile(os.path.join(self.cwd, 'input', 'settings', sys.argv[2])):
-            self.settings_file_path = os.path.join(self.cwd, 'input', 'settings', sys.argv[2])
+        elif os.path.isfile(os.path.join(self.path_pkg, 'input', 'settings', sys.argv[2])):
+            self.settings_file_path = os.path.join(self.path_pkg, 'input', 'settings', sys.argv[2])
         else:
             raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
 
@@ -805,7 +806,7 @@ class SimulationRun:
         root.lift()  # make sure all tk windows appear in front of other windows
 
         # get scenarios file
-        scenarios_default_dir = os.path.join(self.cwd, 'input', 'scenarios')
+        scenarios_default_dir = os.path.join(self.path_pkg, 'input', 'scenarios')
         self.scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
                                                                  title="Select scenario file",
                                                                  filetypes=(("CSV files", "*.csv"),
@@ -814,7 +815,7 @@ class SimulationRun:
             raise FileNotFoundError('No scenario file selected')
 
         # get settings file
-        settings_default_dir = os.path.join(self.cwd, 'input', 'settings')
+        settings_default_dir = os.path.join(self.path_pkg, 'input', 'settings')
         self.settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
                                                                 title="Select settings file",
                                                                 filetypes=(("CSV files", "*.csv"),
