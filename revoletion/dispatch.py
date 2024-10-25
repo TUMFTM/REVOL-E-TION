@@ -548,6 +548,7 @@ class RentalProcess:
         self.rs = rs
         self.env = sc.env_des
         self.run = sc.run
+        self.sc = sc
         self.id = id
 
         self.rs.process_objs.append(self)
@@ -564,14 +565,14 @@ class RentalProcess:
         # wait until start of preblock time
         yield self.env.timeout(self.data['step_preblock_primary'])
 
-        self.run.logger.debug(f'{self.rs.name} process {self.id} preblocked at {self.env.now}')
+        self.sc.logger.debug(f'{self.rs.name} process {self.id} preblocked at {self.env.now}')
 
         # request primary resource(s) from (Multi)Store
         with self.rs.store.get(self.data['num_primary']) as self.primary_request:
             self.primary_result = yield self.primary_request | self.env.timeout(
                 self.data['steps_patience_primary'])
 
-        self.run.logger.debug(f'{self.rs.name} process {self.id} requested {self.data["num_primary"]}'
+        self.sc.logger.debug(f'{self.rs.name} process {self.id} requested {self.data["num_primary"]}'
                               f' primary resource(s) at {self.env.now}')
 
         # wait until actual request time (leaving time to charge vehicle)
@@ -584,19 +585,19 @@ class RentalProcess:
                 self.secondary_result = yield self.secondary_request | self.env.timeout(
                     self.data['steps_patience_secondary'])
 
-            self.run.logger.debug(f'{self.rs.name} process {self.id} requested {self.data["num_secondary"]}'
+            self.sc.logger.debug(f'{self.rs.name} process {self.id} requested {self.data["num_secondary"]}'
                                   f' secondary resource(s) at {self.env.now}')
 
         # if request(s) successful
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
             self.rs.processes.loc[self.id, 'status'] = self.status = 'success'
             self.rs.processes.at[self.id, 'commodities_primary'] = self.primary_request.value
-            self.run.logger.debug(f'{self.rs.name} process {self.id} received primary resource'
+            self.sc.logger.debug(f'{self.rs.name} process {self.id} received primary resource'
                                   f' {self.primary_request.value} at {self.env.now}')
 
             if self.secondary_request:
                 self.rs.processes.at[self.id, 'commodities_secondary'] = self.secondary_request.value
-                self.run.logger.debug(f'{self.rs.name} process {self.id} received secondary resource'
+                self.sc.logger.debug(f'{self.rs.name} process {self.id} received secondary resource'
                                       f' {self.secondary_request.value} at {self.env.now}')
 
             self.rs.processes.loc[self.id, 'step_dep'] = self.env.now
@@ -617,12 +618,12 @@ class RentalProcess:
                 self.rs.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
 
             self.rs.store.put(self.primary_result[self.primary_request])
-            self.run.logger.debug(f'{self.rs.name} process {self.id} returned resource(s) {self.primary_request.value}'
+            self.sc.logger.debug(f'{self.rs.name} process {self.id} returned resource(s) {self.primary_request.value}'
                                   f' at {self.env.now}. Primary store content after return: {self.rs.store.items}')
 
             if self.secondary_request:
                 self.rs.cs.rex_cs.rs.store.put(self.secondary_result[self.secondary_request])
-                self.run.logger.debug(f'{self.rs.name} process {self.id} returned secondary resource(s)'
+                self.sc.logger.debug(f'{self.rs.name} process {self.id} returned secondary resource(s)'
                                       f' {self.secondary_request.value} at {self.env.now}.'
                                       f' Secondary store content after return: {self.rs.cs.rex_cs.rs.store.items}')
 
@@ -632,25 +633,25 @@ class RentalProcess:
             if ((self.primary_request not in self.primary_result)
                     and (self.secondary_request not in self.secondary_result)):
                 self.rs.processes.loc[self.id, 'status'] = self.status = 'failure_both'
-                self.run.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive either resource)'
+                self.sc.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive either resource)'
                                       f' at {self.env.now}. Primary store content after failure: {self.rs.store.items}.'
                                       f' Secondary store content after failure: {self.rs.cs.rex_cs.rs.store.items}')
 
             elif self.primary_request not in self.primary_result:
                 self.rs.processes.loc[self.id, 'status'] = self.status = 'failure_primary'
                 if self.secondary_request:
-                    self.run.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive primary'
+                    self.sc.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive primary'
                                           f' resource(s)) at {self.env.now}. Primary store content after fail:'
                                           f' {self.rs.store.items}. Secondary store content after failure:'
                                           f' {self.rs.cs.rex_cs.rs.store.items}')
                 else:
-                    self.run.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive primary'
+                    self.sc.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive primary'
                                           f' resource(s)) at {self.env.now}. Primary store content after fail:'
                                           f' {self.rs.store.items}')
 
             elif self.secondary_request not in self.secondary_result:
                 self.rs.processes.loc[self.id, 'status'] = self.status = 'failure_secondary'
-                self.run.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive secondary resource(s))'
+                self.sc.logger.debug(f'{self.rs.name} process {self.id} failed (didn´t receive secondary resource(s))'
                                       f' at {self.env.now}. Primary store content after fail: {self.rs.store.items}.'
                                       f' Secondary store content after failure: {self.rs.cs.rex_cs.rs.store.items}')
 
@@ -658,19 +659,19 @@ class RentalProcess:
             if self.primary_request.triggered:
                 primary_resource = yield self.primary_request
                 self.rs.store.put(primary_resource)
-                self.run.logger.debug(f'{self.rs.name} process {self.id} returned primary resource {primary_resource}'
+                self.sc.logger.debug(f'{self.rs.name} process {self.id} returned primary resource {primary_resource}'
                                       f' at {self.env.now}. Primary store content after return: {self.rs.store.items}.')
 
             if hasattr(self.secondary_request, 'triggered'):
                 if self.secondary_request.triggered:
                     secondary_resource = yield self.secondary_request
                     self.rs.cs.rex_cs.rs.store.put(secondary_resource)
-                    self.run.logger.debug(f'{self.rs.name} process {self.id} returned secondary resource'
+                    self.sc.logger.debug(f'{self.rs.name} process {self.id} returned secondary resource'
                                           f' {secondary_resource} at {self.env.now}. Primary store content after'
                                           f' return: {self.rs.store.items}. Secondary store content after return:'
                                           f' {self.rs.cs.rex_cs.rs.store.items}')
 
-        self.run.logger.debug(f'{self.rs.name} process {self.id} finished at {self.env.now}')
+        self.sc.logger.debug(f'{self.rs.name} process {self.id} finished at {self.env.now}')
 
 ###############################################################################
 # global functions

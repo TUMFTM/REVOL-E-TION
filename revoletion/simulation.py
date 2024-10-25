@@ -346,22 +346,22 @@ class Scenario:
                         and cs.mode_scheduling != 'uc'
                         and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-                run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
-                                 f' without static load management (lm_static) is not compatible with size optimization')
+                self.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
+                                  f' without static load management (lm_static) is not compatible with size optimization')
                 exit()  # TODO exit scenario instead of run
             if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryEnergyStorage)]:
-                run.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
-                                 f' without static load management (lm_static) is not implemented for systems with'
-                                 f' stationary energy storage')
+                self.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
+                                  f' without static load management (lm_static) is not implemented for systems with'
+                                  f' stationary energy storage')
                 exit()  # TODO exit scenario instead of run
             if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-                run.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
-                                 f' have to follow the same strategy. Different strategies are not possible')
+                self.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
+                                  f' have to follow the same strategy. Different strategies are not possible')
                 exit()  # TODO exit scenario instead of run
             if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-                run.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
-                                 f' dynamic load management, all CommoditySystems with dynamic load management have to'
-                                 f' be connected to the same bus')
+                self.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
+                                  f' dynamic load management, all CommoditySystems with dynamic load management have to'
+                                  f' be connected to the same bus')
                 exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
