@@ -74,7 +74,7 @@ class InputChecker:
         if len(missing_params) > 0:
             raise AttributeError(f'Not all required settings defined. Missing: {", ".join(missing_params)}')
 
-
+        # Individual parameter checks
         for param in self.settings_target['Parameter']:
             value = getattr(run, param)
 

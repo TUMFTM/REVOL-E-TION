@@ -865,7 +865,7 @@ class GridConnection(InvestBlock):
         # initialize power to 0 as for rh this value will be used to initialize the existing peak power
         self.peakshaving_ints.loc[:, 'power'] = 0
 
-        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # todo crosscheck
+        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # can be adapted for multiple cost levels over time
 
         if self.peakshaving is not None:
             # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)

@@ -42,6 +42,7 @@ class BatteryPackModel:
         self.r_inc_cyc = np.zeros(scenario.nhorizons + 1)
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
+        # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
         self.q_loss_cal[0] = self.commodity.q_loss_cal_init
         self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
 
