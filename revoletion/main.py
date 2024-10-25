@@ -69,33 +69,33 @@ def simulate_scenario(name: str, run: sim.SimulationRun, log_queue):  # needs to
     # make sure to clear up memory space
     del scenario
 
-def read_arguments(cwd):
+def read_arguments(path_pkg):
 
     if os.path.isfile(sys.argv[1]):
         scenarios_file_path = sys.argv[1]
-    elif os.path.isfile(os.path.join(cwd, 'input', 'scenarios', sys.argv[1])):
-        scenarios_file_path = os.path.join(cwd, 'input', 'scenarios', sys.argv[1])
+    elif os.path.isfile(os.path.join(path_pkg, 'input', 'scenarios', sys.argv[1])):
+        scenarios_file_path = os.path.join(path_pkg, 'input', 'scenarios', sys.argv[1])
     else:
         raise FileNotFoundError(f'Scenario file or path not found: {sys.argv[1]}')
 
     if os.path.isfile(sys.argv[2]):
         settings_file_path = sys.argv[2]
-    elif os.path.isfile(os.path.join(cwd, 'input', 'settings', sys.argv[2])):
-        settings_file_path = os.path.join(cwd, 'input', 'settings', sys.argv[2])
+    elif os.path.isfile(os.path.join(path_pkg, 'input', 'settings', sys.argv[2])):
+        settings_file_path = os.path.join(path_pkg, 'input', 'settings', sys.argv[2])
     else:
         raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
 
     return scenarios_file_path, settings_file_path
 
 
-def select_arguments(cwd):
+def select_arguments(path_pkg):
 
     root = tk.Tk()
     root.withdraw()  # hide small tk-window
     root.lift()  # make sure all tk windows appear in front of other windows
 
     # get scenarios file
-    scenarios_default_dir = os.path.join(cwd, 'input', 'scenarios')
+    scenarios_default_dir = os.path.join(path_pkg, 'input', 'scenarios')
     scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
                                                         title="Select scenario file",
                                                         filetypes=(("CSV files", "*.csv"),
@@ -104,7 +104,7 @@ def select_arguments(cwd):
         raise FileNotFoundError('No scenario file selected')
 
     # get settings file
-    settings_default_dir = os.path.join(cwd, 'input', 'settings')
+    settings_default_dir = os.path.join(path_pkg, 'input', 'settings')
     settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
                                                        title="Select settings file",
                                                        filetypes=(("CSV files", "*.csv"),
@@ -116,11 +116,11 @@ def select_arguments(cwd):
 
 
 def main():
-    cwd = os.getcwd()
+    path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if len(sys.argv) == 1:  # no arguments passed
-        path_scenario, path_settings = select_arguments(cwd)
+        path_scenario, path_settings = select_arguments(path_pkg)
     elif len(sys.argv) == 3:  # two arguments passed
-        path_scenario, path_settings = read_arguments(cwd)
+        path_scenario, path_settings = read_arguments(path_pkg)
     else:
         raise ValueError('Invalid number of arguments - please provide either none (GUI input) '
                          'or two arguments: scenarios file name or path and settings file name or path')
