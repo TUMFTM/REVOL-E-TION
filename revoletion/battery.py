@@ -16,6 +16,7 @@ class BatteryPackModel:
     def __init__(self, scenario, commodity):
 
         self.commodity = commodity
+        self.scenario = scenario
 
         self.chemistry = self.commodity.chemistry.lower()
 
@@ -36,16 +37,17 @@ class BatteryPackModel:
         # self.t_heat_off = 15 # Heating deactivation threshold in °C
 
         # Initial values for aging state tracking
-        self.q_loss_cal = np.zeros(scenario.nhorizons + 1)
-        self.r_inc_cal = np.zeros(scenario.nhorizons + 1)
-        self.q_loss_cyc = np.zeros(scenario.nhorizons + 1)
-        self.r_inc_cyc = np.zeros(scenario.nhorizons + 1)
+        self.q_loss_cal = np.zeros(self.scenario.nhorizons + 1)
+        self.r_inc_cal = np.zeros(self.scenario.nhorizons + 1)
+        self.q_loss_cyc = np.zeros(self.scenario.nhorizons + 1)
+        self.r_inc_cyc = np.zeros(self.scenario.nhorizons + 1)
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
+        # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
         self.q_loss_cal[0] = self.commodity.q_loss_cal_init
         self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
 
-        self.commodity.soh[scenario.starttime] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
+        self.commodity.soh[self.scenario.starttime] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
 
         # Placeholders for aging variables to be filled every aging evaluation
         self.soc_hor = self.ocv_hor = self.cycles_hor = None
@@ -68,7 +70,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.59  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.39  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sanyo_ur18650e.pkl')
+            self.data_path = os.path.join(self.scenario.run.path_data_immut, 'sanyo_ur18650e.pkl')
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -84,7 +86,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.71  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.55  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(os.getcwd(), 'input', 'battery_cells', 'sony_us26650.pkl')
+            self.data_path = os.path.join(self.scenario.run.path_data_immut, 'sony_us26650.pkl')
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
@@ -112,7 +114,7 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-    def age(self, run, scenario, horizon):
+    def age(self, run, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
@@ -145,9 +147,9 @@ class BatteryPackModel:
         # Get temperature timeseries
         if isinstance(self.commodity.temp_battery, str):
             try:
-                self.temp_hor_c = scenario.blocks[self.commodity.temp_battery].data_ph.loc[horizon.dti_ch, 'temp_air']
+                self.temp_hor_c = self.scenario.blocks[self.commodity.temp_battery].data_ph.loc[horizon.dti_ch,'temp_air']
             except KeyError or NameError:
-                scenario.logger.warning(f'Battery temp source for storage {self.commodity.name} not found,'
+                self.scenario.logger.warning(f'Battery temp source for storage {self.commodity.name} not found,'
                                    f' using 25°C default')
                 self.temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
         elif isinstance(self.commodity.temp_battery, (int, float)):

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import scipy as sp
+import statistics
 import importlib
 
 from revoletion import blocks
@@ -68,9 +69,19 @@ class RentalSystem:
         self.mtf = utils.import_module_from_path(module_name=sc.filename_mapper,
                                                  file_path=self.path_mapper)
 
+        self.soc_max_init = min([commodity.soc_max for commodity in self.cs.commodities.values()])
+        self.soc_min_init = max([commodity.soc_min for commodity in self.cs.commodities.values()])
+
         # calculate usable energy to expect
-        self.dsoc_usable_high = self.cs.soc_target_high - self.cs.soc_return
-        self.dsoc_usable_low = self.cs.soc_target_low - self.cs.soc_return
+
+        self.dsoc_usable_high = (statistics.median([self.soc_min_init, self.cs.soc_target_high, self.soc_max_init]) -
+                                 statistics.median([self.soc_min_init, self.cs.soc_return, self.soc_max_init]))
+        self.dsoc_usable_low = (statistics.median([self.soc_min_init, self.cs.soc_target_low, self.soc_max_init]) -
+                                 statistics.median([self.soc_min_init, self.cs.soc_return, self.soc_max_init]))
+
+        if (self.dsoc_usable_high <= 0) or (self.dsoc_usable_low <= 0):
+            raise ValueError(f'Usable dSOC for {self.cs.name} is zero or negative. Check SOC targets and aging.')
+
         self.energy_usable_pc_high = self.dsoc_usable_high * self.cs.size_pc * np.sqrt(self.cs.eff_storage_roundtrip)
         self.energy_usable_pc_low = self.dsoc_usable_low * self.cs.size_pc * np.sqrt(self.cs.eff_storage_roundtrip)
 

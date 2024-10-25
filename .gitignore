@@ -9,13 +9,11 @@
 
 analysis/*
 !analysis/.gitignore
+
 results/*
 !results/.gitignore
 
 input/*
-
-!input/battery_cells/sanyo_ur18650e.pkl
-!input/battery_cells/sony_us26650.pkl
 
 !input/VehicleCommoditySystem/bev_example.csv
 !input/VehicleCommoditySystem/bev_example_processes.csv
@@ -43,7 +41,6 @@ input/*
 !input/TimeframeMapper/timeframe_mapper_example.csv
 
 !input/WindSource/wind_example.csv
-!input/WindSource/turbine_data.pkl
 
 utils/*
 

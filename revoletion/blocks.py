@@ -568,7 +568,6 @@ class CommoditySystem(InvestBlock):
         self.opex_ep_spec_ext_ac = self.opex_spec_ext_ac * self.factor_opex
         self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
-
     def calc_opex_sim(self, scenario):
 
         self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[scenario.dti_sim]
@@ -865,7 +864,7 @@ class GridConnection(InvestBlock):
         # initialize power to 0 as for rh this value will be used to initialize the existing peak power
         self.peakshaving_ints.loc[:, 'power'] = 0
 
-        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # todo crosscheck
+        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # can be adapted for multiple cost levels over time
 
         if self.peakshaving is not None:
             # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
@@ -1366,7 +1365,7 @@ class MobileCommodity:
                                   secondary_y=True)
 
     def calc_aging(self, run, scenario, horizon):
-        self.aging_model.age(run, scenario, horizon)
+        self.aging_model.age(run, horizon)
 
     # noinspection DuplicatedCode
     def calc_results(self, scenario):
@@ -1474,7 +1473,7 @@ class MobileCommodity:
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                     self.data_ph['dsoc'] + self.dsoc_buffer)
+                                                     self.data_ph['dsoc'] + self.soc_min + self.dsoc_buffer)
             soc_min = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
@@ -1828,7 +1827,7 @@ class StationaryEnergyStorage(InvestBlock):
                                   secondary_y=True)
 
     def calc_aging(self, run, scenario, horizon):
-        self.aging_model.age(run, scenario, horizon)
+        self.aging_model.age(run, horizon)
 
     def calc_energy(self, scenario):
         self.calc_energy_bidi(scenario)
@@ -2131,9 +2130,7 @@ class WindSource(RenewableInvestBlock):
             self.data = scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
-            self.path_turbine_data_file = os.path.join(run.path_input_data,
-                                                       self.__class__.__name__,
-                                                       'turbine_data.pkl')
+            self.path_turbine_data_file = os.path.join(run.path_data_immut, 'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
             self.turbine_data = self.turbine_data.loc[
