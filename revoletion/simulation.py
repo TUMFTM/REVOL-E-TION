@@ -756,7 +756,6 @@ class SimulationRun:
             self.join_results()
 
         self.end_timing()
-        # TODO improve error handling - scenarios that fail wait to the end and are memory hogs
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -832,9 +831,6 @@ class SimulationRun:
                 else:
                     horizon.get_results(scenario, self)
 
-                # free up memory before garbage collector can act - mostly useful in rolling horizon strategy
-                del horizon
-
             scenario.end_timing()
 
             if not scenario.exception:
@@ -853,9 +849,6 @@ class SimulationRun:
                         scenario.save_plots()
                     if self.show_plots:
                         scenario.show_plots()
-
-            # make sure to clear up memory space
-            del scenario
 
         except Exception as e:
             logger.error(f"Exception in scenario {name}: {str(e)}")
