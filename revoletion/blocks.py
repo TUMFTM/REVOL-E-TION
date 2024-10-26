@@ -214,9 +214,8 @@ class InvestBlock(Block):
 
         # ToDo: move to checker.py
         if self.invest and scenario.strategy != 'go':
-            scenario.logger.warning(f'\"{self.name}\" component size optimization not implemented'
-                                    f' for any other strategy than \"GO\" - exiting')
-            exit()  # TODO exit scenario instead of run
+            raise ValueError(f'Scenario {scenario.name} - Block \"{self.name}\" component size optimization '
+                             f'not implemented for any other strategy than \"GO\"')
 
         self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
         # annuity factor to factor the difference between simulation and project time into component sizing
@@ -504,7 +503,7 @@ class CommoditySystem(InvestBlock):
                 self.data.columns = self.data.columns.map(lambda x: (com_names_rename.get(x[0], x[0]), *x[1:]))
                 com_names = com_names_rename.values()
         else:
-            raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
+            raise ValueError(f'Scenario {scenario.name} - Block \"{self.name}\": invalid data source')
 
         if self.system == 'ac':
             self.eff_chg = self.eff_chg_ac
@@ -631,14 +630,13 @@ class CommoditySystem(InvestBlock):
         # static load management is deactivated for 'uc' mode
         if self.power_lim_static and self.mode_scheduling == 'uc':
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented for'
-                                    f' scheduling mode \"uc\" -> deactivating static load management')
+                                    f' scheduling mode \"uc\". deactivating static load management')
             self.power_lim_static = None
 
         # ToDo: move to checker.py
         if self.invest and self.mode_scheduling in run.apriori_lvls:
-            scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
-                                  f' implemented for a priori integration levels: {run.apriori_lvls}')
-            exit()  # TODO exit scenario instead of run
+            raise ValueError(f'CommoditySystem \"{self.name}\": commodity size optimization not '
+                             f'implemented for a priori integration levels: {run.apriori_lvls}')
 
     def get_invest_size(self, horizon):
         """
@@ -1291,12 +1289,11 @@ class MobileCommodity:
         self.eff_storage_roundtrip = self.parent.eff_storage_roundtrip
         self.temp_battery = self.parent.temp_battery
 
+        # Data Source has been checked in the parent class to be either 'des' or 'log'
         if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
         elif self.parent.data_source == 'log':  # predetermined log file
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
-        else:
-            raise ValueError(f'Commodity \"{self.name}\" data source not recognized - exiting scenario')
 
         self.apriori_data = None
 
@@ -1767,8 +1764,7 @@ class PVSource(RenewableInvestBlock):
                 self.calc_power_solcast()
 
             else:
-                scenario.logger.warning('No usable PV input type specified - exiting')
-                exit()  # TODO exit scenario instead of entire execution
+                raise ValueError(f'Scenario {scenario.name} - Block {self.name}: No usable PV data input specified')
 
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(scenario.timestep).mean().ffill().bfill()

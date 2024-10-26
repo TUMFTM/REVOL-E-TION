@@ -336,7 +336,7 @@ class Scenario:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
-        # ToDo: put into extra function
+        # ToDo: move to checker.py
         # check input parameter configuration for model dump
         if run.dump_model and self.strategy == 'rh':
             self.logger.warning('Model file dump not implemented for RH operating strategy - ' +
@@ -348,23 +348,20 @@ class Scenario:
                         and cs.mode_scheduling != 'uc'
                         and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-                self.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
-                                  f' without static load management (lm_static) is not compatible with size optimization')
-                exit()  # TODO exit scenario instead of run
+                raise ValueError(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc) '
+                                 f'without static load management (lm_static) is not compatible'
+                                 f' with size optimization')
             if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryEnergyStorage)]:
-                self.logger.error(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc)'
-                                  f' without static load management (lm_static) is not implemented for systems with'
-                                  f' stationary energy storage')
-                exit()  # TODO exit scenario instead of run
+                raise ValueError(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc) '
+                                 f'without static load management (lm_static) is not implemented for systems with '
+                                 f'stationary energy storage')
             if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-                self.logger.error(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management'
-                                  f' have to follow the same strategy. Different strategies are not possible')
-                exit()  # TODO exit scenario instead of run
+                raise ValueError(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management '
+                                 f'have to follow the same strategy. Different strategies are not possible')
             if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-                self.logger.error(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
+                raise ValueError(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
                                   f' dynamic load management, all CommoditySystems with dynamic load management have to'
                                   f' be connected to the same bus')
-                exit()  # TODO exit scenario instead of run
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.mode_scheduling in self.run.apriori_lvls]):
@@ -817,7 +814,6 @@ class SimulationRun:
         self.process = mp.current_process() if self.parallel else None
 
         try:
-
             scenario = Scenario(name, self, logger)  # Create scenario instance
 
             for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
