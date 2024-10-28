@@ -784,7 +784,6 @@ class SimulationRun:
         self.logger.error(''.join(traceback.format_tb(exc_traceback)))
 
         self.logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-        exit()
 
     def join_results(self):
 
@@ -797,7 +796,7 @@ class SimulationRun:
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
-        joined_results = pd.concat(scenario_frames, axis=1)[self.scenario_names]
+        joined_results = pd.concat(scenario_frames, axis=1)
         joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
         joined_results.to_csv(self.path_result_summary_file)
         self.logger.info("Technoeconomic output file created")
@@ -851,8 +850,10 @@ class SimulationRun:
                         scenario.show_plots()
 
         except Exception as e:
+            scenario.exception = str(e)
             logger.error(f"Exception in scenario {name}: {str(e)}")
             logger.error("Traceback:", exc_info=True)
 
         finally:
             logging.shutdown()
+            scenario.save_result_summary()  # experimental - save results even if exception occurred
