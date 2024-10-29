@@ -631,6 +631,9 @@ class SimulationRun:
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
 
+        # Tracking of failed scenarios in scenario file (scenario object initialization failures included)
+        self.scenarios_failed = pd.DataFrame(columns=['scenario_name', 'exception', 'traceback']).set_index('scenario_name')
+
         self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
@@ -722,6 +725,8 @@ class SimulationRun:
                                                       f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
         self.path_result_summary_file = os.path.join(self.path_result_dir,
                                                      f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
+        self.path_scenarios_failed_file = os.path.join(self.path_result_dir,
+                                                     f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_failed.csv')
         self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.log')
 
@@ -749,6 +754,7 @@ class SimulationRun:
             for scenario_name in self.scenario_names:
                 self.simulate_scenario(scenario_name, None)
 
+        self.save_scenarios_failed()
         if self.save_results:
             self.join_results()
 
@@ -803,6 +809,10 @@ class SimulationRun:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
 
+    def save_scenarios_failed(self):
+        self.scenarios_failed.to_csv(self.path_scenarios_failed_file,
+                                     index=True)
+
     def simulate_scenario(self, name: str, log_queue):
         logger = logger_fcs.setup_logger(name, log_queue, self)
 
@@ -847,9 +857,15 @@ class SimulationRun:
                         scenario.show_plots()
 
         except Exception as e:
-            scenario.exception = str(e)
-            if scenario.result_summary.empty:
-                scenario.save_result_summary()  # experimental - save results even if exception occurred
+            try:
+                scenario.exception = str(e)
+                if scenario.result_summary.empty:
+                    scenario.save_result_summary()  # experimental - save results even if exception occurred
+            except UnboundLocalError:  # scenario instance does not exist yet
+                pass
+
+            self.scenarios_failed.loc[name, 'exception'] = str(e)
+            self.scenarios_failed.loc[name, 'traceback'] = traceback.format_exc()
             logger.error(f'Exception: {str(e)}')
             logger.error('Traceback:', exc_info=True)
 

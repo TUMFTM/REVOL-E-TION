@@ -487,7 +487,6 @@ class CommoditySystem(InvestBlock):
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode(scenario, run)
 
-
         com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
         self.data = None
         if self.data_source == 'des':
