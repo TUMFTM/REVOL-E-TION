@@ -136,11 +136,10 @@ class PredictionHorizon:
         # Creates the Directed-Graph
         dot = graphviz.Digraph(filename=scenario.path_system_graph_file, format='pdf')
 
-        dot.node("Bus", shape='rectangle', fontsize="10", color='red')
-        dot.node("Sink", shape='trapezium', fontsize="10")
-        dot.node("Source", shape='invtrapezium', fontsize="10")
-        dot.node("Transformer", shape='rectangle', fontsize="10")
-        dot.node("Storage", shape='rectangle', style='dashed', fontsize="10", color="green")
+        dot.node('Bus', shape='rectangle', fontsize='10', color='red')
+        dot.node('Sink', shape='trapezium', fontsize='10')
+        dot.node('Source', shape='invtrapezium', fontsize='10')
+        dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
 
         busses = []
         # draw a node for each of the network's component. The shape depends on the component's type
@@ -148,7 +147,7 @@ class PredictionHorizon:
             if isinstance(nd, solph.Bus):
                 dot.node(nd.label,
                          shape='rectangle',
-                         fontsize="10",
+                         fontsize='10',
                          fixedsize='shape',
                          width='2.4',
                          height='0.6',
@@ -156,13 +155,13 @@ class PredictionHorizon:
                 # keep the bus reference for drawing edges later
                 busses.append(nd)
             elif isinstance(nd, solph.components.Sink):
-                dot.node(nd.label, shape='trapezium', fontsize="10")
+                dot.node(nd.label, shape='trapezium', fontsize='10')
             elif isinstance(nd, solph.components.Source):
-                dot.node(nd.label, shape='invtrapezium', fontsize="10")
+                dot.node(nd.label, shape='invtrapezium', fontsize='10')
             elif isinstance(nd, solph.components.Converter):
-                dot.node(nd.label, shape='rectangle', fontsize="10")
+                dot.node(nd.label, shape='rectangle', fontsize='10')
             elif isinstance(nd, solph.components.GenericStorage):
-                dot.node(nd.label, shape='rectangle', style='dashed', fontsize="10", color="green")
+                dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
             else:
                 scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
 
@@ -455,7 +454,7 @@ class Scenario:
             if class_obj is not None and isinstance(class_obj, type):
                 objects[name] = class_obj(name, self, run)
             else:
-                raise ValueError(f"Class '{class_name}' not found in blocks.py file - Check for typos or add class.")
+                raise ValueError(f'Class "{class_name}" not found in blocks.py file - Check for typos or add class.')
         return objects
 
     def end_timing(self):
@@ -511,39 +510,39 @@ class Scenario:
         for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore) and block.invest:
-                self.logger.info(f'Optimized size of AC/DC power in component \"{block.name}\":'
+                self.logger.info(f'Optimized size of AC/DC power in component "{block.name}":'
                                  f' {block.size_acdc / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_acdc_additional / 1e3:.1f} {unit})')
-                self.logger.info(f'Optimized size of DC/AC power in component \"{block.name}\":'
+                self.logger.info(f'Optimized size of DC/AC power in component "{block.name}":'
                                  f' {block.size_dcac / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
             elif isinstance(block, blocks.GridConnection):
                 if block.invest:
-                    self.logger.info(f'Optimized size of g2s power in component \"{block.name}\":'
+                    self.logger.info(f'Optimized size of g2s power in component "{block.name}":'
                                      f' {block.size_g2s / 1e3:.1f} {unit}' + \
                                      f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
                                      f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
-                    self.logger.info(f'Optimized size of s2g power in component \"{block.name}\":'
+                    self.logger.info(f'Optimized size of s2g power in component "{block.name}":'
                                      f' {block.size_s2g / 1e3:.1f} {unit}'
                                      f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
                                      f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
                 if block.peakshaving:
                     for interval in block.peakshaving_ints.index:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
-                            self.logger.info(f'Optimized peak power in component \"{block.name}\" for interval'
+                            self.logger.info(f'Optimized peak power in component "{block.name}" for interval'
                                              f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} {unit}'
                                              f' - OPEX: {block.opex_ep_spec_peak * block.peakshaving_ints.loc[interval, ["period_fraction", "power"]].prod():.2f} {self.currency}')
 
             elif isinstance(block, blocks.CommoditySystem) and block.invest:
                 for commodity in block.commodities.values():
-                    self.logger.info(f'Optimized size of commodity \"{commodity.name}\" in component \"{block.name}\":'
+                    self.logger.info(f'Optimized size of commodity "{commodity.name}" in component "{block.name}":'
                                      f' {commodity.size / 1e3:.1f} {unit}'
                                      f' (existing: {commodity.size_existing / 1e3:.1f} {unit}'
                                      f' - additional: {commodity.size_additional / 1e3:.1f} {unit})')
             elif hasattr(block, 'invest') and block.invest:
-                self.logger.info(f'Optimized size of component \"{block.name}\": {block.size / 1e3:.1f} {unit}'
+                self.logger.info(f'Optimized size of component "{block.name}": {block.size / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_additional / 1e3:.1f} {unit})')
 
@@ -589,7 +588,7 @@ class Scenario:
                         self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = (
                             float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']))
                         self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = (
-                            block_obj.peakshaving_ints.loc[interval, ["period_fraction", "power", "opex_spec"]].prod())
+                            block_obj.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
 
         self.result_summary.reset_index(inplace=True, names=['block', 'key'])
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=False)
@@ -609,7 +608,7 @@ class SimulationRun:
 
         self.name = 'run'
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.process = None
+        self.process = self.process_num = None
 
         self.scenarios_file_path = path_scenario
         self.settings_file_path = path_settings
@@ -667,7 +666,7 @@ class SimulationRun:
                                           f'  %(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
-        log_file_handler = logging.FileHandler(os.environ.get("LOGFILE", self.path_log_file))
+        log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.path_log_file))
         log_file_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_stream_handler)
         self.logger.addHandler(log_file_handler)
@@ -681,10 +680,10 @@ class SimulationRun:
             self.logger.setLevel(logging.INFO)
         else:
             if self.debugmode:
-                self.logger.setLevel(os.environ.get("LOGLEVEL", "DEBUG"))
+                self.logger.setLevel(os.environ.get('LOGLEVEL', 'DEBUG'))
                 log_stream_handler.setLevel(logging.DEBUG)
             else:
-                self.logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
+                self.logger.setLevel(os.environ.get('LOGLEVEL', 'INFO'))
                 log_stream_handler.setLevel(logging.INFO)
 
         # plural extensions
@@ -770,7 +769,7 @@ class SimulationRun:
             print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
             self.parallel = False
 
-        if (len(self.scenario_names) <= 0):
+        if len(self.scenario_names) <= 0:
             raise ValueError('No executable scenarios found in scenario file')
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
@@ -778,12 +777,12 @@ class SimulationRun:
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
 
-        self.logger.error(f"Exception type: {exc_type.__name__}")
-        self.logger.error(f"Exception message: {str(exc_value)}")
-        self.logger.error("Traceback:")
+        self.logger.error(f'Exception type: {exc_type.__name__}')
+        self.logger.error(f'Exception message: {str(exc_value)}')
+        self.logger.error('Traceback:')
         self.logger.error(''.join(traceback.format_tb(exc_traceback)))
 
-        self.logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        self.logger.error('Uncaught exception', exc_info=(exc_type, exc_value, exc_traceback))
 
     def join_results(self):
 
@@ -799,7 +798,7 @@ class SimulationRun:
         joined_results = pd.concat(scenario_frames, axis=1)
         joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
         joined_results.to_csv(self.path_result_summary_file)
-        self.logger.info("Technoeconomic output file created")
+        self.logger.info('Technoeconomic output file created')
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
@@ -821,7 +820,7 @@ class SimulationRun:
                 if scenario.strategy in ['go', 'rh']:
                     horizon.run_optimization(scenario, self)
                 else:
-                    logger.error(f'Scenario {scenario.name}: energy management strategy unknown')
+                    logger.error(f'Optimization strategy "{scenario.strategy}" unknown')
                     break
 
                 if scenario.exception and self.save_results:
@@ -851,8 +850,8 @@ class SimulationRun:
 
         except Exception as e:
             scenario.exception = str(e)
-            logger.error(f"Exception in scenario {name}: {str(e)}")
-            logger.error("Traceback:", exc_info=True)
+            logger.error(f'Exception: {str(e)}')
+            logger.error('Traceback:', exc_info=True)
 
         finally:
             logging.shutdown()
