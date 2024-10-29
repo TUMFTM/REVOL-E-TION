@@ -568,7 +568,6 @@ class Scenario:
                     self.result_summary.loc[(name, key), self.name] = float(value)
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
-
         result_types = (int, float, str, bool)
         result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
@@ -849,9 +848,10 @@ class SimulationRun:
 
         except Exception as e:
             scenario.exception = str(e)
+            if scenario.result_summary.empty:
+                scenario.save_result_summary()  # experimental - save results even if exception occurred
             logger.error(f'Exception: {str(e)}')
             logger.error('Traceback:', exc_info=True)
 
         finally:
             logging.shutdown()
-            scenario.save_result_summary()  # experimental - save results even if exception occurred
