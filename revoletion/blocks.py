@@ -85,7 +85,8 @@ class Block:
         capex = pd.Series(dtype='float64', index=range(scenario.prj_duration_yrs), data=0)
         capex[0] = self.capex_init
         if hasattr(self, 'ls'):
-            for year in eco.repllist(self.ls, scenario.prj_duration_yrs):
+            for year in eco.invest_periods(lifespan=self.ls,
+                                           observation_horizon=scenario.prj_duration_yrs):
                 capex[year] = self.capex_init * (self.ccr ** year)
         self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
@@ -213,17 +214,18 @@ class InvestBlock(Block):
 
         # ToDo: move to checker.py
         if self.invest and scenario.strategy != 'go':
-            scenario.logger.warning(f'\"{self.name}\" component size optimization not implemented'
-                                    f' for any other strategy than \"GO\" - exiting')
-            exit()  # TODO exit scenario instead of run
+            raise ValueError(f'Scenario {scenario.name} - Block \"{self.name}\" component size optimization '
+                             f'not implemented for any other strategy than \"GO\"')
 
-        # ace = adjusted capital expenses (including maintenance)
-        self.ace = eco.adj_ce(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
-
+        self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
         # annuity factor to factor the difference between simulation and project time into component sizing
+        self.factor_capex = eco.annuity_due_capex(capex_init=1,
+                                                  lifespan=self.ls,
+                                                  observation_horizon=scenario.prj_duration_yrs,
+                                                  discount_rate=scenario.wacc,
+                                                  cost_change_ratio=self.ccr)
         # ep = equivalent present (i.e. specific values prediscounted)
-        self.factor_capex = eco.ann_recur(1, self.ls, scenario.prj_duration_yrs, scenario.wacc, self.ccr)
-        self.capex_ep_spec = self.ace * self.factor_capex  # Capex is downrated in importance for short simulations
+        self.capex_ep_spec = self.capex_joined * self.factor_capex  # Capex is downrated for short simulations
 
         self.factor_opex = 1 / scenario.sim_prj_rat
         self.opex_ep_spec = None  # initial value
@@ -236,20 +238,20 @@ class InvestBlock(Block):
 
         self.calc_capex_init(scenario)  # initial investment references to different parameters depending on block type
 
-        self.capex_prj = eco.tce(self.capex_init,
-                                 self.ccr,
-                                 self.ls,
-                                 scenario.prj_duration_yrs)
-        self.capex_dis = eco.pce(self.capex_init,
-                                 self.ccr,
-                                 scenario.wacc,
-                                 self.ls,
-                                 scenario.prj_duration_yrs)
-        self.capex_ann = eco.ann_recur(self.capex_init,
+        self.capex_prj = eco.capex_sum(self.capex_init,
+                                       self.ccr,
                                        self.ls,
-                                       scenario.prj_duration_yrs,
-                                       scenario.wacc,
-                                       self.ccr)
+                                       scenario.prj_duration_yrs)
+        self.capex_dis = eco.capex_present(self.capex_init,
+                                           self.ccr,
+                                           scenario.wacc,
+                                           self.ls,
+                                           scenario.prj_duration_yrs)
+        self.capex_ann = eco.annuity_due_capex(self.capex_init,
+                                               self.ls,
+                                               scenario.prj_duration_yrs,
+                                               scenario.wacc,
+                                               self.ccr)
 
         scenario.capex_init += self.capex_init
         scenario.capex_prj += self.capex_prj
@@ -292,11 +294,11 @@ class InvestBlock(Block):
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
                                           scenario.prj_duration_yrs,
                                           scenario.wacc)
-        self.mntex_ann = eco.ann_recur(self.mntex_yrl,
-                                       1,  # lifespan of 1 yr -> mntex happening yearly
-                                       scenario.prj_duration_yrs,
-                                       scenario.wacc,
-                                       1)  # no cost decrease in mntex
+        self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
+                                               1,  # lifespan of 1 yr -> mntex happening yearly
+                                               scenario.prj_duration_yrs,
+                                               scenario.wacc,
+                                               1)  # no cost decrease in mntex
 
         scenario.mntex_yrl += self.mntex_yrl
         scenario.mntex_prj += self.mntex_prj
@@ -322,11 +324,11 @@ class InvestBlock(Block):
         self.opex_dis = eco.acc_discount(self.opex_yrl,
                                          scenario.prj_duration_yrs,
                                          scenario.wacc)
-        self.opex_ann = eco.ann_recur(self.opex_yrl,
-                                      1,  # lifespan of 1 yr -> opex happening yearly
-                                      scenario.prj_duration_yrs,
-                                      scenario.wacc,
-                                      1)  # no cost decrease in opex
+        self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
+                                              1,  # lifespan of 1 yr -> opex happening yearly
+                                              scenario.prj_duration_yrs,
+                                              scenario.wacc,
+                                              1)  # no cost decrease in opex
 
         scenario.opex_sim += self.opex_sim
         scenario.opex_yrl += self.opex_yrl
@@ -485,7 +487,6 @@ class CommoditySystem(InvestBlock):
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode(scenario, run)
 
-
         com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
         self.data = None
         if self.data_source == 'des':
@@ -501,7 +502,7 @@ class CommoditySystem(InvestBlock):
                 self.data.columns = self.data.columns.map(lambda x: (com_names_rename.get(x[0], x[0]), *x[1:]))
                 com_names = com_names_rename.values()
         else:
-            raise ValueError(f'\"{self.name}\" data source not recognized - exiting scenario')
+            raise ValueError(f'Scenario {scenario.name} - Block \"{self.name}\": invalid data source')
 
         if self.system == 'ac':
             self.eff_chg = self.eff_chg_ac
@@ -588,7 +589,7 @@ class CommoditySystem(InvestBlock):
         self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
                                              scenario.prj_duration_yrs,
                                              scenario.wacc)
-        self.opex_ann_ext = eco.ann_recur(self.opex_yrl_ext,
+        self.opex_ann_ext = eco.annuity_due_capex(self.opex_yrl_ext,
                                           1,  # lifespan of 1 yr -> opex happening yearly
                                           scenario.prj_duration_yrs,
                                           scenario.wacc,
@@ -628,14 +629,13 @@ class CommoditySystem(InvestBlock):
         # static load management is deactivated for 'uc' mode
         if self.power_lim_static and self.mode_scheduling == 'uc':
             scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented for'
-                                    f' scheduling mode \"uc\" -> deactivating static load management')
+                                    f' scheduling mode \"uc\". deactivating static load management')
             self.power_lim_static = None
 
         # ToDo: move to checker.py
         if self.invest and self.mode_scheduling in run.apriori_lvls:
-            scenario.logger.error(f'CommoditySystem \"{self.name}\": commodity size optimization not'
-                                  f' implemented for a priori integration levels: {run.apriori_lvls}')
-            exit()  # TODO exit scenario instead of run
+            raise ValueError(f'CommoditySystem \"{self.name}\": commodity size optimization not '
+                             f'implemented for a priori integration levels: {run.apriori_lvls}')
 
     def get_invest_size(self, horizon):
         """
@@ -771,7 +771,7 @@ class BatteryCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario, run):
-        self.dsoc_buffer = None  # necessary as only VehicleCommoditySystem has this as input parameter
+        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as input parameter
 
         super().__init__(name, scenario, run)
 
@@ -1288,12 +1288,13 @@ class MobileCommodity:
         self.eff_storage_roundtrip = self.parent.eff_storage_roundtrip
         self.temp_battery = self.parent.temp_battery
 
+        self.dsoc_buffer += (self.q_loss_cal_init + self.q_loss_cyc_init) / 2
+
+        # Data Source has been checked in the parent class to be either 'des' or 'log'
         if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
         elif self.parent.data_source == 'log':  # predetermined log file
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
-        else:
-            raise ValueError(f'Commodity \"{self.name}\" data source not recognized - exiting scenario')
 
         self.apriori_data = None
 
@@ -1473,7 +1474,7 @@ class MobileCommodity:
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                     self.data_ph['dsoc'] + self.soc_min + self.dsoc_buffer)
+                                                     self.data_ph['dsoc'] + self.dsoc_buffer)
             soc_min = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
@@ -1764,8 +1765,7 @@ class PVSource(RenewableInvestBlock):
                 self.calc_power_solcast()
 
             else:
-                scenario.logger.warning('No usable PV input type specified - exiting')
-                exit()  # TODO exit scenario instead of entire execution
+                raise ValueError(f'Scenario {scenario.name} - Block {self.name}: No usable PV data input specified')
 
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(scenario.timestep).mean().ffill().bfill()
