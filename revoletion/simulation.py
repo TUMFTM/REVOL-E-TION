@@ -36,6 +36,10 @@ from revoletion import scheduler
 from revoletion import utils
 
 
+class InfeasibilityError(Exception):
+    pass
+
+
 class OptimizationSuccessfulFilter(logging.Filter):
     def filter(self, record):
         # Filter out log messages from the root logger
@@ -218,8 +222,9 @@ class PredictionHorizon:
             if scenario.strategy != 'rh':
                 scenario.objective_opt = self.model.objective()
         except UserWarning as exc:
-            scenario.logger.warning(f'Scenario failed or infeasible - continue on next scenario')
+            scenario.logger.error(f'Scenario failed or infeasible - continue on next scenario')
             scenario.exception = str(exc)
+            raise InfeasibilityError
 
 
 class Scenario:
