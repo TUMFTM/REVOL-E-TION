@@ -740,19 +740,25 @@ class SimulationRun:
         # parallelization activated in settings file
         if self.parallel:
             with mp.Manager() as manager:
+                scenarios_failed_queue = manager.Queue()
                 log_queue = manager.Queue()
-
                 log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
                 log_thread.start()
                 with mp.Pool(processes=self.process_num) as pool:
                     pool.starmap(
                         self.simulate_scenario,
-                        zip(self.scenario_names, itertools.repeat(log_queue)))
+                        zip(self.scenario_names, itertools.repeat(log_queue), itertools.repeat(scenarios_failed_queue))
+                    )
                 log_queue.put(None)
                 log_thread.join()
+
+                while not scenarios_failed_queue.empty():
+                    scenario_name, exception_msg, traceback_msg = scenarios_failed_queue.get()
+                    self.scenarios_failed.loc[scenario_name, 'exception'] = exception_msg
+                    self.scenarios_failed.loc[scenario_name, 'traceback'] = traceback_msg
         else:
             for scenario_name in self.scenario_names:
-                self.simulate_scenario(scenario_name, None)
+                self.simulate_scenario(scenario_name)
 
         self.save_scenarios_failed()
         if self.save_results:
@@ -813,7 +819,7 @@ class SimulationRun:
         self.scenarios_failed.to_csv(self.path_scenarios_failed_file,
                                      index=True)
 
-    def simulate_scenario(self, name: str, log_queue):
+    def simulate_scenario(self, name: str, log_queue=None, scenarios_failed_queue=None):
         logger = logger_fcs.setup_logger(name, log_queue, self)
 
         self.process = mp.current_process() if self.parallel else None
@@ -864,8 +870,10 @@ class SimulationRun:
             except UnboundLocalError:  # scenario instance does not exist yet
                 pass
 
-            self.scenarios_failed.loc[name, 'exception'] = str(e)
-            self.scenarios_failed.loc[name, 'traceback'] = traceback.format_exc()
+            if scenarios_failed_queue is not None:
+                scenarios_failed_queue.put((name, str(e), traceback.format_exc()))
+            else:
+                self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
             logger.error(f'Exception: {str(e)}')
             logger.error('Traceback:', exc_info=True)
 
