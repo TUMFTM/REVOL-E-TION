@@ -1289,6 +1289,8 @@ class MobileCommodity:
         self.eff_storage_roundtrip = self.parent.eff_storage_roundtrip
         self.temp_battery = self.parent.temp_battery
 
+        self.dsoc_buffer += (self.q_loss_cal_init + self.q_loss_cyc_init) / 2
+
         # Data Source has been checked in the parent class to be either 'des' or 'log'
         if self.parent.data_source == 'des':
             self.data = None  # parent data does not exist yet, filtering is done later
@@ -1473,7 +1475,7 @@ class MobileCommodity:
         if self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, VehicleCommoditySystem):
             # VehicleCommoditySystems operate on the premise of not necessarily renting out at high SOC level
             dsoc_dep_ph = self.data_ph['dsoc'].where(self.data_ph['dsoc'] == 0,
-                                                     self.data_ph['dsoc'] + self.soc_min + self.dsoc_buffer)
+                                                     self.data_ph['dsoc'] + self.dsoc_buffer)
             soc_min = dsoc_dep_ph.clip(lower=self.soc_min, upper=self.soc_max)
         elif self.mode_dispatch == 'opt_myopic' and isinstance(self.parent, BatteryCommoditySystem):
             # BatteryCommoditySystems operate on the premise of renting out at max SOC
