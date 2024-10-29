@@ -5,6 +5,7 @@ import logging
 
 def setup_logger(name, log_queue, run):
     logger = logging.getLogger(name)
+    logging.getLogger('pyomo.core').setLevel(logging.ERROR)  # supress pyomo warnings
     if log_queue:
         logger.setLevel(logging.DEBUG if run.debugmode else logging.INFO)
         formatter = logging.Formatter('%(message)s')

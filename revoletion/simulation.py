@@ -703,7 +703,6 @@ class SimulationRun:
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
 
-        logging.getLogger('pyomo.core').setLevel(logging.ERROR)  # supress pyomo warnings
         if self.parallel:
             log_stream_handler.setLevel(logging.INFO)
             self.logger.setLevel(logging.INFO)
