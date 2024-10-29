@@ -771,7 +771,7 @@ class BatteryCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario, run):
-        self.dsoc_buffer = None  # necessary as only VehicleCommoditySystem has this as input parameter
+        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as input parameter
 
         super().__init__(name, scenario, run)
 
