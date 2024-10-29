@@ -4,18 +4,8 @@ import os
 import sys
 import tkinter as tk
 import tkinter.filedialog
-import warnings
 
 from revoletion import simulation as sim
-
-
-# raise UserWarnings about infeasibility as errors to catch them properly
-warnings.simplefilter(action='error', category=UserWarning)
-
-# only print FutureWarnings once (in theory)
-# Set to 'ignore' to suppress all FutureWarnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=RuntimeWarning)
 
 
 def read_arguments(path_pkg):
@@ -32,7 +22,7 @@ def read_arguments(path_pkg):
     elif os.path.isfile(os.path.join(path_pkg, 'input', 'settings', sys.argv[2])):
         settings_file_path = os.path.join(path_pkg, 'input', 'settings', sys.argv[2])
     else:
-        raise FileNotFoundError(f'Settings file or pathnot found: {sys.argv[2]} not found')
+        raise FileNotFoundError(f'Settings file or path not found: {sys.argv[2]} not found')
 
     return scenarios_file_path, settings_file_path
 

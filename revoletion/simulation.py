@@ -20,11 +20,13 @@ import threading
 import time
 import timezonefinder
 import traceback
+import warnings
 
 import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
+import pyomo.environ as po
 
 from revoletion import blocks
 from revoletion import checker
@@ -36,7 +38,11 @@ from revoletion import scheduler
 from revoletion import utils
 
 
-class InfeasibilityError(Exception):
+class OptimizationInfeasibleError(Exception):
+    pass
+
+
+class OptimizationUnboundedError(Exception):
     pass
 
 
@@ -215,16 +221,25 @@ class PredictionHorizon:
     def run_optimization(self, scenario, run):
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                              f'Model built, starting optimization')
-        try:
-            self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
+        results = self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
+        if (results.solver.status == po.SolverStatus.ok) and \
+                (results.solver.termination_condition == po.TerminationCondition.optimal):
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                  f'Optimization completed, getting results')
             if scenario.strategy != 'rh':
                 scenario.objective_opt = self.model.objective()
-        except UserWarning as exc:
-            scenario.logger.error(f'Scenario failed or infeasible - continue on next scenario')
-            scenario.exception = str(exc)
-            raise InfeasibilityError
+        elif results.solver.termination_condition == po.TerminationCondition.infeasible:
+            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
+                                 f'Scenario failed: Infeasible'
+            raise OptimizationInfeasibleError(scenario.exception)
+        elif results.solver.termination_condition == po.TerminationCondition.unbounded:
+            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
+                                 f'Scenario failed: Unbounded'
+            raise OptimizationUnboundedError(scenario.exception)
+        else:
+            scenario.exception(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                               f'Optimization terminated with unknown status: {results.solver.termination_condition}')
+            raise Exception(scenario.exception)
 
 
 class Scenario:
@@ -235,6 +250,13 @@ class Scenario:
         self.run = run
         self.logger = logger
         self.logger.propagate = False
+
+        def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
+            # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
+            if not 'Optimization ended with status warning and termination condition' in str(message):
+                logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
+
+        warnings.showwarning = custom_warning_handler
 
         # General Information --------------------------------
 
@@ -681,6 +703,7 @@ class SimulationRun:
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
 
+        logging.getLogger('pyomo.core').setLevel(logging.ERROR)  # supress pyomo warnings
         if self.parallel:
             log_stream_handler.setLevel(logging.INFO)
             self.logger.setLevel(logging.INFO)
@@ -879,8 +902,9 @@ class SimulationRun:
                 scenarios_failed_queue.put((name, str(e), traceback.format_exc()))
             else:
                 self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
-            logger.error(f'Exception: {str(e)}')
-            logger.error('Traceback:', exc_info=True)
+            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
+            logger.error(msg=f'{str(e)} - continue on next scenario',
+                         exc_info=(not isinstance(e, (OptimizationInfeasibleError, OptimizationUnboundedError))))
 
         finally:
             logging.shutdown()
