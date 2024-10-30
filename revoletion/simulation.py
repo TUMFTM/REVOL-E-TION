@@ -590,7 +590,7 @@ class Scenario:
                     self.result_summary.loc[(name, key), self.name] = float(value)
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
-        result_types = (int, float, str, bool)
+        result_types = (int, float, str, bool, type(None))
         result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
 
@@ -714,9 +714,7 @@ class SimulationRun:
         pe2 = 'es' if self.process_num > 1 else ''
 
         mode = f'parallel mode with {self.process_num} process{pe2}' if self.parallel else 'sequential mode'
-        self.logger.info(
-            f'Global settings read - running {self.scenario_num} scenario{pe1} in {mode}'
-        )
+        self.logger.info(f'Global settings read - running {self.scenario_num} scenario{pe1} in {mode}')
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
