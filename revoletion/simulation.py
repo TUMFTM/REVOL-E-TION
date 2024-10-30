@@ -230,7 +230,7 @@ class PredictionHorizon:
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
             scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                  f'Optimization completed, getting results')
-            if scenario.strategy != 'rh':
+            if scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
                 scenario.objective_opt = self.model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
             scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
