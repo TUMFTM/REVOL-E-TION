@@ -1109,8 +1109,15 @@ class GridMarket:
 
         self.set_init_size()
 
+        # opex_spec_g2s has always to be specified as a scalar or a filename containing a timeseries
+        # ToDo: move to checker.py
+        if self.opex_spec_g2s == 'equal':
+            raise ValueError(f'GridMarket "{self.name}": opex_spec_g2s cannot be set to "equal".'
+                             f' When using the same cost for g2s and s2g specifiy the cost in  opex_spec_g2s and set'
+                             f' opex_spec_s2g to "equal".')
         utils.transform_scalar_var(self, 'opex_spec_g2s', scenario, run)
 
+        # opex_spec_s2g can be specified as a scalar, a filename containing a timeseries or as 'equal' to opex_spec_g2s
         if self.opex_spec_s2g == 'equal':
             self.equal_prices = True
             self.opex_spec_s2g = -1 * self.opex_spec_g2s
