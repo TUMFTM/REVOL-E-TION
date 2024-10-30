@@ -845,6 +845,8 @@ class GridConnection(InvestBlock):
 
         self.opex_sim_power = self.opex_sim_energy = 0
 
+        self.factor_opex_peak = self.opex_ep_spec_peak = 0
+
         self.initialize_peakshaving(scenario)
         self.initialize_markets(run, scenario)
 
@@ -989,12 +991,12 @@ class GridConnection(InvestBlock):
                 self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[
                     -1]
 
-        # Count number of "actual" peakshaving intervals
-        # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
-        n_peakshaving_ints_prj = (pd.date_range(start=scenario.starttime, end=scenario.prj_endtime, freq=scenario.timestep)
-                                  .to_series().apply(periods_func[self.peakshaving])).unique().size
-        self.factor_opex_peak = n_peakshaving_ints_prj / n_peakshaving_ints
-        self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
+            # Count number of "actual" peakshaving intervals
+            # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
+            n_peakshaving_ints_prj = (pd.date_range(start=scenario.starttime, end=scenario.prj_endtime, freq=scenario.timestep)
+                                      .to_series().apply(periods_func[self.peakshaving])).unique().size
+            self.factor_opex_peak = n_peakshaving_ints_prj / n_peakshaving_ints
+            self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
 
     def set_init_size(self, scenario, run):
         self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
