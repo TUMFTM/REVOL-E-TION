@@ -155,21 +155,26 @@ def resample_to_timestep(data: pd.DataFrame, block, scenario):
     return resampled_data
 
 
-def transform_scalar_var(block, var_name, scenario, run):
-    scenario_entry = getattr(block, var_name)
+def transform_scalar_var(block, var_name):
+    """
+    Transform scalar variable to a constant pandas Series with the same index as the simulation.
+    Not every block that calls this function is a child of the Block class, so function lives here
+    """
+    scenario = block.scenario if hasattr(block, 'scenario') else block.parent.scenario  # catch GridMarket
+    attr = getattr(block, var_name)
     # In case of filename for operations cost read csv file
-    if isinstance(scenario_entry, str):
+    if isinstance(attr, str):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
         dirname = block.parent.__class__.__name__ if hasattr(block, 'parent') else block.__class__.__name__
         opex = read_input_csv(block,
-                              os.path.join(run.path_input_data, dirname, set_extension(scenario_entry)),
+                              os.path.join(scenario.run.path_input_data, dirname, set_extension(attr)),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_extd_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series
         setattr(block, var_name, opex[opex.columns[0]])
     else:  # opex_spec is given as a scalar directly in scenario file
         # Use sequence of values for variable costs to unify computation of results
-        setattr(block, var_name, pd.Series(scenario_entry, index=scenario.dti_sim_extd))
+        setattr(block, var_name, pd.Series(attr, index=scenario.dti_sim_extd))
 
 
 def set_extension(filename, default_extension='.csv'):

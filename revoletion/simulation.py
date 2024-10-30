@@ -53,50 +53,52 @@ class PredictionHorizon:
     def __init__(self, index, scenario, run):
 
         self.index = index
+        self.scenario = scenario
+        self.run = run
 
         # Time and data slicing --------------------------------
-        self.starttime = scenario.starttime + (index * scenario.len_ch)  # calc both start times
-        self.ch_endtime = self.starttime + scenario.len_ch
-        self.ph_endtime = self.starttime + scenario.len_ph
-        self.timestep = scenario.timestep
+        self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
+        self.ch_endtime = self.starttime + self.scenario.len_ch
+        self.ph_endtime = self.starttime + self.scenario.len_ph
+        self.timestep = self.scenario.timestep
 
         self.components = []  # empty list to store all oemof-solph components
-        self.constraints = constraints.CustomConstraints(scenario=scenario)
+        self.constraints = constraints.CustomConstraints(scenario=self.scenario)
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
-        if self.ph_endtime > scenario.sim_endtime and scenario.truncate_ph:
-            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
+        if self.ph_endtime > self.scenario.sim_endtime and self.scenario.truncate_ph:
+            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
                                  f'Prediction Horizon truncated to simulation end time')
 
         # Truncate PH and CH to simulation or eval end time
-        self.ph_endtime = min(self.ph_endtime, scenario.sim_extd_endtime)
-        self.ch_endtime = min(self.ch_endtime, scenario.sim_endtime)
+        self.ph_endtime = min(self.ph_endtime, self.scenario.sim_extd_endtime)
+        self.ch_endtime = min(self.ch_endtime, self.scenario.sim_endtime)
 
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - ' +
-                             f'Start: {self.starttime} - ' +
-                             f'CH end: {self.ch_endtime} - ' +
-                             f'PH end: {self.ph_endtime}')
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
+                                  f'Start: {self.starttime} - ' +
+                                  f'CH end: {self.ch_endtime} - ' +
+                                  f'PH end: {self.ph_endtime}')
 
         # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
-        self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=scenario.timestep, inclusive='left')
-        self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=scenario.timestep, inclusive='left')
+        self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=self.scenario.timestep, inclusive='left')
+        self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=self.scenario.timestep, inclusive='left')
 
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                             f'Initializing model build')
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                  f'Initializing model build')
 
-        for block in [block for block in scenario.blocks.values() if hasattr(block, 'data')]:
+        for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
             if isinstance(block, blocks.CommoditySystem):
                 for commodity in block.commodities.values():
                     commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
 
         # if apriori power scheduling is necessary, calculate power schedules:
-        if scenario.scheduler:
-            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                                 f'Calculating power schedules for commodities with rulebased charging strategies')
-            scenario.scheduler.calc_ph_schedule(self)
+        if self.scenario.scheduler:
+            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                      f'Calculating power schedules for commodities with rulebased charging strategies')
+            self.scenario.scheduler.calc_ph_schedule(self)
 
-        for block in scenario.blocks.values():
+        for block in self.scenario.blocks.values():
             block.update_input_components(scenario, self)  # (re)define solph components that need input slices
 
         self.results = None
@@ -104,8 +106,8 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                              f'Building energy system instance')
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Building energy system instance')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -113,34 +115,34 @@ class PredictionHorizon:
         for component in self.components:
             self.es.add(component)  # add components to this horizon's energy system
 
-        if self.index == 0 and run.save_system_graphs:  # first horizon - create graph of energy system
-            self.draw_energy_system(scenario)
+        if self.index == 0 and self.run.save_system_graphs:  # first horizon - create graph of energy system
+            self.draw_energy_system()
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                              f'Creating optimization model')
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Creating optimization model')
 
         try:
             # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=run.debugmode)
+            self.model = solph.Model(self.es, debug=self.run.debugmode)
         except IndexError:
-            msg = (f'Horizon {self.index + 1} of {scenario.nhorizons} -'
+            msg = (f'Horizon {self.index + 1} of {self.scenario.nhorizons} -'
                    f'Input data not matching time index - check input data and time index consistency')
-            scenario.logger.error(msg)
+            self.scenario.logger.error(msg)
             raise IndexError(msg)
 
         # Apply custom constraints
         self.constraints.apply_constraints(model=self.model)
 
-        if run.dump_model and scenario.strategy != 'rh':
-            self.model.write(run.path_dump_file, io_options={'symbolic_solver_labels': True})
+        if self.run.dump_model and self.scenario.strategy != 'rh':
+            self.model.write(self.run.path_dump_file, io_options={'symbolic_solver_labels': True})
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                              f'Model build completed')
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Model build completed')
 
-    def draw_energy_system(self, scenario):
+    def draw_energy_system(self):
 
         # Creates the Directed-Graph
-        dot = graphviz.Digraph(filename=scenario.path_system_graph_file, format='pdf')
+        dot = graphviz.Digraph(filename=self.scenario.path_system_graph_file, format='pdf')
 
         dot.node('Bus', shape='rectangle', fontsize='10', color='red')
         dot.node('Sink', shape='trapezium', fontsize='10')
@@ -169,7 +171,7 @@ class PredictionHorizon:
             elif isinstance(nd, solph.components.GenericStorage):
                 dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
             else:
-                scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
+                self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
 
         # draw the edges between the nodes based on each bus inputs/outputs
         for bus in busses:
@@ -183,20 +185,20 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting renderer from stopping model execution
-            scenario.logger.warning(f'Graphviz rendering failed - '
+            self.scenario.logger.warning(f'Graphviz rendering failed - '
                                     f'Error Message: {e}')
 
-    def get_results(self, scenario, run):
+    def get_results(self):
         """
         Get result data slice for current CH from results and save in result dataframes for later analysis
         Get (possibly optimized) component sizes from results to handle outputs more easily
         """
 
-        scenario.logger.debug(f'Horizon {self.index + 1} of {scenario.nhorizons} - Getting results')
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if run.debugmode:
+        if self.run.debugmode:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
@@ -204,46 +206,46 @@ class PredictionHorizon:
         del self.model
 
         # get optimum component sizes for optimized blocks
-        for block in [block for block in scenario.blocks.values()
+        for block in [block for block in self.scenario.blocks.values()
                       if isinstance(block, blocks.InvestBlock) and block.invest]:
             block.get_invest_size(self)
 
-        for block in scenario.blocks.values():
-            block.get_ch_results(self, scenario)
+        for block in self.scenario.blocks.values():
+            block.get_ch_results(self)
 
-        for block in [block for block in scenario.blocks.values() if hasattr(block, 'aging')]:
-            block.calc_aging(run, scenario, self)
+        for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'aging')]:
+            block.calc_aging(self)
 
-    def run_optimization(self, scenario, run):
-        scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+    def run_optimization(self):
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                              f'Model built, starting optimization')
-        results = self.model.solve(solver=run.solver, solve_kwargs={'tee': run.debugmode})
+        results = self.model.solve(solver=self.run.solver, solve_kwargs={'tee': self.run.debugmode})
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
-            scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                  f'Optimization completed, getting results')
-            if scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
-                scenario.objective_opt = self.model.objective()
+            if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
+                self.scenario.objective_opt = self.model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
             raise OptimizationError(
-                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Infeasible')
+                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Infeasible')
         elif results.solver.termination_condition == po.TerminationCondition.unbounded:
             raise OptimizationError(
-                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Unbounded')
+                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Unbounded')
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
             raise OptimizationError(
-                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Infeasible or Unbounded '
+                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Infeasible or Unbounded '
                 f'(To solve this error try to set investment limits for blocks or for the scenario)')
         else:
-            raise Exception(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+            raise Exception(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                             f'Optimization terminated with unknown status: {results.solver.termination_condition}')
 
 
 class Scenario:
 
-    def __init__(self, scenario_name, run, logger):
+    def __init__(self, name, run, logger):
 
-        self.name = scenario_name
+        self.name = name
         self.run = run
         self.logger = logger
         self.logger.propagate = False
@@ -266,7 +268,7 @@ class Scenario:
         self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)}' +
                          (f' - Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else ''))
 
-        self.parameters = run.scenario_data[self.name]
+        self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
@@ -321,39 +323,39 @@ class Scenario:
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
-            run.path_result_dir,
-            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_system_graph.pdf')
+            self.run.path_result_dir,
+            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_system_graph.pdf')
 
         # prepare for dispatch plot saving later on
-        self.plot_file_path = os.path.join(run.path_result_dir, f'{run.runtimestamp}_'
-                                                                   f'{run.scenario_file_name}_'
-                                                                   f'{self.name}.html')
+        self.plot_file_path = os.path.join(self.run.path_result_dir, f'{run.runtimestamp}_'
+                                                                     f'{run.scenario_file_name}_'
+                                                                     f'{self.name}.html')
 
         # prepare for cumulative result saving later on
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
         self.path_result_summary_tempfile = os.path.join(
-            run.path_result_dir,
+            self.run.path_result_dir,
             f'{self.name}_tempresults.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_file = os.path.join(
-            run.path_result_dir,
-            f'{run.runtimestamp}_{run.scenario_file_name}_{self.name}_results.csv')
+            self.run.path_result_dir,
+            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
         # Energy System Blocks --------------------------------
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
-        self.blocks = self.create_block_objects(self.blocks, run)
+        self.blocks = self.create_block_objects()
         self.commodity_systems = {block.name: block for block in self.blocks.values()
                                   if isinstance(block, blocks.CommoditySystem)}
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         if any([cs.data_source == 'des' for cs in self.commodity_systems.values()]):
-            dispatch.execute_des(self, run)
+            dispatch.execute_des(self, self.run)
 
         for cs in [cs for cs in self.commodity_systems.values() if cs.data_source == 'des']:
             for commodity in cs.commodities.values():
@@ -361,7 +363,7 @@ class Scenario:
 
         # ToDo: move to checker.py
         # check input parameter configuration for model dump
-        if run.dump_model and self.strategy == 'rh':
+        if self.run.dump_model and self.strategy == 'rh':
             self.logger.warning('Model file dump not implemented for RH operating strategy - ' +
                                 'File dump deactivated for current scenario')
 
@@ -471,14 +473,16 @@ class Scenario:
                          f' Renewable Curtailment:'
                          f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} %')
 
-    def create_block_objects(self, class_dict, run):
+    def create_block_objects(self):
+        class_dict = self.blocks
         objects = {}
         for name, class_name in class_dict.items():
             class_obj = getattr(blocks, class_name, None)
             if class_obj is not None and isinstance(class_obj, type):
-                objects[name] = class_obj(name, self, run)
+                objects[name] = class_obj(name, self)
             else:
-                raise ValueError(f'Class "{class_name}" not found in blocks.py file - Check for typos or add class.')
+                raise ValueError(f'Scenario {self.name}: Class "{class_name}" not found in blocks.py file - '
+                                 f'Check for typos or add class.')
         return objects
 
     def end_timing(self):
