@@ -38,15 +38,7 @@ from revoletion import scheduler
 from revoletion import utils
 
 
-class OptimizationInfeasibleError(Exception):
-    pass
-
-
-class OptimizationUnboundedError(Exception):
-    pass
-
-
-class OptimizationInfeasibleOrUnboundedError(Exception):
+class OptimizationError(Exception):
     pass
 
 
@@ -233,22 +225,18 @@ class PredictionHorizon:
             if scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
                 scenario.objective_opt = self.model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
-            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
-                                 f'Scenario failed: Infeasible'
-            raise OptimizationInfeasibleError(scenario.exception)
+            raise OptimizationError(
+                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Infeasible')
         elif results.solver.termination_condition == po.TerminationCondition.unbounded:
-            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
-                                 f'Scenario failed: Unbounded'
-            raise OptimizationUnboundedError(scenario.exception)
+            raise OptimizationError(
+                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Unbounded')
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
-            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
-                                 f'Scenario failed: Infeasible or Unbounded '\
-                                 f'(To solve this error try to set investment limits for blocks or for the scenario)'
-            raise OptimizationInfeasibleOrUnboundedError(scenario.exception)
+            raise OptimizationError(
+                f'Horizon {self.index + 1} of {scenario.nhorizons} - Scenario failed: Infeasible or Unbounded '
+                f'(To solve this error try to set investment limits for blocks or for the scenario)')
         else:
-            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
-                                 f'Optimization terminated with unknown status: {results.solver.termination_condition}'
-            raise Exception(scenario.exception)
+            raise Exception(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
+                            f'Optimization terminated with unknown status: {results.solver.termination_condition}')
 
 
 class Scenario:
@@ -839,10 +827,10 @@ class SimulationRun:
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
 
-        joined_results = pd.concat(scenario_frames, axis=1)
-        joined_results.reset_index(inplace=True, names=['block', 'key'])  # necessary for saving in csv
-        joined_results.to_csv(self.path_result_summary_file)
-        self.logger.info('Technoeconomic output file created')
+        if len(scenario_frames) > 0:  # empty scenario_frames, if all scenarios fail during initialization
+            joined_results = pd.concat(scenario_frames, axis=1)
+            joined_results.to_csv(self.path_result_summary_file, index=True)
+            self.logger.info('Technoeconomic output file created')
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
@@ -858,28 +846,38 @@ class SimulationRun:
 
         self.process = mp.current_process() if self.parallel else None
 
+        scenario = None
+
         try:
             scenario = Scenario(name, self, logger)  # Create scenario instance
 
+            # ToDo: move to checker.py
+            if scenario.strategy not in ['go', 'rh']:
+                scenario.exception = f'Optimization strategy "{scenario.strategy}" unknown'
+                raise ValueError(scenario.exception)
+
             for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
                 horizon = PredictionHorizon(horizon_index, scenario, self)
+                horizon.run_optimization(scenario, self)
+                horizon.get_results(scenario, self)
 
-                # ToDo: move to checker.py
-                if scenario.strategy in ['go', 'rh']:
-                    horizon.run_optimization(scenario, self)
-                else:
-                    logger.error(f'Optimization strategy "{scenario.strategy}" unknown')
-                    break
+        except Exception as e:
+            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
+            if scenarios_failed_queue is not None:
+                scenarios_failed_queue.put((name, str(e), traceback.format_exc()))
+            else:
+                self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
 
-                if scenario.exception and self.save_results:
-                    scenario.save_result_summary()
-                    break
-                else:
-                    horizon.get_results(scenario, self)
+            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
+            logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
 
-            scenario.end_timing()
+            if scenario is not None:  # scenario initialization can fail
+                scenario.exception = str(e)
 
-            if not scenario.exception:
+        finally:
+            try:
+                scenario.end_timing()
+                # Process all results
                 if self.save_results or self.print_results:
                     scenario.get_results()
                     scenario.calc_meta_results()
@@ -888,31 +886,13 @@ class SimulationRun:
                         scenario.save_result_timeseries()
                     if self.print_results:
                         scenario.print_results()
-
                 if self.save_plots or self.show_plots:
                     scenario.generate_plots()
                     if self.save_plots:
                         scenario.save_plots()
                     if self.show_plots:
                         scenario.show_plots()
+            except Exception as e:
+                logger.error(e, exc_info=True)
 
-        except Exception as e:
-            try:
-                scenario.exception = str(e)
-                if scenario.result_summary.empty:
-                    scenario.save_result_summary()  # experimental - save results even if exception occurred
-            except UnboundLocalError:  # scenario instance does not exist yet
-                pass
-
-            if scenarios_failed_queue is not None:
-                scenarios_failed_queue.put((name, str(e), traceback.format_exc()))
-            else:
-                self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
-            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
-            logger.error(msg=f'{str(e)} - continue on next scenario',
-                         exc_info=(not isinstance(e, (OptimizationInfeasibleError,
-                                                      OptimizationUnboundedError,
-                                                      OptimizationInfeasibleOrUnboundedError))))
-
-        finally:
             logging.shutdown()

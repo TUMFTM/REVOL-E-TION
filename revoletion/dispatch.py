@@ -346,20 +346,14 @@ class VehicleRentalSystem(RentalSystem):
 
     def check_rex_inputs(self):
         if self.cs.rex_cs not in self.sc.blocks.keys():
-            message = (f'Selected range extender system \"{self.cs.rex_cs}\" for VehicleCommoditySystem'
-                       f' \"{self.cs.name}\" in scenario \"{self.sc.name}\" does not exist')
-            self.sc.exception = message
-            raise ValueError(message)
+            raise ValueError(f'Selected range extender system "{self.cs.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.cs.name}" in scenario "{self.sc.name}" does not exist')
         elif not isinstance(self.sc.blocks[self.cs.rex_cs], blocks.BatteryCommoditySystem):
-            message = (f'Selected range extender system \"{self.cs.rex_cs}\" for VehicleCommoditySystem'
-                       f' \"{self.cs.name}\" in scenario \"{self.sc.name}\" is not a BatteryCommoditySystem')
-            self.sc.exception = message
-            raise ValueError(message)
+            raise ValueError(f'Selected range extender system "{self.cs.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.cs.name}" in scenario "{self.sc.name}" is not a BatteryCommoditySystem')
         elif not self.sc.blocks[self.cs.rex_cs].data_source == 'des':
-            message = (f'Selected range extender system \"{self.cs.rex_cs}\" for VehicleCommoditySystem'
-                       f' \"{self.cs.name}\" in scenario \"{self.sc.name}\" is not set to run DES itself')
-            self.sc.exception = message
-            raise ValueError(message)
+            raise ValueError(f'Selected range extender system "{self.cs.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.cs.name}" in scenario "{self.sc.name}" is not set to run DES itself')
 
     def get_consumption_speed(self):
 
