@@ -1,13 +1,13 @@
 block,key,grid_only,dispatch_go,dispatch_rh,sizing
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,5,5,5,5
+scenario,sim_duration,50,50,50,50
 scenario,prj_duration,25,25,25,25
 scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
 scenario,len_ch,12,12,12,12
 scenario,truncate_ph,True,True,True,True
-scenario,invest_max,None,None,None,None
+scenario,invest_max,None,None,None,20000
 scenario,wacc,0.09,0.09,0.09,0.09
 scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
@@ -101,7 +101,7 @@ ess,eff_acdc,0.95,0.95,0.95,0.95
 ess,eff_dcac,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8
 ess,crate_dis,0.8,0.8,0.8,0.8
-ess,soc_init,0.5,0.5,0.5,0.5
+ess,soc_init,0,0,0,0
 ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
