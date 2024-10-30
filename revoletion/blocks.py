@@ -1563,7 +1563,9 @@ class MobileCommodity:
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=statistics.median(
-                                                       [self.soc_min, self.soc[horizon.starttime], self.soc_max]),
+                                                       [soc_min[horizon.starttime],
+                                                        self.soc[horizon.starttime],
+                                                        soc_max[horizon.starttime]]),
                                                    inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.parent.capex_ep_spec,
