@@ -718,7 +718,7 @@ class SimulationRun:
             f'Global settings read - running {self.scenario_num} scenario{pe1} in {mode}'
         )
 
-        # make sure that errors are logged to logfile
+        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
 
     def define_paths(self):
