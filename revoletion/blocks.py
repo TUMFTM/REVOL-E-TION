@@ -217,8 +217,11 @@ class InvestBlock(Block):
             raise ValueError(f'Scenario {scenario.name} - Block \"{self.name}\" component size optimization '
                              f'not implemented for any other strategy than \"GO\"')
 
+        # Include (time-based) maintenance expenses in capex calculation for otimizer (results are disaggregated anyway)
         self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, scenario.wacc)
-        # annuity factor to factor the difference between simulation and project time into component sizing
+
+        # annuity factor (incl. replacements) to compensate for difference
+        # between simulation and project time in component sizing
         self.factor_capex = eco.annuity_due_capex(capex_init=1,
                                                   lifespan=self.ls,
                                                   observation_horizon=scenario.prj_duration_yrs,
@@ -227,6 +230,8 @@ class InvestBlock(Block):
         # ep = equivalent present (i.e. specific values prediscounted)
         self.capex_ep_spec = self.capex_joined * self.factor_capex  # Capex is downrated for short simulations
 
+        # runtime factor to compensate for difference between simulation and project timeframe
+        # opex is uprated in importance for short simulations
         self.factor_opex = 1 / scenario.sim_prj_rat
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
@@ -840,59 +845,8 @@ class GridConnection(InvestBlock):
 
         self.opex_sim_power = self.opex_sim_energy = 0
 
-        if self.peakshaving is None:
-            peakshaving_ints = ['sim_duration']
-        else:
-            # Create functions to extract relevant property of datetimeindex for peakshaving intervals
-            periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
-                            'week': lambda x: x.strftime('%Y-CW%W'),
-                            'month': lambda x: x.strftime('%Y-%m'),
-                            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-                            'year': lambda x: x.strftime('%Y')}
-
-            # Assign the corresponding interval to each timestep
-            periods = scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
-            peakshaving_ints = periods.unique()
-
-            # Activate the corresponding bus for each period
-            self.bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                                for period_label in peakshaving_ints}, index=scenario.dti_sim_extd)
-
-        # Create a series to store peak power values
-        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints,
-                                             columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
-        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
-        self.peakshaving_ints.loc[:, 'power'] = 0
-
-        self.peakshaving_ints['opex_spec'] = self.opex_peak_spec  # can be adapted for multiple cost levels over time
-
-        if self.peakshaving is not None:
-            # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
-            for interval in self.peakshaving_ints.index:
-                self.peakshaving_ints.loc[interval, 'period_fraction'] = utils.get_period_fraction(
-                    dti=self.bus_activation.loc[scenario.dti_sim][self.bus_activation.loc[scenario.dti_sim, interval] == 1].index,
-                    period=self.peakshaving,
-                    freq=scenario.timestep)
-
-                # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
-                self.peakshaving_ints.loc[interval, 'start'] = self.bus_activation[self.bus_activation[interval] == 1].index[0]
-                self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[-1]
-
-        # get information about GridMarkets specified in the scenario file
-        if self.filename_markets:
-            markets = pd.read_csv(os.path.join(run.path_input_data,
-                                               self.__class__.__name__,
-                                               utils.set_extension(self.filename_markets)),
-                                  index_col=[0])
-            markets = markets.map(utils.infer_dtype)
-        else:
-            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'pwr_g2s', 'pwr_s2g'],
-                                   columns=['grid'],
-                                   data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
-
-        # Generate individual GridMarkets instances
-        self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
-                        for market in markets.columns}
+        self.initialize_peakshaving(scenario)
+        self.initialize_markets(run, scenario)
 
     def add_power_trace(self, scenario):
         super().add_power_trace(scenario)
@@ -916,11 +870,12 @@ class GridConnection(InvestBlock):
         self.mntex_yrl = np.maximum(self.size_g2s, self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_peak = self.opex_peak_spec * self.factor_opex
+        # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridConnection
+        pass
 
     def calc_opex_sim(self, scenario):
         # Calculate costs for grid peak power
-        self.opex_sim_power = self.opex_peak_spec * self.peakshaving_ints['power'].sum()
+        self.opex_sim_power = self.opex_spec_peak * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():
@@ -941,10 +896,7 @@ class GridConnection(InvestBlock):
             market.get_ch_results(horizon)
 
         if self.peakshaving:
-            for interval in self.peakshaving_ints.index:
-                converter = self.outflow[f'{self.name}_xc_{interval}']
-                self.peakshaving_ints.loc[interval, 'power'] = max(self.peakshaving_ints.loc[interval, 'power'],
-                                                                   horizon.results[(converter, self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
+            self.get_peak_powers(horizon)
 
     def get_invest_size(self, horizon):
         # Get optimized sizes of the grid connection. Select first size, as they all have to be the same
@@ -963,8 +915,10 @@ class GridConnection(InvestBlock):
 
     def get_peak_powers(self, horizon):
         # Peakshaving happens between converter and bus_connected -> select this flow to get peak values
-        for interval, converter in zip(self.peakshaving_ints.index, self.outflow.values()):
-            self.peakshaving_ints.loc[interval, 'power'] = horizon.results[(converter, self.bus_connected)]['scalars']['invest']
+        for interval in self.peakshaving_ints.index:
+            converter = self.outflow[f'{self.name}_xc_{interval}']
+            self.peakshaving_ints.loc[interval, 'power'] = max(self.peakshaving_ints.loc[interval, 'power'],
+                                                               horizon.results[(converter, self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
 
     def get_timeseries_results(self, scenario):
         """
@@ -973,6 +927,74 @@ class GridConnection(InvestBlock):
         super().get_timeseries_results(scenario)  # this goes up to the Block class
         for market in self.markets.values():
             market.get_timeseries_results(scenario)
+
+    def initialize_markets(self, run, scenario):
+        # get information about GridMarkets specified in the scenario file
+        if self.filename_markets:
+            markets = pd.read_csv(os.path.join(run.path_input_data,
+                                               self.__class__.__name__,
+                                               utils.set_extension(self.filename_markets)),
+                                  index_col=[0])
+            markets = markets.map(utils.infer_dtype)
+        else:
+            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'pwr_g2s', 'pwr_s2g'],
+                                   columns=['grid'],
+                                   data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
+        # Generate individual GridMarkets instances
+        self.markets = {market: GridMarket(market, scenario, run, self, markets.loc[:, market])
+                        for market in markets.columns}
+
+    def initialize_peakshaving(self, scenario):
+
+        if self.peakshaving is None:
+            peakshaving_ints = ['sim_duration']
+            n_peakshaving_ints = 0
+        else:
+            # Create functions to extract relevant property of datetimeindex for peakshaving intervals
+            periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
+                            'week': lambda x: x.strftime('%Y-CW%W'),
+                            'month': lambda x: x.strftime('%Y-%m'),
+                            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+                            'year': lambda x: x.strftime('%Y')}
+
+            # Assign the corresponding interval to each timestep
+            periods = scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
+            peakshaving_ints = periods.unique()
+            n_peakshaving_ints = len(peakshaving_ints)
+
+            # Activate the corresponding bus for each period
+            self.bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
+                                                for period_label in peakshaving_ints}, index=scenario.dti_sim_extd)
+
+        # Create a series to store peak power values
+        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints,
+                                             columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
+        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
+        self.peakshaving_ints.loc[:, 'power'] = 0
+
+        self.peakshaving_ints['opex_spec'] = self.opex_spec_peak  # can be adapted for multiple cost levels over time
+
+        if self.peakshaving is not None:
+            # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
+            for interval in self.peakshaving_ints.index:
+                self.peakshaving_ints.loc[interval, 'period_fraction'] = utils.get_period_fraction(
+                    dti=self.bus_activation.loc[scenario.dti_sim][
+                        self.bus_activation.loc[scenario.dti_sim, interval] == 1].index,
+                    period=self.peakshaving,
+                    freq=scenario.timestep)
+
+                # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
+                self.peakshaving_ints.loc[interval, 'start'] = \
+                self.bus_activation[self.bus_activation[interval] == 1].index[0]
+                self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[
+                    -1]
+
+        # Count number of "actual" peakshaving intervals
+        # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
+        n_peakshaving_ints_prj = (pd.date_range(start=scenario.starttime, end=scenario.prj_endtime, freq=scenario.timestep)
+                                  .to_series().apply(periods_func[self.peakshaving])).unique().size
+        self.factor_opex_peak = n_peakshaving_ints_prj / n_peakshaving_ints
+        self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
 
     def set_init_size(self, scenario, run):
         self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
@@ -1153,8 +1175,8 @@ class GridMarket:
                                   secondary_y=False)
 
     def calc_opex_ep_spec(self):
-        self.opex_ep_spec_g2s = self.opex_spec_g2s / self.parent.factor_opex
-        self.opex_ep_spec_s2g = self.opex_spec_s2g / self.parent.factor_opex
+        self.opex_ep_spec_g2s = self.opex_spec_g2s * self.parent.factor_opex
+        self.opex_ep_spec_s2g = self.opex_spec_s2g * self.parent.factor_opex
 
     def calc_results(self, scenario):
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
