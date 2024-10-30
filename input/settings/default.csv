@@ -12,3 +12,4 @@ show_plots,False
 save_system_graphs,True
 dump_model,False
 debugmode,False
+key_api_solcast,123456abcdef

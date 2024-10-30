@@ -1712,12 +1712,8 @@ class PVSource(RenewableInvestBlock):
                 self.data.index = self.data.index - self.api_shift
 
             elif self.data_source == 'solcast api':  # solcast API input selected
-                # read api key
-                with open(os.path.join(run.path_input_data, self.__class__.__name__, 'solcast_api_key.conf'), 'r') as file:
-                    api_key = file.readline().strip().split(':', 1)[1].strip()  # Split the line at the first colon
-
                 # set api key as bearer token
-                headers = {'Authorization': f'Bearer {api_key}'}
+                headers = {'Authorization': f'Bearer {run.key_api_solcast}'}
 
                 params = {**{'latitude': scenario.latitude,  # unmetered location for testing 41.89021,
                              'longitude': scenario.longitude,  # unmetered location for testing 12.492231,
