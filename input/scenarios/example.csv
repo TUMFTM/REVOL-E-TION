@@ -74,7 +74,7 @@ grid,invest_s2g,equal,equal,equal,equal
 grid,invest_s2g_max,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,None,None,None,None
-grid,opex_peak_spec,0,0,0,0
+grid,opex_spec_peak,0,0,0,0
 grid,capex_spec,10,10,10,10
 grid,mntex_spec,0,0,0,0
 grid,ls,10,10,10,10
