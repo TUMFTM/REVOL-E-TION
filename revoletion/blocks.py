@@ -1352,6 +1352,8 @@ class MobileCommodity:
         self.soc[scenario.starttime] = self.soc_init
 
         self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
+        self.q_loss_cal = pd.Series(index=utils.extend_dti(scenario.dti_sim))
+        self.q_loss_cyc = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.aging_model = bat.BatteryPackModel(scenario, self)
         self.soc_min = (1 - self.soh[scenario.starttime]) / 2
         self.soc_max = 1 - ((1 - self.soh[scenario.starttime]) / 2)
@@ -1466,7 +1468,10 @@ class MobileCommodity:
                                              f'{self.name}_flow_ext_dc': self.flow_ext_dc,
                                              f'{self.name}_flow_ext_ac': self.flow_ext_ac,
                                              f'{self.name}_soc': self.soc,
-                                             f'{self.name}_soh': self.soh})
+                                             f'{self.name}_soh': self.soh,
+                                             f'{self.name}_q_loss_cal': self.q_loss_cal,
+                                             f'{self.name}_q_loss_cyc': self.q_loss_cyc})
+
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, commodity_ts_results], axis=1)
 
     def set_init_size(self, *_):
@@ -1832,6 +1837,8 @@ class StationaryEnergyStorage(InvestBlock):
         self.soc[scenario.starttime] = self.soc_init
 
         self.soh = pd.Series(index=utils.extend_dti(scenario.dti_sim))
+        self.q_loss_cal = pd.Series(index=utils.extend_dti(scenario.dti_sim))
+        self.q_loss_cyc = pd.Series(index=utils.extend_dti(scenario.dti_sim))
         self.aging_model = bat.BatteryPackModel(scenario, self)
         self.soc_min = (1 - self.soh[scenario.starttime]) / 2
         self.soc_max = 1 - ((1 - self.soh[scenario.starttime]) / 2)
@@ -1889,7 +1896,11 @@ class StationaryEnergyStorage(InvestBlock):
         """
         super().get_timeseries_results(scenario)  # this goes up to the Block class
 
-        block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc, f'{self.name}_soh': self.soh})
+        block_ts_results = pd.DataFrame({f'{self.name}_soc': self.soc,
+                                         f'{self.name}_soh': self.soh,
+                                         f'{self.name}_q_loss_cal': self.q_loss_cal,
+                                         f'{self.name}_q_loss_cyc': self.q_loss_cyc})
+
         scenario.result_timeseries = pd.concat([scenario.result_timeseries, block_ts_results], axis=1)
 
     def update_input_components(self, scenario, horizon):

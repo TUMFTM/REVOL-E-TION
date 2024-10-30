@@ -44,8 +44,8 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.q_loss_cal[0] = self.commodity.q_loss_cal_init
-        self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
+        self.commodity.q_loss_cal[self.scenario.starttime] = self.q_loss_cal[0] = self.commodity.q_loss_cal_init
+        self.commodity.q_loss_cyc[self.scenario.starttime] = self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
 
         self.commodity.soh[self.scenario.starttime] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
 
@@ -187,6 +187,8 @@ class BatteryPackModel:
 
         # Update block / commodity storage size
         self.commodity.soh[horizon.ch_endtime] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
+        self.commodity.q_loss_cal[horizon.ch_endtime] = sum(self.q_loss_cal)
+        self.commodity.q_loss_cyc[horizon.ch_endtime] = sum(self.q_loss_cyc)
         self.commodity.soc_min = (1 - self.commodity.soh[horizon.ch_endtime]) / 2
         self.commodity.soc_max = 1 - ((1 - self.commodity.soh[horizon.ch_endtime]) / 2)
 
