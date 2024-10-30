@@ -242,11 +242,12 @@ class PredictionHorizon:
             raise OptimizationUnboundedError(scenario.exception)
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
             scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
-                                 f'Scenario failed: Infeasible or Unbounded'
+                                 f'Scenario failed: Infeasible or Unbounded '\
+                                 f'(To solve this error try to set investment limits for blocks or for the scenario)'
             raise OptimizationInfeasibleOrUnboundedError(scenario.exception)
         else:
-            scenario.exception(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
-                               f'Optimization terminated with unknown status: {results.solver.termination_condition}')
+            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
+                                 f'Optimization terminated with unknown status: {results.solver.termination_condition}'
             raise Exception(scenario.exception)
 
 
