@@ -533,7 +533,6 @@ class Scenario:
             block.calc_cashflows(self)
 
     def print_results(self):
-        print('#################')
         for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
             unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
             if isinstance(block, blocks.SystemCore) and block.invest:
@@ -576,7 +575,6 @@ class Scenario:
         self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
         self.logger.info(
             f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
-        print('#################')
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
