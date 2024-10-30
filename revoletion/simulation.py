@@ -46,6 +46,10 @@ class OptimizationUnboundedError(Exception):
     pass
 
 
+class OptimizationInfeasibleOrUnboundedError(Exception):
+    pass
+
+
 class OptimizationSuccessfulFilter(logging.Filter):
     def filter(self, record):
         # Filter out log messages from the root logger
@@ -236,6 +240,10 @@ class PredictionHorizon:
             scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
                                  f'Scenario failed: Unbounded'
             raise OptimizationUnboundedError(scenario.exception)
+        elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
+            scenario.exception = f'Horizon {self.index + 1} of {scenario.nhorizons} - '\
+                                 f'Scenario failed: Infeasible or Unbounded'
+            raise OptimizationInfeasibleOrUnboundedError(scenario.exception)
         else:
             scenario.exception(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
                                f'Optimization terminated with unknown status: {results.solver.termination_condition}')
@@ -901,7 +909,9 @@ class SimulationRun:
                 self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
             # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
             logger.error(msg=f'{str(e)} - continue on next scenario',
-                         exc_info=(not isinstance(e, (OptimizationInfeasibleError, OptimizationUnboundedError))))
+                         exc_info=(not isinstance(e, (OptimizationInfeasibleError,
+                                                      OptimizationUnboundedError,
+                                                      OptimizationInfeasibleOrUnboundedError))))
 
         finally:
             logging.shutdown()
