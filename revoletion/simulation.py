@@ -139,17 +139,20 @@ class PredictionHorizon:
                                    f'Model build completed')
 
     def draw_energy_system(self):
+        """
+        This method draws a directed graph of the scenario's energy system and saves it as a pdf file
+        """
+        # Initialize the graph with the filepath without extension
+        dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
 
-        # Creates the Directed-Graph
-        dot = graphviz.Digraph(filename=self.scenario.path_system_graph_file, format='pdf')
-
+        # Define drawing styles for certain components
         dot.node('Bus', shape='rectangle', fontsize='10', color='red')
         dot.node('Sink', shape='trapezium', fontsize='10')
         dot.node('Source', shape='invtrapezium', fontsize='10')
         dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
 
         busses = []
-        # draw a node for each of the network's component. The shape depends on the component's type
+        # draw a node for each of the network's components.
         for nd in self.es.nodes:
             if isinstance(nd, solph.Bus):
                 dot.node(nd.label,
@@ -183,9 +186,9 @@ class PredictionHorizon:
 
         try:
             dot.render()
-        except Exception as e:  # inhibiting renderer from stopping model execution
-            self.scenario.logger.warning(f'Graphviz rendering failed - '
-                                    f'Error Message: {e}')
+        except Exception as e:  # inhibiting failing renderer from stopping model execution
+            self.scenario.logger.warning(f'Scenario: \"{self.scenario.name}\": System graph rendering failed - '
+                                         f'Traceback: {e}')
 
     def get_results(self):
         """

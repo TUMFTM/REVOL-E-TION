@@ -35,8 +35,8 @@ def join_capex_mntex(capex: float,
 
 
 def annuity_due(present_value: float,
-        observation_horizon: int,
-        discount_rate: float) -> float:
+                observation_horizon: int,
+                discount_rate: float) -> float:
     """
     This function calculates the annuity due (the equivalent periodial, nominally recurring value to generate the same
     NPV) of a present value pv over an observation horizon at a discount rate per period
