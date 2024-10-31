@@ -13,10 +13,10 @@ from revoletion import utils
 
 class BatteryPackModel:
 
-    def __init__(self, scenario, commodity):
+    def __init__(self, commodity):
 
         self.commodity = commodity
-        self.scenario = scenario
+        self.scenario = self.commodity.scenario
 
         self.chemistry = self.commodity.chemistry.lower()
 

@@ -621,7 +621,7 @@ class CommoditySystem(InvestBlock):
 
     def get_dispatch_mode(self):
 
-        if self.mode_scheduling in self.run.apriori_lvls:  # uc, equal, soc, fcfs
+        if self.mode_scheduling in self.scenario.run.apriori_lvls:  # uc, equal, soc, fcfs
             if self.mode_scheduling == 'uc':
                 self.mode_dispatch = 'apriori_unlimited'
             elif isinstance(self.power_lim_static, (int, float)):
@@ -641,9 +641,9 @@ class CommoditySystem(InvestBlock):
             self.power_lim_static = None
 
         # ToDo: move to checker.py
-        if self.invest and self.mode_scheduling in self.run.apriori_lvls:
+        if self.invest and self.mode_scheduling in self.scenario.run.apriori_lvls:
             raise ValueError(f'CommoditySystem \"{self.name}\": commodity size optimization not '
-                             f'implemented for a priori integration levels: {self.run.apriori_lvls}')
+                             f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
 
     def get_invest_size(self, horizon):
         """
@@ -679,7 +679,9 @@ class CommoditySystem(InvestBlock):
         consumption must be meaned, while booleans, distances and dsocs must not.
         """
 
-        log_path = os.path.join(self.run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename))
+        log_path = os.path.join(self.scenario.run.path_input_data,
+                                self.__class__.__name__,
+                                utils.set_extension(self.filename))
         self.data = utils.read_input_csv(self,
                                          log_path,
                                          self.scenario,
@@ -700,7 +702,9 @@ class CommoditySystem(InvestBlock):
         Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe
         """
 
-        usecase_path = os.path.join(self.run.path_input_data, self.__class__.__name__, utils.set_extension(self.filename))
+        usecase_path = os.path.join(self.scenario.run.path_input_data,
+                                    self.__class__.__name__,
+                                    utils.set_extension(self.filename))
         df = pd.read_csv(usecase_path,
                          header=[0, 1],
                          index_col=0)
@@ -724,7 +728,7 @@ class CommoditySystem(InvestBlock):
         #  ToDo: move to checker.py
         if self.invest and self.data_source == 'des':
             self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data'
-                                    f' source DES is not possible. Deactivated invest.')
+                                         f' source DES is not possible. Deactivated invest.')
             self.invest = False
 
         self.size_existing_pc = self.size_existing
@@ -936,7 +940,7 @@ class GridConnection(InvestBlock):
     def initialize_markets(self):
         # get information about GridMarkets specified in the scenario file
         if self.filename_markets:
-            markets = pd.read_csv(os.path.join(self.run.path_input_data,
+            markets = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
                                                self.__class__.__name__,
                                                utils.set_extension(self.filename_markets)),
                                   index_col=[0])
@@ -1130,8 +1134,7 @@ class GridMarket:
 
         self.name = name
         self.parent = parent
-        self.scenario = scenario
-        self.run = run
+        self.scenario = self.parent.scenario
 
         self.src = self.snk = None  # initialize oemof-solph components
 
@@ -1162,9 +1165,9 @@ class GridMarket:
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
 
         # timeseries result initialization
-        self.flow_in = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
 
     def add_power_trace(self):
         # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
@@ -1175,13 +1178,13 @@ class GridMarket:
                     f' {(self.parent.size_g2s if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
                     f' {(self.parent.size_s2g if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
 
-        self.parent.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
-                                                         y=self.flow,
-                                                         mode='lines',
-                                                         name=legentry,
-                                                         line=dict(width=2, dash=None),
-                                                         visible='legendonly'),
-                                              secondary_y=False)
+        self.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
+                                                  y=self.flow,
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=False)
 
     def calc_opex_ep_spec(self):
         self.opex_ep_spec_g2s = self.opex_spec_g2s * self.parent.factor_opex
@@ -1189,18 +1192,18 @@ class GridMarket:
 
     def calc_results(self):
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
-        self.e_sim_in = self.flow_in.sum() * self.parent.scenario.timestep_hours  # flow values are powers --> conversion to Wh
-        self.e_sim_out = self.flow_out.sum() * self.parent.scenario.timestep_hours
-        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, self.parent.scenario)
-        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, self.parent.scenario)
-        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, self.parent.scenario)
-        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.parent.scenario)
+        self.e_sim_in = self.flow_in.sum() * self.scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_sim_out = self.flow_out.sum() * self.scenario.timestep_hours
+        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, self.scenario)
+        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, self.scenario)
+        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, self.scenario)
+        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in,
-                                         self.parent.scenario.prj_duration_yrs,
-                                         self.parent.scenario.wacc)
+                                         self.scenario.prj_duration_yrs,
+                                         self.scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out,
-                                          self.parent.scenario.prj_duration_yrs,
-                                          self.parent.scenario.wacc)
+                                          self.scenario.prj_duration_yrs,
+                                          self.scenario.wacc)
 
         self.flow = self.flow_in - self.flow_out  # for plotting
 
@@ -1214,7 +1217,7 @@ class GridMarket:
         """
         market_ts_results = pd.DataFrame({f'{self.name}_flow_in': self.flow_in,
                                              f'{self.name}_flow_out': self.flow_out})
-        self.parent.scenario.result_timeseries = pd.concat([self.parent.scenario.result_timeseries, market_ts_results], axis=1)
+        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, market_ts_results], axis=1)
 
     def set_init_size(self):
         for dir in ['g2s', 's2g']:
@@ -1247,7 +1250,7 @@ class GridMarket:
                                          inputs={self.parent.bus: solph.Flow(
                                              nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
                                              variable_costs=self.opex_ep_spec_s2g[horizon.dti_ph] +
-                                                            self.parent.scenario.cost_eps * self.equal_prices)
+                                                            self.scenario.cost_eps * self.equal_prices)
                                          })
 
         horizon.components.append(self.src)
@@ -1305,8 +1308,7 @@ class MobileCommodity:
 
         self.name = name
         self.parent = parent
-        self.scenario = scenario
-        self.run = run
+        self.scenario = self.parent.scenario
 
         # initialize oemof-solph components
         self.bus = self.inflow = self.outflow = self.ess = None
@@ -1354,63 +1356,63 @@ class MobileCommodity:
         self.crev_time = self.crev_usage = self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
         # timeseries result initialization
-        self.flow_in = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_out = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_bat_in = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_bat_out = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_ext_ac = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
-        self.flow_ext_dc = pd.Series(data=0, index=self.parent.scenario.dti_sim, dtype='float64')
+        self.flow_in = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_out = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_bat_in = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_bat_out = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_ext_ac = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.flow_ext_dc = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
 
-        self.soc = pd.Series(index=utils.extend_dti(self.parent.scenario.dti_sim), dtype='float64')
-        self.soc[self.parent.scenario.starttime] = self.soc_init
+        self.soc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim), dtype='float64')
+        self.soc[self.scenario.starttime] = self.soc_init
 
-        self.soh = pd.Series(index=utils.extend_dti(self.parent.scenario.dti_sim))
-        self.q_loss_cal = pd.Series(index=utils.extend_dti(self.parent.scenario.dti_sim))
-        self.q_loss_cyc = pd.Series(index=utils.extend_dti(self.parent.scenario.dti_sim))
-        self.aging_model = bat.BatteryPackModel(self.parent.scenario, self)
-        self.soc_min = (1 - self.soh[self.parent.scenario.starttime]) / 2
-        self.soc_max = 1 - ((1 - self.soh[self.parent.scenario.starttime]) / 2)
+        self.soh = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
+        self.q_loss_cal = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
+        self.q_loss_cyc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
+        self.aging_model = bat.BatteryPackModel(self)
+        self.soc_min = (1 - self.soh[self.scenario.starttime]) / 2
+        self.soc_max = 1 - ((1 - self.soh[self.scenario.starttime]) / 2)
 
     def add_power_trace(self):
         legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.eff_dis / 1e3:.1f} kW discharge)'
-        self.parent.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
-                                                         y=self.flow,
-                                                         mode='lines',
-                                                         name=legentry,
-                                                         line=dict(width=2, dash=None),
-                                                         visible='legendonly'),
-                                              secondary_y=False)
+        self.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
+                                                  y=self.flow,
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=False)
 
-        self.parent.scenario.figure.add_trace(go.Scatter(x=self.flow_ext_dc.index,
-                                                         y=self.flow_ext_dc + self.flow_ext_ac,
-                                                         mode='lines',
-                                                         name=f'{self.name} external charging power'
-                                                              f' (AC max. {self.parent.pwr_ext_ac / 1e3:.1f} kW &'
-                                                              f' DC max. {self.parent.pwr_ext_dc / 1e3:.1f} kW)',
-                                                         line=dict(width=2, dash=None),
-                                                         visible='legendonly'),
-                                              secondary_y=False)
+        self.scenario.figure.add_trace(go.Scatter(x=self.flow_ext_dc.index,
+                                                  y=self.flow_ext_dc + self.flow_ext_ac,
+                                                  mode='lines',
+                                                  name=f'{self.name} external charging power'
+                                                       f' (AC max. {self.parent.pwr_ext_ac / 1e3:.1f} kW &'
+                                                       f' DC max. {self.parent.pwr_ext_dc / 1e3:.1f} kW)',
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=False)
 
     def add_soc_trace(self):
         legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
-        self.parent.scenario.figure.add_trace(go.Scatter(x=self.soc.index,
-                                                         y=self.soc,
-                                                         mode='lines',
-                                                         name=legentry,
-                                                         line=dict(width=2, dash=None),
-                                                         visible='legendonly'),
-                                              secondary_y=True)
+        self.scenario.figure.add_trace(go.Scatter(x=self.soc.index,
+                                                  y=self.soc,
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=True)
 
         legentry = f'{self.name} SOH'
         data = self.soh.dropna()
-        self.parent.scenario.figure.add_trace(go.Scatter(x=data.index,
-                                                         y=data,
-                                                         mode='lines',
-                                                         name=legentry,
-                                                         line=dict(width=2, dash=None),
-                                                         visible='legendonly'),
-                                              secondary_y=True)
+        self.scenario.figure.add_trace(go.Scatter(x=data.index,
+                                                  y=data,
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=True)
 
     def calc_aging(self, horizon):
         self.aging_model.age(horizon)
@@ -1419,44 +1421,44 @@ class MobileCommodity:
     def calc_results(self):
 
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
-        self.e_sim_in = self.flow_in.sum() * self.parent.scenario.timestep_hours  # flow values are powers --> conversion to Wh
-        self.e_sim_out = self.flow_out.sum() * self.parent.scenario.timestep_hours
-        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, self.parent.scenario)
-        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, self.parent.scenario)
-        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, self.parent.scenario)
-        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.parent.scenario)
+        self.e_sim_in = self.flow_in.sum() * self.scenario.timestep_hours  # flow values are powers --> conversion to Wh
+        self.e_sim_out = self.flow_out.sum() * self.scenario.timestep_hours
+        self.e_yrl_in = utils.scale_sim2year(self.e_sim_in, self.scenario)
+        self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, self.scenario)
+        self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, self.scenario)
+        self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in,
-                                         self.parent.scenario.prj_duration_yrs,
-                                         self.parent.scenario.wacc)
+                                         self.scenario.prj_duration_yrs,
+                                         self.scenario.wacc)
         self.e_dis_out = eco.acc_discount(self.e_yrl_out,
-                                          self.parent.scenario.prj_duration_yrs,
-                                          self.parent.scenario.wacc)
+                                          self.scenario.prj_duration_yrs,
+                                          self.scenario.wacc)
 
         # energy results for external chargers
-        self.e_ext_ac_sim = self.flow_ext_ac.sum() * self.parent.scenario.timestep_hours
-        self.e_ext_dc_sim = self.flow_ext_dc.sum() * self.parent.scenario.timestep_hours
-        self.e_ext_ac_yrl = utils.scale_sim2year(self.e_ext_ac_sim, self.parent.scenario)
-        self.e_ext_dc_yrl = utils.scale_sim2year(self.e_ext_dc_sim, self.parent.scenario)
-        self.e_ext_ac_prj = utils.scale_year2prj(self.e_ext_ac_yrl, self.parent.scenario)
-        self.e_ext_dc_prj = utils.scale_year2prj(self.e_ext_dc_yrl, self.parent.scenario)
+        self.e_ext_ac_sim = self.flow_ext_ac.sum() * self.scenario.timestep_hours
+        self.e_ext_dc_sim = self.flow_ext_dc.sum() * self.scenario.timestep_hours
+        self.e_ext_ac_yrl = utils.scale_sim2year(self.e_ext_ac_sim, self.scenario)
+        self.e_ext_dc_yrl = utils.scale_sim2year(self.e_ext_dc_sim, self.scenario)
+        self.e_ext_ac_prj = utils.scale_year2prj(self.e_ext_ac_yrl, self.scenario)
+        self.e_ext_dc_prj = utils.scale_year2prj(self.e_ext_dc_yrl, self.scenario)
         self.e_ext_ac_dis = eco.acc_discount(self.e_ext_ac_yrl,
-                                             self.parent.scenario.prj_duration_yrs,
-                                             self.parent.scenario.wacc)
+                                             self.scenario.prj_duration_yrs,
+                                             self.scenario.wacc)
         self.e_ext_dc_dis = eco.acc_discount(self.e_ext_dc_yrl,
-                                             self.parent.scenario.prj_duration_yrs,
-                                             self.parent.scenario.wacc)
+                                             self.scenario.prj_duration_yrs,
+                                             self.scenario.wacc)
 
         self.flow = self.flow_in - self.flow_out  # for plotting
 
     def calc_revenue(self):
 
         # rental time based revenue
-        self.crev_time = ((~self.data.loc[self.parent.scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[self.parent.scenario.dti_sim]) *
-                          self.parent.scenario.timestep_hours)
+        self.crev_time = ((~self.data.loc[self.scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[self.scenario.dti_sim]) *
+                          self.scenario.timestep_hours)
 
         # usage based revenue
         if isinstance(self.parent, VehicleCommoditySystem):
-            self.crev_usage = self.data.loc[self.parent.scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[self.parent.scenario.dti_sim]
+            self.crev_usage = self.data.loc[self.scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[self.scenario.dti_sim]
         else:  # BatteryCommoditySystems have no usage based revenue
             self.crev_usage = 0  # Battery rental is a fixed time based price, irrespective of energy consumption
 
@@ -1494,7 +1496,7 @@ class MobileCommodity:
                                              f'{self.name}_q_loss_cal': self.q_loss_cal,
                                              f'{self.name}_q_loss_cyc': self.q_loss_cyc})
 
-        self.parent.scenario.result_timeseries = pd.concat([self.parent.scenario.result_timeseries, commodity_ts_results], axis=1)
+        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, commodity_ts_results], axis=1)
 
     def set_init_size(self):
         if not self.invest:
@@ -1572,7 +1574,7 @@ class MobileCommodity:
                                                           nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_cap in ['v2v', 'v2s'] else 0),
                                                           max=outflow_max,
                                                           fix=outflow_fix,
-                                                          variable_costs=self.parent.scenario.cost_eps)
+                                                          variable_costs=self.scenario.cost_eps)
                                                   },
                                                   conversion_factors={self.parent.bus: self.eff_dis})
         horizon.components.append(self.outflow)
@@ -1586,7 +1588,7 @@ class MobileCommodity:
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
                                                    inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_ep_spec[horizon.dti_ph])},
                                                    # cost_eps are needed to prevent storage from being emptied in RH
-                                                   outputs={self.bus: solph.Flow(variable_costs=self.parent.scenario.cost_eps)},
+                                                   outputs={self.bus: solph.Flow(variable_costs=self.scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
                                                    balanced=False,
                                                    initial_storage_level=statistics.median(
@@ -1698,11 +1700,11 @@ class PVSource(RenewableInvestBlock):
         if 'api' in self.data_source.lower():  # PVGIS API or Solcast API input selected
             if self.filename:
                 try:
-                    self.api_params = pd.read_csv(os.path.join(self.run.path_input_data,
-                                                           self.__class__.__name__,
-                                                           utils.set_extension(self.filename)),
-                                              index_col=[0],
-                                              na_filter=False)
+                    self.api_params = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
+                                                               self.__class__.__name__,
+                                                               utils.set_extension(self.filename)),
+                                                  index_col=[0],
+                                                  na_filter=False)
                     self.api_params = self.api_params.map(utils.infer_dtype)['value'].to_dict() if self.api_params.index.name == 'parameter' and all(self.api_params.columns == 'value') else {}
                 except FileNotFoundError:
                     self.api_params = {}
@@ -1766,7 +1768,7 @@ class PVSource(RenewableInvestBlock):
 
             elif self.data_source == 'solcast api':  # solcast API input selected
                 # set api key as bearer token
-                headers = {'Authorization': f'Bearer {self.run.key_api_solcast}'}
+                headers = {'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'}
 
                 params = {**{'latitude': self.scenario.latitude,  # unmetered location for testing 41.89021,
                              'longitude': self.scenario.longitude,  # unmetered location for testing 12.492231,
@@ -1796,7 +1798,7 @@ class PVSource(RenewableInvestBlock):
                 self.calc_power_solcast()
 
         else:  # input from file instead of API
-            self.path_input_file = os.path.join(self.run.path_input_data,
+            self.path_input_file = os.path.join(self.scenario.run.path_input_data,
                                                 self.__class__.__name__,
                                                 utils.set_extension(self.filename))
 
@@ -2194,7 +2196,7 @@ class WindSource(RenewableInvestBlock):
             self.data = self.scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
-            self.path_turbine_data_file = os.path.join(self.run.path_data_immut, 'turbine_data.pkl')
+            self.path_turbine_data_file = os.path.join(self.scenario.run.path_data_immut, 'turbine_data.pkl')
             self.turbine_type = 'E-53/800'  # smallest fully filled wind turbine in dataseta as per June 2024
             self.turbine_data = pd.read_pickle(self.path_turbine_data_file)
             self.turbine_data = self.turbine_data.loc[
@@ -2209,7 +2211,7 @@ class WindSource(RenewableInvestBlock):
 
         else:  # input from file instead of PV block
 
-            self.path_input_file = os.path.join(self.run.path_input_data,
+            self.path_input_file = os.path.join(self.scenario.run.path_input_data,
                                                 self.__class__.__name__,
                                                 utils.set_extension(self.filename))
             self.data = utils.read_input_csv(self, self.path_input_file, self.scenario)

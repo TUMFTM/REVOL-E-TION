@@ -50,11 +50,10 @@ class OptimizationSuccessfulFilter(logging.Filter):
 
 class PredictionHorizon:
 
-    def __init__(self, index, scenario, run):
+    def __init__(self, index, scenario):
 
         self.index = index
         self.scenario = scenario
-        self.run = run
 
         # Time and data slicing --------------------------------
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
@@ -115,7 +114,7 @@ class PredictionHorizon:
         for component in self.components:
             self.es.add(component)  # add components to this horizon's energy system
 
-        if self.index == 0 and self.run.save_system_graphs:  # first horizon - create graph of energy system
+        if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system()
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -123,7 +122,7 @@ class PredictionHorizon:
 
         try:
             # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=self.run.debugmode)
+            self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
         except IndexError:
             msg = (f'Horizon {self.index + 1} of {self.scenario.nhorizons} -'
                    f'Input data not matching time index - check input data and time index consistency')
@@ -133,8 +132,8 @@ class PredictionHorizon:
         # Apply custom constraints
         self.constraints.apply_constraints(model=self.model)
 
-        if self.run.dump_model and self.scenario.strategy != 'rh':
-            self.model.write(self.run.path_dump_file, io_options={'symbolic_solver_labels': True})
+        if self.scenario.run.dump_model and self.scenario.strategy != 'rh':
+            self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Model build completed')
@@ -198,7 +197,7 @@ class PredictionHorizon:
 
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if self.run.debugmode:
+        if self.scenario.run.debugmode:
             self.meta_results = solph.processing.meta_results(self.model)
             pprint.pprint(self.meta_results)
 
@@ -219,7 +218,7 @@ class PredictionHorizon:
     def run_optimization(self):
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                              f'Model built, starting optimization')
-        results = self.model.solve(solver=self.run.solver, solve_kwargs={'tee': self.run.debugmode})
+        results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -859,9 +858,9 @@ class SimulationRun:
                 raise ValueError(scenario.exception)
 
             for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-                horizon = PredictionHorizon(horizon_index, scenario, self)
-                horizon.run_optimization(scenario, self)
-                horizon.get_results(scenario, self)
+                horizon = PredictionHorizon(horizon_index, scenario)
+                horizon.run_optimization()
+                horizon.get_results()
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios

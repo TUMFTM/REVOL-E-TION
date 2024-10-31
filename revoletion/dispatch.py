@@ -300,13 +300,13 @@ class RentalSystem:
         delivery through execute_des.
         """
         processes_path = os.path.join(
-            run.path_result_dir,
-            f'{run.runtimestamp}_{self.scenario.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
+            self.sc.run.path_result_dir,
+            f'{self.sc.run.runtimestamp}_{self.sc.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
         self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
-            run.path_result_dir,
-            f'{run.runtimestamp}_{self.scenario.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
+            self.sc.run.path_result_dir,
+            f'{self.sc.run.runtimestamp}_{self.sc.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
         self.data.to_csv(log_path)
 
 
@@ -319,7 +319,7 @@ class VehicleRentalSystem(RentalSystem):
         # replace the rex system name read in from scenario file with the actual CommoditySystem object
         if self.cs.rex_cs:
             self.check_rex_inputs()
-            cs.rex_cs = self.sc.blocks[cs.rex_cs]
+            self.cs.rex_cs = self.sc.blocks[self.cs.rex_cs]
 
         self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
         self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
@@ -549,12 +549,11 @@ class RentalProcess:
 
     def __init__(self, id, data, rental_system):
 
+        self.id = id
         self.data = data
         self.rs = rental_system
-        self.env = sc.env_des
-        self.run = sc.run
         self.sc = self.rs.sc
-        self.id = id
+        self.env = self.sc.env_des
 
         self.rs.process_objs.append(self)
 
@@ -729,7 +728,9 @@ def execute_des(scenario, run):
     for rental_system in scenario.rental_systems.values():
         for idx, row in rental_system.processes.iterrows():
             # VehicleRentalSystem RentalProcesses can init additional processes in BatteryRentalSystems at runtime
-            process = RentalProcess(idx, row, rental_system, scenario)
+            process = RentalProcess(id=idx,
+                                    data=row,
+                                    rental_system=rental_system)
             rental_system.processes.loc[idx, 'process_obj'] = process
 
     # actually run the discrete event simulation
@@ -752,14 +753,14 @@ def execute_des(scenario, run):
 
     # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
     for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.cs.rex_cs is not None)]:
-        rental_system.transfer_rex_processes(scenario)
+        rental_system.transfer_rex_processes()
 
     # reframe logging results to resource-based view instead of process based (and save)
     for rental_system in scenario.rental_systems.values():
         rental_system.convert_process_log()
         rental_system.calc_performance_metrics()
         if run.save_des_results:
-            rental_system.save_data(run)
+            rental_system.save_data()
 
 
 def lognormal_params(mean, stdev):

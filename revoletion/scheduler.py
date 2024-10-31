@@ -45,7 +45,7 @@ class AprioriPowerScheduler:
                               and not cs.power_lim_static]
 
         # get a dict of all commodities within Apriori CommoditySystems
-        self.apriori_commodities = {name: AprioriCommodity(commodity, self.scenario) for block in
+        self.apriori_commodities = {name: AprioriCommodity(commodity) for block in
                                     self.cs_unlim + self.cs_lm_static + self.cs_lm_dynamic for name, commodity in
                                     block.commodities.items()}
 
@@ -119,7 +119,7 @@ class AprioriPowerScheduler:
             # Execute external charging of commodities based on the defined criteria
             for commodity in self.apriori_commodities.values():
                 commodity.ext_charging(dtindex)
-                commodity.calc_new_soc(dtindex, self.scenario)
+                commodity.calc_new_soc(dtindex)
 
     def calc_pwr_commodities(self, dtindex, commodities, mode_scheduling, pwr_csc_avail_total):
         # get all commodities which are ready for charging
@@ -230,9 +230,9 @@ class AprioriPowerScheduler:
 
 
 class AprioriCommodity:
-    def __init__(self, block, scenario):
+    def __init__(self, block):
         self.block = block
-        self.scenario = scenario
+        self.scenario = self.block.parent.scenario
         # get the system to which the block is connected
         self.system = self.block.parent.system
 
@@ -322,7 +322,7 @@ class AprioriCommodity:
         # but new soc_target which is decreased compared to the old soc_target due to aging.
         return max(pwr_chg, 0)
 
-    def calc_new_soc(self, dtindex, scenario):
+    def calc_new_soc(self, dtindex):
         columns = ['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption']
         power = 0
         for column in columns:
