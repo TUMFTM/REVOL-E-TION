@@ -57,16 +57,16 @@ class MultiStore(simpy.resources.base.BaseResource):
 
 class RentalSystem:
 
-    def __init__(self, cs, sc):
+    def __init__(self, commodity_system, scenario):
 
-        self.cs = cs
-        self.sc = sc
+        self.cs = commodity_system
+        self.sc = scenario
         self.name = self.cs.name
 
         self.rng = np.random.default_rng()
 
-        self.path_mapper = os.path.join(sc.run.path_input_data, 'TimeframeMapper', f'{sc.filename_mapper}.py')
-        self.mtf = utils.import_module_from_path(module_name=sc.filename_mapper,
+        self.path_mapper = os.path.join(self.sc.run.path_input_data, 'TimeframeMapper', f'{self.sc.filename_mapper}.py')
+        self.mtf = utils.import_module_from_path(module_name=self.sc.filename_mapper,
                                                  file_path=self.path_mapper)
 
         self.soc_max_init = min([commodity.soc_max for commodity in self.cs.commodities.values()])
@@ -293,7 +293,7 @@ class RentalSystem:
 
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.sc)
 
-    def save_data(self, run):
+    def save_data(self):
         """
         This function saves the converted log dataframe as a suitable input csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
@@ -301,25 +301,25 @@ class RentalSystem:
         """
         processes_path = os.path.join(
             run.path_result_dir,
-            f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
+            f'{run.runtimestamp}_{self.scenario.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_processes.csv')
         self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
             run.path_result_dir,
-            f'{run.runtimestamp}_{run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
+            f'{run.runtimestamp}_{self.scenario.run.scenario_file_name}_{self.sc.name}_{self.cs.name}_log.csv')
         self.data.to_csv(log_path)
 
 
 class VehicleRentalSystem(RentalSystem):
 
-    def __init__(self, cs, sc):
+    def __init__(self, commodity_system, scenario):
 
-        super().__init__(cs, sc)
+        super().__init__(commodity_system, scenario)
 
         # replace the rex system name read in from scenario file with the actual CommoditySystem object
         if self.cs.rex_cs:
             self.check_rex_inputs()
-            cs.rex_cs = sc.blocks[cs.rex_cs]
+            cs.rex_cs = self.sc.blocks[cs.rex_cs]
 
         self.dsoc_usable_rex_high = self.cs.rex_cs.soc_target_high - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
         self.dsoc_usable_rex_low = self.cs.rex_cs.soc_target_low - self.cs.rex_cs.soc_return if self.cs.rex_cs else 0
@@ -448,7 +448,7 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_req_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
-    def transfer_rex_processes(self, sc):
+    def transfer_rex_processes(self):
         """
         This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
         BatteryRentalSystem's processes dataframe as these don't originate from the latter's demand pregeneration
@@ -481,9 +481,9 @@ class VehicleRentalSystem(RentalSystem):
 
 class BatteryRentalSystem(RentalSystem):
 
-    def __init__(self, cs, sc):
+    def __init__(self, commodity_system, scenario):
 
-        super().__init__(cs, sc)
+        super().__init__(commodity_system, scenario)
 
         self.cs.rex_cs = None  # needs to be set for later check
 
@@ -547,13 +547,13 @@ class BatteryRentalSystem(RentalSystem):
 
 class RentalProcess:
 
-    def __init__(self, id, data, rs, sc):
+    def __init__(self, id, data, rental_system):
 
         self.data = data
-        self.rs = rs
+        self.rs = rental_system
         self.env = sc.env_des
         self.run = sc.run
-        self.sc = sc
+        self.sc = self.rs.sc
         self.id = id
 
         self.rs.process_objs.append(self)

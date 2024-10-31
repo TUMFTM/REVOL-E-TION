@@ -412,7 +412,7 @@ class RenewableInvestBlock(InvestBlock):
     def calc_opex_sim(self):
         self.opex_sim = self.flow_out @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
-    def get_ch_results(self, horizon, *_):
+    def get_ch_results(self, horizon):
 
         # flow values are powers
         self.flow_out[horizon.dti_ch] = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1202,7 +1202,7 @@ class GridMarket:
 
         self.flow = self.flow_in - self.flow_out  # for plotting
 
-    def get_ch_results(self, horizon, *_):
+    def get_ch_results(self, horizon):
         self.flow_in[horizon.dti_ch] = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
         self.flow_out[horizon.dti_ch] = horizon.results[(self.src, self.parent.bus)]['sequences']['flow'][horizon.dti_ch]
 
