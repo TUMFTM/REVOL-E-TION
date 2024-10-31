@@ -624,7 +624,7 @@ class RentalProcess:
 
             self.rs.store.put(self.primary_result[self.primary_request])
             self.sc.logger.debug(f'{self.rs.name} process {self.id} returned resource(s) {self.primary_request.value}'
-                                  f' at {self.env.now}. Primary store content after return: {self.rs.store.items}')
+                                 f' at {self.env.now}. Primary store content after return: {self.rs.store.items}')
 
             if self.secondary_request:
                 self.rs.cs.rex_cs.rs.store.put(self.secondary_result[self.secondary_request])
@@ -705,53 +705,61 @@ def steps2dt(series, sc, absolute=False):
     return out
 
 
-def execute_des(sc, run):
+def execute_des(scenario, run):
 
     # define a DES environment
-    sc.env_des = simpy.Environment()
+    scenario.env_des = simpy.Environment()
 
     # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
-    sc.dti_des = sc.dti_sim_extd.union(
-        pd.date_range(start=sc.dti_sim_extd[-1] + sc.dti_sim_extd.freq,
+    scenario.dti_des = scenario.dti_sim_extd.union(
+        pd.date_range(start=scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq,
                       periods=200,
-                      freq=sc.dti_sim_extd.freq))
+                      freq=scenario.dti_sim_extd.freq))
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
-    sc.rental_systems = dict()
-    for cs in [cs for cs in sc.commodity_systems.values() if cs.data_source == 'des']:
+    scenario.rental_systems = dict()
+    for cs in [cs for cs in scenario.commodity_systems.values() if cs.data_source == 'des']:
         if isinstance(cs, blocks.VehicleCommoditySystem):
-            cs.rs = VehicleRentalSystem(cs, sc)
+            cs.rs = VehicleRentalSystem(cs, scenario)
         elif isinstance(cs, blocks.BatteryCommoditySystem):
-            cs.rs = BatteryRentalSystem(cs, sc)
-        sc.rental_systems[cs.name] = cs.rs
+            cs.rs = BatteryRentalSystem(cs, scenario)
+        scenario.rental_systems[cs.name] = cs.rs
 
     # generate individual RentalProcess instances for every pregenerated process
-    for rs in sc.rental_systems.values():
-        for idx, row in rs.processes.iterrows():
+    for rental_system in scenario.rental_systems.values():
+        for idx, row in rental_system.processes.iterrows():
             # VehicleRentalSystem RentalProcesses can init additional processes in BatteryRentalSystems at runtime
-            process = RentalProcess(idx, row, rs, sc)
-            rs.processes.loc[idx, 'process_obj'] = process
+            process = RentalProcess(idx, row, rental_system, scenario)
+            rental_system.processes.loc[idx, 'process_obj'] = process
 
     # actually run the discrete event simulation
-    sc.env_des.run()
+    scenario.env_des.run()
 
     # reconvert time steps to actual times
-    for rs in sc.rental_systems.values():
-        rs.processes['time_dep'] = steps2dt(rs.processes['step_dep'], sc, absolute=True)
-        rs.processes['time_return'] = steps2dt(rs.processes['step_return'], sc, absolute=True)
-        rs.processes['time_reavail_primary'] = steps2dt(rs.processes['step_reavail_primary'], sc, absolute=True)
-        rs.processes['time_reavail_secondary'] = steps2dt(rs.processes['step_reavail_secondary'], sc, absolute=True)
+    for rental_system in scenario.rental_systems.values():
+        rental_system.processes['time_dep'] = steps2dt(rental_system.processes['step_dep'],
+                                                       scenario,
+                                                       absolute=True)
+        rental_system.processes['time_return'] = steps2dt(rental_system.processes['step_return'],
+                                                          scenario,
+                                                          absolute=True)
+        rental_system.processes['time_reavail_primary'] = steps2dt(rental_system.processes['step_reavail_primary'],
+                                                                   scenario,
+                                                                   absolute=True)
+        rental_system.processes['time_reavail_secondary'] = steps2dt(rental_system.processes['step_reavail_secondary'],
+                                                                     scenario,
+                                                                     absolute=True)
 
     # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
-    for rs in [rs for rs in sc.rental_systems.values() if (rs.cs.rex_cs is not None)]:
-        rs.transfer_rex_processes(sc)
+    for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.cs.rex_cs is not None)]:
+        rental_system.transfer_rex_processes(scenario)
 
     # reframe logging results to resource-based view instead of process based (and save)
-    for rs in sc.rental_systems.values():
-        rs.convert_process_log()
-        rs.calc_performance_metrics()
+    for rental_system in scenario.rental_systems.values():
+        rental_system.convert_process_log()
+        rental_system.calc_performance_metrics()
         if run.save_des_results:
-            rs.save_data(run)
+            rental_system.save_data(run)
 
 
 def lognormal_params(mean, stdev):
