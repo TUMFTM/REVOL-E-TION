@@ -97,7 +97,7 @@ class PredictionHorizon:
             scenario.scheduler.calc_ph_schedule(self)
 
         for block in scenario.blocks.values():
-            block.update_input_components(scenario, self)  # (re)define solph components that need input slices
+            block.update_input_components(self)  # (re)define solph components that need input slices
 
         self.results = None
         self.meta_results = None
@@ -209,10 +209,10 @@ class PredictionHorizon:
             block.get_invest_size(self)
 
         for block in scenario.blocks.values():
-            block.get_ch_results(self, scenario)
+            block.get_ch_results(self)
 
         for block in [block for block in scenario.blocks.values() if hasattr(block, 'aging')]:
-            block.calc_aging(run, scenario, self)
+            block.calc_aging(self)
 
     def run_optimization(self, scenario, run):
         scenario.logger.info(f'Horizon {self.index + 1} of {scenario.nhorizons} - '
@@ -491,11 +491,11 @@ class Scenario:
         self.figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
         for block in self.blocks.values():
-            block.add_power_trace(self)
+            block.add_power_trace()
             if hasattr(block, 'add_soc_trace'):  # should affect CommoditySystems and StationaryEnergyStorage
-                block.add_soc_trace(self)
+                block.add_soc_trace()
             if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
-                block.add_curtailment_trace(self)
+                block.add_curtailment_trace()
 
         self.figure.update_layout(plot_bgcolor=colors.tum_white)
         self.figure.update_xaxes(title='Local Time',
@@ -524,10 +524,10 @@ class Scenario:
 
     def get_results(self):
         for block in self.blocks.values():
-            block.calc_energy(self)
-            block.calc_expenses(self)
-            block.calc_revenue(self)
-            block.calc_cashflows(self)
+            block.calc_energy()
+            block.calc_expenses()
+            block.calc_revenue()
+            block.calc_cashflows()
 
     def print_results(self):
         for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
@@ -615,7 +615,7 @@ class Scenario:
 
     def save_result_timeseries(self):
         for block in self.blocks.values():
-            block.get_timeseries_results(self)
+            block.get_timeseries_results()
         self.result_timeseries.to_csv(self.path_result_file)
 
     def show_plots(self):

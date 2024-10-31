@@ -13,10 +13,11 @@ from revoletion import utils
 
 class BatteryPackModel:
 
-    def __init__(self, scenario, commodity):
+    def __init__(self, commodity, scenario, run):
 
         self.commodity = commodity
         self.scenario = scenario
+        self.run = run
 
         self.chemistry = self.commodity.chemistry.lower()
 
@@ -70,7 +71,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.59  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.39  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(self.scenario.run.path_data_immut, 'sanyo_ur18650e.pkl')
+            self.data_path = os.path.join(self.run.path_data_immut, 'sanyo_ur18650e.pkl')
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -86,7 +87,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.71  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.55  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(self.scenario.run.path_data_immut, 'sony_us26650.pkl')
+            self.data_path = os.path.join(self.run.path_data_immut, 'sony_us26650.pkl')
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
@@ -114,7 +115,7 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-    def age(self, run, horizon):
+    def age(self, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
