@@ -535,13 +535,13 @@ class CommoditySystem(InvestBlock):
                             for com_name in com_names}
 
     def add_power_trace(self):
-        super().add_power_trace(self.scenario)
+        super().add_power_trace()
         for commodity in self.commodities.values():
-            commodity.add_power_trace(self.scenario)
+            commodity.add_power_trace()
 
     def add_soc_trace(self):
         for commodity in self.commodities.values():
-            commodity.add_soc_trace(self.scenario)
+            commodity.add_soc_trace()
 
     def calc_aging(self, horizon):
         for commodity in self.commodities.values():
@@ -636,8 +636,8 @@ class CommoditySystem(InvestBlock):
 
         # static load management is deactivated for 'uc' mode
         if self.power_lim_static and self.mode_scheduling == 'uc':
-            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented for'
-                                    f' scheduling mode \"uc\". deactivating static load management')
+            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented'
+                                         f' for scheduling mode \"uc\". deactivating static load management')
             self.power_lim_static = None
 
         # ToDo: move to checker.py
@@ -723,8 +723,8 @@ class CommoditySystem(InvestBlock):
     def set_init_size(self):
         #  ToDo: move to checker.py
         if self.invest and self.data_source == 'des':
-            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data source'
-                                    f' DES is not possible. Deactivated invest.')
+            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data'
+                                    f' source DES is not possible. Deactivated invest.')
             self.invest = False
 
         self.size_existing_pc = self.size_existing
@@ -1128,10 +1128,12 @@ class GridConnection(InvestBlock):
 class GridMarket:
     def __init__(self, name, parent, params):
 
-        self.src = self.snk = None  # initialize oemof-solph components
-
         self.name = name
         self.parent = parent
+        self.scenario = scenario
+        self.run = run
+
+        self.src = self.snk = None  # initialize oemof-solph components
 
         for param, value in params.items():
             setattr(self, param, value)
@@ -1301,13 +1303,16 @@ class MobileCommodity:
 
     def __init__(self, name, parent):
 
+        self.name = name
+        self.parent = parent
+        self.scenario = scenario
+        self.run = run
+
         # initialize oemof-solph components
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
         self.bus_ext_dc = self.conv_ext_dc = self.src_ext_dc = None
 
-        self.name = name
-        self.parent = parent
         self.invest = self.parent.invest
         self.size = self.size_additional = 0
         self.size_existing = self.parent.size_existing_pc

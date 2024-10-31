@@ -114,7 +114,7 @@ class BatteryPackModel:
         self.e_spec_vol_cell = self.e_cell / self.v_cell
         # self.c_th_cell = self.m_cell * self.c_th_spec_cell
 
-    def age(self, run, horizon):
+    def age(self, horizon):
         """
         Get aging relevant features for control horizon, apply correct aging model,
         and derate block for next horizon
