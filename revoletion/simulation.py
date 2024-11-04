@@ -468,7 +468,7 @@ class Scenario:
         # print basic results
         self.logger.info(f'NPC {f"{self.totex_dis:,.2f}" if pd.notna(self.totex_dis) else "-"} {self.currency} -'
                          f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
-                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.1f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
+                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
                          f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
                          f' Renewable Share:'
                          f' {f"{self.renewable_share * 100:.1f}" if pd.notna(self.renewable_share) else "-"} % -'
@@ -574,10 +574,6 @@ class Scenario:
                 self.logger.info(f'Optimized size of component "{block.name}": {block.size / 1e3:.1f} {unit}'
                                  f' (existing: {block.size_existing / 1e3:.1f} {unit}'
                                  f' - additional: {block.size_additional / 1e3:.1f} {unit})')
-
-        self.logger.info(f'Total simulated cost: {self.totex_sim / 1e6:.2f} million {self.currency}')
-        self.logger.info(
-            f'Levelized cost of electricity for local site: {f"{1e5 * self.lcoe_wocs:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh')
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
