@@ -13,12 +13,14 @@ def discount(future_value: float,
 
 def acc_discount(nominal_value: float,
                  observation_horizon: int,
-                 discount_rate: float) -> float:
+                 discount_rate: float,
+                 occurs_at='beginning') -> float:
     """
-    This function calculates the accumulated present value of a peridical, nominally repeating cashflow in the future
+    This function calculates the accumulated present value of a periodical, nominally repeating cashflow in the future
     (from present to the observation horizon) at a discount rate per period
     """
-    present_value = sum([discount(nominal_value, period, discount_rate)
+    p_delta = {'beginning': 0, 'middle': 0.5, 'end': 1}[occurs_at]
+    present_value = sum([discount(nominal_value, period + p_delta, discount_rate)
                          for period in range(observation_horizon)])
     return present_value
 
@@ -30,23 +32,26 @@ def join_capex_mntex(capex: float,
     """
     This function adjusts a component's capex to include accumulated present maintenance cost for time based maintenance
     """
-    capex_adjusted = capex + acc_discount(mntex, lifespan, discount_rate)
+    capex_adjusted = capex + acc_discount(mntex, lifespan, discount_rate, occurs_at='beginning')
     return capex_adjusted
 
 
-def annuity_due(present_value: float,
-                observation_horizon: int,
-                discount_rate: float) -> float:
+def annuity(present_value: float,
+            observation_horizon: int,
+            discount_rate: float,
+            occurs_at='beginning') -> float:
     """
-    This function calculates the annuity due (the equivalent periodial, nominally recurring value to generate the same
-    NPV) of a present value pv over an observation horizon at a discount rate per period
+    This function calculates the annuity (the equivalent periodical, nominally recurring value to generate the same
+    NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
+    the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
     """
     q = 1 + discount_rate
+    due_factor = {'beginning': q, 'end': 1}[occurs_at]
     try:
-        annuity_due = present_value / (q * ((1 - (q ** -observation_horizon)) / discount_rate))
+        annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * due_factor)
     except ZeroDivisionError:
-        annuity_due = present_value / periods
-    return annuity_due
+        annuity = present_value / observation_horizon
+    return annuity
 
 
 def invest_periods(lifespan: int,
@@ -99,7 +104,8 @@ def annuity_due_capex(capex_init: float,
                                   discount_rate=discount_rate,
                                   lifespan=lifespan,
                                   observation_horizon=observation_horizon)
-    annuity_due_capex = annuity_due(present_value=present_value,
-                                    observation_horizon=observation_horizon,
-                                    discount_rate=discount_rate)
+    annuity_due_capex = annuity(present_value=present_value,
+                                observation_horizon=observation_horizon,
+                                discount_rate=discount_rate,
+                                occurs_at='beginning')
     return annuity_due_capex

@@ -65,7 +65,7 @@ class Block:
 
         self.crev_yrl = utils.scale_sim2year(self.crev_sim, self.scenario)
         self.crev_prj = utils.scale_year2prj(self.crev_yrl, self.scenario)
-        self.crev_dis = eco.acc_discount(self.crev_yrl, self.scenario.prj_duration_yrs, self.scenario.wacc)
+        self.crev_dis = eco.acc_discount(self.crev_yrl, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
 
         self.scenario.crev_sim += self.crev_sim
         self.scenario.crev_yrl += self.crev_yrl
@@ -108,7 +108,7 @@ class Block:
             self.e_sim_del = self.e_sim_in - self.e_sim_out
             self.e_yrl_del = utils.scale_sim2year(self.e_sim_del, self.scenario)
             self.e_prj_del = utils.scale_year2prj(self.e_yrl_del, self.scenario)
-            self.e_dis_del = eco.acc_discount(self.e_yrl_del, self.scenario.prj_duration_yrs, self.scenario.wacc)
+            self.e_dis_del = eco.acc_discount(self.e_yrl_del, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
 
             self.scenario.e_sim_del += self.e_sim_del
             self.scenario.e_yrl_del += self.e_yrl_del
@@ -119,7 +119,7 @@ class Block:
             self.e_sim_pro = self.e_sim_out - self.e_sim_in
             self.e_yrl_pro = utils.scale_sim2year(self.e_sim_pro, self.scenario)
             self.e_prj_pro = utils.scale_year2prj(self.e_yrl_pro, self.scenario)
-            self.e_dis_pro = eco.acc_discount(self.e_yrl_pro, self.scenario.prj_duration_yrs, self.scenario.wacc)
+            self.e_dis_pro = eco.acc_discount(self.e_yrl_pro, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
 
             self.scenario.e_sim_pro += self.e_sim_pro
             self.scenario.e_yrl_pro += self.e_yrl_pro
@@ -162,8 +162,8 @@ class Block:
         self.e_yrl_out = utils.scale_sim2year(self.e_sim_out, self.scenario)
         self.e_prj_in = utils.scale_year2prj(self.e_yrl_in, self.scenario)
         self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.scenario)
-        self.e_dis_in = eco.acc_discount(self.e_yrl_in, self.scenario.prj_duration_yrs, self.scenario.wacc)
-        self.e_dis_out = eco.acc_discount(self.e_yrl_out, self.scenario.prj_duration_yrs, self.scenario.wacc)
+        self.e_dis_in = eco.acc_discount(self.e_yrl_in, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
+        self.e_dis_out = eco.acc_discount(self.e_yrl_out, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
 
         if self.flow_in.empty:
             self.flow = self.flow_out
@@ -299,7 +299,8 @@ class InvestBlock(Block):
         self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, self.scenario)
         self.mntex_dis = eco.acc_discount(self.mntex_yrl,
                                           self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc)
+                                          self.scenario.wacc,
+                                          occurs_at='beginning')
         self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
                                                1,  # lifespan of 1 yr -> mntex happening yearly
                                                self.scenario.prj_duration_yrs,
@@ -329,7 +330,8 @@ class InvestBlock(Block):
         self.opex_prj = utils.scale_year2prj(self.opex_yrl, self.scenario)
         self.opex_dis = eco.acc_discount(self.opex_yrl,
                                          self.scenario.prj_duration_yrs,
-                                         self.scenario.wacc)
+                                         self.scenario.wacc,
+                                         occurs_at='end')
         self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
                                               1,  # lifespan of 1 yr -> opex happening yearly
                                               self.scenario.prj_duration_yrs,
@@ -596,7 +598,8 @@ class CommoditySystem(InvestBlock):
         self.opex_prj_ext = utils.scale_year2prj(self.opex_yrl_ext, self.scenario)
         self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
                                              self.scenario.prj_duration_yrs,
-                                             self.scenario.wacc)
+                                             self.scenario.wacc,
+                                             occurs_at='end')
         self.opex_ann_ext = eco.annuity_due_capex(self.opex_yrl_ext,
                                           1,  # lifespan of 1 yr -> opex happening yearly
                                           self.scenario.prj_duration_yrs,
@@ -1200,10 +1203,12 @@ class GridMarket:
         self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in,
                                          self.scenario.prj_duration_yrs,
-                                         self.scenario.wacc)
+                                         self.scenario.wacc,
+                                         occurs_at='end')
         self.e_dis_out = eco.acc_discount(self.e_yrl_out,
                                           self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc)
+                                          self.scenario.wacc,
+                                          occurs_at='end')
 
         self.flow = self.flow_in - self.flow_out  # for plotting
 
@@ -1429,10 +1434,12 @@ class MobileCommodity:
         self.e_prj_out = utils.scale_year2prj(self.e_yrl_out, self.scenario)
         self.e_dis_in = eco.acc_discount(self.e_yrl_in,
                                          self.scenario.prj_duration_yrs,
-                                         self.scenario.wacc)
+                                         self.scenario.wacc,
+                                         occurs_at='end')
         self.e_dis_out = eco.acc_discount(self.e_yrl_out,
                                           self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc)
+                                          self.scenario.wacc,
+                                          occurs_at='end')
 
         # energy results for external chargers
         self.e_ext_ac_sim = self.flow_ext_ac.sum() * self.scenario.timestep_hours
@@ -1443,10 +1450,12 @@ class MobileCommodity:
         self.e_ext_dc_prj = utils.scale_year2prj(self.e_ext_dc_yrl, self.scenario)
         self.e_ext_ac_dis = eco.acc_discount(self.e_ext_ac_yrl,
                                              self.scenario.prj_duration_yrs,
-                                             self.scenario.wacc)
+                                             self.scenario.wacc,
+                                             occurs_at='end')
         self.e_ext_dc_dis = eco.acc_discount(self.e_ext_dc_yrl,
                                              self.scenario.prj_duration_yrs,
-                                             self.scenario.wacc)
+                                             self.scenario.wacc,
+                                             occurs_at='end')
 
         self.flow = self.flow_in - self.flow_out  # for plotting
 
@@ -2041,10 +2050,12 @@ class SystemCore(InvestBlock):
         self.e_prj_acdc = utils.scale_year2prj(self.e_yrl_acdc, self.scenario)
         self.e_dis_dcac = eco.acc_discount(self.e_yrl_dcac,
                                            self.scenario.prj_duration_yrs,
-                                           self.scenario.wacc)
+                                           self.scenario.wacc,
+                                           occurs_at='end')
         self.e_dis_acdc = eco.acc_discount(self.e_yrl_acdc,
                                            self.scenario.prj_duration_yrs,
-                                           self.scenario.wacc)
+                                           self.scenario.wacc,
+                                           occurs_at='end')
 
     def calc_mntex_yrl(self):
         self.mntex_yrl = (self.size_acdc + self.size_dcac) * self.mntex_spec
