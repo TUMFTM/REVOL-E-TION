@@ -125,6 +125,71 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
     return df
 
 
+def read_input_log(system):
+    """
+    Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
+    consumption must be meaned, while booleans, distances and dsocs must not. Function has to be callable for
+     ICEVSystems as well
+    """
+
+    log_path = os.path.join(system.scenario.run.path_input_data,
+                            system.__class__.__name__,
+                            set_extension(system.filename))
+    df = read_input_csv(system,
+                        log_path,
+                        system.scenario,
+                        multiheader=True,
+                        resampling=False)
+
+    if pd.infer_freq(df.index).lower() != system.scenario.timestep:
+        system.scenario.logger.warning(f'\"{system.name}\" input data does not match timestep')
+        consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
+        bool_columns = df.columns.difference(consumption_columns)
+        # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+        df = df[consumption_columns].resample(system.scenario.timestep).mean().ffill().bfill()
+        df[bool_columns] = df[bool_columns].resample(system.scenario.timestep).ffill().bfill()
+
+    # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
+    # system + number), the names specified in the log file names are used, with the commodity system name added
+    # for unique identification.
+    if system.data_source == 'log':
+        com_names_log = sorted(df.columns.get_level_values(0).unique()[:system.num].tolist())
+        if system.com_names != com_names_log:
+            com_names_map = {log_name: f'{system.name}_{log_name}' for log_name in com_names_log}
+            df.columns = df.columns.map(lambda x: (com_names_map.get(x[0], x[0]), *x[1:]))
+
+    return df
+
+
+def read_usecase_file(system):
+    """
+    Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe.
+    Function has to be callable for ICEVSystems as well.
+    """
+
+    usecase_path = os.path.join(system.scenario.run.path_input_data,
+                                system.__class__.__name__,
+                                set_extension(system.filename))
+    df = pd.read_csv(usecase_path,
+                     header=[0, 1],
+                     index_col=0)
+    for timeframe in df.columns.levels[0]:
+        df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
+                                                   df.loc[:, (timeframe, 'rel_prob')].sum())
+        df.loc[:, (timeframe, 'sum_dep_magn')] = (df.loc[:, (timeframe, 'dep1_magnitude')] +
+                                                  df.loc[:, (timeframe, 'dep2_magnitude')])
+
+        # catch cases where the sum of both departure magnitudes is not one
+        df.loc[:, (timeframe, 'dep1_magnitude')] = (df.loc[:, (timeframe, 'dep1_magnitude')] /
+                                                    df.loc[:, (timeframe, 'sum_dep_magn')])
+        df.loc[:, (timeframe, 'dep2_magnitude')] = (df.loc[:, (timeframe, 'dep2_magnitude')] /
+                                                    df.loc[:, (timeframe, 'sum_dep_magn')])
+
+        df.drop(columns=[(timeframe, 'sum_dep_magn')], inplace=True)
+
+    return df
+
+
 def resample_to_timestep(data: pd.DataFrame, block, scenario):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling

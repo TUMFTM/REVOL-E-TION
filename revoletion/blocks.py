@@ -495,20 +495,15 @@ class CommoditySystem(InvestBlock):
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode()
 
-        com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
-        self.data = None
+        # commodity names might be rewritten in case of imported log data with differing name
+        self.com_names = [f'{self.name}_{str(i)}' for i in range(self.num)]
+        self.data = None  # init
+
         if self.data_source == 'des':
-            self.usecases = self.read_usecase_file()
+            self.usecases = utils.read_usecase_file(self)
         elif self.data_source == 'log':
-            self.read_input_log()
-            # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
-            # system + number), the names specified in the log file names are used, with the commodity system name added
-            # for unique identification.
-            com_names_log = sorted(self.data.columns.get_level_values(0).unique()[:self.num].tolist())
-            if com_names != com_names_log:
-                com_names_rename = {com_name: f'{com_name} (in {self.name})' for com_name in com_names_log}
-                self.data.columns = self.data.columns.map(lambda x: (com_names_rename.get(x[0], x[0]), *x[1:]))
-                com_names = com_names_rename.values()
+            self.data = utils.read_input_log(self)
+            self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
 
@@ -533,8 +528,7 @@ class CommoditySystem(InvestBlock):
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
         # Generate individual commodity instances
-        self.commodities = {com_name: MobileCommodity(com_name, self)
-                            for com_name in com_names}
+        self.commodities = {com_name: MobileCommodity(com_name, self) for com_name in self.com_names}
 
     def add_power_trace(self):
         super().add_power_trace()
@@ -550,10 +544,6 @@ class CommoditySystem(InvestBlock):
             commodity.calc_aging(horizon)
 
     def calc_capex_init(self):
-        """
-        Default function to calculate initial capex of simple blocks with a single size value.
-        GridConnection, SystemCore and CommoditySystem are more complex.
-        """
         self.capex_init = np.array([com.size for com in self.commodities.values()]).sum() * self.capex_spec
 
     def calc_energy(self):
@@ -675,57 +665,6 @@ class CommoditySystem(InvestBlock):
         super().get_timeseries_results()  # this goes up to the Block class
         for commodity in self.commodities.values():
             commodity.get_timeseries_results()
-
-    def read_input_log(self):
-        """
-        Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
-        consumption must be meaned, while booleans, distances and dsocs must not.
-        """
-
-        log_path = os.path.join(self.scenario.run.path_input_data,
-                                self.__class__.__name__,
-                                utils.set_extension(self.filename))
-        self.data = utils.read_input_csv(self,
-                                         log_path,
-                                         self.scenario,
-                                         multiheader=True,
-                                         resampling=False)
-
-        if pd.infer_freq(self.data.index).lower() != self.scenario.timestep:
-            self.scenario.logger.warning(f'\"{self.name}\" input data does not match timestep')
-            consumption_columns = list(filter(lambda x: 'consumption' in x[1], self.data.columns))
-            bool_columns = self.data.columns.difference(consumption_columns)
-            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-            df = self.data[consumption_columns].resample(self.scenario.timestep).mean().ffill().bfill()
-            df[bool_columns] = self.data[bool_columns].resample(self.scenario.timestep).ffill().bfill()
-            self.data = df
-
-    def read_usecase_file(self):
-        """
-        Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe
-        """
-
-        usecase_path = os.path.join(self.scenario.run.path_input_data,
-                                    self.__class__.__name__,
-                                    utils.set_extension(self.filename))
-        df = pd.read_csv(usecase_path,
-                         header=[0, 1],
-                         index_col=0)
-        for timeframe in df.columns.levels[0]:
-            df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
-                                                       df.loc[:, (timeframe, 'rel_prob')].sum())
-            df.loc[:, (timeframe, 'sum_dep_magn')] = (df.loc[:, (timeframe, 'dep1_magnitude')] +
-                                                      df.loc[:, (timeframe, 'dep2_magnitude')])
-
-            # catch cases where the sum of both departure magnitudes is not one
-            df.loc[:, (timeframe, 'dep1_magnitude')] = (df.loc[:, (timeframe, 'dep1_magnitude')] /
-                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
-            df.loc[:, (timeframe, 'dep2_magnitude')] = (df.loc[:, (timeframe, 'dep2_magnitude')] /
-                                                        df.loc[:, (timeframe, 'sum_dep_magn')])
-
-            df.drop(columns=[(timeframe, 'sum_dep_magn')], inplace=True)
-
-        return df
 
     def set_init_size(self):
         #  ToDo: move to checker.py
@@ -1260,6 +1199,61 @@ class GridMarket:
 
         horizon.components.append(self.src)
         horizon.components.append(self.snk)
+
+
+class ICEVSystem(Block):
+    '''
+    Dummy class to include ICEV fleets into economic result calculation, even though they do not have any energy system
+    impact and/or need any preprocessing.
+    '''
+
+    def __init__(self, name, scenario):
+
+        super().__init__(name, scenario)
+
+        # commodity names might be rewritten in case of imported log data with differing name
+        self.com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
+        self.data = None
+
+        if self.data_source == 'des':
+            raise NotImplementedError(f'Scenario {self.scenario.name} - Block \"{self.name}\": '
+                                      f'dispatch_source "des" is not yet implemented for ICEVSystem')
+        elif self.data_source == 'log':
+            self.data = utils.read_input_log(self)
+            # rewrite commodity names to match modified ones from imported log file
+            self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
+        else:
+            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
+
+        self.distances_sim = 0  # init
+
+    def add_power_trace(self):
+        pass  # function has to be callable, but ICEVSystem does not have a power trace
+
+    def add_soc_trace(self):
+        pass  # function has to be callable, but ICEVSystem does not have a SOC trace
+
+    def calc_capex_init(self):
+        self.capex_init = self.capex_pc * self.num
+
+    def calc_energy(self):
+        pass  # function has to be callable, but ICEVSystem does not impose energy transfers
+
+    def calc_mntex_yrl(self):
+        self.mntex_yrl = self.mntex_pc * self.num
+
+    def calc_opex_sim(self):
+        self.distances_sim = [self.data.loc[self.scenario.dti_sim,(com, 'distance')] for com in self.com_names]
+        self.opex_sim = self.distances_sim @ self.opex_dist
+
+    def get_ch_results(self, horizon):
+        pass  # function has to be callable, but ICEVSystem does not have timeseries results from optimization
+
+    def get_timeseries_results(self):
+        pass  # function has to be callable, but ICEVSystem does not have timeseries results
+
+    def update_input_components(self, *_):
+        pass  # function has to be callable, but ICEVSystem does not have energy system components
 
 
 class FixedDemand(Block):
