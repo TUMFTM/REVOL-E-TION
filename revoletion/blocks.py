@@ -175,16 +175,84 @@ class Block:
     def calc_expenses(self):
         """
         dummy method for code structure simplification.
-        Is called for all block, but only InvestBlocks have expenses.
+        Method is called for all block, but only InvestBlocks and ICEVSystems have expenses.
         """
         pass
 
     def calc_revenue(self):
         """
         dummy function for code structure simplification
-        Is called for all blocks, but CommoditySystems and FixedDemands have a separate implementation
+        Method is called for all blocks, but only ICEVSystems, BatteryCommoditySystems, VehicleCommoditySystems
+        and FixedDemands actually generate revenue
         """
         pass
+
+    def extrapolate_capex(self):
+        """
+        Extrapolate initial capital investment including replacements to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.capex_prj = eco.capex_sum(self.capex_init,
+                                       self.ccr,
+                                       self.ls,
+                                       self.scenario.prj_duration_yrs)
+        self.capex_dis = eco.capex_present(self.capex_init,
+                                           self.ccr,
+                                           self.scenario.wacc,
+                                           self.ls,
+                                           self.scenario.prj_duration_yrs)
+        self.capex_ann = eco.annuity_due_capex(self.capex_init,
+                                               self.ls,
+                                               self.scenario.prj_duration_yrs,
+                                               self.scenario.wacc,
+                                               self.ccr)
+        self.scenario.capex_init += self.capex_init
+        self.scenario.capex_prj += self.capex_prj
+        self.scenario.capex_dis += self.capex_dis
+        self.scenario.capex_ann += self.capex_ann
+
+    def extrapolate_mntex(self):
+        """
+        Extrapolate yearly maintenance expenses to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.mntex_sim = self.mntex_yrl * self.scenario.sim_yr_rat
+        self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, self.scenario)
+        self.mntex_dis = eco.acc_discount(self.mntex_yrl,
+                                          self.scenario.prj_duration_yrs,
+                                          self.scenario.wacc,
+                                          occurs_at='beginning')
+        self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
+                                               1,  # lifespan of 1 yr -> mntex happening yearly
+                                               self.scenario.prj_duration_yrs,
+                                               self.scenario.wacc,
+                                               1)  # no cost decrease in mntex
+        self.scenario.mntex_yrl += self.mntex_yrl
+        self.scenario.mntex_prj += self.mntex_prj
+        self.scenario.mntex_dis += self.mntex_dis
+        self.scenario.mntex_ann += self.mntex_ann
+
+    def extrapolate_opex(self):
+        """
+        Extrapolate operational expenses in simulation timeframe to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.opex_yrl = utils.scale_sim2year(self.opex_sim, self.scenario)
+        self.opex_prj = utils.scale_year2prj(self.opex_yrl, self.scenario)
+        self.opex_dis = eco.acc_discount(self.opex_yrl,
+                                         self.scenario.prj_duration_yrs,
+                                         self.scenario.wacc,
+                                         occurs_at='end')
+        self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
+                                              1,  # lifespan of 1 yr -> opex happening yearly
+                                              self.scenario.prj_duration_yrs,
+                                              self.scenario.wacc,
+                                              1)  # no cost decrease in opex
+        self.scenario.opex_sim += self.opex_sim
+        self.scenario.opex_yrl += self.opex_yrl
+        self.scenario.opex_prj += self.opex_prj
+        self.scenario.opex_dis += self.opex_dis
+        self.scenario.opex_ann += self.opex_ann
 
     def get_legend_entry(self):
         """
@@ -239,30 +307,10 @@ class InvestBlock(Block):
 
     def calc_capex(self):
         """
-        Calculate capital expenses over simulation timeframe and convert to other timeframes.
+        Calculate capital expenses over simulation timeframe and extrapolate to other timeframes.
         """
-
         self.calc_capex_init()  # initial investment references to different parameters depending on block type
-
-        self.capex_prj = eco.capex_sum(self.capex_init,
-                                       self.ccr,
-                                       self.ls,
-                                       self.scenario.prj_duration_yrs)
-        self.capex_dis = eco.capex_present(self.capex_init,
-                                           self.ccr,
-                                           self.scenario.wacc,
-                                           self.ls,
-                                           self.scenario.prj_duration_yrs)
-        self.capex_ann = eco.annuity_due_capex(self.capex_init,
-                                               self.ls,
-                                               self.scenario.prj_duration_yrs,
-                                               self.scenario.wacc,
-                                               self.ccr)
-
-        self.scenario.capex_init += self.capex_init
-        self.scenario.capex_prj += self.capex_prj
-        self.scenario.capex_dis += self.capex_dis
-        self.scenario.capex_ann += self.capex_ann
+        self.extrapolate_capex()
 
     def calc_capex_init(self):
         """
@@ -292,25 +340,8 @@ class InvestBlock(Block):
         Calculate maintenance expenses over simulation timeframe and convert to other timeframes.
         Maintenance expenses are solely time-based. Throughput-based maintenance should be included in opex.
         """
-
         self.calc_mntex_yrl()  # maintenance expenses are defined differently depending on the block type
-
-        self.mntex_sim = self.mntex_yrl * self.scenario.sim_yr_rat
-        self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, self.scenario)
-        self.mntex_dis = eco.acc_discount(self.mntex_yrl,
-                                          self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc,
-                                          occurs_at='beginning')
-        self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
-                                               1,  # lifespan of 1 yr -> mntex happening yearly
-                                               self.scenario.prj_duration_yrs,
-                                               self.scenario.wacc,
-                                               1)  # no cost decrease in mntex
-
-        self.scenario.mntex_yrl += self.mntex_yrl
-        self.scenario.mntex_prj += self.mntex_prj
-        self.scenario.mntex_dis += self.mntex_dis
-        self.scenario.mntex_ann += self.mntex_ann
+        self.extrapolate_mntex()
 
     def calc_mntex_yrl(self):
         """
@@ -323,26 +354,8 @@ class InvestBlock(Block):
         """
         Calculate operational expenses over simulation timeframe and convert to other timeframes.
         """
-
         self.calc_opex_sim()  # opex is defined differently depending on the block type
-
-        self.opex_yrl = utils.scale_sim2year(self.opex_sim, self.scenario)
-        self.opex_prj = utils.scale_year2prj(self.opex_yrl, self.scenario)
-        self.opex_dis = eco.acc_discount(self.opex_yrl,
-                                         self.scenario.prj_duration_yrs,
-                                         self.scenario.wacc,
-                                         occurs_at='end')
-        self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
-                                              1,  # lifespan of 1 yr -> opex happening yearly
-                                              self.scenario.prj_duration_yrs,
-                                              self.scenario.wacc,
-                                              1)  # no cost decrease in opex
-
-        self.scenario.opex_sim += self.opex_sim
-        self.scenario.opex_yrl += self.opex_yrl
-        self.scenario.opex_prj += self.opex_prj
-        self.scenario.opex_dis += self.opex_dis
-        self.scenario.opex_ann += self.opex_ann
+        self.extrapolate_opex()
 
     def calc_opex_ep_spec(self):
         """
@@ -601,6 +614,13 @@ class CommoditySystem(InvestBlock):
         self.scenario.opex_prj_ext += self.opex_prj_ext
         self.scenario.opex_dis_ext += self.opex_dis_ext
         self.scenario.opex_ann_ext += self.opex_ann_ext
+
+    def calc_revenue(self):
+        for commodity in self.commodities.values():
+            commodity.calc_revenue()
+            self.crev_sim += commodity.crev_sim
+
+        self.accumulate_crev()
 
     def get_ch_results(self, horizon):
 
@@ -897,17 +917,17 @@ class GridConnection(InvestBlock):
 
     def initialize_peakshaving(self):
 
+        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
+        periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
+                        'week': lambda x: x.strftime('%Y-CW%W'),
+                        'month': lambda x: x.strftime('%Y-%m'),
+                        'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+                        'year': lambda x: x.strftime('%Y')}
+
         if self.peakshaving is None:
             peakshaving_ints = ['sim_duration']
             n_peakshaving_ints = 0
         else:
-            # Create functions to extract relevant property of datetimeindex for peakshaving intervals
-            periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
-                            'week': lambda x: x.strftime('%Y-CW%W'),
-                            'month': lambda x: x.strftime('%Y-%m'),
-                            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-                            'year': lambda x: x.strftime('%Y')}
-
             # Assign the corresponding interval to each timestep
             periods = self.scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
             peakshaving_ints = periods.unique()
@@ -1202,10 +1222,10 @@ class GridMarket:
 
 
 class ICEVSystem(Block):
-    '''
+    """
     Dummy class to include ICEV fleets into economic result calculation, even though they do not have any energy system
     impact and/or need any preprocessing.
-    '''
+    """
 
     def __init__(self, name, scenario):
 
@@ -1225,26 +1245,36 @@ class ICEVSystem(Block):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
 
-        self.distances_sim = 0  # init
-
     def add_power_trace(self):
         pass  # function has to be callable, but ICEVSystem does not have a power trace
 
     def add_soc_trace(self):
         pass  # function has to be callable, but ICEVSystem does not have a SOC trace
 
-    def calc_capex_init(self):
-        self.capex_init = self.capex_pc * self.num
-
     def calc_energy(self):
-        pass  # function has to be callable, but ICEVSystem does not impose energy transfers
+        pass  # function has to be callable, but ICEVSystem does not impose energy transfer
 
-    def calc_mntex_yrl(self):
+    def calc_expenses(self):
+        self.capex_init = self.capex_pc * self.num
+        self.extrapolate_capex()  # Method defined in Block class
+
+        self.opex_sim = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opex_spec_dist
+                             for com in self.com_names])
+        self.extrapolate_opex()  # Method defined in Block class
+
         self.mntex_yrl = self.mntex_pc * self.num
+        self.extrapolate_mntex()  # Method defined in Block class
 
-    def calc_opex_sim(self):
-        self.distances_sim = [self.data.loc[self.scenario.dti_sim,(com, 'distance')] for com in self.com_names]
-        self.opex_sim = self.distances_sim @ self.opex_dist
+        self.accumulate_expenses()
+
+    def calc_revenue(self):
+
+        self.crev_time = ((~self.data.loc[self.scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[self.scenario.dti_sim]) *
+                          self.scenario.timestep_hours)
+        self.crev_usage = self.data.loc[self.scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[
+            self.scenario.dti_sim]
+
+        self.accumulate_crev()
 
     def get_ch_results(self, horizon):
         pass  # function has to be callable, but ICEVSystem does not have timeseries results from optimization
@@ -2177,13 +2207,6 @@ class VehicleCommoditySystem(CommoditySystem):
 
     def __init__(self, name, scenario):
         super().__init__(name, scenario)
-
-    def calc_revenue(self):
-        for commodity in self.commodities.values():
-            commodity.calc_revenue()
-            self.crev_sim += commodity.crev_sim
-
-        self.accumulate_crev()
 
 
 class WindSource(RenewableInvestBlock):

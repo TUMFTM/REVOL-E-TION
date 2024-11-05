@@ -199,3 +199,4 @@ icev,mntex_pc,1000,0,0,0
 icev,opex_spec_dist,0.3,0,0,0
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.4,0.2,0.2,0.2
+icev,ccr,1,1,1,1
