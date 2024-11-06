@@ -72,6 +72,18 @@ class Block:
         self.scenario.crev_prj += self.crev_prj
         self.scenario.crev_dis += self.crev_dis
 
+    def accumulate_expenses(self):
+
+        self.totex_sim = self.capex_init + self.mntex_sim + self.opex_sim
+        self.totex_prj = self.capex_prj + self.mntex_prj + self.opex_prj
+        self.totex_dis = self.capex_dis + self.mntex_dis + self.opex_dis
+        self.totex_ann = self.capex_ann + self.mntex_ann + self.opex_ann
+
+        self.scenario.totex_sim += self.totex_sim
+        self.scenario.totex_prj += self.totex_prj
+        self.scenario.totex_dis += self.totex_dis
+        self.scenario.totex_ann += self.totex_ann
+
     def add_power_trace(self):
         legentry = self.get_legend_entry()
         self.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
@@ -324,16 +336,7 @@ class InvestBlock(Block):
         self.calc_capex()
         self.calc_mntex()
         self.calc_opex()
-
-        self.totex_sim = self.capex_init + self.mntex_sim + self.opex_sim
-        self.totex_prj = self.capex_prj + self.mntex_prj + self.opex_prj
-        self.totex_dis = self.capex_dis + self.mntex_dis + self.opex_dis
-        self.totex_ann = self.capex_ann + self.mntex_ann + self.opex_ann
-
-        self.scenario.totex_sim += self.totex_sim
-        self.scenario.totex_prj += self.totex_prj
-        self.scenario.totex_dis += self.totex_dis
-        self.scenario.totex_ann += self.totex_ann
+        self.accumulate_expenses()
 
     def calc_mntex(self):
         """
@@ -1245,6 +1248,8 @@ class ICEVSystem(Block):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
 
+        self.crev_time = self.crev_usage = None  # intermediary variables
+
     def add_power_trace(self):
         pass  # function has to be callable, but ICEVSystem does not have a power trace
 
@@ -1269,10 +1274,14 @@ class ICEVSystem(Block):
 
     def calc_revenue(self):
 
-        self.crev_time = ((~self.data.loc[self.scenario.dti_sim, 'atbase'] @ self.parent.crev_spec_time[self.scenario.dti_sim]) *
-                          self.scenario.timestep_hours)
-        self.crev_usage = self.data.loc[self.scenario.dti_sim, 'tour_dist'] @ self.parent.crev_spec_dist[
-            self.scenario.dti_sim]
+        self.crev_time = {commodity: ~self.data.loc[self.scenario.dti_sim, (commodity, 'atbase')]
+                                     @ self.crev_spec_time[self.scenario.dti_sim]
+                                     * self.scenario.timestep_hours
+                          for commodity in self.com_names}
+        self.crev_usage = {commodity: self.data.loc[self.scenario.dti_sim, (commodity, 'tour_dist')]
+                                      @ self.crev_spec_dist[self.scenario.dti_sim]
+                           for commodity in self.com_names}
+        self.crev_sim = sum(self.crev_time.values()) + sum(self.crev_usage.values())
 
         self.accumulate_crev()
 
