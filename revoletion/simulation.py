@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import geopy
 import graphviz
+import holidays
 import importlib.metadata
 import itertools
 import logging
@@ -245,7 +247,7 @@ class PredictionHorizon:
 
 class Scenario:
 
-    def __init__(self, name, run, logger):
+    def __init__(self, name, run, logger, lock):
 
         self.name = name
         self.run = run
@@ -281,6 +283,17 @@ class Scenario:
 
         self.tzfinder = timezonefinder.TimezoneFinder()
         self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+
+        geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
+        if lock is None:  # sequential
+            location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
+        else:  # parallel
+            with lock:
+                location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
+
+        self.country = self.state = None
+        if location:
+            self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
@@ -322,6 +335,23 @@ class Scenario:
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
         self.sim_prj_rat = self.sim_duration / self.prj_duration
+
+        # get holidays during simulation timeframe
+        years = range(min(self.dti_sim_extd).year, max(self.dti_sim_extd).year + 1)
+        try:
+            self.holiday_dates = sorted(
+                getattr(holidays, self.country)(years=years,
+                                                state=self.state))
+        except NotImplementedError:  # not for all countries the states are available (e.g. France)
+            try:
+                self.holiday_dates = sorted(
+                    getattr(holidays, self.country)(years=years))
+                self.logger.warning(f'Holidays for state {self.state} not available.'
+                                    f' Country-wide holidays for {self.country} are used instead.')
+            except AttributeError:  # not all countries worldwide are available
+                self.holiday_dates = []
+                self.logger.warning(f'Holidays for country {self.country} not available.'
+                                    f' No public holidays are considered in this scenario.')
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
@@ -762,6 +792,7 @@ class SimulationRun:
         # parallelization activated in settings file
         if self.parallel:
             with mp.Manager() as manager:
+                lock = manager.Lock()
                 scenarios_failed_queue = manager.Queue()
                 log_queue = manager.Queue()
                 log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
@@ -769,7 +800,10 @@ class SimulationRun:
                 with mp.Pool(processes=self.process_num) as pool:
                     pool.starmap(
                         self.simulate_scenario,
-                        zip(self.scenario_names, itertools.repeat(log_queue), itertools.repeat(scenarios_failed_queue))
+                        zip(self.scenario_names,
+                            itertools.repeat(log_queue),
+                            itertools.repeat(scenarios_failed_queue),
+                            itertools.repeat(lock))
                     )
                 log_queue.put(None)
                 log_thread.join()
@@ -841,7 +875,7 @@ class SimulationRun:
         self.scenarios_failed.to_csv(self.path_scenarios_failed_file,
                                      index=True)
 
-    def simulate_scenario(self, name: str, log_queue=None, scenarios_failed_queue=None):
+    def simulate_scenario(self, name: str, log_queue=None, scenarios_failed_queue=None, lock=None):
         logger = logger_fcs.setup_logger(name, log_queue, self)
 
         self.process = mp.current_process() if self.parallel else None
@@ -849,7 +883,7 @@ class SimulationRun:
         scenario = None
 
         try:
-            scenario = Scenario(name, self, logger)  # Create scenario instance
+            scenario = Scenario(name, self, logger, lock)  # Create scenario instance
 
             # ToDo: move to checker.py
             if scenario.strategy not in ['go', 'rh']:

@@ -321,4 +321,3 @@ def scmod_full_factorial(dir_path: str,
         output_df.to_csv(output_path)
 
     return output_df
-
