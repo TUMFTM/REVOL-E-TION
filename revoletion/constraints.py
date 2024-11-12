@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pyomo.environ as po
-from pyomo import environ as po2
 
 from revoletion import blocks
 
