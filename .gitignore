@@ -28,6 +28,8 @@ input/*
 !input/GridConnection/grid_buy_example.csv
 !input/GridConnection/grid_sell_example.csv
 
+!input/ICEVSystem/icev_example.csv
+
 !input/PVSource/pv_example.csv
 !input/PVSource/pvgis_api_params_example.csv
 !input/PVSource/solcast_api_params_example.csv
