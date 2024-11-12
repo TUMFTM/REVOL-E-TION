@@ -190,8 +190,8 @@ brs,eff_dis_ac,0.95,0.95,0.95,0.95
 brs,eff_dis_dc,0.95,0.95,0.95,0.95
 brs,ccr,1,1,1,1
 brs,sdr,0.02,0.02,0.02,0.02
-icev,data_source,log,des,des,des
-icev,filename,icev_example.csv,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv
+icev,data_source,log,log,log,log
+icev,filename,icev_example.csv,icev_example.csv,icev_example.csv,icev_example.csv
 icev,num,5,5,5,5
 icev,ls,10,10,10,10
 icev,capex_pc,25000,0,0,0
