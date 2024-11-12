@@ -7,6 +7,7 @@ import oemof.solph as solph
 import os
 import pandas as pd
 import pandas.errors
+import plotly.graph_objects as go
 import pvlib
 import requests
 import statistics
@@ -14,9 +15,8 @@ import windpowerlib
 
 from revoletion import battery as bat
 from revoletion import economics as eco
+from revoletion import mobility
 from revoletion import utils
-
-import plotly.graph_objects as go
 
 
 class Block:
@@ -515,8 +515,11 @@ class CommoditySystem(InvestBlock):
         self.com_names = [f'{self.name}_{str(i)}' for i in range(self.num)]
         self.data = None  # init
 
-        if self.data_source == 'des':
+        if self.data_source == 'usecases':
             self.usecases = utils.read_usecase_file(self)
+            self.demand = self.demand.sample()
+        elif self.data_source == 'demand':
+            self.demand = utils.read_demand_file(self)
         elif self.data_source == 'log':
             self.data = utils.read_input_log(self)
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
@@ -526,18 +529,22 @@ class CommoditySystem(InvestBlock):
         if self.system == 'ac':
             self.eff_chg = self.eff_chg_ac
             self.eff_dis = self.eff_dis_ac
-        else:
+        elif self.system == 'dc':
             self.eff_chg = self.eff_chg_dc
             self.eff_dis = self.eff_dis_dc
+        else:
+            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid system type')
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
-        if self.data_source == 'des':
+        if self.data_source in ['usecases', 'demand']:  # dispatch simulation will run
+            # estimate maximum power drawn by self discharge
             self.pwr_loss_max = (utils.convert_sdr(self.sdr, self.scenario.timestep_td) *
                                  self.size_existing *
                                  self.scenario.timestep_hours)
+            # downrate power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
         self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
@@ -691,7 +698,7 @@ class CommoditySystem(InvestBlock):
 
     def set_init_size(self):
         #  ToDo: move to checker.py
-        if self.invest and self.data_source == 'des':
+        if self.invest and self.data_source in ['usecases', 'demand']:
             self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data'
                                          f' source DES is not possible. Deactivated invest.')
             self.invest = False
@@ -748,8 +755,9 @@ class BatteryCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario):
-        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as input parameter
 
+        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as input parameter
+        self.demand = mobility.BatteryCommodityDemand(scenario, self)
         super().__init__(name, scenario)
 
         # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
@@ -1238,7 +1246,7 @@ class ICEVSystem(Block):
         self.com_names = [f'{self.name}{str(i)}' for i in range(self.num)]
         self.data = None
 
-        if self.data_source == 'des':
+        if self.data_source in ['usecases', 'demand']:
             raise NotImplementedError(f'Scenario {self.scenario.name} - Block \"{self.name}\": '
                                       f'dispatch_source "des" is not yet implemented for ICEVSystem')
         elif self.data_source == 'log':
@@ -1376,7 +1384,7 @@ class MobileCommodity:
         self.dsoc_buffer += (self.q_loss_cal_init + self.q_loss_cyc_init) / 2
 
         # Data Source has been checked in the parent class to be either 'des' or 'log'
-        if self.parent.data_source == 'des':
+        if self.parent.data_source in ['usecases', 'demand']:
             self.data = None  # parent data does not exist yet, filtering is done later
         elif self.parent.data_source == 'log':  # predetermined log file
             self.data = self.parent.data.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
@@ -2215,6 +2223,7 @@ class VehicleCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario):
+        self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
 
 

@@ -106,8 +106,8 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-bev,data_source,des,des,des,des
-bev,filename,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv,bev_usecases_default.csv
+bev,data_source,usecases,usecases,usecases,usecases
+bev,filename,bev_example_usecases,bev_example_usecases,bev_example_usecases,bev_example_usecases
 bev,num,5,5,5,5
 bev,size_existing,30000.0,30000.0,30000.0,30000.0
 bev,invest,False,False,False,False
@@ -150,8 +150,8 @@ bev,eff_dis_ac,0.95,0.95,0.95,0.95
 bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,ccr,1,1,1,1
 bev,sdr,0.02,0.02,0.02,0.02
-brs,data_source,des,des,des,des
-brs,filename,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv,brs_usecases_default.csv
+brs,data_source,usecases,usecases,usecases,usecases
+brs,filename,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv
 brs,num,10,10,10,10
 brs,size_existing,3000.0,3000.0,3000.0,3000.0
 brs,invest,False,False,False,False

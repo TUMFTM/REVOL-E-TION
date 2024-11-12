@@ -15,13 +15,15 @@ results/*
 
 input/*
 
-!input/VehicleCommoditySystem/bev_example.csv
+!input/VehicleCommoditySystem/bev_example_log.csv
 !input/VehicleCommoditySystem/bev_example_processes.csv
-!input/VehicleCommoditySystem/bev_usecases_default.csv
+!input/VehicleCommoditySystem/bev_example_demand.csv
+!input/VehicleCommoditySystem/bev_example_usecases.csv
 
-!input/BatteryCommoditySystem/brs_example.csv
+!input/BatteryCommoditySystem/brs_example_log.csv
 !input/BatteryCommoditySystem/brs_example_processes.csv
-!input/BatteryCommoditySystem/brs_usecases_default.csv
+!input/BatteryCommoditySystem/brs_example_demand.csv
+!input/BatteryCommoditySystem/brs_example_usecases.csv
 
 !input/FixedDemand/dem_example.csv
 
