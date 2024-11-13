@@ -16,11 +16,11 @@ scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe_example,mapper_timeframe_example,mapper_timeframe_example,mapper_timeframe_example
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}"
 core,size_acdc_existing,0,22000,22000,0
+core,size_acdc_max,None,None,None,None
 core,invest_acdc,False,False,False,True
-core,invest_acdc_max,None,None,None,None
 core,size_dcac_existing,equal,equal,equal,equal
+core,size_dcac_max,equal,equal,equal,None
 core,invest_dcac,equal,equal,equal,True
-core,invest_dcac_max,equal,equal,equal,None
 core,capex_spec,0.08,0.08,0.08,0.08
 core,mntex_spec,0.0024,0.0024,0.0024,0.0024
 core,opex_spec,0,0,0,0
@@ -33,8 +33,8 @@ dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size_existing,0,15000,15000,0
+wind,size_max,None,None,None,None
 wind,invest,False,False,False,True
-wind,invest_max,None,None,None,None
 wind,system,ac,ac,ac,ac
 wind,data_source,None,pv,pv,pv
 wind,height,50,50,50,50
@@ -46,8 +46,8 @@ wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
 wind,eff,0.95,0.95,0.95,0.95
 pv,size_existing,0,105000,105000,0
+pv,size_max,None,None,None,None
 pv,invest,False,False,False,True
-pv,invest_max,None,None,None,None
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
 pv,filename,None,None,None,None
 pv,system,dc,dc,dc,dc
@@ -58,8 +58,8 @@ pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff,0.95,0.95,0.95,0.95
 gen,size_existing,0,5000,5000,0
+gen,size_max,None,None,None,None
 gen,invest,False,False,False,True
-gen,invest_max,None,None,None,None
 gen,system,ac,ac,ac,ac
 gen,capex_spec,0.261,0.261,0.261,0.261
 gen,mntex_spec,0.03,0.02088,0.02088,0.03
@@ -68,11 +68,11 @@ gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
 gen,eff,1,1,1,1
 grid,size_g2s_existing,0,11000,11000,0
+grid,size_g2s_max,None,None,None,None
 grid,invest_g2s,True,False,False,True
-grid,invest_g2s_max,None,None,None,None
 grid,size_s2g_existing,equal,equal,equal,equal
+grid,size_s2g_max,equal,equal,equal,None
 grid,invest_s2g,equal,equal,equal,equal
-grid,invest_s2g_max,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,None,None,None,None
 grid,opex_spec_peak,0,0,0,0
@@ -86,8 +86,8 @@ grid,res_only,False,False,False,False
 grid,opex_spec_g2s,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
 grid,opex_spec_s2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
 ess,size_existing,0,115000,115000,0
+ess,size_max,None,None,None,None
 ess,invest,False,False,False,True
-ess,invest_max,None,None,None,None
 ess,system,dc,dc,dc,dc
 ess,res_only,False,False,False,False
 ess,aging,True,True,True,True
@@ -111,8 +111,8 @@ bev,data_source,usecases,usecases,usecases,usecases
 bev,filename,bev_example_usecases,bev_example_usecases,bev_example_usecases,bev_example_usecases
 bev,num,5,5,5,5
 bev,size_existing,30000.0,30000.0,30000.0,30000.0
+bev,size_max,None,None,None,None
 bev,invest,False,False,False,False
-bev,invest_max,None,None,None,None
 bev,lvl_cap,v2s,v2s,v2s,v2s
 bev,mode_scheduling,oc,oc,oc,oc
 bev,forecast_hours,None,None,None,None
@@ -155,8 +155,8 @@ brs,data_source,usecases,usecases,usecases,usecases
 brs,filename,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv
 brs,num,10,10,10,10
 brs,size_existing,3000.0,3000.0,3000.0,3000.0
+brs,size_max,None,None,None,None
 brs,invest,False,False,False,False
-brs,invest_max,None,None,None,None
 brs,lvl_cap,ud,ud,ud,ud
 brs,mode_scheduling,fcfs,fcfs,fcfs,fcfs
 brs,forecast_hours,None,None,None,None

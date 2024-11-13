@@ -289,6 +289,7 @@ class InvestBlock(Block):
         self.invest = False  # not every block has input parameter invest without extension -> default: False
         super().__init__(name, scenario)
         self.size = self.size_additional = 0  # placeholder for additional size in optimization
+        self.size_additional_max = None
 
         self.set_init_size()
 
@@ -379,6 +380,9 @@ class InvestBlock(Block):
         """
         if not self.invest:
             self.size = self.size_existing
+
+        if self.size_max is not None:
+            self.size_additional_max = self.size_max - self.size_existing
 
 
 class RenewableInvestBlock(InvestBlock):
@@ -485,7 +489,7 @@ class RenewableInvestBlock(InvestBlock):
                                            outputs={self.bus: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                               existing=self.size_existing,
-                                                                              maximum=self.invest_max if self.invest else 0),
+                                                                              maximum=self.size_additional_max if self.invest else 0),
                                                fix=self.data_ph['power_spec'],
                                                variable_costs=self.opex_ep_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
@@ -702,6 +706,9 @@ class CommoditySystem(InvestBlock):
                                          f' source DES is not possible. Deactivated invest.')
             self.invest = False
 
+        if self.size_max is not None:
+            self.size_additional_max = self.size_max - self.size_existing
+
         self.size_existing_pc = self.size_existing
         self.size_existing = self.size_existing_pc * self.num
         if not self.invest:
@@ -803,7 +810,7 @@ class ControllableSource(InvestBlock):
                                            outputs={self.bus_connected: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                               existing=self.size_existing,
-                                                                              maximum=self.invest_max if self.invest else 0),
+                                                                              maximum=self.size_additional_max if self.invest else 0),
                                                variable_costs=self.opex_ep_spec[horizon.dti_ph])})
 
         horizon.components.append(self.src)
@@ -816,6 +823,7 @@ class ControllableSource(InvestBlock):
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario):
         self.size_g2s = self.size_s2g = self.size_g2s_additional = self.size_s2g_additional = 0
+        self.size_additional_g2s_max = self.size_additional_s2g_max = None
         self.equal = None
 
         super().__init__(name, scenario)
@@ -1010,15 +1018,20 @@ class GridConnection(InvestBlock):
         if not self.invest_s2g:
             self.size_s2g = self.size_s2g_existing
 
-        if (self.invest_g2s_max == 'equal') and (self.invest_s2g_max == 'equal'):
-            self.invest_g2s_max = self.invest_s2g_max = None
+        if (self.size_g2s_max == 'equal') and (self.size_s2g_max == 'equal'):
+            self.size_g2s_max = self.size_s2g_max = None
             self.scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
                                          f' maximum investment into selling and buying power. This is not supported.'
                                          f' The maximum invest was set to None (unlimited) for both directions.')
-        elif self.invest_g2s_max == 'equal':
-            self.invest_g2s_max = self.invest_s2g_max
-        elif self.invest_s2g_max == 'equal':
-            self.invest_s2g_max = self.invest_g2s_max
+        elif self.size_g2s_max == 'equal':
+            self.size_g2s_max = self.size_s2g_max
+        elif self.size_s2g_max == 'equal':
+            self.size_s2g_max = self.size_g2s_max
+
+        if self.size_g2s_max is not None:
+            self.size_additional_g2s_max = self.size_g2s_max - self.size_g2s_existing
+        if self.size_s2g_max is not None:
+            self.size_additional_s2g_max = self.size_s2g_max - self.size_s2g_existing
 
     def update_input_components(self, horizon):
         """
@@ -1053,7 +1066,7 @@ class GridConnection(InvestBlock):
             outputs={self.bus: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                existing=self.size_s2g_existing,
-                                               maximum=self.invest_s2g_max if self.invest_s2g else 0),
+                                               maximum=self.size_additional_s2g_max if self.invest_s2g else 0),
                 variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
@@ -1064,7 +1077,7 @@ class GridConnection(InvestBlock):
             inputs={self.bus: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=(self.capex_ep_spec if intv == self.peakshaving_ints.index[0] else 0),
                                                existing=self.size_g2s_existing,
-                                               maximum=self.invest_g2s_max if self.invest_g2s else 0)
+                                               maximum=self.size_additional_g2s_max if self.invest_g2s else 0)
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_ep_spec_peak,
@@ -1617,7 +1630,6 @@ class MobileCommodity:
 
         inflow_fix = outflow_fix = ext_ac_fix = ext_dc_fix = None
         inflow_max = outflow_max = ext_ac_max = ext_dc_max = None
-        soc_max = soc_min = None
 
         if self.apriori_data is not None:
             # define charging powers (as per uc power calculation)
@@ -1710,7 +1722,7 @@ class MobileCommodity:
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.parent.capex_ep_spec,
                                                                                              existing=self.size_existing,
-                                                                                             maximum=self.parent.invest_max if self.invest else 0),
+                                                                                             maximum=self.parent.size_additional_max if self.invest else 0),
                                                    min_storage_level=soc_min,
                                                    max_storage_level=soc_max
                                                    )
@@ -2086,7 +2098,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                              existing=self.size_existing,
-                                                                                             maximum=self.invest_max if self.invest else 0),
+                                                                                             maximum=self.size_additional_max if self.invest else 0),
                                                    max_storage_level=pd.Series(data=self.soc_max,
                                                                                index=utils.extend_dti(horizon.dti_ph)),
                                                    min_storage_level=pd.Series(data=self.soc_min,
@@ -2108,6 +2120,7 @@ class SystemCore(InvestBlock):
     def __init__(self, name, scenario):
         self.size_acdc = self.size_dcac = 0
         self.size_acdc_additional = self.size_dcac_additional = 0
+        self.size_additional_acdc_max = self.size_additional_dcac_max = None
         self.equal = None
 
         super().__init__(name, scenario)
@@ -2217,15 +2230,20 @@ class SystemCore(InvestBlock):
         if not self.invest_dcac:
             self.size_dcac = self.size_dcac_existing
 
-        if (self.invest_acdc_max == 'equal') and (self.invest_dcac_max == 'equal'):
-            self.invest_acdc_max = self.invest_dcac_max = None
+        if (self.size_acdc_max == 'equal') and (self.size_dcac_max == 'equal'):
+            self.size_acdc_max = self.size_dcac_max = None
             self.scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
                                          f' maximum investment into AC/DC and DC/AC converter. This is not supported.'
                                          f' The maximum invest was set to None (unlimited) for both converters.')
-        elif self.invest_acdc_max == 'equal':
-            self.invest_acdc_max = self.invest_dcac_max
-        elif self.invest_dcac_max == 'equal':
-            self.invest_dcac_max = self.invest_acdc_max
+        elif self.size_acdc_max == 'equal':
+            self.size_acdc_max = self.size_dcac_max
+        elif self.size_dcac_max == 'equal':
+            self.size_dcac_max = self.size_acdc_max
+
+        if self.size_acdc_max is not None:
+            self.size_additional_acdc_max = self.size_acdc_max - self.size_acdc_existing
+        if self.size_dcac_max is not None:
+            self.size_additional_dcac_max = self.size_dcac_max - self.size_dcac_existing
 
     def update_input_components(self, horizon):
         """
@@ -2247,7 +2265,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.ac_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                    existing=self.size_acdc_existing,
-                                                                                   maximum=self.invest_acdc_max if self.invest_acdc else 0),
+                                                                                   maximum=self.size_additional_acdc_max if self.invest_acdc else 0),
                                                     variable_costs=self.opex_ep_spec[horizon.dti_ph])},
                                                 outputs={self.dc_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},
@@ -2257,7 +2275,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.dc_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                    existing=self.size_dcac_existing,
-                                                                                   maximum=self.invest_dcac_max if self.invest_dcac else 0),
+                                                                                   maximum=self.size_additional_dcac_max if self.invest_dcac else 0),
                                                     variable_costs=self.opex_ep_spec[horizon.dti_ph])},
                                                 outputs={self.ac_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},
