@@ -894,6 +894,7 @@ class SimulationRun:
                 horizon = PredictionHorizon(horizon_index, scenario)
                 horizon.run_optimization()
                 horizon.get_results()
+            scenario.end_timing()
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
@@ -907,10 +908,10 @@ class SimulationRun:
 
             if scenario is not None:  # scenario initialization can fail
                 scenario.exception = str(e)
+                scenario.end_timing()
 
         finally:
             try:
-                scenario.end_timing()
                 # Process all results
                 if self.save_results or self.print_results:
                     scenario.get_results()
