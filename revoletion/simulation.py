@@ -285,15 +285,19 @@ class Scenario:
         self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
 
         geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
-        if lock is None:  # sequential
-            location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
-        else:  # parallel
-            with lock:
+        self.country = 'DE'  # set default country
+        self.state = 'BY'  # set default state
+        try:
+            if lock is None:  # sequential
                 location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
-
-        self.country = self.state = None
-        if location:
-            self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
+            else:  # parallel
+                with lock:
+                    location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
+            if location:
+                self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
+        except geopy.exc.GeocoderUnavailable:
+            self.logger.warning('Connection to Geocoder failed.'
+                                ' Using default country ({self.country}) and state ({self.state}).')
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
