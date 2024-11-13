@@ -1301,8 +1301,15 @@ class FixedDemand(Block):
 
         self.bus_connected = self.snk = None  # initialize oemof-solph component
 
-        utils.transform_scalar_var(self, 'load_profile')
-        self.data = self.load_profile
+        self.data = None
+
+        if self.load_profile.upper() in ['H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2']:
+            self.generate_timeseries_from_slp()
+        elif self.load_profile == 'const':
+            self.data = pd.Series(index=self.scenario.dti_sim_extd, data=self.consumption_yrl / (365 * 24))
+        else:
+            utils.transform_scalar_var(self, 'load_profile')
+            self.data = self.load_profile
 
         self.data_ph = None  # placeholder
 
@@ -1312,6 +1319,61 @@ class FixedDemand(Block):
     def calc_revenue(self):
         self.crev_sim = (self.flow_in @ self.crev_spec[self.scenario.dti_sim]) * self.scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev()
+
+    def generate_timeseries_from_slp(self):
+        def get_timeframe(date):
+            month = date.month
+            day = date.day
+            if ((month, day) >= (11, 1)) or ((month, day) <= (3, 20)):
+                return 'Winter'
+            elif (5, 15) <= (month, day) <= (9, 14):
+                return 'Summer'
+            else:  # Transition months
+                return 'Transition'
+
+        def get_daytype(date, holidays):
+            if date.date() in holidays or date.weekday() == 6:
+                return 'Sunday'
+            # Treat Christmas Eve and New Year's Eve as Saturdays if they are not Sundays
+            elif (date.weekday() == 5) or ((date.month, date.day) in [(12, 24), (12, 31)]):
+                return 'Saturday'
+            else:
+                return 'Workday'
+
+        # Read BDEW SLP profiles
+        slp = pd.read_csv(os.path.join(self.scenario.run.path_input_data, self.__class__.__name__, 'dem_bdew_slp.csv'),
+                          skiprows=[0],
+                          header=[0, 1, 2],
+                          index_col=0)
+
+        slp.index = pd.to_datetime(slp.index, format='%H:%M').time
+
+        # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
+        freq_slp = '15min'
+        dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.starttime.floor(freq_slp),
+                                                 end=max(self.scenario.dti_sim_extd).ceil(freq_slp),
+                                                 freq=freq_slp))
+
+        self.data = pd.Series(index=dti_slp, data=0, dtype='float64')
+
+        self.data = self.data.index.to_series().apply(
+        lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))])
+
+        # apply dynamic correction for household profiles
+        if self.load_profile.upper() == 'H0':
+            # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
+            num_day = self.data.index.dayofyear.astype('int64')
+            self.data = round(self.data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
+                                           7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
+                              ndigits=1)
+
+        # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
+        # This calculation leads to small deviations from the specified yearly consumption due to varying holidays and
+        # leap years, but is the correct way as stated by the VDEW manual
+        self.data *= (self.consumption_yrl / 1e6)
+
+        # resample to simulation time step
+        self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
 
     def get_ch_results(self, horizon, *_):
         self.flow_in[horizon.dti_ch] = horizon.results[(self.bus_connected, self.snk)]['sequences']['flow'][horizon.dti_ch]
