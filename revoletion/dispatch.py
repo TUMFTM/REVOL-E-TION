@@ -70,6 +70,14 @@ class RentalSystem:
         self.use_rate = self.fail_rate = None
         self.process_objs = []
 
+    def add_dispatch_columns(self):
+        """
+        Add empty columns to process frame that are iteratively filled during actual dispatch (i.e. in DES)
+        """
+        self.processes['commodities_primary'] = None
+        if (hasattr(self.commodity_system, 'rex_cs')) and (self.commodity_system.rex_cs):
+            self.processes['commodities_secondary'] = None
+
     def create_store(self):
         self.store = MultiStore(self.scenario.env_des, capacity=self.commodity_system.num)
         for commodity in self.commodity_system.commodities.values():
@@ -138,11 +146,11 @@ class RentalSystem:
 
         self.commodity_system.data = self.data
 
-    def generate_processes(self):
+    def generate_process_frame(self):
 
         self.processes = self.commodity_system.demand.copy()
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
-        self.sample_request_data()
+        self.calc_process_data()
 
         # common calculations for both types of RentalSystem
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
@@ -171,7 +179,7 @@ class RentalSystem:
             f'{self.scenario.name}_'
             f'{self.commodity_system.name}_'
             f'processes.csv')
-        self.processes.to_commodity_systemv(processes_path)
+        self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
             self.scenario.run.path_result_dir,
@@ -208,7 +216,8 @@ class VehicleRentalSystem(RentalSystem):
             self.energy_usable_rex_pc_high = 0
             self.energy_usable_rex_pc_low = 0
 
-        self.generate_processes()
+        self.generate_process_frame()
+        self.add_dispatch_columns()
         self.create_store()
 
     def block_charge_time(self):
@@ -217,20 +226,7 @@ class VehicleRentalSystem(RentalSystem):
                                                            self.scenario,
                                                            absolute=True)
 
-    def check_rex_inputs(self):
-        if self.commodity_system.rex_cs not in self.scenario.blocks.keys():
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" does not exist')
-        elif not isinstance(self.scenario.blocks[self.commodity_system.rex_cs], blocks.BatteryCommoditySystem):
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not a BatteryCommoditySystem')
-        elif not self.scenario.blocks[self.commodity_system.rex_cs].data_source in ['usecases', 'demand']:
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not set to run DES itself')
-
-
-
-    def sample_request_data(self):
+    def calc_process_data(self):
         """
         This function fills the demand dataframe with stochastically generated values describing the rental
         requests for each day in the simulation timeframe.
@@ -284,6 +280,21 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
+    def check_rex_inputs(self):
+        if self.commodity_system.rex_cs not in self.scenario.blocks.keys():
+            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" does not exist')
+        elif not isinstance(self.scenario.blocks[self.commodity_system.rex_cs], blocks.BatteryCommoditySystem):
+            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not a BatteryCommoditySystem')
+        elif not self.scenario.blocks[self.commodity_system.rex_cs].data_source in ['usecases', 'demand']:
+            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
+                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not set to run DES itself')
+
+
+
+
+
     def transfer_rex_processes(self):
         """
         This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
@@ -323,14 +334,15 @@ class BatteryRentalSystem(RentalSystem):
 
         self.commodity_system.rex_cs = None  # needs to be set for later check
 
-        self.generate_processes()
+        self.generate_process_frame()
+        self.add_dispatch_columns()
         self.create_store()
 
     def block_charge_time(self):
         self.processes['step_preblock_primary'] = self.processes['step_req']
         self.processes['time_preblock_primary'] = self.processes['time_req']
 
-    def sample_request_data(self):
+    def calc_process_data(self):
         """
         This function fills the demand dataframe with stochastically generated values describing the rental
         requests for each day in the simulation timeframe.
@@ -397,7 +409,7 @@ class RentalProcess:
             self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} requested '
                                        f'{self.data["num_secondary"]} secondary resource(s) at {self.env.now}')
 
-        # if request(s) successful
+        # if primary or both request(s) successful
         if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
             self.rental_system.processes.loc[self.id, 'status'] = self.status = 'success'
             self.rental_system.processes.at[self.id, 'commodities_primary'] = self.primary_request.value
@@ -481,10 +493,6 @@ class RentalProcess:
                                                f' {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
 
         self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} finished at {self.env.now}')
-
-###############################################################################
-# global functions
-###############################################################################
 
 
 def dt2steps(series, sc):

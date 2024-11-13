@@ -140,6 +140,10 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
     df = df.tz_convert(scenario.timezone)
     if resampling:
         df = resample_to_timestep(df, block, scenario)
+
+    if not (scenario.dti_sim.isin(df.index).all()):
+        raise IndexError(f'Scenario \"{scenario.name}\" - Block \"{block.name}\":'
+                         f' Input timeseries data does not cover simulation timeframe')
     return df
 
 

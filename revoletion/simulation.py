@@ -120,14 +120,8 @@ class PredictionHorizon:
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Creating optimization model')
 
-        try:
-            # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
-        except IndexError:
-            msg = (f'Horizon {self.index + 1} of {self.scenario.nhorizons} -'
-                   f'Input data not matching time index - check input data and time index consistency')
-            self.scenario.logger.error(msg)
-            raise IndexError(msg)
+        # Build the mathematical linear optimization model with pyomo
+        self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
 
         # Apply custom constraints
         self.constraints.apply_constraints(model=self.model)
