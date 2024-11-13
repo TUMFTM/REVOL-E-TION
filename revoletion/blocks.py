@@ -6,7 +6,6 @@ import numpy as np
 import oemof.solph as solph
 import os
 import pandas as pd
-import pandas.errors
 import pvlib
 import requests
 import statistics
