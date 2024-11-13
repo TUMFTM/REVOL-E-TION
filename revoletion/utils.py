@@ -26,6 +26,8 @@ def infer_dtype(value):
         return False
     elif value.lower() in ['none', 'null', 'nan', '']:
         return None
+    elif os.path.isdir(value):
+        return value
 
     try:
         evaluated = ast.literal_eval(value)
