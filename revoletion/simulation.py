@@ -836,6 +836,7 @@ class SimulationRun:
         self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
         if (len(self.scenario_names) <= 1 or self.process_num == 1) and self.parallel:
+            # logger not defined yet, use print as logger definition needs to be done after process_num is defined
             print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
             self.parallel = False
 
