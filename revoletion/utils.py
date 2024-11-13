@@ -3,6 +3,7 @@
 import ast
 import importlib.util
 import itertools
+import numpy as np
 import pandas as pd
 import pandas.errors
 import os
@@ -107,9 +108,28 @@ def scale_year2prj(value, scenario):
     return value * scenario.prj_duration_yrs
 
 
+def read_demand_file(block):
+    """
+    Read in a CommodityDemand csv file
+    """
+    path_demand_file = os.path.join(block.scenario.run.path_input_data,
+                                    block.__class__.__name__,
+                                    set_extension(block.filename))
+    df = pd.read_csv(path_demand_file,
+                     index_col=0)
+    df['time_req'] = pd.to_datetime(df['time_req'], utc=True).dt.tz_convert(block.scenario.timezone)
+    df['dtime_active'] = pd.to_timedelta(df['dtime_active'])
+    df['dtime_idle'] = pd.to_timedelta(df['dtime_idle'])
+    df['dtime_patience'] = pd.to_timedelta(df['dtime_patience'])
+
+    df = df.loc[df['time_req'].isin(block.scenario.dti_sim), :]
+
+    return df
+
+
 def read_input_csv(block, path_input_file, scenario, multiheader=False, resampling=True):
     """
-    Properly read in timezone-aware input csv files and form correct datetimeindex
+    Properly read in timezone-aware input timeseries csv files and form correct datetimeindex
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
@@ -123,6 +143,10 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
     df = df.tz_convert(scenario.timezone)
     if resampling:
         df = resample_to_timestep(df, block, scenario)
+
+    if not (scenario.dti_sim.isin(df.index).all()):
+        raise IndexError(f'Scenario \"{scenario.name}\" - Block \"{block.name}\":'
+                         f' Input timeseries data does not cover simulation timeframe')
     return df
 
 
@@ -321,3 +345,8 @@ def scmod_full_factorial(dir_path: str,
         output_df.to_csv(output_path)
 
     return output_df
+
+def lognormal_params(mean, stdev):
+    mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
+    sig = np.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
+    return mu, sig

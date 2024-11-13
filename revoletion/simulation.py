@@ -122,14 +122,8 @@ class PredictionHorizon:
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Creating optimization model')
 
-        try:
-            # Build the mathematical linear optimization model with pyomo
-            self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
-        except IndexError:
-            msg = (f'Horizon {self.index + 1} of {self.scenario.nhorizons} -'
-                   f'Input data not matching time index - check input data and time index consistency')
-            self.scenario.logger.error(msg)
-            raise IndexError(msg)
+        # Build the mathematical linear optimization model with pyomo
+        self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
 
         # Apply custom constraints
         self.constraints.apply_constraints(model=self.model)
@@ -331,6 +325,7 @@ class Scenario:
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
+        # extended index covers PHs that are not truncated after simulation end time
         self.dti_sim_extd = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
                                           inclusive='left')
 
@@ -390,10 +385,10 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([cs.data_source == 'des' for cs in self.commodity_systems.values()]):
+        if any([cs.data_source in ['demand', 'usecases'] for cs in self.commodity_systems.values()]):
             dispatch.execute_des(self, self.run)
 
-        for cs in [cs for cs in self.commodity_systems.values() if cs.data_source == 'des']:
+        for cs in [cs for cs in self.commodity_systems.values() if cs.data_source in ['usecases', 'demand']]:
             for commodity in cs.commodities.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
