@@ -11,7 +11,7 @@ authors = [
     { name = "Brian Dietermann", email = "brian.dietermann@tum.de"}
 ]
 dependencies = [
-    "datetime",
+    "geopy",
     "graphviz",
     "gurobipy",
     "numpy",
@@ -21,10 +21,10 @@ dependencies = [
     "plotly",
     "psutil",
     "pvlib",
-    "pylightxl",
     "pyomo==6.7.0",
     "pytz",
     "rainflow",
+    "scipy",
     "simpy",
     "timezonefinder",
     "tk",
