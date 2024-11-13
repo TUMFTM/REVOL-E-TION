@@ -1362,7 +1362,7 @@ class FixedDemand(Block):
                 return 'Workday'
 
         # Read BDEW SLP profiles
-        slp = pd.read_csv(os.path.join(self.scenario.run.path_input_data, self.__class__.__name__, 'dem_bdew_slp.csv'),
+        slp = pd.read_csv(os.path.join(self.scenario.run.path_data_immut, 'dem_bdew_slp.csv'),
                           skiprows=[0],
                           header=[0, 1, 2],
                           index_col=0)

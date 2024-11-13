@@ -26,7 +26,6 @@ input/*
 !input/BatteryCommoditySystem/brs_example_usecases.csv
 
 !input/FixedDemand/dem_example.csv
-!input/FixedDemand/dem_bdew_slp.csv
 
 !input/GridConnection/grid_buy_example.csv
 !input/GridConnection/grid_sell_example.csv
