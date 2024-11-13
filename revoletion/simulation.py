@@ -308,6 +308,7 @@ class Scenario:
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
+        # extended index covers PHs that are not truncated after simulation end time
         self.dti_sim_extd = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
                                           inclusive='left')
 

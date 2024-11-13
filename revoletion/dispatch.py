@@ -50,21 +50,36 @@ class RentalSystem:
         self.scenario = scenario
         self.name = self.commodity_system.name
 
-        self.soc_max_init = min([commodity.soc_max for commodity in self.commodity_system.commodities.values()])
-        self.soc_min_init = max([commodity.soc_min for commodity in self.commodity_system.commodities.values()])
+        self.soc_max_init = min([commodity.soc_max
+                                 for commodity in self.commodity_system.commodities.values()])
+        self.soc_min_init = max([commodity.soc_min
+                                 for commodity in self.commodity_system.commodities.values()])
 
         # calculate usable energy to expect
 
-        self.dsoc_usable_high = (statistics.median([self.soc_min_init, self.commodity_system.soc_target_high, self.soc_max_init]) -
-                                 statistics.median([self.soc_min_init, self.commodity_system.soc_return, self.soc_max_init]))
-        self.dsoc_usable_low = (statistics.median([self.soc_min_init, self.commodity_system.soc_target_low, self.soc_max_init]) -
-                                statistics.median([self.soc_min_init, self.commodity_system.soc_return, self.soc_max_init]))
+        self.dsoc_usable_high = (statistics.median([self.soc_min_init,
+                                                    self.commodity_system.soc_target_high,
+                                                    self.soc_max_init]) -
+                                 statistics.median([self.soc_min_init,
+                                                    self.commodity_system.soc_return,
+                                                    self.soc_max_init]))
+        self.dsoc_usable_low = (statistics.median([self.soc_min_init,
+                                                   self.commodity_system.soc_target_low,
+                                                   self.soc_max_init]) -
+                                statistics.median([self.soc_min_init,
+                                                   self.commodity_system.soc_return,
+                                                   self.soc_max_init]))
 
         if (self.dsoc_usable_high <= 0) or (self.dsoc_usable_low <= 0):
-            raise ValueError(f'Usable dSOC for {self.commodity_system.name} is zero or negative. Check SOC targets and aging.')
+            raise ValueError(f'Usable dSOC for {self.commodity_system.name} '
+                             f'is zero or negative. Check SOC targets and aging.')
 
-        self.energy_usable_pc_high = self.dsoc_usable_high * self.commodity_system.size_pc * np.sqrt(self.commodity_system.eff_storage_roundtrip)
-        self.energy_usable_pc_low = self.dsoc_usable_low * self.commodity_system.size_pc * np.sqrt(self.commodity_system.eff_storage_roundtrip)
+        self.energy_usable_pc_high = (self.dsoc_usable_high *
+                                      self.commodity_system.size_pc *
+                                      np.sqrt(self.commodity_system.eff_storage_roundtrip))
+        self.energy_usable_pc_low = (self.dsoc_usable_low *
+                                     self.commodity_system.size_pc *
+                                     np.sqrt(self.commodity_system.eff_storage_roundtrip))
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
@@ -202,8 +217,12 @@ class VehicleRentalSystem(RentalSystem):
             self.check_rex_inputs()
             self.commodity_system.rex_cs = self.scenario.blocks[self.commodity_system.rex_cs]
 
-        self.dsoc_usable_rex_high = self.commodity_system.rex_cs.soc_target_high - self.commodity_system.rex_cs.soc_return if self.commodity_system.rex_cs else 0
-        self.dsoc_usable_rex_low = self.commodity_system.rex_cs.soc_target_low - self.commodity_system.rex_cs.soc_return if self.commodity_system.rex_cs else 0
+        self.dsoc_usable_rex_high = (self.commodity_system.rex_cs.soc_target_high -
+                                     self.commodity_system.rex_cs.soc_return)\
+            if self.commodity_system.rex_cs else 0
+        self.dsoc_usable_rex_low = (self.commodity_system.rex_cs.soc_target_low -
+                                    self.commodity_system.rex_cs.soc_return)\
+            if self.commodity_system.rex_cs else 0
 
         if self.commodity_system.rex_cs:  # system can extend range
             self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
@@ -247,9 +266,11 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['rex_request'] = self.processes['num_secondary'] > 0
 
             self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
-                                                    (self.processes['num_secondary'] * self.energy_usable_rex_pc_high))
+                                                    (self.processes['num_secondary'] *
+                                                     self.energy_usable_rex_pc_high))
             self.processes['energy_total_both'] = (self.commodity_system.size_pc +
-                                                   (self.processes['num_secondary'] * self.commodity_system.rex_cs.size_pc))
+                                                   (self.processes['num_secondary'] *
+                                                    self.commodity_system.rex_cs.size_pc))
 
         else:  # no rex defined
             self.processes['num_secondary'] = 0
@@ -258,7 +279,7 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_usable_both'] = self.energy_usable_pc_high
             self.processes['energy_total_both'] = self.commodity_system.size_pc
             # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
-            self.processes['energy_req_both'] = self.processes['energy_req_both'].clip(upper=self.energy_usable_pc_high)
+            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable_pc_high)
 
         # calculate different delta SOC for primary and secondary commodity due to different start SOCs (linear)
         self.processes['dsoc_primary'] = (self.dsoc_usable_high * self.processes['energy_req'] /
@@ -266,13 +287,15 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['dsoc_secondary'] = (self.dsoc_usable_rex_high * self.processes['energy_req'] /
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
-        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.commodity_system.size_pc
+        self.processes['energy_pc_primary'] = (self.processes['dsoc_primary'] *
+                                               self.commodity_system.size_pc)
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
             self.processes['energy_pc_primary'] / self.commodity_system.pwr_chg_des,
             unit='hour')
 
         if self.commodity_system.rex_cs:
-            self.processes['energy_pc_secondary'] = self.processes['dsoc_secondary'] * self.commodity_system.rex_cs.size_pc
+            self.processes['energy_pc_secondary'] = (self.processes['dsoc_secondary'] *
+                                                     self.commodity_system.rex_cs.size_pc)
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
                 self.processes['energy_pc_secondary'] / self.commodity_system.rex_cs.pwr_chg_des,
                 unit='hour')
@@ -282,18 +305,21 @@ class VehicleRentalSystem(RentalSystem):
 
     def check_rex_inputs(self):
         if self.commodity_system.rex_cs not in self.scenario.blocks.keys():
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" does not exist')
+            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
+                             f'Block \"{self.commodity_system.name}\":'
+                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
+                             f'does not exist')
         elif not isinstance(self.scenario.blocks[self.commodity_system.rex_cs], blocks.BatteryCommoditySystem):
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not a BatteryCommoditySystem')
+            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
+                             f'Block \"{self.commodity_system.name}\":'
+                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
+                             f'is not a BatteryCommoditySystem')
         elif not self.scenario.blocks[self.commodity_system.rex_cs].data_source in ['usecases', 'demand']:
-            raise ValueError(f'Selected range extender system "{self.commodity_system.rex_cs}" for VehicleCommoditySystem'
-                             f' "{self.commodity_system.name}" in scenario "{self.scenario.name}" is not set to run DES itself')
-
-
-
-
+            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
+                             f'Block \"{self.commodity_system.name}\":'
+                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
+                             f'has data source\"{self.commodity_system.rex_cs.data_source}\". '
+                             f'Allowed values: [\'usecases\', \'demand\']')
 
     def transfer_rex_processes(self):
         """
@@ -322,8 +348,13 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['step_preblock_primary'] = rex_processes['step_req']
 
         # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
-        self.commodity_system.rex_cs.rental_system.processes = pd.concat([self.commodity_system.rex_cs.rental_system.processes, rex_processes], join='inner')
-        self.commodity_system.rex_cs.rental_system.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
+        self.commodity_system.rex_cs.rental_system.processes = pd.concat(
+            [self.commodity_system.rex_cs.rental_system.processes, rex_processes],
+            join='inner')
+        self.commodity_system.rex_cs.rental_system.processes.sort_values(
+            by='time_preblock_primary',
+            inplace=True,
+            ignore_index=True)
 
 
 class BatteryRentalSystem(RentalSystem):
@@ -445,8 +476,9 @@ class RentalProcess:
             if self.secondary_request:
                 self.rental_system.commodity_system.rex_cs.rental_system.store.put(self.secondary_result[self.secondary_request])
                 self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned secondary resource(s)'
-                                           f' {self.secondary_request.value} at {self.env.now}.'
-                                           f' Secondary store content after return: {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                                           f'{self.secondary_request.value} at {self.env.now}. '
+                                           f'Secondary store content after return: '
+                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items} ')
 
         else:  # either or both (primary/secondary) request(s) unsuccessful
 
@@ -454,43 +486,50 @@ class RentalProcess:
             if ((self.primary_request not in self.primary_result)
                     and (self.secondary_request not in self.secondary_result)):
                 self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_both'
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed (didn´t receive either resource)'
-                                           f' at {self.env.now}. Primary store content after failure: {self.rental_system.store.items}.'
-                                           f' Secondary store content after failure: {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
+                                           f'(didn´t receive either resource) at {self.env.now}. '
+                                           f'Primary store content after failure: {self.rental_system.store.items}. '
+                                           f'Secondary store content after failure: '
+                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
 
             elif self.primary_request not in self.primary_result:
                 self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_primary'
                 if self.secondary_request:
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed (didn´t receive primary'
-                                               f' resource(s)) at {self.env.now}. Primary store content after fail:'
-                                               f' {self.rental_system.store.items}. Secondary store content after failure:'
-                                               f' {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
+                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
+                                               f'Primary store content after fail: {self.rental_system.store.items}. '
+                                               f'Secondary store content after failure: '
+                                               f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
                 else:
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed (didn´t receive primary'
-                                               f' resource(s)) at {self.env.now}. Primary store content after fail:'
-                                               f' {self.rental_system.store.items}')
+                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
+                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
+                                               f'Primary store content after fail: {self.rental_system.store.items}')
 
             elif self.secondary_request not in self.secondary_result:
                 self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_secondary'
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed (didn´t receive secondary resource(s))'
-                                           f' at {self.env.now}. Primary store content after fail: {self.rental_system.store.items}.'
-                                           f' Secondary store content after failure: {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
+                                           f'(didn´t receive secondary resource(s)) at {self.env.now}. '
+                                           f'Primary store content after fail: {self.rental_system.store.items}. '
+                                           f'Secondary store content after failure: '
+                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
 
             # ensure resources are put back after conditional event: https://stackoverflow.com/q/75371166
             if self.primary_request.triggered:
                 primary_resource = yield self.primary_request
                 self.rental_system.store.put(primary_resource)
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned primary resource {primary_resource}'
-                                           f' at {self.env.now}. Primary store content after return: {self.rental_system.store.items}.')
+                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned '
+                                           f'primary resource {primary_resource} at {self.env.now}. '
+                                           f'Primary store content after return: {self.rental_system.store.items}.')
 
             if hasattr(self.secondary_request, 'triggered'):
                 if self.secondary_request.triggered:
                     secondary_resource = yield self.secondary_request
                     self.rental_system.commodity_system.rex_cs.rental_system.store.put(secondary_resource)
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned secondary resource'
-                                               f' {secondary_resource} at {self.env.now}. Primary store content after'
-                                               f' return: {self.rental_system.store.items}. Secondary store content after return:'
-                                               f' {self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned '
+                                               f'secondary resource {secondary_resource} at {self.env.now}. '
+                                               f'Primary store content after return: {self.rental_system.store.items}. '
+                                               f'Secondary store content after return: '
+                                               f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
 
         self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} finished at {self.env.now}')
 
@@ -522,10 +561,13 @@ def execute_des(scenario, run):
     # define a DES environment
     scenario.env_des = simpy.Environment()
 
-    # extend datetimeindex to simulate on by some steps to cover any shifts & predictions necessary
+    # extend datetimeindex to simulate in DES to cover any shifts & predictions necessary
+    time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
+    dtime_overhang = pd.Timedelta(days=28)
+    time_end_overhang = time_start_overhang + dtime_overhang
     scenario.dti_des = scenario.dti_sim_extd.union(
-        pd.date_range(start=scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq,
-                      periods=200,
+        pd.date_range(start=time_start_overhang,
+                      end=time_end_overhang,
                       freq=scenario.dti_sim_extd.freq))
 
     # create rental systems (including stochastic pregeneration of individual rental processes)

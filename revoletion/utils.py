@@ -121,6 +121,9 @@ def read_demand_file(block):
     df['dtime_active'] = pd.to_timedelta(df['dtime_active'])
     df['dtime_idle'] = pd.to_timedelta(df['dtime_idle'])
     df['dtime_patience'] = pd.to_timedelta(df['dtime_patience'])
+
+    df = df.loc[df['time_req'].isin(block.scenario.dti_sim), :]
+
     return df
 
 
