@@ -14,6 +14,7 @@ dependencies = [
     "geopy",
     "graphviz",
     "gurobipy",
+    "holidays",
     "numpy",
     "numpy_financial",
     "oemof.solph==0.6.0a2",
