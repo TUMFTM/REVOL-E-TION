@@ -849,7 +849,7 @@ class GridConnection(InvestBlock):
         self.capex_init = (self.size_g2s + self.size_s2g) * self.capex_spec
 
     def calc_energy(self):
-        # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
+        # Aggregate energy results for all GridMarkets
         for market in self.markets.values():
             market.calc_results()
 
