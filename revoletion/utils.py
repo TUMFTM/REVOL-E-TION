@@ -115,7 +115,6 @@ def read_demand_file(block):
     Read in a CommodityDemand csv file
     """
     path_demand_file = os.path.join(block.scenario.run.path_input_data,
-                                    block.__class__.__name__,
                                     set_extension(block.filename))
     df = pd.read_csv(path_demand_file,
                      index_col=0)
@@ -131,7 +130,7 @@ def read_demand_file(block):
 
 def read_input_csv(block, path_input_file, scenario, multiheader=False, resampling=True):
     """
-    Properly read in timezone-aware input timeseries csv files and form correct datetimeindex
+    Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
@@ -147,8 +146,8 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
         df = resample_to_timestep(df, block, scenario)
 
     if not (scenario.dti_sim.isin(df.index).all()):
-        raise IndexError(f'Scenario \"{scenario.name}\" - Block \"{block.name}\":'
-                         f' Input timeseries data does not cover simulation timeframe')
+        raise IndexError(f'Scenario \"{scenario.name}\" - Block \"{block.name}\": '
+                         f'Input timeseries data does not cover simulation timeframe')
     return df
 
 
@@ -160,7 +159,6 @@ def read_input_log(system):
     """
 
     log_path = os.path.join(system.scenario.run.path_input_data,
-                            system.__class__.__name__,
                             set_extension(system.filename))
     df = read_input_csv(system,
                         log_path,
@@ -169,7 +167,7 @@ def read_input_log(system):
                         resampling=False)
 
     if pd.infer_freq(df.index).lower() != system.scenario.timestep:
-        system.scenario.logger.warning(f'\"{system.name}\" input data does not match timestep')
+        system.scenario.logger.warning(f'\"{system.name}\" example data does not match timestep')
         consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
         bool_columns = df.columns.difference(consumption_columns)
         # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
@@ -195,7 +193,6 @@ def read_usecase_file(system):
     """
 
     usecase_path = os.path.join(system.scenario.run.path_input_data,
-                                system.__class__.__name__,
                                 set_extension(system.filename))
     df = pd.read_csv(usecase_path,
                      header=[0, 1],
@@ -220,7 +217,7 @@ def read_usecase_file(system):
 def resample_to_timestep(data: pd.DataFrame, block, scenario):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-    :param data: The input dataframe with DatetimeIndex
+    :param data: The example dataframe with DatetimeIndex
     :param block: Object of a type defined in blocks.py
     :param scenario: The current scenario object
     :return: resampled dataframe
@@ -232,7 +229,7 @@ def resample_to_timestep(data: pd.DataFrame, block, scenario):
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
     except pandas.errors.NullFrequencyError:
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-        scenario.logger.warning(f'Block \"{block.name}\": Timestep of csv input data could not be inferred -'
+        scenario.logger.warning(f'Block \"{block.name}\": Timestep of csv example data could not be inferred -'
                                 f'using 15 min default')
 
     data_ext = data.reindex(dti_ext).ffill()
@@ -257,9 +254,9 @@ def transform_scalar_var(block, var_name):
     # In case of filename for operations cost read csv file
     if isinstance(attr, str):
         # Open csv file and use first column as index; also directly convert dates to DateTime objects
-        dirname = block.parent.__class__.__name__ if hasattr(block, 'parent') else block.__class__.__name__
         opex = read_input_csv(block,
-                              os.path.join(scenario.run.path_input_data, dirname, set_extension(attr)),
+                              os.path.join(scenario.run.path_input_data,
+                                           set_extension(attr)),
                               scenario)
         opex = opex[scenario.starttime:(scenario.sim_extd_endtime - scenario.timestep_td)]
         # Convert data column of cost DataFrame into Series

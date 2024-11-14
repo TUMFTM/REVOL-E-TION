@@ -69,7 +69,7 @@ class PredictionHorizon:
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph_endtime > self.scenario.sim_endtime and self.scenario.truncate_ph:
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
-                                 f'Prediction Horizon truncated to simulation end time')
+                                      f'Prediction Horizon truncated to simulation end time')
 
         # Truncate PH and CH to simulation or eval end time
         self.ph_endtime = min(self.ph_endtime, self.scenario.sim_extd_endtime)
@@ -100,7 +100,7 @@ class PredictionHorizon:
             self.scenario.scheduler.calc_ph_schedule(self)
 
         for block in self.scenario.blocks.values():
-            block.update_input_components(self)  # (re)define solph components that need input slices
+            block.update_input_components(self)  # (re)define solph components that need example slices
 
         self.results = None
         self.meta_results = None
@@ -216,12 +216,12 @@ class PredictionHorizon:
 
     def run_optimization(self):
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                             f'Model built, starting optimization')
+                                  f'Model built, starting optimization')
         results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                 f'Optimization completed, getting results')
+                                      f'Optimization completed, getting results')
             if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
                 self.scenario.objective_opt = self.model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
@@ -296,7 +296,7 @@ class Scenario:
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
         # simulation vs. extended simulation: for rh strategy and truncate_ph = False, the extended simulation timeframe
-        # is longer than the simulation timeframe defined by the input parameter duration. Otherwise, they are the same.
+        # is longer than the simulation timeframe defined by the example parameter duration. Otherwise, they are the same.
         # ToDo: check for format not only len of string
         self.starttime = self.starttime if len(self.starttime) > 10 else self.starttime + ' 00:00'
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y %H:%M').floor(self.timestep).tz_localize(self.timezone)
@@ -393,12 +393,12 @@ class Scenario:
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
         # ToDo: move to checker.py
-        # check input parameter configuration for model dump
+        # check example parameter configuration for model dump
         if self.run.dump_model and self.strategy == 'rh':
             self.logger.warning('Model file dump not implemented for RH operating strategy - ' +
                                 'File dump deactivated for current scenario')
 
-        # check input parameter configuration of rulebased charging for validity
+        # check example parameter configuration of rulebased charging for validity
         if cs_unlim := [cs for cs in self.commodity_systems.values() if
                         (cs.mode_scheduling in self.run.apriori_lvls)
                         and cs.mode_scheduling != 'uc'
@@ -416,8 +416,8 @@ class Scenario:
                                  f'have to follow the same strategy. Different strategies are not possible')
             if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
                 raise ValueError(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
-                                  f' dynamic load management, all CommoditySystems with dynamic load management have to'
-                                  f' be connected to the same bus')
+                                 f' dynamic load management, all CommoditySystems with dynamic load management have to'
+                                 f' be connected to the same bus')
 
         self.scheduler = None
         if any([cs for cs in self.commodity_systems.values() if cs.mode_scheduling in self.run.apriori_lvls]):
@@ -655,13 +655,13 @@ class Scenario:
 
 class SimulationRun:
 
-    def __init__(self, path_scenario, path_settings, execute=False):
+    def __init__(self, path_scenarios, path_settings, execute=False):
 
         self.name = 'run'
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.process = self.process_num = None
 
-        self.scenarios_file_path = path_scenario
+        self.scenarios_file_path = path_scenarios
         self.settings_file_path = path_settings
 
         self.runtime_start = time.perf_counter()
@@ -670,7 +670,7 @@ class SimulationRun:
 
         self.version_solph = solph.__version__
         self.version_revoletion = importlib.metadata.version('revoletion')
-        
+
         try:
             self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
         except subprocess.CalledProcessError:
@@ -752,8 +752,8 @@ class SimulationRun:
 
     def define_paths(self):
 
-        if self.path_input_data == 'project':
-            self.path_input_data = os.path.join(self.path_pkg, 'input')
+        if self.path_input_data == 'example':
+            self.path_input_data = os.path.join(self.path_pkg, 'example')
         elif os.path.isdir(self.path_input_data):
             pass  # no modification of path necessary
         else:
@@ -776,8 +776,8 @@ class SimulationRun:
                                                       f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
         self.path_result_summary_file = os.path.join(self.path_result_dir,
                                                      f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
-        self.path_scenarios_failed_file = os.path.join(self.path_result_dir,
-                                                     f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_failed.csv')
+        self.path_result_failed_file = os.path.join(self.path_result_dir,
+                                                    f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_failed.csv')
         self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.log')
 
@@ -872,7 +872,7 @@ class SimulationRun:
             os.remove(file_path)
 
     def save_scenarios_failed(self):
-        self.scenarios_failed.to_csv(self.path_scenarios_failed_file,
+        self.scenarios_failed.to_csv(self.path_result_failed_file,
                                      index=True)
 
     def simulate_scenario(self, name: str, log_queue=None, scenarios_failed_queue=None, lock=None):

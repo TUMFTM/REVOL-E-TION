@@ -13,7 +13,7 @@ scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,filename_mapper,mapper_timeframe_example,mapper_timeframe_example,mapper_timeframe_example,mapper_timeframe_example
+scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryEnergyStorage', 'gen': 'ControllableSource', 'grid': 'GridConnection','bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem', 'icev': 'ICEVSystem'}"
 core,size_acdc_existing,0,22000,22000,0
 core,size_acdc_max,None,None,None,None
@@ -28,7 +28,7 @@ core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
-dem,load_profile,dem_example.csv,dem_example.csv,dem_example.csv,dem_example.csv
+dem,load_profile,dem_timeseries,dem_timeseries,dem_timeseries,dem_timeseries
 dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
@@ -38,7 +38,7 @@ wind,invest,False,False,False,True
 wind,system,ac,ac,ac,ac
 wind,data_source,None,pv,pv,pv
 wind,height,50,50,50,50
-wind,filename,wind_example.csv,wind_example.csv,wind_example.csv,wind_example.csv
+wind,filename,wind_timeseries,wind_timeseries,wind_timeseries,wind_timeseries
 wind,capex_spec,2.8,2.8,2.8,2.8
 wind,mntex_spec,0.084,0.084,0.084,0.084
 wind,opex_spec,0,0,0,0
@@ -83,8 +83,8 @@ grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
 grid,filename_markets,None,None,None,None
 grid,res_only,False,False,False,False
-grid,opex_spec_g2s,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv,grid_buy_example.csv
-grid,opex_spec_s2g,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv,grid_sell_example.csv
+grid,opex_spec_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s
+grid,opex_spec_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g
 ess,size_existing,0,115000,115000,0
 ess,size_max,None,None,None,None
 ess,invest,False,False,False,True
@@ -108,7 +108,7 @@ ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
 bev,data_source,usecases,usecases,usecases,usecases
-bev,filename,bev_example_usecases,bev_example_usecases,bev_example_usecases,bev_example_usecases
+bev,filename,bev_usecases,bev_usecases,bev_usecases,bev_usecases
 bev,num,5,5,5,5
 bev,size_existing,30000.0,30000.0,30000.0,30000.0
 bev,size_max,None,None,None,None
@@ -152,7 +152,7 @@ bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,ccr,1,1,1,1
 bev,sdr,0.02,0.02,0.02,0.02
 brs,data_source,usecases,usecases,usecases,usecases
-brs,filename,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv,brs_example_usecases.csv
+brs,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
 brs,num,10,10,10,10
 brs,size_existing,3000.0,3000.0,3000.0,3000.0
 brs,size_max,None,None,None,None
@@ -192,7 +192,7 @@ brs,eff_dis_dc,0.95,0.95,0.95,0.95
 brs,ccr,1,1,1,1
 brs,sdr,0.02,0.02,0.02,0.02
 icev,data_source,log,log,log,log
-icev,filename,icev_example_log.csv,icev_example_log.csv,icev_example_log.csv,icev_example_log.csv
+icev,filename,bev_log,bev_log,bev_log,bev_log
 icev,num,5,5,5,5
 icev,ls,10,10,10,10
 icev,capex_pc,25000,0,0,0

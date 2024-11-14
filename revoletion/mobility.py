@@ -18,7 +18,6 @@ class CommodityDemand:
         self.requests = pd.DataFrame()  # main DataFrame for demand
 
         self.path_mapper = os.path.join(self.scenario.run.path_input_data,
-                                        'TimeframeMapper',
                                         f'{self.scenario.filename_mapper}.py')
         self.mapper_timeframe = utils.import_module_from_path(module_name=self.scenario.filename_mapper,
                                                               file_path=self.path_mapper)

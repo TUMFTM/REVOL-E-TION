@@ -121,7 +121,7 @@ class RentalSystem:
     def convert_process_log(self):
         """
         This function converts the process based log from DES execution into a time based log for each commodity
-        as required by the energy system model as an input
+        as required by the energy system model as an example
         """
 
         commodities = list(self.commodity_system.commodities.keys())
@@ -183,7 +183,7 @@ class RentalSystem:
 
     def save_data(self):
         """
-        This function saves the converted log dataframe as a suitable input csv file for the energy system model.
+        This function saves the converted log dataframe as a suitable example csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """

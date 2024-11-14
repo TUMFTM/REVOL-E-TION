@@ -18,32 +18,31 @@ def read_arguments(path_cwd, path_pkg):
     scenario_input = sys.argv[1]
     settings_input = sys.argv[2]
 
-    # Option 1: full file path (works from anywhere in the system)
+    # Option 1: Full absolute or relative file path (works from anywhere)
     if os.path.isfile(scenario_input):
         scenarios_file_path = scenario_input
-    # Option 2: File name in the working directory (works from parent of 'input' directory only)
-    elif os.path.isfile(os.path.join(path_cwd, 'input', 'scenarios', scenario_input)):
-        scenarios_file_path = os.path.join(path_cwd, 'input', 'scenarios', scenario_input)
-    # Option 3: File name in package directory (works from anywhere, but should only contain example files)
-    elif os.path.isfile(os.path.join(path_pkg, 'input', 'scenarios', scenario_input)):
-        scenarios_file_path = os.path.join(path_pkg, 'input', 'scenarios', scenario_input)
-        warnings.warn(f'Using scenario file {scenario_input} from REVOL-E-TION package directory '
-                      f'- disregard if this is intended, e.g. for running an example scenario',
-                      DefaultFileLocationWarning)
+    # Option 2: File name in the working directory (works from within project directory only)
+    elif os.path.isfile(os.path.join(path_cwd, scenario_input)):
+        scenarios_file_path = os.path.join(path_cwd, scenario_input)
+    # Option 3: Example project in package directory (works from anywhere)
+    elif os.path.isfile(os.path.join(path_pkg, 'example', scenario_input)):
+        scenarios_file_path = os.path.join(path_pkg, 'example', scenario_input)
+        warnings.warn(f'Using example scenario file {scenario_input} from REVOL-E-TION package directory '
+                      f'- disregard if this is intended', DefaultFileLocationWarning)
     else:
         raise FileNotFoundError(f'Scenario file or path not interpretable: {scenario_input}')
 
-    # Option 1: full file path (works from anywhere in the system)
+    # Option 1: Full absolute or relative file path (works from anywhere)
     if os.path.isfile(settings_input):
         settings_file_path = settings_input
-    # Option 2: File name in the working directory (works from parent of 'input' directory only)
-    elif os.path.isfile(os.path.join(path_cwd, 'input', 'settings', settings_input)):
-        settings_file_path = os.path.join(path_cwd, 'input', 'settings', settings_input)
-    # Option 3: File name in package directory (works from anywhere, but should only contain example files)
-    elif os.path.isfile(os.path.join(path_pkg, 'input', 'settings', settings_input)):
-        settings_file_path = os.path.join(path_pkg, 'input', 'settings', settings_input)
-        warnings.warn(f'Using settings file {settings_input} from package directory - disregard if this is intended,'
-                      f' e.g. for running an example settings configuration', DefaultFileLocationWarning)
+    # Option 2: File name in the working directory (works from within project directory only)
+    elif os.path.isfile(os.path.join(path_cwd, settings_input)):
+        settings_file_path = os.path.join(path_cwd, settings_input)
+    # Option 3: Example settings in example project in package directory (works from anywhere)
+    elif os.path.isfile(os.path.join(path_pkg, 'example', settings_input)):
+        settings_file_path = os.path.join(path_pkg, 'example', settings_input)
+        warnings.warn(f'Using default scenario file {scenario_input} from REVOL-E-TION package directory '
+                      f'- disregard if this is intended', DefaultFileLocationWarning)
     else:
         raise FileNotFoundError(f'Settings file or path not interpretable: {settings_input}')
 
@@ -57,7 +56,7 @@ def select_arguments(path_cwd):
     root.lift()  # make sure all tk windows appear in front of other windows
 
     # get scenarios file
-    scenarios_default_dir = os.path.join(path_cwd, 'input', 'scenarios')
+    scenarios_default_dir = os.path.join(path_cwd, 'example', 'scenarios')
     scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
                                                         title="Select scenario file",
                                                         filetypes=(("CSV files", "*.csv"),
@@ -66,7 +65,7 @@ def select_arguments(path_cwd):
         raise FileNotFoundError('No scenario file selected')
 
     # get settings file
-    settings_default_dir = os.path.join(path_cwd, 'input', 'settings')
+    settings_default_dir = os.path.join(path_cwd, 'example', 'settings')
     settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
                                                        title="Select settings file",
                                                        filetypes=(("CSV files", "*.csv"),
@@ -85,10 +84,10 @@ def main():
     elif len(sys.argv) == 3:  # two arguments passed
         path_scenario, path_settings = read_arguments(path_cwd, path_pkg)
     else:
-        raise ValueError('Invalid number of arguments - please provide either none (GUI input) '
+        raise ValueError('Invalid number of arguments - please provide either none (GUI example) '
                          'or two arguments: scenarios file name or path and settings file name or path')
 
-    sim.SimulationRun(path_scenario=path_scenario,
+    sim.SimulationRun(path_scenarios=path_scenario,
                       path_settings=path_settings,
                       execute=True)
 

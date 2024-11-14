@@ -286,7 +286,7 @@ class InvestBlock(Block):
     """
 
     def __init__(self, name, scenario):
-        self.invest = False  # not every block has input parameter invest without extension -> default: False
+        self.invest = False  # not every block has example parameter invest without extension -> default: False
         super().__init__(name, scenario)
         self.size = self.size_additional = 0  # placeholder for additional size in optimization
         self.size_additional_max = None
@@ -762,7 +762,7 @@ class BatteryCommoditySystem(CommoditySystem):
 
     def __init__(self, name, scenario):
 
-        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as input parameter
+        self.dsoc_buffer = 0  # necessary as only VehicleCommoditySystem has this as example parameter
         self.demand = mobility.BatteryCommodityDemand(scenario, self)
         super().__init__(name, scenario)
 
@@ -921,7 +921,6 @@ class GridConnection(InvestBlock):
         # get information about GridMarkets specified in the scenario file
         if self.filename_markets:
             markets = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
-                                               self.__class__.__name__,
                                                utils.set_extension(self.filename_markets)),
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
@@ -1645,7 +1644,7 @@ class MobileCommodity:
             inflow_max = self.data_ph['atbase'].astype(int)
             outflow_max = self.data_ph['atbase'].astype(int)
 
-            # enable/disable ac and dc charging station dependent on input data
+            # enable/disable ac and dc charging station dependent on example data
             ext_ac_max = self.data_ph['atac'].astype(int)
             ext_dc_max = self.data_ph['atdc'].astype(int)
 
@@ -1820,11 +1819,10 @@ class PVSource(RenewableInvestBlock):
         self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
     def get_timeseries_data(self):
-        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API input selected
+        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API example selected
             if self.filename:
                 try:
                     self.api_params = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
-                                                               self.__class__.__name__,
                                                                utils.set_extension(self.filename)),
                                                   index_col=[0],
                                                   na_filter=False)
@@ -1834,7 +1832,7 @@ class PVSource(RenewableInvestBlock):
             else:
                 self.api_params = {}
 
-            if self.data_source == 'pvgis api':  # PVGIS API input selected
+            if self.data_source == 'pvgis api':  # PVGIS API example selected
                 self.api_startyear = self.scenario.starttime.tz_convert('utc').year
                 self.api_endyear = self.scenario.sim_extd_endtime.tz_convert('utc').year
                 self.api_length = self.api_endyear - self.api_startyear
@@ -1889,7 +1887,7 @@ class PVSource(RenewableInvestBlock):
                 self.data.index = self.data.index.round('h')
                 self.data.index = self.data.index - self.api_shift
 
-            elif self.data_source == 'solcast api':  # solcast API input selected
+            elif self.data_source == 'solcast api':  # solcast API example selected
                 # set api key as bearer token
                 headers = {'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'}
 
@@ -1920,18 +1918,17 @@ class PVSource(RenewableInvestBlock):
                 # calculate specific pv power
                 self.calc_power_solcast()
 
-        else:  # input from file instead of API
+        else:  # example from file instead of API
             self.path_input_file = os.path.join(self.scenario.run.path_input_data,
-                                                self.__class__.__name__,
                                                 utils.set_extension(self.filename))
 
-            if self.data_source == 'pvgis file':  # data input from fixed PVGIS csv file
+            if self.data_source == 'pvgis file':  # data example from fixed PVGIS csv file
                 self.data, self.meta, _ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
                 self.scenario.latitude = self.meta['latitude']
                 self.scenario.longitude = self.meta['longitude']
                 # PVGIS gives time slots as XX:06 - round to full hour
                 self.data.index = self.data.index.round('h')
-            elif self.data_source == 'solcast file':  # data input from fixed Solcast csv file
+            elif self.data_source == 'solcast file':  # data example from fixed Solcast csv file
                 # no lat/lon contained in solcast files
                 self.data = pd.read_csv(self.path_input_file)
                 self.data.rename(columns={'PeriodStart': 'period_start',
@@ -2316,7 +2313,7 @@ class WindSource(RenewableInvestBlock):
 
     def get_timeseries_data(self):
 
-        if self.data_source in self.scenario.blocks.keys():  # input from a PV block
+        if self.data_source in self.scenario.blocks.keys():  # example from a PV block
 
             self.data = self.scenario.blocks[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
@@ -2334,10 +2331,9 @@ class WindSource(RenewableInvestBlock):
                 density_correction=False)
             self.data['power_spec'] = self.data['power_original'] / self.turbine_data.loc[0, 'nominal_power']
 
-        else:  # input from file instead of PV block
+        else:  # example from file instead of PV block
 
             self.path_input_file = os.path.join(self.scenario.run.path_input_data,
-                                                self.__class__.__name__,
                                                 utils.set_extension(self.filename))
             self.data = utils.read_input_csv(self, self.path_input_file, self.scenario)
 

@@ -1,14 +1,14 @@
 key,value
 solver,gurobi
-parallel,False
+parallel,True
 max_process_num,max
-path_input_data,project
+path_input_data,example
 path_output_data,project
 save_results,True
 save_des_results,True
 print_results,False
 save_plots,True
-show_plots,True
+show_plots,False
 save_system_graphs,True
 dump_model,False
 debugmode,False
