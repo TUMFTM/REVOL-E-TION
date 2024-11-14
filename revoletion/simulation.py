@@ -754,6 +754,8 @@ class SimulationRun:
 
         if self.path_input_data == 'example':
             self.path_input_data = os.path.join(self.path_pkg, 'example')
+        elif self.path_input_data == 'scenario_file_dir':
+            self.path_input_data = os.path.dirname(self.scenarios_file_path)
         elif os.path.isdir(self.path_input_data):
             pass  # no modification of path necessary
         else:
