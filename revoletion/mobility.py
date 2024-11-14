@@ -72,7 +72,7 @@ class CommodityDemand:
         # sample daily total demand numbers
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim_extd.date)))
         daily_total['timeframe'], daily_total['demand_mean'], daily_total['demand_std'] = \
-            self.mapper_timeframe.map_timeframes(daily_total, self.commodity_system.name)
+            self.mapper_timeframe.map_timeframes(daily_total, self.commodity_system.name, self.scenario)
         daily_total['mu'], daily_total['sigma'] = utils.lognormal_params(daily_total['demand_mean'],
                                                                          daily_total['demand_std'])
         daily_total['demand'] = daily_total.apply(lambda row: self.sample_demand_total_day(row), axis=1)

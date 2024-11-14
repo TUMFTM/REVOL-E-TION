@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-def map_timeframes(df, name):
+def map_timeframes(df, name, scenario):
     cs_map = {'bev': map_timeframes_bev, 'brs': map_timeframes_brs}
-    return cs_map[name](df)
+    return cs_map[name](df, scenario)
 
 
-def map_timeframes_bev(df):
+def map_timeframes_bev(df, scenario):
 
     condition = df.index.weekday > 4
 
@@ -20,7 +20,7 @@ def map_timeframes_bev(df):
     return df['timeframe'], df['demand_mean'], df['demand_std']
 
 
-def map_timeframes_brs(df):
+def map_timeframes_brs(df, scenario):
 
     condition = df.index.weekday > 4
 
