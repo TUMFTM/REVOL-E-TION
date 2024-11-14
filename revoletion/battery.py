@@ -277,7 +277,7 @@ class BatteryPackModel:
         # Calculate calendric aging in this horizon
         t_hor_days = self.t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
         self.q_loss_cal[horizon.index + 1] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
-        self.r_inc_cal[horizon.index + 1] = k_tuning * alpha_cap * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
+        self.r_inc_cal[horizon.index + 1] = k_tuning * alpha_res * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
 
         # Calculate mean OCV of each detected cycle
         ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean']).reshape([-1,])
