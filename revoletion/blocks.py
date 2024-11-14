@@ -856,7 +856,7 @@ class GridConnection(InvestBlock):
         self.calc_energy_source_sink()
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = np.maximum(self.size_g2s, self.size_s2g) * self.mntex_spec
+        self.mntex_yrl = (self.size_g2s + self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
         # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridConnection
