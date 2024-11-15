@@ -1019,7 +1019,7 @@ class GridConnection(InvestBlock):
 
         if (self.size_g2s_max == 'equal') and (self.size_s2g_max == 'equal'):
             self.size_g2s_max = self.size_s2g_max = None
-            self.scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" Maximum invest was defined as "equal" for'
                                          f' maximum investment into selling and buying power. This is not supported.'
                                          f' The maximum invest was set to None (unlimited) for both directions.')
         elif self.size_g2s_max == 'equal':
