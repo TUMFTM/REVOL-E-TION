@@ -761,7 +761,7 @@ class SimulationRun:
         else:
             raise NotADirectoryError(f'Input directory not found: {self.path_input_data}')
 
-        if self.path_output_data == 'project':
+        if self.path_output_data == 'package':
             self.path_output_data = os.path.join(self.path_pkg, 'results')
         elif os.path.isdir(self.path_output_data):
             pass  # no modification of path necessary
