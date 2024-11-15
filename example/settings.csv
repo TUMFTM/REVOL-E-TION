@@ -3,7 +3,7 @@ solver,gurobi
 parallel,True
 max_process_num,max
 path_input_data,example
-path_output_data,project
+path_output_data,package
 save_results,True
 save_des_results,True
 print_results,False
