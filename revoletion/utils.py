@@ -10,6 +10,9 @@ import os
 
 
 def infer_dtype(value):
+    """
+    Infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
+    """
     try:
         return int(value)
     except ValueError:
@@ -42,6 +45,10 @@ def infer_dtype(value):
 
 
 def get_period_fraction(dti, period, freq):
+    """
+    Calculate the fraction of a period that is covered by a datetime index. Used in peakshaving calculations for
+    edges of simulation timeframe
+    """
     # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
     if len(dti) == 0:
         return 0
@@ -78,20 +85,16 @@ def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
 
 
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """
+    Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
+    """
     dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
     return dti_ext
 
 
 def import_module_from_path(module_name, file_path):
     """
-    Import a Python module from a specific file path.
-
-    Args:
-        module_name (str): The name to assign to the module.
-        file_path (str): The path to the Python file.
-
-    Returns:
-        module: The imported module.
+    Import a Python module from a specific file path. Is used for timeframe mapper user input code.
     """
     # Create a module spec from the file path
     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -217,10 +220,6 @@ def read_usecase_file(system):
 def resample_to_timestep(data: pd.DataFrame, block, scenario):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-    :param data: The example dataframe with DatetimeIndex
-    :param block: Object of a type defined in blocks.py
-    :param scenario: The current scenario object
-    :return: resampled dataframe
     """
 
     dti = data.index
@@ -267,6 +266,9 @@ def transform_scalar_var(block, var_name):
 
 
 def set_extension(filename, default_extension='.csv'):
+    """
+    Add a default extension to a filename if none is given. If the filename already has an extension, it is kept.
+    """
     base, ext = os.path.splitext(filename)
     if not ext:
         filename = base + default_extension
@@ -274,6 +276,9 @@ def set_extension(filename, default_extension='.csv'):
 
 
 def load_scenario_files(input_dir_path: str, filenames: list):
+    """
+    Load multiple scenario files and concatenate them into a single DataFrame
+    """
     df_concat = pd.DataFrame()
     for filename in filenames:
         scenario_file_path = os.path.join(input_dir_path, filename) if filename.endswith('.csv') else os.path.join(scenarios_dir_path, f'{filename}.csv')
@@ -287,8 +292,13 @@ def scmod_full_factorial(dir_path: str,
                          bl_scenario_name: str,
                          variation: dict,
                          output_file_name='',
-                         save=False,
-                         include_baseline=True):
+                         save=True,
+                         include_baseline=True,
+                         include_non_baseline=False):
+    """
+    Create a full factorial combination of parameter variations defined within a dict from a baseline scenario file.
+    Function is not used within REVOL-E-TION itself, but rather from external notebooks and scripts.
+    """
 
     # Separate single and nested tuple keys
     params_single = {k: v for k, v in variation.items() if
@@ -323,12 +333,19 @@ def scmod_full_factorial(dir_path: str,
 
     # Load baseline scenario file
     input_file_name = set_extension(input_file_name)
+    output_file_name = set_extension(output_file_name)
     baseline_df = load_scenario_files(input_dir_path=dir_path,
                                       filenames=[input_file_name])
     baseline_scenario = baseline_df[bl_scenario_name]
+    non_baseline_scenarios = baseline_df.drop(columns=bl_scenario_name)
 
+    # initialize scenario list before parameter variation
+    variation_columns = []
+    if include_baseline:
+        variation_columns.append(baseline_scenario)
+    if include_non_baseline:
+        variation_columns.append(non_baseline_scenarios)
     # Write out parameter varied dataframe columns to list and concatenate
-    variation_columns = [baseline_scenario] if include_baseline else []  # initialization
     for scenario_name, parameter_dict in scenario_variations.items():
         # Create a new column with the baseline values and modify by the variation dict where the latter is def'd
         column = baseline_scenario.where(~baseline_scenario.index.isin(parameter_dict.keys()),
