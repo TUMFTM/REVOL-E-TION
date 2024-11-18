@@ -149,7 +149,7 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
         df = resample_to_timestep(df, block, scenario)
 
     if not (scenario.dti_sim.isin(df.index).all()):
-        raise IndexError(f'Scenario \"{scenario.name}\" - Block \"{block.name}\": '
+        raise IndexError(f'Scenario "{scenario.name}" - Block "{block.name}": '
                          f'Input timeseries data does not cover simulation timeframe')
     return df
 
@@ -170,7 +170,7 @@ def read_input_log(system):
                         resampling=False)
 
     if pd.infer_freq(df.index).lower() != system.scenario.timestep:
-        system.scenario.logger.warning(f'\"{system.name}\" example data does not match timestep')
+        system.scenario.logger.warning(f'"{system.name}" example data does not match timestep')
         consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
         bool_columns = df.columns.difference(consumption_columns)
         # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
@@ -228,7 +228,7 @@ def resample_to_timestep(data: pd.DataFrame, block, scenario):
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
     except pandas.errors.NullFrequencyError:
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-        scenario.logger.warning(f'Block \"{block.name}\": Timestep of csv example data could not be inferred -'
+        scenario.logger.warning(f'Block "{block.name}": Timestep of csv example data could not be inferred -'
                                 f'using 15 min default')
 
     data_ext = data.reindex(dti_ext).ffill()
