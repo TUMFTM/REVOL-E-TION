@@ -710,7 +710,10 @@ class SimulationRun:
             self.execute_simulation()
 
     def copy_scenario_file(self):
-        shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)
+        try:
+            shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)
+        except PermissionError:
+            self.logger.warning(f'Copy permission denied - could not copy scenario file to result directory')
 
     def define_logger(self):
 
