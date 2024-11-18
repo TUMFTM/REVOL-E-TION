@@ -1270,14 +1270,14 @@ class ICEVSystem(Block):
         self.data = None
 
         if self.data_source in ['usecases', 'demand']:
-            raise NotImplementedError(f'Scenario {self.scenario.name} - Block "{self.name}": '
-                                      f'dispatch_source "des" is not yet implemented for ICEVSystem')
+            raise NotImplementedError(f'Block "{self.name}": '
+                                      f'dispatch_source "{self.data_source}" is not yet implemented for ICEVSystem')
         elif self.data_source == 'log':
             self.data = utils.read_input_log(self)
             # rewrite commodity names to match modified ones from imported log file
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}": invalid data source')
+            raise ValueError(f'Block "{self.name}": invalid data source ("{self.data_source}")')
 
         self.crev_time = self.crev_usage = None  # intermediary variables
 
