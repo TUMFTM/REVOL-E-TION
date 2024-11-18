@@ -1019,7 +1019,7 @@ class GridConnection(InvestBlock):
 
         if (self.size_g2s_max == 'equal') and (self.size_s2g_max == 'equal'):
             self.size_g2s_max = self.size_s2g_max = None
-            self.scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" Maximum invest was defined as "equal" for'
                                          f' maximum investment into selling and buying power. This is not supported.'
                                          f' The maximum invest was set to None (unlimited) for both directions.')
         elif self.size_g2s_max == 'equal':
@@ -1212,10 +1212,22 @@ class GridMarket:
                 self.set_size(dir)
 
     def set_size(self, dir):
-        # limit grid market power to given value if specified, otherwise use the size of the (physical) grid connection
-        setattr(self, f'pwr_{dir}',
-                min(np.inf if pd.isna(getattr(self, f'pwr_{dir}')) else getattr(self, f'pwr_{dir}'),
-                    getattr(self.parent, f'size_{dir}_existing')))
+        # if no limit is passed for the grid market's direction, use max power of the grid connection
+        # always use sum of existing and additional power as this function also is called after optimization
+        if pd.isna(getattr(self, f'pwr_{dir}')):
+            setattr(self,
+                    f'pwr_{dir}',
+                    (getattr(self.parent, f'size_{dir}_existing') +
+                     getattr(self.parent, f'size_{dir}_additional'))
+                    )
+        # otherwise use the minimum of the grid market's and the grid connection's maximum power
+        else:
+            setattr(self,
+                    f'pwr_{dir}',
+                    min(getattr(self, f'pwr_{dir}'),
+                        (getattr(self.parent, f'size_{dir}_existing') +
+                         getattr(self.parent, f'size_{dir}_additional')))
+                    )
 
     def update_input_components(self, horizon):
         """
