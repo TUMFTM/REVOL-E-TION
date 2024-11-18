@@ -713,7 +713,7 @@ class SimulationRun:
         try:
             shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)  # writes metadata
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
-            shutil.copy(self.scenarios_file_path, self.path_result_scenario_file)  # does not write metadata
+            shutil.copyfile(self.scenarios_file_path, self.path_result_scenario_file)  # does not write metadata
 
     def define_logger(self):
 
