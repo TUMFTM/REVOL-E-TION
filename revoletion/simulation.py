@@ -183,8 +183,7 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting failing renderer from stopping model execution
-            self.scenario.logger.warning(f'Scenario: \"{self.scenario.name}\": System graph rendering failed - '
-                                         f'Traceback: {e}')
+            self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
 
     def get_results(self):
         """
@@ -710,7 +709,10 @@ class SimulationRun:
             self.execute_simulation()
 
     def copy_scenario_file(self):
-        shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)
+        try:
+            shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)  # writes metadata
+        except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
+            shutil.copyfile(self.scenarios_file_path, self.path_result_scenario_file)  # does not write metadata
 
     def define_logger(self):
 

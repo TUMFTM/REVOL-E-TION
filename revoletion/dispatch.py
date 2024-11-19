@@ -305,20 +305,20 @@ class VehicleRentalSystem(RentalSystem):
 
     def check_rex_inputs(self):
         if self.commodity_system.rex_cs not in self.scenario.blocks.keys():
-            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
-                             f'Block \"{self.commodity_system.name}\":'
-                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
+            raise ValueError(f'Scenario "{self.scenario.name}" -'
+                             f'Block "{self.commodity_system.name}":'
+                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
                              f'does not exist')
         elif not isinstance(self.scenario.blocks[self.commodity_system.rex_cs], blocks.BatteryCommoditySystem):
-            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
-                             f'Block \"{self.commodity_system.name}\":'
-                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
+            raise ValueError(f'Scenario "{self.scenario.name}" -'
+                             f'Block "{self.commodity_system.name}":'
+                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
                              f'is not a BatteryCommoditySystem')
         elif not self.scenario.blocks[self.commodity_system.rex_cs].data_source in ['usecases', 'demand']:
-            raise ValueError(f'Scenario \"{self.scenario.name}\" -'
-                             f'Block \"{self.commodity_system.name}\":'
-                             f'Selected range extender system \"{self.commodity_system.rex_cs}\" '
-                             f'has data source\"{self.commodity_system.rex_cs.data_source}\". '
+            raise ValueError(f'Scenario "{self.scenario.name}" -'
+                             f'Block "{self.commodity_system.name}":'
+                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
+                             f'has data source"{self.commodity_system.rex_cs.data_source}". '
                              f'Allowed values: [\'usecases\', \'demand\']')
 
     def transfer_rex_processes(self):

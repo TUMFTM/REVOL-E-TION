@@ -3,6 +3,7 @@ scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
 scenario,prj_duration,25,25,25,25
+scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
 scenario,len_ch,12,12,12,12
@@ -211,12 +212,3 @@ icev,opex_spec_dist,0.3,0,0,0
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.4,0.2,0.2,0.2
 icev,ccr,1,1,1,1
-
-
-
-
-
-
-
-
-
