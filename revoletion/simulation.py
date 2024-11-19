@@ -289,8 +289,8 @@ class Scenario:
             if location:
                 self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
         except geopy.exc.GeocoderUnavailable:
-            self.logger.warning('Connection to Geocoder failed.'
-                                ' Using default country ({self.country}) and state ({self.state}).')
+            self.logger.warning(f'Connection to Geocoder failed.'
+                                f' Using default country ({self.country}) and state ({self.state}).')
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
