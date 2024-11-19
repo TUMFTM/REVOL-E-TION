@@ -93,13 +93,16 @@ class Block:
                                        secondary_y=False)
 
     def calc_cashflows(self):
+        """
+        Collect nominal cashflows for the block for each year in the project.
+        """
 
         capex = pd.Series(dtype='float64', index=range(self.scenario.prj_duration_yrs), data=0)
         capex[0] = self.capex_init
         if hasattr(self, 'ls'):
-            for year in eco.invest_periods(lifespan=self.ls,
+            for year in eco.reinvest_periods(lifespan=self.ls,
                                            observation_horizon=self.scenario.prj_duration_yrs):
-                capex[year] = self.capex_init * (self.ccr ** year)
+                capex[year] = self.capex_replacement * (self.ccr ** year)
         self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
         self.cashflows[f'mntex_{self.name}'] = -1 * self.mntex_yrl
@@ -204,15 +207,20 @@ class Block:
         Method is called for all InvestBlocks and ICEVSystems.
         """
         self.capex_prj = eco.capex_sum(self.capex_init,
+                                       self.capex_replacement,
                                        self.ccr,
                                        self.ls,
                                        self.scenario.prj_duration_yrs)
         self.capex_dis = eco.capex_present(self.capex_init,
+                                           self.capex_replacement,
+                                           self.capex_full,
                                            self.ccr,
                                            self.scenario.wacc,
                                            self.ls,
                                            self.scenario.prj_duration_yrs)
         self.capex_ann = eco.annuity_due_capex(self.capex_init,
+                                               self.capex_replacement,
+                                               self.capex_full,
                                                self.ls,
                                                self.scenario.prj_duration_yrs,
                                                self.scenario.wacc,
@@ -288,8 +296,9 @@ class InvestBlock(Block):
     def __init__(self, name, scenario):
         self.invest = False  # not every block has example parameter invest without extension -> default: False
         super().__init__(name, scenario)
-        self.size = self.size_additional = 0  # placeholder for additional size in optimization
-        self.size_additional_max = None
+
+        self.size = self.size_additional = self.size_additional_max = None  # placeholder
+        self.capex_init_existing = self.capex_init_additional = self.capex_replacement = None
 
         self.set_init_size()
 
@@ -304,6 +313,7 @@ class InvestBlock(Block):
         # annuity factor (incl. replacements) to compensate for difference
         # between simulation and project time in component sizing
         self.factor_capex = eco.annuity_due_capex(capex_init=1,
+                                                  capex_replacement=1,
                                                   lifespan=self.ls,
                                                   observation_horizon=self.scenario.prj_duration_yrs,
                                                   discount_rate=self.scenario.wacc,
@@ -329,7 +339,12 @@ class InvestBlock(Block):
         Default function for blocks with a single size value.
         GridConnections, SystemCore and CommoditySystems are more complex and have their own functions
         """
-        self.capex_init = self.size * self.capex_spec
+        self.capex_init_existing = (self.size_existing * self.capex_spec) if self.capex_existing else 0
+        self.capex_init_additional = self.size_additional * self.capex_spec
+        self.capex_init = self.capex_init_existing + self.capex_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capex_replacement = (self.size_existing + self.size_additional) * self.capex_spec
 
     def calc_expenses(self):
 
@@ -570,7 +585,12 @@ class CommoditySystem(InvestBlock):
             commodity.calc_aging(horizon)
 
     def calc_capex_init(self):
-        self.capex_init = np.array([com.size for com in self.commodities.values()]).sum() * self.capex_spec
+        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec if self.capex_existing else 0
+        self.capex_init_additional = sum([com.size_additional for com in self.commodities.values()]) * self.capex_spec
+        self.capex_init = self.capex_init_existing + self.capex_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capex_replacement = sum([com.size_existing + com.size_additional for com in self.commodities.values()]) * self.capex_spec
 
     def calc_energy(self):
 
@@ -846,7 +866,12 @@ class GridConnection(InvestBlock):
         """
         Calculate initial capital expenses
         """
-        self.capex_init = (self.size_g2s + self.size_s2g) * self.capex_spec
+        self.capex_init_existing = (self.size_g2s_existing + self.size_s2g_existing) * self.capex_spec if self.capex_existing else 0
+        self.capex_init_additional = (self.size_g2s_additional + self.size_s2g_additional) * self.capex_spec
+        self.capex_init = self.capex_init_existing + self.capex_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capex_replacement = (self.size_g2s + self.size_s2g) * self.capex_spec
 
     def calc_energy(self):
         # Aggregate energy results for all GridMarkets
@@ -2161,7 +2186,15 @@ class SystemCore(InvestBlock):
                                        secondary_y=False)
 
     def calc_capex_init(self):
-        self.capex_init = (self.size_acdc + self.size_dcac) * self.capex_spec
+        self.capex_init_existing = (self.size_acdc_existing + self.size_dcac_existing) * self.capex_spec if self.capex_existing else 0
+        self.capex_init_additional = (self.size_acdc_additional + self.size_dcac_additional) * self.capex_spec
+        self.capex_init = self.capex_init_existing + self.capex_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capex_replacement = (self.size_acdc_existing +
+                                  self.size_acdc_additional +
+                                  self.size_dcac_existing +
+                                  self.size_dcac_additional) * self.capex_spec
 
     def calc_energy(self):
 

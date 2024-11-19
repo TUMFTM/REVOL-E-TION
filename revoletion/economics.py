@@ -54,16 +54,17 @@ def annuity(present_value: float,
     return annuity
 
 
-def invest_periods(lifespan: int,
+def reinvest_periods(lifespan: int,
                    observation_horizon: int) -> list:
     """
-    This function returns a list of period numbers to invest into a component (i.e. buy or replace it),
-    given its lifespan and the observation horizon
+    This function returns a list of period numbers to reinvest into a component (i.e. replace it),
+    given its lifespan and the observation horizon. Initial investment is removed.
     """
-    return [period for period in range(observation_horizon) if period % lifespan == 0]
+    return [period for period in range(observation_horizon) if period % lifespan == 0].remove(0)
 
 
 def capex_sum(capex_init: float,
+              capex_replacement: float,
               cost_change_ratio: float,
               lifespan: int,
               observation_horizon: int) -> float:
@@ -71,12 +72,13 @@ def capex_sum(capex_init: float,
     This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
     after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
     """
-    capex_total = sum([capex_init * (cost_change_ratio ** period)
-                       for period in invest_periods(lifespan, observation_horizon)])
+    capex_total = capex_init + sum([capex_replacement * (cost_change_ratio ** period)
+                                    for period in reinvest_periods(lifespan, observation_horizon)])
     return capex_total
 
 
 def capex_present(capex_init: float,
+                  capex_replacement: float,
                   cost_change_ratio: float,
                   discount_rate: float,
                   lifespan: int,
@@ -85,12 +87,13 @@ def capex_present(capex_init: float,
     This function calculates the present (discounted) capital expenses for a component that has to be replaced
     after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
     """
-    capex_present = sum([discount(capex_init * (cost_change_ratio ** period), period, discount_rate)
-                         for period in invest_periods(lifespan, observation_horizon)])
+    capex_present = capex_init + sum([discount(capex_replacement * (cost_change_ratio ** period), period, discount_rate)
+                                      for period in reinvest_periods(lifespan, observation_horizon)])
     return capex_present
 
 
 def annuity_due_capex(capex_init: float,
+                      capex_replacement: float,
                       lifespan: int,
                       observation_horizon: int,
                       discount_rate: float,
@@ -100,12 +103,13 @@ def annuity_due_capex(capex_init: float,
     investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
     """
     present_value = capex_present(capex_init=capex_init,
+                                  capex_replacement=capex_replacement,
                                   cost_change_ratio=cost_change_ratio,
                                   discount_rate=discount_rate,
                                   lifespan=lifespan,
                                   observation_horizon=observation_horizon)
-    annuity_due_capex = annuity(present_value=present_value,
-                                observation_horizon=observation_horizon,
-                                discount_rate=discount_rate,
-                                occurs_at='beginning')
-    return annuity_due_capex
+    annuity_due = annuity(present_value=present_value,
+                          observation_horizon=observation_horizon,
+                          discount_rate=discount_rate,
+                          occurs_at='beginning')
+    return annuity_due
