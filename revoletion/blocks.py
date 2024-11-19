@@ -1506,7 +1506,8 @@ class MobileCommodity:
         self.soc_max = 1 - ((1 - self.soh[self.scenario.starttime]) / 2)
 
     def add_power_trace(self):
-        legentry = f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / {self.pwr_dis * self.eff_dis / 1e3:.1f} kW discharge)'
+        legentry = (f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / '
+                    f'{(self.pwr_dis * self.eff_dis if self.parent.lvl_cap != "ud" else 0) / 1e3:.1f} kW discharge)')
         self.scenario.figure.add_trace(go.Scatter(x=self.flow.index,
                                                   y=self.flow,
                                                   mode='lines',
