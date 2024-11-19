@@ -307,13 +307,13 @@ class InvestBlock(Block):
                                                   lifespan=self.ls,
                                                   observation_horizon=self.scenario.prj_duration_yrs,
                                                   discount_rate=self.scenario.wacc,
-                                                  cost_change_ratio=self.ccr)
+                                                  cost_change_ratio=self.ccr) if scenario.compensate_sim_prj else 1
         # ep = equivalent present (i.e. specific values prediscounted)
         self.capex_ep_spec = self.capex_joined * self.factor_capex  # Capex is downrated for short simulations
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = 1 / self.scenario.sim_prj_rat
+        self.factor_opex = 1 / self.scenario.sim_prj_rat if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 

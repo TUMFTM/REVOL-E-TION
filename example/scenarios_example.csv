@@ -3,6 +3,7 @@ scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
 scenario,prj_duration,25,25,25,25
+scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,rh,go
 scenario,len_ph,48,48,48,48
 scenario,len_ch,12,12,12,12
