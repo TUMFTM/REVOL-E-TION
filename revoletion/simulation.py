@@ -183,8 +183,7 @@ class PredictionHorizon:
         try:
             dot.render()
         except Exception as e:  # inhibiting failing renderer from stopping model execution
-            self.scenario.logger.warning(f'Scenario: \"{self.scenario.name}\": System graph rendering failed - '
-                                         f'Traceback: {e}')
+            self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
 
     def get_results(self):
         """

@@ -218,7 +218,7 @@ class AprioriPowerScheduler:
                                 'AC/DC converter': self.pwr_syscore_conv_avail['ac'],
                                 'DC/AC converter': self.pwr_syscore_conv_avail['dc']}.items():
             if value < 0:
-                self.scenario.logger.warning(f'Scenario \"{self.scenario.name}\": Power shortage of {-1 * value:.2E} W on'
+                self.scenario.logger.warning(f'Power shortage of {-1 * value:.2E} W on'
                                              f' {location} occurred in AprioriScheduler at {dtindex}!'
                                              f' This shortage may lead to infeasibility during optimization.')
 

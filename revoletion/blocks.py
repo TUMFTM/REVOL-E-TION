@@ -100,8 +100,8 @@ class Block:
             for year in eco.invest_periods(lifespan=self.ls,
                                            observation_horizon=self.scenario.prj_duration_yrs):
                 capex[year] = self.capex_init * (self.ccr ** year)
-        self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
 
+        self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
         self.cashflows[f'mntex_{self.name}'] = -1 * self.mntex_yrl
         self.cashflows[f'opex_{self.name}'] = -1 * self.opex_yrl
         self.cashflows[f'crev_{self.name}'] = self.crev_yrl
@@ -295,8 +295,8 @@ class InvestBlock(Block):
 
         # ToDo: move to checker.py
         if self.invest and self.scenario.strategy != 'go':
-            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\" component size optimization '
-                             f'not implemented for any other strategy than \"GO\"')
+            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}" component size optimization '
+                             f'not implemented for any other strategy than "GO"')
 
         # Include (time-based) maintenance expenses in capex calculation for otimizer (results are disaggregated anyway)
         self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, self.scenario.wacc)
@@ -527,7 +527,7 @@ class CommoditySystem(InvestBlock):
             self.data = utils.read_input_log(self)
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
+            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}": invalid data source')
 
         if self.system == 'ac':
             self.eff_chg = self.eff_chg_ac
@@ -536,7 +536,7 @@ class CommoditySystem(InvestBlock):
             self.eff_chg = self.eff_chg_dc
             self.eff_dis = self.eff_dis_dc
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid system type')
+            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}": invalid system type')
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 
@@ -662,13 +662,13 @@ class CommoditySystem(InvestBlock):
 
         # static load management is deactivated for 'uc' mode
         if self.power_lim_static and self.mode_scheduling == 'uc':
-            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": static load management is not implemented'
-                                         f' for scheduling mode \"uc\". deactivating static load management')
+            self.scenario.logger.warning(f'CommoditySystem "{self.name}": static load management is not implemented'
+                                         f' for scheduling mode "uc". deactivating static load management')
             self.power_lim_static = None
 
         # ToDo: move to checker.py
         if self.invest and self.mode_scheduling in self.scenario.run.apriori_lvls:
-            raise ValueError(f'CommoditySystem \"{self.name}\": commodity size optimization not '
+            raise ValueError(f'CommoditySystem "{self.name}": commodity size optimization not '
                              f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
 
     def get_invest_size(self, horizon):
@@ -702,7 +702,7 @@ class CommoditySystem(InvestBlock):
     def set_init_size(self):
         #  ToDo: move to checker.py
         if self.invest and self.data_source in ['usecases', 'demand']:
-            self.scenario.logger.warning(f'CommoditySystem \"{self.name}\": Specified input (active invest and data'
+            self.scenario.logger.warning(f'CommoditySystem "{self.name}": Specified input (active invest and data'
                                          f' source DES is not possible. Deactivated invest.')
             self.invest = False
 
@@ -991,7 +991,7 @@ class GridConnection(InvestBlock):
 
         if (self.invest_g2s == 'equal') and (self.invest_s2g == 'equal'):
             self.invest_g2s = self.invest_s2g = True
-            self.scenario.logger.warning(f'\"{self.name}\" investment option was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" investment option was defined as "equal" for'
                                          f' maximum selling and buying power. This is not supported and leads to enabling'
                                          f' investments for both directions while ensuring the same investment for both.')
         elif self.invest_g2s == 'equal':
@@ -1004,7 +1004,7 @@ class GridConnection(InvestBlock):
 
         if (self.size_g2s_existing == 'equal') and (self.size_s2g_existing == 'equal'):
             self.size_g2s_existing = self.size_s2g_existing = 0
-            self.scenario.logger.warning(f'\"{self.name}\" Existing size was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" Existing size was defined as "equal" for'
                                          f' maximum selling and buying power. This is not supported and leads to setting'
                                          f' the existing size for both directions to 0.')
         elif self.size_g2s_existing == 'equal':
@@ -1270,14 +1270,14 @@ class ICEVSystem(Block):
         self.data = None
 
         if self.data_source in ['usecases', 'demand']:
-            raise NotImplementedError(f'Scenario {self.scenario.name} - Block \"{self.name}\": '
-                                      f'dispatch_source "des" is not yet implemented for ICEVSystem')
+            raise NotImplementedError(f'Block "{self.name}": '
+                                      f'dispatch_source "{self.data_source}" is not yet implemented for ICEVSystem')
         elif self.data_source == 'log':
             self.data = utils.read_input_log(self)
             # rewrite commodity names to match modified ones from imported log file
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block \"{self.name}\": invalid data source')
+            raise ValueError(f'Block "{self.name}": invalid data source ("{self.data_source}")')
 
         self.crev_time = self.crev_usage = None  # intermediary variables
 
@@ -2213,7 +2213,7 @@ class SystemCore(InvestBlock):
 
         if (self.invest_acdc == 'equal') and (self.invest_dcac == 'equal'):
             self.invest_acdc = self.invest_dcac = True
-            self.scenario.logger.warning(f'\"{self.name}\" investment option was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" investment option was defined as "equal" for'
                                          f' AC/DC and DC/AC converter. This is not supported and leads to enabling'
                                          f' investments for both converters while ensuring the same investment for both.')
         elif self.invest_acdc == 'equal':
@@ -2226,7 +2226,7 @@ class SystemCore(InvestBlock):
 
         if (self.size_acdc_existing == 'equal') and (self.size_dcac_existing == 'equal'):
             self.size_acdc_existing = self.size_dcac_existing = 0
-            self.scenario.logger.warning(f'\"{self.name}\" Existing size was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" Existing size was defined as "equal" for'
                                          f' maximum selling and buying power. This is not supported and leads to setting'
                                          f' the existing size for both directions to 0.')
         elif self.size_acdc_existing == 'equal':
@@ -2241,7 +2241,7 @@ class SystemCore(InvestBlock):
 
         if (self.size_acdc_max == 'equal') and (self.size_dcac_max == 'equal'):
             self.size_acdc_max = self.size_dcac_max = None
-            self.scenario.logger.warning(f'\"{self.name}\" Maximum invest was defined as "equal" for'
+            self.scenario.logger.warning(f'"{self.name}" Maximum invest was defined as "equal" for'
                                          f' maximum investment into AC/DC and DC/AC converter. This is not supported.'
                                          f' The maximum invest was set to None (unlimited) for both converters.')
         elif self.size_acdc_max == 'equal':
