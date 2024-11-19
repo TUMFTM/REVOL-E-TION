@@ -313,7 +313,7 @@ class InvestBlock(Block):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = 1 / self.scenario.sim_prj_rat if scenario.compensate_sim_prj else 1
+        self.factor_opex = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 
@@ -859,7 +859,7 @@ class GridConnection(InvestBlock):
         self.mntex_yrl = (self.size_g2s + self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
-        # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridConnection
+        # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridMarket
         pass
 
     def calc_opex_sim(self):
@@ -979,11 +979,11 @@ class GridConnection(InvestBlock):
 
             # Count number of "actual" peakshaving intervals
             # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
-            n_peakshaving_ints_prj = (pd.date_range(start=self.scenario.starttime,
-                                                    end=self.scenario.prj_endtime,
-                                                    freq=self.scenario.timestep)
-                                      .to_series().apply(periods_func[self.peakshaving])).unique().size
-            self.factor_opex_peak = n_peakshaving_ints_prj / n_peakshaving_ints
+            n_peakshaving_ints_yr = (pd.date_range(start=self.scenario.starttime,
+                                                   end=self.scenario.starttime + pd.DateOffset(years=1),
+                                                   freq=self.scenario.timestep)
+                                     .to_series().apply(periods_func[self.peakshaving])).unique().size
+            self.factor_opex_peak = n_peakshaving_ints_yr / n_peakshaving_ints
             self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
 
     def set_init_size(self):
