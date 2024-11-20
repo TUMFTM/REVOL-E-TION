@@ -32,7 +32,10 @@ def join_capex_mntex(capex: float,
     """
     This function adjusts a component's capex to include accumulated present maintenance cost for time based maintenance
     """
-    capex_adjusted = capex + acc_discount(mntex, lifespan, discount_rate, occurs_at='beginning')
+    capex_adjusted = capex + acc_discount(nominal_value=mntex,
+                                          observation_horizon=lifespan,
+                                          discount_rate=discount_rate,
+                                          occurs_at='beginning')
     return capex_adjusted
 
 
@@ -60,7 +63,9 @@ def reinvest_periods(lifespan: int,
     This function returns a list of period numbers to reinvest into a component (i.e. replace it),
     given its lifespan and the observation horizon. Initial investment is removed.
     """
-    return [period for period in range(observation_horizon) if period % lifespan == 0].remove(0)
+    reinvest_periods = [period for period in range(observation_horizon) if period % lifespan == 0]
+    reinvest_periods.remove(0)
+    return reinvest_periods
 
 
 def capex_sum(capex_init: float,
@@ -113,3 +118,19 @@ def annuity_due_capex(capex_init: float,
                           discount_rate=discount_rate,
                           occurs_at='beginning')
     return annuity_due
+
+
+def annuity_due_recur(nominal_value:float,
+                      observation_horizon:float,
+                      discount_rate:float):
+    """
+    Calculate the annuity due of a yearly recurring (lifespan=1) and nonchanging (cost_change_ratio=1)
+    mainenance expense (the equivalent yearly sum to generate the same NPV) over a observation horizon.
+    """
+    annuity_due_recur = annuity_due_capex(capex_init=nominal_value,
+                                          capex_replacement=nominal_value,
+                                          lifespan=1,
+                                          observation_horizon=observation_horizon,
+                                          discount_rate=discount_rate,
+                                          cost_change_ratio=1)
+    return annuity_due_recur

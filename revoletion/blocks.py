@@ -205,25 +205,23 @@ class Block:
         Extrapolate initial capital investment including replacements to project timeframe and calculate annuity.
         Method is called for all InvestBlocks and ICEVSystems.
         """
-        self.capex_prj = eco.capex_sum(self.capex_init,
-                                       self.capex_replacement,
-                                       self.ccr,
-                                       self.ls,
-                                       self.scenario.prj_duration_yrs)
-        self.capex_dis = eco.capex_present(self.capex_init,
-                                           self.capex_replacement,
-                                           self.capex_full,
-                                           self.ccr,
-                                           self.scenario.wacc,
-                                           self.ls,
-                                           self.scenario.prj_duration_yrs)
-        self.capex_ann = eco.annuity_due_capex(self.capex_init,
-                                               self.capex_replacement,
-                                               self.capex_full,
-                                               self.ls,
-                                               self.scenario.prj_duration_yrs,
-                                               self.scenario.wacc,
-                                               self.ccr)
+        self.capex_prj = eco.capex_sum(capex_init=self.capex_init,
+                                       capex_replacement=self.capex_replacement,
+                                       cost_change_ratio=self.ccr,
+                                       lifespan=self.ls,
+                                       observation_horizon=self.scenario.prj_duration_yrs)
+        self.capex_dis = eco.capex_present(capex_init=self.capex_init,
+                                           capex_replacement=self.capex_replacement,
+                                           cost_change_ratio=self.ccr,
+                                           discount_rate=self.scenario.wacc,
+                                           lifespan=self.ls,
+                                           observation_horizon=self.scenario.prj_duration_yrs)
+        self.capex_ann = eco.annuity_due_capex(capex_init=self.capex_init,
+                                               capex_replacement=self.capex_replacement,
+                                               lifespan=self.ls,
+                                               observation_horizon=self.scenario.prj_duration_yrs,
+                                               discount_rate=self.scenario.wacc,
+                                               cost_change_ratio=self.ccr)
         self.scenario.capex_init += self.capex_init
         self.scenario.capex_prj += self.capex_prj
         self.scenario.capex_dis += self.capex_dis
@@ -236,15 +234,13 @@ class Block:
         """
         self.mntex_sim = self.mntex_yrl * self.scenario.sim_yr_rat
         self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, self.scenario)
-        self.mntex_dis = eco.acc_discount(self.mntex_yrl,
-                                          self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc,
+        self.mntex_dis = eco.acc_discount(nominal_value=self.mntex_yrl,
+                                          observation_horizon=self.scenario.prj_duration_yrs,
+                                          discount_rate=self.scenario.wacc,
                                           occurs_at='beginning')
-        self.mntex_ann = eco.annuity_due_capex(self.mntex_yrl,
-                                               1,  # lifespan of 1 yr -> mntex happening yearly
-                                               self.scenario.prj_duration_yrs,
-                                               self.scenario.wacc,
-                                               1)  # no cost decrease in mntex
+        self.mntex_ann = eco.annuity_due_recur(nominal_value=self.mntex_yrl,
+                                               observation_horizon=self.scenario.prj_duration_yrs,
+                                               discount_rate=self.scenario.wacc,)
         self.scenario.mntex_yrl += self.mntex_yrl
         self.scenario.mntex_prj += self.mntex_prj
         self.scenario.mntex_dis += self.mntex_dis
@@ -257,15 +253,13 @@ class Block:
         """
         self.opex_yrl = utils.scale_sim2year(self.opex_sim, self.scenario)
         self.opex_prj = utils.scale_year2prj(self.opex_yrl, self.scenario)
-        self.opex_dis = eco.acc_discount(self.opex_yrl,
-                                         self.scenario.prj_duration_yrs,
-                                         self.scenario.wacc,
+        self.opex_dis = eco.acc_discount(nominal_value=self.opex_yrl,
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc,
                                          occurs_at='end')
-        self.opex_ann = eco.annuity_due_capex(self.opex_yrl,
-                                              1,  # lifespan of 1 yr -> opex happening yearly
-                                              self.scenario.prj_duration_yrs,
-                                              self.scenario.wacc,
-                                              1)  # no cost decrease in opex
+        self.opex_ann = eco.annuity_due_recur(nominal_value=self.opex_yrl,
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc)
         self.scenario.opex_sim += self.opex_sim
         self.scenario.opex_yrl += self.opex_yrl
         self.scenario.opex_prj += self.opex_prj
@@ -296,8 +290,9 @@ class InvestBlock(Block):
         self.invest = False  # not every block has example parameter invest without extension -> default: False
         super().__init__(name, scenario)
 
-        self.size = self.size_additional = self.size_additional_max = None  # placeholder
-        self.capex_init_existing = self.capex_init_additional = self.capex_replacement = None
+        self.size = self.size_additional_max = None  # placeholder
+        self.size_additional = 0
+        self.capex_init_existing = self.capex_init_additional = self.capex_replacement = 0
 
         self.set_init_size()
 
@@ -307,18 +302,20 @@ class InvestBlock(Block):
                              f'not implemented for any other strategy than "GO"')
 
         # Include (time-based) maintenance expenses in capex calculation for otimizer (results are disaggregated anyway)
-        self.capex_joined = eco.join_capex_mntex(self.capex_spec, self.mntex_spec, self.ls, self.scenario.wacc)
+        self.capex_joined_spec = eco.join_capex_mntex(capex=self.capex_spec,
+                                                      mntex=self.mntex_spec,
+                                                      lifespan=self.ls,
+                                                      discount_rate=self.scenario.wacc)
 
-        # annuity factor (incl. replacements) to compensate for difference
-        # between simulation and project time in component sizing
-        self.factor_capex = eco.annuity_due_capex(capex_init=1,
+        # annuity factor (incl. replacements) to compensate for difference between simulation and project time in
+        # component sizing; ep = equivalent present (i.e. specific values prediscounted)
+        self.factor_capex = eco.annuity_due_capex(capex_init=1,  # nonexisting block size is always capexed
                                                   capex_replacement=1,
                                                   lifespan=self.ls,
                                                   observation_horizon=self.scenario.prj_duration_yrs,
                                                   discount_rate=self.scenario.wacc,
                                                   cost_change_ratio=self.ccr) if scenario.compensate_sim_prj else 1
-        # ep = equivalent present (i.e. specific values prediscounted)
-        self.capex_ep_spec = self.capex_joined * self.factor_capex  # Capex is downrated for short simulations
+        self.capex_ep_spec = self.capex_joined_spec * self.factor_capex
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
@@ -584,7 +581,8 @@ class CommoditySystem(InvestBlock):
             commodity.calc_aging(horizon)
 
     def calc_capex_init(self):
-        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec if self.capex_existing else 0
+        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec \
+            if self.capex_existing else 0
         self.capex_init_additional = sum([com.size_additional for com in self.commodities.values()]) * self.capex_spec
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
@@ -635,12 +633,9 @@ class CommoditySystem(InvestBlock):
                                              self.scenario.prj_duration_yrs,
                                              self.scenario.wacc,
                                              occurs_at='end')
-        self.opex_ann_ext = eco.annuity_due_capex(self.opex_yrl_ext,
-                                          1,  # lifespan of 1 yr -> opex happening yearly
-                                          self.scenario.prj_duration_yrs,
-                                          self.scenario.wacc,
-                                          1)  # no cost decrease in opex
-
+        self.opex_ann_ext = eco.annuity_due_recur(nominal_value=self.opex_yrl_ext,
+                                                  observation_horizon=self.scenario.prj_duration_yrs,
+                                                  discount_rate=self.scenario.wacc)
         self.scenario.opex_sim_ext += self.opex_sim_ext
         self.scenario.opex_yrl_ext += self.opex_yrl_ext
         self.scenario.opex_prj_ext += self.opex_prj_ext
@@ -841,9 +836,13 @@ class ControllableSource(InvestBlock):
 
 class GridConnection(InvestBlock):
     def __init__(self, name, scenario):
-        self.size_g2s = self.size_s2g = self.size_g2s_additional = self.size_s2g_additional = 0
+        self.size_g2s = self.size_s2g = 0
+        self.size_g2s_additional = self.size_s2g_additional = 0
         self.size_additional_g2s_max = self.size_additional_s2g_max = None
         self.equal = None
+
+        self.capex_init_existing_s2g = self.capex_init_existing_g2s = 0
+        self.capex_init_additional_s2g = self.capex_init_additional_g2s = 0
 
         super().__init__(name, scenario)
 
@@ -865,12 +864,21 @@ class GridConnection(InvestBlock):
         """
         Calculate initial capital expenses
         """
-        self.capex_init_existing = (self.size_g2s_existing + self.size_s2g_existing) * self.capex_spec if self.capex_existing else 0
-        self.capex_init_additional = (self.size_g2s_additional + self.size_s2g_additional) * self.capex_spec
+        self.capex_init_existing_g2s = self.size_g2s_existing * self.capex_spec if self.capex_existing_g2s else 0
+        self.capex_init_existing_s2g = self.size_s2g_existing * self.capex_spec if self.capex_existing_s2g else 0
+        self.capex_init_existing = self.capex_init_existing_g2s + self.capex_init_existing_s2g
+
+        self.capex_init_additional_g2s = self.size_g2s_additional * self.capex_spec
+        self.capex_init_additional_s2g = self.size_s2g_additional * self.capex_spec
+        self.capex_init_additional = self.capex_init_additional_g2s + self.capex_init_additional_s2g
+
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
-        self.capex_replacement = (self.size_g2s + self.size_s2g) * self.capex_spec
+        self.capex_replacement = (self.size_g2s_existing +
+                                  self.size_g2s_additional +
+                                  self.size_s2g_existing +
+                                  self.size_s2g_additional) * self.capex_spec
 
     def calc_energy(self):
         # Aggregate energy results for all GridMarkets
@@ -1315,7 +1323,8 @@ class ICEVSystem(Block):
         pass  # function has to be callable, but ICEVSystem does not impose energy transfer
 
     def calc_expenses(self):
-        self.capex_init = self.capex_pc * self.num
+        self.capex_init = self.capex_pc * self.num if self.capex_existing else 0
+        self.capex_replacement = self.capex_pc * self.num
         self.extrapolate_capex()  # Method defined in Block class
 
         self.opex_sim = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opex_spec_dist
@@ -2157,6 +2166,8 @@ class SystemCore(InvestBlock):
         self.size_additional_acdc_max = self.size_additional_dcac_max = None
         self.equal = None
 
+        self.capex_init_existing_acdc = self.capex_init_existing_dcac = 0
+
         super().__init__(name, scenario)
         self.ac_bus = self.dc_bus = self.ac_dc = self.dc_ac = None  # initialize oemof-solph components
 
@@ -2186,7 +2197,10 @@ class SystemCore(InvestBlock):
                                        secondary_y=False)
 
     def calc_capex_init(self):
-        self.capex_init_existing = (self.size_acdc_existing + self.size_dcac_existing) * self.capex_spec if self.capex_existing else 0
+        self.capex_init_existing_acdc = self.size_acdc_existing * self.capex_spec if self.capex_existing_acdc else 0
+        self.capex_init_existing_dcac = self.size_dcac_existing * self.capex_spec if self.capex_existing_dcac else 0
+        self.capex_init_existing = self.capex_init_existing_dcac + self.capex_init_existing_acdc
+
         self.capex_init_additional = (self.size_acdc_additional + self.size_dcac_additional) * self.capex_spec
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
