@@ -148,9 +148,8 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
     if resampling:
         df = resample_to_timestep(df, block, scenario)
 
-    if not (scenario.dti_sim.isin(df.index).all()):
-        raise IndexError(f'Scenario "{scenario.name}" - Block "{block.name}": '
-                         f'Input timeseries data does not cover simulation timeframe')
+        if not (scenario.dti_sim.isin(df.index).all()):
+            raise IndexError(f'Block "{block.name}": Input timeseries data does not cover simulation timeframe')
     return df
 
 
@@ -169,13 +168,23 @@ def read_input_log(system):
                         multiheader=True,
                         resampling=False)
 
-    if pd.infer_freq(df.index).lower() != system.scenario.timestep:
-        system.scenario.logger.warning(f'"{system.name}" example data does not match timestep')
+    # Timedelta of frequency of log file
+    freq_log = pd.infer_freq(df.index).lower()
+    # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
+    freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
+
+    # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
+    if freq_log != system.scenario.timestep_td:
+        system.scenario.logger.warning(f'Block "{system.name}": input data does not match specified timestep - Resampling')
         consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
         bool_columns = df.columns.difference(consumption_columns)
         # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-        df = df[consumption_columns].resample(system.scenario.timestep).mean().ffill().bfill()
-        df[bool_columns] = df[bool_columns].resample(system.scenario.timestep).ffill().bfill()
+        df_new = pd.DataFrame()
+        df_new[consumption_columns] = df[consumption_columns].resample(system.scenario.timestep).mean().ffill().bfill()
+        df_new[bool_columns] = df[bool_columns].resample(system.scenario.timestep).ffill().bfill()
+        df = df_new
+    if not (system.scenario.dti_sim.isin(df.index).all()):
+        raise IndexError(f'Block "{system.name}": Input timeseries data does not cover simulation timeframe')
 
     # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
     # system + number), the names specified in the log file names are used, with the commodity system name added

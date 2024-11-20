@@ -85,6 +85,12 @@ This will install the ```revoletion``` package in editable mode, meaning that ch
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
 The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
 The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
+If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi, gurobipy and the license file have to match.
+To ensure this get the version of both your gurobi license/installation (```grbgetkey --version```) and the installed gurobipy package (```pip show gurobipy```).
+If their major version numbers do not match, install the correct version of gurobipy using pip:
+```
+pip install gurobipy==<your_gurobi_version>
+```
 
 #### Step 5: Basic Usage
 Running REVOL-E-TION requires closely defined scenario(s) to simulate and common simulation settings to operate on.
