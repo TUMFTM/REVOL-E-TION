@@ -1,4 +1,4 @@
-block,key,grid_only,#sizing,#dispatch_go,#dispatch_rh
+block,key,grid_only,sizing,dispatch_go,dispatch_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
