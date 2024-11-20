@@ -107,8 +107,8 @@ class PredictionHorizon:
 
         # Build energy system model --------------------------------
 
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Building energy system instance')
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Building oemof model')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -119,8 +119,8 @@ class PredictionHorizon:
         if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system()
 
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Creating optimization model')
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                  f'Building optimization problem')
 
         # Build the mathematical linear optimization model with pyomo
         self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
