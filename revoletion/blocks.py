@@ -1013,7 +1013,8 @@ class GridConnection(InvestBlock):
             # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
             n_peakshaving_ints_yr = (pd.date_range(start=self.scenario.starttime,
                                                    end=self.scenario.starttime + pd.DateOffset(years=1),
-                                                   freq=self.scenario.timestep)
+                                                   freq=self.scenario.timestep,
+                                                   inclusive='left')
                                      .to_series().apply(periods_func[self.peakshaving])).unique().size
             self.factor_opex_peak = n_peakshaving_ints_yr / n_peakshaving_ints
             self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
