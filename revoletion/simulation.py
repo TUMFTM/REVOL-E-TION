@@ -799,7 +799,7 @@ class SimulationRun:
                 lock = manager.Lock()
 
                 status_queue = manager.Queue()
-                status_thread = threading.Thread(target=self.update_scenario_status, args=(status_queue,))
+                status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
                 status_thread.start()
 
                 log_queue = manager.Queue()
@@ -877,18 +877,23 @@ class SimulationRun:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
 
-    def update_scenario_status(self, queue):
+    def trigger_scenario_status_update(self, queue, status_msg):
+        if queue is not None:
+            queue.put(status_msg)
+        else:
+            self.update_scenario_status(status_msg)
+
+    def read_status_queue(self, queue):
         while True:
             # This is all chatgpt bullshit -> ToDO: use structure and adapt
-            status_dict = queue.get()
-            if status_dict is None:  # Exit signal
+            status_msg = queue.get()
+            if status_msg is None:  # Exit signal
                 break
-            for col in [key for key in status_dict.keys() if key != 'scenario']:
-                self.scenario_status.loc[status_dict['scenario'], col] = status_dict[col]
+            self.update_scenario_status(status_msg)
 
-            self.save_scenario_status()
-
-    def save_scenario_status(self):
+    def update_scenario_status(self, status_msg):
+        for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
+            self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
         self.scenario_status.to_csv(self.path_result_status_file,
                                      index=True)
 
@@ -897,23 +902,18 @@ class SimulationRun:
 
         self.process = mp.current_process() if self.parallel else None
 
-        # ToDo: move this to function (within this method) to avoid duplicate code for each status update
-        if status_queue is not None:
-            status_queue.put({'scenario': name, 'status': 'started'})
-        else:
-            self.scenario_status.loc[name, 'status'] = 'started'
-            self.save_scenario_status()
+        self.trigger_scenario_status_update(queue=status_queue,
+                                            status_msg={'scenario': name,
+                                                        'status': 'started'})
 
         scenario = None
 
         try:
             scenario = Scenario(name, self, logger, lock)  # Create scenario instance
 
-            if status_queue is not None:
-                status_queue.put({'scenario': name, 'status': 'fully initialized'})
-            else:
-                self.scenario_status.loc[name, 'status'] = 'fully initialized'
-                self.save_scenario_status()
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': 'fully initialized'})
 
             # ToDo: move to checker.py
             if scenario.strategy not in ['go', 'rh']:
@@ -925,23 +925,19 @@ class SimulationRun:
                 horizon.run_optimization()
                 horizon.get_results()
 
-            if status_queue is not None:
-                status_queue.put({'scenario': name, 'status': 'successful'})
-            else:
-                self.scenario_status.loc[name, 'status'] = 'successful'
-                self.save_scenario_status()
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': 'successful'})
 
             scenario.end_timing()
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-            if status_queue is not None:
-                status_queue.put({'scenario': name, 'status': 'failed', 'exception': str(e), 'traceback': traceback.format_exc()})
-            else:
-                self.scenario_status.loc[name, 'status'] = 'failed'
-                self.scenario_status.loc[name, 'exception'] = str(e)
-                self.scenario_status.loc[name, 'traceback'] = traceback.format_exc()
-                self.save_scenario_status()
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': 'failed',
+                                                            'exception': str(e),
+                                                            'traceback': traceback.format_exc()})
 
             # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
             logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
