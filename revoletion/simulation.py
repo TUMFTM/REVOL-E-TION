@@ -924,6 +924,10 @@ class SimulationRun:
                 horizon = PredictionHorizon(horizon_index, scenario)
                 horizon.run_optimization()
                 horizon.get_results()
+                self.trigger_scenario_status_update(queue=status_queue,
+                                                    status_msg={'scenario': name,
+                                                                'status': f'completed horizon {horizon_index + 1} out of'
+                                                                          f' {scenario.nhorizons}'})
 
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
