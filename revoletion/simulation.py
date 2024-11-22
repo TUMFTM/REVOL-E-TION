@@ -682,9 +682,10 @@ class SimulationRun:
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
         self.scenario_num = len(self.scenario_names)
-
-        # Tracking of failed scenarios in scenario file (scenario object initialization failures included)
-        self.scenarios_failed = pd.DataFrame(columns=['scenario_name', 'exception', 'traceback']).set_index('scenario_name')
+        self.scenario_status = pd.DataFrame(index=self.scenario_names,
+                                            data={'status': 'queued',
+                                                  'exception': None,
+                                                  'traceback': None}).rename_axis('scenario')
 
         self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
         self.settings = self.settings.map(utils.infer_dtype)
@@ -780,8 +781,8 @@ class SimulationRun:
                                                       f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
         self.path_result_summary_file = os.path.join(self.path_result_dir,
                                                      f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
-        self.path_result_failed_file = os.path.join(self.path_result_dir,
-                                                    f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_failed.csv')
+        self.path_result_status_file = os.path.join(self.path_result_dir,
+                                                    f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_status.csv')
         self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
         self.path_log_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.log')
 
@@ -796,30 +797,31 @@ class SimulationRun:
         if self.parallel:
             with mp.Manager() as manager:
                 lock = manager.Lock()
-                scenarios_failed_queue = manager.Queue()
+
+                status_queue = manager.Queue()
+                status_thread = threading.Thread(target=self.update_scenario_status, args=(status_queue,))
+                status_thread.start()
+
                 log_queue = manager.Queue()
                 log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
                 log_thread.start()
+
                 with mp.Pool(processes=self.process_num) as pool:
                     pool.starmap(
                         self.simulate_scenario,
                         zip(self.scenario_names,
                             itertools.repeat(log_queue),
-                            itertools.repeat(scenarios_failed_queue),
+                            itertools.repeat(status_queue),
                             itertools.repeat(lock))
                     )
+                status_queue.put(None)
+                status_thread.join()
                 log_queue.put(None)
                 log_thread.join()
-
-                while not scenarios_failed_queue.empty():
-                    scenario_name, exception_msg, traceback_msg = scenarios_failed_queue.get()
-                    self.scenarios_failed.loc[scenario_name, 'exception'] = exception_msg
-                    self.scenarios_failed.loc[scenario_name, 'traceback'] = traceback_msg
         else:
             for scenario_name in self.scenario_names:
                 self.simulate_scenario(scenario_name)
 
-        self.save_scenarios_failed()
         if self.save_results:
             self.join_results()
 
@@ -875,19 +877,43 @@ class SimulationRun:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
 
-    def save_scenarios_failed(self):
-        self.scenarios_failed.to_csv(self.path_result_failed_file,
+    def update_scenario_status(self, queue):
+        while True:
+            # This is all chatgpt bullshit -> ToDO: use structure and adapt
+            status_dict = queue.get()
+            if status_dict is None:  # Exit signal
+                break
+            for col in [key for key in status_dict.keys() if key != 'scenario']:
+                self.scenario_status.loc[status_dict['scenario'], col] = status_dict[col]
+
+            self.save_scenario_status()
+
+    def save_scenario_status(self):
+        self.scenario_status.to_csv(self.path_result_status_file,
                                      index=True)
 
-    def simulate_scenario(self, name: str, log_queue=None, scenarios_failed_queue=None, lock=None):
+    def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
         logger = logger_fcs.setup_logger(name, log_queue, self)
 
         self.process = mp.current_process() if self.parallel else None
+
+        # ToDo: move this to function (within this method) to avoid duplicate code for each status update
+        if status_queue is not None:
+            status_queue.put({'scenario': name, 'status': 'started'})
+        else:
+            self.scenario_status.loc[name, 'status'] = 'started'
+            self.save_scenario_status()
 
         scenario = None
 
         try:
             scenario = Scenario(name, self, logger, lock)  # Create scenario instance
+
+            if status_queue is not None:
+                status_queue.put({'scenario': name, 'status': 'fully initialized'})
+            else:
+                self.scenario_status.loc[name, 'status'] = 'fully initialized'
+                self.save_scenario_status()
 
             # ToDo: move to checker.py
             if scenario.strategy not in ['go', 'rh']:
@@ -898,14 +924,24 @@ class SimulationRun:
                 horizon = PredictionHorizon(horizon_index, scenario)
                 horizon.run_optimization()
                 horizon.get_results()
+
+            if status_queue is not None:
+                status_queue.put({'scenario': name, 'status': 'successful'})
+            else:
+                self.scenario_status.loc[name, 'status'] = 'successful'
+                self.save_scenario_status()
+
             scenario.end_timing()
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-            if scenarios_failed_queue is not None:
-                scenarios_failed_queue.put((name, str(e), traceback.format_exc()))
+            if status_queue is not None:
+                status_queue.put({'scenario': name, 'status': 'failed', 'exception': str(e), 'traceback': traceback.format_exc()})
             else:
-                self.scenarios_failed.loc[name, ['exception', 'traceback']] = [str(e), traceback.format_exc()]
+                self.scenario_status.loc[name, 'status'] = 'failed'
+                self.scenario_status.loc[name, 'exception'] = str(e)
+                self.scenario_status.loc[name, 'traceback'] = traceback.format_exc()
+                self.save_scenario_status()
 
             # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
             logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
