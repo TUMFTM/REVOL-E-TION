@@ -125,7 +125,7 @@ def annuity_due_recur(nominal_value:float,
                       discount_rate:float):
     """
     Calculate the annuity due of a yearly recurring (lifespan=1) and nonchanging (cost_change_ratio=1)
-    mainenance expense (the equivalent yearly sum to generate the same NPV) over a observation horizon.
+    mainenance expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
     """
     annuity_due_recur = annuity_due_capex(capex_init=nominal_value,
                                           capex_replacement=nominal_value,
