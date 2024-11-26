@@ -859,9 +859,13 @@ class CommoditySystem(InvestBlock):
         # Calc opex for external charging
         self.opem_yrl_ext = utils.scale_sim2year(self.opem_sim_ext, self.scenario)
         self.opem_prj_ext = utils.scale_year2prj(self.opem_yrl_ext, self.scenario)
-        # ToDo: emissions - add opem_dis_ext and opem_ann_ext
-        self.opem_dis_ext = 0
-        self.opem_ann_ext = 0
+        self.opem_dis_ext = eco.acc_discount(self.opem_yrl_ext,
+                                             self.scenario.prj_duration_yrs,
+                                             self.scenario.wacc,  # ToDo: emissions - wacc of emissions?
+                                             occurs_at='end')
+        self.opem_ann_ext = eco.annuity_due_recur(nominal_value=self.opem_yrl_ext,
+                                                  observation_horizon=self.scenario.prj_duration_yrs,
+                                                  discount_rate=self.scenario.wacc)  # ToDo: emissions - wacc of emissions?
 
         self.scenario.opem_sim_ext += self.opem_sim_ext
         self.scenario.opem_yrl_ext += self.opem_yrl_ext
