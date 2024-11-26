@@ -10,6 +10,7 @@ class CustomConstraints:
         self.scenario = scenario
         self.equal_invests = []
         self.invest_costs = {'flow': [], 'storage': []}
+        self.capex_init_existing = 0
 
     def apply_constraints(self, model):
         # Add pyomo block to model to store custom constraints
@@ -276,6 +277,8 @@ class CustomConstraints:
                 # Add investment costs for all storage objects
                 expr += sum(m.GenericInvestmentStorageBlock.invest[invest_storage['so'], 0] *
                             invest_storage['capex_spec'] for invest_storage in self.invest_costs['storage'])
+
+                expr += self.capex_init_existing
 
                 return expr <= self.scenario.invest_max
 

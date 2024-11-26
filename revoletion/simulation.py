@@ -65,6 +65,8 @@ class PredictionHorizon:
 
         self.components = []  # empty list to store all oemof-solph components
         self.constraints = constraints.CustomConstraints(scenario=self.scenario)
+        # add existing capex costs to constraints
+        self.constraints.capex_init_existing = self.scenario.capex_init_existing
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph_endtime > self.scenario.sim_endtime and self.scenario.truncate_ph:
@@ -381,6 +383,17 @@ class Scenario:
         self.blocks = self.create_block_objects()
         self.commodity_systems = {block.name: block for block in self.blocks.values()
                                   if isinstance(block, blocks.CommoditySystem)}
+
+        # initialize variable to store initial investment costs given in scenario definition
+        self.capex_init_existing = 0
+        # get all initial capex costs for existing components
+        for block in self.blocks.values():
+            block.calc_capex_init_existing()
+        if self.invest_max is not None and self.invest_max < self.capex_init_existing:
+            self.logger.error(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency}'
+                              f' exceed maximum investment limit of {self.invest_max} {self.currency}')
+            raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency}'
+                              f' exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.

@@ -335,12 +335,15 @@ class InvestBlock(Block):
         Default function for blocks with a single size value.
         GridConnections, SystemCore and CommoditySystems are more complex and have their own functions
         """
-        self.capex_init_existing = (self.size_existing * self.capex_spec) if self.capex_existing else 0
         self.capex_init_additional = self.size_additional * self.capex_spec
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (self.size_existing + self.size_additional) * self.capex_spec
+
+    def calc_capex_init_existing(self):
+        self.capex_init_existing = (self.size_existing * self.capex_spec) if self.capex_existing else 0
+        self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_expenses(self):
 
@@ -581,13 +584,16 @@ class CommoditySystem(InvestBlock):
             commodity.calc_aging(horizon)
 
     def calc_capex_init(self):
-        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec \
-            if self.capex_existing else 0
         self.capex_init_additional = sum([com.size_additional for com in self.commodities.values()]) * self.capex_spec
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = sum([com.size_existing + com.size_additional for com in self.commodities.values()]) * self.capex_spec
+
+    def calc_capex_init_existing(self):
+        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec \
+            if self.capex_existing else 0
+        self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
 
@@ -864,10 +870,6 @@ class GridConnection(InvestBlock):
         """
         Calculate initial capital expenses
         """
-        self.capex_init_existing_g2s = self.size_g2s_existing * self.capex_spec if self.capex_existing_g2s else 0
-        self.capex_init_existing_s2g = self.size_s2g_existing * self.capex_spec if self.capex_existing_s2g else 0
-        self.capex_init_existing = self.capex_init_existing_g2s + self.capex_init_existing_s2g
-
         self.capex_init_additional_g2s = self.size_g2s_additional * self.capex_spec
         self.capex_init_additional_s2g = self.size_s2g_additional * self.capex_spec
         self.capex_init_additional = self.capex_init_additional_g2s + self.capex_init_additional_s2g
@@ -879,6 +881,12 @@ class GridConnection(InvestBlock):
                                   self.size_g2s_additional +
                                   self.size_s2g_existing +
                                   self.size_s2g_additional) * self.capex_spec
+
+    def calc_capex_init_existing(self):
+        self.capex_init_existing_g2s = self.size_g2s_existing * self.capex_spec if self.capex_existing_g2s else 0
+        self.capex_init_existing_s2g = self.size_s2g_existing * self.capex_spec if self.capex_existing_s2g else 0
+        self.capex_init_existing = self.capex_init_existing_g2s + self.capex_init_existing_s2g
+        self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
         # Aggregate energy results for all GridMarkets
@@ -1323,8 +1331,11 @@ class ICEVSystem(Block):
     def calc_energy(self):
         pass  # function has to be callable, but ICEVSystem does not impose energy transfer
 
-    def calc_expenses(self):
+    def calc_capex_init_existing(self):
         self.capex_init = self.capex_pc * self.num if self.capex_existing else 0
+        self.scenario.capex_init_existing += self.capex_init
+
+    def calc_expenses(self):
         self.capex_replacement = self.capex_pc * self.num
         self.extrapolate_capex()  # Method defined in Block class
 
@@ -1381,6 +1392,9 @@ class FixedDemand(Block):
 
     def calc_energy(self):
         self.calc_energy_source_sink()
+
+    def calc_capex_init_existing(self):
+        pass  # function has to be callable, but FixedDemand does not have any capital expenses
 
     def calc_revenue(self):
         self.crev_sim = (self.flow_in @ self.crev_spec[self.scenario.dti_sim]) * self.scenario.timestep_hours  # @ is dot product (Skalarprodukt)
@@ -2198,10 +2212,6 @@ class SystemCore(InvestBlock):
                                        secondary_y=False)
 
     def calc_capex_init(self):
-        self.capex_init_existing_acdc = self.size_acdc_existing * self.capex_spec if self.capex_existing_acdc else 0
-        self.capex_init_existing_dcac = self.size_dcac_existing * self.capex_spec if self.capex_existing_dcac else 0
-        self.capex_init_existing = self.capex_init_existing_dcac + self.capex_init_existing_acdc
-
         self.capex_init_additional = (self.size_acdc_additional + self.size_dcac_additional) * self.capex_spec
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
@@ -2210,6 +2220,12 @@ class SystemCore(InvestBlock):
                                   self.size_acdc_additional +
                                   self.size_dcac_existing +
                                   self.size_dcac_additional) * self.capex_spec
+
+    def calc_capex_init_existing(self):
+        self.capex_init_existing_acdc = self.size_acdc_existing * self.capex_spec if self.capex_existing_acdc else 0
+        self.capex_init_existing_dcac = self.size_dcac_existing * self.capex_spec if self.capex_existing_dcac else 0
+        self.capex_init_existing = self.capex_init_existing_dcac + self.capex_init_existing_acdc
+        self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
 
