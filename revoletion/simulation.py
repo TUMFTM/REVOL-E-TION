@@ -877,25 +877,12 @@ class SimulationRun:
             file_path = os.path.join(self.path_result_dir, file)
             os.remove(file_path)
 
-    def trigger_scenario_status_update(self, queue, status_msg):
-        if queue is not None:
-            queue.put(status_msg)
-        else:
-            self.update_scenario_status(status_msg)
-
     def read_status_queue(self, queue):
         while True:
-            # This is all chatgpt bullshit -> ToDO: use structure and adapt
             status_msg = queue.get()
             if status_msg is None:  # Exit signal
                 break
             self.update_scenario_status(status_msg)
-
-    def update_scenario_status(self, status_msg):
-        for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
-            self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
-        self.scenario_status.to_csv(self.path_result_status_file,
-                                     index=True)
 
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
         logger = logger_fcs.setup_logger(name, log_queue, self)
@@ -971,3 +958,15 @@ class SimulationRun:
                 logger.error(e, exc_info=True)
 
             logging.shutdown()
+
+    def trigger_scenario_status_update(self, queue, status_msg):
+        if queue is not None:
+            queue.put(status_msg)
+        else:
+            self.update_scenario_status(status_msg)
+
+    def update_scenario_status(self, status_msg):
+        for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
+            self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
+        self.scenario_status.to_csv(self.path_result_status_file,
+                                    index=True)
