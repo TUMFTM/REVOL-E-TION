@@ -375,3 +375,10 @@ def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
     sig = np.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
     return mu, sig
+
+def combine_ex_em(ex, em, scenario):
+    """
+    Combine expenditures and emissions based on given costs for emissions and alpha value
+    """
+    combined = ex * (1 - scenario.alpha_emissions) + em * scenario.cost_emissions_spec * scenario.alpha_emissions
+    return combined

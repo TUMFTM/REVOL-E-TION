@@ -29,7 +29,7 @@ class Block:
         for key, value in self.parameters.items():
             setattr(self, key, value)  # this sets all the parameters defined in the scenario file
 
-        time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
+        time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('opem_spec' in var) or ('crev_spec' in var)]
         # Don't transform variables for GridConnections, as the GridMarket opex defined specifically
         if not isinstance(self, GridConnection):
             for var in time_var_params:
@@ -41,19 +41,30 @@ class Block:
         self.flow_out = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
         # flow direction is specified with respect to the block -> flow_in is from energy system into block
 
-        # Empty result scalar variables
+        # Empty result scalar variables: energies
         self.e_sim = self.e_yrl = self.e_prj = self.e_dis = 0
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
         self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
         self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
+
+        # Empty result scalar variables: costs
         self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
         self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
         self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
         self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
+
+        # Empty result scalar variables: CO2 emissions
+        self.capem_init = self.capem_prj = self.capem_dis = self.capem_ann = 0
+        self.mntem_sim = self.mntem_yrl = self.mntem_prj = self.mntem_dis = self.mntem_ann = 0
+        self.opem_sim = self.opem_yrl = self.opem_prj = self.opem_dis = self.opem_ann = 0
+        self.totem_sim = self.totem_prj = self.totem_dis = self.totem_ann = 0
+
+        # Empty result scalar variables: revenues
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
 
         self.cashflows = pd.DataFrame()
+        self.emissions = pd.DataFrame()
 
         self.apriori_data = None
 
@@ -70,6 +81,18 @@ class Block:
         self.scenario.crev_yrl += self.crev_yrl
         self.scenario.crev_prj += self.crev_prj
         self.scenario.crev_dis += self.crev_dis
+
+    def accumulate_emissions(self):
+
+        self.totem_sim = self.capem_init + self.mntem_sim + self.opem_sim
+        self.totem_prj = self.capem_prj + self.mntem_prj + self.opem_prj
+        self.totem_dis = self.capem_dis + self.mntem_dis + self.opem_dis
+        self.totem_ann = self.capem_ann + self.mntem_ann + self.opem_ann
+
+        self.scenario.totem_sim += self.totem_sim
+        self.scenario.totem_prj += self.totem_prj
+        self.scenario.totem_dis += self.totem_dis
+        self.scenario.totem_ann += self.totem_ann
 
     def accumulate_expenses(self):
 
@@ -109,6 +132,23 @@ class Block:
         self.cashflows[f'crev_{self.name}'] = self.crev_yrl
 
         self.scenario.cashflows = pd.concat([self.scenario.cashflows, self.cashflows], axis=1)
+
+    def calc_emissions(self):
+        """
+            Collect nominal cashflows for the block for each year in the project.
+        """
+
+        capem = pd.Series(dtype='float64', index=range(self.scenario.prj_duration_yrs), data=0)
+        capem[0] = self.capem_init
+        if hasattr(self, 'ls'):
+            for year in eco.reinvest_periods(lifespan=self.ls,
+                                             observation_horizon=self.scenario.prj_duration_yrs):
+                capem[year] = self.capem_replacement * (self.ecr ** year)
+        self.emissions[f'capem_{self.name}'] = -1 * capem  # expenses are negative cashflows (outgoing)
+        self.emissions[f'mntem_{self.name}'] = -1 * self.mntem_yrl
+        self.emissions[f'opem_{self.name}'] = -1 * self.opem_yrl
+
+        self.scenario.emissions = pd.concat([self.scenario.emissions, self.emissions], axis=1)
 
     def calc_energy_bidi(self):
         """
@@ -200,6 +240,33 @@ class Block:
         """
         pass
 
+    def extrapolate_capem(self):
+        """
+        Extrapolate initial capital emissions including replacements to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.capem_prj = eco.capex_sum(capex_init=self.capem_init,
+                                       capex_replacement=self.capem_replacement,
+                                       cost_change_ratio=self.ecr,
+                                       lifespan=self.ls,
+                                       observation_horizon=self.scenario.prj_duration_yrs)
+        self.capem_dis = eco.capex_present(capex_init=self.capem_init,
+                                           capex_replacement=self.capem_replacement,
+                                           cost_change_ratio=self.ecr,
+                                           discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                           lifespan=self.ls,
+                                           observation_horizon=self.scenario.prj_duration_yrs)
+        self.capem_ann = eco.annuity_due_capex(capex_init=self.capem_init,
+                                               capex_replacement=self.capem_replacement,
+                                               lifespan=self.ls,
+                                               observation_horizon=self.scenario.prj_duration_yrs,
+                                               discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                               cost_change_ratio=self.ecr)
+        self.scenario.capem_init += self.capem_init
+        self.scenario.capem_prj += self.capem_prj
+        self.scenario.capem_dis += self.capem_dis
+        self.scenario.capem_ann += self.capem_ann
+
     def extrapolate_capex(self):
         """
         Extrapolate initial capital investment including replacements to project timeframe and calculate annuity.
@@ -227,6 +294,26 @@ class Block:
         self.scenario.capex_dis += self.capex_dis
         self.scenario.capex_ann += self.capex_ann
 
+    def extrapolate_mntem(self):
+        """
+        Extrapolate yearly maintenance emissions to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.mntem_sim = self.mntem_yrl * self.scenario.sim_yr_rat
+        self.mntem_prj = utils.scale_year2prj(self.mntem_yrl, self.scenario)
+        self.mntem_dis = eco.acc_discount(nominal_value=self.mntem_yrl,
+                                          observation_horizon=self.scenario.prj_duration_yrs,
+                                          discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                          occurs_at='beginning')
+        self.mntem_ann = eco.annuity_due_recur(nominal_value=self.mntem_yrl,
+                                               observation_horizon=self.scenario.prj_duration_yrs,
+                                               discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                               )
+        self.scenario.mntem_yrl += self.mntem_yrl
+        self.scenario.mntem_prj += self.mntem_prj
+        self.scenario.mntem_dis += self.mntem_dis
+        self.scenario.mntem_ann += self.mntem_ann
+
     def extrapolate_mntex(self):
         """
         Extrapolate yearly maintenance expenses to project timeframe and calculate annuity.
@@ -245,6 +332,27 @@ class Block:
         self.scenario.mntex_prj += self.mntex_prj
         self.scenario.mntex_dis += self.mntex_dis
         self.scenario.mntex_ann += self.mntex_ann
+
+    def extrapolate_opem(self):
+        """
+        Extrapolate operational emissions in simulation timeframe to project timeframe and calculate annuity.
+        Method is called for all InvestBlocks and ICEVSystems.
+        """
+        self.opem_yrl = utils.scale_sim2year(self.opem_sim, self.scenario)
+        self.opem_prj = utils.scale_year2prj(self.opem_yrl, self.scenario)
+        self.opem_dis = eco.acc_discount(nominal_value=self.opem_yrl,
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                         occurs_at='end')
+        self.opem_ann = eco.annuity_due_recur(nominal_value=self.opem_yrl,
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc, # ToDo: emissions - wacc of emissions?
+                                              )
+        self.scenario.opem_sim += self.opem_sim
+        self.scenario.opem_yrl += self.opem_yrl
+        self.scenario.opem_prj += self.opem_prj
+        self.scenario.opem_dis += self.opem_dis
+        self.scenario.opem_ann += self.opem_ann
 
     def extrapolate_opex(self):
         """
@@ -293,6 +401,7 @@ class InvestBlock(Block):
         self.size = self.size_additional_max = None  # placeholder
         self.size_additional = 0
         self.capex_init_existing = self.capex_init_additional = self.capex_replacement = 0
+        self.capem_init_existing = self.capem_init_additional = self.capem_replacement = 0
 
         self.set_init_size()
 
@@ -307,6 +416,12 @@ class InvestBlock(Block):
                                                       lifespan=self.ls,
                                                       discount_rate=self.scenario.wacc)
 
+        self.capem_joined_spec = eco.join_capex_mntex(capex=self.capem_spec,
+                                                      mntex=self.mntem_spec,
+                                                      lifespan=self.ls,
+                                                      discount_rate=self.scenario.wacc  # ToDo: emissions - wacc for emissions?
+                                                      )
+
         # annuity factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
         self.factor_capex = eco.annuity_due_capex(capex_init=1,  # nonexisting block size is always capexed
@@ -317,11 +432,48 @@ class InvestBlock(Block):
                                                   cost_change_ratio=self.ccr) if scenario.compensate_sim_prj else 1
         self.capex_ep_spec = self.capex_joined_spec * self.factor_capex
 
+        self.factor_capem = eco.annuity_due_capex(capex_init=1,  # nonexisting block size is always capexed
+                                                  capex_replacement=1,
+                                                  lifespan=self.ls,
+                                                  observation_horizon=self.scenario.prj_duration_yrs,
+                                                  discount_rate=self.scenario.wacc,  # ToDo: emissions - wacc for emissions?
+                                                  cost_change_ratio=self.ecr) if scenario.compensate_sim_prj else 1
+        self.capem_ep_spec = self.capem_joined_spec * self.factor_capem
+
+        self.cap_ep_spec = utils.combine_ex_em(ex=self.capex_ep_spec,
+                                               em=self.capem_ep_spec,
+                                               scenario=self.scenario)
+
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
         self.factor_opex = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
+
+        self.factor_opem = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
+        self.opem_ep_spec = None  # initial value
+        self.calc_opem_ep_spec()  # uprate opex values for short simulations, exact process depends on class
+
+        self.calc_op_ep_spec()  # combine ex and em values to get final opex, excat process depends on class
+
+    def calc_capem(self):
+        """
+        Calculate capital emissions over simulation timeframe and extrapolate to other timeframes.
+        """
+        self.calc_capem_init()  # initial investment references to different parameters depending on block type
+        self.extrapolate_capem()
+
+    def calc_capem_init(self):
+        """
+        Default function for blocks with a single size value.
+        GridConnections, SystemCore and CommoditySystems are more complex and have their own functions
+        """
+        self.capem_init_existing = (self.size_existing * self.capem_spec) if self.capem_existing else 0
+        self.capem_init_additional = self.size_additional * self.capem_spec
+        self.capem_init = self.capem_init_existing + self.capem_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capem_replacement = (self.size_existing + self.size_additional) * self.capem_spec
 
     def calc_capex(self):
         """
@@ -342,12 +494,34 @@ class InvestBlock(Block):
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (self.size_existing + self.size_additional) * self.capex_spec
 
+    def calc_emissions(self):
+
+        self.calc_capem()
+        self.calc_mntem()
+        self.calc_opem()
+        self.accumulate_emissions()
+
     def calc_expenses(self):
 
         self.calc_capex()
         self.calc_mntex()
         self.calc_opex()
         self.accumulate_expenses()
+
+    def calc_mntem(self):
+        """
+        Calculate maintenance emissions over simulation timeframe and convert to other timeframes.
+        Maintenance emissions are solely time-based. Throughput-based maintenance should be included in opem.
+        """
+        self.calc_mntem_yrl()  # maintenance emissions are defined differently depending on the block type
+        self.extrapolate_mntem()
+
+    def calc_mntem_yrl(self):
+        """
+        Default function for simple blocks with a single size value. GridConnection, SystemCore and CommoditySystem
+        are more complex.
+        """
+        self.mntem_yrl = self.size * self.mntem_spec
 
     def calc_mntex(self):
         """
@@ -363,6 +537,26 @@ class InvestBlock(Block):
         are more complex.
         """
         self.mntex_yrl = self.size * self.mntex_spec
+
+    def calc_op_ep_spec(self):
+        self.op_ep_spec = utils.combine_ex_em(ex=self.opex_ep_spec,
+                                              em=self.opem_ep_spec,
+                                              scenario=self.scenario)
+
+    def calc_opem(self):
+        """
+        Calculate operational emissions over simulation timeframe and convert to other timeframes.
+        """
+        self.calc_opem_sim()  # opem is defined differently depending on the block type
+        self.extrapolate_opem()
+
+    def calc_opem_ep_spec(self):
+        """
+        Default opem precompensation method for blocks with a single size value.
+        GridConnection (g2s/s2g) and CommoditySystem (sys/ext/opex)
+        are more complex and have their own methods.
+        """
+        self.opem_ep_spec = self.opem_spec * self.factor_opem
 
     def calc_opex(self):
         """
@@ -441,6 +635,9 @@ class RenewableInvestBlock(InvestBlock):
         self.scenario.e_renewable_pot += self.e_pot
         self.scenario.e_renewable_curt += self.e_curt
 
+    def calc_opem_sim(self):
+        self.opem_sim = self.flow_out @ self.opem_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+
     def calc_opex_sim(self):
         self.opex_sim = self.flow_out @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
@@ -498,11 +695,11 @@ class RenewableInvestBlock(InvestBlock):
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.bus: solph.Flow(
-                                               nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
+                                               nominal_value=solph.Investment(ep_costs=self.cap_ep_spec,
                                                                               existing=self.size_existing,
                                                                               maximum=self.size_additional_max if self.invest else 0),
                                                fix=self.data_ph['power_spec'],
-                                               variable_costs=self.opex_ep_spec[horizon.dti_ph])})
+                                               variable_costs=self.op_ep_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
 
         horizon.constraints.add_invest_costs(invest=(self.src, self.bus),
@@ -516,8 +713,11 @@ class CommoditySystem(InvestBlock):
 
         self.size_pc = self.size_existing_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
+        self.opem_sim_ext = self.opem_yrl_ext = self.opem_prj_ext = self.opem_dis_ext = self.opem_ann_ext = 0
 
         super().__init__(name, scenario)
+
+        self.calc_op_ep_spec()
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
@@ -561,7 +761,8 @@ class CommoditySystem(InvestBlock):
             # downrate power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
-        self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
+        self.opex_commodities = self.opex_commodities_ext = self.opex_sys = 0
+        self.opem_commodities = self.opem_commodities_ext = 0
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # results of external charging
 
         # Generate individual commodity instances
@@ -579,6 +780,15 @@ class CommoditySystem(InvestBlock):
     def calc_aging(self, horizon):
         for commodity in self.commodities.values():
             commodity.calc_aging(horizon)
+
+    def calc_capem_init(self):
+        self.capem_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capem_spec \
+            if self.capem_existing else 0
+        self.capem_init_additional = sum([com.size_additional for com in self.commodities.values()]) * self.capem_spec
+        self.capem_init = self.capem_init_existing + self.capem_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capem_replacement = sum([com.size_existing + com.size_additional for com in self.commodities.values()]) * self.capem_spec
 
     def calc_capex_init(self):
         self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec \
@@ -601,8 +811,63 @@ class CommoditySystem(InvestBlock):
 
         self.calc_energy_bidi()  # bidirectional block
 
+    def calc_mntem_yrl(self):
+        self.mntem_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntem_spec
+
     def calc_mntex_yrl(self):
         self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
+
+    def calc_op_ep_spec(self):
+        self.op_ep_spec = utils.combine_ex_em(ex=self.opex_ep_spec,
+                                              em=self.opem_ep_spec,
+                                              scenario=self.scenario)
+
+        self.op_ep_spec_sys_chg = utils.combine_ex_em(ex=self.opex_ep_spec_sys_chg,
+                                                      em=0,
+                                                      scenario=self.scenario)
+
+        self.op_ep_spec_sys_dis = utils.combine_ex_em(ex=self.opex_ep_spec_sys_dis,
+                                                      em=0,
+                                                      scenario=self.scenario)
+
+        self.op_ep_spec_ext_ac = utils.combine_ex_em(ex=self.opex_ep_spec_ext_ac,
+                                                     em=self.opem_ep_spec_ext_ac,
+                                                     scenario=self.scenario)
+
+        self.op_ep_spec_ext_dc = utils.combine_ex_em(ex=self.opex_ep_spec_ext_dc,
+                                                     em=self.opem_ep_spec_ext_dc,
+                                                     scenario=self.scenario)
+
+    def calc_opem_ep_spec(self):
+        # Opex is uprated in importance for short simulations
+        self.opem_ep_spec = self.opem_spec * self.factor_opem
+        self.opem_ep_spec_ext_ac = self.opem_spec_ext_ac * self.factor_opex
+        self.opem_ep_spec_ext_dc = self.opem_spec_ext_dc * self.factor_opex
+
+    def calc_opem_sim(self):
+
+        for commodity in self.commodities.values():
+            commodity.opem_sim = commodity.flow_in @ self.opem_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+            commodity.opem_sim_ext = ((commodity.flow_ext_ac @ self.opem_spec_ext_ac[self.scenario.dti_sim]) +
+                                      (commodity.flow_ext_dc @ self.opem_spec_ext_dc[self.scenario.dti_sim])) * self.scenario.timestep_hours
+            self.opem_commodities += (commodity.opem_sim + commodity.opem_sim_ext)
+            self.opem_commodities_ext += commodity.opem_sim_ext
+
+        self.opem_sim = self.opex_commodities
+        self.opem_sim_ext = self.opem_commodities_ext
+
+        # Calc opex for external charging
+        self.opem_yrl_ext = utils.scale_sim2year(self.opem_sim_ext, self.scenario)
+        self.opem_prj_ext = utils.scale_year2prj(self.opem_yrl_ext, self.scenario)
+        # ToDo: emissions - add opem_dis_ext and opem_ann_ext
+        self.opem_dis_ext = 0
+        self.opem_ann_ext = 0
+
+        self.scenario.opem_sim_ext += self.opem_sim_ext
+        self.scenario.opem_yrl_ext += self.opem_yrl_ext
+        self.scenario.opem_prj_ext += self.opem_prj_ext
+        self.scenario.opem_dis_ext += self.opem_dis_ext
+        self.scenario.opem_ann_ext += self.opem_ann_ext
 
     def calc_opex_ep_spec(self):
         # Opex is uprated in importance for short simulations
@@ -746,7 +1011,7 @@ class CommoditySystem(InvestBlock):
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     variable_costs=self.opex_ep_spec_sys_chg[horizon.dti_ph],
+                                                     variable_costs=self.op_ep_spec_sys_chg[horizon.dti_ph],
                                                      nominal_value=self.power_lim_static,
                                                      max=1 if self.power_lim_static else None
                                                  )},
@@ -757,7 +1022,7 @@ class CommoditySystem(InvestBlock):
                                                   inputs={self.bus: solph.Flow(
                                                       nominal_value=(self.power_lim_static if self.lvl_cap in ['v2s'] else 0),
                                                       max=(1 if self.power_lim_static is not None else None),
-                                                      variable_costs=self.opex_ep_spec_sys_dis[horizon.dti_ph])},
+                                                      variable_costs=self.op_ep_spec_sys_dis[horizon.dti_ph])},
                                                   outputs={self.bus_connected: solph.Flow(
                                                       variable_costs=self.scenario.cost_eps)},
                                                   conversion_factors={self.bus_connected: 1})
@@ -797,6 +1062,9 @@ class ControllableSource(InvestBlock):
     def calc_energy(self):
         self.calc_energy_source_sink()
 
+    def calc_opem_sim(self):
+        self.opem_sim = self.flow_out @ self.opem_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+
     def calc_opex_sim(self):
         self.opex_sim = self.flow_out @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
@@ -822,10 +1090,10 @@ class ControllableSource(InvestBlock):
 
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.bus_connected: solph.Flow(
-                                               nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
+                                               nominal_value=solph.Investment(ep_costs=self.cap_ep_spec,
                                                                               existing=self.size_existing,
                                                                               maximum=self.size_additional_max if self.invest else 0),
-                                               variable_costs=self.opex_ep_spec[horizon.dti_ph])})
+                                               variable_costs=self.op_ep_spec[horizon.dti_ph])})
 
         horizon.components.append(self.src)
 
@@ -842,13 +1110,16 @@ class GridConnection(InvestBlock):
         self.equal = None
 
         self.capex_init_existing_s2g = self.capex_init_existing_g2s = 0
+        self.capem_init_existing_s2g = self.capem_init_existing_g2s = 0
         self.capex_init_additional_s2g = self.capex_init_additional_g2s = 0
+        self.capem_init_additional_s2g = self.capem_init_additional_g2s = 0
 
         super().__init__(name, scenario)
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
         self.opex_sim_power = self.opex_sim_energy = 0
+        self.opem_sim_energy = 0
 
         self.factor_opex_peak = self.opex_ep_spec_peak = 0
 
@@ -859,6 +1130,26 @@ class GridConnection(InvestBlock):
         super().add_power_trace()
         for market in self.markets.values():
             market.add_power_trace()
+
+    def calc_capem_init(self):
+        """
+        Calculate initial capital emissions
+        """
+        self.capem_init_existing_g2s = self.size_g2s_existing * self.capem_spec if self.capem_existing_g2s else 0
+        self.capem_init_existing_s2g = self.size_s2g_existing * self.capem_spec if self.capem_existing_s2g else 0
+        self.capem_init_existing = self.capex_init_existing_g2s + self.capex_init_existing_s2g
+
+        self.capem_init_additional_g2s = self.size_g2s_additional * self.capem_spec
+        self.capem_init_additional_s2g = self.size_s2g_additional * self.capem_spec
+        self.capem_init_additional = self.capem_init_additional_g2s + self.capem_init_additional_s2g
+
+        self.capem_init = self.capem_init_existing + self.capem_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capem_replacement = (self.size_g2s_existing +
+                                  self.size_g2s_additional +
+                                  self.size_s2g_existing +
+                                  self.size_s2g_additional) * self.capem_spec
 
     def calc_capex_init(self):
         """
@@ -887,8 +1178,28 @@ class GridConnection(InvestBlock):
 
         self.calc_energy_source_sink()
 
+    def calc_mntem_yrl(self):
+        self.mntem_yrl = (self.size_g2s + self.size_s2g) * self.mntem_spec
+
     def calc_mntex_yrl(self):
         self.mntex_yrl = (self.size_g2s + self.size_s2g) * self.mntex_spec
+
+    def calc_op_ep_spec(self):
+        pass
+
+    def calc_opem_ep_spec(self):
+        # Method has to be callable from InvestBlock.__init__, but energy based opem is in GridMarket
+        pass
+
+    def calc_opem_sim(self):
+        # Calculate costs of different markets
+        for market in self.markets.values():
+            market.opem_sim = market.flow_out @ market.opem_spec_g2s[self.scenario.dti_sim] * self.scenario.timestep_hours + \
+                              market.flow_in @ market.opem_spec_s2g[self.scenario.dti_sim] * self.scenario.timestep_hours
+
+            self.opem_sim_energy += market.opem_sim
+
+        self.opem_sim = self.opem_sim_energy
 
     def calc_opex_ep_spec(self):
         # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridMarket
@@ -957,9 +1268,11 @@ class GridConnection(InvestBlock):
                                   index_col=[0])
             markets = markets.map(utils.infer_dtype)
         else:
-            markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'pwr_g2s', 'pwr_s2g'],
+            markets = pd.DataFrame(index=['res_only', 'opem_spec_g2s', 'opem_spec_s2g', 'opex_spec_g2s', 'opex_spec_s2g',
+                                          'pwr_g2s', 'pwr_s2g'],
                                    columns=['grid'],
-                                   data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
+                                   data=[self.res_only, self.opem_spec_g2s, self.opem_spec_s2g,
+                                         self.opex_spec_g2s, self.opex_spec_s2g, None, None])
         # Generate individual GridMarkets instances
         self.markets = {market: GridMarket(market, self, markets.loc[:, market])
                         for market in markets.columns}
@@ -1096,7 +1409,7 @@ class GridConnection(InvestBlock):
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
             outputs={self.bus: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
+                nominal_value=solph.Investment(ep_costs=self.cap_ep_spec,
                                                existing=self.size_s2g_existing,
                                                maximum=self.size_additional_s2g_max if self.invest_s2g else 0),
                 variable_costs=self.scenario.cost_eps)},
@@ -1107,12 +1420,12 @@ class GridConnection(InvestBlock):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.bus: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=(self.capex_ep_spec if intv == self.peakshaving_ints.index[0] else 0),
+                nominal_value=solph.Investment(ep_costs=(self.cap_ep_spec if intv == self.peakshaving_ints.index[0] else 0),
                                                existing=self.size_g2s_existing,
                                                maximum=self.size_additional_g2s_max if self.invest_g2s else 0)
             )},
             # Peakshaving
-            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_ep_spec_peak,
+            outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.op_ep_spec_peak,
                                                                                     existing=self.peakshaving_ints.loc[intv, 'power'],)
                                                                    if self.peakshaving else None),
                                                     max=(self.bus_activation.loc[horizon.dti_ph, intv] if self.peakshaving else None))},
@@ -1162,6 +1475,8 @@ class GridMarket:
 
         # opex_spec_g2s has always to be specified as a scalar or a filename containing a timeseries
         # ToDo: move to checker.py
+        # ToDo: emissions - how deal with negative emissions caused by feeding in?
+        # ToDo: emissions - restructure this for emission use case -> only one input needed? Adapt market initialization in GridConnection
         if self.opex_spec_g2s == 'equal':
             raise ValueError(f'GridMarket "{self.name}": opex_spec_g2s cannot be set to "equal".'
                              f' When using the same cost for g2s and s2g specifiy the cost in  opex_spec_g2s and set'
@@ -1176,7 +1491,12 @@ class GridMarket:
             self.equal_prices = False
             utils.transform_scalar_var(self, 'opex_spec_s2g')
 
+        utils.transform_scalar_var(self, 'opem_spec_g2s')
+        utils.transform_scalar_var(self, 'opem_spec_s2g')
+
         self.calc_opex_ep_spec()
+        self.calc_opem_ep_spec()
+        self.calc_op_ep_spec()
 
         self.e_sim_in = self.e_yrl_in = self.e_prj_in = self.e_dis_in = 0
         self.e_sim_out = self.e_yrl_out = self.e_prj_out = self.e_dis_out = 0
@@ -1202,6 +1522,18 @@ class GridMarket:
                                                   line=dict(width=2, dash=None),
                                                   visible='legendonly'),
                                        secondary_y=False)
+
+    def calc_op_ep_spec(self):
+        self.op_ep_spec_s2g = utils.combine_ex_em(ex=self.opex_ep_spec_s2g,
+                                                  em=self.opem_ep_spec_s2g,
+                                                  scenario=self.scenario)
+        self.op_ep_spec_g2s = utils.combine_ex_em(ex=self.opex_ep_spec_g2s,
+                                                  em=self.opem_ep_spec_g2s,
+                                                  scenario=self.scenario)
+
+    def calc_opem_ep_spec(self):
+        self.opem_ep_spec_g2s = self.opem_spec_g2s * self.parent.factor_opem
+        self.opem_ep_spec_s2g = self.opem_spec_s2g * self.parent.factor_opem
 
     def calc_opex_ep_spec(self):
         self.opex_ep_spec_g2s = self.opex_spec_g2s * self.parent.factor_opex
@@ -1274,13 +1606,13 @@ class GridMarket:
         self.src = solph.components.Source(label=f'{self.name}_src',
                                            outputs={self.parent.bus: solph.Flow(
                                                nominal_value=(self.pwr_g2s if not pd.isna(self.pwr_g2s) else None),
-                                               variable_costs=self.opex_ep_spec_g2s[horizon.dti_ph])
+                                               variable_costs=self.op_ep_spec_g2s[horizon.dti_ph])
                                            })
 
         self.snk = solph.components.Sink(label=f'{self.name}_snk',
                                          inputs={self.parent.bus: solph.Flow(
                                              nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
-                                             variable_costs=self.opex_ep_spec_s2g[horizon.dti_ph] +
+                                             variable_costs=self.op_ep_spec_s2g[horizon.dti_ph] +
                                                             self.scenario.cost_eps * self.equal_prices)
                                          })
 
@@ -1322,6 +1654,20 @@ class ICEVSystem(Block):
 
     def calc_energy(self):
         pass  # function has to be callable, but ICEVSystem does not impose energy transfer
+
+    def calc_emissions(self):
+        self.capem_init = self.capem_pc * self.num if self.capem_existing else 0
+        self.capem_replacement = self.capem_pc * self.num
+        self.extrapolate_capem()  # Method defined in Block class
+
+        self.opem_sim = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opem_spec_dist
+                             for com in self.com_names])
+        self.extrapolate_opem()  # Method defined in Block class
+
+        self.mntem_yrl = self.mntem_pc * self.num
+        self.extrapolate_mntem()  # Method defined in Block class
+
+        self.accumulate_emissions()
 
     def calc_expenses(self):
         self.capex_init = self.capex_pc * self.num if self.capex_existing else 0
@@ -1755,7 +2101,7 @@ class MobileCommodity:
         horizon.components.append(self.snk)
 
         self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                   inputs={self.bus: solph.Flow(variable_costs=self.parent.opex_ep_spec[horizon.dti_ph])},
+                                                   inputs={self.bus: solph.Flow(variable_costs=self.parent.op_ep_spec[horizon.dti_ph])},
                                                    # cost_eps are needed to prevent storage from being emptied in RH
                                                    outputs={self.bus: solph.Flow(variable_costs=self.scenario.cost_eps)},
                                                    loss_rate=self.parent.loss_rate,
@@ -1766,7 +2112,7 @@ class MobileCommodity:
                                                         soc_max[horizon.starttime]]),
                                                    inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
-                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.parent.capex_ep_spec,
+                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.parent.cap_ep_spec,
                                                                                              existing=self.size_existing,
                                                                                              maximum=self.parent.size_additional_max if self.invest else 0),
                                                    min_storage_level=soc_min,
@@ -1784,7 +2130,7 @@ class MobileCommodity:
                                                       nominal_value=self.parent.pwr_ext_ac,
                                                       max=ext_ac_max,
                                                       fix=ext_ac_fix,
-                                                      variable_costs=self.parent.opex_ep_spec_ext_ac[horizon.dti_ph])}
+                                                      variable_costs=self.parent.op_ep_spec_ext_ac[horizon.dti_ph])}
                                                   )
 
         self.conv_ext_ac = solph.components.Converter(label=f'{self.name}_conv_ext_ac',
@@ -1805,7 +2151,7 @@ class MobileCommodity:
                                                       nominal_value=self.parent.pwr_ext_dc,
                                                       max=ext_dc_max,
                                                       fix=ext_dc_fix,
-                                                      variable_costs=self.parent.opex_ep_spec_ext_dc[horizon.dti_ph])}
+                                                      variable_costs=self.parent.op_ep_spec_ext_dc[horizon.dti_ph])}
                                                   )
 
         self.conv_ext_dc = solph.components.Converter(label=f'{self.name}_conv_ext_dc',
@@ -2059,6 +2405,9 @@ class StationaryEnergyStorage(InvestBlock):
     def calc_energy(self):
         self.calc_energy_bidi()
 
+    def calc_opem_sim(self):
+        self.opem_sim = self.flow_in @ self.opem_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+
     def calc_opex_sim(self):
         self.opex_sim = self.flow_in @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
@@ -2114,7 +2463,7 @@ class StationaryEnergyStorage(InvestBlock):
 
         self.inflow = solph.components.Converter(label=f'xc_{self.name}',
                                                  inputs={self.bus_connected: solph.Flow(
-                                                     variable_costs=self.opex_ep_spec[horizon.dti_ph]
+                                                     variable_costs=self.op_ep_spec[horizon.dti_ph]
                                                  )},
                                                  outputs={self.bus: solph.Flow()},
                                                  conversion_factors={self.bus: self.eff_chg})
@@ -2140,7 +2489,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    invest_relation_output_capacity=self.crate_dis,
                                                    inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
-                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.capex_ep_spec,
+                                                   nominal_storage_capacity=solph.Investment(ep_costs=self.cap_ep_spec,
                                                                                              existing=self.size_existing,
                                                                                              maximum=self.size_additional_max if self.invest else 0),
                                                    max_storage_level=pd.Series(data=self.soc_max,
@@ -2168,6 +2517,7 @@ class SystemCore(InvestBlock):
         self.equal = None
 
         self.capex_init_existing_acdc = self.capex_init_existing_dcac = 0
+        self.capem_init_existing_acdc = self.capem_init_existing_dcac = 0
 
         super().__init__(name, scenario)
         self.ac_bus = self.dc_bus = self.ac_dc = self.dc_ac = None  # initialize oemof-solph components
@@ -2196,6 +2546,20 @@ class SystemCore(InvestBlock):
                                                   line=dict(width=2, dash=None),
                                                   visible='legendonly'),
                                        secondary_y=False)
+
+    def calc_capem_init(self):
+        self.capem_init_existing_acdc = self.size_acdc_existing * self.capem_spec if self.capem_existing_acdc else 0
+        self.capem_init_existing_dcac = self.size_dcac_existing * self.capem_spec if self.capem_existing_dcac else 0
+        self.capem_init_existing = self.capem_init_existing_dcac + self.capem_init_existing_acdc
+
+        self.capem_init_additional = (self.size_acdc_additional + self.size_dcac_additional) * self.capem_spec
+        self.capem_init = self.capem_init_existing + self.capem_init_additional
+
+        # replacements are full cost irrespective of existing size
+        self.capem_replacement = (self.size_acdc_existing +
+                                  self.size_acdc_additional +
+                                  self.size_dcac_existing +
+                                  self.size_dcac_additional) * self.capem_spec
 
     def calc_capex_init(self):
         self.capex_init_existing_acdc = self.size_acdc_existing * self.capex_spec if self.capex_existing_acdc else 0
@@ -2229,14 +2593,19 @@ class SystemCore(InvestBlock):
                                            self.scenario.wacc,
                                            occurs_at='end')
 
+    def calc_mntem_yrl(self):
+        self.mntem_yrl = (self.size_acdc + self.size_dcac) * self.mntem_spec
+
     def calc_mntex_yrl(self):
         self.mntex_yrl = (self.size_acdc + self.size_dcac) * self.mntex_spec
+
+    def calc_opem_sim(self):
+        self.opem_sim = (self.flow_acdc + self.flow_dcac) @ self.opem_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def calc_opex_sim(self):
         self.opex_sim = (self.flow_acdc + self.flow_dcac) @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def get_ch_results(self, horizon):
-
         self.flow_acdc[horizon.dti_ch] = horizon.results[(self.scenario.blocks['core'].ac_bus, self.ac_dc)]['sequences']['flow'][
             horizon.dti_ch]
         self.flow_dcac[horizon.dti_ch] = horizon.results[(self.scenario.blocks['core'].dc_bus, self.dc_ac)]['sequences']['flow'][
@@ -2320,20 +2689,20 @@ class SystemCore(InvestBlock):
 
         self.ac_dc = solph.components.Converter(label='ac_dc',
                                                 inputs={self.ac_bus: solph.Flow(
-                                                    nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
+                                                    nominal_value=solph.Investment(ep_costs=self.cap_ep_spec,
                                                                                    existing=self.size_acdc_existing,
                                                                                    maximum=self.size_additional_acdc_max if self.invest_acdc else 0),
-                                                    variable_costs=self.opex_ep_spec[horizon.dti_ph])},
+                                                    variable_costs=self.op_ep_spec[horizon.dti_ph])},
                                                 outputs={self.dc_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},
                                                 conversion_factors={self.dc_bus: self.eff_acdc})
 
         self.dc_ac = solph.components.Converter(label='dc_ac',
                                                 inputs={self.dc_bus: solph.Flow(
-                                                    nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
+                                                    nominal_value=solph.Investment(ep_costs=self.cap_ep_spec,
                                                                                    existing=self.size_dcac_existing,
                                                                                    maximum=self.size_additional_dcac_max if self.invest_dcac else 0),
-                                                    variable_costs=self.opex_ep_spec[horizon.dti_ph])},
+                                                    variable_costs=self.op_ep_spec[horizon.dti_ph])},
                                                 outputs={self.ac_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},
                                                 conversion_factors={self.ac_bus: self.eff_dcac})

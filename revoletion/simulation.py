@@ -426,6 +426,7 @@ class Scenario:
         self.figure = None  # placeholder for plotting
 
         self.cashflows = pd.DataFrame()
+        self.emissions = pd.DataFrame()
 
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
@@ -446,6 +447,13 @@ class Scenario:
         self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
         self.lcoe_total = self.lcoe_wocs = None
         self.npv = self.irr = self.mirr = None
+
+        # Result variables - Emissions
+        self.capem_init = self.capem_prj = self.capem_dis = self.capem_ann = 0
+        self.mntem_yrl = self.mntem_prj = self.mntem_dis = self.mntem_ann = 0
+        self.opem_sim = self.opem_yrl = self.opem_prj = self.opem_dis = self.opem_ann = 0
+        self.opem_sim_ext = self.opem_yrl_ext = self.opem_prj_ext = self.opem_dis_ext = self.opem_ann_ext = 0
+        self.totem_sim = self.totem_prj = self.totem_dis = self.totem_ann = 0
 
         self.logger.debug(f'Scenario initialization completed')
 
@@ -501,7 +509,8 @@ class Scenario:
                          f' Renewable Share:'
                          f' {f"{self.renewable_share * 100:.1f}" if pd.notna(self.renewable_share) else "-"} % -'
                          f' Renewable Curtailment:'
-                         f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} %')
+                         f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} % -'
+                         f' CO2-Emissions: {f"{self.totem_dis * 1e-3:,.2f}" if pd.notna(self.totem_dis) else "-"} t')
 
     def create_block_objects(self):
         class_dict = self.blocks
@@ -562,6 +571,7 @@ class Scenario:
             block.calc_expenses()
             block.calc_revenue()
             block.calc_cashflows()
+            block.calc_emissions()
 
     def print_results(self):
         for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
