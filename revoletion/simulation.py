@@ -789,8 +789,8 @@ class SimulationRun:
     def end_timing(self):
 
         self.runtime_end = time.perf_counter()
-        self.runtime_len = round(self.runtime_end - self.runtime_start, 1)
-        self.logger.info(f'Total runtime for all scenarios: {str(self.runtime_len)} s')
+        self.runtime_len = self.runtime_end - self.runtime_start
+        self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
 
     def execute_simulation(self):
         # parallelization activated in settings file
@@ -822,10 +822,12 @@ class SimulationRun:
             for scenario_name in self.scenario_names:
                 self.simulate_scenario(scenario_name)
 
+        self.save_scenarios_failed()
+        self.end_timing()
+
         if self.save_results:
             self.join_results()
 
-        self.end_timing()
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -869,6 +871,8 @@ class SimulationRun:
 
         if len(scenario_frames) > 0:  # empty scenario_frames, if all scenarios fail during initialization
             joined_results = pd.concat(scenario_frames, axis=1)
+            joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
+            joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
             joined_results.to_csv(self.path_result_summary_file, index=True)
             self.logger.info('Technoeconomic output file created')
 
