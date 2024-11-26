@@ -27,7 +27,7 @@ def read_arguments(path_cwd, path_pkg):
     # Option 3: Example project in package directory (works from anywhere)
     elif os.path.isfile(os.path.join(path_pkg, 'example', scenario_input)):
         scenarios_file_path = os.path.join(path_pkg, 'example', scenario_input)
-        warnings.warn(f'Using example scenario file {scenario_input} from REVOL-E-TION package directory '
+        warnings.warn(f'Using example scenario file \"{scenario_input}\" from REVOL-E-TION package directory '
                       f'- disregard if this is intended', DefaultFileLocationWarning)
     else:
         raise FileNotFoundError(f'Scenario file or path not interpretable: {scenario_input}')
@@ -41,7 +41,7 @@ def read_arguments(path_cwd, path_pkg):
     # Option 3: Example settings in example project in package directory (works from anywhere)
     elif os.path.isfile(os.path.join(path_pkg, 'example', settings_input)):
         settings_file_path = os.path.join(path_pkg, 'example', settings_input)
-        warnings.warn(f'Using default scenario file {scenario_input} from REVOL-E-TION package directory '
+        warnings.warn(f'Using default settings file \"{settings_input}\" from REVOL-E-TION package directory '
                       f'- disregard if this is intended', DefaultFileLocationWarning)
     else:
         raise FileNotFoundError(f'Settings file or path not interpretable: {settings_input}')
