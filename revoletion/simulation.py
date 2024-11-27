@@ -287,6 +287,7 @@ class Scenario:
                 location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
             else:  # parallel
                 with lock:
+                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
                     location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
             if location:
                 self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
