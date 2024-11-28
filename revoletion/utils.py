@@ -296,18 +296,7 @@ def load_scenario_files(input_dir_path: str, filenames: list):
     return df_concat
 
 
-def scmod_full_factorial(dir_path: str,
-                         input_file_name: str,
-                         bl_scenario_name: str,
-                         variation: dict,
-                         output_file_name='',
-                         save=True,
-                         include_baseline=True,
-                         include_non_baseline=False):
-    """
-    Create a full factorial combination of parameter variations defined within a dict from a baseline scenario file.
-    Function is not used within REVOL-E-TION itself, but rather from external notebooks and scripts.
-    """
+def flatten_variation_dict(variation: dict):
 
     # Separate single and nested tuple keys
     params_single = {k: v for k, v in variation.items() if
@@ -336,9 +325,28 @@ def scmod_full_factorial(dir_path: str,
     variations_combined_flat = [{**variation_tuple[0], **variation_tuple[1]}
                                 for variation_tuple in variations_combined]
 
+    return variations_combined_flat
+
+
+
+def scmod_full_factorial(dir_path: str,
+                         input_file_name: str,
+                         bl_scenario_name: str,
+                         variation: dict,
+                         output_file_name='',
+                         save=True,
+                         include_baseline=True,
+                         include_non_baseline=False):
+    """
+    Create a full factorial combination of parameter variations defined within a dict from a baseline scenario file.
+    Function is not used within REVOL-E-TION itself, but rather from external notebooks and scripts.
+    """
+
+    variations = flatten_variation_dict(variation)
+
     # Create a dictionary linking scenario names to parameter combinations
     scenario_variations = {f'{bl_scenario_name}_var{idx}': variation
-                           for idx, variation in enumerate(variations_combined_flat)}
+                           for idx, variation in enumerate(variations)}
 
     # Load baseline scenario file
     input_file_name = set_extension(input_file_name)
