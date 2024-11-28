@@ -94,16 +94,28 @@ pip install gurobipy==<your_gurobi_version>
 
 #### Step 5: Basic Usage
 Running REVOL-E-TION requires closely defined scenario(s) to simulate and common simulation settings to operate on.
-Both are to be given as .csv-files specified as parameters in the terminal execution command using one of three options:
+Both are to be given as .csv-files specified as parameters in the terminal execution command.
+Furthermore, additional parameters can be given:
 
-1. No parameters passed: graphical selection dialogs open automatically for scenario and settings files. (simple option)
-2. Only filenames passed: scenario and settings files are searched in (a) the working directory and (b) in the package's example directory.
-3. Valid paths to files passed: scenario and settings files are searched in the specified directories (best for remote execution on a server)
+| Argument                   | Short argument | Long argument | Default value | Description                                                                                                                                                   | Valid input                                                            |
+|----------------------------|----------------|---------------|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|
+| Scenario file              | -scn           | --scenario    | -             | Path to scenario file                                                                                                                                         | string with filename of scenario file (options specified below)        |
+| Settings file              | -set           | --settings    | -             | Path to settings file                                                                                                                                         | string with filename of settings file (options specified below)        |
+| Activate rerun             | -rer           | --rerun       | False         | Rerun scenarios of a previous run which were not completed successfully (due to unexpected termination of SimulationRun or non-deterministic infeasibilities) | False or string with directory path containing results of previous run |
+| Rerun infeasible scenarios | -rin           | --rerun       | True          | Rerun infeasible scenarios, for which the solver did not find an optimal solution (may lead to the same result again) Neglected for ```--rerun False```       | True, False                                                            |
+| Execute SimulationRun      | -exe           | --execute     | True          | Execute SimulationRun immediately (only for debugging purposes, not required for basic usage)                                                                 | True, False                                                            |
+
+
+For the scenario and settings files three options are possible:
+
+1. No filename is passed: graphical selection dialogs open automatically to select file. (simple option)
+2. Only filename is passed: the file is searched in (a) the working directory and (b) in the package's example directory.
+3. Valid paths to file is passed: file is searched in the specified directories (best for remote execution on a server)
 
 The actual terminal command can also be given in multiple forms:
 
-1. Direct execution of the package's main module, e.g. ```python -m revoletion.main <scenario_file_parameter> <settings_file_parameter> ``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
-2. Call to the package's entry point, e.g. ```revoletion <scenario_file_parameter> <settings_file_parameter>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
+1. Direct execution of the package's main module, e.g. ```python -m revoletion.main --scenario <scenario_file_parameter> --settings <settings_file_parameter> ``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
+2. Call to the package's entry point, e.g. ```revoletion --scenario <scenario_file_parameter> -settings <settings_file_parameter>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
 Example scenario and settings files are provided in the example directory.
 Formatting of the scenario and settings files can be taken from the example files and is explained in tabular form below.

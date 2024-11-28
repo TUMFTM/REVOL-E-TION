@@ -56,6 +56,10 @@ def main():
                         type=str,
                         default=False,
                         help='Directory name of run including failed scenarios which should be rerun')
+    parser.add_argument('-rin', '--rerun_infeasible',
+                        type=str,
+                        default=True,
+                        help='Rerun infeasible or unbounded scenarios')
     parser.add_argument('-exe', '--execute',
                         type=str,
                         default=True,
@@ -72,6 +76,7 @@ def main():
     sim.SimulationRun(path_scenarios=path_scenario,
                       path_settings=path_settings,
                       rerun=args.rerun,
+                      rerun_infeasible=args.rerun_infeasible,
                       execute=args.execute)
 
 
