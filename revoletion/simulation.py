@@ -183,7 +183,7 @@ class PredictionHorizon:
                 dot.edge(bus.label, component.label)
 
         try:
-            dot.render()
+            dot.render(cleanup=True)
         except Exception as e:  # inhibiting failing renderer from stopping model execution
             self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
 
