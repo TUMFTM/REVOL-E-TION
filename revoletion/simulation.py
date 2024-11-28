@@ -627,12 +627,20 @@ class Scenario:
         """
 
         def write_values(name, block):
-            for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
+            keys = [key for key in block.__dict__.keys()
+                    if (isinstance(block.__dict__[key], result_types)) or (name, key) == ('scenario', 'blocks')]
+
+            for key in keys:
                 value = block.__dict__[key]
                 if isinstance(value, int):
                     self.result_summary.loc[(name, key), self.name] = float(value)
+                elif (name, key) == ('scenario', 'blocks'):
+                    # blocks dict contains objects, but summary shall contain class names of the blocks
+                    self.result_summary.loc[(name, key), self.name] = str({block: value[block].__class__.__name__
+                                                                           for block in value.keys()})
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
+
         result_types = (int, float, str, bool, type(None))
         result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
