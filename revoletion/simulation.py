@@ -367,9 +367,8 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
-        self.path_result_summary_tempfile = os.path.join(
-            self.run.path_result_dir,
-            f'{self.name}_tempresults.csv')
+        self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
+                                                         f'{self.name}_summary_temp.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_file = os.path.join(
@@ -628,12 +627,20 @@ class Scenario:
         """
 
         def write_values(name, block):
-            for key in [key for key in block.__dict__.keys() if isinstance(block.__dict__[key], result_types)]:
+            keys = [key for key in block.__dict__.keys()
+                    if (isinstance(block.__dict__[key], result_types)) or (name, key) == ('scenario', 'blocks')]
+
+            for key in keys:
                 value = block.__dict__[key]
                 if isinstance(value, int):
                     self.result_summary.loc[(name, key), self.name] = float(value)
+                elif (name, key) == ('scenario', 'blocks'):
+                    # blocks dict contains objects, but summary shall contain class names of the blocks
+                    self.result_summary.loc[(name, key), self.name] = str({block: value[block].__class__.__name__
+                                                                           for block in value.keys()})
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
+
         result_types = (int, float, str, bool, type(None))
         result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
@@ -821,13 +828,11 @@ class SimulationRun:
                 log_thread.start()
 
                 with mp.Pool(processes=self.process_num) as pool:
-                    pool.starmap(
-                        self.simulate_scenario,
-                        zip(self.scenario_names,
-                            itertools.repeat(log_queue),
-                            itertools.repeat(status_queue),
-                            itertools.repeat(lock))
-                    )
+                    pool.starmap(self.simulate_scenario,
+                                 zip(self.scenario_names,
+                                     itertools.repeat(log_queue),
+                                     itertools.repeat(status_queue),
+                                     itertools.repeat(lock)))
                 status_queue.put(None)
                 status_thread.join()
                 log_queue.put(None)
@@ -840,7 +845,6 @@ class SimulationRun:
 
         if self.save_results:
             self.join_results()
-
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -873,7 +877,7 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_tempresults.csv')]
+        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_summary_temp.csv')]
 
         scenario_frames = []
 
