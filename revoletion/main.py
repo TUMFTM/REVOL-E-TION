@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
-import sys
 import tkinter as tk
 import tkinter.filedialog
 import warnings
@@ -13,83 +13,71 @@ class DefaultFileLocationWarning(UserWarning):
     pass
 
 
-def read_arguments(path_cwd, path_pkg):
+def get_path(path_cwd, path_pkg, arg, file_type):
+    # Option 1: No argument passed -> select file via GUI
+    if arg is None:
+        root = tk.Tk()
+        root.withdraw()  # hide small tk-window
+        root.lift()  # make sure all tk windows appear in front of other windows
 
-    scenario_input = sys.argv[1]
-    settings_input = sys.argv[2]
-
-    # Option 1: Full absolute or relative file path (works from anywhere)
-    if os.path.isfile(scenario_input):
-        scenarios_file_path = scenario_input
-    # Option 2: File name in the working directory (works from within project directory only)
-    elif os.path.isfile(os.path.join(path_cwd, scenario_input)):
-        scenarios_file_path = os.path.join(path_cwd, scenario_input)
-    # Option 3: Example project in package directory (works from anywhere)
-    elif os.path.isfile(os.path.join(path_pkg, 'example', scenario_input)):
-        scenarios_file_path = os.path.join(path_pkg, 'example', scenario_input)
-        warnings.warn(f'Using example scenario file \"{scenario_input}\" from REVOL-E-TION package directory '
+        # get file
+        default_dir = os.path.join(path_cwd, 'example')
+        file_path = tk.filedialog.askopenfilename(initialdir=default_dir,
+                                                  title=f'Select {file_type} file',
+                                                  filetypes=(('CSV files', '*.csv'),
+                                                             ('All files', '*.*')))
+        if not file_path:
+            raise FileNotFoundError(f'No {file_type} file selected')
+    # Option 2: Full absolute or relative file path (works from anywhere)
+    elif os.path.isfile(arg):
+        file_path = arg
+    # Option 3: File name in the working directory (works from within project directory only)
+    elif os.path.isfile(os.path.join(path_cwd, arg)):
+        file_path = os.path.join(path_cwd, arg)
+    # Option 4: Example file in example project in package directory (works from anywhere)
+    elif os.path.isfile(os.path.join(path_pkg, 'example', arg)):
+        file_path = os.path.join(path_pkg, 'example', arg)
+        warnings.warn(f'Using default {file_type} file \"{arg}\" from REVOL-E-TION package directory '
                       f'- disregard if this is intended', DefaultFileLocationWarning)
     else:
-        raise FileNotFoundError(f'Scenario file or path not interpretable: {scenario_input}')
+        raise FileNotFoundError(f'{file_type[0].upper()}{file_type[1:]} file or path not interpretable: {arg}')
 
-    # Option 1: Full absolute or relative file path (works from anywhere)
-    if os.path.isfile(settings_input):
-        settings_file_path = settings_input
-    # Option 2: File name in the working directory (works from within project directory only)
-    elif os.path.isfile(os.path.join(path_cwd, settings_input)):
-        settings_file_path = os.path.join(path_cwd, settings_input)
-    # Option 3: Example settings in example project in package directory (works from anywhere)
-    elif os.path.isfile(os.path.join(path_pkg, 'example', settings_input)):
-        settings_file_path = os.path.join(path_pkg, 'example', settings_input)
-        warnings.warn(f'Using default settings file \"{settings_input}\" from REVOL-E-TION package directory '
-                      f'- disregard if this is intended', DefaultFileLocationWarning)
-    else:
-        raise FileNotFoundError(f'Settings file or path not interpretable: {settings_input}')
-
-    return scenarios_file_path, settings_file_path
-
-
-def select_arguments(path_cwd):
-
-    root = tk.Tk()
-    root.withdraw()  # hide small tk-window
-    root.lift()  # make sure all tk windows appear in front of other windows
-
-    # get scenarios file
-    scenarios_default_dir = os.path.join(path_cwd, 'example', 'scenarios')
-    scenarios_file_path = tk.filedialog.askopenfilename(initialdir=scenarios_default_dir,
-                                                        title="Select scenario file",
-                                                        filetypes=(("CSV files", "*.csv"),
-                                                                   ("All files", "*.*")))
-    if not scenarios_file_path:
-        raise FileNotFoundError('No scenario file selected')
-
-    # get settings file
-    settings_default_dir = os.path.join(path_cwd, 'example', 'settings')
-    settings_file_path = tk.filedialog.askopenfilename(initialdir=settings_default_dir,
-                                                       title="Select settings file",
-                                                       filetypes=(("CSV files", "*.csv"),
-                                                                  ("All files", "*.*")))
-    if not settings_file_path:
-        raise FileNotFoundError('No settings file selected')
-
-    return scenarios_file_path, settings_file_path
-
+    return file_path
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-scn', '--scenario',
+                        type=str,
+                        help='Path to the scenario CSV file')
+    parser.add_argument('-set', '--settings',
+                        type=str,
+                        help='Path to the settings CSV file')
+    parser.add_argument('-rer', '--rerun',
+                        type=str,
+                        default=False,
+                        help='Directory name of run including failed scenarios which should be rerun')
+    parser.add_argument('-rin', '--rerun_infeasible',
+                        type=str,
+                        default=True,
+                        help='Rerun infeasible or unbounded scenarios')
+    parser.add_argument('-exe', '--execute',
+                        type=str,
+                        default=True,
+                        help='Immediately execute run')
+
+    args = parser.parse_args()
+
     path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path_cwd = os.getcwd()
-    if len(sys.argv) == 1:  # no arguments passed
-        path_scenario, path_settings = select_arguments(path_pkg)
-    elif len(sys.argv) == 3:  # two arguments passed
-        path_scenario, path_settings = read_arguments(path_cwd, path_pkg)
-    else:
-        raise ValueError('Invalid number of arguments - please provide either none (GUI example) '
-                         'or two arguments: scenarios file name or path and settings file name or path')
+
+    path_scenario = get_path(path_cwd, path_pkg, args.scenario, 'scenarios')
+    path_settings = get_path(path_cwd, path_pkg, args.settings, 'settings')
 
     sim.SimulationRun(path_scenarios=path_scenario,
                       path_settings=path_settings,
-                      execute=True)
+                      rerun=args.rerun,
+                      rerun_infeasible=args.rerun_infeasible,
+                      execute=args.execute)
 
 
 if __name__ == '__main__':

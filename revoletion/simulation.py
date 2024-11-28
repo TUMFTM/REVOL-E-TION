@@ -675,7 +675,7 @@ class Scenario:
 
 class SimulationRun:
 
-    def __init__(self, path_scenarios, path_settings, execute=False):
+    def __init__(self, path_scenarios, path_settings, rerun=False, rerun_infeasible=True, execute=False):
 
         self.name = 'run'
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -683,9 +683,14 @@ class SimulationRun:
 
         self.scenarios_file_path = path_scenarios
         self.settings_file_path = path_settings
+        self.rerun = rerun
+        self.rerun_infeasible = rerun_infeasible
 
         self.runtime_start = time.perf_counter()
-        self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
+        if not self.rerun:
+            self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
+        else:
+            self.runtimestamp = '_'.join(self.rerun.split('_')[0:2])
         self.runtime_end = self.runtime_len = None
 
         self.version_solph = solph.__version__
@@ -696,29 +701,59 @@ class SimulationRun:
         except subprocess.CalledProcessError:
             self.commit_hash = 'unknown'
 
-        self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
-        self.scenario_data = pd.read_csv(self.scenarios_file_path,
-                                         index_col=[0, 1],
-                                         keep_default_na=False)
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
-        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
-        self.scenario_num = len(self.scenario_names)
-        self.scenario_status = pd.DataFrame(index=self.scenario_names,
-                                            data={'status': 'queued',
-                                                  'exception': None,
-                                                  'traceback': None}).rename_axis('scenario')
-
         self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
 
+        self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
+        self.define_paths()
+        self.scenario_data = pd.read_csv((self.path_result_scenario_file if self.rerun else self.scenarios_file_path),
+                                         index_col=[0, 1],
+                                         keep_default_na=False)
+        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
+        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
+
+
+        if self.rerun:
+            # only run scenarios which have not been optimized successfully (or were infeasible)
+            self.scenario_status = pd.read_csv(os.path.join(self.path_result_dir,
+                                                            f'{self.runtimestamp}_'
+                                                            f'{self.scenario_file_name}_'
+                                                            f'scenarios_status.csv'),
+                                               index_col=0)
+
+            dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
+            scenarios_failed = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
+            self.scenario_names = [name for name in self.scenario_names if name in scenarios_failed]
+
+            # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
+            for scenario in self.scenario_names:
+                for file in [f'{scenario}_summary_temp.csv',
+                             f'{scenario}_results.csv',
+                             f'{scenario}_graph.pdf',
+                             f'{scenario}_graph.html']:
+                    if os.path.isfile(os.path.join(self.path_result_dir, file)):
+                        os.remove(os.path.join(self.path_result_dir, file))
+
+            # reset status of scenarios to be run to 'queued'
+            self.scenario_status.loc[self.scenario_names, ['status', 'exception', 'traceback']] = (
+                    [['queued', pd.NA, pd.NA]] * len(self.scenario_names))
+            self.scenario_status.to_csv(self.path_result_status_file, index=True)
+
+        else:
+            self.scenario_status = pd.DataFrame(index=self.scenario_names,
+                                                data={'status': 'queued',
+                                                      'exception': None,
+                                                      'traceback': None}).rename_axis('scenario')
+        self.scenario_num = len(self.scenario_names)
+
         self.input_checker = checker.InputChecker(self)
         self.input_checker.check_settings()
 
-        self.define_paths()
         self.get_process_num()
-        self.copy_scenario_file()
+        if not self.rerun:
+            self.copy_scenario_file()
 
         self.logger = None
         self.define_logger()
@@ -796,7 +831,9 @@ class SimulationRun:
 
         self.path_result_dir = os.path.join(self.path_output_data,
                                             f'{self.runtimestamp}_{self.scenario_file_name}')
-        os.mkdir(self.path_result_dir)
+
+        if not os.path.isdir(self.path_result_dir):
+            os.mkdir(self.path_result_dir)
 
         self.path_result_scenario_file = os.path.join(self.path_result_dir,
                                                       f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
@@ -890,6 +927,12 @@ class SimulationRun:
             joined_results = pd.concat(scenario_frames, axis=1)
             joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
             joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
+            if self.rerun and os.path.isfile(os.path.join(self.path_result_summary_file)):
+                results_summary_prev = pd.read_csv(os.path.join(self.path_result_summary_file),
+                                                   index_col=[0, 1])
+                joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
+            # apply same order of scenarios as in scenario input file
+            joined_results = joined_results[[col for col in self.scenario_data.columns if col in joined_results.columns]]
             joined_results.to_csv(self.path_result_summary_file, index=True)
             self.logger.info('Technoeconomic output file created')
 
@@ -945,9 +988,10 @@ class SimulationRun:
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
+            status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
-                                                            'status': 'failed',
+                                                            'status': status,
                                                             'exception': str(e),
                                                             'traceback': traceback.format_exc()})
 
