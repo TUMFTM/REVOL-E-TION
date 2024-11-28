@@ -836,7 +836,6 @@ class SimulationRun:
             for scenario_name in self.scenario_names:
                 self.simulate_scenario(scenario_name)
 
-        self.save_scenarios_failed()
         self.end_timing()
 
         if self.save_results:
