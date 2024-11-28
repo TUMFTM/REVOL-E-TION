@@ -367,9 +367,8 @@ class Scenario:
         # prepare for cumulative result saving later on
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
-        self.path_result_summary_tempfile = os.path.join(
-            self.run.path_result_dir,
-            f'{self.name}_tempresults.csv')
+        self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
+                                                         f'{self.name}_summary_temp.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_file = os.path.join(
@@ -821,13 +820,11 @@ class SimulationRun:
                 log_thread.start()
 
                 with mp.Pool(processes=self.process_num) as pool:
-                    pool.starmap(
-                        self.simulate_scenario,
-                        zip(self.scenario_names,
-                            itertools.repeat(log_queue),
-                            itertools.repeat(status_queue),
-                            itertools.repeat(lock))
-                    )
+                    pool.starmap(self.simulate_scenario,
+                                 zip(self.scenario_names,
+                                     itertools.repeat(log_queue),
+                                     itertools.repeat(status_queue),
+                                     itertools.repeat(lock)))
                 status_queue.put(None)
                 status_thread.join()
                 log_queue.put(None)
@@ -840,7 +837,6 @@ class SimulationRun:
 
         if self.save_results:
             self.join_results()
-
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -873,7 +869,7 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_tempresults.csv')]
+        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_summary_temp.csv')]
 
         scenario_frames = []
 
