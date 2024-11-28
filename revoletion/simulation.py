@@ -668,7 +668,7 @@ class Scenario:
 
 class SimulationRun:
 
-    def __init__(self, path_scenarios, path_settings, execute=False):
+    def __init__(self, path_scenarios, path_settings, rerun=False, execute=False):
 
         self.name = 'run'
         self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
