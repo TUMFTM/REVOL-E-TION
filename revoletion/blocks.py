@@ -541,7 +541,7 @@ class CommoditySystem(InvestBlock):
             self.data = utils.read_input_log(self)
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}": invalid data source')
+            raise ValueError(f'Block "{self.name}": invalid data source')
 
         if self.system == 'ac':
             self.eff_chg = self.eff_chg_ac
@@ -550,7 +550,7 @@ class CommoditySystem(InvestBlock):
             self.eff_chg = self.eff_chg_dc
             self.eff_dis = self.eff_dis_dc
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}": invalid system type')
+            raise ValueError(f'Block "{self.name}": invalid system type')
 
         self.data_ph = None  # placeholder, is filled in "update_input_components"
 

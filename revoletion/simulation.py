@@ -416,18 +416,18 @@ class Scenario:
                         and cs.mode_scheduling != 'uc'
                         and not cs.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-                raise ValueError(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc) '
+                raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
                                  f'without static load management (lm_static) is not compatible'
                                  f' with size optimization')
             if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryEnergyStorage)]:
-                raise ValueError(f'Scenario {self.name} - Rulebased charging except for uncoordinated charging (uc) '
+                raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
                                  f'without static load management (lm_static) is not implemented for systems with '
                                  f'stationary energy storage')
             if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-                raise ValueError(f'Scenario {self.name} - All rulebased CommoditySystems with dynamic load management '
+                raise ValueError(f'All rulebased CommoditySystems with dynamic load management '
                                  f'have to follow the same strategy. Different strategies are not possible')
             if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-                raise ValueError(f'Scenario {self.name} - If strategy "equal" is chosen for CommoditySystems with'
+                raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
                                  f' dynamic load management, all CommoditySystems with dynamic load management have to'
                                  f' be connected to the same bus')
 
@@ -524,7 +524,7 @@ class Scenario:
             if class_obj is not None and isinstance(class_obj, type):
                 objects[name] = class_obj(name, self)
             else:
-                raise ValueError(f'Scenario {self.name}: Class "{class_name}" not found in blocks.py file - '
+                raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
                                  f'Check for typos or add class.')
         return objects
 
