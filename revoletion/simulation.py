@@ -371,9 +371,9 @@ class Scenario:
                                                          f'{self.name}_summary_temp.csv')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
-        self.path_result_file = os.path.join(
+        self.path_result_ts_file = os.path.join(
             self.run.path_result_dir,
-            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results.csv')
+            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results_ts.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -667,7 +667,7 @@ class Scenario:
     def save_result_timeseries(self):
         for block in self.blocks.values():
             block.get_timeseries_results()
-        self.result_timeseries.to_csv(self.path_result_file)
+        self.result_timeseries.to_csv(self.path_result_ts_file)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -714,7 +714,6 @@ class SimulationRun:
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
-
 
         if self.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
@@ -880,9 +879,7 @@ class SimulationRun:
                 self.simulate_scenario(scenario_name)
 
         self.end_timing()
-
-        if self.save_results:
-            self.join_results()
+        self.join_results()  # includes endtimestamp, therefore after end_timing
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -1005,21 +1002,22 @@ class SimulationRun:
 
         finally:
             try:
-                # Process all results
-                if self.save_results or self.print_results:
-                    scenario.get_results()
-                    scenario.calc_meta_results()
-                    if self.save_results:
-                        scenario.save_result_summary()
-                        scenario.save_result_timeseries()
-                    if self.print_results:
-                        scenario.print_results()
+                scenario.get_results()
+                scenario.calc_meta_results()
+                scenario.save_result_summary()
+
+                if self.save_results_timeseries:
+                    scenario.save_result_timeseries()
+                if self.print_results:
+                    scenario.print_results()
+
                 if self.save_plots or self.show_plots:
                     scenario.generate_plots()
                     if self.save_plots:
                         scenario.save_plots()
                     if self.show_plots:
                         scenario.show_plots()
+
             except Exception as e:
                 logger.error(e, exc_info=True)
 

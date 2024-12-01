@@ -4,12 +4,12 @@ parallel,True
 max_process_num,max
 path_input_data,example
 path_output_data,package
-save_results,True
-save_des_results,True
-print_results,False
+save_results_timeseries,True
+save_results_dispatch,True
 save_plots,True
-show_plots,False
 save_system_graphs,True
+print_results,False
+show_plots,False
 dump_model,False
 debugmode,False
 key_api_solcast,123456abcdef
