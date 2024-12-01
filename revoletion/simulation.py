@@ -690,7 +690,7 @@ class SimulationRun:
         if not self.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         else:
-            self.runtimestamp = '_'.join(self.rerun.split('_')[0:2])
+            self.runtimestamp = '_'.join(os.path.basename(os.path.normpath(self.rerun)).split('_')[0:2])
         self.runtime_end = self.runtime_len = None
 
         self.version_solph = solph.__version__
