@@ -690,6 +690,7 @@ class SimulationRun:
         if not self.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         else:
+            # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
             self.runtimestamp = '_'.join(os.path.basename(os.path.normpath(self.rerun)).split('_')[0:2])
         self.runtime_end = self.runtime_len = None
 
