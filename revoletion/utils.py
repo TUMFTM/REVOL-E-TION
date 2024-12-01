@@ -15,7 +15,7 @@ def infer_dtype(value):
     """
     try:
         return int(value)
-    except ValueError:
+    except (ValueError or OverflowError):
         pass
 
     try:
