@@ -370,7 +370,8 @@ class Scenario:
         self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
                                                          f'{self.name}_summary_temp.csv')
 
-        self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
+        self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd,
+                                              columns=pd.MultiIndex.from_tuples([], names=['block', 'timeseries']))
         self.path_result_file = os.path.join(
             self.run.path_result_dir,
             f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results.csv')
@@ -443,20 +444,30 @@ class Scenario:
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
         # Result variables - Energy
-        self.e_sim_del = self.e_yrl_del = self.e_prj_del = self.e_dis_del = 0
-        self.e_sim_pro = self.e_yrl_pro = self.e_prj_pro = self.e_dis_pro = 0
-        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0  # external charging
+        self.energies = pd.DataFrame(index=['del', 'pro', 'ext'],  # ext = external charging
+                                     columns=['sim', 'yrl', 'prj', 'dis'],
+                                     data=0,
+                                     dtype=float)
         self.e_eta = None
         self.renewable_curtailment = self.renewable_share = None
         self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
 
         # Result variables - Cost
-        self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
-        self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
-        self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
-        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
-        self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
-        self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
+        self.expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
+                                         columns=['init', 'sim', 'yrl', 'prj', 'dis', 'ann'],
+                                         data=0,
+                                         dtype=float)
+
+        # initialize non-existing expenditures with None
+        for ex_periods, ex_type in [(('sim', 'yrl'), 'capex'),
+                                   (('init', 'sim'), 'mntex'),
+                                   (('init'), 'opex'),
+                                   (('init'), 'opex_ext'),
+                                   (('init', 'yrl'), 'totex'),
+                                   (('init', 'ann'), 'crev')]:
+            for ex_period in ex_periods:
+                self.expenditures.loc[ex_period, ex_type] = None
+
         self.lcoe_total = self.lcoe_wocs = None
         self.npv = self.irr = self.mirr = None
 
@@ -467,11 +478,11 @@ class Scenario:
         # TODO implement commodity v2s usage share
         # TODO implement energy storage usage share
 
-        if self.e_sim_pro == 0:
+        if self.energies.loc['pro', 'sim'] == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
             try:
-                self.e_eta = self.e_sim_del / self.e_sim_pro
+                self.e_eta = self.energies.loc['del', 'sim'] / self.energies.loc['pro', 'sim']
             except ZeroDivisionError:
                 self.logger.warning(f'Core efficiency calculation: division by zero')
 
@@ -483,31 +494,32 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable curtailment calculation: division by zero')
 
-        if self.e_sim_pro == 0:
+        if self.energies.loc['pro', 'sim'] == 0:
             self.logger.warning(f'Renewable share calculation: division by zero')
         else:
             try:
-                self.renewable_share = self.e_renewable_act / self.e_sim_pro
+                self.renewable_share = self.e_renewable_act / self.energies.loc['pro', 'sim']
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable share calculation: division by zero')
 
         totex_dis_cs = sum([cs.totex_dis for cs in self.commodity_systems.values()])
-        if self.e_dis_del == 0:
+        if self.energies.loc['del', 'dis'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
-                self.lcoe_total = self.totex_dis / self.e_dis_del
-                self.lcoe_wocs = (self.totex_dis - totex_dis_cs) / self.e_dis_del
+                self.lcoe_total = self.expenditures.loc['totex','dis'] / self.energies.loc['del', 'dis']
+                self.lcoe_wocs = (self.expenditures.loc['totex','dis'] - totex_dis_cs) / self.energies.loc['del', 'dis']
             except ZeroDivisionError:
                 self.lcoe_total = self.lcoe_wocs = None
                 self.logger.warning(f'LCOE calculation: division by zero')
 
-        self.npv = self.crev_dis - self.totex_dis
+        self.npv = self.expenditures.loc['crev','dis'] - self.expenditures.loc['totex','dis']
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {f"{self.totex_dis:,.2f}" if pd.notna(self.totex_dis) else "-"} {self.currency} -'
+        totex_dis = self.expenditures.loc['totex','dis']
+        self.logger.info(f'NPC {f"{totex_dis:,.2f}" if pd.notna(totex_dis) else "-"} {self.currency} -'
                          f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
                          f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
                          f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
@@ -647,6 +659,14 @@ class Scenario:
 
         for block_name, block_obj in result_blocks.items():
             write_values(block_name, block_obj)
+            # write values of DataFrames containing results to summary
+            for var_prefix, var_name in [('e_', 'energies'),
+                                         ('', 'expenditures')]:
+                if hasattr(block_obj, var_name) and isinstance(getattr(block_obj, var_name), pd.DataFrame):
+                    for id1, id2 in itertools.product(getattr(block_obj, var_name).index,
+                                                              getattr(block_obj, var_name).columns):
+                        self.result_summary.loc[(block_name, f'{var_prefix}{id1}_{id2}'), self.name] = (
+                            getattr(block_obj, var_name).loc[id1, id2])
             if isinstance(block_obj, blocks.CommoditySystem):
                 for commodity_name, commodity_obj in block_obj.commodities.items():
                     write_values(commodity_name, commodity_obj)

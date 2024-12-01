@@ -131,9 +131,9 @@ class BatteryPackModel:
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
         if isinstance(self.commodity, blocks.MobileCommodity):
-            self.p_cell_hor = (self.commodity.flow_bat_in[horizon.dti_ch] - self.commodity.flow_bat_out[horizon.dti_ch]) / self.n_cells
+            self.p_cell_hor = (self.commodity.flows.loc[horizon.dti_ch, 'bat_in'] - self.commodity.flows.loc[horizon.dti_ch, 'bat_out']) / self.n_cells
         else:  # StationaryStorage
-            self.p_cell_hor = (self.commodity.flow_in[horizon.dti_ch] - self.commodity.flow_out[horizon.dti_ch]) / self.n_cells
+            self.p_cell_hor = (self.commodity.flows.loc[horizon.dti_ch, 'in'] - self.commodity.flows.loc[horizon.dti_ch, 'out']) / self.n_cells
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
