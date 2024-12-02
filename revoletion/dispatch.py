@@ -616,5 +616,5 @@ def execute_des(scenario, run):
     for rental_system in scenario.rental_systems.values():
         rental_system.convert_process_log()
         rental_system.calc_performance_metrics()
-        if run.save_results_des:
+        if run.save_results_dispatch:
             rental_system.save_data()
