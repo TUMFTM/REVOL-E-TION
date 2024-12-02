@@ -33,7 +33,6 @@ import pyomo.environ as po
 from revoletion import blocks
 from revoletion import checker
 from revoletion import constraints
-from revoletion import colors
 from revoletion import dispatch
 from revoletion import logger as logger_fcs
 from revoletion import scheduler
@@ -544,15 +543,15 @@ class Scenario:
             if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
                 block.add_curtailment_trace()
 
-        self.figure.update_layout(plot_bgcolor=colors.tum_white)
+        self.figure.update_layout(plot_bgcolor='white')
         self.figure.update_xaxes(title='Local Time',
                                  showgrid=True,
-                                 linecolor=colors.tum_grey_20,
-                                 gridcolor=colors.tum_grey_20, )
+                                 linecolor='gray',
+                                 gridcolor='gray')
         self.figure.update_yaxes(title='Power in W',
                                  showgrid=True,
-                                 linecolor=colors.tum_grey_20,
-                                 gridcolor=colors.tum_grey_20,
+                                 linecolor='gray',
+                                 gridcolor='gray',
                                  secondary_y=False, )
         self.figure.update_yaxes(title='State of Charge',
                                  showgrid=False,
