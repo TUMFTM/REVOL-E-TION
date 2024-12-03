@@ -175,7 +175,7 @@ class BatteryCommodityDemand(CommodityDemand):
         self.calc_time_active()
         self.get_patience()
 
-        if self.scenario.run.save_des_results:
+        if self.scenario.run.save_results_dispatch:
             self.save_data()
 
         return self.requests
@@ -245,7 +245,7 @@ class VehicleCommodityDemand(CommodityDemand):
         self.calc_time_energy()
         self.get_patience()
 
-        if self.scenario.run.save_des_results:
+        if self.scenario.run.save_results_dispatch:
             self.save_data()
 
         return self.requests

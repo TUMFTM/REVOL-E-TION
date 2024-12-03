@@ -33,7 +33,6 @@ import pyomo.environ as po
 from revoletion import blocks
 from revoletion import checker
 from revoletion import constraints
-from revoletion import colors
 from revoletion import dispatch
 from revoletion import logger as logger_fcs
 from revoletion import scheduler
@@ -372,9 +371,9 @@ class Scenario:
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd,
                                               columns=pd.MultiIndex.from_tuples([], names=['block', 'timeseries']))
-        self.path_result_file = os.path.join(
+        self.path_result_ts_file = os.path.join(
             self.run.path_result_dir,
-            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results.csv')
+            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results_ts.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -556,15 +555,15 @@ class Scenario:
             if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
                 block.add_curtailment_trace()
 
-        self.figure.update_layout(plot_bgcolor=colors.tum_white)
+        self.figure.update_layout(plot_bgcolor='white')
         self.figure.update_xaxes(title='Local Time',
                                  showgrid=True,
-                                 linecolor=colors.tum_grey_20,
-                                 gridcolor=colors.tum_grey_20, )
+                                 linecolor='gray',
+                                 gridcolor='gray')
         self.figure.update_yaxes(title='Power in W',
                                  showgrid=True,
-                                 linecolor=colors.tum_grey_20,
-                                 gridcolor=colors.tum_grey_20,
+                                 linecolor='gray',
+                                 gridcolor='gray',
                                  secondary_y=False, )
         self.figure.update_yaxes(title='State of Charge',
                                  showgrid=False,
@@ -687,7 +686,7 @@ class Scenario:
     def save_result_timeseries(self):
         for block in self.blocks.values():
             block.get_timeseries_results()
-        self.result_timeseries.to_csv(self.path_result_file)
+        self.result_timeseries.to_csv(self.path_result_ts_file)
 
     def show_plots(self):
         self.figure.show(renderer='browser')
@@ -734,7 +733,6 @@ class SimulationRun:
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
-
 
         if self.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
@@ -900,9 +898,7 @@ class SimulationRun:
                 self.simulate_scenario(scenario_name)
 
         self.end_timing()
-
-        if self.save_results:
-            self.join_results()
+        self.join_results()  # includes endtimestamp, therefore after end_timing
 
     def get_process_num(self):
         if self.max_process_num == 'max':
@@ -940,6 +936,9 @@ class SimulationRun:
         scenario_frames = []
 
         for file in files:
+            # only add results of successful scenarios to summary
+            if self.scenario_status.loc[file.removesuffix('_summary_temp.csv'), 'status'] != 'successful':
+                continue
             file_path = os.path.join(self.path_result_dir, file)
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
@@ -1025,21 +1024,22 @@ class SimulationRun:
 
         finally:
             try:
-                # Process all results
-                if self.save_results or self.print_results:
-                    scenario.get_results()
-                    scenario.calc_meta_results()
-                    if self.save_results:
-                        scenario.save_result_summary()
-                        scenario.save_result_timeseries()
-                    if self.print_results:
-                        scenario.print_results()
+                scenario.get_results()
+                scenario.calc_meta_results()
+                scenario.save_result_summary()
+
+                if self.save_results_timeseries:
+                    scenario.save_result_timeseries()
+                if self.print_results:
+                    scenario.print_results()
+
                 if self.save_plots or self.show_plots:
                     scenario.generate_plots()
                     if self.save_plots:
                         scenario.save_plots()
                     if self.show_plots:
                         scenario.show_plots()
+
             except Exception as e:
                 logger.error(e, exc_info=True)
 
