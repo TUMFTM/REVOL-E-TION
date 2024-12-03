@@ -916,6 +916,9 @@ class SimulationRun:
         scenario_frames = []
 
         for file in files:
+            # only add results of successful scenarios to summary
+            if self.scenario_status.loc[file.removesuffix('_summary_temp.csv'), 'status'] != 'successful':
+                continue
             file_path = os.path.join(self.path_result_dir, file)
             file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
             scenario_frames.append(file_results)
