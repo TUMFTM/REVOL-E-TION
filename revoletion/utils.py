@@ -2,7 +2,6 @@
 
 import ast
 import importlib.util
-import itertools
 import numpy as np
 import pandas as pd
 import pandas.errors
@@ -283,101 +282,6 @@ def set_extension(filename, default_extension='.csv'):
         filename = base + default_extension
     return filename
 
-
-def load_scenario_files(input_dir_path: str, filenames: list):
-    """
-    Load multiple scenario files and concatenate them into a single DataFrame
-    """
-    df_concat = pd.DataFrame()
-    for filename in filenames:
-        scenario_file_path = os.path.join(input_dir_path, filename) if filename.endswith('.csv') else os.path.join(scenarios_dir_path, f'{filename}.csv')
-        df = pd.read_csv(scenario_file_path, index_col=[0,1])
-        df_concat = pd.concat([df_concat, df], axis=1)
-    return df_concat
-
-
-def flatten_variation_dict(variation: dict):
-
-    # Separate single and nested tuple keys
-    params_single = {k: v for k, v in variation.items() if
-                     not isinstance(k, tuple) or isinstance(k[0], str)}
-    params_nested = {k: v for k, v in variation.items() if
-                     isinstance(k, tuple) and isinstance(k[0], tuple)}
-
-    # single (nonnested) parameters
-    keys_single = tuple(params_single.keys())
-    value_combinations_single = list(itertools.product(*params_single.values()))
-    variations_single = [{keys_single[idx]: value
-                          for idx, value in enumerate(vc)}
-                         for vc in value_combinations_single]
-
-    # nested parameters
-    keys_nested = tuple(k for k in params_nested.keys())
-    value_combinations_nested = list(itertools.product(*[params_nested[key] for key in keys_nested]))
-    value_combinations_nested_flat = [sum(ttuple, ()) for ttuple in value_combinations_nested]
-    keys_nested = sum(keys_nested, ())  # flatten key list to correspond to value flattening
-    variations_nested = [{keys_nested[idx]: value
-                          for idx, value in enumerate(vc)}
-                         for vc in value_combinations_nested_flat]
-
-    # Combine single and nested parameter variations
-    variations_combined = list(itertools.product(variations_single, variations_nested))
-    variations_combined_flat = [{**variation_tuple[0], **variation_tuple[1]}
-                                for variation_tuple in variations_combined]
-
-    return variations_combined_flat
-
-
-
-def scmod_full_factorial(dir_path: str,
-                         input_file_name: str,
-                         bl_scenario_name: str,
-                         variation: dict,
-                         output_file_name='',
-                         save=True,
-                         include_baseline=True,
-                         include_non_baseline=False):
-    """
-    Create a full factorial combination of parameter variations defined within a dict from a baseline scenario file.
-    Function is not used within REVOL-E-TION itself, but rather from external notebooks and scripts.
-    """
-
-    variations = flatten_variation_dict(variation)
-
-    # Create a dictionary linking scenario names to parameter combinations
-    scenario_variations = {f'{bl_scenario_name}_var{idx}': variation
-                           for idx, variation in enumerate(variations)}
-
-    # Load baseline scenario file
-    input_file_name = set_extension(input_file_name)
-    output_file_name = set_extension(output_file_name)
-    baseline_df = load_scenario_files(input_dir_path=dir_path,
-                                      filenames=[input_file_name])
-    baseline_scenario = baseline_df[bl_scenario_name]
-    non_baseline_scenarios = baseline_df.drop(columns=bl_scenario_name)
-
-    # initialize scenario list before parameter variation
-    variation_columns = []
-    if include_baseline:
-        variation_columns.append(baseline_scenario)
-    if include_non_baseline:
-        variation_columns.append(non_baseline_scenarios)
-    # Write out parameter varied dataframe columns to list and concatenate
-    for scenario_name, parameter_dict in scenario_variations.items():
-        # Create a new column with the baseline values and modify by the variation dict where the latter is def'd
-        column = baseline_scenario.where(~baseline_scenario.index.isin(parameter_dict.keys()),
-                                         baseline_scenario.index.map(parameter_dict))
-        # Rename the column to the scenario name
-        column = column.rename(scenario_name)
-        variation_columns.append(column)
-    # Concatenate all columns in list (faster than appending to a dataframe)
-    output_df = pd.concat(variation_columns, axis=1)
-
-    if save:
-        output_path = os.path.join(dir_path, output_file_name)
-        output_df.to_csv(output_path)
-
-    return output_df
 
 def lognormal_params(mean, stdev):
     mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
