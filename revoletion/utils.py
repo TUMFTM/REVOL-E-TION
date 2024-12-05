@@ -73,6 +73,23 @@ def get_period_fraction(dti, period, freq):
 
     return period_fraction
 
+def create_expenditures_dataframe():
+    expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
+                                columns=['init', 'sim', 'yrl', 'prj', 'dis', 'ann'],
+                                data=0,
+                                dtype=float)
+
+    # initialize non-existing expenditures with None
+    for ex_type, ex_periods in [('capex', ['sim', 'yrl']),
+                               ('mntex', ['init']),
+                               ('opex', ['init']),
+                               ('opex_ext', ['init']),
+                               ('totex', ['init', 'yrl']),
+                               ('crev', ['init', 'ann'])]:
+        for ex_period in ex_periods:
+            expenditures.loc[ex_type, ex_period] = np.nan
+
+    return expenditures
 
 def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     """

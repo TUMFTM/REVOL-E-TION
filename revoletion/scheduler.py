@@ -271,11 +271,11 @@ class AprioriCommodity:
         self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
 
         self.block.apriori_data.loc[horizon.dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
-                                                                                      self.block.soc[horizon.starttime],
+                                                                                      self.block.storage_timeseries.loc[horizon.starttime, 'soc'],
                                                                                       self.block.soc_max])
 
         # get soh for current prediction horizon
-        self.soh = self.block.soh.dropna().loc[self.block.soh.dropna().index.max()]
+        self.soh = self.block.storage_timeseries['soh'].dropna().loc[self.block.storage_timeseries['soh'].dropna().index.max()]
 
     def get_eff(self, mode):
         eff = {'int_ac': (self.block.eff_chg * np.sqrt(self.block.eff_storage_roundtrip)),

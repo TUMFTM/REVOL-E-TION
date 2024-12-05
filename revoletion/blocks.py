@@ -20,7 +20,7 @@ from revoletion import utils
 
 class Block:
 
-    def __init__(self, name, scenario):
+    def __init__(self, name, scenario, flow_names=['total', 'in', 'out']):
         self.name = name
         self.scenario = scenario
         self.scenario.blocks[self.name] = self
@@ -36,11 +36,13 @@ class Block:
                 utils.transform_scalar_var(self, var)
 
         # Empty result series
+        # flow direction is specified with respect to the block -> "in" is from energy system into block
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
-                                  columns=['total', 'in', 'out'],
+                                  columns=flow_names,
                                   data=0,
                                   dtype='float64')
-        # flow direction is specified with respect to the block -> flow_in is from energy system into block
+
+        self.storage_timeseries = None
 
         # Empty result scalar variables
         self.energies = pd.DataFrame(index=['total', 'in', 'out', 'del', 'pro'],
@@ -48,11 +50,7 @@ class Block:
                                      data=0,
                                      dtype=float)
 
-        self.capex_init = self.capex_prj = self.capex_dis = self.capex_ann = 0
-        self.mntex_sim = self.mntex_yrl = self.mntex_prj = self.mntex_dis = self.mntex_ann = 0
-        self.opex_sim = self.opex_yrl = self.opex_prj = self.opex_dis = self.opex_ann = 0
-        self.totex_sim = self.totex_prj = self.totex_dis = self.totex_ann = 0
-        self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
+        self.expenditures = utils.create_expenditures_dataframe()
 
         self.cashflows = pd.DataFrame()
 
@@ -63,26 +61,23 @@ class Block:
         crev_sim is calculated beforehand for the individual blocks
         """
 
-        self.crev_yrl = utils.scale_sim2year(self.crev_sim, self.scenario)
-        self.crev_prj = utils.scale_year2prj(self.crev_yrl, self.scenario)
-        self.crev_dis = eco.acc_discount(self.crev_yrl, self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
+        self.expenditures.loc['crev', 'yrl'] = utils.scale_sim2year(self.expenditures.loc['crev', 'sim'], self.scenario)
+        self.expenditures.loc['crev', 'prj'] = utils.scale_year2prj(self.expenditures.loc['crev', 'yrl'], self.scenario)
+        self.expenditures.loc['crev', 'dis'] = eco.acc_discount(self.expenditures.loc['crev', 'yrl'],
+                                                                self.scenario.prj_duration_yrs,
+                                                                self.scenario.wacc,
+                                                                occurs_at='end')
 
-        self.scenario.expenditures.loc['crev','sim'] += self.crev_sim
-        self.scenario.expenditures.loc['crev','yrl'] += self.crev_yrl
-        self.scenario.expenditures.loc['crev','prj'] += self.crev_prj
-        self.scenario.expenditures.loc['crev','dis'] += self.crev_dis
+        self.scenario.expenditures.loc['crev', :] += self.expenditures.loc['crev', :]  # sim, yrl, prj, dis
 
     def accumulate_expenses(self):
 
-        self.totex_sim = self.capex_init + self.mntex_sim + self.opex_sim
-        self.totex_prj = self.capex_prj + self.mntex_prj + self.opex_prj
-        self.totex_dis = self.capex_dis + self.mntex_dis + self.opex_dis
-        self.totex_ann = self.capex_ann + self.mntex_ann + self.opex_ann
+        self.expenditures.loc['totex', 'sim'] = self.expenditures.loc['capex', 'init'] + self.expenditures.loc['mntex', 'sim'] + self.expenditures.loc['opex', 'sim']
+        self.expenditures.loc['totex', 'prj'] = self.expenditures.loc['capex', 'prj'] + self.expenditures.loc['mntex', 'prj'] + self.expenditures.loc['opex', 'prj']
+        self.expenditures.loc['totex', 'dis'] = self.expenditures.loc['capex', 'dis'] + self.expenditures.loc['mntex', 'dis'] + self.expenditures.loc['opex', 'dis']
+        self.expenditures.loc['totex', 'ann'] = self.expenditures.loc['capex', 'ann'] + self.expenditures.loc['mntex', 'ann'] + self.expenditures.loc['opex', 'ann']
 
-        self.scenario.expenditures.loc['totex','sim'] += self.totex_sim
-        self.scenario.expenditures.loc['totex','prj'] += self.totex_prj
-        self.scenario.expenditures.loc['totex','dis'] += self.totex_dis
-        self.scenario.expenditures.loc['totex','ann'] += self.totex_ann
+        self.scenario.expenditures.loc['totex', :] += self.expenditures.loc['totex', :]  # sim, prj, dis, ann
 
     def add_power_trace(self):
         legentry = self.get_legend_entry()
@@ -99,24 +94,24 @@ class Block:
         """
 
         capex = pd.Series(dtype='float64', index=range(self.scenario.prj_duration_yrs), data=0)
-        capex[0] = self.capex_init
+        capex[0] = self.expenditures.loc['capex', 'init']
         if hasattr(self, 'ls'):
             for year in eco.reinvest_periods(lifespan=self.ls,
                                            observation_horizon=self.scenario.prj_duration_yrs):
                 capex[year] = self.capex_replacement * (self.ccr ** year)
         self.cashflows[f'capex_{self.name}'] = -1 * capex  # expenses are negative cashflows (outgoing)
-        self.cashflows[f'mntex_{self.name}'] = -1 * self.mntex_yrl
-        self.cashflows[f'opex_{self.name}'] = -1 * self.opex_yrl
-        self.cashflows[f'crev_{self.name}'] = self.crev_yrl
+        self.cashflows[f'mntex_{self.name}'] = -1 * self.expenditures.loc['mntex', 'yrl']
+        self.cashflows[f'opex_{self.name}'] = -1 * self.expenditures.loc['opex', 'yrl']
+        self.cashflows[f'crev_{self.name}'] = self.expenditures.loc['crev', 'yrl']
 
         self.scenario.cashflows = pd.concat([self.scenario.cashflows, self.cashflows], axis=1)
 
-    def calc_energy_bidi(self):
+    def calc_energy_storage_block(self):
         """
         Calculate the energy results for bidirectional blocks (CommoditySystems and StationaryEnergyStorages).
         Bidirectional blocks can be either counted towards energy production or delivery, depending on their balance.
         """
-        self.calc_energy_common()
+        self.calc_energy_common(flow_names=['in', 'out'])
 
         if self.energies.loc['in', 'sim'] > self.energies.loc['out', 'sim']:
             mode = 'del'
@@ -127,7 +122,10 @@ class Block:
 
         self.energies.loc['yrl', 'sim'] = utils.scale_sim2year(self.energies.loc[mode, 'sim'], self.scenario)
         self.energies.loc['prj', 'sim'] = utils.scale_year2prj(self.energies.loc[mode, 'yrl'], self.scenario)
-        self.energies.loc['dis', 'sim'] = eco.acc_discount(self.energies.loc[mode, 'yrl'], self.scenario.prj_duration_yrs, self.scenario.wacc, occurs_at='end')
+        self.energies.loc['dis', 'sim'] = eco.acc_discount(self.energies.loc[mode, 'yrl'],
+                                                           self.scenario.prj_duration_yrs,
+                                                           self.scenario.wacc,
+                                                           occurs_at='end')
 
         self.scenario.energies.loc[mode, :] += self.energies.loc[mode, :]
 
@@ -135,29 +133,43 @@ class Block:
         """
         Accumulating results for sources and sinks
         """
-        self.calc_energy_common()
+        modes = []
+        flow_names = []
+        if 'in' in self.flows.columns:
+            modes.append('del')
+            flow_names.append('in')
+        if 'out' in self.flows.columns:
+            modes.append('pro')
+            flow_names.append('out')
 
-        for row, source_row in zip(['pro', 'del'], ['out', 'in']):
+        self.calc_energy_common(flow_names)
+
+        for mode, source_row in zip(modes, flow_names):
             for col in ['sim', 'yrl', 'prj', 'dis']:
-                self.energies.loc[row, col] = self.energies.loc[source_row, col]
-                self.scenario.energies.loc[row, col] += self.energies.loc[row, col]
+                self.energies.loc[mode, col] = self.energies.loc[source_row, col]
+                self.scenario.energies.loc[mode, col] += self.energies.loc[mode, col]
 
-    def calc_energy_common(self):
+    def calc_energy_common(self, flow_names):
+        if 'in' in flow_names and 'out' in flow_names:
+            self.flows['total'] = self.flows['out'] - self.flows['in']
+            if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
+                self.scenario.logger.warning(f'Block {self.name} - '
+                                             f'simultaneous in- and outflow detected!')
+        elif 'in' in flow_names:
+            self.flows['total'] = -1 * self.flows['in']
+        elif 'out' in flow_names:
+            self.flows['total'] = self.flows['out']
+        else:
+            raise ValueError(f'Block {self.name} - no flow names specified')
 
-        if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
-            self.scenario.logger.warning(f'Block {self.name} - '
-                                         f'simultaneous in- and outflow detected!')
-
-        for flow in ['in', 'out']:
-            self.energies.loc[flow, 'sim'] = self.flows[flow].sum() * self.scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
-            self.energies.loc[flow, 'yrl'] = utils.scale_sim2year(self.energies.loc[flow, 'sim'], self.scenario)
-            self.energies.loc[flow, 'prj'] = utils.scale_year2prj(self.energies.loc[flow, 'yrl'], self.scenario)
-            self.energies.loc[flow, 'dis'] = eco.acc_discount(self.energies.loc[flow, 'yrl'],
-                                                              self.scenario.prj_duration_yrs,
-                                                              self.scenario.wacc,
-                                                              occurs_at='end')
-
-        self.flows['total'] = self.flows['out'] - self.flows['in']
+        for flow_name in flow_names:
+            self.energies.loc[flow_name, 'sim'] = self.flows[flow_name].sum() * self.scenario.timestep_hours  # flow values are powers in W --> conversion to Wh
+            self.energies.loc[flow_name, 'yrl'] = utils.scale_sim2year(self.energies.loc[flow_name, 'sim'], self.scenario)
+            self.energies.loc[flow_name, 'prj'] = utils.scale_year2prj(self.energies.loc[flow_name, 'yrl'], self.scenario)
+            self.energies.loc[flow_name, 'dis'] = eco.acc_discount(self.energies.loc[flow_name, 'yrl'],
+                                                                   self.scenario.prj_duration_yrs,
+                                                                   self.scenario.wacc,
+                                                                   occurs_at='end')
 
     def calc_expenses(self):
         """
@@ -179,66 +191,56 @@ class Block:
         Extrapolate initial capital investment including replacements to project timeframe and calculate annuity.
         Method is called for all InvestBlocks and ICEVSystems.
         """
-        self.capex_prj = eco.capex_sum(capex_init=self.capex_init,
-                                       capex_replacement=self.capex_replacement,
-                                       cost_change_ratio=self.ccr,
-                                       lifespan=self.ls,
-                                       observation_horizon=self.scenario.prj_duration_yrs)
-        self.capex_dis = eco.capex_present(capex_init=self.capex_init,
-                                           capex_replacement=self.capex_replacement,
-                                           cost_change_ratio=self.ccr,
-                                           discount_rate=self.scenario.wacc,
-                                           lifespan=self.ls,
-                                           observation_horizon=self.scenario.prj_duration_yrs)
-        self.capex_ann = eco.annuity_due_capex(capex_init=self.capex_init,
-                                               capex_replacement=self.capex_replacement,
-                                               lifespan=self.ls,
-                                               observation_horizon=self.scenario.prj_duration_yrs,
-                                               discount_rate=self.scenario.wacc,
-                                               cost_change_ratio=self.ccr)
-        self.scenario.expenditures.loc['capex','init'] += self.capex_init
-        self.scenario.expenditures.loc['capex','prj'] += self.capex_prj
-        self.scenario.expenditures.loc['capex','dis'] += self.capex_dis
-        self.scenario.expenditures.loc['capex','ann'] += self.capex_ann
+        self.expenditures.loc['capex', 'prj'] = eco.capex_sum(capex_init=self.expenditures.loc['capex', 'init'],
+                                                              capex_replacement=self.capex_replacement,
+                                                              cost_change_ratio=self.ccr,
+                                                              lifespan=self.ls,
+                                                              observation_horizon=self.scenario.prj_duration_yrs)
+        self.expenditures.loc['capex', 'dis'] = eco.capex_present(capex_init=self.expenditures.loc['capex', 'init'],
+                                                                  capex_replacement=self.capex_replacement,
+                                                                  cost_change_ratio=self.ccr,
+                                                                  discount_rate=self.scenario.wacc,
+                                                                  lifespan=self.ls,
+                                                                  observation_horizon=self.scenario.prj_duration_yrs)
+        self.expenditures.loc['capex', 'ann'] = eco.annuity_due_capex(capex_init=self.expenditures.loc['capex', 'init'],
+                                                                      capex_replacement=self.capex_replacement,
+                                                                      lifespan=self.ls,
+                                                                      observation_horizon=self.scenario.prj_duration_yrs,
+                                                                      discount_rate=self.scenario.wacc,
+                                                                      cost_change_ratio=self.ccr)
+        self.scenario.expenditures.loc['capex', :] += self.expenditures.loc['capex', :]  # init, prj, dis, ann
 
     def extrapolate_mntex(self):
         """
         Extrapolate yearly maintenance expenses to project timeframe and calculate annuity.
         Method is called for all InvestBlocks and ICEVSystems.
         """
-        self.mntex_sim = self.mntex_yrl * self.scenario.sim_yr_rat
-        self.mntex_prj = utils.scale_year2prj(self.mntex_yrl, self.scenario)
-        self.mntex_dis = eco.acc_discount(nominal_value=self.mntex_yrl,
-                                          observation_horizon=self.scenario.prj_duration_yrs,
-                                          discount_rate=self.scenario.wacc,
-                                          occurs_at='beginning')
-        self.mntex_ann = eco.annuity_due_recur(nominal_value=self.mntex_yrl,
-                                               observation_horizon=self.scenario.prj_duration_yrs,
-                                               discount_rate=self.scenario.wacc,)
-        self.scenario.expenditures.loc['mntex','yrl'] += self.mntex_yrl
-        self.scenario.expenditures.loc['mntex','prj'] += self.mntex_prj
-        self.scenario.expenditures.loc['mntex','dis'] += self.mntex_dis
-        self.scenario.expenditures.loc['mntex','ann'] += self.mntex_ann
+        self.expenditures.loc['mntex', 'sim'] = self.expenditures.loc['mntex', 'yrl'] * self.scenario.sim_yr_rat
+        self.expenditures.loc['mntex', 'prj'] = utils.scale_year2prj(self.expenditures.loc['mntex', 'yrl'], self.scenario)
+        self.expenditures.loc['mntex', 'dis'] = eco.acc_discount(nominal_value=self.expenditures.loc['mntex', 'yrl'],
+                                                                 observation_horizon=self.scenario.prj_duration_yrs,
+                                                                 discount_rate=self.scenario.wacc,
+                                                                 occurs_at='beginning')
+        self.expenditures.loc['mntex', 'ann'] = eco.annuity_due_recur(nominal_value=self.expenditures.loc['mntex', 'yrl'],
+                                                                      observation_horizon=self.scenario.prj_duration_yrs,
+                                                                      discount_rate=self.scenario.wacc,)
+        self.scenario.expenditures.loc['mntex',:] += self.expenditures.loc['mntex', :]  # yrl, prj, dis, ann
 
     def extrapolate_opex(self):
         """
         Extrapolate operational expenses in simulation timeframe to project timeframe and calculate annuity.
         Method is called for all InvestBlocks and ICEVSystems.
         """
-        self.opex_yrl = utils.scale_sim2year(self.opex_sim, self.scenario)
-        self.opex_prj = utils.scale_year2prj(self.opex_yrl, self.scenario)
-        self.opex_dis = eco.acc_discount(nominal_value=self.opex_yrl,
+        self.expenditures.loc['opex', 'yrl'] = utils.scale_sim2year(self.expenditures.loc['opex', 'sim'], self.scenario)
+        self.expenditures.loc['opex', 'prj'] = utils.scale_year2prj(self.expenditures.loc['opex', 'yrl'], self.scenario)
+        self.expenditures.loc['opex', 'dis'] = eco.acc_discount(nominal_value=self.expenditures.loc['opex', 'yrl'],
                                          observation_horizon=self.scenario.prj_duration_yrs,
                                          discount_rate=self.scenario.wacc,
                                          occurs_at='end')
-        self.opex_ann = eco.annuity_due_recur(nominal_value=self.opex_yrl,
+        self.expenditures.loc['opex', 'ann'] = eco.annuity_due_recur(nominal_value=self.expenditures.loc['opex', 'yrl'],
                                               observation_horizon=self.scenario.prj_duration_yrs,
                                               discount_rate=self.scenario.wacc)
-        self.scenario.expenditures.loc['opex','sim'] += self.opex_sim
-        self.scenario.expenditures.loc['opex','yrl'] += self.opex_yrl
-        self.scenario.expenditures.loc['opex','prj'] += self.opex_prj
-        self.scenario.expenditures.loc['opex','dis'] += self.opex_dis
-        self.scenario.expenditures.loc['opex','ann'] += self.opex_ann
+        self.scenario.expenditures.loc['opex', :] += self.expenditures.loc['opex', :]  # sim, yrl, prj, dis, ann
 
     def get_legend_entry(self):
         """
@@ -250,8 +252,14 @@ class Block:
         """
         Collect timeseries results of the block in a scenario wide dataframe to be saved
         """
-        block_ts_results = pd.DataFrame({(self.name, col): self.flows[col] for col in self.flows.columns})
-        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, block_ts_results], axis=1)
+        block_ts_results_flows = pd.DataFrame({(self.name, col): self.flows[col] for col in self.flows.columns})
+        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, block_ts_results_flows], axis=1)
+
+        if self.storage_timeseries is not None:
+            block_ts_results_storage = pd.DataFrame({(self.name, col): self.storage_timeseries[col] for col in self.storage_timeseries.columns})
+
+            self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries,
+                                                         block_ts_results_storage], axis=1)
 
 
 class InvestBlock(Block):
@@ -259,9 +267,9 @@ class InvestBlock(Block):
     An InvestBlock is a block that can be optimized in size. It has therefore incurs expenses.
     """
 
-    def __init__(self, name, scenario):
+    def __init__(self, name, scenario, flow_names=['total', 'in', 'out']):
         self.invest = False  # not every block has example parameter invest without extension -> default: False
-        super().__init__(name, scenario)
+        super().__init__(name, scenario, flow_names)
 
         self.size = self.size_additional_max = None  # placeholder
         self.size_additional = 0
@@ -309,7 +317,8 @@ class InvestBlock(Block):
         GridConnections, SystemCore and CommoditySystems are more complex and have their own functions
         """
         self.capex_init_additional = self.size_additional * self.capex_spec
-        self.capex_init = self.capex_init_existing + self.capex_init_additional
+        self.expenditures.loc['capex', 'init'] = self.capex_init_existing + self.capex_init_additional
+
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (self.size_existing + self.size_additional) * self.capex_spec
@@ -338,7 +347,7 @@ class InvestBlock(Block):
         Default function for simple blocks with a single size value. GridConnection, SystemCore and CommoditySystem
         are more complex.
         """
-        self.mntex_yrl = self.size * self.mntex_spec
+        self.expenditures.loc['mntex', 'yrl'] = self.size * self.mntex_spec
 
     def calc_opex(self):
         """
@@ -370,15 +379,12 @@ class RenewableInvestBlock(InvestBlock):
 
     def __init__(self, name, scenario):
 
-        super().__init__(name, scenario)
+        super().__init__(name, scenario, flow_names=['total', 'out', 'pot', 'curt'])
 
         self.bus = self.bus_connected = self.exc = self.src = None  # initialization of oemof-solph components
 
         self.data = self.data_ph = self.input_file_name = self.path_input_file = None  # placeholders, are filled later
 
-        # initialize results as float64
-        self.flows['pot'] = pd.Series(0, index=self.flows.index, dtype='float64')
-        self.flows['curt'] = pd.Series(0, index=self.flows.index, dtype='float64')
         self.e_pot = self.e_curt = 0
 
         self.get_timeseries_data()
@@ -413,10 +419,9 @@ class RenewableInvestBlock(InvestBlock):
         self.scenario.e_renewable_curt += self.e_curt
 
     def calc_opex_sim(self):
-        self.opex_sim = self.flows['out'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+        self.expenditures.loc['opex', 'sim'] = self.flows['out'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def get_ch_results(self, horizon):
-
         # flow values are powers
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'pot'] = horizon.results[(self.src, self.bus)]['sequences']['flow'][horizon.dti_ch]
@@ -428,7 +433,6 @@ class RenewableInvestBlock(InvestBlock):
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.size / 1e3:.1f} kW)'
-
 
     def update_input_components(self, horizon):
         """
@@ -477,7 +481,6 @@ class CommoditySystem(InvestBlock):
     def __init__(self, name, scenario):
 
         self.size_pc = self.size_existing_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
-        self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
 
         super().__init__(name, scenario)
 
@@ -544,7 +547,7 @@ class CommoditySystem(InvestBlock):
 
     def calc_capex_init(self):
         self.capex_init_additional = sum([com.size_additional for com in self.commodities.values()]) * self.capex_spec
-        self.capex_init = self.capex_init_existing + self.capex_init_additional
+        self.expenditures.loc['capex', 'init'] = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = sum([com.size_existing + com.size_additional for com in self.commodities.values()]) * self.capex_spec
@@ -562,10 +565,10 @@ class CommoditySystem(InvestBlock):
             for period in ['sim', 'yrl', 'prj', 'dis']:
                 self.energies.loc['ext', period] += commodity.energies.loc['ext_ac', period] + commodity.energies.loc['ext_dc', period]
 
-        self.calc_energy_bidi()  # bidirectional block
+        self.calc_energy_storage_block()  # bidirectional block
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
+        self.expenditures.loc['mntex', 'yrl'] = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
 
     def calc_opex_ep_spec(self):
         # Opex is uprated in importance for short simulations
@@ -586,34 +589,29 @@ class CommoditySystem(InvestBlock):
             self.opex_commodities += (commodity.opex_sim + commodity.opex_sim_ext)
             self.opex_commodities_ext += commodity.opex_sim_ext
 
-        self.opex_sim = self.opex_sys + self.opex_commodities
-        self.opex_sim_ext = self.opex_commodities_ext
+        self.expenditures.loc['opex', 'sim'] = self.opex_sys + self.opex_commodities
+        self.expenditures.loc['opex_ext', 'sim'] = self.opex_commodities_ext
 
         # Calc opex for external charging
-        self.opex_yrl_ext = utils.scale_sim2year(self.opex_sim_ext, self.scenario)
-        self.opex_prj_ext = utils.scale_year2prj(self.opex_yrl_ext, self.scenario)
-        self.opex_dis_ext = eco.acc_discount(self.opex_yrl_ext,
-                                             self.scenario.prj_duration_yrs,
-                                             self.scenario.wacc,
-                                             occurs_at='end')
-        self.opex_ann_ext = eco.annuity_due_recur(nominal_value=self.opex_yrl_ext,
-                                                  observation_horizon=self.scenario.prj_duration_yrs,
-                                                  discount_rate=self.scenario.wacc)
-        self.scenario.expenditures.loc['opex_ext','sim'] += self.opex_sim_ext
-        self.scenario.expenditures.loc['opex_ext','yrl'] += self.opex_yrl_ext
-        self.scenario.expenditures.loc['opex_ext','prj'] += self.opex_prj_ext
-        self.scenario.expenditures.loc['opex_ext','dis'] += self.opex_dis_ext
-        self.scenario.expenditures.loc['opex_ext','ann'] += self.opex_ann_ext
+        self.expenditures.loc['opex_ext', 'yrl'] = utils.scale_sim2year(self.expenditures.loc['opex_ext', 'sim'], self.scenario)
+        self.expenditures.loc['opex_ext', 'prj'] = utils.scale_year2prj(self.expenditures.loc['opex_ext', 'yrl'], self.scenario)
+        self.expenditures.loc['opex_ext', 'dis'] = eco.acc_discount(self.expenditures.loc['opex_ext', 'yrl'],
+                                                                    self.scenario.prj_duration_yrs,
+                                                                    self.scenario.wacc,
+                                                                    occurs_at='end')
+        self.expenditures.loc['opex_ext', 'ann'] = eco.annuity_due_recur(nominal_value=self.expenditures.loc['opex_ext', 'yrl'],
+                                                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                                                         discount_rate=self.scenario.wacc)
+        self.scenario.expenditures.loc['opex_ext', :] += self.expenditures.loc['opex_ext', :]  # sim, yrl, prj, dis, ann
 
     def calc_revenue(self):
         for commodity in self.commodities.values():
             commodity.calc_revenue()
-            self.crev_sim += commodity.crev_sim
+            self.expenditures.loc['crev', 'sim'] += commodity.crev_sim
 
         self.accumulate_crev()
 
     def get_ch_results(self, horizon):
-
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[
             (self.outflow, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[
@@ -623,7 +621,6 @@ class CommoditySystem(InvestBlock):
             commodity.get_ch_results(horizon)
 
     def get_dispatch_mode(self):
-
         if self.mode_scheduling in self.scenario.run.apriori_lvls:  # uc, equal, soc, fcfs
             if self.mode_scheduling == 'uc':
                 self.mode_dispatch = 'apriori_unlimited'
@@ -753,7 +750,7 @@ class ControllableSource(InvestBlock):
 
     def __init__(self, name, scenario):
 
-        super().__init__(name, scenario)
+        super().__init__(name, scenario, flow_names=['total', 'out'])
 
         self.bus_connected = self.src = None  # initialize oemof-solph components
 
@@ -761,7 +758,7 @@ class ControllableSource(InvestBlock):
         self.calc_energy_source_sink()
 
     def calc_opex_sim(self):
-        self.opex_sim = self.flows['out'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+        self.expenditures.loc['opex', 'sim'] = self.flows['out'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.src, self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -831,7 +828,7 @@ class GridConnection(InvestBlock):
         self.capex_init_additional_s2g = self.size_s2g_additional * self.capex_spec
         self.capex_init_additional = self.capex_init_additional_g2s + self.capex_init_additional_s2g
 
-        self.capex_init = self.capex_init_existing + self.capex_init_additional
+        self.expenditures.loc['capex', 'init'] = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (self.size_g2s_existing +
@@ -853,7 +850,7 @@ class GridConnection(InvestBlock):
         self.calc_energy_source_sink()
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = (self.size_g2s + self.size_s2g) * self.mntex_spec
+        self.expenditures.loc['mntex', 'yrl'] = (self.size_g2s + self.size_s2g) * self.mntex_spec
 
     def calc_opex_ep_spec(self):
         # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridMarket
@@ -870,13 +867,13 @@ class GridConnection(InvestBlock):
 
             self.opex_sim_energy += market.opex_sim
 
-        self.opex_sim = self.opex_sim_power + self.opex_sim_energy
+        self.expenditures.loc['opex', 'sim'] = self.opex_sim_power + self.opex_sim_energy
 
     def get_ch_results(self, horizon, *_):
         self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
                                             for inflow in self.inflow.values()])
-        self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
-                                             for outflow in self.outflow.values()])
+        self.flows.loc[horizon.dti_ch, 'out'] = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
+                                                     for outflow in self.outflow.values()])
 
         for market in self.markets.values():
             market.get_ch_results(horizon)
@@ -923,14 +920,13 @@ class GridConnection(InvestBlock):
             markets = markets.map(utils.infer_dtype)
         else:
             markets = pd.DataFrame(index=['res_only', 'opex_spec_g2s', 'opex_spec_s2g', 'pwr_g2s', 'pwr_s2g'],
-                                   columns=['grid'],
+                                   columns=[f'{self.name}_market'],
                                    data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
         # Generate individual GridMarkets instances
         self.markets = {market: GridMarket(market, self, markets.loc[:, market])
                         for market in markets.columns}
 
     def initialize_peakshaving(self):
-
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
         periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
                         'week': lambda x: x.strftime('%Y-CW%W'),
@@ -1155,10 +1151,6 @@ class GridMarket:
                                      dtype=float)
 
     def add_power_trace(self):
-        # Do not plot an additional power trace if there is only one grid market, as it equals the GridConnection power.
-        if self.parent.filename_markets is None:
-            return
-
         legentry = (f'{self.name} power (max.'
                     f' {(self.parent.size_g2s if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
                     f' {(self.parent.size_s2g if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
@@ -1186,7 +1178,7 @@ class GridMarket:
                                                               self.scenario.wacc,
                                                               occurs_at='end')
 
-        self.flows['total'] = self.flows['in'] - self.flows['out']  # for plotting
+        self.flows['total'] = self.flows['out'] - self.flows['in']  # for plotting
 
     def get_ch_results(self, horizon):
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.parent.bus, self.snk)]['sequences']['flow'][horizon.dti_ch]
@@ -1285,18 +1277,18 @@ class ICEVSystem(Block):
         pass  # function has to be callable, but ICEVSystem does not impose energy transfer
 
     def calc_capex_init_existing(self):
-        self.capex_init = self.capex_pc * self.num if self.capex_existing else 0
-        self.scenario.capex_init_existing += self.capex_init
+        self.expenditures.loc['capex', 'init'] = self.capex_pc * self.num if self.capex_existing else 0
+        self.scenario.capex_init_existing += self.expenditures.loc['capex', 'init']
 
     def calc_expenses(self):
         self.capex_replacement = self.capex_pc * self.num
         self.extrapolate_capex()  # Method defined in Block class
 
-        self.opex_sim = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opex_spec_dist
-                             for com in self.com_names])
+        self.expenditures.loc['opex', 'sim'] = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opex_spec_dist
+                                                    for com in self.com_names])
         self.extrapolate_opex()  # Method defined in Block class
 
-        self.mntex_yrl = self.mntex_pc * self.num
+        self.expenditures.loc['mntex', 'yrl'] = self.mntex_pc * self.num
         self.extrapolate_mntex()  # Method defined in Block class
 
         self.accumulate_expenses()
@@ -1310,7 +1302,7 @@ class ICEVSystem(Block):
         self.crev_usage = {commodity: self.data.loc[self.scenario.dti_sim, (commodity, 'tour_dist')]
                                       @ self.crev_spec_dist[self.scenario.dti_sim]
                            for commodity in self.com_names}
-        self.crev_sim = sum(self.crev_time.values()) + sum(self.crev_usage.values())
+        self.expenditures.loc['crev', 'sim'] = sum(self.crev_time.values()) + sum(self.crev_usage.values())
 
         self.accumulate_crev()
 
@@ -1327,7 +1319,7 @@ class ICEVSystem(Block):
 class FixedDemand(Block):
 
     def __init__(self, name, scenario):
-        super().__init__(name, scenario)
+        super().__init__(name, scenario, flow_names=['total', 'in'])
 
         self.bus_connected = self.snk = None  # initialize oemof-solph component
 
@@ -1350,7 +1342,7 @@ class FixedDemand(Block):
         pass  # function has to be callable, but FixedDemand does not have any capital expenses
 
     def calc_revenue(self):
-        self.crev_sim = (self.flows['in'] @ self.crev_spec[self.scenario.dti_sim]) * self.scenario.timestep_hours  # @ is dot product (Skalarprodukt)
+        self.expenditures.loc['crev', 'sim'] = (self.flows['in'] @ self.crev_spec[self.scenario.dti_sim]) * self.scenario.timestep_hours  # @ is dot product (Skalarprodukt)
         self.accumulate_crev()
 
     def generate_timeseries_from_slp(self):
@@ -1494,15 +1486,15 @@ class MobileCommodity:
                                   data=0,
                                   dtype='float64')
 
-        self.soc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim), dtype='float64')
-        self.soc[self.scenario.starttime] = self.soc_init
+        self.storage_timeseries = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
+                                               columns=['soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                                               dtype='float64')
 
-        self.soh = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
-        self.q_loss_cal = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
-        self.q_loss_cyc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
+        self.storage_timeseries.loc[self.scenario.starttime, 'soc'] = self.soc_init
+
         self.aging_model = bat.BatteryPackModel(self)
-        self.soc_min = (1 - self.soh[self.scenario.starttime]) / 2
-        self.soc_max = 1 - ((1 - self.soh[self.scenario.starttime]) / 2)
+        self.soc_min = (1 - self.storage_timeseries.loc[self.scenario.starttime, 'soh']) / 2
+        self.soc_max = 1 - ((1 - self.storage_timeseries.loc[self.scenario.starttime, 'soh']) / 2)
 
     def add_power_trace(self):
         legentry = (f'{self.name} power (max. {self.pwr_chg / 1e3:.1f} kW charge / '
@@ -1527,8 +1519,8 @@ class MobileCommodity:
 
     def add_soc_trace(self):
         legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
-        self.scenario.figure.add_trace(go.Scatter(x=self.soc.index,
-                                                  y=self.soc,
+        self.scenario.figure.add_trace(go.Scatter(x=self.storage_timeseries.index,
+                                                  y=self.storage_timeseries['soc'],
                                                   mode='lines',
                                                   name=legentry,
                                                   line=dict(width=2, dash=None),
@@ -1536,7 +1528,7 @@ class MobileCommodity:
                                        secondary_y=True)
 
         legentry = f'{self.name} SOH'
-        data = self.soh.dropna()
+        data = self.storage_timeseries['soh'].dropna()
         self.scenario.figure.add_trace(go.Scatter(x=data.index,
                                                   y=data,
                                                   mode='lines',
@@ -1591,7 +1583,7 @@ class MobileCommodity:
         self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[(self.src_ext_dc, self.bus_ext_dc)]['sequences']['flow'][horizon.dti_ch]
 
         # storage content during PH (including endtime)
-        self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(
+        self.storage_timeseries.loc[utils.extend_dti(horizon.dti_ch), 'soc'] = solph.views.node(
             horizon.results, f'{self.name}_ess')['sequences'][((f'{self.name}_ess', 'None'), 'storage_content')][
                                                          utils.extend_dti(horizon.dti_ch)] / self.size
 
@@ -1601,15 +1593,11 @@ class MobileCommodity:
         """
 
         commodity_ts_results_flows = pd.DataFrame({(self.name, col): self.flows[col] for col in self.flows.columns})
-
-        commodity_ts_results_rest = pd.DataFrame({(self.name, 'soc'): self.soc,
-                                                  (self.name, 'soh'): self.soh,
-                                                  (self.name, 'q_loss_cal'): self.q_loss_cal,
-                                                  (self.name, 'q_loss_cyc'): self.q_loss_cyc})
+        commodity_ts_results_storage = pd.DataFrame({(self.name, col): self.storage_timeseries[col] for col in self.storage_timeseries.columns})
 
         self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries,
                                                      commodity_ts_results_flows,
-                                                     commodity_ts_results_rest], axis=1)
+                                                     commodity_ts_results_storage], axis=1)
 
     def set_init_size(self):
         if not self.invest:
@@ -1705,7 +1693,7 @@ class MobileCommodity:
                                                    balanced=False,
                                                    initial_storage_level=statistics.median(
                                                        [soc_min[horizon.starttime],
-                                                        self.soc[horizon.starttime],
+                                                        self.storage_timeseries.loc[horizon.starttime, 'soc'],
                                                         soc_max[horizon.starttime]]),
                                                    inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
@@ -1964,30 +1952,27 @@ class StationaryEnergyStorage(InvestBlock):
         self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
-        self.flows['in'] = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
-        self.flows['out'] = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
+        self.storage_timeseries = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
+                                               columns=['soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                                               dtype='float64')
 
-        self.soc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim), dtype='float64')
-        self.soc[self.scenario.starttime] = self.soc_init
+        self.storage_timeseries.loc[self.scenario.starttime, 'soc'] = self.soc_init
 
-        self.soh = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
-        self.q_loss_cal = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
-        self.q_loss_cyc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim))
         self.aging_model = bat.BatteryPackModel(self)
-        self.soc_min = (1 - self.soh[self.scenario.starttime]) / 2
-        self.soc_max = 1 - ((1 - self.soh[self.scenario.starttime]) / 2)
+        self.soc_min = (1 - self.storage_timeseries.loc[self.scenario.starttime, 'soh']) / 2
+        self.soc_max = 1 - ((1 - self.storage_timeseries.loc[self.scenario.starttime, 'soh']) / 2)
 
     def add_soc_trace(self):
         legentry = f'{self.name} SOC ({self.size/1e3:.1f} kWh)'
-        self.scenario.figure.add_trace(go.Scatter(x=self.soc.index,
-                                                  y=self.soc,
+        self.scenario.figure.add_trace(go.Scatter(x=self.storage_timeseries.index,
+                                                  y=self.storage_timeseries['soc'],
                                                   mode='lines',
                                                   name=legentry,
                                                   line=dict(width=2, dash=None)),
                                        secondary_y=True)
 
         legentry = f'{self.name} SOH'
-        data = self.soh.dropna()
+        data = self.storage_timeseries['soh'].dropna()
         self.scenario.figure.add_trace(go.Scatter(x=data.index,
                                                   y=data,
                                                   mode='lines',
@@ -2000,10 +1985,10 @@ class StationaryEnergyStorage(InvestBlock):
         self.aging_model.age(horizon)
 
     def calc_energy(self):
-        self.calc_energy_bidi()
+        self.calc_energy_storage_block()
 
     def calc_opex_sim(self):
-        self.opex_sim = self.flows['in'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+        self.expenditures.loc['opex', 'sim'] = self.flows['in'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def get_ch_results(self, horizon, *_):
 
@@ -2013,7 +1998,7 @@ class StationaryEnergyStorage(InvestBlock):
             horizon.dti_ch]
 
         # storage content during PH (including endtime)
-        self.soc[utils.extend_dti(horizon.dti_ch)] = solph.views.node(horizon.results, self.name)['sequences'][
+        self.storage_timeseries.loc[utils.extend_dti(horizon.dti_ch), 'soc'] = solph.views.node(horizon.results, self.name)['sequences'][
             ((self.name, 'None'), 'storage_content')][utils.extend_dti(horizon.dti_ch)] / self.size
 
     def get_invest_size(self, horizon):
@@ -2023,19 +2008,6 @@ class StationaryEnergyStorage(InvestBlock):
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.size * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
                 f' {self.size * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
-
-    def get_timeseries_results(self):
-        """
-        Collect timeseries results of the block in a scenario wide dataframe to be saved
-        """
-        super().get_timeseries_results()  # this goes up to the Block class
-
-        block_ts_results = pd.DataFrame({(self.name, 'soc'): self.soc,
-                                         (self.name, 'soh'): self.soh,
-                                         (self.name, 'q_loss_cal'): self.q_loss_cal,
-                                         (self.name, 'q_loss_cyc'): self.q_loss_cyc})
-
-        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, block_ts_results], axis=1)
 
     def update_input_components(self, horizon):
         """
@@ -2076,7 +2048,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    loss_rate=self.loss_rate,
                                                    balanced={'go': True, 'rh': False}[self.scenario.strategy],
                                                    initial_storage_level=statistics.median(
-                                                       [self.soc_min, self.soc[horizon.starttime], self.soc_max]),
+                                                       [self.soc_min, self.storage_timeseries.loc[horizon.starttime, 'soc'], self.soc_max]),
                                                    invest_relation_input_capacity=self.crate_chg,
                                                    # crate measured "outside" of conversion factor (efficiency)
                                                    # p_max at outputs is size * crate_dis (not incl. eff)
@@ -2112,16 +2084,11 @@ class SystemCore(InvestBlock):
 
         self.capex_init_existing_acdc = self.capex_init_existing_dcac = 0
 
-        super().__init__(name, scenario)
+        super().__init__(name, scenario, flow_names=['acdc', 'dcac'])
         self.ac_bus = self.dc_bus = self.ac_dc = self.dc_ac = None  # initialize oemof-solph components
 
         self.energies.loc['acdc', :] = 0
         self.energies.loc['dcac', :] = 0
-
-        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
-                                  columns=['acdc', 'dcac'],
-                                  data=0,
-                                  dtype='float64')
 
     def add_power_trace(self):
         legentry = f'{self.name} DC-AC power (max. {self.size_dcac/1e3:.1f} kW)'
@@ -2144,7 +2111,7 @@ class SystemCore(InvestBlock):
 
     def calc_capex_init(self):
         self.capex_init_additional = (self.size_acdc_additional + self.size_dcac_additional) * self.capex_spec
-        self.capex_init = self.capex_init_existing + self.capex_init_additional
+        self.expenditures.loc['capex', 'init'] = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (self.size_acdc_existing +
@@ -2159,6 +2126,9 @@ class SystemCore(InvestBlock):
         self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
+        if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
+            self.scenario.logger.warning(f'Block {self.name} - '
+                                         f'simultaneous flow for "acdc" and "dcac" detected!')
 
         # energy result calculation is different from any other block as there is no in/out definition of flow
         for flow in ['acdc', 'dcac']:
@@ -2171,10 +2141,10 @@ class SystemCore(InvestBlock):
                                                               occurs_at='end')
 
     def calc_mntex_yrl(self):
-        self.mntex_yrl = (self.size_acdc + self.size_dcac) * self.mntex_spec
+        self.expenditures.loc['mntex', 'yrl'] = (self.size_acdc + self.size_dcac) * self.mntex_spec
 
     def calc_opex_sim(self):
-        self.opex_sim = (self.flows['acdc'] + self.flows['dcac']) @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
+        self.expenditures.loc['opex', 'sim'] = (self.flows['acdc'] + self.flows['dcac']) @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
 
     def get_ch_results(self, horizon):
         self.flows.loc[horizon.dti_ch, 'acdc'] = horizon.results[(self.scenario.blocks['core'].ac_bus, self.ac_dc)]['sequences']['flow'][
@@ -2187,14 +2157,6 @@ class SystemCore(InvestBlock):
         self.size_acdc = self.size_acdc_existing + self.size_acdc_additional
         self.size_dcac_additional = horizon.results[(self.dc_bus, self.dc_ac)]['scalars']['invest']
         self.size_dcac = self.size_dcac_existing + self.size_dcac_additional
-
-    def get_timeseries_results(self):
-        """
-        Collect timeseries results of the block in a scenario wide dataframe to be saved
-        """
-        # do not use super() here as 'in' and 'out' are empty for SystemCore
-        block_ts_results = pd.DataFrame({(self.name, col): self.flows[col] for col in ['acdc', 'dcac']})
-        self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, block_ts_results], axis=1)
 
     def set_init_size(self):
         self.equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False

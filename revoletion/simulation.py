@@ -452,20 +452,7 @@ class Scenario:
         self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
 
         # Result variables - Cost
-        self.expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
-                                         columns=['init', 'sim', 'yrl', 'prj', 'dis', 'ann'],
-                                         data=0,
-                                         dtype=float)
-
-        # initialize non-existing expenditures with None
-        for ex_periods, ex_type in [(('sim', 'yrl'), 'capex'),
-                                   (('init', 'sim'), 'mntex'),
-                                   (('init'), 'opex'),
-                                   (('init'), 'opex_ext'),
-                                   (('init', 'yrl'), 'totex'),
-                                   (('init', 'ann'), 'crev')]:
-            for ex_period in ex_periods:
-                self.expenditures.loc[ex_period, ex_type] = None
+        self.expenditures = utils.create_expenditures_dataframe()
 
         self.lcoe_total = self.lcoe_wocs = None
         self.npv = self.irr = self.mirr = None
@@ -501,7 +488,7 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable share calculation: division by zero')
 
-        totex_dis_cs = sum([cs.totex_dis for cs in self.commodity_systems.values()])
+        totex_dis_cs = sum([cs.expenditures.loc['totex', 'dis'] for cs in self.commodity_systems.values()])
         if self.energies.loc['del', 'dis'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
@@ -663,7 +650,7 @@ class Scenario:
                                          ('', 'expenditures')]:
                 if hasattr(block_obj, var_name) and isinstance(getattr(block_obj, var_name), pd.DataFrame):
                     for id1, id2 in itertools.product(getattr(block_obj, var_name).index,
-                                                              getattr(block_obj, var_name).columns):
+                                                      getattr(block_obj, var_name).columns):
                         self.result_summary.loc[(block_name, f'{var_prefix}{id1}_{id2}'), self.name] = (
                             getattr(block_obj, var_name).loc[id1, id2])
             if isinstance(block_obj, blocks.CommoditySystem):
