@@ -14,9 +14,9 @@ RUN wget https://packages.gurobi.com/12.0/gurobi12.0.0_linux64.tar.gz && \
     rm gurobi12.0.0_linux64.tar.gz && \
     mv gurobi1200 /opt/gurobi
 
-# Set environment variables
+# Set environment variables for gurobi
 ENV PATH=/opt/gurobi/bin:${PATH} \
-    LD_LIBRARY_PATH=/opt/gurobi/lib:${LD_LIBRARY_PATH} \
+    LD_LIBRARY_PATH=/opt/gurobi/lib:${LD_LIBRARY_PATH}
 
 # Install Python dependencies
 RUN pip install .
