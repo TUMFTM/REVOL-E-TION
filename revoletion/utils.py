@@ -74,20 +74,15 @@ def get_period_fraction(dti, period, freq):
     return period_fraction
 
 def create_expenditures_dataframe():
+    # previous capex_iit is renamed to capex_sim to reduce number of columns of the dataframe
     expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
-                                columns=['init', 'sim', 'yrl', 'prj', 'dis', 'ann'],
+                                columns=['sim', 'yrl', 'prj', 'dis', 'ann'],
                                 data=0,
-                                dtype=float)
+                                dtype='float64')
 
     # initialize non-existing expenditures with None
-    for ex_type, ex_periods in [('capex', ['sim', 'yrl']),
-                               ('mntex', ['init']),
-                               ('opex', ['init']),
-                               ('opex_ext', ['init']),
-                               ('totex', ['init', 'yrl']),
-                               ('crev', ['init', 'ann'])]:
-        for ex_period in ex_periods:
-            expenditures.loc[ex_type, ex_period] = np.nan
+    for ex_type, ex_period in [('capex', 'yrl'), ('totex', 'yrl'), ('crev', 'ann')]:
+        expenditures.loc[ex_type, ex_period] = np.nan
 
     return expenditures
 
@@ -99,6 +94,21 @@ def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
     tsr = ts / pd.Timedelta('30 days')
     lr = 1 - (1 - sdr) ** tsr
     return lr
+
+def conv_add_max(value):
+    return value if pd.notna(value) else None
+
+
+def init_tuple_variables(block, name_vars: list):
+    name_var1, name_var2 = name_vars
+    if (getattr(block, name_var1) == 'equal') and (getattr(block, name_var2) == 'equal'):
+        error_msg = (f'"{block.name}" parameters {name_var1} and {name_var2} were both set to equal.'
+                     f' Maximum one of these variables is allowed to be set to "equal"')
+        block.scenario.logger.error(error_msg)
+    elif getattr(block, name_var1) == 'equal':
+        setattr(block, name_var1, getattr(block, name_var2))
+    elif getattr(block, name_var2) == 'equal':
+        setattr(block, name_var2, getattr(block, name_var1))
 
 
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:

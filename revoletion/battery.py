@@ -307,7 +307,7 @@ class BatteryPackModel:
             q_eq = 0
 
     def get_pack_parameters(self):
-        self.size = self.commodity.size
+        self.size = self.commodity.size.loc['block', 'total']
         # Calculate number of cells as a float to correctly represent power split with nonreal cells
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell

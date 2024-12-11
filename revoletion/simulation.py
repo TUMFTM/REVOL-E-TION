@@ -203,14 +203,15 @@ class PredictionHorizon:
         # free up RAM
         del self.model
 
-        # get optimum component sizes for optimized blocks
-        for block in [block for block in self.scenario.blocks.values()
-                      if isinstance(block, blocks.InvestBlock) and block.invest]:
+        # get optimum component sizes
+        for block in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.InvestBlock)]:
             block.get_invest_size(self)
 
+        # get results for all blocks
         for block in self.scenario.blocks.values():
             block.get_ch_results(self)
 
+        # calculate aging for all storage blocks
         for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'aging')]:
             block.calc_aging(self)
 
@@ -653,6 +654,16 @@ class Scenario:
                                                       getattr(block_obj, var_name).columns):
                         self.result_summary.loc[(block_name, f'{var_prefix}{id1}_{id2}'), self.name] = (
                             getattr(block_obj, var_name).loc[id1, id2])
+
+            if hasattr(block_obj, 'size') and isinstance(getattr(block_obj, 'size'), pd.DataFrame):
+                skip_block_size = True if len(block_obj.size.index) > 1 else False
+                for sub_size, type_size in itertools.product(block_obj.size.index, block_obj.size.columns):
+                    prefix = f'_{sub_size}' if sub_size != 'block' else ''
+                    # ToDo: for blocks with multiple sizes: Should additional_max and total_max be included?
+                    if not (skip_block_size and sub_size == 'block' and type_size in []):
+                        self.result_summary.loc[(block_name, f'size{prefix}_{type_size}'), self.name] = (
+                            block_obj.size.loc[sub_size, type_size])
+
             if isinstance(block_obj, blocks.CommoditySystem):
                 for commodity_name, commodity_obj in block_obj.commodities.items():
                     write_values(commodity_name, commodity_obj)
