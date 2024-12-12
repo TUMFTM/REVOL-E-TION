@@ -29,6 +29,8 @@ class Block:
         for key, value in self.parameters.items():
             setattr(self, key, value)  # this sets all the parameters defined in the scenario file
 
+        self.subblocks = {}
+
         time_var_params = [var for var in vars(self) if ('opex_spec' in var) or ('crev_spec' in var)]
         # Don't transform variables for GridConnections, as the GridMarket opex defined specifically
         if not isinstance(self, GridConnection):
@@ -42,6 +44,7 @@ class Block:
                                   data=0,
                                   dtype='float64')
 
+        # Placeholder for storage timeseries results
         self.storage_timeseries = None
 
         # Empty result scalar variables
@@ -85,6 +88,9 @@ class Block:
                                                   line=dict(width=2, dash=None)),
                                        secondary_y=False)
 
+        for subblock in self.subblocks.values():
+            subblock.add_power_trace()
+
     def calc_cashflows(self):
         """
         Collect nominal cashflows for the block for each year in the project.
@@ -117,9 +123,9 @@ class Block:
             mode = 'pro'
             self.energies.loc['pro', 'sim'] = self.energies.loc['out', 'sim'] - self.energies.loc['in', 'sim']
 
-        self.energies.loc['yrl', 'sim'] = utils.scale_sim2year(self.energies.loc[mode, 'sim'], self.scenario)
-        self.energies.loc['prj', 'sim'] = utils.scale_year2prj(self.energies.loc[mode, 'yrl'], self.scenario)
-        self.energies.loc['dis', 'sim'] = eco.acc_discount(self.energies.loc[mode, 'yrl'],
+        self.energies.loc[mode, 'yrl'] = utils.scale_sim2year(self.energies.loc[mode, 'sim'], self.scenario)
+        self.energies.loc[mode, 'prj'] = utils.scale_year2prj(self.energies.loc[mode, 'yrl'], self.scenario)
+        self.energies.loc[mode, 'dis'] = eco.acc_discount(self.energies.loc[mode, 'yrl'],
                                                            self.scenario.prj_duration_yrs,
                                                            self.scenario.wacc,
                                                            occurs_at='end')
@@ -258,6 +264,10 @@ class Block:
             self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries,
                                                          block_ts_results_storage], axis=1)
 
+    def print_results(self):
+        # Dummy function; has to be available for every block, but is implemented for InvestBlocks and Subblocks only
+        pass
+
 
 class InvestBlock(Block):
     """
@@ -368,6 +378,14 @@ class InvestBlock(Block):
         are more complex and have their own methods.
         """
         self.opex_ep_spec = self.opex_spec * self.factor_opex
+
+    def print_results(self):
+        if self.invest:
+            self.scenario.logger.info(f'Optimized size of component "{self.name}": {self.size.loc["block", "total"] / 1e3:.1f} kW'
+                                      f' (existing: {self.size.loc["block", "existing"] / 1e3:.1f} kW'
+                                      f' - additional: {self.size.loc["block", "additional"] / 1e3:.1f} kW)')
+            for subblock in self.subblocks.values():
+                subblock.print_results()
 
     def set_init_size(self, size_names=[]):
         """
@@ -599,30 +617,25 @@ class CommoditySystem(InvestBlock):
                           'pwr_chg', 'pwr_dis', 'eff_chg', 'eff_dis', 'eff_storage_roundtrip', 'temp_battery']
         params = {key: getattr(self, key) for key in params_to_inherit}
         # Generate individual commodity instances
-        self.commodities = {com_name: MobileCommodity(com_name, self, params) for com_name in self.com_names}
-
-    def add_power_trace(self):
-        super().add_power_trace()
-        for commodity in self.commodities.values():
-            commodity.add_power_trace()
+        self.subblocks = {com_name: MobileCommodity(com_name, self, params) for com_name in self.com_names}
 
     def add_soc_trace(self):
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.add_soc_trace()
 
     def calc_aging(self, horizon):
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.calc_aging(horizon)
 
     def calc_capex_init_existing(self):
-        self.capex_init_existing = sum([com.size.loc['block', 'existing'] for com in self.commodities.values()]) * self.capex_spec \
+        self.capex_init_existing = sum([com.size.loc['block', 'existing'] for com in self.subblocks.values()]) * self.capex_spec \
             if self.capex_existing else 0
         self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
 
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.calc_results()
             self.energies.loc['ext', ['sim', 'yrl', 'prj', 'dis']] += commodity.energies.loc[['ext_ac', 'ext_dc'], ['sim', 'yrl', 'prj', 'dis']].sum()
 
@@ -640,7 +653,7 @@ class CommoditySystem(InvestBlock):
 
         self.opex_sys = self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] + self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim]
 
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.opex_sim = commodity.flows['in'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
             commodity.opex_sim_ext = ((commodity.flows['ext_ac'] @ self.opex_spec_ext_ac[self.scenario.dti_sim]) +
                                       (commodity.flows['ext_dc'] @ self.opex_spec_ext_dc[self.scenario.dti_sim])) * self.scenario.timestep_hours
@@ -663,7 +676,7 @@ class CommoditySystem(InvestBlock):
         self.scenario.expenditures.loc['opex_ext', :] += self.expenditures.loc['opex_ext', :]  # sim, yrl, prj, dis, ann
 
     def calc_revenue(self):
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.calc_revenue()
             self.expenditures.loc['crev', 'sim'] += commodity.crev_sim
 
@@ -675,7 +688,7 @@ class CommoditySystem(InvestBlock):
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[
             (self.bus_connected, self.inflow)]['sequences']['flow'][horizon.dti_ch]
 
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.get_ch_results(horizon)
 
     def get_dispatch_mode(self):
@@ -707,7 +720,7 @@ class CommoditySystem(InvestBlock):
         """
         Size for the commodity system is the sum of all commodity sizes in results
         """
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.get_invest_size(horizon)
             self.size.loc['block', :] += commodity.size.loc['block', :]
 
@@ -720,8 +733,14 @@ class CommoditySystem(InvestBlock):
         Collect timeseries results of the block in a scenario wide dataframe to be saved
         """
         super().get_timeseries_results()  # this goes up to the Block class
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.get_timeseries_results()
+
+    def print_results(self):
+        # No invest happens for CommoditySystems, only for subblocks
+        if self.invest:
+            for subblock in self.subblocks.values():
+                subblock.print_results()
 
     def set_init_size(self, size_names):
         super().set_init_size()
@@ -773,7 +792,7 @@ class CommoditySystem(InvestBlock):
         horizon.components.append(self.inflow)
         horizon.components.append(self.outflow)
 
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.update_input_components(horizon)
 
 
@@ -860,14 +879,9 @@ class GridConnection(InvestBlock):
         self.initialize_peakshaving()
         self.initialize_markets()
 
-    def add_power_trace(self):
-        super().add_power_trace()
-        for market in self.markets.values():
-            market.add_power_trace()
-
     def calc_energy(self):
         # Aggregate energy results for all GridMarkets
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.calc_results()
 
         self.calc_energy_source_sink()
@@ -881,7 +895,7 @@ class GridConnection(InvestBlock):
         self.opex_sim_power = self.opex_spec_peak * self.peakshaving_ints['power'].sum()
 
         # Calculate costs of different markets
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.opex_sim = market.flows['out'] @ market.opex_spec_g2s[self.scenario.dti_sim] * self.scenario.timestep_hours + \
                               market.flows['in'] @ market.opex_spec_s2g[self.scenario.dti_sim] * self.scenario.timestep_hours
 
@@ -895,7 +909,7 @@ class GridConnection(InvestBlock):
         self.flows.loc[horizon.dti_ch, 'out'] = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
                                                      for outflow in self.outflow.values()])
 
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.get_ch_results(horizon)
 
         if self.peakshaving:
@@ -909,7 +923,7 @@ class GridConnection(InvestBlock):
 
         self.size['total'] = self.size['existing'] + self.size['additional']
 
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.set_size('g2s')
             market.set_size('s2g')
 
@@ -929,7 +943,7 @@ class GridConnection(InvestBlock):
         Collect timeseries results of the block in a scenario wide dataframe to be saved
         """
         super().get_timeseries_results()  # this goes up to the Block class
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.get_timeseries_results()
 
     def initialize_markets(self):
@@ -944,8 +958,8 @@ class GridConnection(InvestBlock):
                                    columns=[f'{self.name}_market'],
                                    data=[self.res_only, self.opex_spec_g2s, self.opex_spec_s2g, None, None])
         # Generate individual GridMarkets instances
-        self.markets = {market: GridMarket(market, self, markets.loc[:, market])
-                        for market in markets.columns}
+        self.subblocks = {market: GridMarket(market, self, markets.loc[:, market])
+                          for market in markets.columns}
 
     def initialize_peakshaving(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
@@ -1000,6 +1014,24 @@ class GridConnection(InvestBlock):
                                      .to_series().apply(periods_func[self.peakshaving])).unique().size
             self.factor_opex_peak = n_peakshaving_ints_yr / n_peakshaving_ints
             self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
+
+    def print_results(self):
+        if self.invest:
+            self.scenario.logger.info(f'Optimized size of g2s power in component "{self.name}":'
+                                      f' {self.size.loc["g2s", "total"] / 1e3:.1f} kW' + \
+                                      f' (existing: {self.size.loc["g2s", "existing"] / 1e3:.1f} kW'
+                                      f' - additional: {self.size.loc["g2s", "additional"] / 1e3:.1f} kW)')
+            self.scenario.logger.info(f'Optimized size of s2g power in component "{self.name}":'
+                                      f' {self.size.loc["s2g", "total"] / 1e3:.1f} kW'
+                                      f' (existing: {self.size.loc["s2g", "existing"] / 1e3:.1f} kW'
+                                      f' - additional: {self.size.loc["s2g", "additional"] / 1e3:.1f} kW)')
+
+        if self.peakshaving:
+            for interval in self.peakshaving_ints.index:
+                if self.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
+                    self.scenario.logger.info(f'Optimized peak power in component "{self.name}" for interval'
+                                     f' {interval}: {self.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} kW'
+                                     f' - OPEX: {self.opex_spec_peak * self.peakshaving_ints.loc[interval, ["period_fraction", "power"]].prod():.2f} {self.currency}')
 
     def set_init_size(self, size_names):
         self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
@@ -1087,7 +1119,7 @@ class GridConnection(InvestBlock):
         if len(equal_investments) > 1:
             horizon.constraints.add_equal_invests(equal_investments)
 
-        for market in self.markets.values():
+        for market in self.subblocks.values():
             market.update_input_components(horizon)
 
 
@@ -1529,6 +1561,13 @@ class MobileCommodity(SubBlock):
         self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries,
                                                      commodity_ts_results_flows,
                                                      commodity_ts_results_storage], axis=1)
+
+    def print_results(self):
+        if self.invest:
+            self.scenario.logger.info(f'Optimized size of commodity "{self.name}" in component "{self.parent.name}":'
+                                      f' {self.size.loc["block", "total"] / 1e3:.1f} kWh'
+                                      f' (existing: {self.size.loc["block", "existing"] / 1e3:.1f} kWh'
+                                      f' - additional: {self.size.loc["block", "additional"] / 1e3:.1f} kWh)')
 
     def set_init_size(self):
         self.size = pd.DataFrame(self.parent.size.loc['pc']).T
@@ -2069,6 +2108,17 @@ class SystemCore(InvestBlock):
 
         self.size.loc['block', :] = self.size.loc['acdc', :] + self.size.loc['dcac', :]
         self.size['total'] = self.size['existing'] + self.size['additional']
+
+    def print_results(self):
+        if self.invest:
+            self.scenario.logger.info(f'Optimized size of AC/DC power in component "{self.name}":'
+                                      f' {self.size.loc["acdc", "total"] / 1e3:.1f} kW'
+                                      f' (existing: {self.size.loc["acdc", "existing"] / 1e3:.1f} kW'
+                                      f' - additional: {self.size.loc["acdc", "additional"] / 1e3:.1f} kW)')
+            self.scenario.logger.info(f'Optimized size of DC/AC power in component "{self.name}":'
+                                      f' {self.size.loc["dcac", "total"] / 1e3:.1f} kW'
+                                      f' (existing: {self.size.loc["dcac", "existing"] / 1e3:.1f} kW'
+                                      f' - additional: {self.size.loc["dcac", "additional"] / 1e3:.1f} kW)')
 
     def set_init_size(self, size_names):
         self.equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False

@@ -90,9 +90,9 @@ class PredictionHorizon:
 
         for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'data')]:
             block.data_ph = block.data[self.starttime:self.ph_endtime]
-            if isinstance(block, blocks.CommoditySystem):
-                for commodity in block.commodities.values():
-                    commodity.data_ph = commodity.data[self.starttime:self.ph_endtime]
+            for subblock in block.subblocks.values():
+                if hasattr(subblock, 'data'):
+                    subblock.data_ph = subblock.data[self.starttime:self.ph_endtime]
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
@@ -402,7 +402,7 @@ class Scenario:
             dispatch.execute_des(self, self.run)
 
         for cs in [cs for cs in self.commodity_systems.values() if cs.data_source in ['usecases', 'demand']]:
-            for commodity in cs.commodities.values():
+            for commodity in cs.subblocks.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
 
         # ToDo: move to checker.py
@@ -576,44 +576,8 @@ class Scenario:
             block.calc_cashflows()
 
     def print_results(self):
-        for block in [block for block in self.blocks.values() if isinstance(block, blocks.InvestBlock)]:
-            unit = 'kWh' if isinstance(block, (blocks.CommoditySystem, blocks.StationaryEnergyStorage)) else 'kW'
-            if isinstance(block, blocks.SystemCore) and block.invest:
-                self.logger.info(f'Optimized size of AC/DC power in component "{block.name}":'
-                                 f' {block.size_acdc / 1e3:.1f} {unit}'
-                                 f' (existing: {block.size_acdc_existing / 1e3:.1f} {unit}'
-                                 f' - additional: {block.size_acdc_additional / 1e3:.1f} {unit})')
-                self.logger.info(f'Optimized size of DC/AC power in component "{block.name}":'
-                                 f' {block.size_dcac / 1e3:.1f} {unit}'
-                                 f' (existing: {block.size_dcac_existing / 1e3:.1f} {unit}'
-                                 f' - additional: {block.size_dcac_additional / 1e3:.1f} {unit})')
-            elif isinstance(block, blocks.GridConnection):
-                if block.invest:
-                    self.logger.info(f'Optimized size of g2s power in component "{block.name}":'
-                                     f' {block.size_g2s / 1e3:.1f} {unit}' + \
-                                     f' (existing: {block.size_g2s_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_g2s_additional / 1e3:.1f} {unit})')
-                    self.logger.info(f'Optimized size of s2g power in component "{block.name}":'
-                                     f' {block.size_s2g / 1e3:.1f} {unit}'
-                                     f' (existing: {block.size_s2g_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {block.size_s2g_additional / 1e3:.1f} {unit})')
-                if block.peakshaving:
-                    for interval in block.peakshaving_ints.index:
-                        if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
-                            self.logger.info(f'Optimized peak power in component "{block.name}" for interval'
-                                             f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} {unit}'
-                                             f' - OPEX: {block.opex_spec_peak * block.peakshaving_ints.loc[interval, ["period_fraction", "power"]].prod():.2f} {self.currency}')
-
-            elif isinstance(block, blocks.CommoditySystem) and block.invest:
-                for commodity in block.commodities.values():
-                    self.logger.info(f'Optimized size of commodity "{commodity.name}" in component "{block.name}":'
-                                     f' {commodity.size / 1e3:.1f} {unit}'
-                                     f' (existing: {commodity.size_existing / 1e3:.1f} {unit}'
-                                     f' - additional: {commodity.size_additional / 1e3:.1f} {unit})')
-            elif hasattr(block, 'invest') and block.invest:
-                self.logger.info(f'Optimized size of component "{block.name}": {block.size / 1e3:.1f} {unit}'
-                                 f' (existing: {block.size_existing / 1e3:.1f} {unit}'
-                                 f' - additional: {block.size_additional / 1e3:.1f} {unit})')
+        for block in self.blocks.values():
+            block.print_results()
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
@@ -626,6 +590,7 @@ class Scenario:
         """
 
         def write_values(name, block):
+            # Save attributes of type int, float, str, bool and None to result summary; additionally save blocks dict
             keys = [key for key in block.__dict__.keys()
                     if (isinstance(block.__dict__[key], result_types)) or (name, key) == ('scenario', 'blocks')]
 
@@ -640,44 +605,51 @@ class Scenario:
                 else:
                     self.result_summary.loc[(name, key), self.name] = value
 
+        def write_dataframes(name, block):
+            # Save energy and expenditure values to result summary
+            for var_prefix, var_name in [('e_', 'energies'),
+                                         ('', 'expenditures')]:
+                if hasattr(block, var_name) and isinstance(getattr(block, var_name), pd.DataFrame):
+                    for id1, id2 in itertools.product(getattr(block, var_name).index,
+                                                      getattr(block, var_name).columns):
+                        self.result_summary.loc[(name, f'{var_prefix}{id1}_{id2}'), self.name] = (
+                            getattr(block, var_name).loc[id1, id2])
+
+            # Save size values to result summary
+            if hasattr(block, 'size') and isinstance(getattr(block, 'size'), pd.DataFrame):
+                skip_block_size = True if len(block.size.index) > 1 else False
+                for sub_size, type_size in itertools.product(block.size.index, block.size.columns):
+                    prefix = f'_{sub_size}' if sub_size != 'block' else ''
+                    if not (skip_block_size and sub_size == 'block' and type_size in ['additional_max', 'total_max']):
+                        self.result_summary.loc[(name, f'size{prefix}_{type_size}'), self.name] = (
+                            block.size.loc[sub_size, type_size])
+
+            # Save peakshaving results to result summary
+            if hasattr(block, 'peakshaving_ints') and block.peakshaving:
+                for interval in block.peakshaving_ints.index:
+                    if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
+                        self.result_summary.loc[(name, f'power_peak_{interval}'), self.name] = float(
+                            block.peakshaving_ints.loc[interval, 'power'])
+                        self.result_summary.loc[(name, f'power_period_fraction_{interval}'), self.name] = float(
+                            block.peakshaving_ints.loc[interval, 'period_fraction'])
+                        self.result_summary.loc[(name, f'power_opex_spec_{interval}'), self.name] = (
+                            float(block.peakshaving_ints.loc[interval, 'opex_spec']))
+                        self.result_summary.loc[(name, f'power_opex_{interval}'), self.name] = (
+                            block.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
+
         result_types = (int, float, str, bool, type(None))
         result_blocks = {'run': self.run, 'scenario': self}
         result_blocks.update(self.blocks)
 
         for block_name, block_obj in result_blocks.items():
+            # Save all attributes of type int, float, str, bool and None to result summary
             write_values(block_name, block_obj)
-            # write values of DataFrames containing results to summary
-            for var_prefix, var_name in [('e_', 'energies'),
-                                         ('', 'expenditures')]:
-                if hasattr(block_obj, var_name) and isinstance(getattr(block_obj, var_name), pd.DataFrame):
-                    for id1, id2 in itertools.product(getattr(block_obj, var_name).index,
-                                                      getattr(block_obj, var_name).columns):
-                        self.result_summary.loc[(block_name, f'{var_prefix}{id1}_{id2}'), self.name] = (
-                            getattr(block_obj, var_name).loc[id1, id2])
+            write_dataframes(block_name, block_obj)
 
-            if hasattr(block_obj, 'size') and isinstance(getattr(block_obj, 'size'), pd.DataFrame):
-                skip_block_size = True if len(block_obj.size.index) > 1 else False
-                for sub_size, type_size in itertools.product(block_obj.size.index, block_obj.size.columns):
-                    prefix = f'_{sub_size}' if sub_size != 'block' else ''
-                    # ToDo: for blocks with multiple sizes: Should additional_max and total_max be included?
-                    if not (skip_block_size and sub_size == 'block' and type_size in []):
-                        self.result_summary.loc[(block_name, f'size{prefix}_{type_size}'), self.name] = (
-                            block_obj.size.loc[sub_size, type_size])
-
-            if isinstance(block_obj, blocks.CommoditySystem):
-                for commodity_name, commodity_obj in block_obj.commodities.items():
-                    write_values(commodity_name, commodity_obj)
-            if hasattr(block_obj, 'peakshaving_ints') and block_obj.peakshaving:
-                for interval in block_obj.peakshaving_ints.index:
-                    if block_obj.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
-                        self.result_summary.loc[(block_name, f'power_peak_{interval}'), self.name] = float(
-                            block_obj.peakshaving_ints.loc[interval, 'power'])
-                        self.result_summary.loc[(block_name, f'power_period_fraction_{interval}'), self.name] = float(
-                            block_obj.peakshaving_ints.loc[interval, 'period_fraction'])
-                        self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = (
-                            float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']))
-                        self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = (
-                            block_obj.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
+            if hasattr(block_obj, 'subblocks'):
+                for subblock_name, subblock_obj in block_obj.subblocks.items():
+                    write_values(subblock_name, subblock_obj)
+                    write_dataframes(subblock_name, subblock_obj)
 
         self.result_summary.to_csv(self.path_result_summary_tempfile, index=True)
 

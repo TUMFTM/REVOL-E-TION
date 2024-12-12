@@ -47,7 +47,7 @@ class AprioriPowerScheduler:
         # get a dict of all commodities within Apriori CommoditySystems
         self.apriori_commodities = {name: AprioriCommodity(commodity) for block in
                                     self.cs_unlim + self.cs_lm_static + self.cs_lm_dynamic for name, commodity in
-                                    block.commodities.items()}
+                                    block.subblocks.items()}
 
         # initialize dataframe for power drawn by unlimited (uc) or static load management CommoditySystems
         self.pwr_csc_unlim_static = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
@@ -92,10 +92,10 @@ class AprioriPowerScheduler:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
             for cs in self.cs_unlim + self.cs_lm_static:
                 self.pwr_csc_unlim_static.loc[dtindex, cs.system] += self.calc_pwr_commodities(dtindex=dtindex,
-                                                                                           commodities=[self.apriori_commodities[key]
-                                                                                                        for key in cs.commodities.keys()],
-                                                                                           mode_scheduling=cs.mode_scheduling,
-                                                                                           pwr_csc_avail_total=cs.power_lim_static)
+                                                                                               commodities=[self.apriori_commodities[key]
+                                                                                                            for key in cs.subblocks.keys()],
+                                                                                               mode_scheduling=cs.mode_scheduling,
+                                                                                               pwr_csc_avail_total=cs.power_lim_static)
 
             # only execute optimization of the local grid if there are rulebased components
             if self.cs_lm_dynamic:
@@ -111,10 +111,10 @@ class AprioriPowerScheduler:
 
                 # Schedule at base charging of commodities (mode_scheduling has to be the same for all CommoditySystems -> [0])
                 self.calc_pwr_commodities(dtindex=dtindex,
-                                        commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
-                                                     for key in cs.commodities.keys()],
-                                        mode_scheduling=self.cs_lm_dynamic[0].mode_scheduling,
-                                        pwr_csc_avail_total=None)
+                                          commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
+                                                       for key in cs.subblocks.keys()],
+                                          mode_scheduling=self.cs_lm_dynamic[0].mode_scheduling,
+                                          pwr_csc_avail_total=None)
 
             # Execute external charging of commodities based on the defined criteria
             for commodity in self.apriori_commodities.values():

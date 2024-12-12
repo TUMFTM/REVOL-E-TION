@@ -51,9 +51,9 @@ class RentalSystem:
         self.name = self.commodity_system.name
 
         self.soc_max_init = min([commodity.soc_max
-                                 for commodity in self.commodity_system.commodities.values()])
+                                 for commodity in self.commodity_system.subblocks.values()])
         self.soc_min_init = max([commodity.soc_min
-                                 for commodity in self.commodity_system.commodities.values()])
+                                 for commodity in self.commodity_system.subblocks.values()])
 
         # calculate usable energy to expect
 
@@ -95,7 +95,7 @@ class RentalSystem:
 
     def create_store(self):
         self.store = MultiStore(self.scenario.env_des, capacity=self.commodity_system.num)
-        for commodity in self.commodity_system.commodities.values():
+        for commodity in self.commodity_system.subblocks.values():
             self.store.put([commodity.name])
 
     def calc_performance_metrics(self):
@@ -107,7 +107,7 @@ class RentalSystem:
 
         # calculate percentage of DES (not sim, the latter is shorter) time
         # occupied by active, idle & recharge times
-        for commodity in list(self.commodity_system.commodities.keys()):
+        for commodity in list(self.commodity_system.subblocks.keys()):
             processes = processes_exploded.loc[processes_exploded['commodities_primary'] == commodity, :]
             steps_blocked = processes['steps_charge_primary'].sum() + processes['steps_rental'].sum()
             self.use_rate[commodity] = steps_blocked / steps_total
@@ -124,7 +124,7 @@ class RentalSystem:
         as required by the energy system model as an example
         """
 
-        commodities = list(self.commodity_system.commodities.keys())
+        commodities = list(self.commodity_system.subblocks.keys())
         column_names = []
         for commodity in commodities:
             column_names.extend([(commodity,'atbase'), (commodity,'dsoc'), (commodity,'consumption'),
