@@ -489,7 +489,8 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable share calculation: division by zero')
 
-        totex_dis_cs = sum([cs.expenditures.loc['totex', 'dis'] for cs in self.commodity_systems.values()])
+        totex_dis_cs = (sum([cs.expenditures.loc['totex', 'dis'] for cs in self.commodity_systems.values()]) +
+                        sum([ics.expenditures.loc['totex', 'dis'] for ics in self.blocks.values() if isinstance(ics, blocks.ICEVSystem)]))
         if self.energies.loc['del', 'dis'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
@@ -826,8 +827,10 @@ class SimulationRun:
 
         self.path_result_scenario_file = os.path.join(self.path_result_dir,
                                                       f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
-        self.path_result_summary_file = os.path.join(self.path_result_dir,
-                                                     f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
+        self.path_result_summary_file_csv = os.path.join(self.path_result_dir,
+                                                         f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
+        self.path_result_summary_file_pkl = os.path.join(self.path_result_dir,
+                                                         f'{self.runtimestamp}_{self.scenario_file_name}_summary.pkl')
         self.path_result_status_file = os.path.join(self.path_result_dir,
                                                     f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_status.csv')
         self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
@@ -923,7 +926,8 @@ class SimulationRun:
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
             # apply same order of scenarios as in scenario input file
             joined_results = joined_results[[col for col in self.scenario_data.columns if col in joined_results.columns]]
-            joined_results.to_csv(self.path_result_summary_file, index=True)
+            joined_results.to_csv(self.path_result_summary_file_csv, index=True)
+            joined_results.to_pickle(self.path_result_summary_file_pkl)
             self.logger.info('Technoeconomic output file created')
 
         # deletion loop at the end to avoid premature execution of results in case of error
