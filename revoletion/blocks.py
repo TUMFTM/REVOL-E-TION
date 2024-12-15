@@ -1189,10 +1189,9 @@ class GridMarket(SubBlock):
         self.scenario.result_timeseries = pd.concat([self.scenario.result_timeseries, market_ts_results], axis=1)
 
     def set_init_size(self):
-        for dir in ['g2s', 's2g']:
-            # if grid size has an additional invest option, size is set after the optimization as it is only used for plotting purposes
-            if self.parent.size.loc[dir, 'additional'] == 0:
-                self.set_size(dir)
+        # power of market cannot exceed GridConnection limit due to constraints
+        # GridMarket limits are already set in __init__() by given parameters
+        pass
 
     def set_size(self, dir):
         # if no limit is passed for the grid market's direction, use max power of the grid connection
