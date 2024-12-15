@@ -1980,12 +1980,11 @@ class StationaryEnergyStorage(InvestBlock):
                 f' {self.size.loc["block", "total"] * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
 
     def print_results(self):
-        def print_results(self):
-            if self.invest:
-                self.scenario.logger.info(
-                    f'Optimized size of component "{self.name}": {self.size.loc["block", "total"] / 1e3:.1f} kWh'
-                    f' (existing: {self.size.loc["block", "existing"] / 1e3:.1f} kWh'
-                    f' - additional: {self.size.loc["block", "additional"] / 1e3:.1f} kWh)')
+        if self.invest:
+            self.scenario.logger.info(
+                f'Optimized size of component "{self.name}": {self.size.loc["block", "total"] / 1e3:.1f} kWh'
+                f' (existing: {self.size.loc["block", "existing"] / 1e3:.1f} kWh'
+                f' - additional: {self.size.loc["block", "additional"] / 1e3:.1f} kWh)')
 
     def update_input_components(self, horizon):
         """
