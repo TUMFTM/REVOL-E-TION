@@ -739,8 +739,8 @@ class CommoditySystem(InvestBlock):
     def print_results(self):
         # No invest happens for CommoditySystems, only for subblocks
         if self.invest:
-            for subblock in self.subblocks.values():
-                subblock.print_results()
+            for commodity in self.subblocks.values():
+                commodity.print_results()
 
     def set_init_size(self, size_names):
         super().set_init_size()
@@ -1156,8 +1156,8 @@ class GridMarket(SubBlock):
 
     def add_power_trace(self):
         legentry = (f'{self.name} power (max.'
-                    f' {(self.parent.size_g2s if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
-                    f' {(self.parent.size_s2g if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
+                    f' {(self.parent.size.loc["g2s", "total"] if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
+                    f' {(self.parent.size.loc["s2g", "total"] if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
 
         self.scenario.figure.add_trace(go.Scatter(x=self.flows.index,
                                                   y=self.flows['total'],
@@ -1979,6 +1979,14 @@ class StationaryEnergyStorage(InvestBlock):
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.size.loc["block", "total"] * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
                 f' {self.size.loc["block", "total"] * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
+
+    def print_results(self):
+        def print_results(self):
+            if self.invest:
+                self.scenario.logger.info(
+                    f'Optimized size of component "{self.name}": {self.size.loc["block", "total"] / 1e3:.1f} kWh'
+                    f' (existing: {self.size.loc["block", "existing"] / 1e3:.1f} kWh'
+                    f' - additional: {self.size.loc["block", "additional"] / 1e3:.1f} kWh)')
 
     def update_input_components(self, horizon):
         """

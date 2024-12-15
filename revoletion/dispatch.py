@@ -75,10 +75,10 @@ class RentalSystem:
                              f'is zero or negative. Check SOC targets and aging.')
 
         self.energy_usable_pc_high = (self.dsoc_usable_high *
-                                      self.commodity_system.size_pc *
+                                      self.commodity_system.size.loc['pc', 'existing'] *
                                       np.sqrt(self.commodity_system.eff_storage_roundtrip))
         self.energy_usable_pc_low = (self.dsoc_usable_low *
-                                     self.commodity_system.size_pc *
+                                     self.commodity_system.size.loc['pc', 'existing'] *
                                      np.sqrt(self.commodity_system.eff_storage_roundtrip))
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
@@ -226,10 +226,10 @@ class VehicleRentalSystem(RentalSystem):
 
         if self.commodity_system.rex_cs:  # system can extend range
             self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
-                                              self.commodity_system.rex_cs.size_pc *
+                                              self.commodity_system.rex_cs.size.loc['pc', 'existing'] *
                                               np.sqrt(self.commodity_system.rex_cs.eff_storage_roundtrip))
             self.energy_usable_rex_pc_low = (self.dsoc_usable_rex_low *
-                                             self.commodity_system.rex_cs.size_pc *
+                                             self.commodity_system.rex_cs.size.loc['pc', 'existing'] *
                                              np.sqrt(self.commodity_system.rex_cs.eff_storage_roundtrip))
         else:  # no rex defined
             self.energy_usable_rex_pc_high = 0
@@ -268,16 +268,16 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
                                                     (self.processes['num_secondary'] *
                                                      self.energy_usable_rex_pc_high))
-            self.processes['energy_total_both'] = (self.commodity_system.size_pc +
+            self.processes['energy_total_both'] = (self.commodity_system.size.loc['pc', 'existing'] +
                                                    (self.processes['num_secondary'] *
-                                                    self.commodity_system.rex_cs.size_pc))
+                                                    self.commodity_system.rex_cs.size.loc['pc', 'existing']))
 
         else:  # no rex defined
             self.processes['num_secondary'] = 0
             self.processes['rex_request'] = False
 
             self.processes['energy_usable_both'] = self.energy_usable_pc_high
-            self.processes['energy_total_both'] = self.commodity_system.size_pc
+            self.processes['energy_total_both'] = self.commodity_system.size.loc['pc', 'existing']
             # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
             self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable_pc_high)
 
@@ -288,14 +288,14 @@ class VehicleRentalSystem(RentalSystem):
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
         self.processes['energy_pc_primary'] = (self.processes['dsoc_primary'] *
-                                               self.commodity_system.size_pc)
+                                               self.commodity_system.size.loc['pc', 'existing'])
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
             self.processes['energy_pc_primary'] / self.commodity_system.pwr_chg_des,
             unit='hour')
 
         if self.commodity_system.rex_cs:
             self.processes['energy_pc_secondary'] = (self.processes['dsoc_secondary'] *
-                                                     self.commodity_system.rex_cs.size_pc)
+                                                     self.commodity_system.rex_cs.size.loc['pc', 'existing'])
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
                 self.processes['energy_pc_secondary'] / self.commodity_system.rex_cs.pwr_chg_des,
                 unit='hour')
@@ -380,10 +380,10 @@ class BatteryRentalSystem(RentalSystem):
         """
         self.processes['rex_request'] = False
         self.processes['num_primary'] = np.ceil(self.processes['energy_req'] / self.energy_usable_pc_high).astype(int)
-        self.processes['energy_total_both'] = self.processes['num_primary'] * self.commodity_system.size_pc
+        self.processes['energy_total_both'] = self.processes['num_primary'] * self.commodity_system.size.loc['pc', 'existing']
         self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc_high
         self.processes['dsoc_primary'] = self.processes['energy_req'] / self.processes['energy_total_both']
-        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.commodity_system.size_pc
+        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.commodity_system.size.loc['pc', 'existing']
         self.processes['energy_primary'] = self.processes['energy_pc_primary'] * self.processes['num_primary']
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
             self.processes['energy_pc_primary'] / (self.commodity_system.pwr_chg *
