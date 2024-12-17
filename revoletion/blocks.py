@@ -451,7 +451,7 @@ class SubBlock:
         # energy result calculation does not count towards delivered/produced energy (already done at the system level)
         # calculate energy results for bidi charging at site and external chargers
         for flow in flows:
-            self.energies.loc[flow, 'sim'] = self.flows['in'].sum() * self.scenario.timestep_hours  # flow values are powers --> conversion to Wh
+            self.energies.loc[flow, 'sim'] = self.flows[flow].sum() * self.scenario.timestep_hours  # flow values are powers --> conversion to Wh
             self.energies.loc[flow, 'yrl'] = utils.scale_sim2year(self.energies.loc[flow, 'sim'], self.scenario)
             self.energies.loc[flow, 'prj'] = utils.scale_year2prj(self.energies.loc[flow, 'yrl'], self.scenario)
             self.energies.loc[flow, 'dis'] = eco.acc_discount(self.energies.loc[flow, 'yrl'],
