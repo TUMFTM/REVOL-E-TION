@@ -257,9 +257,9 @@ class Block:
                                          observation_horizon=self.scenario.prj_duration_yrs,
                                          discount_rate=self.scenario.wacc,
                                          occurs_at='end')
-        self.opex_ann = eco.annuity_due_recur(nominal_value=self.opex_yrl,
-                                              observation_horizon=self.scenario.prj_duration_yrs,
-                                              discount_rate=self.scenario.wacc)
+        self.opex_ann = eco.annuity_recur(nominal_value=self.opex_yrl,
+                                          observation_horizon=self.scenario.prj_duration_yrs,
+                                          discount_rate=self.scenario.wacc)
         self.scenario.opex_sim += self.opex_sim
         self.scenario.opex_yrl += self.opex_yrl
         self.scenario.opex_prj += self.opex_prj
@@ -319,7 +319,10 @@ class InvestBlock(Block):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
+        self.factor_opex = eco.annuity_recur(nominal_value=utils.scale_sim2prj(value=1,
+                                                                               scenario=self.scenario),
+                                             observation_horizon=self.scenario.prj_duration_yrs,
+                                             discount_rate=self.scenario.wacc) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 
@@ -639,9 +642,9 @@ class CommoditySystem(InvestBlock):
                                              self.scenario.prj_duration_yrs,
                                              self.scenario.wacc,
                                              occurs_at='end')
-        self.opex_ann_ext = eco.annuity_due_recur(nominal_value=self.opex_yrl_ext,
-                                                  observation_horizon=self.scenario.prj_duration_yrs,
-                                                  discount_rate=self.scenario.wacc)
+        self.opex_ann_ext = eco.annuity_recur(nominal_value=self.opex_yrl_ext,
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc)
         self.scenario.opex_sim_ext += self.opex_sim_ext
         self.scenario.opex_yrl_ext += self.opex_yrl_ext
         self.scenario.opex_prj_ext += self.opex_prj_ext
