@@ -527,6 +527,8 @@ class CommoditySystem(InvestBlock):
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None  # placeholder
+
         self.mode_dispatch = None
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode()
@@ -600,6 +602,8 @@ class CommoditySystem(InvestBlock):
 
     def calc_energy(self):
 
+        self.calc_pwr_max_observed()
+
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.commodities.values():
             commodity.calc_results()
@@ -650,6 +654,13 @@ class CommoditySystem(InvestBlock):
         self.scenario.opex_prj_ext += self.opex_prj_ext
         self.scenario.opex_dis_ext += self.opex_dis_ext
         self.scenario.opex_ann_ext += self.opex_ann_ext
+
+    def calc_pwr_max_observed(self):
+        """
+        Calculate maximum power drawn by the system for external charging and discharging
+        """
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
         for commodity in self.commodities.values():
@@ -1496,6 +1507,7 @@ class MobileCommodity:
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
         self.bus_ext_dc = self.conv_ext_dc = self.src_ext_dc = None
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None
 
         self.invest = self.parent.invest
         self.size = self.size_additional = 0
@@ -1636,6 +1648,9 @@ class MobileCommodity:
                                              occurs_at='end')
 
         self.flow = self.flow_in - self.flow_out  # for plotting
+
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
 
