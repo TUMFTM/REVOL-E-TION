@@ -240,9 +240,9 @@ class Block:
                                                                 observation_horizon=self.scenario.prj_duration_yrs,
                                                                 discount_rate=self.scenario.wacc,
                                                                 occurs_at='end')
-        self.expenditures.loc['opex', 'ann'] = eco.annuity_due_recur(nominal_value=self.expenditures.loc['opex', 'yrl'],
-                                                                     observation_horizon=self.scenario.prj_duration_yrs,
-                                                                     discount_rate=self.scenario.wacc)
+        self.expenditures.loc['opex', 'ann'] = eco.annuity_recur(nominal_value=self.expenditures.loc['opex', 'yrl'],
+                                                                 observation_horizon=self.scenario.prj_duration_yrs,
+                                                                 discount_rate=self.scenario.wacc)
         self.scenario.expenditures.loc['opex', :] += self.expenditures.loc['opex', :]  # sim, yrl, prj, dis, ann
 
     def get_legend_entry(self):
@@ -306,7 +306,10 @@ class InvestBlock(Block):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
+        self.factor_opex = eco.annuity_recur(nominal_value=utils.scale_sim2prj(value=1,
+                                                                               scenario=self.scenario),
+                                             observation_horizon=self.scenario.prj_duration_yrs,
+                                             discount_rate=self.scenario.wacc) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 
@@ -568,6 +571,8 @@ class CommoditySystem(InvestBlock):
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None  # placeholder
+
         self.mode_dispatch = None
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
         self.get_dispatch_mode()
@@ -634,6 +639,8 @@ class CommoditySystem(InvestBlock):
 
     def calc_energy(self):
 
+        self.calc_pwr_max_observed()
+
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.subblocks.values():
             commodity.calc_results()
@@ -670,10 +677,17 @@ class CommoditySystem(InvestBlock):
                                                                     self.scenario.prj_duration_yrs,
                                                                     self.scenario.wacc,
                                                                     occurs_at='end')
-        self.expenditures.loc['opex_ext', 'ann'] = eco.annuity_due_recur(nominal_value=self.expenditures.loc['opex_ext', 'yrl'],
-                                                                         observation_horizon=self.scenario.prj_duration_yrs,
-                                                                         discount_rate=self.scenario.wacc)
+        self.expenditures.loc['opex_ext', 'ann'] = eco.annuity_recur(nominal_value=self.expenditures.loc['opex_ext', 'yrl'],
+                                                                     observation_horizon=self.scenario.prj_duration_yrs,
+                                                                     discount_rate=self.scenario.wacc)
         self.scenario.expenditures.loc['opex_ext', :] += self.expenditures.loc['opex_ext', :]  # sim, yrl, prj, dis, ann
+
+    def calc_pwr_max_observed(self):
+        """
+        Calculate maximum power drawn by the system for external charging and discharging
+        """
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
         for commodity in self.subblocks.values():
@@ -1437,6 +1451,7 @@ class MobileCommodity(SubBlock):
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
         self.bus_ext_dc = self.conv_ext_dc = self.src_ext_dc = None
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None
 
         self.size = pd.DataFrame()
         self.set_init_size()
@@ -1513,6 +1528,9 @@ class MobileCommodity(SubBlock):
     def calc_results(self):
         super().calc_results(flows=['in', 'out', 'ext_ac', 'ext_dc'])
         self.flows['total'] = self.flows['in'] - self.flows['out']  # for plotting
+
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
 

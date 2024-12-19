@@ -142,6 +142,10 @@ def scale_year2prj(value, scenario):
     return value * scenario.prj_duration_yrs
 
 
+def scale_sim2prj(value, scenario):
+    return scale_year2prj(scale_sim2year(value, scenario), scenario)
+
+
 def read_demand_file(block):
     """
     Read in a CommodityDemand csv file
