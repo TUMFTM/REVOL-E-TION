@@ -367,7 +367,7 @@ class Scenario:
         self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
         self.result_summary = self.result_summary.set_index(['Block', 'Key'])
         self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
-                                                         f'{self.name}_summary_temp.csv')
+                                                         f'{self.name}_summary_temp.pkl')
 
         self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd)
         self.path_result_ts_file = os.path.join(
@@ -633,9 +633,7 @@ class Scenario:
 
             for key in keys:
                 value = block.__dict__[key]
-                if isinstance(value, int):
-                    self.result_summary.loc[(name, key), self.name] = float(value)
-                elif (name, key) == ('scenario', 'blocks'):
+                if (name, key) == ('scenario', 'blocks'):
                     # blocks dict contains objects, but summary shall contain class names of the blocks
                     self.result_summary.loc[(name, key), self.name] = str({block: value[block].__class__.__name__
                                                                            for block in value.keys()})
@@ -663,7 +661,7 @@ class Scenario:
                         self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = (
                             block_obj.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
 
-        self.result_summary.to_csv(self.path_result_summary_tempfile, index=True)
+        self.result_summary.to_pickle(self.path_result_summary_tempfile)
 
     def save_result_timeseries(self):
         for block in self.blocks.values():
@@ -915,31 +913,30 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_summary_temp.csv')]
+        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_summary_temp.pkl')]
 
         scenario_frames = []
 
         for file in files:
             # only add results of successful scenarios to summary
-            if self.scenario_status.loc[file.removesuffix('_summary_temp.csv'), 'status'] != 'successful':
+            if self.scenario_status.loc[file.removesuffix('_summary_temp.pkl'), 'status'] != 'successful':
                 continue
             file_path = os.path.join(self.path_result_dir, file)
-            file_results = pd.read_csv(file_path, index_col=[0, 1], header=[0], low_memory=False)
+            file_results = pd.read_pickle(file_path)
             scenario_frames.append(file_results)
 
-        if len(scenario_frames) > 0:  # empty scenario_frames, if all scenarios fail during initialization
+        if len(scenario_frames) > 0:  # empty scenario_frames, might happen if all scenarios fail during initialization
             joined_results = pd.concat(scenario_frames, axis=1)
             joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
             joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
-            if self.rerun and os.path.isfile(os.path.join(self.path_result_summary_file)):
-                results_summary_prev = pd.read_csv(os.path.join(self.path_result_summary_file),
-                                                   index_col=[0, 1])
+            if self.rerun and os.path.isfile(os.path.join(self.path_result_summary_file_pkl)):
+                results_summary_prev = pd.read_pickle(os.path.join(self.path_result_summary_file_pkl))
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
             # apply same order of scenarios as in scenario input file
             joined_results = joined_results[[col for col in self.scenario_data.columns if col in joined_results.columns]]
             joined_results.to_csv(self.path_result_summary_file_csv, index=True)
             joined_results.to_pickle(self.path_result_summary_file_pkl)
-            self.logger.info('Technoeconomic output file created')
+            self.logger.info('Result summary file created')
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
