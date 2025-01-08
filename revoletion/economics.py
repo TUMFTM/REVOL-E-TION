@@ -141,7 +141,7 @@ def annuity_recur(nominal_value: float,
                   discount_rate: float):
     """
     Calculate the annuity of a periodically recurring  and nonchanging (cost_change_ratio=1)
-    expense (the equivalent yearly sum to generate the same NPV) over a observation horizon.
+    expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
     """
     present_value = acc_discount(nominal_value=nominal_value,
                                  observation_horizon=observation_horizon,
