@@ -389,10 +389,10 @@ class Scenario:
         for block in self.blocks.values():
             block.calc_capex_init_existing()
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
-            self.logger.error(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency}'
-                              f' exceed maximum investment limit of {self.invest_max} {self.currency}')
-            raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency}'
-                              f' exceed maximum investment limit of {self.invest_max} {self.currency}')
+            self.logger.error(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
+                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
+            raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
+                             f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
