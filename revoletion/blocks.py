@@ -638,13 +638,12 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self):
 
-        self.opex_sys = self.flow_in @ self.opex_spec_sys_chg[self.scenario.dti_sim] + self.flow_out @ self.opex_spec_sys_dis[self.scenario.dti_sim]
+        self.opex_sys = (self.flow_in @ self.opex_spec_sys_chg[self.scenario.dti_sim] +
+                         self.flow_out @ self.opex_spec_sys_dis[self.scenario.dti_sim])
 
         for commodity in self.commodities.values():
-            commodity.opex_sim = commodity.flow_in @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
-            commodity.opex_sim_ext = ((commodity.flow_ext_ac @ self.opex_spec_ext_ac[self.scenario.dti_sim]) +
-                                      (commodity.flow_ext_dc @ self.opex_spec_ext_dc[self.scenario.dti_sim])) * self.scenario.timestep_hours
-            self.opex_commodities += (commodity.opex_sim + commodity.opex_sim_ext)
+            commodity.calc_opex_sim()
+            self.opex_commodities += commodity.opex_sim
             self.opex_commodities_ext += commodity.opex_sim_ext
 
         self.opex_sim = self.opex_sys + self.opex_commodities
@@ -818,6 +817,7 @@ class BatteryCommoditySystem(CommoditySystem):
 
     def calc_mntex_yrl(self):
         self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
+
 
 class ControllableSource(InvestBlock):
 
@@ -1571,6 +1571,8 @@ class MobileCommodity:
         self.flow_ext_ac = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
         self.flow_ext_dc = pd.Series(data=0, index=self.scenario.dti_sim, dtype='float64')
 
+        self.opex_sim_int = self.opex_sim_ext = self.opex_sim = 0
+
         self.soc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim), dtype='float64')
         self.soc[self.scenario.starttime] = self.soc_init
 
@@ -1624,6 +1626,24 @@ class MobileCommodity:
 
     def calc_aging(self, horizon):
         self.aging_model.age(horizon)
+
+    def calc_opex_sim(self):
+        """
+        Postprocessing method
+        Calculate internal and external opex of individual commodities.
+        Vehicle opex is distance based, battery opex is energy throughput based.
+        """
+        if isinstance(self.parent, VehicleCommoditySystem):
+            self.opex_sim_int = (self.data.loc[self.scenario.dti_sim, 'tour_dist'] @
+                                 self.parent.opex_spec_dist[self.scenario.dti_sim])
+        else:
+            self.opex_sim_int = (self.flow_in @ self.parent.opex_spec[self.scenario.dti_sim] *
+                                 self.scenario.timestep_hours)
+
+        self.opex_sim_ext = (((self.flow_ext_ac @ self.parent.opex_spec_ext_ac[self.scenario.dti_sim]) +
+                             (self.flow_ext_dc @ self.parent.opex_spec_ext_dc[self.scenario.dti_sim])) *
+                             self.scenario.timestep_hours)
+        self.opex_sim += (self.opex_sim_int + self.opex_sim_ext)
 
     # noinspection DuplicatedCode
     def calc_results(self):
@@ -2414,8 +2434,9 @@ class VehicleCommoditySystem(CommoditySystem):
 
     def join_capex_mntex(self):
         """
+        Preprocessing method
         For VehicleCommoditySystems, mntex is fixed (not battery size dependent) and is therefore
-        not considered in optimization.
+        not considered in optimization and is not joined with capex.
         """
         self.capex_joined_spec = self.capex_spec
 
