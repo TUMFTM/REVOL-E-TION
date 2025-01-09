@@ -319,7 +319,7 @@ class InvestBlock(Block):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = eco.annuity_recur(nominal_value=1,
+        self.factor_opex = eco.annuity_recur(nominal_value=utils.scale_sim2year(1, self.scenario),
                                              observation_horizon=self.scenario.prj_duration_yrs,
                                              discount_rate=self.scenario.wacc) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
