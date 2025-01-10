@@ -54,7 +54,7 @@ pv,capex_existing,True,True,True,True
 pv,size_max,None,None,None,None
 pv,invest,False,True,True,False
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
-pv,filename,None,None,None,None
+pv,filename,pvgis_api_params,pvgis_api_params,pvgis_api_params,pvgis_api_params
 pv,system,dc,dc,dc,dc
 pv,capex_spec,0.250,0.250,0.250,0.250
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
