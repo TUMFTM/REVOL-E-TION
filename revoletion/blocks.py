@@ -529,6 +529,7 @@ class CommoditySystem(InvestBlock):
 
     def __init__(self, name, scenario):
 
+
         self.size_pc = self.size_existing_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
         self.capex_fix = 0  # storage size agnostic cost component (e.g. for vehicle glider and charger)
@@ -536,6 +537,8 @@ class CommoditySystem(InvestBlock):
         self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0
 
         super().__init__(name, scenario)
+
+        self.prediction = prediction.MobilityPrediction(self)
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
@@ -795,6 +798,8 @@ class CommoditySystem(InvestBlock):
 
         horizon.components.append(self.inflow)
         horizon.components.append(self.outflow)
+
+        self.prediction.predict(horizon=horizon)
 
         for commodity in self.commodities.values():
             commodity.update_input_components(horizon)
@@ -1517,8 +1522,6 @@ class MobileCommodity:
         self.parent = parent
         self.scenario = self.parent.scenario
 
-        self.prediction = prediction.MobilityPrediction(self)
-
         # initialize oemof-solph components
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
@@ -1742,8 +1745,6 @@ class MobileCommodity:
 
     def update_input_components(self, horizon):
         # Get predicted mobility
-        self.data_ph = self.prediction.predict(horizon)
-
         inflow_fix = outflow_fix = ext_ac_fix = ext_dc_fix = None
         inflow_max = outflow_max = ext_ac_max = ext_dc_max = None
 
