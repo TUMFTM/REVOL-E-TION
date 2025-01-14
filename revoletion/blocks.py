@@ -15,6 +15,7 @@ import windpowerlib
 from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import mobility
+from revoletion import prediction
 from revoletion import utils
 
 
@@ -1516,6 +1517,8 @@ class MobileCommodity:
         self.parent = parent
         self.scenario = self.parent.scenario
 
+        self.prediction = prediction.MobilityPrediction(self)
+
         # initialize oemof-solph components
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
@@ -1738,6 +1741,8 @@ class MobileCommodity:
             self.size = self.size_existing
 
     def update_input_components(self, horizon):
+        # Get predicted mobility
+        self.data_ph = self.prediction.predict(horizon)
 
         inflow_fix = outflow_fix = ext_ac_fix = ext_dc_fix = None
         inflow_max = outflow_max = ext_ac_max = ext_dc_max = None
