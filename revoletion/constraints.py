@@ -95,13 +95,13 @@ class CustomConstraints:
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_g2s_markets',
-                         flows_markets=[(market.src, grid.bus) for market in grid.markets.values()],
+                         flows_markets=[(market.src, grid.bus) for market in grid.subblocks.values()],
                          flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
 
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_s2g_markets',
-                         flows_markets=[(grid.bus, market.snk) for market in grid.markets.values()],
+                         flows_markets=[(grid.bus, market.snk) for market in grid.subblocks.values()],
                          flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
 
     def renewables_only(self, model):
@@ -132,7 +132,7 @@ class CustomConstraints:
         # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
         flows_res_from_bus = {
             'ac': [(market.parent.bus, market.snk) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.GridConnection) for market in block.markets.values() if
+                   isinstance(block, blocks.GridConnection) for market in block.subblocks.values() if
                    market.res_only] + [(fo, fi) for fi, fo in storage_flows_ac],
             'dc': [(fo, fi) for fi, fo in storage_flows_dc]  # invert discharging flows to charging flows
         }
@@ -252,7 +252,7 @@ class CustomConstraints:
 
         # Apply constraints for every MobileCommodity
         for cs in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
-            for commodity in cs.commodities.values():
+            for commodity in cs.subblocks.values():
                 _equal_flows(m=model,
                              block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
                              name=f'limit_{commodity.name}_external_charging_to_storage',

@@ -44,10 +44,10 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.commodity.q_loss_cal[self.scenario.starttime] = self.q_loss_cal[0] = self.commodity.q_loss_cal_init
-        self.commodity.q_loss_cyc[self.scenario.starttime] = self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
+        self.commodity.storage_timeseries.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal[0] = self.commodity.q_loss_cal_init
+        self.commodity.storage_timeseries.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
 
-        self.commodity.soh[self.scenario.starttime] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
+        self.commodity.storage_timeseries.loc[self.scenario.starttime, 'soh'] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
 
         # Placeholders for aging variables to be filled every aging evaluation
         self.soc_hor = self.ocv_hor = self.cycles_hor = None
@@ -122,7 +122,7 @@ class BatteryPackModel:
 
         # If aging is disabled, keep initial SOH
         if not self.commodity.aging:
-            self.commodity.soh[horizon.ch_endtime] = self.commodity.soh_init
+            self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'soh'] = self.commodity.soh_init
             return
 
         if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
@@ -137,7 +137,7 @@ class BatteryPackModel:
         self.crate_hor = self.p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = self.commodity.soc[utils.extend_dti(horizon.dti_ch)]
+        self.soc_hor = self.commodity.storage_timeseries.loc[utils.extend_dti(horizon.dti_ch), 'soc']
 
         self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
 
@@ -186,11 +186,11 @@ class BatteryPackModel:
             self.calc_aging_naumann(horizon)
 
         # Update block / commodity storage size
-        self.commodity.soh[horizon.ch_endtime] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
-        self.commodity.q_loss_cal[horizon.ch_endtime] = sum(self.q_loss_cal)
-        self.commodity.q_loss_cyc[horizon.ch_endtime] = sum(self.q_loss_cyc)
-        self.commodity.soc_min = (1 - self.commodity.soh[horizon.ch_endtime]) / 2
-        self.commodity.soc_max = 1 - ((1 - self.commodity.soh[horizon.ch_endtime]) / 2)
+        self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
+        self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
+        self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
+        self.commodity.soc_min = (1 - self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'soh']) / 2
+        self.commodity.soc_max = 1 - ((1 - self.commodity.storage_timeseries.loc[horizon.ch_endtime, 'soh']) / 2)
 
     def calc_aging_naumann(self, horizon):
 
@@ -307,7 +307,7 @@ class BatteryPackModel:
             q_eq = 0
 
     def get_pack_parameters(self):
-        self.size = self.commodity.size
+        self.size = self.commodity.size.loc['block', 'total']
         # Calculate number of cells as a float to correctly represent power split with nonreal cells
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell
