@@ -287,5 +287,5 @@ class CustomConstraints:
         # Add additional user-specific constraints for investment cost limit
         if self.scenario.invest_max is not None:
             _limit_invests(m=model,
-                          block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
-                          name='limit_invest_costs')
+                           block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
+                           name='limit_invest_costs')

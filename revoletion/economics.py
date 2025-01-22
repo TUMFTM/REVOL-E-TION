@@ -120,12 +120,12 @@ def annuity_due_capex(capex_init: float,
     return annuity_due
 
 
-def annuity_due_recur(nominal_value:float,
-                      observation_horizon:float,
-                      discount_rate:float):
+def annuity_due_recur(nominal_value: float,
+                      observation_horizon: float,
+                      discount_rate: float):
     """
     Calculate the annuity due of a yearly recurring (lifespan=1) and nonchanging (cost_change_ratio=1)
-    mainenance expense (the equivalent yearly sum to generate the same NPV) over a observation horizon.
+    mainenance expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
     """
     annuity_due_recur = annuity_due_capex(capex_init=nominal_value,
                                           capex_replacement=nominal_value,
@@ -134,3 +134,41 @@ def annuity_due_recur(nominal_value:float,
                                           discount_rate=discount_rate,
                                           cost_change_ratio=1)
     return annuity_due_recur
+
+
+def annuity_recur(nominal_value: float,
+                  observation_horizon: float,
+                  discount_rate: float):
+    """
+    Calculate the annuity of a periodically recurring  and nonchanging (cost_change_ratio=1)
+    expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
+    """
+    present_value = acc_discount(nominal_value=nominal_value,
+                                 observation_horizon=observation_horizon,
+                                 discount_rate=discount_rate,
+                                 occurs_at='end')
+    annuity_recur = annuity(present_value=present_value,
+                            observation_horizon=observation_horizon,
+                            discount_rate=discount_rate,
+                            occurs_at='end')
+    return annuity_recur
+
+
+def calc_wacc(
+        share_equity: float,  # share of equity in capital structure
+        rate_debt: float,  # interest rate on debt
+        rate_market=0.07,  # expected return on market
+        rate_riskfree=0.03,  # risk-free return rate
+        rate_tax=0.25,  # corporate tax rate
+        rate_inflation=0.02,  # expected inflation rate
+        volatility_relative=1,  # volatility of stock price relative to market
+        ) -> float:
+    """
+    This function calculates the nominal (inluding inflation) weighted average cost of capital (WACC) using the
+    Capital Asset Pricing Model (CAPM) for equity cost.
+    """
+    share_debt = 1 - share_equity
+    cost_equity = rate_riskfree + volatility_relative * (rate_market - rate_riskfree)  # CAPM
+    wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
+    wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
+    return wacc_nominal, wacc_real

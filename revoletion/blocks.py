@@ -231,14 +231,14 @@ class Block:
                                          observation_horizon=self.scenario.prj_duration_yrs,
                                          discount_rate=self.scenario.wacc,
                                          occurs_at='end')
-        self.opex_ann = eco.annuity_due_recur(nominal_value=self.opex_yrl,
-                                              observation_horizon=self.scenario.prj_duration_yrs,
-                                              discount_rate=self.scenario.wacc)
-        self.scenario.expenditures.loc['opex','sim'] += self.opex_sim
-        self.scenario.expenditures.loc['opex','yrl'] += self.opex_yrl
-        self.scenario.expenditures.loc['opex','prj'] += self.opex_prj
-        self.scenario.expenditures.loc['opex','dis'] += self.opex_dis
-        self.scenario.expenditures.loc['opex','ann'] += self.opex_ann
+        self.opex_ann = eco.annuity_recur(nominal_value=self.opex_yrl,
+                                          observation_horizon=self.scenario.prj_duration_yrs,
+                                          discount_rate=self.scenario.wacc)
+        self.scenario.expenditures.loc['opex', 'sim'] += self.opex_sim
+        self.scenario.expenditures.loc['opex', 'yrl'] += self.opex_yrl
+        self.scenario.expenditures.loc['opex', 'prj'] += self.opex_prj
+        self.scenario.expenditures.loc['opex', 'dis'] += self.opex_dis
+        self.scenario.expenditures.loc['opex', 'ann'] += self.opex_ann
 
     def get_legend_entry(self):
         """
@@ -266,6 +266,7 @@ class InvestBlock(Block):
         self.size = self.size_additional_max = None  # placeholder
         self.size_additional = 0
         self.capex_init_existing = self.capex_init_additional = self.capex_replacement = 0
+        self.capex_joined_spec = 0
 
         self.set_init_size()
 
@@ -274,11 +275,9 @@ class InvestBlock(Block):
             raise ValueError(f'Scenario {self.scenario.name} - Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
 
-        # Include (time-based) maintenance expenses in capex calculation for otimizer (results are disaggregated anyway)
-        self.capex_joined_spec = eco.join_capex_mntex(capex=self.capex_spec,
-                                                      mntex=self.mntex_spec,
-                                                      lifespan=self.ls,
-                                                      discount_rate=self.scenario.wacc)
+        # Include (time-based) maintenance expenses in capex calculation for optimizer
+        # results are disaggregated anyway through separate postprocessing
+        self.join_capex_mntex()
 
         # annuity factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
@@ -292,7 +291,9 @@ class InvestBlock(Block):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # opex is uprated in importance for short simulations
-        self.factor_opex = (1 / self.scenario.sim_yr_rat) if scenario.compensate_sim_prj else 1
+        self.factor_opex = eco.annuity_recur(nominal_value=utils.scale_sim2year(1, self.scenario),
+                                             observation_horizon=self.scenario.prj_duration_yrs,
+                                             discount_rate=self.scenario.wacc) if scenario.compensate_sim_prj else 1
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 
@@ -354,6 +355,16 @@ class InvestBlock(Block):
         are more complex and have their own methods.
         """
         self.opex_ep_spec = self.opex_spec * self.factor_opex
+
+    def join_capex_mntex(self):
+        """
+        Default method for all blocks with purely size-dependent capex and mntex
+        CommoditySystems are deviating due to base capex and dist-dependent mntex
+        """
+        self.capex_joined_spec = eco.join_capex_mntex(capex=self.capex_spec,
+                                                      mntex=self.mntex_spec,
+                                                      lifespan=self.ls,
+                                                      discount_rate=self.scenario.wacc)
 
     def set_init_size(self):
         """
@@ -478,10 +489,15 @@ class CommoditySystem(InvestBlock):
 
         self.size_pc = self.size_existing_pc = 0  # placeholder for storage capacity. Might be set in super().__init__
         self.opex_sim_ext = self.opex_yrl_ext = self.opex_prj_ext = self.opex_dis_ext = self.opex_ann_ext = 0
+        self.capex_fix = 0  # storage size agnostic cost component (e.g. for vehicle glider and charger)
+        self.opex_spec = self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
+        self.e_sim_ext = self.e_yrl_ext = self.e_prj_ext = self.e_dis_ext = 0
 
         super().__init__(name, scenario)
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
+
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None  # placeholder
 
         self.mode_dispatch = None
         # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
@@ -523,9 +539,6 @@ class CommoditySystem(InvestBlock):
             # downrate power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
-        self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
-        self.energies.loc['ext', :] = 0  # results of external charging
-
         # Generate individual commodity instances
         self.commodities = {com_name: MobileCommodity(com_name, self) for com_name in self.com_names}
 
@@ -547,14 +560,18 @@ class CommoditySystem(InvestBlock):
         self.capex_init = self.capex_init_existing + self.capex_init_additional
 
         # replacements are full cost irrespective of existing size
-        self.capex_replacement = sum([com.size_existing + com.size_additional for com in self.commodities.values()]) * self.capex_spec
+        self.capex_replacement = (sum([com.size_existing + com.size_additional for com in self.commodities.values()]) *
+                                  self.capex_spec + self.capex_fix)
 
     def calc_capex_init_existing(self):
-        self.capex_init_existing = sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec \
-            if self.capex_existing else 0
+        self.capex_fix = self.capex_glider + self.capex_charger
+        self.capex_init_existing = (sum([com.size_existing for com in self.commodities.values()]) * self.capex_spec +
+                                    self.capex_fix * self.num) if self.capex_existing else 0
         self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
+
+        self.calc_pwr_max_observed()
 
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.commodities.values():
@@ -564,11 +581,12 @@ class CommoditySystem(InvestBlock):
 
         self.calc_energy_bidi()  # bidirectional block
 
-    def calc_mntex_yrl(self):
-        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
-
     def calc_opex_ep_spec(self):
-        # Opex is uprated in importance for short simulations
+        """
+        Uprate opex in importance for short simulations.
+        For VehicleCommoditySystems, opex is not considered in optimization (opex_ep_spec = 0 is default initialization)
+        as opex is not dependent on battery sizing.
+        """
         self.opex_ep_spec = self.opex_spec * self.factor_opex
         self.opex_ep_spec_sys_chg = self.opex_spec_sys_chg * self.factor_opex
         self.opex_ep_spec_sys_dis = self.opex_spec_sys_dis * self.factor_opex
@@ -577,13 +595,12 @@ class CommoditySystem(InvestBlock):
 
     def calc_opex_sim(self):
 
-        self.opex_sys = self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] + self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim]
+        self.opex_sys = (self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] +
+                         self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim])
 
         for commodity in self.commodities.values():
-            commodity.opex_sim = commodity.flows['in'] @ self.opex_spec[self.scenario.dti_sim] * self.scenario.timestep_hours
-            commodity.opex_sim_ext = ((commodity.flows['ext_ac'] @ self.opex_spec_ext_ac[self.scenario.dti_sim]) +
-                                      (commodity.flows['ext_dc'] @ self.opex_spec_ext_dc[self.scenario.dti_sim])) * self.scenario.timestep_hours
-            self.opex_commodities += (commodity.opex_sim + commodity.opex_sim_ext)
+            commodity.calc_opex_sim()
+            self.opex_commodities += commodity.opex_sim
             self.opex_commodities_ext += commodity.opex_sim_ext
 
         self.opex_sim = self.opex_sys + self.opex_commodities
@@ -596,14 +613,21 @@ class CommoditySystem(InvestBlock):
                                              self.scenario.prj_duration_yrs,
                                              self.scenario.wacc,
                                              occurs_at='end')
-        self.opex_ann_ext = eco.annuity_due_recur(nominal_value=self.opex_yrl_ext,
-                                                  observation_horizon=self.scenario.prj_duration_yrs,
-                                                  discount_rate=self.scenario.wacc)
-        self.scenario.expenditures.loc['opex_ext','sim'] += self.opex_sim_ext
-        self.scenario.expenditures.loc['opex_ext','yrl'] += self.opex_yrl_ext
-        self.scenario.expenditures.loc['opex_ext','prj'] += self.opex_prj_ext
-        self.scenario.expenditures.loc['opex_ext','dis'] += self.opex_dis_ext
-        self.scenario.expenditures.loc['opex_ext','ann'] += self.opex_ann_ext
+        self.opex_ann_ext = eco.annuity_recur(nominal_value=self.opex_yrl_ext,
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc)
+        self.scenario.expenditures.loc['opex_ext', 'sim'] += self.opex_sim_ext
+        self.scenario.expenditures.loc['opex_ext', 'yrl'] += self.opex_yrl_ext
+        self.scenario.expenditures.loc['opex_ext', 'prj'] += self.opex_prj_ext
+        self.scenario.expenditures.loc['opex_ext', 'dis'] += self.opex_dis_ext
+        self.scenario.expenditures.loc['opex_ext', 'ann'] += self.opex_ann_ext
+
+    def calc_pwr_max_observed(self):
+        """
+        Calculate maximum power drawn by the system for external charging and discharging
+        """
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
         for commodity in self.commodities.values():
@@ -747,6 +771,9 @@ class BatteryCommoditySystem(CommoditySystem):
         # to one SOC before rental
         self.soc_target_high = self.soc_target
         self.soc_target_low = self.soc_target
+
+    def calc_mntex_yrl(self):
+        self.mntex_yrl = np.array([com.size for com in self.commodities.values()]).sum() * self.mntex_spec
 
 
 class ControllableSource(InvestBlock):
@@ -1285,18 +1312,18 @@ class ICEVSystem(Block):
         pass  # function has to be callable, but ICEVSystem does not impose energy transfer
 
     def calc_capex_init_existing(self):
-        self.capex_init = self.capex_pc * self.num if self.capex_existing else 0
+        self.capex_init = self.capex_glider * self.num if self.capex_existing else 0
         self.scenario.capex_init_existing += self.capex_init
 
     def calc_expenses(self):
-        self.capex_replacement = self.capex_pc * self.num
+        self.capex_replacement = self.capex_glider * self.num
         self.extrapolate_capex()  # Method defined in Block class
 
         self.opex_sim = sum([self.data.loc[self.scenario.dti_sim, (com, 'tour_dist')] @ self.opex_spec_dist
                              for com in self.com_names])
         self.extrapolate_opex()  # Method defined in Block class
 
-        self.mntex_yrl = self.mntex_pc * self.num
+        self.mntex_yrl = self.mntex_glider * self.num
         self.extrapolate_mntex()  # Method defined in Block class
 
         self.accumulate_expenses()
@@ -1446,6 +1473,7 @@ class MobileCommodity:
         self.bus = self.inflow = self.outflow = self.ess = None
         self.bus_ext_ac = self.conv_ext_ac = self.src_ext_ac = None
         self.bus_ext_dc = self.conv_ext_dc = self.src_ext_dc = None
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None
 
         self.invest = self.parent.invest
         self.size = self.size_additional = 0
@@ -1493,6 +1521,8 @@ class MobileCommodity:
                                   columns=['total', 'in', 'out', 'bat_in', 'bat_out', 'ext_ac', 'ext_dc'],
                                   data=0,
                                   dtype='float64')
+
+        self.opex_sim_int = self.opex_sim_ext = self.opex_sim = 0
 
         self.soc = pd.Series(index=utils.extend_dti(self.scenario.dti_sim), dtype='float64')
         self.soc[self.scenario.starttime] = self.soc_init
@@ -1548,6 +1578,24 @@ class MobileCommodity:
     def calc_aging(self, horizon):
         self.aging_model.age(horizon)
 
+    def calc_opex_sim(self):
+        """
+        Postprocessing method
+        Calculate internal and external opex of individual commodities.
+        Vehicle opex is distance based, battery opex is energy throughput based.
+        """
+        if isinstance(self.parent, VehicleCommoditySystem):
+            self.opex_sim_int = (self.data.loc[self.scenario.dti_sim, 'tour_dist'] @
+                                 self.parent.opex_spec_dist[self.scenario.dti_sim])
+        else:
+            self.opex_sim_int = (self.flow_in @ self.parent.opex_spec[self.scenario.dti_sim] *
+                                 self.scenario.timestep_hours)
+
+        self.opex_sim_ext = (((self.flow_ext_ac @ self.parent.opex_spec_ext_ac[self.scenario.dti_sim]) +
+                             (self.flow_ext_dc @ self.parent.opex_spec_ext_dc[self.scenario.dti_sim])) *
+                             self.scenario.timestep_hours)
+        self.opex_sim += (self.opex_sim_int + self.opex_sim_ext)
+
     # noinspection DuplicatedCode
     def calc_results(self):
 
@@ -1563,6 +1611,9 @@ class MobileCommodity:
                                                                    occurs_at='end')
 
         self.flows['total'] = self.flows['in'] - self.flows['out']  # for plotting
+
+        self.pwr_chg_max_observed = self.flow_in.max()
+        self.pwr_dis_max_observed = self.flow_out.max()
 
     def calc_revenue(self):
 
@@ -2301,6 +2352,17 @@ class VehicleCommoditySystem(CommoditySystem):
     def __init__(self, name, scenario):
         self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
+
+    def calc_mntex_yrl(self):
+        self.mntex_yrl = self.mntex_glider * self.num
+
+    def join_capex_mntex(self):
+        """
+        Preprocessing method
+        For VehicleCommoditySystems, mntex is fixed (not battery size dependent) and is therefore
+        not considered in optimization and is not joined with capex.
+        """
+        self.capex_joined_spec = self.capex_spec
 
 
 class WindSource(RenewableInvestBlock):
