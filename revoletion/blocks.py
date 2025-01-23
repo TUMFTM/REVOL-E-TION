@@ -677,7 +677,7 @@ class CommoditySystem(InvestBlock):
         self.opex_sys = (self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] +
                          self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim])
 
-        for commodity in self.commodities.values():
+        for commodity in self.subblocks.values():
             commodity.calc_opex_sim()
             self.opex_commodities += commodity.opex_sim
             self.opex_commodities_ext += commodity.opex_sim_ext
@@ -701,8 +701,8 @@ class CommoditySystem(InvestBlock):
         """
         Calculate maximum power drawn by the system for external charging and discharging
         """
-        self.pwr_chg_max_observed = self.flow_in.max()
-        self.pwr_dis_max_observed = self.flow_out.max()
+        self.pwr_chg_max_observed = self.flows['in'].max()
+        self.pwr_dis_max_observed = self.flows['out'].max()
 
     def calc_revenue(self):
         for commodity in self.subblocks.values():
@@ -1482,6 +1482,7 @@ class MobileCommodity(SubBlock):
         self.data_ph = None  # placeholder, is filled in update_input_components
 
         self.crev_time = self.crev_usage = self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
+        self.opex_sim = self.opex_sim_int = self.opex_sim_ext = 0
 
         # timeseries result initialization
         self.storage_timeseries = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
@@ -2141,7 +2142,6 @@ class SystemCore(InvestBlock):
             self.scenario.logger.warning(f'Block {self.name} - '
                                          f'simultaneous flow for "acdc" and "dcac" detected!')
 
-        self.e_sim_dcac = self.flow_dcac.sum() * self.scenario.timestep_hours  # flow values are powers --> conversion to Wh
         for flow in ['acdc', 'dcac']:
             self.energies.loc[flow, 'sim'] = self.flows[flow].sum() * self.scenario.timestep_hours
             self.energies.loc[flow, 'yrl'] = utils.scale_sim2year(self.energies.loc[flow, 'sim'], self.scenario)
@@ -2245,6 +2245,7 @@ class VehicleCommoditySystem(CommoditySystem):
     """
 
     def __init__(self, name, scenario):
+        self.opex_spec = self.mntex_spec = 0  # ensures common methods for Battery and VehicleCommoditySystems
         self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
     
