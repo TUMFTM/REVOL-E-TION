@@ -74,7 +74,7 @@ def get_period_fraction(dti, period, freq):
 
 
 def create_expenditures_dataframe():
-    # previous capex_init is renamed to capex_sim to reduce number of columns of the dataframe
+    # capex_sim represents initial capex (possibly excluding some existing blocks)
     expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
                                 columns=['sim', 'yrl', 'prj', 'dis', 'ann'],
                                 data=0,
