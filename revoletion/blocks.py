@@ -285,14 +285,16 @@ class InvestBlock(Block):
 
         self.capex_init_existing = self.capex_init_additional = self.capex_replacement = 0
 
-        # ToDo: move to checker.py
         if self.invest and self.scenario.strategy != 'go':
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
 
         # Include (time-based) maintenance expenses in capex calculation for optimizer
         # results are disaggregated anyway through separate postprocessing
-        self.join_capex_mntex()
+        self.capex_joined_spec = eco.join_capex_mntex(capex=self.capex_spec,
+                                                      mntex=self.mntex_spec,
+                                                      lifespan=self.ls,
+                                                      discount_rate=self.scenario.wacc)
 
         # annuity factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
@@ -380,16 +382,6 @@ class InvestBlock(Block):
         are more complex and have their own methods.
         """
         self.opex_ep_spec = self.opex_spec * self.factor_opex
-        
-    def join_capex_mntex(self):
-        """
-        Default method for all blocks with purely size-dependent capex and mntex
-        CommoditySystems are deviating due to base capex and dist-dependent mntex
-        """
-        self.capex_joined_spec = eco.join_capex_mntex(capex=self.capex_spec,
-                                                      mntex=self.mntex_spec,
-                                                      lifespan=self.ls,
-                                                      discount_rate=self.scenario.wacc)
 
     def print_results(self):
         if self.invest:
@@ -2248,14 +2240,6 @@ class VehicleCommoditySystem(CommoditySystem):
         self.opex_spec = self.mntex_spec = 0  # ensures common methods for Battery and VehicleCommoditySystems
         self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
-    
-    def join_capex_mntex(self):
-        """
-        Preprocessing method
-        For VehicleCommoditySystems, mntex is fixed (not battery size dependent) and is therefore
-        not considered in optimization and is not joined with capex.
-        """
-        self.capex_joined_spec = self.capex_spec
 
 class WindSource(RenewableInvestBlock):
 
