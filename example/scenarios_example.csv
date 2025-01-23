@@ -1,4 +1,4 @@
-block,key,icev,bev_grid,bev_mg,bev_mg_rh
+block,key,#icev,#bev_grid,bev_mg,#bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
-scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess':'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
+scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_acdc_existing,0,0,0,0
 core,capex_existing_acdc,True,True,True,True
 core,size_acdc_max,None,None,None,None
@@ -56,7 +56,7 @@ pv,invest,False,True,True,False
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
 pv,filename,pvgis_api_params,pvgis_api_params,pvgis_api_params,pvgis_api_params
 pv,system,dc,dc,dc,dc
-pv,capex_spec,0.250,0.250,0.250,0.250
+pv,capex_spec,0.5,0.5,0.5,0.5
 pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
 pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
@@ -73,7 +73,7 @@ gen,opex_spec,0.0009,0.0009,0.0009,0.0009
 gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
 gen,eff,1,1,1,1
-grid,size_g2s_existing,0,0,0,0
+grid,size_g2s_existing,0,0,0,43500
 grid,capex_existing_g2s,True,True,True,True
 grid,size_g2s_max,None,None,None,None
 grid,invest_g2s,True,True,True,False
