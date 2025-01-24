@@ -435,7 +435,7 @@ class InvestBlock(Block):
 
 class SubBlock:
 
-    def __init__(self, name, parent, params):
+    def __init__(self, name, parent, params, flow_names=['total', 'in', 'out']):
         self.name = name
         self.parent = parent
         self.scenario = self.parent.scenario
@@ -450,6 +450,8 @@ class SubBlock:
 
         # timeseries result initialization
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
+                                  columns=flow_names,
+                                  data=0,
                                   dtype='float64')
 
     def calc_results(self, flows=[]):
@@ -1056,9 +1058,9 @@ class GridConnection(InvestBlock):
     def set_init_size(self, size_names):
         self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
 
-        utils.init_tuple_variables(self, ['invest_s2g', 'invest_g2s'])
-        utils.init_tuple_variables(self, ['size_g2s_existing', 'size_s2g_existing'])
-        utils.init_tuple_variables(self, ['size_g2s_max', 'size_s2g_max'])
+        utils.init_equalizable_variables(self, ['invest_s2g', 'invest_g2s'])
+        utils.init_equalizable_variables(self, ['size_g2s_existing', 'size_s2g_existing'])
+        utils.init_equalizable_variables(self, ['size_g2s_max', 'size_s2g_max'])
 
         super().set_init_size(size_names)
 
@@ -1146,10 +1148,7 @@ class GridConnection(InvestBlock):
 class GridMarket(SubBlock):
     def __init__(self, name, parent, params):
 
-        super().__init__(name, parent, params)
-
-        # initialize block specific flows
-        self.flows[['total', 'in', 'out']] = 0.0
+        super().__init__(name, parent, params, flow_names=['total', 'in', 'out'])
 
         # initialize oemof-solph components
         self.src = self.snk = None
@@ -1174,6 +1173,9 @@ class GridMarket(SubBlock):
         self.calc_opex_ep_spec()
 
     def add_power_trace(self):
+        if self.parent.filename_markets is None:
+            return
+
         legentry = (f'{self.name} power (max.'
                     f' {(self.parent.size.loc["g2s", "total"] if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
                     f' {(self.parent.size.loc["s2g", "total"] if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
@@ -1443,14 +1445,11 @@ class MobileCommodity(SubBlock):
 
     def __init__(self, name, parent, params):
 
-        super().__init__(name, parent, params)
+        super().__init__(name, parent, params, flow_names=['total', 'in', 'out', 'bat_in', 'bat_out', 'ext_ac', 'ext_dc'])
 
         # Add block specific energies
         self.energies.loc['ext_ac', :] = 0.0
         self.energies.loc['ext_dc', :] = 0.0
-
-        # Add block specific flows
-        self.flows[['total', 'in', 'out', 'bat_in', 'bat_out', 'ext_ac', 'ext_dc']] = 0.0
 
         # initialize oemof-solph components
         self.bus = self.inflow = self.outflow = self.ess = None
@@ -2174,9 +2173,9 @@ class SystemCore(InvestBlock):
     def set_init_size(self, size_names):
         self.equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
-        utils.init_tuple_variables(block=self, name_vars=['invest_acdc', 'invest_dcac'])
-        utils.init_tuple_variables(block=self, name_vars=['size_acdc_existing', 'size_dcac_existing'])
-        utils.init_tuple_variables(block=self, name_vars=['size_acdc_max', 'size_dcac_max'])
+        utils.init_equalizable_variables(block=self, name_vars=['invest_acdc', 'invest_dcac'])
+        utils.init_equalizable_variables(block=self, name_vars=['size_acdc_existing', 'size_dcac_existing'])
+        utils.init_equalizable_variables(block=self, name_vars=['size_acdc_max', 'size_dcac_max'])
 
         super().set_init_size(size_names)
 
