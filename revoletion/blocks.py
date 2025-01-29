@@ -602,7 +602,7 @@ class CommoditySystem(InvestBlock):
 
         # replacements are full cost irrespective of existing size
         self.capex_replacement = (sum([com.size_existing + com.size_additional for com in self.commodities.values()]) *
-                                  self.capex_spec + self.capex_fix)
+                                  self.capex_spec + self.capex_fix * self.num)
 
     def calc_capex_init_existing(self):
         self.capex_fix = self.capex_glider + self.capex_charger
