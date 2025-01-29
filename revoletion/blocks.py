@@ -931,7 +931,8 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self):
         # Calculate costs for grid peak power
-        self.opex_sim_power = self.opex_spec_peak * self.peakshaving_ints['power'].sum()
+        self.peakshaving_ints['opex'] = self.peakshaving_ints[['power', 'period_fraction', 'opex_spec']].prod(axis=1)
+        self.opex_sim_power = self.peakshaving_ints['opex'].sum()
 
         # Calculate costs of different markets
         for market in self.markets.values():

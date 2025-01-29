@@ -604,7 +604,7 @@ class Scenario:
                         if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
                             self.logger.info(f'Optimized peak power in component "{block.name}" for interval'
                                              f' {interval}: {block.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} {unit}'
-                                             f' - OPEX: {block.opex_spec_peak * block.peakshaving_ints.loc[interval, ["period_fraction", "power"]].prod():.2f} {self.currency}')
+                                             f' - OPEX: {block.peakshaving_ints.loc[interval, "opex"]:.2f} {self.currency}')
 
             elif isinstance(block, blocks.CommoditySystem) and block.invest:
                 for commodity in block.commodities.values():
@@ -659,7 +659,7 @@ class Scenario:
                         self.result_summary.loc[(block_name, f'power_opex_spec_{interval}'), self.name] = (
                             float(block_obj.peakshaving_ints.loc[interval, 'opex_spec']))
                         self.result_summary.loc[(block_name, f'power_opex_{interval}'), self.name] = (
-                            block_obj.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
+                            block_obj.peakshaving_ints.loc[interval, 'opex'])
 
         self.result_summary.to_pickle(self.path_result_summary_tempfile)
 
