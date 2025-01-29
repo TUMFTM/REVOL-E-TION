@@ -296,9 +296,9 @@ class InvestBlock(Block):
                                                       lifespan=self.ls,
                                                       discount_rate=self.scenario.wacc)
 
-        # annuity factor (incl. replacements) to compensate for difference between simulation and project time in
+        # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
-        self.factor_capex = eco.annuity_due_capex(capex_init=1,  # nonexisting block size is always capexed
+        self.factor_capex = eco.annuity_due_capex(capex_init=1,
                                                   capex_replacement=1,
                                                   lifespan=self.ls,
                                                   observation_horizon=self.scenario.prj_duration_yrs,
@@ -574,15 +574,24 @@ class CommoditySystem(InvestBlock):
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
-        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None  # placeholder
+        self.pwr_chg_max_observed = self.pwr_dis_max_observed = None
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
-        self.mode_dispatch = None
-        # mode_dispatch can be 'apriori_unlimited', 'apriori_static', 'apriori_dynamic', 'opt_myopic', 'opt_global'
+        self.mode_dispatch = None  # apriori_unlimited, apriori_static, apriori_dynamic, opt_myopic, opt_global
         self.get_dispatch_mode()
 
         # commodity names might be rewritten in case of imported log data with differing name
-        self.com_names = [f'{self.name}_{str(i)}' for i in range(self.num)]
-        self.data = None  # init
+        self.com_names = [f'{self.name}_{i}' for i in range(self.num)]
+        self.data = self.data_ph = None
+
+        if self.system == 'ac':
+            self.eff_chg = self.eff_chg_ac
+            self.eff_dis = self.eff_dis_ac
+        elif self.system == 'dc':
+            self.eff_chg = self.eff_chg_dc
+            self.eff_dis = self.eff_dis_dc
+        else:
+            raise ValueError(f'Block "{self.name}": invalid system type')
 
         if self.data_source == 'usecases':
             self.usecases = utils.read_usecase_file(self)
@@ -594,19 +603,6 @@ class CommoditySystem(InvestBlock):
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
-
-        if self.system == 'ac':
-            self.eff_chg = self.eff_chg_ac
-            self.eff_dis = self.eff_dis_ac
-        elif self.system == 'dc':
-            self.eff_chg = self.eff_chg_dc
-            self.eff_dis = self.eff_dis_dc
-        else:
-            raise ValueError(f'Block "{self.name}": invalid system type')
-
-        self.data_ph = None  # placeholder, is filled in "update_input_components"
-
-        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))
 
         if self.data_source in ['usecases', 'demand']:  # dispatch simulation will run
             # estimate maximum power drawn by self discharge

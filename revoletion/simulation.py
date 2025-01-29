@@ -384,13 +384,14 @@ class Scenario:
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.blocks = self.create_block_objects()
         self.commodity_systems = {block.name: block for block in self.blocks.values()
-                                  if isinstance(block, blocks.CommoditySystem)}
+                                  if isinstance(block, blocks.CommoditySystem)}  # todo move to commoditysystem init
 
         # initialize variable to store initial investment costs given in scenario definition
         self.capex_init_existing = 0
         # get all initial capex costs for existing components
         for block in self.blocks.values():
-            block.calc_capex_init_existing()
+            block.calc_capex_init_existing()  # todo move to (invest)block init
+
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
             self.logger.error(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                               f'exceed maximum investment limit of {self.invest_max} {self.currency}')
