@@ -634,9 +634,11 @@ class CommoditySystem(InvestBlock):
             commodity.calc_aging(horizon)
 
     def calc_capex_init_existing(self):
-        self.capex_fix = self.capex_glider + self.capex_charger
-        self.capex_init_existing = (sum([com.size.loc['block', 'existing'] for com in self.subblocks.values()]) * self.capex_spec +
-                                    self.capex_fix * self.num) if self.capex_existing else 0
+        """ Preprocessing method """
+        for commodity in self.subblocks.values():
+            commodity.calc_capex_init_existing()
+            self.capex_init_existing += commodity.capex_init_existing
+
         self.scenario.capex_init_existing += self.capex_init_existing
 
     def calc_energy(self):
@@ -1468,6 +1470,7 @@ class MobileCommodity(SubBlock):
 
         self.data_ph = None  # placeholder, is filled in update_input_components
 
+        self.capex_fix = self.capex_init_existing = 0
         self.crev_time = self.crev_usage = self.crev_sim = self.crev_yrl = self.crev_prj = self.crev_dis = 0
         self.opex_sim = self.opex_sim_int = self.opex_sim_ext = 0
 
@@ -1526,22 +1529,33 @@ class MobileCommodity(SubBlock):
     def calc_aging(self, horizon):
         self.aging_model.age(horizon)
 
+    def calc_capex_init_existing(self):
+        """ Preprocessing method """
+        self.capex_fix = self.capex_glider + self.capex_charger
+        if self.parent.capex_existing:
+            self.capex_init_existing = (self.size.loc['block', 'existing'] * self.capex_spec +
+                                        self.capex_fix)
+
     def calc_opex_sim(self):
         """
         Postprocessing method
         Calculate internal and external opex of individual commodities.
         Vehicle opex is distance based, battery opex is energy throughput based.
         """
+
         if isinstance(self.parent, VehicleCommoditySystem):
             self.opex_sim_int = (self.data.loc[self.scenario.dti_sim, 'tour_dist'] @
                                  self.parent.opex_spec_dist[self.scenario.dti_sim])
-        else:
+        elif isinstance(self.parent, BatteryCommoditySystem):
             self.opex_sim_int = (self.flows['in'] @ self.parent.opex_spec[self.scenario.dti_sim] *
                                  self.scenario.timestep_hours)
+        else:
+            raise ValueError
 
         self.opex_sim_ext = (((self.flows['ext_ac'] @ self.parent.opex_spec_ext_ac[self.scenario.dti_sim]) +
                              (self.flows['ext_dc'] @ self.parent.opex_spec_ext_dc[self.scenario.dti_sim])) *
                              self.scenario.timestep_hours)
+
         self.opex_sim += (self.opex_sim_int + self.opex_sim_ext)
 
     def calc_results(self):
@@ -2235,6 +2249,7 @@ class VehicleCommoditySystem(CommoditySystem):
         self.opex_spec = self.mntex_spec = 0  # ensures common methods for Battery and VehicleCommoditySystems
         self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
+
 
 class WindSource(RenewableInvestBlock):
 
