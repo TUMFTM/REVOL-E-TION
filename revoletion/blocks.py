@@ -617,6 +617,12 @@ class CommoditySystem(InvestBlock):
         # Aggregate energy results for external charging for all MobileCommodities within the CommoditySystem
         for commodity in self.commodities.values():
             commodity.calc_results()
+
+            self.e_sim_ext += (commodity.e_ext_ac_sim + commodity.e_ext_dc_sim)
+            self.e_yrl_ext += (commodity.e_ext_ac_yrl + commodity.e_ext_dc_yrl)
+            self.e_prj_ext += (commodity.e_ext_ac_prj + commodity.e_ext_dc_prj)
+            self.e_dis_ext += (commodity.e_ext_ac_dis + commodity.e_ext_dc_dis)
+
             self.scenario.e_sim_ext += (commodity.e_ext_ac_sim + commodity.e_ext_dc_sim)
             self.scenario.e_yrl_ext += (commodity.e_ext_ac_yrl + commodity.e_ext_dc_yrl)
             self.scenario.e_prj_ext += (commodity.e_ext_ac_prj + commodity.e_ext_dc_prj)
