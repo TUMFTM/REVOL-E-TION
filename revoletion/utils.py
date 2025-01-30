@@ -101,7 +101,7 @@ def conv_add_max(value):
     return value if pd.notna(value) else None
 
 
-def init_tuple_variables(block, name_vars: list):
+def init_equalizable_variables(block, name_vars: list):
     name_var1, name_var2 = name_vars
     if (getattr(block, name_var1) == 'equal') and (getattr(block, name_var2) == 'equal'):
         error_msg = (f'"{block.name}" parameters {name_var1} and {name_var2} were both set to equal.'
