@@ -619,8 +619,9 @@ class CommoditySystem(InvestBlock):
 
         # Get commodity-specific parameters defined on commodity system level
         params_to_inherit = ['invest', 'aging', 'dsoc_buffer', 'mode_dispatch', 'soc_init',
-                          'chemistry', 'q_loss_cal_init', 'q_loss_cyc_init',
-                          'pwr_chg', 'pwr_dis', 'eff_chg', 'eff_dis', 'eff_storage_roundtrip', 'temp_battery']
+                             'chemistry', 'q_loss_cal_init', 'q_loss_cyc_init',
+                             'pwr_chg', 'pwr_dis', 'eff_chg', 'eff_dis', 'eff_storage_roundtrip', 'temp_battery',
+                             'capex_glider', 'capex_charger', 'capex_spec']
         params = {key: getattr(self, key) for key in params_to_inherit}
         # Generate individual commodity instances
         self.subblocks = {com_name: MobileCommodity(com_name, self, params) for com_name in self.com_names}
