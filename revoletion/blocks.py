@@ -156,7 +156,7 @@ class Block:
     def calc_energy_common(self, flow_names):
         if 'in' in flow_names and 'out' in flow_names:
             self.flows['total'] = self.flows['out'] - self.flows['in']
-            
+
             if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
                 self.scenario.logger.warning(f'Block {self.name} - '
                                              f'simultaneous in- and outflow detected!')
@@ -571,7 +571,7 @@ class RenewableInvestBlock(InvestBlock):
 class CommoditySystem(InvestBlock):
 
     def __init__(self, name, scenario):
-    
+
         super().__init__(name, scenario)
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
@@ -912,7 +912,8 @@ class GridConnection(InvestBlock):
 
     def calc_opex_sim(self):
         # Calculate costs for grid peak power
-        self.opex_sim_power = self.opex_spec_peak * self.peakshaving_ints['power'].sum()
+        self.peakshaving_ints['opex'] = self.peakshaving_ints[['power', 'period_fraction', 'opex_spec']].prod(axis=1)
+        self.opex_sim_power = self.peakshaving_ints['opex'].sum()
 
         # Calculate costs of different markets
         for market in self.subblocks.values():
