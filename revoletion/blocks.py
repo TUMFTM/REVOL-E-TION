@@ -744,7 +744,9 @@ class CommoditySystem(InvestBlock):
         """
         for commodity in self.subblocks.values():
             commodity.get_invest_size(horizon)
-            self.size.loc['block', :] += commodity.size.loc['block', :]
+            self.size.loc['block', 'additional'] += commodity.size.loc['block', 'additional']
+
+        self.size.loc['block', 'total'] = self.size.loc['block', 'existing'] + self.size.loc['block', 'additional']
 
     def get_legend_entry(self):
         return (f'{self.name} total power'
