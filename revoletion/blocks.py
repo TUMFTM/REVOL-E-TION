@@ -77,7 +77,6 @@ class Block:
     def accumulate_expenses(self):
         # add all expenditures (capex, mntex, opex) for the current block
         self.expenditures.loc['totex', ['sim', 'prj', 'dis', 'ann']] = self.expenditures.loc[['capex', 'mntex', 'opex'], ['sim', 'prj', 'dis', 'ann']].sum()
-
         self.scenario.expenditures.loc['totex', :] += self.expenditures.loc['totex', :]  # sim, prj, dis, ann
 
     def add_power_trace(self):
@@ -363,16 +362,9 @@ class InvestBlock(Block):
 
     def calc_mntex_yrl(self):
         """
-        Calculate yearly maintenance expenses
+        Default calculation method for yearly maintenance expenses
         """
         self.expenditures.loc['mntex', 'yrl'] = self.size.loc['block', 'total'] * self.mntex_spec
-
-    def calc_opex(self):
-        """
-        Calculate operational expenses over simulation timeframe and convert to other timeframes.
-        """
-        self.calc_opex_sim()  # opex is defined differently depending on the block type
-        self.extrapolate_opex()
 
     def calc_opex_ep_spec(self):
         """
@@ -613,7 +605,7 @@ class CommoditySystem(InvestBlock):
             # downrate power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
-        self.opex_sys = self.opex_commodities = self.opex_commodities_ext = 0
+        self.opex_sys_sim = self.opex_commodities_sim = self.opex_commodities_ext_sim = 0
         self.energies.loc['ext', :] = 0  # results of external charging
 
         # Get commodity-specific parameters defined on commodity system level
@@ -677,19 +669,20 @@ class CommoditySystem(InvestBlock):
         self.opex_ep_spec_ext_dc = self.opex_spec_ext_dc * self.factor_opex
 
     def calc_opex_sim(self):
+        """ Postprocessing method """
 
-        self.opex_sys = (self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] +
-                         self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim])
+        self.opex_sys_sim = (self.flows['in'] @ self.opex_spec_sys_chg[self.scenario.dti_sim] +
+                             self.flows['out'] @ self.opex_spec_sys_dis[self.scenario.dti_sim])
 
         for commodity in self.subblocks.values():
             commodity.calc_opex_sim()
-            self.opex_commodities += commodity.opex_sim
-            self.opex_commodities_ext += commodity.opex_sim_ext
+            self.opex_commodities_sim += commodity.opex_sim
+            self.opex_commodities_ext_sim += commodity.opex_sim_ext
 
-        self.expenditures.loc['opex', 'sim'] = self.opex_sys + self.opex_commodities
-        self.expenditures.loc['opex_ext', 'sim'] = self.opex_commodities_ext
+        self.expenditures.loc['opex', 'sim'] = self.opex_sys_sim + self.opex_commodities_sim
+        self.expenditures.loc['opex_ext', 'sim'] = self.opex_commodities_ext_sim
 
-        # Calc opex for external charging
+        # Extrapolate external opex
         self.expenditures.loc['opex_ext', 'yrl'] = utils.scale_sim2year(self.expenditures.loc['opex_ext', 'sim'], self.scenario)
         self.expenditures.loc['opex_ext', 'prj'] = utils.scale_year2prj(self.expenditures.loc['opex_ext', 'yrl'], self.scenario)
         self.expenditures.loc['opex_ext', 'dis'] = eco.acc_discount(self.expenditures.loc['opex_ext', 'yrl'],
@@ -781,9 +774,7 @@ class CommoditySystem(InvestBlock):
         super().set_init_size()
 
         if self.invest and self.data_source in ['usecases', 'demand']:
-            self.scenario.logger.warning(f'CommoditySystem "{self.name}": Specified input (active invest and data'
-                                         f' source DES is not possible. Deactivated invest.')
-            self.invest = False
+            raise ValueError(f'Block "{self.name}": size optimization not compatible with a priori dispatch simulation')
 
         # define sizes per commodity
         self.size.loc['pc', :] = self.size.loc['block', :]
