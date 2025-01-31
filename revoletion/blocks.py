@@ -897,7 +897,7 @@ class GridConnection(InvestBlock):
 
         self.bus = self.bus_connected = self.inflow = self.outflow = None  # initialization of oemof-solph components
 
-        self.opex_sim_power = self.opex_sim_energy = 0
+        self.opex_sim_peak = self.opex_sim_energy = 0
 
         self.factor_opex_peak = self.opex_ep_spec_peak = 0
 
@@ -912,26 +912,27 @@ class GridConnection(InvestBlock):
         self.calc_energy_source_sink()
 
     def calc_opex_ep_spec(self):
-        # Method has to be callable from InvestBlock.__init__, but energy based opex is in GridMarket
+        """
+        Method has to be callable from InvestBlock.__init__, but energy based opex is in GridMarket
+        """
         pass
 
     def calc_opex_sim(self):
         # Calculate costs for grid peak power
         self.peakshaving_ints['opex'] = self.peakshaving_ints[['power', 'period_fraction', 'opex_spec']].prod(axis=1)
-        self.opex_sim_power = self.peakshaving_ints['opex'].sum()
+        self.opex_sim_peak = self.peakshaving_ints['opex'].sum()
 
         # Calculate costs of different markets
         for market in self.subblocks.values():
             market.opex_sim = market.flows['out'] @ market.opex_spec_g2s[self.scenario.dti_sim] * self.scenario.timestep_hours + \
                               market.flows['in'] @ market.opex_spec_s2g[self.scenario.dti_sim] * self.scenario.timestep_hours
-
             self.opex_sim_energy += market.opex_sim
 
-        self.expenditures.loc['opex', 'sim'] = self.opex_sim_power + self.opex_sim_energy
+        self.expenditures.loc['opex', 'sim'] = self.opex_sim_peak + self.opex_sim_energy
 
     def get_ch_results(self, horizon, *_):
         self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.bus)]['sequences']['flow'][horizon.dti_ch]
-                                            for inflow in self.inflow.values()])
+                                                    for inflow in self.inflow.values()])
         self.flows.loc[horizon.dti_ch, 'out'] = sum([horizon.results[(self.bus, outflow)]['sequences']['flow'][horizon.dti_ch]
                                                      for outflow in self.outflow.values()])
 
