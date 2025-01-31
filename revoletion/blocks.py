@@ -2255,6 +2255,12 @@ class VehicleCommoditySystem(CommoditySystem):
         self.demand = mobility.VehicleCommodityDemand(scenario, self)
         super().__init__(name, scenario)
 
+    def calc_mntex_yrl(self):
+        """
+        Calculate yearly maintenance expenses
+        """
+        self.expenditures.loc['mntex', 'yrl'] = self.num * self.mntex_glider
+
 
 class WindSource(RenewableInvestBlock):
 
