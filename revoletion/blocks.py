@@ -329,8 +329,8 @@ class InvestBlock(Block):
         self.capex_init_additional = self.size.loc['block', 'additional'] * self.capex_spec
         self.expenditures.loc['capex', 'sim'] = self.capex_init_existing + self.capex_init_additional
 
-        # replacements are full cost irrespective of existing size
-        self.capex_replacement = self.size.loc['block', 'total'] * self.capex_spec
+        # replacements are full nominal cost irrespective of existing size
+        self.capex_replacement = self.size.loc['block', 'total'] * self.capex_spec + self.capex_fix
 
     def calc_capex_init_existing(self):
         """
@@ -639,6 +639,7 @@ class CommoditySystem(InvestBlock):
         for commodity in self.subblocks.values():
             commodity.calc_capex_init_existing()
             self.capex_init_existing += commodity.capex_init_existing
+            self.capex_fix += commodity.capex_fix
 
         self.scenario.capex_init_existing += self.capex_init_existing
 
