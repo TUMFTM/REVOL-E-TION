@@ -1,4 +1,4 @@
-block,key,#icev,#bev_grid,bev_mg,#bev_mg_rh
+block,key,icev,bev_grid,bev_mg,bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
