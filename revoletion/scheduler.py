@@ -47,7 +47,7 @@ class AprioriPowerScheduler:
         # get a dict of all commodities within Apriori CommoditySystems
         self.apriori_commodities = {name: AprioriCommodity(commodity) for block in
                                     self.cs_unlim + self.cs_lm_static + self.cs_lm_dynamic for name, commodity in
-                                    block.commodities.items()}
+                                    block.subblocks.items()}
 
         # initialize dataframe for power drawn by unlimited (uc) or static load management CommoditySystems
         self.pwr_csc_unlim_static = pd.DataFrame(columns=['ac', 'dc'], dtype=float)
@@ -80,11 +80,11 @@ class AprioriPowerScheduler:
 
             for block in self.scenario.blocks.values():
                 if isinstance(block, blocks.GridConnection):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_g2s_existing * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size.loc['g2s', 'existing'] * block.eff
                 elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size_existing * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size.loc['block', 'existing'] * block.eff
                 elif isinstance(block, blocks.ControllableSource):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size_existing * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size.loc['block', 'existing'] * block.eff
                 elif isinstance(block, blocks.FixedDemand):
                     self.pwr_esm_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w']
 
@@ -92,16 +92,16 @@ class AprioriPowerScheduler:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
             for cs in self.cs_unlim + self.cs_lm_static:
                 self.pwr_csc_unlim_static.loc[dtindex, cs.system] += self.calc_pwr_commodities(dtindex=dtindex,
-                                                                                           commodities=[self.apriori_commodities[key]
-                                                                                                        for key in cs.commodities.keys()],
-                                                                                           mode_scheduling=cs.mode_scheduling,
-                                                                                           pwr_csc_avail_total=cs.power_lim_static)
+                                                                                               commodities=[self.apriori_commodities[key]
+                                                                                                            for key in cs.subblocks.keys()],
+                                                                                               mode_scheduling=cs.mode_scheduling,
+                                                                                               pwr_csc_avail_total=cs.power_lim_static)
 
             # only execute optimization of the local grid if there are rulebased components
             if self.cs_lm_dynamic:
                 # reset available power on converter to maximum power
-                self.pwr_syscore_conv_avail = {'ac': self.sys_core.size_acdc_existing,
-                                               'dc': self.sys_core.size_dcac_existing}
+                self.pwr_syscore_conv_avail = {'ac': self.sys_core.size.loc['acdc', 'existing'],
+                                               'dc': self.sys_core.size.loc['dcac', 'existing']}
 
                 # Draw demand power (FixedDemand, cs_unlim, cs_lm_static) from available power on AC bus
                 for system in ['ac', 'dc']:
@@ -111,10 +111,10 @@ class AprioriPowerScheduler:
 
                 # Schedule at base charging of commodities (mode_scheduling has to be the same for all CommoditySystems -> [0])
                 self.calc_pwr_commodities(dtindex=dtindex,
-                                        commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
-                                                     for key in cs.commodities.keys()],
-                                        mode_scheduling=self.cs_lm_dynamic[0].mode_scheduling,
-                                        pwr_csc_avail_total=None)
+                                          commodities=[self.apriori_commodities[key] for cs in self.cs_lm_dynamic
+                                                       for key in cs.subblocks.keys()],
+                                          mode_scheduling=self.cs_lm_dynamic[0].mode_scheduling,
+                                          pwr_csc_avail_total=None)
 
             # Execute external charging of commodities based on the defined criteria
             for commodity in self.apriori_commodities.values():
@@ -271,11 +271,11 @@ class AprioriCommodity:
         self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
 
         self.block.apriori_data.loc[horizon.dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
-                                                                                      self.block.soc[horizon.starttime],
+                                                                                      self.block.storage_timeseries.loc[horizon.starttime, 'soc'],
                                                                                       self.block.soc_max])
 
         # get soh for current prediction horizon
-        self.soh = self.block.soh.dropna().loc[self.block.soh.dropna().index.max()]
+        self.soh = self.block.storage_timeseries['soh'].dropna().loc[self.block.storage_timeseries['soh'].dropna().index.max()]
 
     def get_eff(self, mode):
         eff = {'int_ac': (self.block.eff_chg * np.sqrt(self.block.eff_storage_roundtrip)),
@@ -311,7 +311,7 @@ class AprioriCommodity:
             return 0
 
         # STORAGE: power to be charged to target SOC in Wh in one timestep using SOC delta
-        pwr_tosoc = ((((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size_existing / self.scenario.timestep_hours) +
+        pwr_tosoc = ((((soc_target - soc_current * (1 - self.loss_rate)) * self.block.size.loc['block', 'existing'] / self.scenario.timestep_hours) +
                      self.block.apriori_data.loc[dtindex, 'p_consumption'] / self.get_eff('consumption'))) / self.get_eff(mode)
 
         # BUS: charging power measured at connection to DC bus; reduce power in final step to just reach target SOC
@@ -329,7 +329,7 @@ class AprioriCommodity:
             power += self.block.apriori_data.loc[dtindex, column] * self.get_eff(column[2:])
 
         # calculate new soc value
-        new_soc = power / self.block.size_existing * self.scenario.timestep_hours + \
+        new_soc = power / self.block.size.loc['block', 'existing'] * self.scenario.timestep_hours + \
                   self.block.apriori_data.loc[dtindex, 'soc'] * (1 - self.loss_rate)
 
         if new_soc < self.block.soc_min:
@@ -363,7 +363,7 @@ class AprioriCommodity:
                      * self.scenario.timestep_hours)
 
         #  Convert energy consumption to delta soc taking the current soh into account
-        soc_delta = e_con / self.block.size_existing
+        soc_delta = e_con / self.block.size.loc['block', 'existing']
         #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
         if soc_delta > (self.block.parent.soc_target_low - self.block.parent.soc_return):
             soc_target = self.block.parent.soc_target_high
@@ -381,7 +381,7 @@ class AprioriCommodity:
 
                 # set charging to True, if charging is necessary
                 if e_trip_remaining > ((self.block.apriori_data.loc[dtindex, 'soc'] - self.block.parent.soc_return) *
-                                       self.block.size_existing * self.soh):
+                                       self.block.size.loc['block', 'existing'] * self.soh):
                     self.parking_charging = True
                 else:
                     self.parking_charging = False
@@ -395,7 +395,7 @@ class AprioriCommodity:
             chg_nxt = self.chg_avail_dti[self.chg_avail_dti > dtindex].min()
             soc_chg_nxt = self.block.apriori_data.loc[dtindex, 'soc'] - \
                           self.block.data_ph.loc[dtindex:chg_nxt - self.scenario.timestep_td,
-                          'consumption'].sum() * self.scenario.timestep_hours / self.block.size_existing
+                          'consumption'].sum() * self.scenario.timestep_hours / self.block.size.loc['block', 'existing']
             if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
                 # fast-charging only up to SOC of 80 %
                 self.set_p(dtindex=dtindex,

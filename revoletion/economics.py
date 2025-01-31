@@ -152,3 +152,23 @@ def annuity_recur(nominal_value: float,
                             discount_rate=discount_rate,
                             occurs_at='end')
     return annuity_recur
+
+
+def calc_wacc(
+        share_equity: float,  # share of equity in capital structure
+        rate_debt: float,  # interest rate on debt
+        rate_market=0.07,  # expected return on market
+        rate_riskfree=0.03,  # risk-free return rate
+        rate_tax=0.25,  # corporate tax rate
+        rate_inflation=0.02,  # expected inflation rate
+        volatility_relative=1,  # volatility of stock price relative to market
+        ) -> float:
+    """
+    This function calculates the nominal (inluding inflation) weighted average cost of capital (WACC) using the
+    Capital Asset Pricing Model (CAPM) for equity cost.
+    """
+    share_debt = 1 - share_equity
+    cost_equity = rate_riskfree + volatility_relative * (rate_market - rate_riskfree)  # CAPM
+    wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
+    wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
+    return wacc_nominal, wacc_real
