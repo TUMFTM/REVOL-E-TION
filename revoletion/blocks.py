@@ -1055,10 +1055,11 @@ class GridConnection(InvestBlock):
 
         if self.peakshaving:
             for interval in self.peakshaving_ints.index:
-                if self.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
+                if self.peakshaving_ints.loc[interval, 'start'] <= self.scenario.dti_sim[-1]:
                     self.scenario.logger.info(f'Optimized peak power in component "{self.name}" for interval'
-                                     f' {interval}: {self.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} kW'
-                                     f' - OPEX: {self.opex_spec_peak * self.peakshaving_ints.loc[interval, ["period_fraction", "power"]].prod():.2f} {self.currency}')
+                                              f' {interval}: {self.peakshaving_ints.loc[interval, "power"] / 1e3:.1f} kW'
+                                              f' - OPEX: {self.peakshaving_ints.loc[interval, "opex"]:.2f}'
+                                              f' {self.scenario.currency}')
 
     def set_init_size(self, size_names):
         self.equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False

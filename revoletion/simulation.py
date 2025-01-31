@@ -636,7 +636,7 @@ class Scenario:
                         self.result_summary.loc[(name, f'power_opex_spec_{interval}'), self.name] = (
                             float(block.peakshaving_ints.loc[interval, 'opex_spec']))
                         self.result_summary.loc[(name, f'power_opex_{interval}'), self.name] = (
-                            block.peakshaving_ints.loc[interval, ['period_fraction', 'power', 'opex_spec']].prod())
+                            block_obj.peakshaving_ints.loc[interval, 'opex'])
 
         result_types = (int, float, str, bool, type(None))
         result_blocks = {'run': self.run, 'scenario': self}
