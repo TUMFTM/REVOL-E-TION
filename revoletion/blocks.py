@@ -314,23 +314,11 @@ class InvestBlock(Block):
         self.opex_ep_spec = None  # initial value
         self.calc_opex_ep_spec()  # uprate opex values for short simulations, exact process depends on class
 
-    def calc_capex(self):
-        """
-        Calculate capital expenses over simulation timeframe and extrapolate to other timeframes.
-        """
-        self.calc_capex_init()  # initial investment references to different parameters depending on block type
-        self.extrapolate_capex()
-
     def calc_capex_init(self):
-        """
-        Default function for blocks with a single size value.
-        GridConnections, SystemCore and CommoditySystems are more complex and have their own functions
-        """
+        """ Default postprocessing method for blocks with a single size value. """
+
         self.capex_init_additional = self.size.loc['block', 'additional'] * self.capex_spec
         self.expenditures.loc['capex', 'sim'] = self.capex_init_existing + self.capex_init_additional
-
-        # replacements are full nominal cost irrespective of existing size
-        self.capex_replacement = self.size.loc['block', 'total'] * self.capex_spec + self.capex_fix
 
     def calc_capex_init_existing(self):
         """
@@ -345,22 +333,33 @@ class InvestBlock(Block):
 
         self.scenario.capex_init_existing += self.capex_init_existing
 
+    def calc_capex_replacement(self):
+        """
+        Default postprocessing method (no subblocks)
+        Result: nominal replacement cost without cost change (yet)
+        Replacement cost is on full size irrespective of preexisting size considerations
+        """
+
+        self.capex_replacement = self.size.loc['block', 'total'] * self.capex_spec + self.capex_fix
+
     def calc_expenses(self):
         """
-        Calculate all expenses of an InvestBlock over simulation timeframe and extrapolate to project timeframe.
+        Calculate all expenses of an InvestBlock and extrapolate to project timeframe.
         """
-        self.calc_capex()
-        self.calc_mntex()
-        self.calc_opex()
-        self.accumulate_expenses()
+        # capex
+        self.calc_capex_init()  # initial investment references to different parameters depending on block type
+        self.calc_capex_replacement()
+        self.extrapolate_capex()
 
-    def calc_mntex(self):
-        """
-        Calculate maintenance expenses over simulation timeframe and convert to other timeframes.
-        Maintenance expenses are solely time-based. Throughput-based maintenance should be included in opex.
-        """
-        self.calc_mntex_yrl()
+        # mntex
+        self.calc_mntex_yrl()  # VehicleCommoditySystems have a nondefault method
         self.extrapolate_mntex()
+
+        # opex
+        self.calc_opex_sim()  # opex is defined differently depending on the block type
+        self.extrapolate_opex()
+
+        self.accumulate_expenses()
 
     def calc_mntex_yrl(self):
         """
@@ -642,6 +641,17 @@ class CommoditySystem(InvestBlock):
             self.capex_fix += commodity.capex_fix
 
         self.scenario.capex_init_existing += self.capex_init_existing
+
+    def calc_capex_replacement(self):
+        """
+        Postprocessing method
+        Result: nominal replacement cost without cost change (yet)
+        Replacement cost is on full size irrespective of preexisting size considerations
+        """
+
+        for commodity in self.subblocks.values():
+            commodity.calc_capex_replacement()
+            self.capex_replacement += commodity.capex_replacement
 
     def calc_energy(self):
 
@@ -1540,6 +1550,15 @@ class MobileCommodity(SubBlock):
         if self.parent.capex_existing:
             self.capex_init_existing = (self.size.loc['block', 'existing'] * self.capex_spec +
                                         self.capex_fix)
+
+    def calc_capex_replacement(self):
+        """
+        Postprocessing method
+        Result: nominal replacement cost without cost change (yet)
+        Replacement cost is on full size irrespective of preexisting size considerations
+        """
+
+        self.capex_replacement = self.size.loc['block', 'total'] * self.capex_spec + self.capex_fix
 
     def calc_opex_sim(self):
         """
