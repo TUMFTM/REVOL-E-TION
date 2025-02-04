@@ -343,7 +343,7 @@ class Scenario:
             self.holiday_dates = sorted(
                 getattr(holidays, self.country)(years=years,
                                                 state=self.state))
-        except NotImplementedError:  # not for all countries the states are available (e.g. France)
+        except:  # not for all countries the states are available (e.g. France)
             try:
                 self.holiday_dates = sorted(
                     getattr(holidays, self.country)(years=years))
