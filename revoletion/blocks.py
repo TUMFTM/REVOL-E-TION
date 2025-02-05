@@ -80,7 +80,7 @@ class Block:
         self.expansion_equal = False
         self.initialize_sizes(sizes=size_names)
 
-        self.poes = {eco.PointOfEvaluation(name=name, block=self) for name in poe_names} \
+        self.poes = {name: eco.PointOfEvaluation(name=name, block=self) for name in poe_names} \
             if poe_names is not None else dict()
 
         # todo move ls & ccr to poe
@@ -103,12 +103,14 @@ class Block:
 
         for size in sizes:
             size_str = '' if size == 'block' else f'_{size}'
-            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_str}')
-            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_str}')
-            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_str}')
-            delattr(self, f'size_preexisting{size_str}')
-            delattr(self, f'size_max{size_str}')
-            delattr(self, f'invest{size_str}')
+            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_str}', 0)
+            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_str}', 0)
+            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_str}', False)
+            # delete attributes if available
+            for attr in ['size_preexisting', 'size_max', 'invest']:
+                attr_str = f'{attr}{size_str}'
+                if hasattr(self, attr_str):
+                    delattr(self, attr_str)
 
         # expansion_max logic: 0=no investment, NaN=unlimited investment, float=limited investment
         self.sizes['expansion_max'] = self.sizes['total_max'] - self.sizes['preexisting']
@@ -202,14 +204,16 @@ class FixedDemand(Block):
 
     def get_flows_apriori(self):
 
-        #todo self.flows_apriori.index = self.scenario.dti_sim
+        self.flows_apriori.index = self.scenario.dti_sim_extd
         if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
             self.generate_timeseries_from_slp()
         elif self.load_profile in ['const', 'constant']:
-            self.data = pd.Series(index=self.scenario.dti_sim_extd, data=self.consumption_yrl / (365 * 24))
+            self.flows_apriori['demand'] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
             utils.transform_scalar_var(self, 'load_profile')  # todo change: utils.read_csv & extract series/slice timeframe
             self.data = self.load_profile
+
+        pass
 
         # todo append to flows_apriori
 
@@ -247,26 +251,26 @@ class FixedDemand(Block):
                                                  end=max(self.scenario.dti_sim_extd).ceil(freq_slp),
                                                  freq=freq_slp))
 
-        self.data = pd.Series(index=dti_slp, data=0, dtype='float64')
+        data = pd.Series(index=dti_slp, data=0, dtype='float64')
 
-        self.data = self.data.index.to_series().apply(
+        data = data.index.to_series().apply(
         lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))])
 
         # apply dynamic correction for household profiles
-        if self.load_profile.upper() == 'H0':
+        if self.load_profile == 'h0':
             # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
             num_day = self.data.index.dayofyear.astype('int64')
-            self.data = round(self.data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
-                                           7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
-                              ndigits=1)
+            data = round(data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
+                                 7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
+                         ndigits=1)
 
         # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
-        # This calculation leads to small deviations from the specified yearly consumption due to varying holidays and
+        # this calculation leads to small deviations from the specified yearly consumption due to varying holidays and
         # leap years, but is the correct way as stated by the VDEW manual
-        self.data *= (self.consumption_yrl / 1e6)
+        data *= (self.consumption_yrl / 1e6)
 
         # resample to simulation time step
-        self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
+        self.flows_apriori['demand'] = data.resample(self.scenario.timestep).mean().ffill().bfill()
 
 class StationaryBattery(Block, StorageBlock):
 
