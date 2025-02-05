@@ -264,6 +264,12 @@ class PointOfEvaluation:
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
         # endregion
 
+        # region calculate capital expenses for preexisting block size
+        self.capex['preexisting'] = (self.capex['preexisting'] *  # boolean so far - will be overwritten
+                                     self.block.sizes.loc[self.name, 'preexisting'] *  # scalar size of poe
+                                     self.capex['spec'])  # scalar
+        # endregion
+
     def scalar_to_ts(self,
                      value: str | float):
         """

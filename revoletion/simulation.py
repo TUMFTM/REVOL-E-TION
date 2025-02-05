@@ -212,8 +212,8 @@ class PredictionHorizon:
             block.get_ch_results(self)
 
         # calculate aging for all storage blocks
-        for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'aging')]:
-            block.calc_aging(self)
+        for storage_block in self.scenario.storage_blocks.values():
+            storage_block.aging_model.age()  #todo move to post horizon
 
     def run_optimization(self):
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -382,9 +382,9 @@ class Scenario:
         # Energy System Blocks --------------------------------
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
+        self.storage_blocks = {}
+        self.commodity_systems = {}
         self.blocks = self.create_block_objects()
-        self.commodity_systems = {block.name: block for block in self.blocks.values()
-                                  if isinstance(block, blocks.CommoditySystem)}  # todo move to commoditysystem init
 
         # initialize variable to store initial investment costs given in scenario definition
         self.capex_init_existing = 0
