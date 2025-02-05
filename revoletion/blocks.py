@@ -59,13 +59,15 @@ class Block:
 
         # region initialize data structures
         self.subblocks = dict()
+        self.components = dict()
+        self.bus_connected = None
 
         self.flows_apriori = pd.DataFrame()  # partially recalculated for every horizon
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
                                   columns=flow_names if flow_names is not None else [],
                                   data=np.nan,
                                   dtype='float64')
-        self.states = pd.DataFrame(index=self.scenario.dti_sim,
+        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
                                    columns=state_names if state_names is not None else [],
                                    data=np.nan,
                                    dtype='float64')
@@ -76,37 +78,37 @@ class Block:
 
         self.sizes = pd.DataFrame()
         self.expansion_equal = False
-        self.initialize_sizes(components=size_names)
+        self.initialize_sizes(sizes=size_names)
 
         self.poes = {eco.PointOfEvaluation(name=name, block=self) for name in poe_names} \
             if poe_names is not None else dict()
 
         # todo move ls & ccr to poe
 
-        self.economic_results = eco.EconomicResults(self)
+        #self.economic_results = eco.EconomicResults(self) #todo
         # endregion
 
     def initialize_sizes(self,
-                         components: list = None):
+                         sizes: list = None):
         """
         Initialize the sizes DataFrame for the block
         """
 
-        components = components if components else ['block']
-        self.sizes = pd.DataFrame(index=components,
+        sizes = sizes if sizes else ['block']
+        self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
                                   data=np.nan,
                                   dtype='float64')
         self.sizes['invest'] = False
 
-        for component in components:
-            component_str = '' if component == 'block' else f'_{component}'
-            self.sizes.loc[component, 'preexisting'] = getattr(self, f'size_preexisting{component_str}')
-            self.sizes.loc[component, 'total_max'] = getattr(self, f'size_max{component_str}')
-            self.sizes.loc[component, 'invest'] = getattr(self, f'invest{component_str}')
-            delattr(self, f'size_preexisting{component_str}')
-            delattr(self, f'size_max{component_str}')
-            delattr(self, f'invest{component_str}')
+        for size in sizes:
+            size_str = '' if size == 'block' else f'_{size}'
+            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_str}')
+            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_str}')
+            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_str}')
+            delattr(self, f'size_preexisting{size_str}')
+            delattr(self, f'size_max{size_str}')
+            delattr(self, f'invest{size_str}')
 
         # expansion_max logic: 0=no investment, NaN=unlimited investment, float=limited investment
         self.sizes['expansion_max'] = self.sizes['total_max'] - self.sizes['preexisting']
@@ -124,13 +126,15 @@ class SystemCore(Block):
                  scenario):
         super().__init__(name=name,
                          scenario=scenario,
+                         flow_names=['acdc', 'dcac'],
+                         state_names=None,
                          size_names=['acdc', 'dcac'],
-                         poe_names=['acdc', 'dcac'])
-
-
+                         poe_names=['acdc', 'dcac'],
+                         params=None,
+                         parent=None)
 
     def initialize_sizes(self,
-                         components: list = None):
+                         sizes: list = None):
 
         self.expansion_equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
@@ -138,11 +142,201 @@ class SystemCore(Block):
         utils.init_equalizable_variables(block=self, name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
         utils.init_equalizable_variables(block=self, name_vars=['size_max_acdc', 'size_max_dcac'])
 
-        super().initialize_sizes(components=components)
+        super().initialize_sizes(sizes=sizes)
 
 
+class RenewableSource(Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['out', 'total', 'pot', 'curt'],
+                         state_names=None,
+                         size_names=['block'],
+                         poe_names=['block'],
+                         params=None,
+                         parent=None)
+
+class StorageBlock:
+
+    def __init__(self):
+        self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))  #todo move function to StorageBlock
+
+        self.states.loc[self.scenario.starttime, 'soc'] = self.soc_init
+        delattr(self, 'soc_init')
+
+        self.aging_model = bat.BatteryPackModel(self)
+        self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
+        self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
 
 
+class PVSource(RenewableSource):
+
+    pass
+
+
+class WindSource(RenewableSource):
+
+    pass
+
+
+class FixedDemand(Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['in', 'total'],
+                         state_names=None,
+                         size_names=None,
+                         poe_names=['block'],
+                         params=None,
+                         parent=None)
+
+        self.get_flows_apriori()
+
+    def get_flows_apriori(self):
+
+        #todo self.flows_apriori.index = self.scenario.dti_sim
+        if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
+            self.generate_timeseries_from_slp()
+        elif self.load_profile in ['const', 'constant']:
+            self.data = pd.Series(index=self.scenario.dti_sim_extd, data=self.consumption_yrl / (365 * 24))
+        elif isinstance(self.load_profile, str):  # load_profile is a file name
+            utils.transform_scalar_var(self, 'load_profile')  # todo change: utils.read_csv & extract series/slice timeframe
+            self.data = self.load_profile
+
+        # todo append to flows_apriori
+
+    def generate_timeseries_from_slp(self):
+        def get_timeframe(date):
+            month = date.month
+            day = date.day
+            if ((month, day) >= (11, 1)) or ((month, day) <= (3, 20)):
+                return 'Winter'
+            elif (5, 15) <= (month, day) <= (9, 14):
+                return 'Summer'
+            else:  # Transition months
+                return 'Transition'
+
+        def get_daytype(date, holidays):
+            if date.date() in holidays or date.weekday() == 6:
+                return 'Sunday'
+            # Treat Christmas Eve and New Year's Eve as Saturdays if they are not Sundays
+            elif (date.weekday() == 5) or ((date.month, date.day) in [(12, 24), (12, 31)]):
+                return 'Saturday'
+            else:
+                return 'Workday'
+
+        # Read BDEW SLP profiles
+        slp = pd.read_csv(os.path.join(self.scenario.run.path_data_immut, 'slp_bdew.csv'),
+                          skiprows=[0],
+                          header=[0, 1, 2],
+                          index_col=0)
+
+        slp.index = pd.to_datetime(slp.index, format='%H:%M').time
+
+        # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
+        freq_slp = '15min'
+        dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.starttime.floor(freq_slp),
+                                                 end=max(self.scenario.dti_sim_extd).ceil(freq_slp),
+                                                 freq=freq_slp))
+
+        self.data = pd.Series(index=dti_slp, data=0, dtype='float64')
+
+        self.data = self.data.index.to_series().apply(
+        lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))])
+
+        # apply dynamic correction for household profiles
+        if self.load_profile.upper() == 'H0':
+            # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
+            num_day = self.data.index.dayofyear.astype('int64')
+            self.data = round(self.data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
+                                           7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
+                              ndigits=1)
+
+        # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
+        # This calculation leads to small deviations from the specified yearly consumption due to varying holidays and
+        # leap years, but is the correct way as stated by the VDEW manual
+        self.data *= (self.consumption_yrl / 1e6)
+
+        # resample to simulation time step
+        self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
+
+class StationaryBattery(Block, StorageBlock):
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['in', 'out', 'total'],
+                         state_names=['soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                         size_names=['block'],
+                         poe_names=['block'],
+                         params=None,
+                         parent=None)
+
+        StorageBlock.__init__(self)
+
+        self.eff_chg = self.eff_acdc if self.system == 'ac' else 1
+        self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
+
+
+class ControllableSource(Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['out', 'total'],
+                         state_names=None,
+                         size_names=['block'],
+                         poe_names=['block'],
+                         params=None,
+                         parent=None)
+
+
+class GridConnection(Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['in', 'out', 'total'],
+                         state_names=None,
+                         size_names=['g2s', 's2g'],
+                         poe_names=['g2s', 's2g'],
+                         params=None,
+                         parent=None)
+
+
+class GridMarket(Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario,
+                 params,
+                 parent):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_names=['in', 'out', 'total'],
+                         state_names=None,
+                         size_names=['g2s', 's2g'],
+                         poe_names=['g2s', 's2g'],
+                         params=params,
+                         parent=parent)
 
 
 
