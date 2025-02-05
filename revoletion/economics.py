@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+import os
+import pandas as pd
+
+from revoletion import utils
+
+
 def discount(future_value: float,
              periods: int,
              discount_rate: float) -> float:
@@ -172,3 +178,108 @@ def calc_wacc(
     wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
     wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
     return wacc_nominal, wacc_real
+
+
+class EconomicResults:
+    def __init__(self):
+        self._capex = pd.DataFrame(columns=['init', 'yrl', 'prj', 'dis'])
+        # ToDo: include
+        #  capex_replacement     ->  cost for replacement
+        #  capex_init_existing   ->  cost for existing size
+        #  capex_init_additional ->  cost for additional size
+        #  capex_joined_spec     ->  capex + mntex
+
+        self._mntex = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
+        self._opex = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
+        self._crev = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
+        self._cashflows = None
+        self._totex = None
+
+        # todo cashflows
+        pass
+
+class PointOfEvaluation:
+
+    def __init__(self,
+                 name: str,
+                 block):
+
+        self.name = name
+        self.block = block
+
+        value_types = ['capex', 'mntex', 'opex', 'crev']
+
+        self.capex = dict()
+        self.mntex = dict()
+        self.opex = dict()
+        self.crev = dict()
+
+        # region get all values from block
+        for key in [key for key in self.block.__dict__.keys()
+                    if key.startswith(tuple(value_types))]:
+            param_split = key.split('_')
+            if len(param_split) == 2:  # single cost occurrence location in block
+                param_split.append('block')
+            value_type, cause, poe = param_split  # examples: capex, spec, g2s
+
+            if poe == self.name:
+                if value_type in ['capex', 'mntex']:
+                    getattr(self, value_type)[cause] = getattr(self.block, key)
+                else:
+                    getattr(self, value_type)[cause] = self.scalar_to_ts(value=getattr(self.block, key))
+                delattr(self.block, key)
+        # endregion
+
+        # region calculate equivalent present specific capex and opex for optimizer
+        # include (time-based) maintenance expenses in capex calculation as equivalent present cost
+        self.capex['spec_joined'] = join_capex_mntex(capex=self.capex.get('spec', 0),
+                                                     mntex=self.mntex.get('spec', 0),
+                                                     lifespan=self.block.ls,
+                                                     discount_rate=self.block.scenario.wacc)
+
+        # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
+        # component sizing; ep = equivalent present (i.e. specific values prediscounted)
+        self.capex['factor_ep'] = annuity_due_capex(capex_init=1,
+                                                    capex_replacement=1,
+                                                    lifespan=self.block.ls,
+                                                    observation_horizon=self.block.scenario.prj_duration_yrs,
+                                                    discount_rate=self.block.scenario.wacc,
+                                                    cost_change_ratio=self.block.ccr)\
+            if self.block.scenario.compensate_sim_prj else 1
+
+        self.capex['spec_ep'] = self.capex['spec_joined'] * self.capex['factor_ep']
+
+        # runtime factor to compensate for difference between simulation and project timeframe
+        # opex is uprated in importance for short simulations
+        self.opex['factor_ep'] = annuity_recur(nominal_value=utils.scale_sim2year(1, self.block.scenario),
+                                               observation_horizon=self.block.scenario.prj_duration_yrs,
+                                               discount_rate=self.block.scenario.wacc)\
+            if self.block.scenario.compensate_sim_prj else 1
+
+        self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
+        # endregion
+
+    def scalar_to_ts(self,
+                     value: str | float):
+        """
+        Transform scalar value or filename (contents) to timeseries to be able to calculate the economic results using
+        dot product with the block's flows
+        """
+
+        if isinstance(value, str):
+            ts = utils.read_input_csv(block=self.block,
+                                      path_input_file=os.path.join(self.block.scenario.run.path_input_data,
+                                                                   utils.set_extension(value)),
+                                      scenario=self.block.scenario)
+            if ts.shape[1] != 1:
+                raise ValueError(f'Input file "{utils.set_extension(value)}" for parameter '
+                                 f'"{value_type}_{cause}{f"_{component}" if component != "block" else ""}" '
+                                 f'in block "{self.block.name}" has more than one column')
+
+            ts = ts.loc[self.block.scenario.dti_sim_extd, ts.columns[0]]  # convert to series and slice to sim timeframe
+        else:  # scalar value
+            ts = pd.Series(index=self.block.scenario.dti_sim_extd,
+                           data=value)
+
+        return ts
+

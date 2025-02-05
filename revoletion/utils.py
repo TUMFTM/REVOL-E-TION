@@ -183,6 +183,7 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
 
         if not (scenario.dti_sim.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}": Input timeseries data does not cover simulation timeframe')
+
     return df
 
 
