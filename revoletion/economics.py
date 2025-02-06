@@ -163,11 +163,11 @@ def annuity_recur(nominal_value: float,
 def calc_wacc(
         share_equity: float,  # share of equity in capital structure
         rate_debt: float,  # interest rate on debt
-        rate_market=0.07,  # expected return on market
-        rate_riskfree=0.03,  # risk-free return rate
-        rate_tax=0.25,  # corporate tax rate
-        rate_inflation=0.02,  # expected inflation rate
-        volatility_relative=1,  # volatility of stock price relative to market
+        rate_market: float = 0.07,  # expected return on market
+        rate_riskfree: float = 0.03,  # risk-free return rate
+        rate_tax: float = 0.25,  # corporate tax rate
+        rate_inflation: float = 0.02,  # expected inflation rate
+        volatility_relative: float = 1,  # volatility of stock price relative to market
         ) -> float:
     """
     This function calculates the nominal (inluding inflation) weighted average cost of capital (WACC) using the

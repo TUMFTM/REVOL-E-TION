@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
 import os
-
+import io
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
+import pvlib
+import requests
+import statistics
+import windpowerlib
 
 from revoletion import battery as bat
 from revoletion import economics as eco
@@ -222,6 +226,8 @@ class RenewableSource(Block):
                          params=None,
                          parent=scenario)
 
+        self.get_ts_data()
+
     def define_oemof_components(self,
                                 horizon):
         """
@@ -314,14 +320,223 @@ class StorageBlock:
                                        secondary_y=True)
 
 
-
-
-
-
-
 class PVSource(RenewableSource):
 
-    pass
+    def __init__(self,
+                 name: str,
+                 scenario):
+
+        super().__init__(name=name,
+                         scenario=scenario)
+
+    def get_ts_data(self):
+        """
+        pre scenario (init) method
+        Get potential power profile from API or file, each either from Solcast or PVGIS
+        """
+
+        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API example selected
+
+            # region get API parameters
+            if self.filename:
+                try:
+                    api_params = pd.read_csv(
+                        os.path.join(
+                            self.scenario.run.path_input_data,
+                            utils.set_extension(self.filename)
+                        ),
+                        index_col=[0],
+                        na_filter=False)
+                    api_params = api_params.map(utils.infer_dtype)['value'].to_dict()\
+                        if api_params.index.name == 'parameter' and all(api_params.columns == 'value') else {}
+                except FileNotFoundError:
+                    api_params = {}
+            else:
+                api_params = {}
+            # endregion
+
+            # region get data from PVGIS API
+            if self.data_source == 'pvgis api':  # PVGIS API example selected
+                api_startyear = self.scenario.starttime.tz_convert('utc').year
+                api_endyear = self.scenario.sim_extd_endtime.tz_convert('utc').year
+                api_length = api_endyear - api_startyear
+                api_shift = pd.to_timedelta('0 days')
+
+                API_MAX_YEAR = 2023
+                API_MIN_YEAR = 2005
+                API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
+
+                if api_length > API_MAX_LENGTH:
+                    raise ValueError('PVGIS API request exceeds maximum length of available data')
+                elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
+                    api_shift = (pd.to_datetime(f'{API_MAX_YEAR}-01-01 00:00:00+00:00') -
+                                 pd.to_datetime(f'{api_endyear}-01-01 00:00:00+00:00'))
+                    api_endyear = API_MAX_YEAR
+                    api_startyear = API_MAX_YEAR - api_length
+                    self.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by {abs(api_shift)}'
+                                        f' year{s if abs(api_shift) == 1 else ""} to end in {API_MAX_YEAR}')
+                elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
+                    api_shift = (pd.to_datetime(f'{API_MIN_YEAR}-01-01 00:00:00+00:00') -
+                                 pd.to_datetime(f'{api_startyear}-01-01 00:00:00+00:00'))
+                    api_startyear = API_MIN_YEAR
+                    api_endyear = API_MIN_YEAR + api_length
+                    self.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by {abs(api_shift)}'
+                                        f' year{s if abs(api_shift) == 1 else ""} to start in {API_MIN_YEAR}')
+                # Todo leap years can result in data shifting not landing at the same point in time
+
+                # revert lower() in reading data as pvgis is case-sensitive
+                # ToDo: move to checker.py
+                api_params['raddatabase'] = api_params.get('raddatabase', 'PVGIS-SARAH3').upper()
+                api_params['pvtechchoice'] = {'crystsi': 'crystSi',
+                                              'cis': 'CIS',
+                                              'cdte': 'CdTe',
+                                              'unknown': 'Unknown'}[api_params.get('pvtechchoice', 'crystsi')]
+
+                self.data, *_ = pvlib.iotools.get_pvgis_hourly(
+                    self.scenario.latitude,
+                    self.scenario.longitude,
+                    start=api_startyear,
+                    end=api_endyear,
+                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                    components=False,
+                    outputformat='json',
+                    pvcalculation=True,
+                    peakpower=1,
+                    map_variables=True,
+                    loss=0,
+                    raddatabase=api_params['raddatabase'],  # conversion above ensures that the parameter exists
+                    pvtechchoice=api_params['pvtechchoice'],  # conversion above ensures that the parameter exists
+                    mountingplace=api_params.get('mountingplace', 'free'),
+                    optimalangles=api_params.get('optimalangles', True),
+                    optimal_surface_tilt=api_params.get('optimal_surface_tilt', False),
+                    surface_azimuth=api_params.get('surface_azimuth', 180),
+                    surface_tilt=api_params.get('surface_tilt', 0),
+                    trackingtype=api_params.get('trackingtype', 0),
+                    usehorizon=api_params.get('usehorizon', True),
+                    userhorizon=api_params.get('userhorizon', None),
+                )
+                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots not as full hours
+                self.data.index = self.data.index - api_shift
+            # endregion
+
+            # region get data from Solcast API
+            elif self.data_source == 'solcast api':  # solcast API example selected
+                # set api key as bearer token
+                headers = {'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'}
+
+                params = {
+                    **{'latitude': self.scenario.latitude,  # unmetered location for testing 41.89021,
+                       'longitude': self.scenario.longitude,  # unmetered location for testing 12.492231,
+                       'period': 'PT5M',
+                       'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
+                       'start': self.scenario.starttime,
+                       'end': self.scenario.sim_extd_endtime,
+                       'format': 'csv',
+                       'time_zone': 'utc',},
+                    **{parameter: value for parameter, value in api_params.items() if value is not None}}
+
+                url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
+
+                # get data from Solcast API
+                response = requests.get(url, headers=headers, params=params)
+                # convert to csv
+                self.data = pd.read_csv(io.StringIO(response.text))
+                # calculate period_start as only period_end is given, set as index and remove unnecessary columns
+                self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
+                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                self.data = self.data.tz_convert(self.scenario.timezone)
+                self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+                # rename columns according to further processing steps
+                self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+                # calculate specific pv power
+                self.calc_power_solcast()
+            # endregion
+
+        else:
+
+            # region get data from file
+            path_input_file = os.path.join(
+                self.scenario.run.path_input_data,
+                utils.set_extension(self.filename)
+            )
+
+            # region get data from PVGIS file
+            if self.data_source == 'pvgis file':
+                self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
+                self.scenario.latitude = meta['latitude']
+                self.scenario.longitude = meta['longitude']
+                self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
+            # endregion
+
+            # region get data from Solcast file
+            elif self.data_source == 'solcast file':
+                # no lat/lon contained in solcast files
+                self.data = pd.read_csv(self.path_input_file)
+                self.data.rename(columns={'PeriodStart': 'period_start',
+                                          'PeriodEnd': 'period_end',
+                                          'AirTemp': 'temp_air',
+                                          'GtiFixedTilt': 'gti',
+                                          'WindSpeed10m': 'wind_speed'}, inplace=True)
+                self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
+                self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
+                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                self.data = self.data[['temp_air', 'wind_speed', 'gti']]
+                self.calc_power_solcast()
+            # endregion
+
+            else:
+                raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified')
+
+        # region resample, localize, and transform data
+
+        # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
+        self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
+        # convert to local time
+        self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
+        # data is in W for a 1kWp PV array -> convert to specific power
+        self.data['power_spec'] = self.data['P'] / 1e3
+
+        self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
+        # endregion
+
+    def calc_power_from_irradiation(self):
+        """
+        pre scenario (init) method
+        calculate PV potential output power from insolation and weather data
+        function is necessary for solcast input that does not contain power data
+        """
+
+        u0 = 26.9  # W/(˚C.m2) - cSi Free standing
+        u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
+        mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['wind_speed'])))
+
+        # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
+        # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
+        # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
+        k1 = -0.017237
+        k2 = -0.040465
+        k3 = -0.004702
+        k4 = 0.000149
+        k5 = 0.000170
+        k6 = 0.000005
+        g = self.data['gti'] / 1000
+        t = mod_temp - 25
+        lng = np.zeros_like(g)
+        lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
+
+        # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
+        # Prog. Photovolt. Res. Appl.2008, 16, 307–315
+        eff_rel = (1 +
+                   (k1 * lng) +
+                   (k2 * (lng ** 2)) +
+                   (k3 * t) +
+                   (k4 * t * lng) +
+                   (k5 * t * (lng ** 2)) +
+                   (k6 * (t ** 2)))
+        eff_rel = eff_rel.fillna(0)
+
+        # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
+        self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
 
 class WindSource(RenewableSource):
@@ -767,6 +982,7 @@ class FleetUnit:  # equivalent to commodity
 
 class Vehicle:
     pass
+    # todo glider, charger, battery are poes
 
 
 class VehicleFleet(Block):
