@@ -178,8 +178,8 @@ class SystemCore(Block):
             label='acdc',
             inputs={self.components['ac']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.poes['acdc'].capex['spec_ep'],
-                                               existing=self.sizes.loc['acdc', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['acdc', 'additional_max'])),
+                                               existing=self.sizes.loc['acdc', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['acdc', 'expansion_max'])),
                 variable_costs=self.poes['acdc'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['dc']: self.eff_acdc})
@@ -188,8 +188,8 @@ class SystemCore(Block):
             label='dcac',
             inputs={self.components['dc']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.poes['dcac'].capex['spec_ep'],
-                                               existing=self.sizes.loc['dcac', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['dcac', 'additional_max'])),
+                                               existing=self.sizes.loc['dcac', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['dcac', 'expansion_max'])),
                 variable_costs=self.poes['dcac'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['ac']: self.eff_dcac})
@@ -204,7 +204,7 @@ class SystemCore(Block):
             capex_spec=self.poes['dcac'].capex['spec'],
             invest_type='flow')
 
-        if self.equal:
+        if self.expansion_equal:
             # add a tuple of tuples to the list of equal variables of the scenario
             horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
@@ -264,8 +264,8 @@ class RenewableSource(Block):
             label=f'{self.name}_src',
             outputs={self.components['bus']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.poes['block'].capex['spec_ep'],
-                                               existing=self.sizes.loc['block', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'additional_max'])),
+                                               existing=self.sizes.loc['block', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'expansion_max'])),
                 fix=self.data.loc[horizon.dti_ph, 'power_spec'],
                 variable_costs=self.poes['block'].opex['spec_ep'][horizon.dti_ph])}
         )
@@ -740,8 +740,8 @@ class StationaryBattery(Block, StorageBlock):
             outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.poes['block'].opex['spec_ep'],
-                existing=self.sizes.loc['block', 'existing'],
-                maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+                existing=self.sizes.loc['block', 'preexisting'],
+                maximum=utils.conv_add_max(self.sizes.loc['block', 'expansion_max'])),
             max_storage_level=pd.Series(
                 data=self.soc_max,
                 index=utils.extend_dti(horizon.dti_ph)
@@ -791,8 +791,8 @@ class ControllableSource(Block):
             label=f'{self.name}_src',
             outputs={self.bus_connected: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.poes['block'].capex['spec_ep'],
-                                               existing=self.sizes.loc['block', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'additional_max'])),
+                                               existing=self.sizes.loc['block', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'expansion_max'])),
                 variable_costs=self.poes['block'].opex['spec_ep'][horizon.dti_ph])}
         )
 
@@ -816,6 +816,91 @@ class GridConnection(Block):
                          poe_names=['g2s', 's2g'],
                          params=None,
                          parent=scenario)
+
+        # ToDo: Straight from blocks_legacy.py -> check if all attributes are needed
+        self.opex_sim_peak = self.opex_sim_energy = 0
+
+        # ToDo: Straight from blocks_legacy.py -> check if all attributes are needed
+        self.factor_opex_peak = self.opex_ep_spec_peak = 0
+
+
+        self.initialize_peakshaving()
+        self.initialize_markets()
+
+    def initialize_sizes(self,
+                         sizes: list = None):
+
+        self.expansion_equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
+
+        utils.init_equalizable_variables(self, ['invest_s2g', 'invest_g2s'])
+        utils.init_equalizable_variables(self, ['size_preexisting_g2s', 'size_preexisting_s2g'])
+        utils.init_equalizable_variables(self, ['size_max_g2s', 'size_max_s2g'])
+
+        super().initialize_sizes(sizes=sizes)
+
+    def initialize_markets(self):
+        # get information about GridMarkets specified in the scenario file
+        markets = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
+                                               utils.set_extension(self.filename_markets)),
+                                  index_col=[0]).map(utils.infer_dtype)
+
+        # Generate individual GridMarkets instances
+        self.subblocks = {market: GridMarket(market, self, markets.loc[:, market])
+                          for market in markets.columns}
+
+    def initialize_peakshaving(self):
+        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
+        periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
+                        'week': lambda x: x.strftime('%Y-CW%W'),
+                        'month': lambda x: x.strftime('%Y-%m'),
+                        'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+                        'year': lambda x: x.strftime('%Y')}
+
+        if self.peakshaving is None:
+            peakshaving_ints = ['sim_duration']
+            n_peakshaving_ints = 0
+        else:
+            # Assign the corresponding interval to each timestep
+            periods = self.scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
+            peakshaving_ints = periods.unique()
+            n_peakshaving_ints = len(peakshaving_ints)
+
+            # Activate the corresponding bus for each period
+            self.bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
+                                                for period_label in peakshaving_ints}, index=self.scenario.dti_sim_extd)
+
+        # Create a series to store peak power values
+        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints,
+                                             columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
+        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
+        self.peakshaving_ints.loc[:, 'power'] = 0
+
+        self.peakshaving_ints['opex_spec'] = self.opex_spec_peak  # can be adapted for multiple cost levels over time
+
+        if self.peakshaving is not None:
+            # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
+            for interval in self.peakshaving_ints.index:
+                self.peakshaving_ints.loc[interval, 'period_fraction'] = utils.get_period_fraction(
+                    dti=self.bus_activation.loc[self.scenario.dti_sim][
+                        self.bus_activation.loc[self.scenario.dti_sim, interval] == 1].index,
+                    period=self.peakshaving,
+                    freq=self.scenario.timestep)
+
+                # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
+                self.peakshaving_ints.loc[interval, 'start'] = \
+                self.bus_activation[self.bus_activation[interval] == 1].index[0]
+                self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[
+                    -1]
+
+            # Count number of "actual" peakshaving intervals
+            # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
+            n_peakshaving_ints_yr = (pd.date_range(start=self.scenario.starttime,
+                                                   end=self.scenario.starttime + pd.DateOffset(years=1),
+                                                   freq=self.scenario.timestep,
+                                                   inclusive='left')
+                                     .to_series().apply(periods_func[self.peakshaving])).unique().size
+            self.factor_opex_peak = n_peakshaving_ints_yr / n_peakshaving_ints
+            self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
 
     def define_oemof_components(self,
                                 horizon):
@@ -849,8 +934,8 @@ class GridConnection(Block):
             # Size optimization
             outputs={self.components['bus']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.poes['s2g'].capex['spec_ep'],
-                                               existing=self.sizes.loc['s2g', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['s2g', 'additional_max'])),
+                                               existing=self.sizes.loc['s2g', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['s2g', 'expansion_max'])),
                 variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['bus']: 1})})
 
@@ -860,8 +945,8 @@ class GridConnection(Block):
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=(self.poes['g2s'].capex['spec_ep'] if intv == self.peakshaving_ints.index[0] else 0),
-                                               existing=self.sizes.loc['g2s', 'existing'],
-                                               maximum=utils.conv_add_max(self.sizes.loc['g2s', 'additional_max']))
+                                               existing=self.sizes.loc['g2s', 'preexisting'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['g2s', 'expansion_max']))
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(

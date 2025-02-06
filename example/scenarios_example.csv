@@ -78,7 +78,7 @@ gen,ccr,1,1,1,1
 gen,eff,1,1,1,1
 grid,size_preexisting_g2s,0,0,0,43500
 grid,capex_preexisting_g2s,True,True,True,True
-grid,size_g2s_max,None,None,None,None
+grid,size_max_g2s,None,None,None,None
 grid,invest_g2s,True,True,True,False
 grid,size_preexisting_s2g,equal,equal,equal,equal
 grid,capex_preexisting_s2g,True,True,True,True
