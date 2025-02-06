@@ -204,15 +204,13 @@ class PointOfEvaluation:
                  name: str,
                  block,
                  aggregator: bool = False,
-                 ls: int = None,
-                 ccr: float = 1,
                  ):
 
         self.name = name
         self.block = block
         self.aggregator = aggregator
-        self.ls = ls if ls is not None else self.block.scenario.prj_duration_yrs
-        self.ccr = ccr
+        self.ls = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
+        self.ccr = getattr(self.block, 'ccr', 1)
 
         value_types = ['capex', 'mntex', 'opex', 'crev']
 
@@ -220,6 +218,8 @@ class PointOfEvaluation:
         self.mntex = {'fix': 0, 'spec': 0}
         self.opex = {'spec': self.scalar_to_ts(value=0)}
         self.crev = dict()
+
+        # ToDo: also get ls and ccr if specified for this specific poe
 
         # region get all values from block
         for key in [key for key in self.block.__dict__.keys()

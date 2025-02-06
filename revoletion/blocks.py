@@ -76,6 +76,9 @@ class Block:
         self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
         self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
             if poe_names is not None else dict())
+
+        # ToDo: delete ls and ccr if available
+
         self.scenario.capex_init_existing += self.poes['total'].capex['preexisting']
 
         # todo move ls & ccr to poe
