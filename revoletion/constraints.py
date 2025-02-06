@@ -140,10 +140,12 @@ class CustomConstraints:
 
         # Get all renewable power flows
         flows_res_to_bus = {
-            'ac': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableSource) and 'ac' in block.bus_connected.label] + storage_flows_ac,
-            'dc': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableSource) and 'dc' in block.bus_connected.label] + storage_flows_dc
+            'ac': [(block.components['outflow'], block.bus_connected)
+                   for block in self.scenario.renewable_sources.values()
+                   if 'ac' in block.bus_connected.label] + storage_flows_ac,
+            'dc': [(block.components['outflow'], block.bus_connected)
+                   for block in self.scenario.renewable_sources.values()
+                   if 'dc' in block.bus_connected.label] + storage_flows_dc
         }
 
         def _sum_res(m, block, name, sum_flow, split_flows):
@@ -189,13 +191,15 @@ class CustomConstraints:
         _limit_res_to_conv(m=model,
                            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                            name='limit_pwr_res_acdc_to_conv',
-                           conv_flow=(self.scenario.blocks['core'].ac_bus, self.scenario.blocks['core'].ac_dc),
+                           conv_flow=(self.scenario.blocks['core'].components['ac'],
+                                      self.scenario.blocks['core'].components['acdc']),
                            res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc)
         # limit flow of renewable power from DC to AC to the maximum power of the DC/AC converter in SystemCore
         _limit_res_to_conv(m=model,
                            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
                            name='limit_pwr_res_dcac_to_conv',
-                           conv_flow=(self.scenario.blocks['core'].dc_bus, self.scenario.blocks['core'].dc_ac),
+                           conv_flow=(self.scenario.blocks['core'].components['dc'],
+                                      self.scenario.blocks['core'].components['dcac']),
                            res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac)
 
         def _limit_feed_in(m, block, name, flows_feed_in, flows_res, eff_conv):
@@ -252,7 +256,7 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
 
         # Apply constraints for every MobileCommodity
-        for cs in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.CommoditySystem)]:
+        for cs in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.Fleet)]:
             for commodity in cs.subblocks.values():
                 _equal_flows(m=model,
                              block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,

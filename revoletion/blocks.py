@@ -228,6 +228,8 @@ class RenewableSource(Block):
 
         self.get_ts_data()
 
+        self.scenario.renewable_sources[self.name] = self
+
     def define_oemof_components(self,
                                 horizon):
         """

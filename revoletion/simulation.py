@@ -377,6 +377,7 @@ class Scenario:
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.storage_blocks = {}
         self.commodity_systems = {}
+        self.renewable_sources = {}
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
