@@ -1027,8 +1027,7 @@ class GridMarket(Block):
             inputs={
                 self.parent.components['bus']: solph.Flow(
                     nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
-                    variable_costs=(self.poes['s2g'].opex['spec_ep'][horizon.dti_ph] +
-                                    (self.scenario.cost_eps if self.equal_prices else 0)),
+                    variable_costs=(self.poes['s2g'].opex['spec_ep'][horizon.dti_ph]),
                 )
             }
         )
