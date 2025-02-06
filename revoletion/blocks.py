@@ -227,6 +227,7 @@ class RenewableSource(Block):
                          params=None,
                          parent=scenario)
 
+        self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
 
         self.scenario.renewable_sources[self.name] = self
@@ -324,13 +325,6 @@ class StorageBlock:
 
 
 class PVSource(RenewableSource):
-
-    def __init__(self,
-                 name: str,
-                 scenario):
-
-        super().__init__(name=name,
-                         scenario=scenario)
 
     def get_ts_data(self):
         """
@@ -544,8 +538,36 @@ class PVSource(RenewableSource):
 
 class WindSource(RenewableSource):
 
-    pass
+    def get_ts_data(self):
+        """
+        pre scenario (init) method
+        get potential power profile from PVSource block or file
+        """
+        if self.data_source in self.scenario.blocks.keys():
+            # region get data from PVSource block
+            self.data = self.scenario.blocks[self.data_source].data.copy()
+            self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
+            path_turbine_data_file = os.path.join(self.scenario.run.path_data_immut, 'turbine_data.pkl')
+            turbine_data = pd.read_pickle(path_turbine_data_file)
+            # smallest fully filled wind turbine in dataseta as per June 2024
+            turbine_data = turbine_data.loc[turbine_data['turbine_type'] == 'E-53/800'].reset_index()
+
+            self.data['power_original'] = windpowerlib.power_output.power_curve(
+                wind_speed=self.data['wind_speed_adj'],
+                power_curve_wind_speeds=ast.literal_eval(turbine_data.loc[0, 'power_curve_wind_speeds']),
+                power_curve_values=ast.literal_eval(turbine_data.loc[0, 'power_curve_values']),
+                density_correction=False)
+            self.data['power_spec'] = self.data['power_original'] / self.turbine_data.loc[0, 'nominal_power']
+            # endregion
+        elif self.data_source == 'file':
+            # region get data from file
+            path_input_file = os.path.join(self.scenario.run.path_input_data,
+                                           utils.set_extension(self.filename))
+            self.data = utils.read_input_csv(self, path_input_file, self.scenario)
+            # endregion
+        else:
+            raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified')
 
 class FixedDemand(Block):
 

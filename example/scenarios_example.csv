@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
-scenario,blocks,"{'grid':'GridConnection', 'ess': 'StationaryBattery', 'pv': 'PVSource', 'dem': 'FixedDemand'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
+scenario,blocks,"{'grid':'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_preexisting_acdc,1000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -43,7 +43,7 @@ wind,capex_preexisting,True,True,True,True
 wind,size_max,None,None,None,None
 wind,invest,False,True,True,False
 wind,system,ac,ac,ac,ac
-wind,data_source,None,None,pv,pv
+wind,data_source,file,None,pv,pv
 wind,height,50,50,50,50
 wind,filename,wind_timeseries,wind_timeseries,wind_timeseries,wind_timeseries
 wind,capex_spec,2.8,2.8,2.8,2.8
