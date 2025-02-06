@@ -203,21 +203,31 @@ class FixedDemand(Block):
         self.get_flows_apriori()
 
     def get_flows_apriori(self):
-
         self.flows_apriori.index = self.scenario.dti_sim_extd
         if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
-            self.generate_timeseries_from_slp()
+            self.get_demand_from_slp()
         elif self.load_profile in ['const', 'constant']:
             self.flows_apriori['demand'] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
-            utils.transform_scalar_var(self, 'load_profile')  # todo change: utils.read_csv & extract series/slice timeframe
-            self.data = self.load_profile
+            self.get_demand_from_file()
+        else:
+            raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
-        pass
+    def get_demand_from_file(self):
+        data = utils.read_input_csv(block=self,
+                                    path_input_file=os.path.join(self.scenario.run.path_input_data,
+                                                                 utils.set_extension(self.load_profile)),
+                                    scenario=self.scenario)
 
-        # todo append to flows_apriori
+        if data.shape[1] != 1:
+            self.scenario.logger.warning(f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
+                                         f'"load_profile" in block "{self.block.name}" has more than one column. '
+                                         f'Sum of all columns is calculated for load profile.')
 
-    def generate_timeseries_from_slp(self):
+        data = data.sum(axis=1)[self.flows_apriori.index]  # convert to series and slice to sim timeframe
+        self.flows_apriori['demand'] = data
+
+    def get_demand_from_slp(self):
         def get_timeframe(date):
             month = date.month
             day = date.day
@@ -259,7 +269,7 @@ class FixedDemand(Block):
         # apply dynamic correction for household profiles
         if self.load_profile == 'h0':
             # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
-            num_day = self.data.index.dayofyear.astype('int64')
+            num_day = data.index.dayofyear.astype('int64')
             data = round(data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
                                  7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
                          ndigits=1)

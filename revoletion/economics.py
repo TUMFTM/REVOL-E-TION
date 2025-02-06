@@ -276,7 +276,7 @@ class PointOfEvaluation:
                                       path_input_file=os.path.join(self.block.scenario.run.path_input_data,
                                                                    utils.set_extension(value)),
                                       scenario=self.block.scenario)
-            if ts.shape[1] != 1:
+            if ts.shape[1] != 1:  # todo: fix this. value_type, cause, component are not available anymore
                 raise ValueError(f'Input file "{utils.set_extension(value)}" for parameter '
                                  f'"{value_type}_{cause}{f"_{component}" if component != "block" else ""}" '
                                  f'in block "{self.block.name}" has more than one column')
