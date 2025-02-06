@@ -213,6 +213,52 @@ class RenewableSource(Block):
                          params=None,
                          parent=None)
 
+    def define_oemof_components(self,
+                                horizon):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+        bus_connected      name_bus
+          |                   |
+          |<--x----name_out---|<--name_src
+          |                   |
+          |                   |-->name_exc
+        """
+
+        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+
+        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+
+        self.components['outflow'] = solph.components.Converter(
+            label=f'{self.name}_out',
+            inputs={self.components['bus']: solph.Flow()},
+            outputs={self.bus_connected: solph.Flow()},
+            conversion_factors={self.bus_connected: self.eff}
+        )
+
+        # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
+        # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
+        # All other components such as converters and storages only have cost_eps in the output direction.
+        self.components['exc'] = solph.components.Sink(
+            label=f'{self.name}_exc',
+            inputs={self.components['bus']: solph.Flow(variable_costs=2 * self.scenario.cost_eps)}
+        )
+
+        self.components['src'] = solph.components.Source(
+            label=f'{self.name}_src',
+            outputs={self.components['bus']: solph.Flow(
+                nominal_value=solph.Investment(ep_costs=self.poes['block'].capex['spec_ep'],
+                                               existing=self.sizes.loc['block', 'existing'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'additional_max'])),
+                fix=self.data.loc[horizon.dti_ph, 'power_spec'],
+                variable_costs=self.poes['block'].opex['spec_ep'][horizon.dti_ph])}
+        )
+
+        horizon.constraints.add_invest_costs(invest=(self.components['src'], self.components['bus']),
+                                             capex_spec=self.poes['block'].capex['spec'],
+                                             invest_type='flow')
+
 
 class StorageBlock:
 
@@ -372,6 +418,26 @@ class FixedDemand(Block):
         # resample to simulation time step
         self.flows_apriori['demand'] = data.resample(self.scenario.timestep).mean().ffill().bfill()
 
+    def define_oemof_components(self,
+                                horizon):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+        bus_connected
+          |
+          |-x->name_snk
+          |
+        """
+
+        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+
+        self.components['snk'] = solph.components.Sink(
+            label=f'{self.name}_snk',
+            inputs={self.bus_connected: solph.Flow(nominal_value=1,
+                                                   fix=self.data['demand'][horizon.dti_ph])}
+        )
+
 
 class StationaryBattery(Block, StorageBlock):
 
@@ -409,6 +475,34 @@ class ControllableSource(Block):
                          params=None,
                          parent=None)
 
+    def define_oemof_components(self,
+                                horizon):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+        bus_connected
+          |
+          |<-name_gen
+          |
+        """
+
+        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+
+        self.components['src'] = solph.components.Source(
+            label=f'{self.name}_src',
+            outputs={self.bus_connected: solph.Flow(
+                nominal_value=solph.Investment(ep_costs=self.poes['block'].capex['spec_ep'],
+                                               existing=self.sizes.loc['block', 'existing'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['block', 'additional_max'])),
+                variable_costs=self.poes['block'].opex['spec_ep'][horizon.dti_ph])}
+        )
+
+        horizon.constraints.add_invest_costs(invest=(self.components['src'], self.bus_connected),
+                                             capex_spec=self.poes['block'].capex['spec'],
+                                             invest_type='flow')
+
+
 
 class GridConnection(Block):
 
@@ -424,6 +518,84 @@ class GridConnection(Block):
                          poe_names=['g2s', 's2g'],
                          params=None,
                          parent=None)
+
+    def define_oemof_components(self,
+                                horizon):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+        bus_connected          name_bus
+          |                        |
+          |---name_inflow_1--x---->|
+          |<--name_outflow_1--x----|
+          |                        |---(GridMarket Instance)
+          |---name_inflow_2--x---->|
+          |<--name_outflow_2--x----|
+          |                        |---(GridMarket Instance)
+
+                     ...
+
+          |---name_inflow_n--x---->|
+          |<--name_outflow_n--x----|
+        """
+
+        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+
+        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+
+        self.components.update({f'{self.name}_inflow_1': solph.components.Converter(
+            label=f'xc_{self.name}',
+            # Peakshaving not implemented for feed-in into grid
+            inputs={self.bus_connected: solph.Flow()},
+            # Size optimization
+            outputs={self.components['bus']: solph.Flow(
+                nominal_value=solph.Investment(ep_costs=self.poes['s2g'].capex['spec_ep'],
+                                               existing=self.sizes.loc['s2g', 'existing'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['s2g', 'additional_max'])),
+                variable_costs=self.scenario.cost_eps)},
+            conversion_factors={self.components['bus']: 1})})
+
+        self.components.update({f'{self.name}_outflow_{intv}': solph.components.Converter(
+            label=f'{self.name}_xc_{intv}',
+            # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
+            # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
+            inputs={self.components['bus']: solph.Flow(
+                nominal_value=solph.Investment(ep_costs=(self.poes['g2s'].capex['spec_ep'] if intv == self.peakshaving_ints.index[0] else 0),
+                                               existing=self.sizes.loc['g2s', 'existing'],
+                                               maximum=utils.conv_add_max(self.sizes.loc['g2s', 'additional_max']))
+            )},
+            # Peakshaving
+            outputs={self.bus_connected: solph.Flow(
+                nominal_value=(solph.Investment(ep_costs=self.poes['peak'].opex['spec_ep'][horizon.dti_ph],  #todo: fix this poe definition
+                                                existing=self.peakshaving_ints.loc[intv, 'power'],)
+                               if self.peakshaving else None),
+                max=(self.bus_activation.loc[horizon.dti_ph, intv] if self.peakshaving else None))},
+            conversion_factors={self.bus_connected: 1}) for intv in self.peakshaving_ints.index})
+
+        horizon.constraints.add_invest_costs(invest=(self.components[f'{self.name}_inflow_1'],
+                                                     self.components['bus']),
+                                             capex_spec=self.poes['s2g'].capex['spec'],
+                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(invest=(self.components['bus'],
+                                                     self.components[f'{self.name}_outflow_{self.peakshaving_ints.index[0]}']),
+                                             capex_spec=self.poes['g2s'].capex['spec'],
+                                             invest_type='flow')
+
+        # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
+        # represent the same grid connection
+        equal_investments = [{'in': self.components['bus'], 'out': self.components[f'{self.name}_outflow_{intv}']}
+                             for intv in self.peakshaving_ints.index]  # todo: check this definition
+
+        # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
+        if self.equal:
+            equal_investments.append({'in': self.components[f'{self.name}_inflow_1'],
+                                      'out': self.components['bus']})  # currently only works without peakshaving for inflows
+
+        # add list of variables to the scenario constraints if list contains more than one element
+        # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
+        if len(equal_investments) > 1:
+            horizon.constraints.add_equal_invests(equal_investments)
 
 
 class GridMarket(Block):
