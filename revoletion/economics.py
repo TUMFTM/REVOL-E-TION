@@ -203,11 +203,16 @@ class PointOfEvaluation:
     def __init__(self,
                  name: str,
                  block,
-                 aggregator: bool = False):
+                 aggregator: bool = False,
+                 ls: int = None,
+                 ccr: float = 1,
+                 ):
 
         self.name = name
         self.block = block
         self.aggregator = aggregator
+        self.ls = ls if ls is not None else self.block.scenario.prj_duration_yrs
+        self.ccr = ccr
 
         value_types = ['capex', 'mntex', 'opex', 'crev']
 
@@ -236,18 +241,18 @@ class PointOfEvaluation:
         # include (time-based) maintenance expenses in capex calculation as equivalent present cost
         self.capex['spec_joined'] = join_capex_mntex(capex=self.capex.get('spec', 0),
                                                      mntex=self.mntex.get('spec', 0),
-                                                     lifespan=getattr(self.block, 'ls', 1),  # todo default value for blocks without lifespan
+                                                     lifespan=self.ls,
                                                      discount_rate=self.block.scenario.wacc)
 
         # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
         self.capex['factor_ep'] = annuity_due_capex(capex_init=1,
                                                     capex_replacement=1,
-                                                    lifespan=getattr(self.block, 'ls', 1),  # todo default value for blocks without lifespan
+                                                    lifespan=self.ls,
                                                     observation_horizon=self.block.scenario.prj_duration_yrs,
                                                     discount_rate=self.block.scenario.wacc,
-                                                    cost_change_ratio=getattr(self.block, 'ccr', 1))\
-            if self.block.scenario.compensate_sim_prj else 1  # todo default value for blocks without ccr
+                                                    cost_change_ratio=self.ccr)\
+            if self.block.scenario.compensate_sim_prj else 1
 
         self.capex['spec_ep'] = self.capex['spec_joined'] * self.capex['factor_ep']
 
