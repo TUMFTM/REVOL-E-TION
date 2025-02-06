@@ -16,11 +16,11 @@ scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
 scenario,blocks,{'ess': 'StationaryBattery'},"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
-core,size_preexisting_acdc,0,0,0,0
+core,size_preexisting_acdc,1000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
 core,invest_acdc,False,True,True,False
-core,size_preexisting_dcac,equal,equal,equal,equal
+core,size_preexisting_dcac,2000,equal,equal,equal
 core,capex_preexisting_dcac,True,True,True,True
 core,size_max_dcac,equal,equal,equal,equal
 core,invest_dcac,equal,equal,equal,equal
@@ -145,10 +145,10 @@ bev,soc_target_high,1.0,1.0,1.0,1.0
 bev,soc_target_low,0.8,0.8,0.8,0.8
 bev,soc_return,0.15,0.15,0.15,0.15
 bev,dsoc_buffer,0.05,0.05,0.05,0.05
-bev,capex_glider,25000,25000,25000,25000
-bev,capex_charger,1500,1500,1500,1500
+bev,capex_fix_glider,25000,25000,25000,25000
+bev,capex_fix_charger,1500,1500,1500,1500
 bev,capex_spec,0.3,0.3,0.3,0.3
-bev,mntex_glider,500,500,500,500
+bev,mntex_fix_glider,500,500,500,500
 bev,opex_spec_dist,0.3,0.3,0.3,0.3
 bev,opex_spec_sys_chg,0,0,0,0
 bev,opex_spec_sys_dis,0,0,0,0
@@ -189,8 +189,8 @@ brs,q_loss_cyc_init,0,0,0,0
 brs,soc_init,0.5,0.5,0.5,0.5
 brs,soc_target,1.0,1.0,1.0,1.0
 brs,soc_return,0.15,0.15,0.15,0.15
-brs,capex_glider,0,0,0,0
-brs,capex_charger,0,0,0,0
+brs,capex_fix_glider,0,0,0,0
+brs,capex_fix_charger,0,0,0,0
 brs,capex_spec,0,0,0,0
 brs,mntex_spec,0,0,0,0
 brs,opex_spec,0,0,0,0
@@ -216,8 +216,8 @@ icev,filename,bev_log,bev_log,bev_log,bev_log
 icev,num,5,5,5,5
 icev,ls,10,10,10,10
 icev,capex_preexisting,True,True,True,True
-icev,capex_glider,25000,25000,25000,25000
-icev,mntex_glider,1000,1000,1000,1000
+icev,capex_fix_glider,25000,25000,25000,25000
+icev,mntex_fix_glider,1000,1000,1000,1000
 icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.4,0.4,0.4,0.4
