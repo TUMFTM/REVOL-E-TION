@@ -94,7 +94,7 @@ grid,mntex_spec_s2g,0,0,0,0
 grid,ls,10,10,10,10
 grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
-grid,filename_markets,None,None,None,None
+grid,filename_markets,grid_markets,None,None,None
 grid,res_only,False,False,False,False
 grid,opex_spec_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s
 grid,opex_spec_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g

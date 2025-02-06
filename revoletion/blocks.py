@@ -658,7 +658,7 @@ class FixedDemand(Block):
         self.components['snk'] = solph.components.Sink(
             label=f'{self.name}_snk',
             inputs={self.bus_connected: solph.Flow(nominal_value=1,
-                                                   fix=self.data['demand'][horizon.dti_ph])}
+                                                   fix=self.flows_apriori['demand'][horizon.dti_ph])}
         )
 
 
@@ -845,8 +845,12 @@ class GridConnection(Block):
                                   index_col=[0]).map(utils.infer_dtype)
 
         # Generate individual GridMarkets instances
-        self.subblocks = {market: GridMarket(market, self, markets.loc[:, market])
-                          for market in markets.columns}
+        self.subblocks = {market_name: GridMarket(name=market_name,
+                                                  scenario=self.scenario,
+                                                  params=dict(markets.loc[:, market_name]),
+                                                  parent=self)
+                          for market_name in markets.columns}
+        pass
 
     def initialize_peakshaving(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
@@ -971,7 +975,7 @@ class GridConnection(Block):
                              for intv in self.peakshaving_ints.index]  # todo: check this definition
 
         # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
-        if self.equal:
+        if self.expansion_equal:
             equal_investments.append({'in': self.components[f'{self.name}_inflow_1'],
                                       'out': self.components['bus']})  # currently only works without peakshaving for inflows
 
