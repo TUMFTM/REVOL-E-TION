@@ -88,6 +88,11 @@ class Block:
         #self.economic_results = eco.EconomicResults(self) #todo
         # endregion
 
+        # region accumulate capex for preexisting sizes
+        for poe in self.poes.values():
+            scenario.capex_init_existing += poe.capex['preexisting']  # todo intermediate block step?
+        # endregion
+
     def initialize_sizes(self,
                          sizes: list = None):
         """
@@ -162,9 +167,13 @@ class RenewableSource(Block):
                          params=None,
                          parent=None)
 
+
 class StorageBlock:
 
     def __init__(self):
+
+        self.scenario.storage_blocks[self.name] = self
+
         self.loss_rate = utils.convert_sdr(self.sdr, pd.Timedelta(hours=1))  #todo move function to StorageBlock
 
         self.states.loc[self.scenario.starttime, 'soc'] = self.soc_init
@@ -173,6 +182,41 @@ class StorageBlock:
         self.aging_model = bat.BatteryPackModel(self)
         self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
         self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
+
+
+
+    def calc_energies(self):
+        """
+        post-scenario calculation of energies as integrals of flows
+        """
+        pass
+
+    def add_state_traces(self):
+        """
+        post-scenario plotting of SOC and SOH traces in timeseries plot
+        """
+        legentry = f'{self.name} SOC ({self.size.loc["block", "total"]/1e3:.1f} kWh)'
+        self.scenario.figure.add_trace(go.Scatter(x=self.states.index,
+                                                  y=self.states['soc'],
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None)),
+                                       secondary_y=True)
+
+        legentry = f'{self.name} SOH'
+        data = self.states['soh'].dropna()
+        self.scenario.figure.add_trace(go.Scatter(x=data.index,
+                                                  y=data,
+                                                  mode='lines',
+                                                  name=legentry,
+                                                  line=dict(width=2, dash=None),
+                                                  visible='legendonly'),
+                                       secondary_y=True)
+
+
+
+
+
 
 
 class PVSource(RenewableSource):
@@ -282,6 +326,7 @@ class FixedDemand(Block):
         # resample to simulation time step
         self.flows_apriori['demand'] = data.resample(self.scenario.timestep).mean().ffill().bfill()
 
+
 class StationaryBattery(Block, StorageBlock):
 
     def __init__(self,
@@ -351,6 +396,12 @@ class GridMarket(Block):
                          poe_names=['g2s', 's2g'],
                          params=params,
                          parent=parent)
+
+
+class CommoditySystem:
+
+    def __init__(self):
+        self.scenario.commodity_systems[self.name] = self
 
 
 
