@@ -76,9 +76,12 @@ class Block:
         self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
         self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
             if poe_names is not None else dict())
+        # Delete ccr and ls as they are contained in poes
+        for attribute in ['ccr', 'ls']:
+            if hasattr(self, attribute):
+                delattr(self, attribute)
+
         self.scenario.capex_init_existing += self.poes['total'].capex['preexisting']
-        delattr(self, 'ccr')
-        delattr(self, 'ls')
 
         # self.economic_results = eco.EconomicResults(self) #todo
         # endregion
