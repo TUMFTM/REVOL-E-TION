@@ -124,11 +124,11 @@ class CustomConstraints:
                     var_name,
                     po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
-        # Get discharging flows of all StationaryEnergyStorages which only allow storing renewable energy
+        # Get discharging flows of all StationaryBatterys which only allow storing renewable energy
         storage_flows_ac = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
-                            isinstance(block, blocks.StationaryEnergyStorage) and block.res_only and block.system == 'ac']
+                            isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'ac']
         storage_flows_dc = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
-                            isinstance(block, blocks.StationaryEnergyStorage) and block.res_only and block.system == 'dc']
+                            isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'dc']
 
         # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
         flows_res_from_bus = {
@@ -141,9 +141,9 @@ class CustomConstraints:
         # Get all renewable power flows
         flows_res_to_bus = {
             'ac': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableInvestBlock) and 'ac' in block.bus_connected.label] + storage_flows_ac,
+                   isinstance(block, blocks.RenewableSource) and 'ac' in block.bus_connected.label] + storage_flows_ac,
             'dc': [(block.outflow, block.bus_connected) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.RenewableInvestBlock) and 'dc' in block.bus_connected.label] + storage_flows_dc
+                   isinstance(block, blocks.RenewableSource) and 'dc' in block.bus_connected.label] + storage_flows_dc
         }
 
         def _sum_res(m, block, name, sum_flow, split_flows):

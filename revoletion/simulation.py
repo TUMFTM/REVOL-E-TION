@@ -402,7 +402,7 @@ class Scenario:
                 raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
                                  f'without static load management (lm_static) is not compatible'
                                  f' with size optimization')
-            if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryEnergyStorage)]:
+            if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryBattery)]:
                 raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
                                  f'without static load management (lm_static) is not implemented for systems with '
                                  f'stationary energy storage')
@@ -521,7 +521,7 @@ class Scenario:
 
         for block in self.blocks.values():
             block.add_power_trace()
-            if hasattr(block, 'add_soc_trace'):  # should affect CommoditySystems and StationaryEnergyStorage
+            if hasattr(block, 'add_soc_trace'):  # should affect CommoditySystems and StationaryBattery
                 block.add_soc_trace()
             if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
                 block.add_curtailment_trace()
