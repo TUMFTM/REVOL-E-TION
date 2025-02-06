@@ -33,8 +33,8 @@ class Block:
         self.parent = parent
 
         # region set attributes from scenario file or parent
-        if self.parent is None:  # is top level block
-            scenario.blocks[self.name] = self
+        if self.parent is self.scenario:  # is top level block
+            self.scenario.blocks[self.name] = self
 
             self.parameters = self.scenario.parameters.loc[self.name]
             for key, value in self.parameters.items():
@@ -47,7 +47,7 @@ class Block:
                 setattr(self, key, value)
 
         else:  # is subblock without params defined
-            raise ValueError(f'Subblock {self.name} of {self.parent.name} has no parameters defined')
+            raise ValueError(f'Subblock {self.name} of {self.parent.name} has no inherited parameters defined')
         # endregion
 
         # region initialize data structures
@@ -76,12 +76,10 @@ class Block:
         self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
         self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
             if poe_names is not None else dict())
-
-        # ToDo: delete ls and ccr if available
-
         self.scenario.capex_init_existing += self.poes['total'].capex['preexisting']
+        delattr(self, 'ccr')
+        delattr(self, 'ls')
 
-        # todo move ls & ccr to poe
         # self.economic_results = eco.EconomicResults(self) #todo
         # endregion
 
@@ -141,7 +139,7 @@ class SystemCore(Block):
                          size_names=['acdc', 'dcac'],
                          poe_names=['acdc', 'dcac'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
     def initialize_sizes(self,
                          sizes: list = None):
@@ -218,7 +216,7 @@ class RenewableSource(Block):
                          size_names=['block'],
                          poe_names=['block'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
     def define_oemof_components(self,
                                 horizon):
@@ -339,7 +337,7 @@ class FixedDemand(Block):
                          size_names=None,
                          poe_names=['block'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
         self.get_flows_apriori()
 
@@ -457,7 +455,7 @@ class StationaryBattery(Block, StorageBlock):
                          size_names=['block'],
                          poe_names=['block'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
         StorageBlock.__init__(self)
 
@@ -553,7 +551,7 @@ class ControllableSource(Block):
                          size_names=['block'],
                          poe_names=['block'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
     def define_oemof_components(self,
                                 horizon):
@@ -597,7 +595,7 @@ class GridConnection(Block):
                          size_names=['g2s', 's2g'],
                          poe_names=['g2s', 's2g'],
                          params=None,
-                         parent=None)
+                         parent=scenario)
 
     def define_oemof_components(self,
                                 horizon):
@@ -727,9 +725,25 @@ class GridMarket(Block):
         )
 
 
-class CommoditySystem:
+class Fleet(Block):
 
-    def __init__(self):
+    def __init__(self,
+                 name: str,
+                 scenario,
+                 params,
+                 parent):
+
+        super().__init__(self,
+                         name=name,
+                         scenario=scenario,
+                         flow_names=None,
+                         state_names=None,
+                         size_names=None,
+                         poe_names=None,
+                         params=None,
+                         parent=None,
+        )  # todo fill out
+
         self.scenario.commodity_systems[self.name] = self
 
 
@@ -741,10 +755,34 @@ class NonElectricBlock:
         """
         pass
 
-
-class ICEVehicle(Block, NonElectricBlock):
-
+class FleetUnit:  # equivalent to commodity
     pass
+
+
+class Vehicle:
+    pass
+
+
+class VehicleFleet(Block):
+    pass
+
+
+class BatteryFleet(Block):
+    pass
+
+
+class ElectricVehicle(Block, FleetUnit, Vehicle, StorageBlock):
+    pass
+
+
+class CombustionVehicle(Block, FleetUnit, Vehicle, NonElectricBlock):
+    pass
+
+
+class MobileBattery(Block, FleetUnit, StorageBlock):
+    pass
+
+
 
 
 

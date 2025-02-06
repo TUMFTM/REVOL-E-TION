@@ -198,6 +198,7 @@ class EconomicResults:
         # todo cashflows
         pass
 
+
 class PointOfEvaluation:
 
     def __init__(self,
