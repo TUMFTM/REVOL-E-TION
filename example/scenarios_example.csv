@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
-scenario,blocks,"{'ess': 'StationaryBattery', 'pv': 'PVSource', 'dem': 'FixedDemand'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
+scenario,blocks,"{'grid':'GridConnection', 'ess': 'StationaryBattery', 'pv': 'PVSource', 'dem': 'FixedDemand'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_preexisting_acdc,1000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -86,7 +86,7 @@ grid,size_max_s2g,equal,equal,equal,equal
 grid,invest_s2g,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,None,None,None,None
-grid,opex_spec_peak,0,0,0,0
+grid,opex_spec_peak,1,0,0,0
 grid,capex_spec_g2s,0.1,0.1,0.1,0.1
 grid,capex_spec_s2g,0.1,0.1,0.1,0.1
 grid,mntex_spec_g2s,0,0,0,0
@@ -95,9 +95,6 @@ grid,ls,10,10,10,10
 grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
 grid,filename_markets,grid_markets,None,None,None
-grid,res_only,False,False,False,False
-grid,opex_spec_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s
-grid,opex_spec_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g
 ess,size_preexisting,0,0,0,0
 ess,capex_preexisting,True,True,True,True
 ess,size_max,None,None,None,None

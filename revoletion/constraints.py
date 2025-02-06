@@ -96,14 +96,14 @@ class CustomConstraints:
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_g2s_markets',
-                         flows_markets=[(market.src, grid.bus) for market in grid.subblocks.values()],
-                         flows_grid=[(grid.bus, converter) for converter in grid.outflow.values()])
+                         flows_markets=[(market.components['src'], grid.components['bus']) for market in grid.subblocks.values()],
+                         flows_grid=[(grid.components['bus'], converter) for converter in grid.outflows.values()])
 
             _limit_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
                          name=f'limit_{grid.name}_s2g_markets',
-                         flows_markets=[(grid.bus, market.snk) for market in grid.subblocks.values()],
-                         flows_grid=[(converter, grid.bus) for converter in grid.inflow.values()])
+                         flows_markets=[(grid.components['bus'], market.components['snk']) for market in grid.subblocks.values()],
+                         flows_grid=[(converter, grid.components['bus']) for converter in grid.inflows.values()])
 
     def renewables_only(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only

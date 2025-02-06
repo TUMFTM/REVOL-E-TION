@@ -52,6 +52,9 @@ def get_period_fraction(dti, period, freq):
     if len(dti) == 0:
         return 0
 
+    if str(period) == 'None':  # peakshaving is not activated
+        return 1
+
     if period == 'day':
         start = dti.min().normalize()
         end = start + pd.DateOffset(days=1) - pd.Timedelta(freq)

@@ -11,6 +11,7 @@ import requests
 import statistics
 import windpowerlib
 
+
 from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import utils
@@ -819,12 +820,10 @@ class GridConnection(Block):
                          params=None,
                          parent=scenario)
 
-        # ToDo: Straight from blocks_legacy.py -> check if all attributes are needed
-        self.opex_sim_peak = self.opex_sim_energy = 0
+        self.inflows = dict()
+        self.outflows = dict()
 
-        # ToDo: Straight from blocks_legacy.py -> check if all attributes are needed
-        self.factor_opex_peak = self.opex_ep_spec_peak = 0
-
+        self.peakshaving_periods = pd.DataFrame()
 
         self.initialize_peakshaving()
         self.initialize_markets()
@@ -840,6 +839,59 @@ class GridConnection(Block):
 
         super().initialize_sizes(sizes=sizes)
 
+    def initialize_peakshaving(self):
+        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
+        periods_func = {
+            'day': lambda x: x.strftime('%Y-%m-%d'),
+            'week': lambda x: x.strftime('%Y-CW%W'),
+            'month': lambda x: x.strftime('%Y-%m'),
+            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+            'year': lambda x: x.strftime('%Y'),
+            'None': lambda x: 'sim_duration'
+        }
+
+        # Pre-calculate peakshaving type
+        peakshaving = str(self.peakshaving)
+
+        # Get dummies directly from the 'periods' data
+        self.bus_activation = pd.get_dummies(
+            self.scenario.dti_sim_extd.to_series().map(periods_func[peakshaving])).astype(int)
+
+
+        # Create a series to store peak power values
+        self.peakshaving_periods = pd.DataFrame(index=self.bus_activation.columns,
+                                                columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
+        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
+        self.peakshaving_periods.loc[:, 'power'] = 0
+
+        # ToDo: fix peakshaving opex using (peakshaving-)poe objects
+        self.peakshaving_periods['opex_spec'] = self.opex_spec_peak if self.peakshaving is not None else 0  # can be adapted for multiple cost levels over time
+
+        # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
+        for period in self.peakshaving_periods.index:
+            self.peakshaving_periods.loc[period, 'period_fraction'] = utils.get_period_fraction(
+                dti=self.bus_activation.loc[self.scenario.dti_sim][
+                    self.bus_activation.loc[self.scenario.dti_sim, period] == 1].index,
+                period=self.peakshaving,
+                freq=self.scenario.timestep)
+
+            # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
+            dti_period = self.bus_activation[self.bus_activation[period] == 1].index
+            self.peakshaving_periods.loc[period, 'start'] = dti_period.min()
+            self.peakshaving_periods.loc[period, 'end'] = dti_period.max()
+
+        # ToDo: fix peakshaving opex scaling -> seems to be wrong compared to usual opex scaling
+
+        # Count number of "actual" peakshaving intervals
+        # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
+        n_peakshaving_periods_yr = (pd.date_range(start=self.scenario.starttime,
+                                               end=self.scenario.starttime + pd.DateOffset(years=1),
+                                               freq=self.scenario.timestep,
+                                               inclusive='left')
+                                 .to_series().apply(periods_func[self.peakshaving])).unique().size
+        self.factor_opex_peak = n_peakshaving_periods_yr / self.peakshaving_periods.shape[0]
+        self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
+
     def initialize_markets(self):
         # get information about GridMarkets specified in the scenario file
         markets = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
@@ -852,61 +904,6 @@ class GridConnection(Block):
                                                   params=dict(markets.loc[:, market_name]),
                                                   parent=self)
                           for market_name in markets.columns}
-        pass
-
-    def initialize_peakshaving(self):
-        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
-        periods_func = {'day': lambda x: x.strftime('%Y-%m-%d'),
-                        'week': lambda x: x.strftime('%Y-CW%W'),
-                        'month': lambda x: x.strftime('%Y-%m'),
-                        'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-                        'year': lambda x: x.strftime('%Y')}
-
-        if self.peakshaving is None:
-            peakshaving_ints = ['sim_duration']
-            n_peakshaving_ints = 0
-        else:
-            # Assign the corresponding interval to each timestep
-            periods = self.scenario.dti_sim_extd.to_series().apply(periods_func[self.peakshaving])
-            peakshaving_ints = periods.unique()
-            n_peakshaving_ints = len(peakshaving_ints)
-
-            # Activate the corresponding bus for each period
-            self.bus_activation = pd.DataFrame({period_label: (periods == period_label).astype(int)
-                                                for period_label in peakshaving_ints}, index=self.scenario.dti_sim_extd)
-
-        # Create a series to store peak power values
-        self.peakshaving_ints = pd.DataFrame(index=peakshaving_ints,
-                                             columns=['power', 'period_fraction', 'start', 'end', 'opex_spec'])
-        # initialize power to 0 as for rh this value will be used to initialize the existing peak power
-        self.peakshaving_ints.loc[:, 'power'] = 0
-
-        self.peakshaving_ints['opex_spec'] = self.opex_spec_peak  # can be adapted for multiple cost levels over time
-
-        if self.peakshaving is not None:
-            # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
-            for interval in self.peakshaving_ints.index:
-                self.peakshaving_ints.loc[interval, 'period_fraction'] = utils.get_period_fraction(
-                    dti=self.bus_activation.loc[self.scenario.dti_sim][
-                        self.bus_activation.loc[self.scenario.dti_sim, interval] == 1].index,
-                    period=self.peakshaving,
-                    freq=self.scenario.timestep)
-
-                # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
-                self.peakshaving_ints.loc[interval, 'start'] = \
-                self.bus_activation[self.bus_activation[interval] == 1].index[0]
-                self.peakshaving_ints.loc[interval, 'end'] = self.bus_activation[self.bus_activation[interval] == 1].index[
-                    -1]
-
-            # Count number of "actual" peakshaving intervals
-            # (i.e. not entered as 'sim duration', which happens when self.peakshaving is None)
-            n_peakshaving_ints_yr = (pd.date_range(start=self.scenario.starttime,
-                                                   end=self.scenario.starttime + pd.DateOffset(years=1),
-                                                   freq=self.scenario.timestep,
-                                                   inclusive='left')
-                                     .to_series().apply(periods_func[self.peakshaving])).unique().size
-            self.factor_opex_peak = n_peakshaving_ints_yr / n_peakshaving_ints
-            self.opex_ep_spec_peak = self.opex_spec_peak * self.factor_opex_peak
 
     def define_oemof_components(self,
                                 horizon):
@@ -933,7 +930,7 @@ class GridConnection(Block):
 
         self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
 
-        self.components.update({f'{self.name}_inflow_1': solph.components.Converter(
+        self.inflows = {f'{self.name}_inflow_1': solph.components.Converter(
             label=f'xc_{self.name}',
             # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
@@ -943,38 +940,42 @@ class GridConnection(Block):
                                                existing=self.sizes.loc['s2g', 'preexisting'],
                                                maximum=utils.conv_add_max(self.sizes.loc['s2g', 'expansion_max'])),
                 variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['bus']: 1})})
+            conversion_factors={self.components['bus']: 1})}
 
-        self.components.update({f'{self.name}_outflow_{intv}': solph.components.Converter(
-            label=f'{self.name}_xc_{intv}',
+        self.components.update(self.inflows)
+
+        self.outflows = {f'{self.name}_outflow_{period}': solph.components.Converter(
+            label=f'{self.name}_xc_{period}',
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=(self.poes['g2s'].capex['spec_ep'] if intv == self.peakshaving_ints.index[0] else 0),
+                nominal_value=solph.Investment(ep_costs=(self.poes['g2s'].capex['spec_ep'] if period == self.peakshaving_periods.index[0] else 0),
                                                existing=self.sizes.loc['g2s', 'preexisting'],
                                                maximum=utils.conv_add_max(self.sizes.loc['g2s', 'expansion_max']))
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=self.poes['peak'].opex['spec_ep'][horizon.dti_ph],  #todo: fix this poe definition
-                                                existing=self.peakshaving_ints.loc[intv, 'power'],)
+                nominal_value=(solph.Investment(ep_costs=self.poes['peak'].opex['spec_ep'][horizon.dti_ph],  #ToDo: fix this poe definition
+                                                existing=self.peakshaving_periods.loc[period, 'power'],)
                                if self.peakshaving else None),
-                max=(self.bus_activation.loc[horizon.dti_ph, intv] if self.peakshaving else None))},
-            conversion_factors={self.bus_connected: 1}) for intv in self.peakshaving_ints.index})
+                max=(self.bus_activation.loc[horizon.dti_ph, period] if self.peakshaving else None))},
+            conversion_factors={self.bus_connected: 1}) for period in self.peakshaving_periods.index}
+
+        self.components.update(self.outflows)
 
         horizon.constraints.add_invest_costs(invest=(self.components[f'{self.name}_inflow_1'],
                                                      self.components['bus']),
                                              capex_spec=self.poes['s2g'].capex['spec'],
                                              invest_type='flow')
         horizon.constraints.add_invest_costs(invest=(self.components['bus'],
-                                                     self.components[f'{self.name}_outflow_{self.peakshaving_ints.index[0]}']),
+                                                     self.components[f'{self.name}_outflow_{self.peakshaving_periods.index[0]}']),
                                              capex_spec=self.poes['g2s'].capex['spec'],
                                              invest_type='flow')
 
         # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
         # represent the same grid connection
-        equal_investments = [{'in': self.components['bus'], 'out': self.components[f'{self.name}_outflow_{intv}']}
-                             for intv in self.peakshaving_ints.index]  # todo: check this definition
+        equal_investments = [{'in': self.components['bus'], 'out': outflow}
+                             for outflow in self.outflows.values]
 
         # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
         if self.expansion_equal:
