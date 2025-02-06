@@ -11,7 +11,7 @@ from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import utils
 
-
+# ToDo: @abstractclass if possible
 class Block:
 
     def __init__(self,
@@ -206,6 +206,7 @@ class SystemCore(Block):
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
 
 
+# ToDo: @abstractclass if possible
 class RenewableSource(Block):
 
     def __init__(self,
@@ -268,6 +269,7 @@ class RenewableSource(Block):
                                              invest_type='flow')
 
 
+# ToDo: @abstractclass if possible
 class StorageBlock:
 
     def __init__(self):
@@ -750,6 +752,7 @@ class Fleet(Block):
         self.scenario.commodity_systems[self.name] = self
 
 
+# ToDo: @abstractclass if possible
 class NonElectricBlock:
 
     def define_oemof_components(self, *_):
