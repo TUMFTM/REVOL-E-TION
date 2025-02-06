@@ -424,7 +424,7 @@ The following table specifies each parameter of a complete settings file, all of
 Blocks of class GridConnection, which model a physical grid connection, allow to define different grid markets to sell and buy energy. Each of these markets is characterized by the following parameters specified in a file specified by the parameter "filename_markets":
 - res_only: If activated, selling energy to the grid is restricted to energy produced by renewable energies blocks (PVSource, WindSource) in the current timestep and energy stored in a storage with activated "res_only" parameter
 - opex_spec_g2s: Specific operational expenditures for buying energy from the market: cost in currency per energy in Wh. Can be given as float or filename of a csv file containing a timeseries
-- opex_spec_s2g: Specific operational expenditures for selling energy to the market: cost in currency per energy in Wh. Can be given as float, filename of a csv file containing a timeseries, or set to 'equal' which then uses the same value as opex_spec_g2s and adds the specified cost_eps to avoid circular flows.
+- opex_spec_s2g: Specific operational expenditures for selling energy to the market: cost in currency per energy in Wh. Can be given as float, filename of a csv file containing a timeseries 
 - pwr_g2s: Maximum power of the grid connection point towards the local grid in W. 
 - pwr_s2g: Maximum power of the grid connection point towards the public grid in W.
 Specifying a market file is optional and overrides the default market.
