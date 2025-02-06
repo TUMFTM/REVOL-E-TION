@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 
-import ast
-import io
+import os
+
 import numpy as np
 import oemof.solph as solph
-import os
 import pandas as pd
 import plotly.graph_objects as go
-import pvlib
-import requests
-import statistics
-import windpowerlib
 
 from revoletion import battery as bat
 from revoletion import economics as eco
-from revoletion import mobility
-from revoletion import simulation as sim
 from revoletion import utils
 
 
@@ -80,17 +73,14 @@ class Block:
         self.expansion_equal = False
         self.initialize_sizes(sizes=size_names)
 
-        self.poes = {name: eco.PointOfEvaluation(name=name, block=self) for name in poe_names} \
-            if poe_names is not None else dict()
+        self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
+        self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
+            if poe_names is not None else dict())
+        self.scenario.capex_init_existing += self.poes['total'].capex['preexisting']
 
         # todo move ls & ccr to poe
 
         #self.economic_results = eco.EconomicResults(self) #todo
-        # endregion
-
-        # region accumulate capex for preexisting sizes
-        for poe in self.poes.values():
-            scenario.capex_init_existing += poe.capex['preexisting']  # todo intermediate block step?
         # endregion
 
     def initialize_sizes(self,
@@ -125,6 +115,17 @@ class Block:
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
 
+    def pre_horizon(self,
+                    horizon):
+        """
+        build energy system components before each horizon
+        """
+        self.define_oemof_components(horizon=horizon)
+        horizon.es.add(*self.components.values())
+
+        for subblock in self.subblocks.values():
+            subblock.pre_horizon(horizon=horizon)
+
 
 class SystemCore(Block):
 
@@ -150,6 +151,51 @@ class SystemCore(Block):
         utils.init_equalizable_variables(block=self, name_vars=['size_max_acdc', 'size_max_dcac'])
 
         super().initialize_sizes(sizes=sizes)
+
+    def define_oemof_components(self,
+                                horizon):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+          dc          ac
+          |-x--dcac-->|
+          |           |
+          |<---acdc-x-|
+        """
+
+        self.components['ac'] = solph.Bus(label='ac')
+        self.components['dc'] = solph.Bus(label='dc')
+
+        self.components['acdc'] = solph.components.Converter(label='acdc',
+                                                              inputs={self.components['ac']: solph.Flow(
+                                                                  nominal_value=solph.Investment(ep_costs=self.poes['acdc'].capex['spec_ep'],
+                                                                                                 existing=self.sizes.loc['acdc', 'existing'],
+                                                                                                 maximum=utils.conv_add_max(self.sizes.loc['acdc', 'additional_max'])),
+                                                                  variable_costs=self.poes['acdc'].opex['spec_ep'][horizon.dti_ph])},
+                                                              outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
+                                                              conversion_factors={self.components['dc']: self.eff_acdc})
+
+        self.components['dcac'] = solph.components.Converter(label='dcac',
+                                                             inputs={self.components['dc']: solph.Flow(
+                                                                 nominal_value=solph.Investment(ep_costs=self.poes['dcac'].capex['spec_ep'],
+                                                                                                existing=self.sizes.loc['dcac', 'existing'],
+                                                                                                maximum=utils.conv_add_max(self.sizes.loc['dcac', 'additional_max'])),
+                                                                 variable_costs=self.poes['dcac'].opex['spec_ep'][horizon.dti_ph])},
+                                                             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
+                                                             conversion_factors={self.components['ac']: self.eff_dcac})
+
+        horizon.constraints.add_invest_costs(invest=(self.components['ac'], self.components['acdc']),
+                                             capex_spec=self.poes['acdc'].capex['spec'],
+                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(invest=(self.components['dc'], self.components['dcac']),
+                                             capex_spec=self.poes['dcac'].capex['spec'],
+                                             invest_type='flow')
+
+        if self.equal:
+            # add a tuple of tuples to the list of equal variables of the scenario
+            horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
+                                                   {'in': self.components['ac'], 'out': self.components['acdc']}])
 
 
 class RenewableSource(Block):
@@ -402,6 +448,21 @@ class CommoditySystem:
 
     def __init__(self):
         self.scenario.commodity_systems[self.name] = self
+
+
+class NonElectricBlock:
+
+    def define_oemof_components(self, *_):
+        """
+        Dummy to be callable for all blocks
+        """
+        pass
+
+
+class ICEVehicle(Block, NonElectricBlock):
+
+    pass
+
 
 
 

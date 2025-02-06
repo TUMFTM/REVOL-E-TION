@@ -82,11 +82,11 @@ class AprioriPowerScheduler:
                 if isinstance(block, blocks.GridConnection):
                     self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size.loc['g2s', 'existing'] * block.eff
                 elif isinstance(block, (blocks.WindSource, blocks.PVSource)):
-                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data_ph['power_spec'] * block.size.loc['block', 'existing'] * block.eff
+                    self.pwr_esm_avail.loc[:, get_block_system(block)] += block.data.loc[horizon.dti_ph, 'power_spec'] * block.size.loc['block', 'existing'] * block.eff
                 elif isinstance(block, blocks.ControllableSource):
                     self.pwr_esm_avail.loc[:, get_block_system(block)] += block.size.loc['block', 'existing'] * block.eff
                 elif isinstance(block, blocks.FixedDemand):
-                    self.pwr_esm_fixed.loc[:, get_block_system(block)] += block.data_ph['power_w']
+                    self.pwr_esm_fixed.loc[:, get_block_system(block)] += block.data.loc[horizon.dti_ph, 'power_w']
 
         for dtindex in self.horizon.dti_ph:
             # Calculate power for all CommoditySystems with 'uc' or static load management and add to consumed power
@@ -123,7 +123,7 @@ class AprioriPowerScheduler:
 
     def calc_pwr_commodities(self, dtindex, commodities, mode_scheduling, pwr_csc_avail_total):
         # get all commodities which are ready for charging
-        commodities = [commodity for commodity in commodities if commodity.block.data_ph.loc[dtindex, 'atbase']]
+        commodities = [commodity for commodity in commodities if commodity.block.data.loc[dtindex, 'atbase']]
         pwr_csc_assigned = 0
 
         if not commodities:
@@ -268,7 +268,7 @@ class AprioriCommodity:
                                                columns=['p_int_ac', 'p_ext_ac', 'p_ext_dc', 'p_consumption', 'soc'],
                                                dtype=float)
 
-        self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data_ph['consumption']
+        self.block.apriori_data.loc[:, 'p_consumption'] = -1 * self.block.data.loc[horizon.dti_ph, 'consumption']
 
         self.block.apriori_data.loc[horizon.dti_ph.min(), 'soc'] = statistics.median([self.block.soc_min,
                                                                                       self.block.storage_timeseries.loc[horizon.starttime, 'soc'],
@@ -371,9 +371,9 @@ class AprioriCommodity:
             soc_target = self.block.parent.soc_target_low
         return soc_target
 
-    def ext_charging(self, dtindex):
+    def ext_charging(self, dtindex):  # todo include horizon to have access to dti_ph instead of block.data_ph
         # determine whether destination charging is necessary
-        if self.block.data_ph.loc[dtindex, 'atac'] == 1:
+        if self.block.data.loc[dtindex, 'atac'] == 1:
             if dtindex in self.arr_dest_dti:  # plugging in only happens when parking starts
                 # use current time and next arrival index to calculate consumption and convert to SOC
                 arr_nxt = arrivals.min() if not (arrivals := self.arr_base_dti[self.arr_base_dti >= dtindex]).empty else self.block.data_ph.index.max()

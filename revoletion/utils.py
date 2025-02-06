@@ -77,7 +77,7 @@ def create_expenditures_dataframe():
     # capex_sim represents initial capex (possibly excluding some existing blocks)
     expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
                                 columns=['sim', 'yrl', 'prj', 'dis', 'ann'],
-                                data=0,
+                                data=0,  # cumulative property
                                 dtype='float64')
 
     # initialize non-existing expenditures with None

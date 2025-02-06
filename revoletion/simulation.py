@@ -62,10 +62,7 @@ class PredictionHorizon:
         self.ph_endtime = self.starttime + self.scenario.len_ph
         self.timestep = self.scenario.timestep
 
-        self.components = []  # empty list to store all oemof-solph components
         self.constraints = constraints.CustomConstraints(scenario=self.scenario)
-        # add existing capex costs to constraints
-        self.constraints.capex_init_existing = self.scenario.capex_init_existing
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph_endtime > self.scenario.sim_endtime and self.scenario.truncate_ph:
@@ -88,20 +85,17 @@ class PredictionHorizon:
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Initializing model build')
 
-        for block in [block for block in self.scenario.blocks.values() if hasattr(block, 'data')]:
-            block.data_ph = block.data[self.starttime:self.ph_endtime]
-            for subblock in block.subblocks.values():
-                if hasattr(subblock, 'data'):
-                    subblock.data_ph = subblock.data[self.starttime:self.ph_endtime]
-
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                       f'Calculating power schedules for commodities with rulebased charging strategies')
             self.scenario.scheduler.calc_ph_schedule(self)
 
+        self.es = solph.EnergySystem(timeindex=self.dti_ph,
+                                     infer_last_interval=True)  # initialize energy system model instance
+
         for block in self.scenario.blocks.values():
-            block.update_input_components(self)  # (re)define solph components that need example slices
+            block.pre_horizon(self)
 
         self.results = None
         self.meta_results = None
@@ -110,12 +104,6 @@ class PredictionHorizon:
 
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Building oemof model')
-
-        self.es = solph.EnergySystem(timeindex=self.dti_ph,
-                                     infer_last_interval=True)  # initialize energy system model instance
-
-        for component in self.components:
-            self.es.add(component)  # add components to this horizon's energy system
 
         if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
             self.draw_energy_system()
@@ -324,6 +312,9 @@ class Scenario:
             self.len_ph = self.sim_duration
             self.len_ch = self.sim_duration
             self.nhorizons = 1
+        else:
+            self.exception = f'Optimization strategy "{self.strategy}" unknown'
+            raise ValueError(self.exception)
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
@@ -380,21 +371,15 @@ class Scenario:
         self.exception = None  # placeholder for possible infeasibility
 
         # Energy System Blocks --------------------------------
+        # initialize variable to store initial investment costs given in scenario definition
+        self.capex_init_existing = 0
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.storage_blocks = {}
         self.commodity_systems = {}
         self.blocks = self.create_block_objects()
 
-        # initialize variable to store initial investment costs given in scenario definition
-        self.capex_init_existing = 0
-        # get all initial capex costs for existing components
-        for block in self.blocks.values():
-            block.calc_capex_init_existing()  # todo move to (invest)block init
-
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
-            self.logger.error(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
-                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
             raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
@@ -403,15 +388,10 @@ class Scenario:
         if any([cs.data_source in ['demand', 'usecases'] for cs in self.commodity_systems.values()]):
             dispatch.execute_des(self, self.run)
 
+        # todo move to pre scenario of commodities
         for cs in [cs for cs in self.commodity_systems.values() if cs.data_source in ['usecases', 'demand']]:
             for commodity in cs.subblocks.values():
                 commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
-
-        # ToDo: move to checker.py
-        # check example parameter configuration for model dump
-        if self.run.dump_model and self.strategy == 'rh':
-            self.logger.warning('Model file dump not implemented for RH operating strategy - ' +
-                                'File dump deactivated for current scenario')
 
         # check example parameter configuration of rulebased charging for validity
         if cs_unlim := [cs for cs in self.commodity_systems.values() if
@@ -955,14 +935,11 @@ class SimulationRun:
         try:
             scenario = Scenario(name, self, logger, lock)  # Create scenario instance
 
+            # todo move to scenario init?
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
                                                             'status': 'fully initialized'})
 
-            # ToDo: move to checker.py
-            if scenario.strategy not in ['go', 'rh']:
-                scenario.exception = f'Optimization strategy "{scenario.strategy}" unknown'
-                raise ValueError(scenario.exception)
 
             for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
                 horizon = PredictionHorizon(horizon_index, scenario)

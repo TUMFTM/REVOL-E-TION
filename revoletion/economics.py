@@ -202,16 +202,18 @@ class PointOfEvaluation:
 
     def __init__(self,
                  name: str,
-                 block):
+                 block,
+                 aggregator: bool = False):
 
         self.name = name
         self.block = block
+        self.aggregator = aggregator
 
         value_types = ['capex', 'mntex', 'opex', 'crev']
 
-        self.capex = dict()
-        self.mntex = dict()
-        self.opex = dict()
+        self.capex = {'fix': 0, 'preexisting': 0, 'spec': 0}
+        self.mntex = {'fix': 0, 'spec': 0}
+        self.opex = {'spec': self.scalar_to_ts(value=0)}
         self.crev = dict()
 
         # region get all values from block
@@ -225,14 +227,9 @@ class PointOfEvaluation:
             if poe == self.name:
                 if value_type in ['capex', 'mntex']:
                     getattr(self, value_type)[cause] = getattr(self.block, key)
-                else:
+                else:  # opex, crev
                     getattr(self, value_type)[cause] = self.scalar_to_ts(value=getattr(self.block, key))
                 delattr(self.block, key)
-
-        # add opex_spec to opex if not present; e. g. for FixedDemand
-        if 'spec' not in self.opex.keys():
-            self.opex['spec'] = self.scalar_to_ts(value=0)
-
         # endregion
 
         # region calculate equivalent present specific capex and opex for optimizer
@@ -265,9 +262,11 @@ class PointOfEvaluation:
         # endregion
 
         # region calculate capital expenses for preexisting block size
+        size_preexisting = self.block.sizes.loc[self.name, 'preexisting'] if self.name in self.block.sizes.index else 0
         self.capex['preexisting'] = (self.capex['preexisting'] *  # boolean so far - will be overwritten
-                                     self.block.sizes.loc[self.name, 'preexisting'] *  # scalar size of poe
-                                     self.capex['spec'])  # scalar
+                                     (size_preexisting * self.capex['spec'] + self.capex['fix']))
+        if not aggregator:
+            self.block.poes['total'].capex['preexisting'] += self.capex['preexisting']
         # endregion
 
     def scalar_to_ts(self,
