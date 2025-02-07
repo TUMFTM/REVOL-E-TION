@@ -50,10 +50,10 @@ def get_period_fraction(dti, period, freq):
     """
     # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
     if len(dti) == 0:
-        return 0
+        return 0.0
 
     if str(period) == 'None':  # peakshaving is not activated
-        return 1
+        return 1.0
 
     if period == 'day':
         start = dti.min().normalize()

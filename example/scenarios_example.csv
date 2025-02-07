@@ -85,7 +85,7 @@ grid,capex_preexisting_s2g,True,True,True,True
 grid,size_max_s2g,equal,equal,equal,equal
 grid,invest_s2g,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
-grid,peakshaving,None,None,None,None
+grid,peakshaving,week,None,None,None
 grid,opex_spec_peak,1,0,0,0
 grid,capex_spec_g2s,0.1,0.1,0.1,0.1
 grid,capex_spec_s2g,0.1,0.1,0.1,0.1
