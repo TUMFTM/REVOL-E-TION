@@ -1105,6 +1105,19 @@ class GridConnection(Block):
         self.sizes.loc['s2g', 'expansion'] = horizon.results[(list(self.inflows.values())[0],
                                                               self.components['bus'])]['scalars']['invest']
 
+        self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+                                                    for inflow in self.inflows.values()])
+        self.flows.loc[horizon.dti_ch, 'out'] = sum([horizon.results[(self.components['bus'], outflow)]['sequences']['flow'][horizon.dti_ch]
+                                                     for outflow in self.outflows.values()])
+
+        def get_peak_power(row):
+            peak_power = max(row['power'],
+                             horizon.results[(self.outflows[f'{self.name}_xc_{row.name}'],
+                                              self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
+            return peak_power
+
+        self.peakshaving_periods['power'] = self.peakshaving_periods.apply(get_peak_power, axis=1)
+
 
 class GridMarket(Block, NonInvestBlock):
 
