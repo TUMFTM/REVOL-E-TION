@@ -144,16 +144,6 @@ class Block:
         self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
 
 
-class NonInvestBlock:
-
-    def get_horizon_results(self,
-                            horizon):
-        """
-        post horizon method
-        """
-        pass
-
-
 class SystemCore(Block):
 
     def __init__(self,
@@ -238,6 +228,11 @@ class SystemCore(Block):
                                                                self.components['acdc'])]['scalars']['invest']
         self.sizes.loc['dcac', 'expansion'] = horizon.results[(self.components['dc'],
                                                                self.components['dcac'])]['scalars']['invest']
+
+        self.flows.loc[horizon.dti_ch, 'acdc'] = horizon.results[(self.components['ac'],
+                                                                  self.components['acdc'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'dcac'] = horizon.results[(self.components['dc'],
+                                                                  self.components['dcac'])]['sequences']['flow'][horizon.dti_ch]
 
 
 # ToDo: @abstractclass if possible
@@ -638,7 +633,7 @@ class WindSource(RenewableSource):
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
 
-class FixedDemand(Block, NonInvestBlock):
+class FixedDemand(Block):
 
     def __init__(self,
                  name: str,
@@ -754,6 +749,14 @@ class FixedDemand(Block, NonInvestBlock):
             inputs={self.bus_connected: solph.Flow(nominal_value=1,
                                                    fix=self.flows_apriori['demand'][horizon.dti_ph])}
         )
+
+    def get_horizon_results(self,
+                            horizon):
+        """
+        post horizon method
+        """
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
 
 class StationaryBattery(Block, StorageBlock):
@@ -901,6 +904,9 @@ class ControllableSource(Block):
         """
         self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
                                                                 self.bus_connected)]['scalars']['invest']
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
 
 
 class GridConnection(Block):
@@ -1132,7 +1138,7 @@ class GridConnection(Block):
         self.peakshaving_periods['power'] = self.peakshaving_periods.apply(get_peak_power, axis=1)
 
 
-class GridMarket(Block, NonInvestBlock):
+class GridMarket(Block):
 
     def __init__(self,
                  name: str,
@@ -1179,6 +1185,19 @@ class GridMarket(Block, NonInvestBlock):
             }
         )
 
+    def get_horizon_results(self,
+                            horizon):
+
+        """
+        post horizon method
+        """
+
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.parent.components['bus'],
+                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
+                                                                 self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+
 
 class Fleet(Block):
 
@@ -1206,6 +1225,12 @@ class Fleet(Block):
 class NonElectricBlock:
 
     def define_oemof_components(self, *_):
+        """
+        Dummy to be callable for all blocks
+        """
+        pass
+
+    def get_horizon_results(self, *_):
         """
         Dummy to be callable for all blocks
         """
