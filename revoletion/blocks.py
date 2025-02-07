@@ -37,6 +37,8 @@ class Block:
         self.scenario = scenario
         self.parent = parent
 
+        flow_names = ['total', *flow_names] if flow_names is not None else ['total']
+
         # region set attributes from scenario file or parent
         if self.parent is self.scenario:  # is top level block
             self.scenario.blocks[self.name] = self
@@ -62,14 +64,14 @@ class Block:
 
         self.flows_apriori = pd.DataFrame()  # partially recalculated for every horizon
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
-                                  columns=flow_names if flow_names is not None else [],
+                                  columns=flow_names,
                                   data=np.nan,
                                   dtype='float64')
         self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
                                    columns=state_names if state_names is not None else [],
                                    data=np.nan,
                                    dtype='float64')
-        self.energies = pd.DataFrame(index=['total', 'in', 'out', 'del', 'pro'],
+        self.energies = pd.DataFrame(index=flow_names,
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,  # cumulative property
                                      dtype=float)
@@ -78,9 +80,9 @@ class Block:
         self.expansion_equal = False
         self.initialize_sizes(sizes=size_names)
 
-        self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
-        self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
-                             if poe_names is not None else dict())
+        self.poa = eco.PointOfAggregation(name=f'{self.name}_total', parent=self.parent.poe_total)
+        self.poes = {name: eco.PointOfEvaluation(name=name, block=self, parent=self.poa) for name in poe_names} \
+            if poe_names is not None else dict()
         # Delete ccr and ls as they are contained in poes
         for attribute in ['ccr', 'ls']:
             if hasattr(self, attribute):
@@ -142,6 +144,34 @@ class Block:
 
         self.get_horizon_results(horizon=horizon)
         self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
+
+    def post_scenario(self):
+
+        for subblock in self.subblocks.values():
+            subblock.post_scenario()
+
+        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
+        self.check_bidi_flows()
+
+        # region calculate energy values from flows
+        for flow_name, flow in self.flows.items():
+            self.energies.loc[flow_name, 'sim'] = flow.sum() * self.scenario.timestep_hours
+
+        self.energies['yrl'] = utils.scale_sim2year(value=self.energies['sim'], scenario=self.scenario)
+        self.energies['prj'] = utils.scale_year2prj(value=self.energies['yrl'], scenario=self.scenario)
+        self.energies['dis'] = utils.scale_year2dis(value=self.energies['yrl'], scenario=self.scenario)
+        # endregion
+
+        for poe in self.poes.values():
+            poe.calc_economic_results()
+
+    def check_bidi_flows(self):
+        """
+        post scenario method
+        """
+        if {'in', 'out'}.issubset(set(self.flows.columns)):
+            if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
+                self.scenario.logger.warning(f'Block {self.name} - simultaneous in- and outflow detected!')
 
 
 class SystemCore(Block):
@@ -234,6 +264,12 @@ class SystemCore(Block):
         self.flows.loc[horizon.dti_ch, 'dcac'] = horizon.results[(self.components['dc'],
                                                                   self.components['dcac'])]['sequences']['flow'][horizon.dti_ch]
 
+    def check_bidi_flows(self):
+        """
+        post scenario method
+        """
+        if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
+            self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
 # ToDo: @abstractclass if possible
 class RenewableSource(Block):
@@ -1236,6 +1272,11 @@ class NonElectricBlock:
         """
         pass
 
+    def calc_energies(self, *_):
+        """
+        Dummy to be callable for all blocks
+        """
+        pass
 
 class FleetUnit:  # equivalent to commodity
     pass
@@ -1258,7 +1299,7 @@ class ElectricVehicle(Block, FleetUnit, Vehicle, StorageBlock):
     pass
 
 
-class CombustionVehicle(Block, FleetUnit, Vehicle, NonElectricBlock, NonInvestBlock):
+class CombustionVehicle(Block, FleetUnit, Vehicle, NonElectricBlock):
     pass
 
 

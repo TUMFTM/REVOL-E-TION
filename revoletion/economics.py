@@ -17,7 +17,7 @@ def discount(future_value: float,
     return present_value
 
 
-def acc_discount(nominal_value: float,
+def acc_discount(nominal_value: float | pd.Series,
                  observation_horizon: int,
                  discount_rate: float,
                  occurs_at='beginning') -> float:
@@ -26,6 +26,10 @@ def acc_discount(nominal_value: float,
     (from present to the observation horizon) at a discount rate per period
     """
     p_delta = {'beginning': 0, 'middle': 0.5, 'end': 1}[occurs_at]
+
+    if isinstance(nominal_value, pd.Series):
+        return nominal_value.apply(lambda x: acc_discount(x, observation_horizon, discount_rate, occurs_at))
+
     present_value = sum([discount(nominal_value, period + p_delta, discount_rate)
                          for period in range(observation_horizon)])
     return present_value
@@ -180,65 +184,83 @@ def calc_wacc(
     return wacc_nominal, wacc_real
 
 
-class EconomicResults:
-    def __init__(self):
-        self._capex = pd.DataFrame(columns=['init', 'yrl', 'prj', 'dis'])
-        # ToDo: include
-        #  capex_replacement     ->  cost for replacement
-        #  capex_init_existing   ->  cost for existing size
-        #  capex_init_additional ->  cost for additional size
-        #  capex_joined_spec     ->  capex + mntex
-
-        self._mntex = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
-        self._opex = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
-        self._crev = pd.DataFrame(columns=['sim', 'yrl', 'prj', 'dis'])
-        self._cashflows = None
-        self._totex = None
-
-        # todo cashflows
-        pass
-
-
-class PointOfEvaluation:
+class PointOfAggregation:
 
     def __init__(self,
                  name: str,
-                 block,
-                 aggregator: bool = False,
-                 ):
+                 parent: PointOfAggregation,
+                 block=None):
 
         self.name = name
+        self.parent = parent
         self.block = block
-        self.aggregator = aggregator
-
-        self.value_types = ['capex', 'mntex', 'opex', 'crev']
-
-        self.ls = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
-        self.ccr = getattr(self.block, 'ccr', 1)
-
 
         self.capex = {'fix': 0, 'preexisting': 0, 'spec': 0}
         self.mntex = {'fix': 0, 'spec': 0}
         self.opex = {'spec': self.scalar_to_ts(value=0)}
         self.crev = dict()
+        self.aux_params = dict()
 
         self.get_block_params()
+        self.pre_scenario()
+
+        if self.parent is not None:
+            self.parent.capex['preexisting'] += self.capex['preexisting']
+
+    def get_block_params(self):
+        """
+        default method
+        """
+        pass
+
+    def pre_scenario(self):
+        """
+        default method
+        """
+        pass
+
+
+class PointOfEvaluation(PointOfAggregation):
+
+    def get_block_params(self):
+        """
+        Get the block's parameters for the specific point of evaluation and combine them in the respective dictionaries
+        """
+
+        self.aux_params['ls'] = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
+        self.aux_params['ccr'] = getattr(self.block, 'ccr', 1)
+
+        for key in [key for key in self.block.__dict__.keys()
+                    if key.startswith(('capex', 'mntex', 'opex', 'crev'))]:
+            param_split = key.split('_')
+            if len(param_split) == 2:  # single cost occurrence location in block
+                param_split.append('block')
+            value_type, cause, poe = param_split  # examples: capex, spec, g2s
+
+            if poe == self.name:
+                if value_type in ['capex', 'mntex']:
+                    getattr(self, value_type)[cause] = getattr(self.block, key)
+                else:  # opex, crev
+                    getattr(self, value_type)[cause] = self.scalar_to_ts(key=key)
+                delattr(self.block, key)
+
+    def pre_scenario(self):
 
         # region calculate equivalent present specific capex and opex for optimizer
         # include (time-based) maintenance expenses in capex calculation as equivalent present cost
         self.capex['spec_joined'] = join_capex_mntex(capex=self.capex.get('spec', 0),
                                                      mntex=self.mntex.get('spec', 0),
-                                                     lifespan=self.ls,
+                                                     lifespan=self.aux_params['ls'],
                                                      discount_rate=self.block.scenario.wacc)
 
         # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
         self.capex['factor_ep'] = annuity_due_capex(capex_init=1,
                                                     capex_replacement=1,
-                                                    lifespan=self.ls,
+                                                    lifespan=self.aux_params['ls'],
                                                     observation_horizon=self.block.scenario.prj_duration_yrs,
                                                     discount_rate=self.block.scenario.wacc,
-                                                    cost_change_ratio=self.ccr)\
+                                                    cost_change_ratio=self.aux_params['ccr'])\
             if self.block.scenario.compensate_sim_prj else 1
 
         self.capex['spec_ep'] = self.capex['spec_joined'] * self.capex['factor_ep']
@@ -256,27 +278,7 @@ class PointOfEvaluation:
         size_preexisting = self.block.sizes.loc[self.name, 'preexisting'] if self.name in self.block.sizes.index else 0
         self.capex['preexisting'] = (self.capex['preexisting'] *  # boolean so far - will be overwritten
                                      (size_preexisting * self.capex['spec'] + self.capex['fix']))
-
-
-        if not self.aggregator:
-            self.block.poes['total'].capex['preexisting'] += self.capex['preexisting']
         # endregion
-
-    def get_block_params(self):
-        # ToDo: also get ls and ccr if specified for this specific poe
-        for key in [key for key in self.block.__dict__.keys()
-                    if key.startswith(tuple(self.value_types))]:
-            param_split = key.split('_')
-            if len(param_split) == 2:  # single cost occurrence location in block
-                param_split.append('block')
-            value_type, cause, poe = param_split  # examples: capex, spec, g2s
-
-            if poe == self.name:
-                if value_type in ['capex', 'mntex']:
-                    getattr(self, value_type)[cause] = getattr(self.block, key)
-                else:  # opex, crev
-                    getattr(self, value_type)[cause] = self.scalar_to_ts(key=key)
-                delattr(self.block, key)
 
     def calc_opex_factor_ep(self):
         self.opex['factor_ep'] = annuity_recur(nominal_value=utils.scale_sim2year(1, self.block.scenario),
@@ -312,6 +314,7 @@ class PointOfEvaluation:
 
 
 class PeakPeriodPointOfEvaluation(PointOfEvaluation):
+
     def get_block_params(self):
         # get opex spec timeseries
         opex_spec_ts = self.scalar_to_ts('opex_spec_peak')
