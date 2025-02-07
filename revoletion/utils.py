@@ -167,7 +167,7 @@ def read_demand_file(block):
     return df
 
 
-def read_input_csv(block, path_input_file, scenario, multiheader=False, resampling=True):
+def read_input_csv(path_input_file, scenario, block=None, multiheader=False, resampling=True):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
     """
@@ -182,10 +182,11 @@ def read_input_csv(block, path_input_file, scenario, multiheader=False, resampli
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(scenario.timezone)
     if resampling:
-        df = resample_to_timestep(df, block, scenario)
+        df = resample_to_timestep(df, scenario, block)
 
         if not (scenario.dti_sim.isin(df.index).all()):
-            raise IndexError(f'Block "{block.name}": Input timeseries data does not cover simulation timeframe')
+            msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
+            raise IndexError(f'{msg_pre}Input timeseries data in {path_input_file} does not cover simulation timeframe')
 
     return df
 
@@ -199,9 +200,9 @@ def read_input_log(system):
 
     log_path = os.path.join(system.scenario.run.path_input_data,
                             set_extension(system.filename))
-    df = read_input_csv(system,
-                        log_path,
-                        system.scenario,
+    df = read_input_csv(path_input_file=log_path,
+                        scenario=system.scenario,
+                        block=system,
                         multiheader=True,
                         resampling=False)
 
@@ -263,19 +264,21 @@ def read_usecase_file(system):
     return df
 
 
-def resample_to_timestep(data: pd.DataFrame, block, scenario):
+def resample_to_timestep(data: pd.DataFrame, scenario, block=None):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
     """
 
     dti = data.index
     # Add one element to the dataframe to include the last timesteps
+    # ToDo: use function extend_dti() instead of dti.union()?
     try:
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
     except pandas.errors.NullFrequencyError:
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-        scenario.logger.warning(f'Block "{block.name}": Timestep of csv example data could not be inferred -'
-                                f'using 15 min default')
+        # ToDo: pass name of input file to function to add to warning message
+        msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
+        scenario.logger.warning(f'{msg_pre}Timestep of csv data could not be inferred - using 15 min default')
 
     data_ext = data.reindex(dti_ext).ffill()
 
@@ -289,26 +292,21 @@ def resample_to_timestep(data: pd.DataFrame, block, scenario):
     return resampled_data
 
 
-def transform_scalar_var(block, var_name):
+def transform_scalar_var(value, scenario, block=None):
     """
-    Transform scalar variable to a constant pandas Series with the same index as the simulation.
-    Not every block that calls this function is a child of the Block class, so function lives here
+    Transform a value holding either the filename of a csv file containing a timeseries or a scalar
+    to a pandas Series with the same DatetimeIndex as the simulation.
     """
-    scenario = block.scenario if hasattr(block, 'scenario') else block.parent.scenario  # catch GridMarket
-    attr = getattr(block, var_name)
-    # In case of filename for operations cost read csv file
-    if isinstance(attr, str):
-        # Open csv file and use first column as index; also directly convert dates to DateTime objects
-        opex = read_input_csv(block,
-                              os.path.join(scenario.run.path_input_data,
-                                           set_extension(attr)),
-                              scenario)
-        opex = opex[scenario.starttime:(scenario.sim_extd_endtime - scenario.timestep_td)]
-        # Convert data column of cost DataFrame into Series
-        setattr(block, var_name, opex[opex.columns[0]])
-    else:  # opex_spec is given as a scalar directly in scenario file
-        # Use sequence of values for variable costs to unify computation of results
-        setattr(block, var_name, pd.Series(attr, index=scenario.dti_sim_extd))
+    if isinstance(value, str):  # value contains filename
+        return read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data,
+                                                           set_extension(filename=value, default_extension='.csv')),
+                              scenario=scenario,
+                              block=block,
+                              multiheader=False,
+                              resampling=True)[scenario.dti_sim_extd].to_series()
+    else:  # value is given as scalar
+        return pd.Series(data=value,
+                         index=scenario.dti_sim_extd)
 
 
 def set_extension(filename, default_extension='.csv'):

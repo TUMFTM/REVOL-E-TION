@@ -219,7 +219,9 @@ class PointOfEvaluation:
 
         self.capex = {'fix': 0, 'preexisting': 0, 'spec': 0}
         self.mntex = {'fix': 0, 'spec': 0}
-        self.opex = {'spec': self.scalar_to_ts(value=0)}
+        self.opex = {'spec': utils.transform_scalar_var(value=0,
+                                                        scenario=self.scenario,
+                                                        block=self.block)}
         self.crev = dict()
 
         self.get_block_params()
@@ -275,7 +277,9 @@ class PointOfEvaluation:
                 if value_type in ['capex', 'mntex']:
                     getattr(self, value_type)[cause] = getattr(self.block, key)
                 else:  # opex, crev
-                    getattr(self, value_type)[cause] = self.scalar_to_ts(key=key)
+                    getattr(self, value_type)[cause] = utils.transform_scalar_var(value=getattr(self.block, key),
+                                                                                  scenario=self.scenario,
+                                                                                  block=self.block)
                 delattr(self.block, key)
 
     def calc_opex_factor_ep(self):
@@ -295,10 +299,11 @@ class PointOfEvaluation:
         value = getattr(self.block, key) if key is not None else value
 
         if isinstance(value, str):
-            ts = utils.read_input_csv(block=self.block,
-                                      path_input_file=os.path.join(self.block.scenario.run.path_input_data,
+            ts = utils.read_input_csv(path_input_file=os.path.join(self.block.scenario.run.path_input_data,
                                                                    utils.set_extension(value)),
-                                      scenario=self.block.scenario)
+                                      scenario=self.block.scenario,
+                                      block=self.block,
+                                      )
             if ts.shape[1] != 1:
                 raise ValueError(f'Input file "{utils.set_extension(value)}" for parameter '
                                  f'"key" in block "{self.block.name}" has more than one column')
@@ -314,7 +319,10 @@ class PointOfEvaluation:
 class PeakPeriodPointOfEvaluation(PointOfEvaluation):
     def get_block_params(self):
         # get opex spec timeseries
-        opex_spec_ts = self.scalar_to_ts('opex_spec_peak')
+        opex_spec_ts = utils.transform_scalar_var(value=self.block.opex_spec_peak,
+                                                  scenario=self.scenario,
+                                                  block=self.block)
+
         # get and set the opex_spec at the first timestep of the peakshaving period
         self.opex['spec'] = opex_spec_ts[self.block.peakshaving_periods.loc[self.name, 'start']]
 

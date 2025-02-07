@@ -614,7 +614,9 @@ class WindSource(RenewableSource):
             # region get data from file
             path_input_file = os.path.join(self.scenario.run.path_input_data,
                                            utils.set_extension(self.filename))
-            self.data = utils.read_input_csv(self, path_input_file, self.scenario)
+            self.data = utils.read_input_csv(path_input_file=path_input_file,
+                                             scenario=self.scenario,
+                                             block=self)
             # endregion
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
@@ -649,10 +651,11 @@ class FixedDemand(Block):
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
     def get_demand_from_file(self):
-        data = utils.read_input_csv(block=self,
-                                    path_input_file=os.path.join(self.scenario.run.path_input_data,
+        data = utils.read_input_csv(path_input_file=os.path.join(self.scenario.run.path_input_data,
                                                                  utils.set_extension(self.load_profile)),
-                                    scenario=self.scenario)
+                                    scenario=self.scenario,
+                                    block=self,
+                                    )
 
         if data.shape[1] != 1:
             self.scenario.logger.warning(f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
