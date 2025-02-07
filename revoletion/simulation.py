@@ -192,12 +192,7 @@ class PredictionHorizon:
         del self.model
 
         for block in self.scenario.blocks.values():
-            block.get_invest_size(self)
-            block.get_ch_results(self)
-
-        # calculate aging for all storage blocks
-        for storage_block in self.scenario.storage_blocks.values():
-            storage_block.aging_model.age()  #todo move to post horizon
+            block.post_horizon(self)
 
     def run_optimization(self):
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '

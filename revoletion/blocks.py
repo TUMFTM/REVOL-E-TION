@@ -80,7 +80,7 @@ class Block:
 
         self.poes = {'total': eco.PointOfEvaluation(name='total', block=self, aggregator=True)}  # total covers entire block
         self.poes.update({name: eco.PointOfEvaluation(name=name, block=self, aggregator=False) for name in poe_names} \
-            if poe_names is not None else dict())
+                             if poe_names is not None else dict())
         # Delete ccr and ls as they are contained in poes
         for attribute in ['ccr', 'ls']:
             if hasattr(self, attribute):
@@ -136,21 +136,18 @@ class Block:
 
     def post_horizon(self,
                      horizon):
-        """
-        post horizon method
-        """
 
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
 
-        self.get_oemof_results(horizon=horizon)
-        self.sizes['total'] = self.sizes['existing'] + self.sizes['expansion']
+        self.get_horizon_results(horizon=horizon)
+        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
 
 
 class NonInvestBlock:
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
@@ -232,8 +229,8 @@ class SystemCore(Block):
             horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
@@ -310,8 +307,8 @@ class RenewableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
@@ -321,9 +318,9 @@ class RenewableSource(Block):
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'pot'] = horizon.results[(self.components['src'],
-                                                                 self.bus)]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'curt'] = horizon.results[(self.bus,
-                                                                  self.exc)]['sequences']['flow'][horizon.dti_ch]
+                                                                 self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'curt'] = horizon.results[(self.components['bus'],
+                                                                  self.components['exc'])]['sequences']['flow'][horizon.dti_ch]
 
 
 # ToDo: @abstractclass if possible
@@ -342,13 +339,29 @@ class StorageBlock:
         self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
         self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
-        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['storage'],
-                                                                None)]['scalars']['invest']
+        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['storage'], None)]['scalars']['invest']
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'bat_out'] = horizon.results[(self.components['storage'],
+                                                                     self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'bat_in'] = horizon.results[(self.components['bus'],
+                                                                    self.components['storage'])]['sequences']['flow'][horizon.dti_ch]
+
+        # preemptive size calculation to enable soc calculation
+        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
+        self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][utils.extend_dti(horizon.dti_ch)]
+        self.states['soc'] = self.states['energy'] / self.sizes.loc['block', 'total']
+
+        #self.aging_model.age(horizon=horizon)  # todo reactivate
 
     def calc_energies(self):
         """
@@ -399,7 +412,7 @@ class PVSource(RenewableSource):
                         ),
                         index_col=[0],
                         na_filter=False)
-                    api_params = api_params.map(utils.infer_dtype)['value'].to_dict()\
+                    api_params = api_params.map(utils.infer_dtype)['value'].to_dict() \
                         if api_params.index.name == 'parameter' and all(api_params.columns == 'value') else {}
                 except FileNotFoundError:
                     api_params = {}
@@ -704,7 +717,7 @@ class FixedDemand(Block, NonInvestBlock):
         data = pd.Series(index=dti_slp, data=0, dtype='float64')
 
         data = data.index.to_series().apply(
-        lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))])
+            lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))])
 
         # apply dynamic correction for household profiles
         if self.load_profile == 'h0':
@@ -752,7 +765,7 @@ class StationaryBattery(Block, StorageBlock):
         super().__init__(name=name,
                          scenario=scenario,
                          flow_names=['in', 'out', 'total'],
-                         state_names=['soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                         state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
                          size_names=['block'],
                          poe_names=['block'],
                          params=None,
@@ -881,8 +894,8 @@ class ControllableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
@@ -1003,8 +1016,8 @@ class GridConnection(Block):
     def initialize_markets(self):
         # get information about GridMarkets specified in the scenario file
         markets = pd.read_csv(os.path.join(self.scenario.run.path_input_data,
-                                               utils.set_extension(self.filename_markets)),
-                                  index_col=[0]).map(utils.infer_dtype)
+                                           utils.set_extension(self.filename_markets)),
+                              index_col=[0]).map(utils.infer_dtype)
 
         # Generate individual GridMarkets instances
         self.subblocks = {market_name: GridMarket(name=market_name,
@@ -1095,8 +1108,8 @@ class GridConnection(Block):
         if len(equal_investments) > 1:
             horizon.constraints.add_equal_invests(equal_investments)
 
-    def get_oemof_results(self,
-                        horizon):
+    def get_horizon_results(self,
+                            horizon):
         """
         post horizon method
         """
@@ -1112,7 +1125,7 @@ class GridConnection(Block):
 
         def get_peak_power(row):
             peak_power = max(row['power'],
-                             horizon.results[(self.outflows[f'{self.name}_xc_{row.name}'],
+                             horizon.results[(self.outflows[f'{self.name}_outflow_{row.name}'],
                                               self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
             return peak_power
 
@@ -1184,7 +1197,7 @@ class Fleet(Block):
                          poe_names=None,
                          params=None,
                          parent=None,
-        )  # todo fill out
+                         )  # todo fill out
 
         self.scenario.commodity_systems[self.name] = self
 
