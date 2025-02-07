@@ -1,12 +1,12 @@
 block,key,icev,#bev_grid,#bev_mg,#bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,50,50,50,50
+scenario,sim_duration,14,50,50,50
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,go,rh
-scenario,len_ph,None,None,None,48
-scenario,len_ch,None,None,None,12
+scenario,len_ph,48,None,None,48
+scenario,len_ch,12,None,None,12
 scenario,truncate_ph,True,True,True,True
 scenario,invest_max,None,None,None,None
 scenario,wacc,0.09,0.09,0.09,0.09
@@ -16,14 +16,14 @@ scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
 scenario,blocks,"{'grid':'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
-core,size_preexisting_acdc,1000,0,0,0
+core,size_preexisting_acdc,10000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
 core,invest_acdc,False,True,True,False
-core,size_preexisting_dcac,2000,equal,equal,equal
+core,size_preexisting_dcac,12000,equal,equal,equal
 core,capex_preexisting_dcac,True,True,True,True
 core,size_max_dcac,equal,equal,equal,equal
-core,invest_dcac,equal,equal,equal,equal
+core,invest_dcac,False,equal,equal,equal
 core,capex_spec_acdc,0.08,0.08,0.08,0.08
 core,capex_spec_dcac,0.08,0.08,0.08,0.08
 core,mntex_spec_acdc,0.0024,0.0024,0.0024,0.0024
@@ -38,7 +38,7 @@ dem,load_profile,dem_timeseries,dem_timeseries,dem_timeseries,dem_timeseries
 dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
-wind,size_preexisting,0,0,0,0
+wind,size_preexisting,5000,0,0,0
 wind,capex_preexisting,True,True,True,True
 wind,size_max,None,None,None,None
 wind,invest,False,True,True,False
@@ -52,7 +52,7 @@ wind,opex_spec,0,0,0,0
 wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
 wind,eff,0.95,0.95,0.95,0.95
-pv,size_preexisting,0,0,0,0
+pv,size_preexisting,15000,0,0,0
 pv,capex_preexisting,True,True,True,True
 pv,size_max,None,None,None,None
 pv,invest,False,True,True,False
@@ -65,7 +65,7 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff,0.95,0.95,0.95,0.95
-gen,size_preexisting,0,0,0,0
+gen,size_preexisting,8000,0,0,0
 gen,capex_preexisting,True,True,True,True
 gen,size_max,None,None,None,None
 gen,invest,False,True,True,False
@@ -76,14 +76,14 @@ gen,opex_spec,0.0009,0.0009,0.0009,0.0009
 gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
 gen,eff,1,1,1,1
-grid,size_preexisting_g2s,0,0,0,43500
+grid,size_preexisting_g2s,20000,0,0,43500
 grid,capex_preexisting_g2s,True,True,True,True
 grid,size_max_g2s,None,None,None,None
-grid,invest_g2s,True,True,True,False
+grid,invest_g2s,False,True,True,False
 grid,size_preexisting_s2g,equal,equal,equal,equal
 grid,capex_preexisting_s2g,True,True,True,True
 grid,size_max_s2g,equal,equal,equal,equal
-grid,invest_s2g,equal,equal,equal,equal
+grid,invest_s2g,False,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,week,None,None,None
 grid,opex_spec_peak,1,0,0,0
@@ -95,7 +95,7 @@ grid,ls,10,10,10,10
 grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
 grid,filename_markets,grid_markets,None,None,None
-ess,size_preexisting,0,0,0,0
+ess,size_preexisting,22000,0,0,0
 ess,capex_preexisting,True,True,True,True
 ess,size_max,None,None,None,None
 ess,invest,False,True,True,False

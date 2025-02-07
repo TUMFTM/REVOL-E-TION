@@ -34,6 +34,7 @@ from revoletion import blocks
 from revoletion import checker
 from revoletion import constraints
 from revoletion import dispatch
+from revoletion import economics as eco
 from revoletion import logger as logger_fcs
 from revoletion import scheduler
 from revoletion import utils
@@ -192,12 +193,7 @@ class PredictionHorizon:
         del self.model
 
         for block in self.scenario.blocks.values():
-            block.get_invest_size(self)
-            block.get_ch_results(self)
-
-        # calculate aging for all storage blocks
-        for storage_block in self.scenario.storage_blocks.values():
-            storage_block.aging_model.age()  #todo move to post horizon
+            block.post_horizon(self)
 
     def run_optimization(self):
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -254,9 +250,6 @@ class Scenario:
         self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
-
-        # add SystemCore to blocks ensuring SystemCore is the first component to be built
-        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
@@ -369,6 +362,10 @@ class Scenario:
         # Energy System Blocks --------------------------------
         # initialize variable to store initial investment costs given in scenario definition
         self.capex_init_existing = 0
+        self.poa = eco.PointOfAggregation(name='scenario', parent=None, scenario=self)
+
+        # add SystemCore to blocks ensuring SystemCore is the first component to be built
+        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.storage_blocks = {}
@@ -548,13 +545,6 @@ class Scenario:
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
-    def get_results(self):
-        for block in self.blocks.values():
-            block.calc_energy()
-            block.calc_expenses()
-            block.calc_revenue()
-            block.calc_cashflows()
-
     def print_results(self):
         for block in self.blocks.values():
             block.print_results()
@@ -632,7 +622,7 @@ class Scenario:
         self.result_summary.to_pickle(self.path_result_summary_tempfile)
 
     def save_result_timeseries(self):
-        for block in self.blocks.values():
+        for block in self.blocks.values():  # todo transform to proactive push from blocks
             block.get_timeseries_results()
         self.result_timeseries.to_csv(self.path_result_ts_file)
 
@@ -951,7 +941,7 @@ class SimulationRun:
                                                 status_msg={'scenario': name,
                                                             'status': 'successful'})
 
-            scenario.end_timing()
+            scenario.end_timing()  # todo move after result getting?
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
@@ -971,7 +961,8 @@ class SimulationRun:
 
         finally:
             try:
-                scenario.get_results()
+                for block in scenario.blocks.values():
+                    block.post_scenario()
                 scenario.calc_meta_results()
                 scenario.save_result_summary()
 
