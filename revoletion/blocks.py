@@ -147,6 +147,13 @@ class Block:
         self.sizes['total'] = self.sizes['existing'] + self.sizes['expansion']
 
 
+class NonInvestBlock:
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        pass
 
 
 class SystemCore(Block):
@@ -594,7 +601,7 @@ class WindSource(RenewableSource):
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
 
-class FixedDemand(Block):
+class FixedDemand(Block, NonInvestBlock):
 
     def __init__(self,
                  name: str,
@@ -1057,8 +1064,18 @@ class GridConnection(Block):
         if len(equal_investments) > 1:
             horizon.constraints.add_equal_invests(equal_investments)
 
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        self.sizes.loc['g2s', 'expansion'] = horizon.results[(self.components['bus'],
+                                                              list(self.outflows.values())[0])]['scalars']['invest']
+        self.sizes.loc['s2g', 'expansion'] = horizon.results[(list(self.inflows.values())[0],
+                                                              self.components['bus'])]['scalars']['invest']
 
-class GridMarket(Block):
+
+class GridMarket(Block, NonInvestBlock):
 
     def __init__(self,
                  name: str,
@@ -1159,7 +1176,7 @@ class ElectricVehicle(Block, FleetUnit, Vehicle, StorageBlock):
     pass
 
 
-class CombustionVehicle(Block, FleetUnit, Vehicle, NonElectricBlock):
+class CombustionVehicle(Block, FleetUnit, Vehicle, NonElectricBlock, NonInvestBlock):
     pass
 
 
