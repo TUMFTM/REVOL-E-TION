@@ -188,16 +188,37 @@ class PointOfAggregation:
 
     def __init__(self,
                  name: str,
-                 parent: PointOfAggregation,
+                 parent,  # todo type hint PointOfAggregation
+                 scenario,
                  block=None):
 
         self.name = name
         self.parent = parent
+        self.scenario = scenario  # might be needed as block is not mandatory for PoAs
         self.block = block
 
-        self.capex = {'fix': 0, 'preexisting': 0, 'spec': 0}
-        self.mntex = {'fix': 0, 'spec': 0}
-        self.opex = {'spec': self.scalar_to_ts(value=0)}
+        self.capex = getattr(self, 'capex', dict())
+        self.capex.update({'fix': 0,
+                           'preexisting': 0,
+                           'expansion': 0,
+                           'init': 0,
+                           'replacement': 0,
+                           'prj': 0,
+                           'dis': 0,
+                           'ann': 0})
+        self.mntex = getattr(self, 'mntex', dict())
+        self.mntex.update({'fix': 0,
+                           'yrl': 0,
+                           'sim': 0,
+                           'prj': 0,
+                           'dis': 0,
+                           'ann': 0})
+        self.opex = getattr(self, 'opex', dict())
+        self.opex.update({'yrl': 0,
+                          'sim': 0,
+                          'prj': 0,
+                          'dis': 0,
+                          'ann': 0})
         self.crev = dict()
         self.aux_params = dict()
 
@@ -206,6 +227,32 @@ class PointOfAggregation:
 
         if self.parent is not None:
             self.parent.capex['preexisting'] += self.capex['preexisting']
+
+    def scalar_to_ts(self,
+                     key: str = None,
+                     value: float = None):  # todo make this a global function in utils. inputs: scenario, value --> return ts
+        """
+        Transform scalar value or filename (contents) stored in self.block.key to timeseries
+        to be able to calculate the economic results using dot product with the block's flows
+        """
+
+        value = getattr(self.block, key) if key is not None else value
+
+        if isinstance(value, str):
+            ts = utils.read_input_csv(block=self.block,
+                                      path_input_file=os.path.join(self.block.scenario.run.path_input_data,
+                                                                   utils.set_extension(value)),
+                                      scenario=self.block.scenario)
+            if ts.shape[1] != 1:
+                raise ValueError(f'Input file "{utils.set_extension(value)}" for parameter '
+                                 f'"key" in block "{self.block.name}" has more than one column')
+
+            ts = ts.loc[self.block.scenario.dti_sim_extd, ts.columns[0]]  # convert to series and slice to sim timeframe
+        else:  # scalar value
+            ts = pd.Series(index=self.scenario.dti_sim_extd,
+                           data=value)
+
+        return ts
 
     def get_block_params(self):
         """
@@ -219,8 +266,40 @@ class PointOfAggregation:
         """
         pass
 
+    def post_scenario(self):
+        """
+        Aggregate economic results one level up
+        """
+        if self.parent is not None:
+            for key in ['expansion', 'init', 'replacement', 'prj', 'dis', 'ann']:
+                self.parent.capex[key] += self.capex[key]
+            for key in ['yrl', 'sim', 'prj', 'dis', 'ann']:
+                self.parent.mntex[key] += self.mntex[key]
+                self.parent.opex[key] += self.opex[key]
+
 
 class PointOfEvaluation(PointOfAggregation):
+
+    def __init__(self,
+                 name: str,
+                 parent,
+                 scenario,
+                 block,
+                 opex_flow_name: str = None):
+
+        self.scenario = scenario
+
+        self.capex = {'spec': 0}
+        self.mntex = {'spec': 0}
+        self.opex = {'spec': self.scalar_to_ts(value=0)}
+
+        super().__init__(name=name,
+                         parent=parent,
+                         scenario=scenario,
+                         block=block)
+
+        self.opex_flow_name = opex_flow_name
+
 
     def get_block_params(self):
         """
@@ -286,36 +365,70 @@ class PointOfEvaluation(PointOfAggregation):
                                                discount_rate=self.block.scenario.wacc)\
             if self.block.scenario.compensate_sim_prj else 1
 
-    def scalar_to_ts(self,
-                     key: str = None,
-                     value: float = None):
-        """
-        Transform scalar value or filename (contents) stored in self.block.key to timeseries
-        to be able to calculate the economic results using dot product with the block's flows
-        """
+    def post_scenario(self):
 
-        value = getattr(self.block, key) if key is not None else value
+        # region capex
+        self.capex['expansion'] = self.capex['spec'] * self.block.sizes.loc[self.name, 'expansion']
+        self.capex['init'] = self.capex['preexisting'] + self.capex['expansion']
+        self.capex['replacement'] = self.capex['spec'] * self.block.sizes.loc[self.name, 'total'] + self.capex['fix']
+        self.capex['prj'] = capex_sum(capex_init=self.capex['init'],
+                                      capex_replacement=self.capex['replacement'],
+                                      cost_change_ratio=self.aux_params['ccr'],
+                                      lifespan=self.aux_params['ls'],
+                                      observation_horizon=self.scenario.prj_duration_yrs)
+        self.capex['dis'] = capex_present(capex_init=self.capex['init'],
+                                          capex_replacement=self.capex['replacement'],
+                                          cost_change_ratio=self.aux_params['ccr'],
+                                          discount_rate=self.scenario.wacc,
+                                          lifespan=self.aux_params['ls'],
+                                          observation_horizon=self.scenario.prj_duration_yrs)
+        self.capex['ann'] = annuity_due_capex(capex_init=self.capex['init'],
+                                              capex_replacement=self.capex['replacement'],
+                                              lifespan=self.aux_params['ls'],
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc,
+                                              cost_change_ratio=self.aux_params['ccr'])
+        # endregion
 
-        if isinstance(value, str):
-            ts = utils.read_input_csv(block=self.block,
-                                      path_input_file=os.path.join(self.block.scenario.run.path_input_data,
-                                                                   utils.set_extension(value)),
-                                      scenario=self.block.scenario)
-            if ts.shape[1] != 1:
-                raise ValueError(f'Input file "{utils.set_extension(value)}" for parameter '
-                                 f'"key" in block "{self.block.name}" has more than one column')
+        # region mntex
+        self.mntex['yrl'] = self.block.sizes.loc[self.name, 'total'] * self.mntex['spec']
+        self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
+        self.mntex['prj'] = utils.scale_year2prj(self.mntex['yrl'], self.scenario)
+        self.mntex['dis'] = acc_discount(nominal_value=self.mntex['yrl'],
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc,
+                                         occurs_at='beginning')
+        self.mntex['ann'] = annuity_due_recur(nominal_value=self.mntex['yrl'],
+                                              observation_horizon=self.scenario.prj_duration_yrs,
+                                              discount_rate=self.scenario.wacc)
+        # endregion
 
-            ts = ts.loc[self.block.scenario.dti_sim_extd, ts.columns[0]]  # convert to series and slice to sim timeframe
-        else:  # scalar value
-            ts = pd.Series(index=self.block.scenario.dti_sim_extd,
-                           data=value)
+        # region opex
+        self.opex['sim'] = self.block.flows[self.opex_flow_name] @ self.opex['spec'][self.scenario.dti_sim] \
+            if self.opex_flow_name is not None else 0
+        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
+        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.scenario)
+        self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
+                                        observation_horizon=self.scenario.prj_duration_yrs,
+                                        discount_rate=self.scenario.wacc,
+                                        occurs_at='end')
+        self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc)
+        # endregion
 
-        return ts
+        super().post_scenario()
+
+
 
 
 class PeakPeriodPointOfEvaluation(PointOfEvaluation):
 
     def get_block_params(self):
+
+        self.aux_params['ls'] = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
+        self.aux_params['ccr'] = getattr(self.block, 'ccr', 1)
+
         # get opex spec timeseries
         opex_spec_ts = self.scalar_to_ts('opex_spec_peak')
         # get and set the opex_spec at the first timestep of the peakshaving period
@@ -324,3 +437,20 @@ class PeakPeriodPointOfEvaluation(PointOfEvaluation):
     def calc_opex_factor_ep(self):
         self.opex['factor_ep'] = (self.block.n_peakshaving_periods_yr / self.block.peakshaving_periods.shape[0]
                                   if self.block.scenario.compensate_sim_prj else 1)
+
+    def post_scenario(self):
+
+        self.opex['sim'] = self.block.flows[self.opex_flow_name] @ self.opex['spec'][self.scenario.dti_sim] \
+            if self.opex_flow_name is not None else 0
+        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
+        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.scenario)
+        self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
+                                        observation_horizon=self.scenario.prj_duration_yrs,
+                                        discount_rate=self.scenario.wacc,
+                                        occurs_at='end')
+        self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc)
+
+        super(PointOfEvaluation, self).post_scenario()  # call PointOfAggregation.post_scenario(self)
+

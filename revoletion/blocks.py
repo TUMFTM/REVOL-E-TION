@@ -25,7 +25,7 @@ class Block:
                  flow_names: list = None,
                  state_names: list = None,
                  size_names: list = None,
-                 poe_names: list = None,
+                 poe_names: dict = None,
                  params: dict = None,
                  parent=None,  # todo type hint
                  ):
@@ -80,17 +80,19 @@ class Block:
         self.expansion_equal = False
         self.initialize_sizes(sizes=size_names)
 
-        self.poa = eco.PointOfAggregation(name=f'{self.name}_total', parent=self.parent.poe_total)
-        self.poes = {name: eco.PointOfEvaluation(name=name, block=self, parent=self.poa) for name in poe_names} \
+        self.poa = eco.PointOfAggregation(name=f'{self.name}_total',
+                                          parent=self.parent.poa,
+                                          scenario=self.scenario)
+        self.poes = {name: eco.PointOfEvaluation(name=name,
+                                                 block=self,
+                                                 parent=self.poa,
+                                                 scenario=self.scenario,
+                                                 opex_flow_name=opex_flow_name) for name, opex_flow_name in poe_names.items()} \
             if poe_names is not None else dict()
         # Delete ccr and ls as they are contained in poes
         for attribute in ['ccr', 'ls']:
             if hasattr(self, attribute):
                 delattr(self, attribute)
-
-        self.scenario.capex_init_existing += self.poes['total'].capex['preexisting']
-
-        # self.economic_results = eco.EconomicResults(self) #todo
         # endregion
 
     def initialize_sizes(self,
@@ -163,7 +165,8 @@ class Block:
         # endregion
 
         for poe in self.poes.values():
-            poe.calc_economic_results()
+            poe.post_scenario()
+        self.poa.post_scenario()
 
     def check_bidi_flows(self):
         """
@@ -184,7 +187,7 @@ class SystemCore(Block):
                          flow_names=['acdc', 'dcac'],
                          state_names=None,
                          size_names=['acdc', 'dcac'],
-                         poe_names=['acdc', 'dcac'],
+                         poe_names={'acdc': 'acdc', 'dcac': 'dcac'},
                          params=None,
                          parent=scenario)
 
@@ -283,7 +286,7 @@ class RenewableSource(Block):
                          flow_names=['out', 'total', 'pot', 'curt'],
                          state_names=None,
                          size_names=['block'],
-                         poe_names=['block'],
+                         poe_names={'block': 'out'},
                          params=None,
                          parent=scenario)
 
@@ -680,7 +683,7 @@ class FixedDemand(Block):
                          flow_names=['in', 'total'],
                          state_names=None,
                          size_names=None,
-                         poe_names=['block'],
+                         poe_names={'block': None},
                          params=None,
                          parent=scenario)
 
@@ -806,7 +809,7 @@ class StationaryBattery(Block, StorageBlock):
                          flow_names=['in', 'out', 'total'],
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
                          size_names=['block'],
-                         poe_names=['block'],
+                         poe_names={'block': 'in'},
                          params=None,
                          parent=scenario)
 
@@ -902,7 +905,7 @@ class ControllableSource(Block):
                          flow_names=['out', 'total'],
                          state_names=None,
                          size_names=['block'],
-                         poe_names=['block'],
+                         poe_names={'block': 'out'},
                          params=None,
                          parent=scenario)
 
@@ -1050,7 +1053,8 @@ class GridConnection(Block):
         self.poes.update({period: eco.PeakPeriodPointOfEvaluation(
             name=period,
             block=self,
-            aggregator=False)
+            parent=self.poa,
+            scenario=self.scenario,)
             for period in self.peakshaving_periods.index})
         pass
 
@@ -1187,7 +1191,7 @@ class GridMarket(Block):
                          flow_names=['in', 'out', 'total'],
                          state_names=None,
                          size_names=['g2s', 's2g'],
-                         poe_names=['g2s', 's2g'],
+                         poe_names={'g2s': 'g2s', 's2g': 's2g'},
                          params=params,
                          parent=parent)
 
