@@ -959,10 +959,10 @@ class GridConnection(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['in', 'out', 'total'],
+                         flow_names=['in', 'out'],
                          state_names=None,
                          size_names=['g2s', 's2g'],
-                         poe_names=['g2s', 's2g'],
+                         poe_names={'g2s': 'in', 's2g': 'out'},
                          params=None,
                          parent=scenario)
 
@@ -1191,10 +1191,10 @@ class GridMarket(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['in', 'out', 'total'],
+                         flow_names=['in', 'out'],
                          state_names=None,
                          size_names=['g2s', 's2g'],
-                         poe_names={'g2s': 'g2s', 's2g': 's2g'},
+                         poe_names={'g2s': 'in', 's2g': 'out'},
                          params=params,
                          parent=parent)
 

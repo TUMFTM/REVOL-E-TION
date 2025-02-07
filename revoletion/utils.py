@@ -307,13 +307,22 @@ def transform_scalar_var(value, scenario, block=None):
     Transform a value holding either the filename of a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
     """
+    # ToDo: fix block=None in structure -> main cause in structure of POEs
     if isinstance(value, str):  # value contains filename
-        return read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data,
-                                                           set_extension(filename=value, default_extension='.csv')),
-                              scenario=scenario,
-                              block=block,
-                              multiheader=False,
-                              resampling=True)[scenario.dti_sim_extd].to_series()
+        filename = set_extension(filename=value, default_extension='.csv')
+        df = read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data,
+                                                         filename),
+                            scenario=scenario,
+                            block=block,
+                            multiheader=False,
+                            resampling=True).loc[scenario.dti_sim_extd]
+        if df.shape[1] != 1:
+            msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
+            scenario.logger.warning(f'{msg_pre}Input data in {filename} contains more than one column - '
+                                    f'only first column is used.')
+
+        return df.iloc[:, 0]  # return only first column
+
     else:  # value is given as scalar
         return pd.Series(data=value,
                          index=scenario.dti_sim_extd)

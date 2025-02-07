@@ -338,9 +338,12 @@ class PointOfEvaluation(PointOfAggregation):
         # endregion
 
     def get_block_params(self):
-        # ToDo: also get ls and ccr if specified for this specific poe
+
+        self.aux_params['ls'] = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
+        self.aux_params['ccr'] = getattr(self.block, 'ccr', 1)
+
         for key in [key for key in self.block.__dict__.keys()
-                    if key.startswith(tuple(self.value_types))]:
+                    if key.startswith(('capex', 'mntex', 'opex', 'crev'))]:
             param_split = key.split('_')
             if len(param_split) == 2:  # single cost occurrence location in block
                 param_split.append('block')
