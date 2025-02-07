@@ -11,10 +11,10 @@ import requests
 import statistics
 import windpowerlib
 
-
 from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import utils
+
 
 # ToDo: @abstractclass if possible
 class Block:
@@ -134,6 +134,20 @@ class Block:
         for subblock in self.subblocks.values():
             subblock.pre_horizon(horizon=horizon)
 
+    def post_horizon(self,
+                     horizon):
+        """
+        post horizon method
+        """
+
+        for subblock in self.subblocks.values():
+            subblock.post_horizon(horizon=horizon)
+
+        self.get_invest_size(horizon=horizon)
+        self.sizes['total'] = self.sizes['existing'] + self.sizes['expansion']
+
+
+
 
 class SystemCore(Block):
 
@@ -209,6 +223,16 @@ class SystemCore(Block):
             # add a tuple of tuples to the list of equal variables of the scenario
             horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
+
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        self.sizes.loc['acdc', 'expansion'] = horizon.results[(self.components['ac'],
+                                                               self.components['acdc'])]['scalars']['invest']
+        self.sizes.loc['dcac', 'expansion'] = horizon.results[(self.components['dc'],
+                                                               self.components['dcac'])]['scalars']['invest']
 
 
 # ToDo: @abstractclass if possible
@@ -567,7 +591,8 @@ class WindSource(RenewableSource):
             self.data = utils.read_input_csv(self, path_input_file, self.scenario)
             # endregion
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified')
+            raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
+
 
 class FixedDemand(Block):
 
@@ -1111,6 +1136,7 @@ class NonElectricBlock:
         Dummy to be callable for all blocks
         """
         pass
+
 
 class FleetUnit:  # equivalent to commodity
     pass

@@ -191,12 +191,8 @@ class PredictionHorizon:
         # free up RAM
         del self.model
 
-        # get optimum component sizes
-        for block in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.InvestBlock)]:
-            block.get_invest_size(self)
-
-        # get results for all blocks
         for block in self.scenario.blocks.values():
+            block.get_invest_size(self)
             block.get_ch_results(self)
 
         # calculate aging for all storage blocks
