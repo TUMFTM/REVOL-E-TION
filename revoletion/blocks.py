@@ -302,6 +302,14 @@ class RenewableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
+                                                                self.components['bus'])]['scalars']['invest']
+
 
 # ToDo: @abstractclass if possible
 class StorageBlock:
@@ -318,6 +326,14 @@ class StorageBlock:
         self.aging_model = bat.BatteryPackModel(self)
         self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
         self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
+
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['storage'],
+                                                                None)]['scalars']['invest']
 
     def calc_energies(self):
         """
@@ -850,6 +866,13 @@ class ControllableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
+    def get_invest_size(self,
+                        horizon):
+        """
+        post horizon method
+        """
+        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
+                                                                self.bus_connected)]['scalars']['invest']
 
 
 class GridConnection(Block):
