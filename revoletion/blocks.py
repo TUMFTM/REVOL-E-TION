@@ -143,12 +143,13 @@ class Block:
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
 
-        self.get_invest_size(horizon=horizon)
+        self.get_oemof_results(horizon=horizon)
         self.sizes['total'] = self.sizes['existing'] + self.sizes['expansion']
 
 
 class NonInvestBlock:
-    def get_invest_size(self,
+
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
@@ -231,7 +232,7 @@ class SystemCore(Block):
             horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
 
-    def get_invest_size(self,
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
@@ -309,13 +310,20 @@ class RenewableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
-    def get_invest_size(self,
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
         """
         self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
                                                                 self.components['bus'])]['scalars']['invest']
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'pot'] = horizon.results[(self.components['src'],
+                                                                 self.bus)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'curt'] = horizon.results[(self.bus,
+                                                                  self.exc)]['sequences']['flow'][horizon.dti_ch]
 
 
 # ToDo: @abstractclass if possible
@@ -334,7 +342,7 @@ class StorageBlock:
         self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
         self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
 
-    def get_invest_size(self,
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
@@ -873,7 +881,7 @@ class ControllableSource(Block):
                                              capex_spec=self.poes['block'].capex['spec'],
                                              invest_type='flow')
 
-    def get_invest_size(self,
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
@@ -1087,7 +1095,7 @@ class GridConnection(Block):
         if len(equal_investments) > 1:
             horizon.constraints.add_equal_invests(equal_investments)
 
-    def get_invest_size(self,
+    def get_oemof_results(self,
                         horizon):
         """
         post horizon method
