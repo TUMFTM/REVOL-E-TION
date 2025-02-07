@@ -886,8 +886,7 @@ class GridConnection(Block):
                                                 data=0.0,  # cumulative variable
                                                 dtype='float64')
 
-        # ToDo: fix peakshaving opex using (peakshaving-)poe objects
-        self.opex_spec_peak = self.opex_spec_peak if self.peakshaving is not None else 0  # can be adapted for multiple cost levels over time
+        self.opex_spec_peak = self.opex_spec_peak if self.peakshaving is not None else 0
 
         # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
         # for period in self.peakshaving_periods.index:
@@ -1001,7 +1000,7 @@ class GridConnection(Block):
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=self.poes[period].opex['spec_ep'],  #ToDo: fix this poe definition
+                nominal_value=(solph.Investment(ep_costs=self.poes[period].opex['spec_ep'],
                                                 existing=self.peakshaving_periods.loc[period, 'power'],)
                                if self.peakshaving else None),
                 max=(self.bus_activation.loc[horizon.dti_ph, period] if self.peakshaving else None))},
