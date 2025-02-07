@@ -1166,6 +1166,20 @@ class GridMarket(Block, NonInvestBlock):
             }
         )
 
+    def get_horizon_results(self,
+                            horizon):
+
+        """
+        post horizon method
+        """
+
+
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.parent.components['bus'],
+                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
+                                                                 self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+
 
 class Fleet(Block):
 
