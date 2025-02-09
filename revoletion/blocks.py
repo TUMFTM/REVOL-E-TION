@@ -80,14 +80,14 @@ class Block:
         self.expansion_equal = False
         self.initialize_sizes(sizes=size_names)
 
-        self.poa = eco.PointOfAggregation(name=f'{self.name}_total',
-                                          parent=self.parent.poa,
+        self.aggregator = eco.EconomicAggregator(name=f'{self.name}_total',
+                                          parent=self.parent.agregator,
                                           scenario=self.scenario)
-        self.poes = {name: eco.PointOfEvaluation(name=name,
-                                                 block=self,
-                                                 parent=self.poa,
-                                                 scenario=self.scenario,
-                                                 opex_flow_name=opex_flow_name) for name, opex_flow_name in poe_names.items()} \
+        self.evaluators = {name: eco.EconomicEvaluator(name=name,
+                                                       block=self,
+                                                       parent=self.poa,
+                                                       scenario=self.scenario,
+                                                       opex_flow_name=opex_flow_name) for name, opex_flow_name in poe_names.items()} \
             if poe_names is not None else dict()
         # Delete ccr and ls as they are contained in poes
         for attribute in ['ccr', 'ls']:
@@ -1053,7 +1053,7 @@ class GridConnection(Block):
                                                        inclusive='left')
                                          .to_series().apply(periods_func[peakshaving])).unique().size
 
-        self.poes.update({period: eco.PeakPeriodPointOfEvaluation(
+        self.poes.update({period: eco.PeakEvaluator(
             name=period,
             block=self,
             parent=self.poa,

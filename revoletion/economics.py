@@ -184,16 +184,28 @@ def calc_wacc(
     return wacc_nominal, wacc_real
 
 
-class PointOfAggregation:
+@abstractclass
+class EconomicPointOfInterest:
 
     def __init__(self,
                  name: str,
-                 parent,  # todo type hint PointOfAggregation
-                 scenario,
-                 block=None):
+                 parent: 'EconomicAggregator'):
 
         self.name = name
         self.parent = parent
+
+
+class EconomicAggregator(EconomicPointOfInterest):
+
+    def __init__(self,
+                 name: str,
+                 parent: 'EconomicAggregator',
+                 scenario,
+                 block=None):
+
+        super().__init__(name=name,
+                         parent=parent)
+
         self.scenario = scenario  # might be needed as block is not mandatory for PoAs
         self.block = block
 
@@ -252,7 +264,8 @@ class PointOfAggregation:
                 self.parent.opex[key] += self.opex[key]
 
 
-class PointOfEvaluation(PointOfAggregation):
+@ abstractclass
+class EconomicEvaluator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
@@ -419,9 +432,19 @@ class PointOfEvaluation(PointOfAggregation):
         super().post_scenario()
 
 
+# generally: blocks get a dict like this self.epois = {self.name: EconomicAggregator, 'storage': CapexEvaluator, 'inflow': OpexEvaluator, 'outflow': OpexEvaluator}
+class CapexEvaluator(EconomicEvaluator):
+    # covers size_names / investable parameter
+    # this one gets the functions join_capex_mntex, annuity_due_capex, reinvest_periods etc. as methods
+    pass
 
 
-class PeakPeriodPointOfEvaluation(PointOfEvaluation):
+class OpexEvaluator(EconomicEvaluator):
+    # covers flow_names parameter
+    pass
+
+
+class PeakEvaluator(EconomicEvaluator):
 
     def get_block_params(self):
 
@@ -454,5 +477,6 @@ class PeakPeriodPointOfEvaluation(PointOfEvaluation):
                                          observation_horizon=self.scenario.prj_duration_yrs,
                                          discount_rate=self.scenario.wacc)
 
-        super(PointOfEvaluation, self).post_scenario()  # call PointOfAggregation.post_scenario(self)
+        super(EconomicEvaluator, self).post_scenario()  # call EconomicAggregator.post_scenario(self)
+
 
