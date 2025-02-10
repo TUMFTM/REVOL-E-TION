@@ -44,42 +44,42 @@ class MultiStore(simpy.resources.base.BaseResource):
 
 class RentalSystem:
 
-    def __init__(self, commodity_system, scenario):
+    def __init__(self, fleet, scenario):
 
-        self.commodity_system = commodity_system
+        self.fleet = fleet
         self.scenario = scenario
-        self.name = self.commodity_system.name
+        self.name = self.fleet.name
 
-        self.soc_max_init = min([commodity.soc_max
-                                 for commodity in self.commodity_system.subblocks.values()])
-        self.soc_min_init = max([commodity.soc_min
-                                 for commodity in self.commodity_system.subblocks.values()])
+        self.soc_max_init = min([unit.soc_max
+                                 for unit in self.fleet.subblocks.values()])
+        self.soc_min_init = max([unit.soc_min
+                                 for unit in self.fleet.subblocks.values()])
 
         # calculate usable energy to expect
 
         self.dsoc_usable_high = (statistics.median([self.soc_min_init,
-                                                    self.commodity_system.soc_target_high,
+                                                    self.fleet.soc_target_high,
                                                     self.soc_max_init]) -
                                  statistics.median([self.soc_min_init,
-                                                    self.commodity_system.soc_return,
+                                                    self.fleet.soc_return,
                                                     self.soc_max_init]))
         self.dsoc_usable_low = (statistics.median([self.soc_min_init,
-                                                   self.commodity_system.soc_target_low,
+                                                   self.fleet.soc_target_low,
                                                    self.soc_max_init]) -
                                 statistics.median([self.soc_min_init,
-                                                   self.commodity_system.soc_return,
+                                                   self.fleet.soc_return,
                                                    self.soc_max_init]))
 
         if (self.dsoc_usable_high <= 0) or (self.dsoc_usable_low <= 0):
-            raise ValueError(f'Usable dSOC for {self.commodity_system.name} '
+            raise ValueError(f'Usable dSOC for {self.fleet.name} '
                              f'is zero or negative. Check SOC targets and aging.')
 
         self.energy_usable_pc_high = (self.dsoc_usable_high *
-                                      self.commodity_system.size.loc['pc', 'existing'] *
-                                      np.sqrt(self.commodity_system.eff_storage_roundtrip))
+                                      self.fleet.size.loc['pc', 'existing'] *
+                                      np.sqrt(self.fleet.eff_storage_roundtrip))
         self.energy_usable_pc_low = (self.dsoc_usable_low *
-                                     self.commodity_system.size.loc['pc', 'existing'] *
-                                     np.sqrt(self.commodity_system.eff_storage_roundtrip))
+                                     self.fleet.size.loc['pc', 'existing'] *
+                                     np.sqrt(self.fleet.eff_storage_roundtrip))
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
@@ -90,47 +90,47 @@ class RentalSystem:
         Add empty columns to process frame that are iteratively filled during actual dispatch (i.e. in DES)
         """
         self.processes['commodities_primary'] = None
-        if (hasattr(self.commodity_system, 'rex_cs')) and (self.commodity_system.rex_cs):
+        if (hasattr(self.fleet, 'rex_fleet')) and (self.fleet.rex_fleet):
             self.processes['commodities_secondary'] = None
 
     def create_store(self):
-        self.store = MultiStore(self.scenario.env_des, capacity=self.commodity_system.num)
-        for commodity in self.commodity_system.subblocks.values():
-            self.store.put([commodity.name])
+        self.store = MultiStore(self.scenario.env_des, capacity=self.fleet.num)
+        for unit in self.fleet.subblocks.values():
+            self.store.put([unit.name])
 
     def calc_performance_metrics(self):
 
         self.use_rate = dict()
         steps_total = self.data.shape[0]
-        # make an individual row for each used commodity in a process
+        # make an individual row for each used unit in a process
         processes_exploded = self.processes.explode('commodities_primary')
 
         # calculate percentage of DES (not sim, the latter is shorter) time
         # occupied by active, idle & recharge times
-        for commodity in list(self.commodity_system.subblocks.keys()):
-            processes = processes_exploded.loc[processes_exploded['commodities_primary'] == commodity, :]
+        for unit in list(self.fleet.subblocks.keys()):
+            processes = processes_exploded.loc[processes_exploded['commodities_primary'] == unit, :]
             steps_blocked = processes['steps_charge_primary'].sum() + processes['steps_rental'].sum()
-            self.use_rate[commodity] = steps_blocked / steps_total
-        self.commodity_system.use_rate = np.mean(list(self.use_rate.values()))
+            self.use_rate[unit] = steps_blocked / steps_total
+        self.fleet.use_rate = np.mean(list(self.use_rate.values()))
 
         # calculate overall percentage of failed trips
         n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
-        self.fail_rate = self.commodity_system.fail_rate = 1 - (n_success / n_total)
+        self.fail_rate = self.fleet.fail_rate = 1 - (n_success / n_total)
 
     def convert_process_log(self):
         """
-        This function converts the process based log from DES execution into a time based log for each commodity
+        This function converts the process based log from DES execution into a time based log for each unit
         as required by the energy system model as an example
         """
 
-        commodities = list(self.commodity_system.subblocks.keys())
+        commodities = list(self.fleet.subblocks.keys())
         column_names = []
-        for commodity in commodities:
-            column_names.extend([(commodity,'atbase'), (commodity,'dsoc'), (commodity,'consumption'),
-                                 (commodity,'atac'), (commodity,'atdc')])
+        for unit in commodities:
+            column_names.extend([(unit,'atbase'), (unit,'dsoc'), (unit,'consumption'),
+                                 (unit,'atac'), (unit,'atdc')])
             if isinstance(self, VehicleRentalSystem):
-                column_names.extend([(commodity,'tour_dist')])
+                column_names.extend([(unit,'tour_dist')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
@@ -142,28 +142,28 @@ class RentalSystem:
         self.data.loc[:, (slice(None), 'atdc')] = False
 
         for process in [row for _, row in self.processes.iterrows() if row['status'] == 'success']:
-            for commodity in process['commodities_primary']:
+            for unit in process['commodities_primary']:
                 # Set Availability at base for charging
                 self.data.loc[process['time_dep']:(process['time_return'] - self.scenario.timestep_td),
-                (commodity, 'atbase')] = False
+                (unit, 'atbase')] = False
 
                 # set consumption power as constant while rented out
                 self.data.loc[process['time_dep']:(process['time_return'] - self.scenario.timestep_td),
-                (commodity, 'consumption')] = (process['energy_pc_primary'] /
+                (unit, 'consumption')] = (process['energy_pc_primary'] /
                                                (process['steps_rental'] * self.scenario.timestep_hours))
 
                 # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
-                self.data.loc[process['time_dep'], (commodity, 'dsoc')] = process['dsoc_primary']
+                self.data.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_primary']
 
                 if isinstance(self, VehicleRentalSystem):
                     # set distance in first timestep of rental (for distance based revenue calculation)
-                    self.data.loc[process['time_dep'], (commodity, 'tour_dist')] = process['distance']
+                    self.data.loc[process['time_dep'], (unit, 'tour_dist')] = process['distance']
 
-        self.commodity_system.data = self.data
+        self.fleet.data = self.data
 
     def generate_process_frame(self):
 
-        self.processes = self.commodity_system.demand.copy()
+        self.processes = self.fleet.demand.copy()
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
         self.calc_process_data()
 
@@ -192,7 +192,7 @@ class RentalSystem:
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.scenario_file_name}_'
             f'{self.scenario.name}_'
-            f'{self.commodity_system.name}_'
+            f'{self.fleet.name}_'
             f'processes.csv')
         self.processes.to_csv(processes_path)
 
@@ -201,36 +201,36 @@ class RentalSystem:
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.scenario_file_name}_'
             f'{self.scenario.name}_'
-            f'{self.commodity_system.name}_'
+            f'{self.fleet.name}_'
             f'log.csv')
         self.data.to_csv(log_path)
 
 
 class VehicleRentalSystem(RentalSystem):
 
-    def __init__(self, commodity_system, scenario):
+    def __init__(self, fleet, scenario):
 
-        super().__init__(commodity_system, scenario)
+        super().__init__(fleet, scenario)
 
-        # replace the rex system name read in from scenario file with the actual CommoditySystem object
-        if self.commodity_system.rex_cs:
+        # replace the rex system name read in from scenario file with the actual Fleet object
+        if self.fleet.rex_fleet:
             self.check_rex_inputs()
-            self.commodity_system.rex_cs = self.scenario.blocks[self.commodity_system.rex_cs]
+            self.fleet.rex_fleet = self.scenario.blocks[self.fleet.rex_fleet]
 
-        self.dsoc_usable_rex_high = (self.commodity_system.rex_cs.soc_target_high -
-                                     self.commodity_system.rex_cs.soc_return)\
-            if self.commodity_system.rex_cs else 0
-        self.dsoc_usable_rex_low = (self.commodity_system.rex_cs.soc_target_low -
-                                    self.commodity_system.rex_cs.soc_return)\
-            if self.commodity_system.rex_cs else 0
+        self.dsoc_usable_rex_high = (self.fleet.rex_fleet.soc_target_high -
+                                     self.fleet.rex_fleet.soc_return)\
+            if self.fleet.rex_fleet else 0
+        self.dsoc_usable_rex_low = (self.fleet.rex_fleet.soc_target_low -
+                                    self.fleet.rex_fleet.soc_return)\
+            if self.fleet.rex_fleet else 0
 
-        if self.commodity_system.rex_cs:  # system can extend range
+        if self.fleet.rex_fleet:  # system can extend range
             self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
-                                              self.commodity_system.rex_cs.size.loc['pc', 'existing'] *
-                                              np.sqrt(self.commodity_system.rex_cs.eff_storage_roundtrip))
+                                              self.fleet.rex_fleet.size.loc['pc', 'existing'] *
+                                              np.sqrt(self.fleet.rex_fleet.eff_storage_roundtrip))
             self.energy_usable_rex_pc_low = (self.dsoc_usable_rex_low *
-                                             self.commodity_system.rex_cs.size.loc['pc', 'existing'] *
-                                             np.sqrt(self.commodity_system.rex_cs.eff_storage_roundtrip))
+                                             self.fleet.rex_fleet.size.loc['pc', 'existing'] *
+                                             np.sqrt(self.fleet.rex_fleet.eff_storage_roundtrip))
         else:  # no rex defined
             self.energy_usable_rex_pc_high = 0
             self.energy_usable_rex_pc_low = 0
@@ -255,7 +255,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['range_usable_high'] = self.energy_usable_pc_high / self.processes['consumption']
         self.processes['range_usable_low'] = self.energy_usable_pc_low / self.processes['consumption']
 
-        if self.commodity_system.rex_cs:  # system can extend range
+        if self.fleet.rex_fleet:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
             self.processes['distance_missing'] = np.maximum(
                 0,
@@ -268,57 +268,57 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
                                                     (self.processes['num_secondary'] *
                                                      self.energy_usable_rex_pc_high))
-            self.processes['energy_total_both'] = (self.commodity_system.size.loc['pc', 'existing'] +
+            self.processes['energy_total_both'] = (self.fleet.size.loc['pc', 'existing'] +
                                                    (self.processes['num_secondary'] *
-                                                    self.commodity_system.rex_cs.size.loc['pc', 'existing']))
+                                                    self.fleet.rex_fleet.size.loc['pc', 'existing']))
 
         else:  # no rex defined
             self.processes['num_secondary'] = 0
             self.processes['rex_request'] = False
 
             self.processes['energy_usable_both'] = self.energy_usable_pc_high
-            self.processes['energy_total_both'] = self.commodity_system.size.loc['pc', 'existing']
+            self.processes['energy_total_both'] = self.fleet.size.loc['pc', 'existing']
             # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
             self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable_pc_high)
 
-        # calculate different delta SOC for primary and secondary commodity due to different start SOCs (linear)
+        # calculate different delta SOC for primary and secondary unit due to different start SOCs (linear)
         self.processes['dsoc_primary'] = (self.dsoc_usable_high * self.processes['energy_req'] /
                                           self.processes['energy_usable_both'])
         self.processes['dsoc_secondary'] = (self.dsoc_usable_rex_high * self.processes['energy_req'] /
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
         self.processes['energy_pc_primary'] = (self.processes['dsoc_primary'] *
-                                               self.commodity_system.size.loc['pc', 'existing'])
+                                               self.fleet.size.loc['pc', 'existing'])
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / self.commodity_system.pwr_chg_des,
+            self.processes['energy_pc_primary'] / self.fleet.pwr_chg_des,
             unit='hour')
 
-        if self.commodity_system.rex_cs:
+        if self.fleet.rex_fleet:
             self.processes['energy_pc_secondary'] = (self.processes['dsoc_secondary'] *
-                                                     self.commodity_system.rex_cs.size.loc['pc', 'existing'])
+                                                     self.fleet.rex_fleet.size.loc['pc', 'existing'])
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
-                self.processes['energy_pc_secondary'] / self.commodity_system.rex_cs.pwr_chg_des,
+                self.processes['energy_pc_secondary'] / self.fleet.rex_fleet.pwr_chg_des,
                 unit='hour')
         else:
             self.processes['energy_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
     def check_rex_inputs(self):
-        if self.commodity_system.rex_cs not in self.scenario.blocks.keys():
+        if self.fleet.rex_fleet not in self.scenario.blocks.keys():
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.commodity_system.name}":'
-                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
+                             f'Block "{self.fleet.name}":'
+                             f'Selected range extender system "{self.fleet.rex_fleet}" '
                              f'does not exist')
-        elif not isinstance(self.scenario.blocks[self.commodity_system.rex_cs], blocks.BatteryCommoditySystem):
+        elif not isinstance(self.scenario.blocks[self.fleet.rex_fleet], blocks.BatteryFleet):
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.commodity_system.name}":'
-                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
-                             f'is not a BatteryCommoditySystem')
-        elif not self.scenario.blocks[self.commodity_system.rex_cs].data_source in ['usecases', 'demand']:
+                             f'Block "{self.fleet.name}":'
+                             f'Selected range extender system "{self.fleet.rex_fleet}" '
+                             f'is not a BatteryFleet')
+        elif not self.scenario.blocks[self.fleet.rex_fleet].data_source in ['usecases', 'demand']:
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.commodity_system.name}":'
-                             f'Selected range extender system "{self.commodity_system.rex_cs}" '
-                             f'has data source"{self.commodity_system.rex_cs.data_source}". '
+                             f'Block "{self.fleet.name}":'
+                             f'Selected range extender system "{self.fleet.rex_fleet}" '
+                             f'has data source"{self.fleet.rex_fleet.data_source}". '
                              f'Allowed values: [\'usecases\', \'demand\']')
 
     def transfer_rex_processes(self):
@@ -332,7 +332,7 @@ class VehicleRentalSystem(RentalSystem):
 
         # convert values for target BatteryRentalSystem
         rex_processes['usecase_id'] = -1
-        rex_processes['usecase_name'] = f'rex_{self.commodity_system.name}'
+        rex_processes['usecase_name'] = f'rex_{self.fleet.name}'
 
         def swap_primary_secondary(col_name):
             if 'primary' in col_name:
@@ -348,10 +348,10 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['step_preblock_primary'] = rex_processes['step_req']
 
         # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
-        self.commodity_system.rex_cs.rental_system.processes = pd.concat(
-            [self.commodity_system.rex_cs.rental_system.processes, rex_processes],
+        self.fleet.rex_fleet.rental_system.processes = pd.concat(
+            [self.fleet.rex_fleet.rental_system.processes, rex_processes],
             join='inner')
-        self.commodity_system.rex_cs.rental_system.processes.sort_values(
+        self.fleet.rex_fleet.rental_system.processes.sort_values(
             by='time_preblock_primary',
             inplace=True,
             ignore_index=True)
@@ -359,11 +359,11 @@ class VehicleRentalSystem(RentalSystem):
 
 class BatteryRentalSystem(RentalSystem):
 
-    def __init__(self, commodity_system, scenario):
+    def __init__(self, fleet, scenario):
 
-        super().__init__(commodity_system, scenario)
+        super().__init__(fleet, scenario)
 
-        self.commodity_system.rex_cs = None  # needs to be set for later check
+        self.fleet.rex_fleet = None  # needs to be set for later check
 
         self.generate_process_frame()
         self.add_dispatch_columns()
@@ -380,16 +380,16 @@ class BatteryRentalSystem(RentalSystem):
         """
         self.processes['rex_request'] = False
         self.processes['num_primary'] = np.ceil(self.processes['energy_req'] / self.energy_usable_pc_high).astype(int)
-        self.processes['energy_total_both'] = self.processes['num_primary'] * self.commodity_system.size.loc['pc', 'existing']
+        self.processes['energy_total_both'] = self.processes['num_primary'] * self.fleet.size.loc['pc', 'existing']
         self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc_high
         self.processes['dsoc_primary'] = self.processes['energy_req'] / self.processes['energy_total_both']
-        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.commodity_system.size.loc['pc', 'existing']
+        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.fleet.size.loc['pc', 'existing']
         self.processes['energy_primary'] = self.processes['energy_pc_primary'] * self.processes['num_primary']
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / (self.commodity_system.pwr_chg *
-                                                   self.commodity_system.eff_chg *  # charger efficiency (into commodity's bus)
+            self.processes['energy_pc_primary'] / (self.fleet.pwr_chg *
+                                                   self.fleet.eff_chg *  # charger efficiency (into unit's bus)
                                                    # storage component efficiency (both ways)
-                                                   self.commodity_system.eff_storage_roundtrip),
+                                                   self.fleet.eff_storage_roundtrip),
             unit='hour')
 
 
@@ -433,7 +433,7 @@ class RentalProcess:
 
         # request secondary resources from other MultiStore
         if 'num_secondary' in self.data.index.values and self.data['num_secondary'] > 0:
-            with (self.rental_system.commodity_system.rex_cs.rental_system.store.get(self.data['num_secondary'])
+            with (self.rental_system.fleet.rex_fleet.rental_system.store.get(self.data['num_secondary'])
                   as self.secondary_request):
                 self.secondary_result = yield self.secondary_request | self.env.timeout(self.data['steps_patience'])
 
@@ -458,7 +458,7 @@ class RentalProcess:
             yield self.env.timeout(self.data['steps_rental'])
             self.rental_system.processes.loc[self.id, 'step_return'] = self.env.now
 
-            # cover the recharge time for BatteryCommoditySystems
+            # cover the recharge time for BatteryFleets
             if isinstance(self.rental_system, VehicleRentalSystem):
                 self.rental_system.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
                 if self.secondary_request:
@@ -474,11 +474,11 @@ class RentalProcess:
                                        f' at {self.env.now}. Primary store content after return: {self.rental_system.store.items}')
 
             if self.secondary_request:
-                self.rental_system.commodity_system.rex_cs.rental_system.store.put(self.secondary_result[self.secondary_request])
+                self.rental_system.fleet.rex_fleet.rental_system.store.put(self.secondary_result[self.secondary_request])
                 self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned secondary resource(s)'
                                            f'{self.secondary_request.value} at {self.env.now}. '
                                            f'Secondary store content after return: '
-                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items} ')
+                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items} ')
 
         else:  # either or both (primary/secondary) request(s) unsuccessful
 
@@ -490,7 +490,7 @@ class RentalProcess:
                                            f'(didn´t receive either resource) at {self.env.now}. '
                                            f'Primary store content after failure: {self.rental_system.store.items}. '
                                            f'Secondary store content after failure: '
-                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
 
             elif self.primary_request not in self.primary_result:
                 self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_primary'
@@ -499,7 +499,7 @@ class RentalProcess:
                                                f'(didn´t receive primary resource(s)) at {self.env.now}. '
                                                f'Primary store content after fail: {self.rental_system.store.items}. '
                                                f'Secondary store content after failure: '
-                                               f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                                               f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
                 else:
                     self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
                                                f'(didn´t receive primary resource(s)) at {self.env.now}. '
@@ -511,7 +511,7 @@ class RentalProcess:
                                            f'(didn´t receive secondary resource(s)) at {self.env.now}. '
                                            f'Primary store content after fail: {self.rental_system.store.items}. '
                                            f'Secondary store content after failure: '
-                                           f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
 
             # ensure resources are put back after conditional event: https://stackoverflow.com/q/75371166
             if self.primary_request.triggered:
@@ -524,12 +524,12 @@ class RentalProcess:
             if hasattr(self.secondary_request, 'triggered'):
                 if self.secondary_request.triggered:
                     secondary_resource = yield self.secondary_request
-                    self.rental_system.commodity_system.rex_cs.rental_system.store.put(secondary_resource)
+                    self.rental_system.fleet.rex_fleet.rental_system.store.put(secondary_resource)
                     self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned '
                                                f'secondary resource {secondary_resource} at {self.env.now}. '
                                                f'Primary store content after return: {self.rental_system.store.items}. '
                                                f'Secondary store content after return: '
-                                               f'{self.rental_system.commodity_system.rex_cs.rental_system.store.items}')
+                                               f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
 
         self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} finished at {self.env.now}')
 
@@ -572,12 +572,12 @@ def execute_des(scenario, run):
 
     # create rental systems (including stochastic pregeneration of individual rental processes)
     scenario.rental_systems = dict()
-    for cs in [cs for cs in scenario.commodity_systems.values() if cs.data_source in ['usecases', 'demand']]:
-        if isinstance(cs, blocks.VehicleCommoditySystem):
-            cs.rental_system = VehicleRentalSystem(cs, scenario)
-        elif isinstance(cs, blocks.BatteryCommoditySystem):
-            cs.rental_system = BatteryRentalSystem(cs, scenario)
-        scenario.rental_systems[cs.name] = cs.rental_system
+    for fleet in [fleet for fleet in scenario.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
+        if isinstance(fleet, blocks.VehicleFleet):
+            fleet.rental_system = VehicleRentalSystem(fleet, scenario)
+        elif isinstance(fleet, blocks.BatteryFleet):
+            fleet.rental_system = BatteryRentalSystem(fleet, scenario)
+        scenario.rental_systems[fleet.name] = fleet.rental_system
 
     # generate individual RentalProcess instances for every pregenerated process
     for rental_system in scenario.rental_systems.values():
@@ -609,7 +609,7 @@ def execute_des(scenario, run):
                                                                          absolute=True)
 
     # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
-    for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.commodity_system.rex_cs is not None)]:
+    for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.fleet.rex_fleet is not None)]:
         rental_system.transfer_rex_processes()
 
     # reframe logging results to resource-based view instead of process based (and save)
