@@ -177,7 +177,7 @@ def read_demand_file(block):
     return df
 
 
-def read_input_csv(path_input_file, scenario, block=None, multiheader=False, resampling=True):
+def read_input_csv(path_input_file, block, scenario, multiheader=False, resampling=True):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
     """
@@ -192,11 +192,10 @@ def read_input_csv(path_input_file, scenario, block=None, multiheader=False, res
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(scenario.timezone)
     if resampling:
-        df = resample_to_timestep(df, scenario, block)
-
+        df = resample_to_timestep(df, block, scenario)
         if not (scenario.dti_sim.isin(df.index).all()):
-            msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
-            raise IndexError(f'{msg_pre}Input timeseries data in {path_input_file} does not cover simulation timeframe')
+            raise IndexError(f'Block "{block.name}":'
+                             f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
 
     return df
 
@@ -211,8 +210,8 @@ def read_input_log(system):
     log_path = os.path.join(system.scenario.run.path_input_data,
                             set_extension(system.filename))
     df = read_input_csv(path_input_file=log_path,
-                        scenario=system.scenario,
                         block=system,
+                        scenario=system.scenario,
                         multiheader=True,
                         resampling=False)
 
@@ -274,7 +273,7 @@ def read_usecase_file(system):
     return df
 
 
-def resample_to_timestep(data: pd.DataFrame, scenario, block=None):
+def resample_to_timestep(data: pd.DataFrame, block, scenario):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
     """
@@ -286,9 +285,7 @@ def resample_to_timestep(data: pd.DataFrame, scenario, block=None):
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
     except pandas.errors.NullFrequencyError:
         dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-        # ToDo: pass name of input file to function to add to warning message
-        msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
-        scenario.logger.warning(f'{msg_pre}Timestep of csv data could not be inferred - using 15 min default')
+        scenario.logger.warning(f'Block "{block.name}": Timestep of csv data could not be inferred - using 15 min default')
 
     data_ext = data.reindex(dti_ext).ffill()
 
@@ -307,18 +304,15 @@ def transform_scalar_var(value, scenario, block=None):
     Transform a value holding either the filename of a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
     """
-    # ToDo: fix block=None in structure -> main cause in structure of POEs
     if isinstance(value, str):  # value contains filename
         filename = set_extension(filename=value, default_extension='.csv')
-        df = read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data,
-                                                         filename),
-                            scenario=scenario,
+        df = read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data, filename),
                             block=block,
+                            scenario=scenario,
                             multiheader=False,
                             resampling=True).loc[scenario.dti_sim_extd]
         if df.shape[1] != 1:
-            msg_pre = f'Block "{block.name}": ' if hasattr(block, 'name') else ''  # block might not be given
-            scenario.logger.warning(f'{msg_pre}Input data in {filename} contains more than one column - '
+            scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
                                     f'only first column is used.')
 
         return df.iloc[:, 0]  # return only first column
