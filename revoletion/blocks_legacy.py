@@ -591,7 +591,7 @@ class CommoditySystem(InvestBlock):
             self.demand = self.demand.sample()
         elif self.data_source == 'demand':
             self.demand = utils.read_demand_file(self)
-        elif self.data_source == 'log':
+        elif self.data_source in ['log', 'logfile']:
             self.data = utils.read_input_log(self)
             self.com_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
         else:

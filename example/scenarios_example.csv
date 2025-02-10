@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
-scenario,blocks,"{'grid': 'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource', 'bev': 'VehicleFleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
+scenario,blocks,"{'grid': 'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource', 'bev': 'ElectricVehicleFleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_preexisting_acdc,10000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -113,8 +113,8 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-bev,data_source,usecases,usecases,usecases,usecases
-bev,filename,bev_usecases,bev_usecases,bev_usecases,bev_usecases
+bev,data_source,log,usecases,usecases,usecases
+bev,filename,bev_log,bev_usecases,bev_usecases,bev_usecases
 bev,num,5,5,5,5
 bev,size_preexisting,30000.0,30000.0,30000.0,30000.0
 bev,capex_preexisting,True,True,True,True

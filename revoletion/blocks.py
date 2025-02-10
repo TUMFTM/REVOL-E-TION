@@ -130,7 +130,7 @@ class Block:
                              f'not implemented for any other strategy than "GO"')
 
     def pre_horizon(self,
-                    horizon):
+                    horizon: 'PredictionHorizon'):
         """
         build energy system components before each horizon
         """
@@ -1394,7 +1394,7 @@ class Fleet(Block):
             self.demand = utils.read_demand_file(self)
         elif self.data_source == 'log':
             self.log = utils.read_input_log(self)
-            self.unit_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
+            self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
         # endregion
@@ -1436,7 +1436,8 @@ class Fleet(Block):
             delattr(self, param)
         # endregion
 
-    def define_oemof_components(self):
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
         """
         pre horizon method
 
@@ -1459,13 +1460,13 @@ class Fleet(Block):
                 nominal_value=self.power_lim_static,
                 max=1 if self.power_lim_static else None
             )},
-            outputs={self.bus: solph.Flow()},
-            conversion_factors={self.bus: 1}
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: 1}
         )
 
         self.components['outflow'] = solph.components.Converter(
             label=f'{self.name}_xc',
-            inputs={self.bus: solph.Flow(
+            inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['sys_dis'].opex['spec_ep'][horizon.dti_ph],
                 nominal_value=(self.power_lim_static if self.lvl_cap == 'v2s' else 0),
                 max=(1 if self.power_lim_static is not None else None))},
@@ -1475,7 +1476,7 @@ class Fleet(Block):
         )
 
 
-class VehicleFleet(Fleet):
+class ElectricVehicleFleet(Fleet):
 
     def __init__(self,
                  name: str,
@@ -1563,7 +1564,8 @@ class ElectricFleetUnit(Block, StorageBlock):
             # downrate assumed power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
-    def define_oemof_components(self):
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
         """
         pre horizon method
 
