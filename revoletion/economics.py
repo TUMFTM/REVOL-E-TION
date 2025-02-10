@@ -135,7 +135,7 @@ def annuity_due_recur(nominal_value: float,
                       discount_rate: float):
     """
     Calculate the annuity due of a yearly recurring (lifespan=1) and nonchanging (cost_change_ratio=1)
-    mainenance expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
+    maintenance expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
     """
     annuity_due_recur = annuity_due_capex(capex_init=nominal_value,
                                           capex_replacement=nominal_value,
@@ -284,6 +284,12 @@ class EconomicEvaluator(EconomicPointOfInterest):
                           'dist': utils.transform_scalar_var(value=0,
                                                              scenario=self.block.scenario,
                                                              block=self.block)})
+        self.crev.update({'spec': utils.transform_scalar_var(value=0,
+                                                             scenario=self.block.scenario,
+                                                             block=block),
+                          'dist': utils.transform_scalar_var(value=0,
+                                                             scenario=self.block.scenario,
+                                                             block=self.block)})
         self.aux = {'ls': self.block.scenario.prj_duration_yrs,
                     'ccr': 1}
         self.size_name = None
@@ -372,8 +378,8 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
         # region mntex
         self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec']
-        self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
-        self.mntex['prj'] = utils.scale_year2prj(self.mntex['yrl'], self.scenario)
+        self.mntex['sim'] = self.mntex['yrl'] * self.block.scenario.sim_yr_rat
+        self.mntex['prj'] = utils.scale_year2prj(self.mntex['yrl'], self.block.scenario)
         self.mntex['dis'] = acc_discount(nominal_value=self.mntex['yrl'],
                                          observation_horizon=self.block.scenario.prj_duration_yrs,
                                          discount_rate=self.block.scenario.wacc,
@@ -384,7 +390,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # endregion
 
         # region opex
-        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
+        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.block.scenario.dti_sim] *
                             self.block.scenario.timestep_hours) if self.flow_name is not None else 0
         self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.block.scenario)
         self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.block.scenario)
@@ -398,7 +404,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # endregion
 
         # region crev
-        self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.scenario.dti_sim] *
+        self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.block.scenario.dti_sim] *
                             self.block.scenario.timestep_hours) if self.flow_name is not None else 0
         self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.block.scenario)
         self.crev['prj'] = utils.scale_year2prj(self.crev['yrl'], self.block.scenario)
@@ -411,7 +417,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
                                          discount_rate=self.block.scenario.wacc)
         # endregion
 
-        super().aggregate(target=self.block.aggregator)
+        super().aggregate_post_scenario(target=self.block.aggregator)
 
     def get_size(self,
                  size_name: str,
@@ -424,42 +430,36 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
 
 class FleetUnitEvaluator(EconomicEvaluator):
+    """
+    dist and time shit
+    """
     pass
 
 
 class PeakEvaluator(EconomicEvaluator):
 
-    def get_block_params(self):
-
-        self.aux['ls'] = getattr(self.block, 'ls', self.block.scenario.prj_duration_yrs)
-        self.aux['ccr'] = getattr(self.block, 'ccr', 1)
-
-        # get opex spec timeseries
-        opex_spec_ts = utils.transform_scalar_var(value=self.block.opex_spec_peak,
-                                                  scenario=self.scenario,
-                                                  block=self.block)
+    def pre_scenario(self):
 
         # get and set the opex_spec at the first timestep of the peakshaving period
-        self.opex['spec'] = opex_spec_ts[self.block.peakshaving_periods.loc[self.name, 'start']]
+        self.opex['spec'] = self.opex['spec'][self.block.peakshaving_periods.loc[self.name, 'start']]
 
-    def calc_opex_factor_ep(self):
         self.opex['factor_ep'] = (self.block.n_peakshaving_periods_yr / self.block.peakshaving_periods.shape[0]
                                   if self.block.scenario.compensate_sim_prj else 1)
 
     def post_scenario(self):
 
-        self.opex['sim'] = self.block.flows[self.opex_flow_name] @ self.opex['spec'][self.scenario.dti_sim] \
-            if self.opex_flow_name is not None else 0
-        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
-        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.scenario)
+        self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\
+                           self.block.peakshaving_periods.loc[self.name, 'period_fraction']
+        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.block.scenario)
+        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.block.scenario)
         self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
-                                        observation_horizon=self.scenario.prj_duration_yrs,
-                                        discount_rate=self.scenario.wacc,
+                                        observation_horizon=self.block.scenario.prj_duration_yrs,
+                                        discount_rate=self.block.scenario.wacc,
                                         occurs_at='end')
         self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
-                                         observation_horizon=self.scenario.prj_duration_yrs,
-                                         discount_rate=self.scenario.wacc)
+                                         observation_horizon=self.block.scenario.prj_duration_yrs,
+                                         discount_rate=self.block.scenario.wacc)
 
-        super(EconomicEvaluator, self).post_scenario()  # call EconomicAggregator.post_scenario(self)
+        self.aggregate_post_scenario(target=self.block.aggregator)
 
 

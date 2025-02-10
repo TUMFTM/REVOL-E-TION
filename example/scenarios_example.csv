@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
-scenario,blocks,"{'grid':'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
+scenario,blocks,"{'grid': 'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
 core,size_preexisting_acdc,10000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -62,7 +62,7 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff,0.95,0.95,0.95,0.95
-gen,size_preexisting,8000,0,0,0
+gen,size_preexisting,100000,0,0,0
 gen,capex_preexisting,True,True,True,True
 gen,size_max,None,None,None,None
 gen,invest,False,True,True,False
@@ -84,10 +84,8 @@ grid,invest_s2g,False,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,week,None,None,None
 grid,opex_spec_peak,1,0,0,0
-grid,capex_spec_g2s,0.1,0.1,0.1,0.1
-grid,capex_spec_s2g,0.1,0.1,0.1,0.1
-grid,mntex_spec_g2s,0,0,0,0
-grid,mntex_spec_s2g,0,0,0,0
+grid,capex_spec,0.1,0.1,0.1,0.1
+grid,mntex_spec,0,0,0,0
 grid,ls,10,10,10,10
 grid,ccr,1,1,1,1
 grid,eff,1,1,1,1
