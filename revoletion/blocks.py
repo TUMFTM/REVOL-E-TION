@@ -167,6 +167,12 @@ class Block:
             evaluator.post_scenario()
         self.aggregator.post_scenario()
 
+        # write values to scenario results summary
+        # ToDo: write attributes of type int, float, bool and str
+        # ToDo: write entries of energies dataframe to results summary
+        # ToDo: for self.aggregator and every evaluator in self.evaluators write values
+        #       (this can already be done in post_scenario() method of aggregators and evaluators)
+
     def check_bidi_flows(self):
         """
         post scenario method
@@ -422,12 +428,6 @@ class StorageBlock:
         self.states['soc'] = self.states['energy'] / self.sizes.loc['block', 'total']
 
         #self.aging_model.age(horizon=horizon)  # todo reactivate
-
-    def calc_energies(self):
-        """
-        post-scenario calculation of energies as integrals of flows
-        """
-        pass
 
     def add_state_traces(self):
         """
