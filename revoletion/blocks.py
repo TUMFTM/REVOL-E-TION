@@ -172,8 +172,6 @@ class Block:
         # write values to scenario results summary
         # ToDo: write attributes of type int, float, bool and str
         # ToDo: write entries of energies dataframe to results summary
-        # ToDo: for self.aggregator and every evaluator in self.evaluators write values
-        #       (this can already be done in post_scenario() method of aggregators and evaluators)
 
     def check_bidi_flows(self):
         """

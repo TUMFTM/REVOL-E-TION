@@ -272,6 +272,18 @@ class EconomicAggregator(EconomicPointOfInterest):
             self.totex[key] = self.capex[key] + self.mntex[key] + self.opex[key]
             self.value[key] = self.totex[key] - self.crev[key]
 
+        self.write_results()
+
+    def write_results(self):
+        # ToDo: write values to scenario results instead of dummy dataframe
+        block_name = self.block.name if self.block is not None else 'scenario'
+        scn_name = 'test_scn'
+        temp_df = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[], names=['block', 'key']),
+                               columns=[scn_name])
+        for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']:
+            for key, value in getattr(self, dict_name).items():
+                temp_df.loc[(block_name, f'{dict_name}_{key}'), scn_name] = value
+
 
 class EconomicEvaluator(EconomicPointOfInterest):
     """
