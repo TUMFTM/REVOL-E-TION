@@ -1211,12 +1211,6 @@ class StorageBlock:
 
         #self.aging_model.age(horizon=horizon)  # todo reactivate
 
-    def calc_energies(self):
-        """
-        post-scenario calculation of energies as integrals of flows
-        """
-        pass
-
     def add_state_traces(self):
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
