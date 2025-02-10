@@ -22,10 +22,8 @@ class Block:
     def __init__(self,
                  name: str,
                  scenario,  # todo type hint
-                 flow_names: list = None,
+                 pois: dict = None,
                  state_names: list = None,
-                 size_names: list = None,
-                 poe_names: dict = None,
                  params: dict = None,
                  parent=None,  # todo type hint
                  ):
@@ -36,8 +34,6 @@ class Block:
         self.name = name
         self.scenario = scenario
         self.parent = parent
-
-        flow_names = ['total', *flow_names] if flow_names is not None else ['total']
 
         # region set attributes from scenario file or parent
         if self.parent is self.scenario:  # is top level block
@@ -63,45 +59,48 @@ class Block:
         self.bus_connected = None
 
         self.flows_apriori = pd.DataFrame()  # partially recalculated for every horizon
+        flow_names = ['total',
+                      *[name for name in
+                        [poi.get(('flow', 'name')) for poi in pois.values()]
+                        if name is not None]]
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
                                   columns=flow_names,
                                   data=np.nan,
                                   dtype='float64')
-        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
-                                   columns=state_names if state_names is not None else [],
-                                   data=np.nan,
-                                   dtype='float64')
         self.energies = pd.DataFrame(index=flow_names,
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,  # cumulative property
                                      dtype=float)
+        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
+                                   columns=state_names if state_names is not None else [],
+                                   data=np.nan,
+                                   dtype='float64')
 
         self.sizes = pd.DataFrame()
         self.expansion_equal = False
-        self.initialize_sizes(sizes=size_names)
+        self.initialize_sizes(pois=pois)
 
-        self.aggregator = eco.EconomicAggregator(name=f'{self.name}_total',
-                                          parent=self.parent.agregator,
-                                          scenario=self.scenario)
+        self.aggregator = eco.EconomicAggregator(name=self.name,
+                                                 block=self)
         self.evaluators = {name: eco.EconomicEvaluator(name=name,
                                                        block=self,
-                                                       parent=self.poa,
-                                                       scenario=self.scenario,
-                                                       opex_flow_name=opex_flow_name) for name, opex_flow_name in poe_names.items()} \
-            if poe_names is not None else dict()
-        # Delete ccr and ls as they are contained in poes
-        for attribute in ['ccr', 'ls']:
+                                                       params=params) for name, params in pois.items()}
+
+        self.aggregator.pre_scenario()  # aggregate capex preexisting
+
+        # Delete ccr and ls as they are now contained in evaluators
+        for attribute in set(value for poi in pois.values() for value in poi.values()):
             if hasattr(self, attribute):
                 delattr(self, attribute)
         # endregion
 
     def initialize_sizes(self,
-                         sizes: list = None):
+                         pois: dict = None):
         """
         Initialize the sizes DataFrame for the block
         """
 
-        sizes = sizes if sizes else ['block']
+        sizes = [name for name in [poi.get(('size', 'name')) for poi in pois.values()] if name is not None]
         self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
                                   data=np.nan,
@@ -182,17 +181,33 @@ class SystemCore(Block):
     def __init__(self,
                  name : str,
                  scenario):
+
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['acdc', 'dcac'],
+                         pois={
+                             'acdc': {('capex', 'preexisting'): 'capex_preexisting_acdc',
+                                      ('capex', 'spec'): 'capex_spec',
+                                      ('mntex', 'spec'): 'mntex_spec',
+                                      ('opex', 'spec'): 'opex_spec',
+                                      ('size', 'name'): 'acdc',
+                                      ('flow', 'name'): 'acdc',
+                                      ('aux', 'ls'): 'ls',
+                                      ('aux', 'ccr'): 'ccr'},
+                             'dcac': {('capex', 'preexisting'): 'capex_preexisting_dcac',
+                                      ('capex', 'spec'): 'capex_spec',
+                                      ('mntex', 'spec'): 'mntex_spec',
+                                      ('opex', 'spec'): 'opex_spec',
+                                      ('size', 'name'): 'dcac',
+                                      ('flow', 'name'): 'dcac',
+                                      ('aux', 'ls'): 'ls',
+                                      ('aux', 'ccr'): 'ccr'},
+                         },
                          state_names=None,
-                         size_names=['acdc', 'dcac'],
-                         poe_names={'acdc': 'acdc', 'dcac': 'dcac'},
                          params=None,
                          parent=scenario)
 
     def initialize_sizes(self,
-                         sizes: list = None):
+                         pois: dict = None):
 
         self.expansion_equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
@@ -200,7 +215,7 @@ class SystemCore(Block):
         utils.init_equalizable_variables(block=self, name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
         utils.init_equalizable_variables(block=self, name_vars=['size_max_acdc', 'size_max_dcac'])
 
-        super().initialize_sizes(sizes=sizes)
+        super().initialize_sizes(pois=pois)
 
     def define_oemof_components(self,
                                 horizon):
@@ -957,6 +972,8 @@ class GridConnection(Block):
                  name: str,
                  scenario):
 
+        pass
+
         super().__init__(name=name,
                          scenario=scenario,
                          flow_names=['in', 'out'],
@@ -975,7 +992,7 @@ class GridConnection(Block):
         self.initialize_markets()
 
     def initialize_sizes(self,
-                         sizes: list = None):
+                         pois: dict = None):
 
         self.expansion_equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
 
@@ -983,7 +1000,7 @@ class GridConnection(Block):
         utils.init_equalizable_variables(self, ['size_preexisting_g2s', 'size_preexisting_s2g'])
         utils.init_equalizable_variables(self, ['size_max_g2s', 'size_max_s2g'])
 
-        super().initialize_sizes(sizes=sizes)
+        super().initialize_sizes(pois=pois)
 
     def initialize_peakshaving(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals

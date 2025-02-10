@@ -24,12 +24,9 @@ core,size_preexisting_dcac,12000,equal,equal,equal
 core,capex_preexisting_dcac,True,True,True,True
 core,size_max_dcac,equal,equal,equal,equal
 core,invest_dcac,False,equal,equal,equal
-core,capex_spec_acdc,0.08,0.08,0.08,0.08
-core,capex_spec_dcac,0.08,0.08,0.08,0.08
-core,mntex_spec_acdc,0.0024,0.0024,0.0024,0.0024
-core,mntex_spec_dcac,0.0024,0.0024,0.0024,0.0024
-core,opex_spec_acdc,0,0,0,0
-core,opex_spec_dcac,grid_opex_g2s,0,0,0
+core,capex_spec,0.08,0.08,0.08,0.08
+core,mntex_spec,0.0024,0.0024,0.0024,0.0024
+core,opex_spec,0,0,0,0
 core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
