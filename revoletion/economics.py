@@ -446,6 +446,8 @@ class PeakEvaluator(EconomicEvaluator):
         self.opex['factor_ep'] = (self.block.n_peakshaving_periods_yr / self.block.peakshaving_periods.shape[0]
                                   if self.block.scenario.compensate_sim_prj else 1)
 
+        self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
+
     def post_scenario(self):
 
         self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\

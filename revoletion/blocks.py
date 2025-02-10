@@ -1246,10 +1246,14 @@ class GridMarket(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['in', 'out'],
                          state_names=None,
-                         size_names=['g2s', 's2g'],
-                         poe_names={'g2s': 'in', 's2g': 'out'},
+                         pois={'g2s': {('opex', 'spec'): 'opex_spec_g2s',
+                                       ('size', 'name'): 'g2s',
+                                       ('flow', 'name'): 'out'},
+                               's2g': {('opex', 'spec'): 'opex_spec_s2g',
+                                       ('size', 'name'): 'g2s',
+                                       ('flow', 'name'): 'in'},
+                               },
                          params=params,
                          parent=parent)
 
