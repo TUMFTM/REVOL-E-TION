@@ -824,10 +824,20 @@ class StationaryBattery(Block, StorageBlock):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['in', 'out', 'total'],
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
-                         size_names=['block'],
-                         poe_names={'block': 'in'},
+                         pois={
+                             'block': {('capex', 'preexisting'): 'capex_preexisting',
+                                       ('capex', 'spec'): 'capex_spec',
+                                       ('mntex', 'spec'): 'mntex_spec',
+                                       ('opex', 'spec'): 'opex_spec',
+                                       ('size', 'name'): 'block',
+                                       ('flow', 'name'): 'in',
+                                       ('aux', 'ls'): 'ls',
+                                       ('aux', 'ccr'): 'ccr'},
+                             'out': {('flow', 'name'): 'out'},
+                             'bat_in': {('flow', 'name'): 'bat_in'},
+                             'bat_out': {('flow', 'name'): 'bat_out'},
+                         },
                          params=None,
                          parent=scenario)
 
