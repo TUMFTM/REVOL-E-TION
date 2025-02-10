@@ -250,6 +250,13 @@ class EconomicAggregator(EconomicPointOfInterest):
         super().__init__(name=name,
                          block=block)
 
+        self.totex = {'prj': 0,
+                      'dis': 0,
+                      'ann': 0}
+        self.value = {'prj': 0,
+                      'dis': 0,
+                      'ann': 0}
+
     def pre_scenario(self):
         if self.block is not None:
             self.aggregate_pre_scenario(target=self.block.parent.aggregator)
@@ -260,6 +267,10 @@ class EconomicAggregator(EconomicPointOfInterest):
         """
         if self.block is not None:
             self.aggregate_post_scenario(target=self.block.parent.aggregator)
+
+        for key in self.totex:
+            self.totex[key] = self.capex[key] + self.mntex[key] + self.opex[key]
+            self.value[key] = self.totex[key] - self.crev[key]
 
 
 class EconomicEvaluator(EconomicPointOfInterest):
