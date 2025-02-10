@@ -920,10 +920,17 @@ class ControllableSource(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_names=['out', 'total'],
                          state_names=None,
-                         size_names=['block'],
-                         poe_names={'block': 'out'},
+                         pois={
+                             'block': {('capex', 'preexisting'): 'capex_preexisting',
+                                      ('capex', 'spec'): 'capex_spec',
+                                      ('mntex', 'spec'): 'mntex_spec',
+                                      ('opex', 'spec'): 'opex_spec',
+                                      ('size', 'name'): 'block',
+                                      ('flow', 'name'): 'out',
+                                      ('aux', 'ls'): 'ls',
+                                      ('aux', 'ccr'): 'ccr'},
+                         },
                          params=None,
                          parent=scenario)
 
