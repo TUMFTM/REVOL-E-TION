@@ -369,7 +369,7 @@ class Scenario:
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.storage_blocks = {}
-        self.commodity_systems = {}
+        self.fleets = {}
         self.renewable_sources = {}
         self.blocks = self.create_block_objects()
 
@@ -379,19 +379,19 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([cs.data_source in ['demand', 'usecases'] for cs in self.commodity_systems.values()]):
+        if any([fleet.data_source in ['demand', 'usecases'] for fleet in self.fleets.values()]):
             dispatch.execute_des(self, self.run)
 
         # todo move to pre scenario of commodities
-        for cs in [cs for cs in self.commodity_systems.values() if cs.data_source in ['usecases', 'demand']]:
-            for commodity in cs.subblocks.values():
-                commodity.data = cs.data.loc[:, (commodity.name, slice(None))].droplevel(0, axis=1)
+        for fleet in [fleet for fleet in self.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
+            for fleet_unit in fleet.subblocks.values():
+                fleet_unit.data = fleet.data.loc[:, (fleet_unit.name, slice(None))].droplevel(0, axis=1)
 
         # check example parameter configuration of rulebased charging for validity
-        if cs_unlim := [cs for cs in self.commodity_systems.values() if
-                        (cs.mode_scheduling in self.run.apriori_lvls)
-                        and cs.mode_scheduling != 'uc'
-                        and not cs.power_lim_static]:
+        if fleet_unlim := [fleet for fleet in self.fleets.values() if
+                        (fleet.mode_scheduling in self.run.apriori_lvls)
+                        and fleet.mode_scheduling != 'uc'
+                        and not fleet.power_lim_static]:
             if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
                 raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
                                  f'without static load management (lm_static) is not compatible'
@@ -409,7 +409,7 @@ class Scenario:
                                  f' be connected to the same bus')
 
         self.scheduler = None
-        if any([cs for cs in self.commodity_systems.values() if cs.mode_scheduling in self.run.apriori_lvls]):
+        if any([fleet for fleet in self.fleets.values() if fleet.mode_scheduling in self.run.apriori_lvls]):
             self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
@@ -465,7 +465,7 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable share calculation: division by zero')
 
-        totex_dis_cs = (sum([cs.expenditures.loc['totex', 'dis'] for cs in self.commodity_systems.values()]) +
+        totex_dis_cs = (sum([fleet.expenditures.loc['totex', 'dis'] for fleet in self.fleets.values()]) +
                         sum([ics.expenditures.loc['totex', 'dis'] for ics in self.blocks.values() if isinstance(ics, blocks.ICEVSystem)]))
         if self.energies.loc['del', 'dis'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')

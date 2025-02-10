@@ -92,16 +92,6 @@ def create_expenditures_dataframe():
     return expenditures
 
 
-def convert_sdr(sdr: float, ts: pd.Timedelta) -> float:
-    """
-    This function converts the self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per timestep
-    """
-    # According to oemof documentation, the loss rate needs to be given for 1 hour neglecting the timestep of the model
-    tsr = ts / pd.Timedelta('30 days')
-    lr = 1 - (1 - sdr) ** tsr
-    return lr
-
-
 def conv_add_max(value):
     return value if pd.notna(value) else None
 
