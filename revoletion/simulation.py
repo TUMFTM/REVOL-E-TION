@@ -361,8 +361,7 @@ class Scenario:
 
         # Energy System Blocks --------------------------------
         # initialize variable to store initial investment costs given in scenario definition
-        self.capex_init_existing = 0
-        self.aggregator = eco.EconomicAggregator(name='scenario', block=None)
+        self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
         # add SystemCore to blocks ensuring SystemCore is the first component to be built
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}

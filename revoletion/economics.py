@@ -245,10 +245,17 @@ class EconomicAggregator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block'):
+                 block: 'blocks.Block',
+                 scenario: 'simulation.Scenario'=None):
 
         super().__init__(name=name,
                          block=block)
+
+        # set scenario to write values to scenario summary
+        if self.block is None and scenario is None:
+            raise ValueError('At least one of the arguments "block" or "scenario" has to be provided to initialize'
+                             'an object of type "EconomicAggregator".')
+        self.scenario = self.block.scenario if scenario is None else scenario
 
         self.totex = {'prj': 0,
                       'dis': 0,
@@ -275,14 +282,12 @@ class EconomicAggregator(EconomicPointOfInterest):
         self.write_results()
 
     def write_results(self):
-        # ToDo: write values to scenario results instead of dummy dataframe
+        # ToDo: fasten calculation / use pd.concat instead of many .loc operations?
         block_name = self.block.name if self.block is not None else 'scenario'
-        scn_name = 'test_scn'
-        temp_df = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[], names=['block', 'key']),
-                               columns=[scn_name])
         for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']:
             for key, value in getattr(self, dict_name).items():
-                temp_df.loc[(block_name, f'{dict_name}_{key}'), scn_name] = value
+                self.scenario.result_summary.loc[(block_name, f'{dict_name}_{key}'), self.scenario.name] = value
+        pass
 
 
 class EconomicEvaluator(EconomicPointOfInterest):

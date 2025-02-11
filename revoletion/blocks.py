@@ -172,6 +172,7 @@ class Block:
         # write values to scenario results summary
         # ToDo: write attributes of type int, float, bool and str
         # ToDo: write entries of energies dataframe to results summary
+        pass
 
     def check_bidi_flows(self):
         """
