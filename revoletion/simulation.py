@@ -418,8 +418,11 @@ class Scenario:
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
         # Result variables - Energy
-        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=['block', 'key']),
+        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'pot'),
+                                                                             ('renewable', 'curt')],
+                                                                     names=['block', 'key']),
                                      columns=['sim', 'yrl', 'prj', 'dis'],
+                                     data=0,
                                      dtype=float)
 
         self.e_eta = None

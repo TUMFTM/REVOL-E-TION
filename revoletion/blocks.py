@@ -445,6 +445,12 @@ class RenewableSource(Block):
         self.flows.loc[horizon.dti_ch, 'curt'] = horizon.results[(self.components['bus'],
                                                                   self.components['exc'])]['sequences']['flow'][horizon.dti_ch]
 
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        # add curt and pot to scenario.energies
+        self.scenario.energies.loc[('renewable', 'curt'), :] += self.energies.loc['curt', :]
+        self.scenario.energies.loc[('renewable', 'pot'), :] += self.energies.loc['pot', :]
+
 
 class PVSource(RenewableSource):
 

@@ -84,7 +84,8 @@ def get_dataframe_results(df: pd.DataFrame,
     Convert results stored in a DataFrame to a Series for scenario.result_summary.
     """
     result_series = pd.Series(df.stack())
-    result_series.index = result_series.index.map(lambda x: f'{name_prefix}_{x[0]}_{x[1]}')
+    # create MultiIndex. Use "_".join() to avoid problems if df already has MultiIndex
+    result_series.index = result_series.index.map(lambda x: f'{name_prefix}_{"_".join(x)}')
 
     return result_series
 
