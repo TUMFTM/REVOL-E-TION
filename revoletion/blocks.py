@@ -38,6 +38,8 @@ class Block:
         self.scenario = scenario
         self.parent = parent
 
+        self.classname = self.__class__.__name__
+
         # region set attributes from scenario file or parent
         if self.parent is self.scenario:  # is top level block
             self.scenario.blocks[self.name] = self
@@ -171,8 +173,12 @@ class Block:
         self.aggregator.post_scenario()
 
         # write values to scenario results summary
-        # ToDo: write attributes of type int, float, bool and str
+        # write attributes of type int, float, bool and str
+        for key, value in self.__dict__.items():
+            if isinstance(value, (int, float, bool, str)):
+                self.scenario.result_summary.loc[(self.name, key), self.scenario.name] = value
         # ToDo: write entries of energies dataframe to results summary
+        # ToDo: write entries of sizes dataframe to results summary
         pass
 
     def check_bidi_flows(self):

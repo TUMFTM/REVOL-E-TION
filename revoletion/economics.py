@@ -287,7 +287,6 @@ class EconomicAggregator(EconomicPointOfInterest):
         for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']:
             for key, value in getattr(self, dict_name).items():
                 self.scenario.result_summary.loc[(block_name, f'{dict_name}_{key}'), self.scenario.name] = value
-        pass
 
 
 class EconomicEvaluator(EconomicPointOfInterest):
