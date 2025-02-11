@@ -165,7 +165,10 @@ class Block:
 
         self.calc_results_energies()
         self.calc_results_economics()
+        self.add_result_msgs()
+        self.add_plot_traces()
         self.write_result_summary()
+        self.write_result_timeseries()
 
     def calc_results_energies(self):
         # process flows and calculate energies from flows
@@ -215,6 +218,45 @@ class Block:
         # write block's results to scenario.result_summary
         self.scenario.result_summary = pd.concat([self.scenario.result_summary, result_series])
 
+    def write_result_timeseries(self):
+        """
+        write flows and states to scenario.result_timeseries
+        """
+        if self.scenario.run.save_results_timeseries:
+            # write flows and states to scenario.result_timeseries
+            self.flows.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.flows.columns],
+                                                           names=['block', 'key'])
+
+            self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
+                                                            names=['block', 'key'])
+
+            self.scenario.result_timeseries = pd.concat(objs=[self.scenario.result_timeseries, self.flows, self.states],
+                                                        axis=1)
+
+    def add_result_msgs(self, unit='kW'):
+        if self.sizes.shape[0] == 0:  # ToDo: fix sizes in GridMarket
+            return
+        self.scenario.print_results_msgs.extend(
+            [msg for msg in self.sizes.apply(lambda size: (
+                f'Optimized size of component "{size.name}" in block "{self.name}": {size["total"] / 1e3:.1f} {unit}'
+                f' (existing: {size["preexisting"] / 1e3:.1f} {unit}'
+                f' - additional: {size["expansion"] / 1e3:.1f} {unit})'
+                if size['invest'] else ''), axis=1).to_list() if msg != ''])
+
+    def add_plot_traces(self):
+        self.scenario.plot_traces['powers'].append(go.Scatter(x=self.flows.index,
+                                                              y=self.flows['total'],
+                                                              mode='lines',
+                                                              name=self.get_legend_entry(),
+                                                              line=dict(width=2, dash=None))
+                                                   )
+
+    def get_legend_entry(self):
+        """
+        Standard legend entry for simple blocks using power as their size
+        """
+        return f'{self.name} power (max. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
+
 
 class NonElectricBlock:
     """
@@ -238,6 +280,13 @@ class NonElectricBlock:
         Dummy to be callable for all blocks
         """
         pass
+
+    def add_plot_traces(self):
+        """
+        Dummy to be callable for all blocks
+        """
+        pass
+
 
 
 class SystemCore(Block):
@@ -353,6 +402,22 @@ class SystemCore(Block):
         if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
             self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
+    def add_plot_traces(self):
+        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                               y=self.flows['dcac'],
+                                                               mode='lines',
+                                                               name=f'{self.name} DC-AC power (max. '
+                                                                    f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly'),
+                                                    go.Scatter(x=self.flows.index,
+                                                               y=self.flows['acdc'],
+                                                               mode='lines',
+                                                               name=f'{self.name} AC-DC power (max. '
+                                                                    f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly')])
+
 
 class RenewableSource(Block):
     """
@@ -452,6 +517,24 @@ class RenewableSource(Block):
         # add curt and pot to scenario.energies
         self.scenario.energies.loc[('renewable', 'curt'), :] += self.energies.loc['curt', :]
         self.scenario.energies.loc[('renewable', 'pot'), :] += self.energies.loc['pot', :]
+
+    def add_plot_traces(self):
+        super().add_plot_traces()
+        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                               y=-1 * self.flows['curt'],
+                                                               mode='lines',
+                                                               name=f'{self.name} curtailed power',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly'),
+                                                    go.Scatter(x=self.flows.index,
+                                                               y=self.flows['pot'],
+                                                               mode='lines',
+                                                               name=f'{self.name} potential power',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly')])
+
+    def get_legend_entry(self):
+        return f'{self.name} power (nom. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
 
 
 class PVSource(RenewableSource):
@@ -829,6 +912,9 @@ class FixedDemand(Block):
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
+    def get_legend_entry(self):
+        return f'{self.name} power'
+
 
 class ControllableSource(Block):
 
@@ -1131,6 +1217,10 @@ class GridConnection(Block):
 
         self.peakshaving_periods['power'] = self.peakshaving_periods.apply(get_peak_power, axis=1)
 
+    def get_legend_entry(self):
+        return (f'{self.name} power (max. {self.sizes.loc["g2s", "total"] / 1e3:.1f} kW from / '
+                f'{self.sizes.loc["s2g", "total"] / 1e3:.1f} kW to grid)')
+
 
 class GridMarket(Block):
 
@@ -1152,6 +1242,11 @@ class GridMarket(Block):
                                },
                          params=params,
                          parent=parent)
+
+    def initialize_sizes(self,
+                         pois: dict = None):
+        # ToDo: implement logic for GridMarket sizes
+        pass
 
     def define_oemof_components(self,
                                 horizon):
@@ -1194,6 +1289,11 @@ class GridMarket(Block):
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
                                                                  self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+
+    def get_legend_entry(self):
+        return (f'{self.name} power (max.'
+                f' {(self.parent.sizes.loc["g2s", "total"] if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
+                f' {(self.parent.sizes.loc["s2g", "total"] if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
 
 
 class StorageBlock:
@@ -1253,23 +1353,21 @@ class StorageBlock:
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
-        legentry = f'{self.name} SOC ({self.size.loc["block", "total"]/1e3:.1f} kWh)'
-        self.scenario.figure.add_trace(go.Scatter(x=self.states.index,
-                                                  y=self.states['soc'],
-                                                  mode='lines',
-                                                  name=legentry,
-                                                  line=dict(width=2, dash=None)),
-                                       secondary_y=True)
-
-        legentry = f'{self.name} SOH'
-        data = self.states['soh'].dropna()
-        self.scenario.figure.add_trace(go.Scatter(x=data.index,
-                                                  y=data,
-                                                  mode='lines',
-                                                  name=legentry,
-                                                  line=dict(width=2, dash=None),
-                                                  visible='legendonly'),
-                                       secondary_y=True)
+        data_soc = self.states['soc'].dropna()
+        data_soh = self.states['soh'].dropna()
+        self.scenario.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
+                                                               y=data_soc,
+                                                               mode='lines',
+                                                               name=f'{self.name} SOC',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly'),
+                                                    go.Scatter(x=data_soh.index,
+                                                               y=data_soh,
+                                                               mode='lines',
+                                                               name=f'{self.name} SOH',
+                                                               line=dict(width=2, dash=None),
+                                                               visible='legendonly'),
+                                                    ])
 
 
 class StationaryBattery(Block, StorageBlock):
@@ -1378,6 +1476,17 @@ class StationaryBattery(Block, StorageBlock):
             invest=(self.components['storage'],),
             capex_spec=self.evaluators['block'].capex['spec'],
             invest_type='storage')
+
+    def add_result_msgs(self, *_):
+        super().add_result_msgs(unit='kWh')
+
+    def add_plot_traces(self):
+        super().add_plot_traces()
+        super().add_state_traces()
+
+    def get_legend_entry(self):
+        return (f'{self.name} power (max. {self.sizes.loc["block", "total"] * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
+                f' {self.sizes.loc["block", "total"] * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
 
 
 class Fleet(Block):

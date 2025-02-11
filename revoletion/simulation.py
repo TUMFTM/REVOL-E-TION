@@ -349,8 +349,8 @@ class Scenario:
         self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
                                                          f'{self.name}_summary_temp.pkl')
 
-        self.result_timeseries = pd.DataFrame(index=self.dti_sim_extd,
-                                              columns=pd.MultiIndex.from_tuples([],
+        self.result_timeseries = pd.DataFrame(index=utils.extend_dti(self.dti_sim_extd),
+                                              columns=pd.MultiIndex.from_tuples(tuples=[],
                                                                                 names=['block', 'timeseries']))
         self.path_result_ts_file = os.path.join(
             self.run.path_result_dir,
@@ -416,6 +416,10 @@ class Scenario:
         self.cashflows = pd.DataFrame()
 
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
+
+        self.print_results_msgs = []
+        self.plot_traces = {'powers': [],
+                            'states': []}
 
         # Result variables - Energy
         self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'pot'),
@@ -520,12 +524,11 @@ class Scenario:
 
         self.figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
-        for block in self.blocks.values():
-            block.add_power_trace()
-            if hasattr(block, 'add_soc_trace'):  # should affect CommoditySystems and StationaryBattery
-                block.add_soc_trace()
-            if hasattr(block, 'add_curtailment_trace'):  # should affect PVSource and WindSource
-                block.add_curtailment_trace()
+        self.figure.add_traces(self.plot_traces['powers'],
+                               secondary_ys=[False] * len(self.plot_traces['powers']))
+
+        self.figure.add_traces(self.plot_traces['states'],
+                               secondary_ys=[True] * len(self.plot_traces['states']))
 
         self.figure.update_layout(plot_bgcolor='white')
         self.figure.update_xaxes(title='Local Time',
@@ -553,8 +556,8 @@ class Scenario:
                                             f'CH: {self.len_ch}h')
 
     def print_results(self):
-        for block in self.blocks.values():
-            block.print_results()
+        for msg in self.print_results_msgs:
+            self.logger.info(msg)
 
     def save_plots(self):
         self.figure.write_html(self.plot_file_path)
@@ -569,6 +572,7 @@ class Scenario:
         # get results of run
         results_run = pd.Series({key: value for key, value in self.run.__dict__.items()
                                  if isinstance(value, (int, float, bool, str))})
+        # apply MultiIndex
         results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
                                                       names=['block', 'key'])
 
@@ -588,16 +592,13 @@ class Scenario:
         results_scenario.index = pd.MultiIndex.from_tuples(tuples=[('scenario', key) for key in results_scenario.index],
                                                            names=['block', 'key'])
 
-        # write results to result_summary
+        # write results from run and scenario to result_summary
         self.result_summary = pd.concat([results_run, results_scenario, self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
-        self.result_summary = pd.DataFrame(self.result_summary, columns=[self.name])
-        self.result_summary.to_pickle(self.path_result_summary_tempfile)
+        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
 
     def save_result_timeseries(self):
-        for block in self.blocks.values():  # todo transform to proactive push from blocks
-            block.get_timeseries_results()
         self.result_timeseries.to_csv(self.path_result_ts_file)
 
     def show_plots(self):
