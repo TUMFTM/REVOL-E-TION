@@ -279,14 +279,10 @@ class EconomicAggregator(EconomicPointOfInterest):
             self.totex[key] = self.capex[key] + self.mntex[key] + self.opex[key]
             self.value[key] = self.totex[key] - self.crev[key]
 
-        self.write_results()
-
-    def write_results(self):
-        # ToDo: fasten calculation / use pd.concat instead of many .loc operations?
-        block_name = self.block.name if self.block is not None else 'scenario'
         for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']:
             for key, value in getattr(self, dict_name).items():
-                self.scenario.result_summary.loc[(block_name, f'{dict_name}_{key}'), self.scenario.name] = value
+                self.scenario.result_summary[((self.block.name if self.block is not None else 'scenario'),
+                                              f'{dict_name}_{key}')] = value
 
 
 class EconomicEvaluator(EconomicPointOfInterest):

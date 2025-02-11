@@ -78,18 +78,22 @@ def get_period_fraction(dti, period, freq):
     return period_fraction
 
 
-def create_expenditures_dataframe():
-    # capex_sim represents initial capex (possibly excluding some existing blocks)
-    expenditures = pd.DataFrame(index=['capex', 'mntex', 'opex', 'opex_ext', 'totex', 'crev'],  # ext = external charging
-                                columns=['sim', 'yrl', 'prj', 'dis', 'ann'],
-                                data=0,  # cumulative property
-                                dtype='float64')
+def get_dataframe_results(df: pd.DataFrame,
+                          name_block: str,
+                          name_prefix: str) -> pd.Series:
+    """
+    Convert results stored in a DataFrame to a Series with a MultiIndex.
+    The MultiIndex will be created from the variable 'name_block' as first level entry and a combination of the given
+    'name_prefix' and the original index and column names as second level entry.
+    Used to store results in the scenario.result_summary dictionary.
+    """
+    results_series = pd.Series(df.stack())
+    results_series.index = pd.MultiIndex.from_tuples(
+        tuples=results_series.index.map(lambda x: (name_block, f'{name_prefix}_{x[0]}_{x[1]}')),
+        names=['block', 'key'])
 
-    # initialize non-existing expenditures with None
-    for ex_type, ex_period in [('capex', 'yrl'), ('totex', 'yrl'), ('crev', 'ann')]:
-        expenditures.loc[ex_type, ex_period] = np.nan
+    return results_series
 
-    return expenditures
 
 
 def conv_add_max(value):

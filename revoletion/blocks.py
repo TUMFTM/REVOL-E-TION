@@ -172,14 +172,18 @@ class Block:
             evaluator.post_scenario()
         self.aggregator.post_scenario()
 
-        # write values to scenario results summary
-        # write attributes of type int, float, bool and str
-        for key, value in self.__dict__.items():
-            if isinstance(value, (int, float, bool, str)):
-                self.scenario.result_summary.loc[(self.name, key), self.scenario.name] = value
-        # ToDo: write entries of energies dataframe to results summary
-        # ToDo: write entries of sizes dataframe to results summary
-        pass
+        # write attributes of type int, float, bool and str to scenario.result_summary
+        results = []
+        result_dict = {key: value for key, value in self.__dict__.items() if isinstance(value, (int,float, bool, str))}
+        results.append(pd.Series(data=result_dict.values(),
+                                  index=pd.MultiIndex.from_tuples(tuples=[(self.name, k) for k in result_dict.keys()],
+                                                                  names=['block', 'key'])))
+
+        # write entries of energies and sizes dataframe to results summary
+        results.extend([utils.get_dataframe_results(df=df, name_block=self.name, name_prefix=prefix)
+                        for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
+
+        self.scenario.result_summary = pd.concat([self.scenario.result_summary, *results])
 
     def check_bidi_flows(self):
         """

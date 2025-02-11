@@ -345,8 +345,7 @@ class Scenario:
                                                                      f'{self.name}.html')
 
         # prepare for cumulative result saving later on
-        self.result_summary = pd.DataFrame(columns=['Block', 'Key', self.name])
-        self.result_summary = self.result_summary.set_index(['Block', 'Key'])
+        self.result_summary = pd.Series(index=pd.MultiIndex.from_tuples(tuples=[], names=['block', 'key']))
         self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
                                                          f'{self.name}_summary_temp.pkl')
 
@@ -426,9 +425,6 @@ class Scenario:
         self.e_eta = None
         self.renewable_curtailment = self.renewable_share = None
         self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
-
-        # Result variables - Cost
-        self.expenditures = utils.create_expenditures_dataframe()
 
         self.lcoe_total = self.lcoe_wocs = None
         self.npv = self.irr = self.mirr = None
@@ -618,6 +614,8 @@ class Scenario:
                     write_values(subblock_name, subblock_obj)
                     write_dataframes(subblock_name, subblock_obj)
 
+        # convert result_summary to DataFrame and save to temporary file
+        self.result_summary = pd.DataFrame(self.result_summary, columns=[self.name])
         self.result_summary.to_pickle(self.path_result_summary_tempfile)
 
     def save_result_timeseries(self):
