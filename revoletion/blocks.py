@@ -106,13 +106,17 @@ class Block:
         """
 
         sizes = [name for name in [poi.get(('size', 'name')) for poi in pois.values()] if name is not None]
+
+        if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
+            raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
+
         self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
                                   data=np.nan,
                                   dtype='float64')
         self.sizes['invest'] = False
 
-        for size in sizes:
+        for size in self.sizes.index:
             size_str = '' if size == 'block' else f'_{size}'
             self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_str}', 0)
             self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_str}', 0)
@@ -172,18 +176,19 @@ class Block:
             evaluator.post_scenario()
         self.aggregator.post_scenario()
 
+        # region write scenario.result_summary
         # write attributes of type int, float, bool and str to scenario.result_summary
-        results = []
         result_dict = {key: value for key, value in self.__dict__.items() if isinstance(value, (int,float, bool, str))}
-        results.append(pd.Series(data=result_dict.values(),
-                                  index=pd.MultiIndex.from_tuples(tuples=[(self.name, k) for k in result_dict.keys()],
-                                                                  names=['block', 'key'])))
+        result_series = [pd.Series(data=result_dict.values(),
+                                   index=pd.MultiIndex.from_tuples(tuples=[(self.name, k) for k in result_dict.keys()],
+                                                                   names=['block', 'key']))]
 
-        # write entries of energies and sizes dataframe to results summary
-        results.extend([utils.get_dataframe_results(df=df, name_block=self.name, name_prefix=prefix)
-                        for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
+        # write energies/sizes dataframes to scenario.result_summary
+        result_series.extend([utils.get_dataframe_results(df=df, name_block=self.name, name_prefix=prefix)
+                              for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
 
-        self.scenario.result_summary = pd.concat([self.scenario.result_summary, *results])
+        self.scenario.result_summary = pd.concat([self.scenario.result_summary, *result_series])
+        # endregion
 
     def check_bidi_flows(self):
         """
@@ -1119,7 +1124,7 @@ class GridMarket(Block):
                                        ('size', 'name'): 'g2s',
                                        ('flow', 'name'): 'out'},
                                's2g': {('opex', 'spec'): 'opex_spec_s2g',
-                                       ('size', 'name'): 'g2s',
+                                       ('size', 'name'): 's2g',
                                        ('flow', 'name'): 'in'},
                                },
                          params=params,
