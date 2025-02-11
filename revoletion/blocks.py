@@ -13,6 +13,7 @@ import windpowerlib
 
 from revoletion import battery as bat
 from revoletion import economics as eco
+from revoletion import mobility
 from revoletion import utils
 
 
@@ -129,7 +130,7 @@ class Block:
                              f'not implemented for any other strategy than "GO"')
 
     def pre_horizon(self,
-                    horizon):
+                    horizon: 'PredictionHorizon'):
         """
         build energy system components before each horizon
         """
@@ -1394,40 +1395,50 @@ class Fleet(Block):
             self.demand = utils.read_demand_file(self)
         elif self.data_source == 'log':
             self.log = utils.read_input_log(self)
-            self.unit_names = self.data.columns.get_level_values(0).unique()[:self.num].tolist()
+            self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
         # endregion
 
-        # todo move to dispatch
-        if self.data_source in ['usecases', 'demand']:  # dispatch simulation will run
-            # estimate maximum power drawn by self discharge
-            self.pwr_loss_max = (utils.convert_sdr(self.sdr, self.scenario.timestep_td) *
-                                 self.size.loc['block', 'existing'] *
-                                 self.scenario.timestep_hours)
-            # downrate power for a priori dispatch simulation
-            self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
+        # region define params for subblocks
+        params_units_list = ['invest',
+                             'aging',
+                             'dsoc_buffer',
+                             'mode_dispatch',
+                             'soc_init',
+                             'chemistry',
+                             'q_loss_cal_init',
+                             'q_loss_cyc_init',
+                             'pwr_chg',
+                             'pwr_dis',
+                             'eff_chg_ac',
+                             'eff_chg_dc',
+                             'eff_dis_ac',
+                             'eff_dis_dc',
+                             'eff_storage_roundtrip',
+                             'temp_battery',
+                             'size_preexisting',
+                             'capex_preexisting',
+                             'capex_fix_glider',
+                             'capex_fix_charger',
+                             'capex_spec',
+                             'mntex_fix_glider',
+                             'opex_spec_dist',
+                             'opex_spec_ext_ac',
+                             'opex_spec_ext_dc',
+                             'crev_spec_time',
+                             'crev_spec_dist',
+                             'factor_pwr_des',
+                             'ls',
+                             'ccr',
+                             'sdr']
+        self.params_units = {key: getattr(self, key) for key in params_units_list}
+        for param in params_units_list:
+            delattr(self, param)
+        # endregion
 
-        self.params_inherit = ['invest',
-                               'aging',
-                               'dsoc_buffer',
-                               'mode_dispatch',
-                               'soc_init',
-                               'chemistry',
-                               'q_loss_cal_init',
-                               'q_loss_cyc_init',
-                               'pwr_chg',
-                               'pwr_dis',
-                               'eff_chg',
-                               'eff_dis',
-                               'eff_storage_roundtrip',
-                               'temp_battery',
-                               'capex_glider',
-                               'capex_charger',
-                               'capex_spec']
-        self.params_inherit = {key: getattr(self, key) for key in params_to_inherit}
-
-    def define_oemof_components(self):
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
         """
         pre horizon method
 
@@ -1450,13 +1461,13 @@ class Fleet(Block):
                 nominal_value=self.power_lim_static,
                 max=1 if self.power_lim_static else None
             )},
-            outputs={self.bus: solph.Flow()},
-            conversion_factors={self.bus: 1}
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: 1}
         )
 
         self.components['outflow'] = solph.components.Converter(
             label=f'{self.name}_xc',
-            inputs={self.bus: solph.Flow(
+            inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['sys_dis'].opex['spec_ep'][horizon.dti_ph],
                 nominal_value=(self.power_lim_static if self.lvl_cap == 'v2s' else 0),
                 max=(1 if self.power_lim_static is not None else None))},
@@ -1466,17 +1477,21 @@ class Fleet(Block):
         )
 
 
-class VehicleFleet(Fleet):
+class ElectricVehicleFleet(Fleet):
 
     def __init__(self,
                  name: str,
                  scenario: 'Scenario'):
+
+        self.demand = mobility.VehicleFleetDemand(scenario, self)
+
         super().__init__(name=name,
                          scenario=scenario)
 
         self.subblocks = {name: ElectricVehicle(name=name,
-                                                parent=self) for name in self.unit_names}
-        for attr in ['unit_names', 'params_inherit']:
+                                                parent=self,
+                                                scenario=scenario) for name in self.unit_names}
+        for attr in ['unit_names', 'params_units']:
             delattr(self, attr)
 
 
@@ -1485,11 +1500,15 @@ class BatteryFleet(Fleet):
     def __init__(self,
                  name: str,
                  scenario: 'Scenario'):
+
+        self.demand = mobility.BatteryFleetDemand(scenario, self)
+
         super().__init__(name=name,
                          scenario=scenario)
 
         self.subblocks = {name: MobileBattery(name=name,
-                                              parent=self) for name in self.unit_names}
+                                              parent=self,
+                                              scenario=scenario) for name in self.unit_names}
         for attr in ['unit_names', 'params_inherit']:
             delattr(self, attr)
 
@@ -1499,35 +1518,55 @@ class ElectricFleetUnit(Block, StorageBlock):
     abstract class
     """
 
-    def __init__(self):
+    def __init__(self,
+                 name: str,
+                 parent: Fleet,
+                 scenario: 'Scenario'):
 
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'block': {('capex', 'preexisting'): 'capex_preexisting',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('opex', 'spec'): 'opex_spec',
-                                       ('size', 'name'): 'block',
-                                       ('flow', 'name'): 'in',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'},
+                             'glider': {('capex', 'fix'): 'capex_fix_glider',
+                                        ('mntex', 'fix'): 'mntex_fix_glider',
+                                        ('opex', 'dist'): 'opex_spec_dist',
+                                        ('crev', 'time'): 'crev_spec_time',
+                                        ('crev', 'dist'): 'crev_spec_dist',
+                                        ('flow', 'name'): 'in',  # todo reference ???
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'},
+                             'charger': {('capex', 'fix'): 'capex_fix_charger'},
+                             'storage': {('capex', 'preeexisting'): 'capex_preexisting',
+                                         ('capex', 'spec'): 'capex_spec',
+                                         ('size', 'name'): 'block'},
+                             'ext_ac': {('opex', 'spec'): 'opex_spec_ext_ac',
+                                        ('flow', 'name'): 'ext_ac'},
+                             'ext_dc': {('opex', 'spec'): 'opex_spec_ext_dc',
+                                        ('flow', 'name'): 'ext_dc'},
                              'out': {('flow', 'name'): 'out'},
+                             'in': {('flow', 'name'): 'in'},
                              'bat_in': {('flow', 'name'): 'bat_in'},
                              'bat_out': {('flow', 'name'): 'bat_out'},
                          },
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
-                         params=None,
-                         parent=scenario)
+                         params=parent.params_units,
+                         parent=parent)
 
         StorageBlock.__init__(self)
 
-        self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.system]
-        self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.system]
+        self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.system]
+        self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.system]
         delattr(self, 'eff_chg_ac')
         delattr(self, 'eff_chg_dc')
 
-    def define_oemof_components(self):
+        # todo move to dispatch
+        if self.parent.data_source in ['usecases', 'demand']:  # dispatch simulation will run
+            # estimate maximum power drawn by self discharge
+            self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
+            # downrate assumed power for a priori dispatch simulation
+            self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
+
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
         """
         pre horizon method
 
@@ -1550,90 +1589,84 @@ class ElectricFleetUnit(Block, StorageBlock):
                 nominal_value=self.pwr_chg,
                 max=inflow_max,
                 fix=inflow_fix)},
-            outputs={self.bus: solph.Flow()},
-            conversion_factors={self.bus: self.eff_chg})
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: self.eff_chg})
 
-        self.outflow = solph.components.Converter(label=f'{self.name}_mc',
-                                                  inputs={self.bus: solph.Flow()},
-                                                  outputs={
-                                                      self.parent.bus: solph.Flow(
-                                                          nominal_value=(
-                                                              self.pwr_dis * self.eff_dis if self.parent.lvl_cap in [
-                                                                  'v2v', 'v2s'] else 0),
-                                                          max=outflow_max,
-                                                          fix=outflow_fix,
-                                                          variable_costs=self.scenario.cost_eps)
-                                                  },
-                                                  conversion_factors={self.parent.bus: self.eff_dis})
-        horizon.components.append(self.outflow)
+        self.components['outflow'] = solph.components.Converter(
+            label=f'{self.name}_mc',
+            inputs={self.components['bus']: solph.Flow()},
+            outputs={self.parent.bus: solph.Flow(
+                nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_cap in ['v2v', 'v2s'] else 0),
+                max=outflow_max,
+                fix=outflow_fix,
+                variable_costs=self.scenario.cost_eps)
+            },
+            conversion_factors={self.parent.bus: self.eff_dis})
 
-        self.snk = solph.components.Sink(label=f'{self.name}_snk',
-                                         inputs={self.bus: solph.Flow(nominal_value=1,
-                                                                      fix=self.data_ph['consumption'])})
-        # actual values are set later in update_input_components for each prediction horizon
-        horizon.components.append(self.snk)
+        self.components['snk'] = solph.components.Sink(
+            label=f'{self.name}_snk',
+            inputs={self.components['bus']: solph.Flow(
+                nominal_value=1,
+                fix=self.data_ph['consumption']
+            )})
 
-        self.ess = solph.components.GenericStorage(label=f'{self.name}_ess',
-                                                   inputs={self.bus: solph.Flow(
-                                                       variable_costs=self.parent.opex_ep_spec[horizon.dti_ph])},
-                                                   # cost_eps are needed to prevent storage from being emptied in RH
-                                                   outputs={
-                                                       self.bus: solph.Flow(variable_costs=self.scenario.cost_eps)},
-                                                   loss_rate=self.parent.loss_rate,
-                                                   balanced=False,
-                                                   initial_storage_level=statistics.median(
-                                                       [soc_min[horizon.starttime],
-                                                        self.storage_timeseries.loc[horizon.starttime, 'soc'],
-                                                        soc_max[horizon.starttime]]),
-                                                   inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
-                                                   outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
-                                                   nominal_storage_capacity=solph.Investment(
-                                                       ep_costs=self.parent.capex_ep_spec,
-                                                       existing=self.size.loc['block', 'existing'],
-                                                       maximum=utils.conv_add_max(
-                                                           self.size.loc['block', 'additional_max'])),
-                                                   min_storage_level=soc_min,
-                                                   max_storage_level=soc_max
-                                                   )
+        self.components['storage'] = solph.components.GenericStorage(
+            label=f'{self.name}_ess',
+            inputs={self.components['bus']: solph.Flow(variable_costs=self.parent.opex_ep_spec[horizon.dti_ph])},
+            # cost_eps are needed to prevent storage from being emptied in RH
+            outputs={self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            loss_rate=self.parent.loss_rate,
+            balanced=False,
+            initial_storage_level=statistics.median(
+                [soc_min[horizon.starttime],
+                 self.storage_timeseries.loc[horizon.starttime, 'soc'],
+                 soc_max[horizon.starttime]]),
+            inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
+            outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
+            nominal_storage_capacity=solph.Investment(
+                ep_costs=self.parent.capex_ep_spec,
+                existing=self.size.loc['block', 'existing'],
+                maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+            min_storage_level=soc_min,
+            max_storage_level=soc_max
+        )
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
-        # add external AC charger as new energy source
-        self.bus_ext_ac = solph.Bus(label=f'{self.name}_bus_ext_ac')
+        self.components['bus_ext_ac'] = solph.Bus(label=f'{self.name}_bus_ext_ac')
 
-        self.src_ext_ac = solph.components.Source(label=f'{self.name}_src_ext_ac',
-                                                  outputs={self.bus_ext_ac: solph.Flow(
-                                                      nominal_value=self.parent.pwr_ext_ac,
-                                                      max=ext_ac_max,
-                                                      fix=ext_ac_fix,
-                                                      variable_costs=self.parent.opex_ep_spec_ext_ac[horizon.dti_ph])}
-                                                  )
+        self.components['src_ext_ac'] = solph.components.Source(
+            label=f'{self.name}_src_ext_ac',
+            outputs={self.components['bus_ext_ac']: solph.Flow(
+                nominal_value=self.parent.pwr_ext_ac,
+                max=ext_ac_max,
+                fix=ext_ac_fix,
+                variable_costs=self.parent.opex_ep_spec_ext_ac[horizon.dti_ph])}
+        )
 
-        self.conv_ext_ac = solph.components.Converter(label=f'{self.name}_conv_ext_ac',
-                                                      inputs={self.bus_ext_ac: solph.Flow()},
-                                                      outputs={self.bus: solph.Flow()},
-                                                      conversion_factors={self.bus: self.parent.eff_chg_ac}
-                                                      )
+        self.components['conv_ext_ac'] = solph.components.Converter(
+            label=f'{self.name}_conv_ext_ac',
+            inputs={self.components['bus_ext_ac']: solph.Flow()},
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: self.parent.eff_chg_ac}
+        )
 
-        # add external DC charger as new energy source
-        self.bus_ext_dc = solph.Bus(label=f'{self.name}_bus_ext_dc')
+        self.components['bus_ext_dc'] = solph.Bus(label=f'{self.name}_bus_ext_dc')
 
-        self.src_ext_dc = solph.components.Source(label=f'{self.name}_src_ext_dc',
-                                                  outputs={self.bus_ext_dc: solph.Flow(
-                                                      nominal_value=self.parent.pwr_ext_dc,
-                                                      max=ext_dc_max,
-                                                      fix=ext_dc_fix,
-                                                      variable_costs=self.parent.opex_ep_spec_ext_dc[horizon.dti_ph])}
-                                                  )
+        self.components['src_ext_dc'] = solph.components.Source(
+            label=f'{self.name}_src_ext_dc',
+            outputs={self.components['bus_ext_dc']: solph.Flow(
+                nominal_value=self.parent.pwr_ext_dc,
+                max=ext_dc_max,
+                fix=ext_dc_fix,
+                variable_costs=self.parent.opex_ep_spec_ext_dc[horizon.dti_ph])}
+        )
 
-        self.conv_ext_dc = solph.components.Converter(label=f'{self.name}_conv_ext_dc',
-                                                      inputs={self.bus_ext_dc: solph.Flow()},
-                                                      outputs={self.bus: solph.Flow()},
-                                                      conversion_factors={self.bus: 1}
-                                                      )
-
-        horizon.components.append(self.bus_ext_dc)
-        horizon.components.append(self.src_ext_dc)
-        horizon.components.append(self.conv_ext_dc)
+        self.components['conv_ext_dc'] = solph.components.Converter(
+            label=f'{self.name}_conv_ext_dc',
+            inputs={self.components['bus_ext_dc']: solph.Flow()},
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: 1}
+        )
 
         horizon.constraints.add_invest_costs(invest=(self.ess,),
                                              capex_spec=self.parent.capex_spec,

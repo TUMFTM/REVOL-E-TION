@@ -9,12 +9,12 @@ import revoletion.utils as utils
 
 
 class CommodityDemand:
-    def __init__(self, scenario, commodity_system):
+    def __init__(self, scenario, fleet):
         """
-        CommodityDemand objects are only to be initialized by inheriting subclasses.
+        abstract class: CommodityDemand objects are only to be initialized by inheriting subclasses.
         """
         self.scenario = scenario
-        self.commodity_system = commodity_system
+        self.fleet = fleet
         self.requests = pd.DataFrame()  # main DataFrame for demand
 
         self.path_mapper = os.path.join(self.scenario.run.path_input_data,
@@ -34,7 +34,7 @@ class CommodityDemand:
     def get_patience_usecase(self, group):
         usecase = group.name[0]
         timeframe = group.name[1]
-        patience = pd.to_timedelta(self.commodity_system.usecases.loc[usecase, (timeframe, 'patience')],
+        patience = pd.to_timedelta(self.fleet.usecases.loc[usecase, (timeframe, 'patience')],
                                    unit='hour')
         return pd.DataFrame({'patience_primary': [patience] * len(group)}, index=group.index)
 
@@ -59,8 +59,8 @@ class CommodityDemand:
         """
         usecase = group.name[0]
         timeframe = group.name[1]
-        uc_idle_mean = self.commodity_system.usecases.loc[usecase, (timeframe, 'idle_mean')]
-        uc_idle_stdev = self.commodity_system.usecases.loc[usecase, (timeframe, 'idle_std')]
+        uc_idle_mean = self.fleet.usecases.loc[usecase, (timeframe, 'idle_mean')]
+        uc_idle_stdev = self.fleet.usecases.loc[usecase, (timeframe, 'idle_std')]
         p1, p2 = utils.lognormal_params(uc_idle_mean, uc_idle_stdev)
         idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
         return pd.Series(idle, index=group.index)
@@ -72,7 +72,7 @@ class CommodityDemand:
         # sample daily total demand numbers
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim_extd.date)))
         daily_total['timeframe'], daily_total['demand_mean'], daily_total['demand_std'] = \
-            self.mapper_timeframe.map_timeframes(daily_total, self.commodity_system.name, self.scenario)
+            self.mapper_timeframe.map_timeframes(daily_total, self.fleet.name, self.scenario)
         daily_total['mu'], daily_total['sigma'] = utils.lognormal_params(daily_total['demand_mean'],
                                                                          daily_total['demand_std'])
         daily_total['demand'] = daily_total.apply(lambda row: self.sample_demand_total_day(row), axis=1)
@@ -103,14 +103,14 @@ class CommodityDemand:
         # always sample finer than timestep to avoid rounding errors
         time_vals = np.arange(start=0, stop=24, step=self.scenario.timestep_hours / 100)
 
-        mag1 = self.commodity_system.usecases.loc[usecase, (timeframe, 'dep1_magnitude')]
-        mean1 = np.median([self.commodity_system.usecases.loc[usecase, (timeframe, 'dep1_time_mean')], 0, 24])
-        std1 = np.max([self.commodity_system.usecases.loc[usecase, (timeframe, 'dep1_time_std')], 1e-8])
+        mag1 = self.fleet.usecases.loc[usecase, (timeframe, 'dep1_magnitude')]
+        mean1 = np.median([self.fleet.usecases.loc[usecase, (timeframe, 'dep1_time_mean')], 0, 24])
+        std1 = np.max([self.fleet.usecases.loc[usecase, (timeframe, 'dep1_time_std')], 1e-8])
         cdf1_vals = sp.stats.norm.cdf(time_vals, mean1, std1)
 
-        mag2 = self.commodity_system.usecases.loc[usecase, (timeframe, 'dep2_magnitude')]
-        mean2 = np.median([self.commodity_system.usecases.loc[usecase, (timeframe, 'dep2_time_mean')], 0, 24])
-        std2 = np.max([self.commodity_system.usecases.loc[usecase, (timeframe, 'dep2_time_std')], 1e-8])
+        mag2 = self.fleet.usecases.loc[usecase, (timeframe, 'dep2_magnitude')]
+        mean2 = np.median([self.fleet.usecases.loc[usecase, (timeframe, 'dep2_time_mean')], 0, 24])
+        std2 = np.max([self.fleet.usecases.loc[usecase, (timeframe, 'dep2_time_std')], 1e-8])
         cdf2_vals = sp.stats.norm.cdf(time_vals, mean2, std2)
 
         cdf_vals = mag1 * cdf1_vals + mag2 * cdf2_vals
@@ -123,10 +123,10 @@ class CommodityDemand:
         return pd.DataFrame(data=time_samples, index=group.index)
 
     def sample_usecases(self,group):
-        return pd.Series(np.random.choice(self.commodity_system.usecases.index.values,
+        return pd.Series(np.random.choice(self.fleet.usecases.index.values,
                                           size=len(group),
                                           replace=True,
-                                          p=self.commodity_system.usecases.loc[:, (group.name, 'rel_prob_norm')]),
+                                          p=self.fleet.usecases.loc[:, (group.name, 'rel_prob_norm')]),
                          index=group.index)
 
     def save_data(self):
@@ -138,15 +138,15 @@ class CommodityDemand:
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.scenario_file_name}_'
             f'{self.scenario.name}_'
-            f'{self.commodity_system.name}_'
+            f'{self.fleet.name}_'
             f'demand.csv')
         self.requests.to_csv(requests_path)
 
 
-class BatteryCommodityDemand(CommodityDemand):
+class BatteryFleetDemand(CommodityDemand):
 
-    def __init__(self, scenario, commodity_system):
-        super().__init__(scenario, commodity_system)
+    def __init__(self, scenario, fleet):
+        super().__init__(scenario, fleet)
 
     def calc_time_active(self):
         """
@@ -164,7 +164,7 @@ class BatteryCommodityDemand(CommodityDemand):
         """
         usecase = group.name[0]
         timeframe = group.name[1]
-        power = self.commodity_system.usecases.loc[usecase, (timeframe, 'power_avg')]
+        power = self.fleet.usecases.loc[usecase, (timeframe, 'power_avg')]
         dtime_active = pd.to_timedelta(group['energy_req'] / power, unit='hour')
         return pd.Series(dtime_active, index=group.index)
 
@@ -195,17 +195,17 @@ class BatteryCommodityDemand(CommodityDemand):
         """
         usecase = group.name[0]
         timeframe = group.name[1]
-        uc_energy_mean = self.commodity_system.usecases.loc[usecase, (timeframe, 'energy_mean')]
-        uc_energy_stdev = self.commodity_system.usecases.loc[usecase, (timeframe, 'energy_std')]
+        uc_energy_mean = self.fleet.usecases.loc[usecase, (timeframe, 'energy_mean')]
+        uc_energy_stdev = self.fleet.usecases.loc[usecase, (timeframe, 'energy_std')]
         p1, p2 = utils.lognormal_params(uc_energy_mean, uc_energy_stdev)
         dist = self.rng.lognormal(p1, p2, len(group))
         return pd.Series(dist, index=group.index)
 
 
-class VehicleCommodityDemand(CommodityDemand):
+class VehicleFleetDemand(CommodityDemand):
 
-    def __init__(self, scenario, commodity_system):
-        super().__init__(scenario, commodity_system)
+    def __init__(self, scenario, fleet):
+        super().__init__(scenario, fleet)
 
     def calc_time_energy(self):
         """
@@ -231,8 +231,8 @@ class VehicleCommodityDemand(CommodityDemand):
         """
         usecase = group.name[0]
         timeframe = group.name[1]
-        consumption = self.commodity_system.usecases.loc[usecase, (timeframe, 'consumption')]
-        speed_avg = self.commodity_system.usecases.loc[usecase, (timeframe, 'speed_avg')]
+        consumption = self.fleet.usecases.loc[usecase, (timeframe, 'consumption')]
+        speed_avg = self.fleet.usecases.loc[usecase, (timeframe, 'speed_avg')]
         return pd.DataFrame(data={'consumption': [consumption] * len(group),
                                   'speed_avg': [speed_avg] * len(group)},
                             index=group.index)
@@ -252,7 +252,7 @@ class VehicleCommodityDemand(CommodityDemand):
 
     def sample_distance(self):
         """
-        Sample distances for each request within a VehicleCommoditySystem
+        Sample distances for each request within a VehicleFleet
         """
         self.requests['distance'] = np.nan  # distance column is only used for VehicleRentalSystems
         self.requests['distance'] = (self.requests.groupby(
@@ -264,8 +264,8 @@ class VehicleCommodityDemand(CommodityDemand):
         """
         usecase = group.name[0]
         timeframe = group.name[1]
-        uc_dist_mean = self.commodity_system.usecases.loc[usecase, (timeframe, 'dist_mean')]
-        uc_dist_stdev = self.commodity_system.usecases.loc[usecase, (timeframe, 'dist_std')]
+        uc_dist_mean = self.fleet.usecases.loc[usecase, (timeframe, 'dist_mean')]
+        uc_dist_stdev = self.fleet.usecases.loc[usecase, (timeframe, 'dist_std')]
         p1, p2 = utils.lognormal_params(uc_dist_mean, uc_dist_stdev)
         dist = self.rng.lognormal(p1, p2, len(group))
         return pd.Series(dist, index=group.index)
