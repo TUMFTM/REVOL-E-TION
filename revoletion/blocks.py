@@ -113,7 +113,9 @@ class Block:
 
         self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
-                                  data=np.nan,
+                                  # ToDo: check whether there is a better solution for initialization
+                                  data=0,  # sizes sometimes exist, although they cannot be optimized (e.g. GridMarkets)
+                                           # if a existing sizes is nan, the economic calculation fails
                                   dtype='float64')
         self.sizes['invest'] = False
 

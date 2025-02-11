@@ -419,7 +419,8 @@ class Scenario:
 
         # Result variables - Energy
         self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'pot'),
-                                                                             ('renewable', 'curt')],
+                                                                             ('renewable', 'curt'),
+                                                                             ('renewable', 'act'),],
                                                                      names=['block', 'key']),
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,
@@ -439,6 +440,8 @@ class Scenario:
         # TODO implement commodity v2s usage share
         # TODO implement energy storage usage share
 
+        # ToDo: check whether if/else/try/except structure is necessary
+
         if self.energies.loc[self.energies['sim'] > 0, 'sim'].sum() == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
@@ -448,41 +451,46 @@ class Scenario:
             except ZeroDivisionError:
                 self.logger.warning(f'Core efficiency calculation: division by zero')
 
-        if self.e_renewable_pot == 0:  # ToDo
+        if self.energies.loc[('renewable', 'pot'), 'sim'] == 0:
             self.logger.warning(f'Renewable curtailment calculation: division by zero')
         else:
             try:
-                self.renewable_curtailment = self.e_renewable_curt / self.e_renewable_pot
+                self.renewable_curtailment = (self.energies.loc[('renewable', 'curt'), 'sim'] /
+                                              self.energies.loc[('renewable', 'pot'), 'sim'])
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable curtailment calculation: division by zero')
 
-        if self.energies.loc['pro', 'sim'] == 0:
+        if self.energies.loc[self.energies['sim'] > 0, 'sim'].sum() == 0:
             self.logger.warning(f'Renewable share calculation: division by zero')
         else:
             try:
-                self.renewable_share = self.e_renewable_act / self.energies.loc['pro', 'sim']
+                self.renewable_share = (self.energies.loc[('renewable', 'act'), 'sim'] /
+                                        self.energies.loc[self.energies['sim'] > 0, 'sim'].sum())
             except ZeroDivisionError:
                 self.logger.warning(f'Renewable share calculation: division by zero')
 
-        totex_dis_cs = (sum([fleet.expenditures.loc['totex', 'dis'] for fleet in self.fleets.values()]) +
-                        sum([ics.expenditures.loc['totex', 'dis'] for ics in self.blocks.values() if isinstance(ics, blocks.ICEVSystem)]))
-        if self.energies.loc['del', 'dis'] == 0:
+        if self.energies.loc[self.energies['dis'] < 0, 'dis'].sum() == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
             try:
-                self.lcoe_total = self.expenditures.loc['totex','dis'] / self.energies.loc['del', 'dis']
-                self.lcoe_wocs = (self.expenditures.loc['totex','dis'] - totex_dis_cs) / self.energies.loc['del', 'dis']
+                self.lcoe_total = (self.aggregator.totex['dis'] /
+                                   self.energies.loc[self.energies['dis'] < 0, 'dis'].sum())
+                # ToDo: check whether calculation of totex['dis'] of fleets is correct
+                self.lcoe_wocs = ((self.aggregator.totex['dis'] -
+                                  sum([fleet.aggregator.totex['dis'] for fleet in self.fleets])) /
+                                  self.energies.loc[self.energies['dis'] < 0, 'dis'].sum())
             except ZeroDivisionError:
                 self.lcoe_total = self.lcoe_wocs = None
                 self.logger.warning(f'LCOE calculation: division by zero')
 
-        self.npv = self.expenditures.loc['crev','dis'] - self.expenditures.loc['totex','dis']
+        self.npc = self.aggregator.totex['dis']
+        self.npv = self.aggregator.value['dis']
+        # ToDo: implement self.cashflows
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        totex_dis = self.expenditures.loc['totex','dis']
-        self.logger.info(f'NPC {f"{totex_dis:,.2f}" if pd.notna(totex_dis) else "-"} {self.currency} -'
+        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} -'
                          f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
                          f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
                          f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
@@ -929,8 +937,9 @@ class SimulationRun:
             try:
                 for block in scenario.blocks.values():
                     block.post_scenario()
-                # ToDo: reactivate! deactivated for debugging / development purposes
-                # scenario.calc_meta_results()
+                scenario.aggregator.post_scenario()
+
+                scenario.calc_meta_results()
                 scenario.save_result_summary()
 
                 if self.save_results_timeseries:

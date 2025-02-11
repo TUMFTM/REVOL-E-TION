@@ -277,7 +277,7 @@ class EconomicAggregator(EconomicPointOfInterest):
 
         for key in self.totex:
             self.totex[key] = self.capex[key] + self.mntex[key] + self.opex[key]
-            self.value[key] = self.totex[key] - self.crev[key]
+            self.value[key] = self.crev[key] - self.totex[key]
 
     def write_result_summary(self):
         # combine all dicts in a series
