@@ -418,10 +418,10 @@ class Scenario:
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
         # Result variables - Energy
-        self.energies = pd.DataFrame(index=['del', 'pro', 'ext'],  # ext = external charging
+        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=['block', 'key']),
                                      columns=['sim', 'yrl', 'prj', 'dis'],
-                                     data=0,
                                      dtype=float)
+
         self.e_eta = None
         self.renewable_curtailment = self.renewable_share = None
         self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
@@ -436,15 +436,16 @@ class Scenario:
         # TODO implement commodity v2s usage share
         # TODO implement energy storage usage share
 
-        if self.energies.loc['pro', 'sim'] == 0:
+        if self.energies.loc[self.energies['sim'] > 0, 'sim'].sum() == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
             try:
-                self.e_eta = self.energies.loc['del', 'sim'] / self.energies.loc['pro', 'sim']
+                self.e_eta = (self.energies.loc[self.energies['sim'] < 0, 'sim'].sum() /
+                              self.energies.loc[self.energies['sim'] > 0, 'sim'].sum())
             except ZeroDivisionError:
                 self.logger.warning(f'Core efficiency calculation: division by zero')
 
-        if self.e_renewable_pot == 0:
+        if self.e_renewable_pot == 0:  # ToDo
             self.logger.warning(f'Renewable curtailment calculation: division by zero')
         else:
             try:
@@ -554,65 +555,30 @@ class Scenario:
         :return: none
         """
 
-        def write_values(name, block):
-            # Save attributes of type int, float, str, bool and None to result summary; additionally save blocks dict
-            keys = [key for key in block.__dict__.keys()
-                    if (isinstance(block.__dict__[key], result_types)) or (name, key) == ('scenario', 'blocks')]
+        # get results of run
+        results_run = pd.Series({key: value for key, value in self.run.__dict__.items()
+                                 if isinstance(value, (int, float, bool, str))})
+        results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
+                                                      names=['block', 'key'])
 
-            for key in keys:
-                value = block.__dict__[key]
-                if (name, key) == ('scenario', 'blocks'):
-                    # blocks dict contains objects, but summary shall contain class names of the blocks
-                    self.result_summary.loc[(name, key), self.name] = str({block: value[block].__class__.__name__
-                                                                           for block in value.keys()})
-                else:
-                    self.result_summary.loc[(name, key), self.name] = value
+        # get results of scenario
+        results_scenario = pd.concat([
+            # get attributes of type int, float, bool and str for scenario.result_summary
+            pd.Series({key: value for key, value in self.__dict__.items()
+                       if isinstance(value, (int, float, bool, str))}),
+            # get dict of blocks with class names
+            pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.blocks.items()})),
+            # get energies dataframes results for scenario.result_summary
+            utils.get_dataframe_results(df=self.energies, name_prefix='energy'),
+            # get economic results for scenario.result_summary
+            self.aggregator.write_result_summary()])
 
-        def write_dataframes(name, block):
-            # Save energy and expenditure values to result summary
-            for var_prefix, var_name in [('e_', 'energies'),
-                                         ('', 'expenditures')]:
-                if hasattr(block, var_name) and isinstance(getattr(block, var_name), pd.DataFrame):
-                    for id1, id2 in itertools.product(getattr(block, var_name).index,
-                                                      getattr(block, var_name).columns):
-                        self.result_summary.loc[(name, f'{var_prefix}{id1}_{id2}'), self.name] = (
-                            getattr(block, var_name).loc[id1, id2])
+        # apply MultiIndex
+        results_scenario.index = pd.MultiIndex.from_tuples(tuples=[('scenario', key) for key in results_scenario.index],
+                                                           names=['block', 'key'])
 
-            # Save size values to result summary
-            if hasattr(block, 'size') and isinstance(getattr(block, 'size'), pd.DataFrame):
-                skip_block_size = True if len(block.size.index) > 1 else False
-                for sub_size, type_size in itertools.product(block.size.index, block.size.columns):
-                    prefix = f'_{sub_size}' if sub_size != 'block' else ''
-                    if not (skip_block_size and sub_size == 'block' and type_size in ['additional_max', 'total_max']):
-                        self.result_summary.loc[(name, f'size{prefix}_{type_size}'), self.name] = (
-                            block.size.loc[sub_size, type_size])
-
-            # Save peakshaving results to result summary
-            if hasattr(block, 'peakshaving_ints') and block.peakshaving:
-                for interval in block.peakshaving_ints.index:
-                    if block.peakshaving_ints.loc[interval, 'start'] <= self.dti_sim[-1]:
-                        self.result_summary.loc[(name, f'power_peak_{interval}'), self.name] = float(
-                            block.peakshaving_ints.loc[interval, 'power'])
-                        self.result_summary.loc[(name, f'power_period_fraction_{interval}'), self.name] = float(
-                            block.peakshaving_ints.loc[interval, 'period_fraction'])
-                        self.result_summary.loc[(name, f'power_opex_spec_{interval}'), self.name] = (
-                            float(block.peakshaving_ints.loc[interval, 'opex_spec']))
-                        self.result_summary.loc[(name, f'power_opex_{interval}'), self.name] = (
-                            block_obj.peakshaving_ints.loc[interval, 'opex'])
-
-        result_types = (int, float, str, bool, type(None))
-        result_blocks = {'run': self.run, 'scenario': self}
-        result_blocks.update(self.blocks)
-
-        for block_name, block_obj in result_blocks.items():
-            # Save all attributes of type int, float, str, bool and None to result summary
-            write_values(block_name, block_obj)
-            write_dataframes(block_name, block_obj)
-
-            if hasattr(block_obj, 'subblocks'):
-                for subblock_name, subblock_obj in block_obj.subblocks.items():
-                    write_values(subblock_name, subblock_obj)
-                    write_dataframes(subblock_name, subblock_obj)
+        # write results to result_summary
+        self.result_summary = pd.concat([results_run, results_scenario, self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
         self.result_summary = pd.DataFrame(self.result_summary, columns=[self.name])
@@ -960,7 +926,8 @@ class SimulationRun:
             try:
                 for block in scenario.blocks.values():
                     block.post_scenario()
-                scenario.calc_meta_results()
+                # ToDo: reactivate! deactivated for debugging / development purposes
+                # scenario.calc_meta_results()
                 scenario.save_result_summary()
 
                 if self.save_results_timeseries:

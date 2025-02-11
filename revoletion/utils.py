@@ -79,20 +79,14 @@ def get_period_fraction(dti, period, freq):
 
 
 def get_dataframe_results(df: pd.DataFrame,
-                          name_block: str,
                           name_prefix: str) -> pd.Series:
     """
-    Convert results stored in a DataFrame to a Series with a MultiIndex.
-    The MultiIndex will be created from the variable 'name_block' as first level entry and a combination of the given
-    'name_prefix' and the original index and column names as second level entry.
-    Used to store results in the scenario.result_summary dictionary.
+    Convert results stored in a DataFrame to a Series for scenario.result_summary.
     """
-    results_series = pd.Series(df.stack())
-    results_series.index = pd.MultiIndex.from_tuples(
-        tuples=results_series.index.map(lambda x: (name_block, f'{name_prefix}_{x[0]}_{x[1]}')),
-        names=['block', 'key'])
+    result_series = pd.Series(df.stack())
+    result_series.index = result_series.index.map(lambda x: f'{name_prefix}_{x[0]}_{x[1]}')
 
-    return results_series
+    return result_series
 
 
 

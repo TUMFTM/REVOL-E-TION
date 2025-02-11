@@ -39,6 +39,7 @@ class Block:
         self.parent = parent
 
         self.classname = self.__class__.__name__
+        self.top_level_block = True if self.parent is self.scenario else False
 
         # region set attributes from scenario file or parent
         if self.parent is self.scenario:  # is top level block
@@ -160,35 +161,23 @@ class Block:
         for subblock in self.subblocks.values():
             subblock.post_scenario()
 
+        self.calc_results_energies()
+        self.calc_results_economics()
+        self.write_result_summary()
+
+    def calc_results_energies(self):
+        # process flows and calculate energies from flows
         self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
         self.check_bidi_flows()
 
-        # region calculate energy values from flows
         for flow_name, flow in self.flows.items():
             self.energies.loc[flow_name, 'sim'] = flow.sum() * self.scenario.timestep_hours
-
         self.energies['yrl'] = utils.scale_sim2year(value=self.energies['sim'], scenario=self.scenario)
         self.energies['prj'] = utils.scale_year2prj(value=self.energies['yrl'], scenario=self.scenario)
         self.energies['dis'] = utils.scale_year2dis(value=self.energies['yrl'], scenario=self.scenario)
-        # endregion
-
-        for evaluator in self.evaluators.values():
-            evaluator.post_scenario()
-        self.aggregator.post_scenario()
-
-        # region write scenario.result_summary
-        # write attributes of type int, float, bool and str to scenario.result_summary
-        result_dict = {key: value for key, value in self.__dict__.items() if isinstance(value, (int,float, bool, str))}
-        result_series = [pd.Series(data=result_dict.values(),
-                                   index=pd.MultiIndex.from_tuples(tuples=[(self.name, k) for k in result_dict.keys()],
-                                                                   names=['block', 'key']))]
-
-        # write energies/sizes dataframes to scenario.result_summary
-        result_series.extend([utils.get_dataframe_results(df=df, name_block=self.name, name_prefix=prefix)
-                              for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
-
-        self.scenario.result_summary = pd.concat([self.scenario.result_summary, *result_series])
-        # endregion
+        # only add total energies of top level blocks to scenario.energies
+        if self.top_level_block:
+            self.scenario.energies.loc[(self.name, 'total'), :] = self.energies.loc['total', :]
 
     def check_bidi_flows(self):
         """
@@ -197,6 +186,32 @@ class Block:
         if {'in', 'out'}.issubset(set(self.flows.columns)):
             if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
                 self.scenario.logger.warning(f'Block {self.name} - simultaneous in- and outflow detected!')
+
+    def calc_results_economics(self):
+        # calculate economic results and write one level up
+        for evaluator in self.evaluators.values():
+            evaluator.post_scenario()
+        self.aggregator.post_scenario()
+
+    def write_result_summary(self):
+        # get attributes of type int, float, bool and str for scenario.result_summary
+        result_series = [pd.Series({key: value for key, value in self.__dict__.items()
+                                    if isinstance(value, (int, float, bool, str))})]
+
+        # get energies/sizes dataframes results for scenario.result_summary
+        result_series.extend([utils.get_dataframe_results(df=df, name_prefix=prefix)
+                              for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
+
+        # get economic results for scenario.result_summary
+        result_series.append(self.aggregator.write_result_summary())
+
+        # concat all result_series and apply MultiIndex with
+        result_series = pd.concat(result_series)
+        result_series.index = pd.MultiIndex.from_tuples(tuples=[(self.name, key) for key in result_series.index],
+                                                        names=['block', 'key'])
+
+        # write block's results to scenario.result_summary
+        self.scenario.result_summary = pd.concat([self.scenario.result_summary, result_series])
 
 
 class NonElectricBlock:

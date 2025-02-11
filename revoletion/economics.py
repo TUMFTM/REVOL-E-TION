@@ -279,10 +279,13 @@ class EconomicAggregator(EconomicPointOfInterest):
             self.totex[key] = self.capex[key] + self.mntex[key] + self.opex[key]
             self.value[key] = self.totex[key] - self.crev[key]
 
-        for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']:
-            for key, value in getattr(self, dict_name).items():
-                self.scenario.result_summary[((self.block.name if self.block is not None else 'scenario'),
-                                              f'{dict_name}_{key}')] = value
+    def write_result_summary(self):
+        # combine all dicts in a series
+        result_series = pd.Series({f'{dict_name}_{key}': value
+                                   for dict_name in ['capex', 'mntex', 'opex', 'crev', 'totex', 'value']
+                                   for key, value in getattr(self, dict_name).items()})
+
+        return result_series
 
 
 class EconomicEvaluator(EconomicPointOfInterest):
