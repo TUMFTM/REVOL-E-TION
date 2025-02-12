@@ -168,7 +168,7 @@ def read_demand_file(block):
     return df
 
 
-def read_input_csv(path_input_file, block, scenario, multiheader=False, resampling=True):
+def read_timeseries_csv(path_input_file, block, scenario, multiheader=False, resampling=True):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
     """
@@ -200,11 +200,11 @@ def read_input_log(fleet):
 
     log_path = os.path.join(fleet.scenario.run.path_input_data,
                             set_extension(fleet.filename))
-    df = read_input_csv(path_input_file=log_path,
-                        block=fleet,
-                        scenario=fleet.scenario,
-                        multiheader=True,
-                        resampling=False)
+    df = read_timeseries_csv(path_input_file=log_path,
+                             block=fleet,
+                             scenario=fleet.scenario,
+                             multiheader=True,
+                             resampling=False)
 
     # Timedelta of frequency of log file
     freq_log = pd.infer_freq(df.index).lower()
@@ -297,11 +297,11 @@ def transform_scalar_var(value, scenario, block=None):
     """
     if isinstance(value, str):  # value contains filename
         filename = set_extension(filename=value, default_extension='.csv')
-        df = read_input_csv(path_input_file=os.path.join(scenario.run.path_input_data, filename),
-                            block=block,
-                            scenario=scenario,
-                            multiheader=False,
-                            resampling=True).loc[scenario.dti_sim_extd]
+        df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.path_input_data, filename),
+                                 block=block,
+                                 scenario=scenario,
+                                 multiheader=False,
+                                 resampling=True).loc[scenario.dti_sim_extd]
         if df.shape[1] != 1:
             scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
                                     f'only first column is used.')

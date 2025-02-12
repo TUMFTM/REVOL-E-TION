@@ -2307,9 +2307,9 @@ class WindSource(RenewableInvestBlock):
 
             self.path_input_file = os.path.join(self.scenario.run.path_input_data,
                                                 utils.set_extension(self.filename))
-            self.data = utils.read_input_csv(path_input_file=self.path_input_file,
-            block=self,
-            scenario=self.scenario)
+            self.data = utils.read_timeseries_csv(path_input_file=self.path_input_file,
+                                                  block=self,
+                                                  scenario=self.scenario)
 
     def update_input_components(self, horizon):
         self.bus_connected = self.scenario.blocks['core'].ac_bus if self.system == 'ac' else self.scenario.blocks['core'].dc_bus

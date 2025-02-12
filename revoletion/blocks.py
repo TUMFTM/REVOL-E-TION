@@ -38,6 +38,9 @@ class Block:
         self.scenario = scenario
         self.parent = parent
 
+        pois = pois if pois is not None else dict()
+        state_names = state_names if state_names is not None else []
+
         self.classname = self.__class__.__name__
         self.top_level_block = True if self.parent is self.scenario else False
 
@@ -78,7 +81,7 @@ class Block:
                                      data=0,  # cumulative property
                                      dtype=float)
         self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
-                                   columns=state_names if state_names is not None else [],
+                                   columns=state_names,
                                    data=np.nan,
                                    dtype='float64')
 
@@ -135,6 +138,13 @@ class Block:
         if self.sizes['invest'].any() and self.scenario.strategy != 'go':
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
+
+    def pre_scenario(self):
+        """
+        trigger actions to be executed after all inits
+        """
+        for subblock in self.subblocks.values():
+            subblock.pre_scenario()
 
     def pre_horizon(self,
                     horizon: 'PredictionHorizon'):
@@ -260,30 +270,35 @@ class NonElectricBlock:
     abstract class
     """
 
-    def define_oemof_components(self, *_):
+    def define_oemof_components(self, *_args, **_kwargs):
         """
-        Dummy to be callable for all blocks
-        """
-        pass
-
-    def get_horizon_results(self, *_):
-        """
-        Dummy to be callable for all blocks
+        dummy method
         """
         pass
 
-    def calc_energies(self, *_):
+    def get_horizon_results(self, *_args, **_kwargs):
         """
-        Dummy to be callable for all blocks
-        """
-        pass
-
-    def add_plot_traces(self):
-        """
-        Dummy to be callable for all blocks
+        dummy method
         """
         pass
 
+    def calc_energies(self, *_args, **_kwargs):
+        """
+        dummy method
+        """
+        pass
+
+    def add_plot_traces(self, *_args, **_kwargs):
+        """
+        dummy method
+        """
+        pass
+
+    def write_result_timeseries(self, *_args, **_kwargs):
+        """
+        dummy method
+        """
+        pass
 
 
 class SystemCore(Block):
@@ -781,9 +796,9 @@ class WindSource(RenewableSource):
             # region get data from file
             path_input_file = os.path.join(self.scenario.run.path_input_data,
                                            utils.set_extension(self.filename))
-            self.data = utils.read_input_csv(path_input_file=path_input_file,
-                                             block=self,
-                                             scenario=self.scenario)
+            self.data = utils.read_timeseries_csv(path_input_file=path_input_file,
+                                                  block=self,
+                                                  scenario=self.scenario)
             # endregion
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
@@ -819,11 +834,11 @@ class FixedDemand(Block):
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
     def get_demand_from_file(self):
-        data = utils.read_input_csv(path_input_file=os.path.join(self.scenario.run.path_input_data,
-                                                                 utils.set_extension(self.load_profile)),
-                                    block=self,
-                                    scenario=self.scenario,
-                                    )
+        data = utils.read_timeseries_csv(path_input_file=os.path.join(self.scenario.run.path_input_data,
+                                                                      utils.set_extension(self.load_profile)),
+                                         block=self,
+                                         scenario=self.scenario,
+                                         )
 
         if data.shape[1] != 1:
             self.scenario.logger.warning(f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
@@ -1539,7 +1554,19 @@ class Fleet(Block):
 
         self.scenario.fleets[self.name] = self
 
-        # todo init subfleets
+        path_fleet_definition = os.path.join(self.scenario.run.path_input_data,
+                                             utils.set_extension(self.filename))
+        subfleets = pd.read_csv(path_fleet_definition,
+                                index_col=0,
+                                keep_default_na=False).map(utils.infer_dtype)
+
+        for subfleet_name, subfleet in subfleets.items():
+            if subfleet_name.startswith('#'):
+                continue
+            self.subblocks[subfleet_name] = SubFleet(name=subfleet_name,
+                                                     scenario=self.scenario,
+                                                     params=subfleet.to_dict(),
+                                                     parent=self)
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
@@ -1584,7 +1611,7 @@ class Fleet(Block):
         """
         post horizon method
         """
-        self.sizes['expansion'] = 0  # set value initialized as np.nan to 0 for both sizes to enable preexisting add
+        self.sizes['expansion'] = 0.0  # set value initialized as np.nan to 0 for both sizes to enable preexisting add
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1596,64 +1623,62 @@ class Fleet(Block):
                 f'{self.sizes.loc["s2f", "total"] / 1e3:.1f} kW to fleet)')
 
 
+class SubFleet(NonElectricBlock, Block):
 
-class SubFleet(Block, NonElectricBlock):
+    def __init__(self,
+                 name: str,
+                 scenario,
+                 params,
+                 parent):
 
-    def __init__(self):
+        params_subfleet = {key: params.pop(key) for key in ['num', 'type_unit', 'data_source', 'filename', 'rex']}
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         state_names=None,
+                         pois=None,
+                         params=params_subfleet,
+                         parent=parent)
+
+        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
+        if self.type_unit in ['ev']:
+            # todo generate logfile
+            pass
+            self.subblocks = {name: ElectricVehicle(name=name,
+                                                    scenario=self.scenario,
+                                                    params=params,
+                                                    parent=self) for name in self.unit_names}
+        elif self.type_unit in ['icev']:
+            self.subblocks = {name: CombustionVehicle(name=name,
+                                                      scenario=self.scenario,
+                                                      params=params,
+                                                      parent=self) for name in self.unit_names}
+        elif self.type_unit in ['mb']:
+            self.subblocks = {name: MobileBattery(name=name,
+                                                  scenario=self.scenario,
+                                                  params=params,
+                                                  parent=self) for name in self.unit_names}
+        else:
+            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" has invalid unit type')
+
         # self.demand = mobility.VehicleFleetDemand(scenario, self)  # todo modify
         # self.demand = mobility.BatteryFleetDemand(scenario, self)
 
-        self.unit_names = [f'{self.name}_{i}' for i in range(self.num)]
         if self.data_source == 'usecases':
             self.usecases = utils.read_usecase_file(self)
             self.demand = self.demand.sample()
+            # todo enter into dispatcher dict
         elif self.data_source == 'demand':
             self.demand = utils.read_demand_file(self)
-        elif self.data_source == 'log':
+            # todo enter into dispatcher dict
+        elif self.data_source in ['log', 'logfile']:
             self.log = utils.read_input_log(self)
-            self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
+            # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
-        params_units_list = ['invest',
-                             'aging',
-                             'dsoc_buffer',
-                             'mode_dispatch',
-                             'soc_init',
-                             'chemistry',
-                             'q_loss_cal_init',
-                             'q_loss_cyc_init',
-                             'pwr_chg',
-                             'pwr_dis',
-                             'eff_chg_ac',
-                             'eff_chg_dc',
-                             'eff_dis_ac',
-                             'eff_dis_dc',
-                             'eff_storage_roundtrip',
-                             'temp_battery',
-                             'size_preexisting',
-                             'capex_preexisting',
-                             'capex_fix_glider',
-                             'capex_fix_charger',
-                             'capex_spec',
-                             'mntex_fix_glider',
-                             'opex_spec_dist',
-                             'opex_spec_ext_ac',
-                             'opex_spec_ext_dc',
-                             'crev_spec_time',
-                             'crev_spec_dist',
-                             'factor_pwr_des',
-                             'ls',
-                             'ccr',
-                             'sdr']
-        self.params_units = {key: getattr(self, key) for key in params_units_list}
-        for param in params_units_list:
-            delattr(self, param)
-
-        # todo move to pre scenario of commodities
-        for fleet in [fleet for fleet in self.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
-            for fleet_unit in fleet.subblocks.values():
-                fleet_unit.data = fleet.data.loc[:, (fleet_unit.name, slice(None))].droplevel(0, axis=1)
+        if params['invest'] and self.data_source in ['usecases', 'demand']:
+            raise ValueError(f'Subfleet "{self.name}": dispatch not implemented for data source "{self.data_source}"')
 
 
 class ElectricFleetUnit(Block, StorageBlock):
@@ -1663,24 +1688,30 @@ class ElectricFleetUnit(Block, StorageBlock):
 
     def __init__(self,
                  name: str,
+                 scenario: 'Scenario',
                  parent: Fleet,
-                 scenario: 'Scenario'):
+                 params: dict):
 
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'glider': {('capex', 'fix'): 'capex_fix_glider',
+                             'glider': {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'fix'): 'capex_fix_glider',
                                         ('mntex', 'fix'): 'mntex_fix_glider',
                                         ('opex', 'dist'): 'opex_spec_dist',
                                         ('crev', 'time'): 'crev_spec_time',
                                         ('crev', 'dist'): 'crev_spec_dist',
-                                        ('flow', 'name'): 'in',  # todo reference ???
                                         ('aux', 'ls'): 'ls',
                                         ('aux', 'ccr'): 'ccr'},
-                             'charger': {('capex', 'fix'): 'capex_fix_charger'},
-                             'storage': {('capex', 'preeexisting'): 'capex_preexisting',
+                             'charger': {('capex', 'preexisting'): 'capex_preexisting',
+                                         ('capex', 'fix'): 'capex_fix_charger',
+                                         ('aux', 'ls'): 'ls',
+                                         ('aux', 'ccr'): 'ccr'},
+                             'storage': {('capex', 'preexisting'): 'capex_preexisting',
                                          ('capex', 'spec'): 'capex_spec',
-                                         ('size', 'name'): 'block'},
+                                         ('size', 'name'): 'block',
+                                         ('aux', 'ls'): 'ls',
+                                         ('aux', 'ccr'): 'ccr'},
                              'ext_ac': {('opex', 'spec'): 'opex_spec_ext_ac',
                                         ('flow', 'name'): 'ext_ac'},
                              'ext_dc': {('opex', 'spec'): 'opex_spec_ext_dc',
@@ -1691,46 +1722,39 @@ class ElectricFleetUnit(Block, StorageBlock):
                              'bat_out': {('flow', 'name'): 'bat_out'},
                          },
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
-                         params=parent.params_units,
+                         params=params,
                          parent=parent)
 
         StorageBlock.__init__(self)
 
-        # region get dispatch mode and get data accordingly
-        if self.mode_scheduling in self.scenario.run.apriori_lvls:  # uc, equal, soc, fcfs
-            if self.mode_scheduling == 'uc':
-                self.mode_dispatch = 'apriori_unlimited'
-            elif isinstance(self.power_lim_static, (int, float)):
-                self.mode_dispatch = 'apriori_static'
-            elif self.power_lim_static is None:
-                self.mode_dispatch = 'apriori_dynamic'
+        self.log = None
 
-        elif self.scenario.strategy == 'rh':
-            self.mode_dispatch = 'opt_myopic'
-        elif self.scenario.strategy == 'go':
-            self.mode_dispatch = 'opt_global'
-
-        self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.system]
-        self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.system]
+        self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
+        self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
         delattr(self, 'eff_chg_ac')
         delattr(self, 'eff_chg_dc')
 
         # todo move to dispatch
-        if self.parent.data_source in ['usecases', 'demand']:  # dispatch simulation will run
+        if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
             # estimate maximum power drawn by self discharge
             self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
             # downrate assumed power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
-        # todo invest not possible with dispatch
-        if self.invest and self.mode_scheduling in self.scenario.run.apriori_lvls:
-            raise ValueError(f'CommoditySystem "{self.name}": commodity size optimization not '
+        if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.run.apriori_lvls:
+            raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
                              f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
+
+    def pre_scenario(self):
+        """
+        slice log file from subfleet
+        """
+
+        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
-
-
 
         """
         pre horizon method
@@ -1750,37 +1774,37 @@ class ElectricFleetUnit(Block, StorageBlock):
 
         self.components['inflow'] = solph.components.Converter(
             label=f'mc_{self.name}',
-            inputs={self.parent.components['bus']: solph.Flow(
-                nominal_value=self.pwr_chg,
-                max=inflow_max,
-                fix=inflow_fix)},
+            inputs={self.parent.parent.components['bus']: solph.Flow(
+                nominal_value=self.pwr_chg_max,
+                max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
+                fix=None)},  # todo fix for apriori scheduling
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: self.eff_chg})
 
         self.components['outflow'] = solph.components.Converter(
             label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
-            outputs={self.parent.bus: solph.Flow(
-                nominal_value=(self.pwr_dis * self.eff_dis if self.parent.lvl_cap in ['v2v', 'v2s'] else 0),
-                max=outflow_max,
-                fix=outflow_fix,
+            outputs={self.parent.parent.components['bus']: solph.Flow(
+                nominal_value=self.pwr_dis_max * self.eff_dis if pd.notna(self.pwr_dis_max) else 0,
+                max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
+                fix=None,  # todo fix for apriori scheduling
                 variable_costs=self.scenario.cost_eps)
             },
-            conversion_factors={self.parent.bus: self.eff_dis})
+            conversion_factors={self.parent.parent.components['bus']: self.eff_dis})
 
         self.components['snk'] = solph.components.Sink(
             label=f'{self.name}_snk',
             inputs={self.components['bus']: solph.Flow(
                 nominal_value=1,
-                fix=self.data_ph['consumption']
+                fix=self.log.loc[horizon.dti_ph, 'consumption']
             )})
 
         self.components['storage'] = solph.components.GenericStorage(
             label=f'{self.name}_ess',
-            inputs={self.components['bus']: solph.Flow(variable_costs=self.parent.opex_ep_spec[horizon.dti_ph])},
+            inputs={self.components['bus']: solph.Flow(variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph])},
             # cost_eps are needed to prevent storage from being emptied in RH
             outputs={self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            loss_rate=self.parent.loss_rate,
+            loss_rate=self.loss_rate,
             balanced=False,
             initial_storage_level=statistics.median(
                 [soc_min[horizon.starttime],
@@ -1789,7 +1813,7 @@ class ElectricFleetUnit(Block, StorageBlock):
             inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             nominal_storage_capacity=solph.Investment(
-                ep_costs=self.parent.capex_ep_spec,
+                ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.size.loc['block', 'existing'],
                 maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
             min_storage_level=soc_min,
@@ -1802,9 +1826,9 @@ class ElectricFleetUnit(Block, StorageBlock):
         self.components['src_ext_ac'] = solph.components.Source(
             label=f'{self.name}_src_ext_ac',
             outputs={self.components['bus_ext_ac']: solph.Flow(
-                nominal_value=self.parent.pwr_ext_ac,
-                max=ext_ac_max,
-                fix=ext_ac_fix,
+                nominal_value=self.pwr_ext_ac,
+                max=self.log.loc[horizon.dti_ph, 'atac'].astype(int),  # todo deactivate for apriori scheduling
+                fix=None,  # todo fix for apriori scheduling
                 variable_costs=self.parent.opex_ep_spec_ext_ac[horizon.dti_ph])}
         )
 
@@ -1820,9 +1844,9 @@ class ElectricFleetUnit(Block, StorageBlock):
         self.components['src_ext_dc'] = solph.components.Source(
             label=f'{self.name}_src_ext_dc',
             outputs={self.components['bus_ext_dc']: solph.Flow(
-                nominal_value=self.parent.pwr_ext_dc,
-                max=ext_dc_max,
-                fix=ext_dc_fix,
+                nominal_value=self.pwr_ext_dc,
+                max=self.log.loc[horizon.dti_ph, 'atdc'].astype(int),  # todo deactivate for apriori scheduling
+                fix=None,  # todo fix for apriori scheduling
                 variable_costs=self.parent.opex_ep_spec_ext_dc[horizon.dti_ph])}
         )
 
@@ -1833,8 +1857,8 @@ class ElectricFleetUnit(Block, StorageBlock):
             conversion_factors={self.components['bus']: 1}
         )
 
-        horizon.constraints.add_invest_costs(invest=(self.ess,),
-                                             capex_spec=self.parent.capex_spec,
+        horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
+                                             capex_spec=self.evaluators['storage'].capex['spec'],
                                              invest_type='storage')
 
 
@@ -1852,6 +1876,12 @@ class CombustionVehicle(Vehicle, NonElectricBlock):
 
 class MobileBattery(ElectricFleetUnit):
     pass
+
+
+    # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
+    # to one SOC before rental
+    # self.soc_target_high = self.soc_target
+    # self.soc_target_low = self.soc_target
 
 
 

@@ -333,7 +333,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
             elif param_tuple == ('flow', 'name'):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
-                getattr(self, dict_name)[dict_key] = utils.transform_scalar_var(value=getattr(self.block, param_name),
+                getattr(self, dict_name)[dict_key] = utils.transform_scalar_var(value=getattr(self.block, param_name, 0),
                                                                                 scenario=self.block.scenario,
                                                                                 block=self.block)
             else:  # capex, mntex, aux

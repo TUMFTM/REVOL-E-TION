@@ -529,6 +529,10 @@ class Scenario:
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
+    def pre_scenario(self):
+        for block in self.blocks.values():
+            block.pre_scenario()
+
     def print_results(self):
         for msg in self.print_results_msgs:
             self.logger.info(msg)
@@ -875,6 +879,8 @@ class SimulationRun:
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
                                                             'status': 'fully initialized'})
+
+            scenario.pre_scenario()
 
 
             for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
