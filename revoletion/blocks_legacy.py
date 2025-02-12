@@ -549,7 +549,7 @@ class RenewableInvestBlock(InvestBlock):
                                            outputs={self.bus: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                               existing=self.size.loc['block', 'existing'],
-                                                                              maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+                                                                              maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
                                                fix=self.data_ph['power_spec'],
                                                variable_costs=self.opex_ep_spec[horizon.dti_ph])})
         horizon.components.append(self.src)
@@ -876,7 +876,7 @@ class ControllableSource(InvestBlock):
                                            outputs={self.bus_connected: solph.Flow(
                                                nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                               existing=self.size.loc['block', 'existing'],
-                                                                              maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+                                                                              maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
                                                variable_costs=self.opex_ep_spec[horizon.dti_ph])})
 
         horizon.components.append(self.src)
@@ -1103,7 +1103,7 @@ class GridConnection(InvestBlock):
             outputs={self.bus: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                existing=self.size.loc['s2g', 'existing'],
-                                               maximum=utils.conv_add_max(self.size.loc['s2g', 'additional_max'])),
+                                               maximum=utils.conv_nan2none(self.size.loc['s2g', 'additional_max'])),
                 variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.bus: 1})}
 
@@ -1114,7 +1114,7 @@ class GridConnection(InvestBlock):
             inputs={self.bus: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=(self.capex_ep_spec if intv == self.peakshaving_ints.index[0] else 0),
                                                existing=self.size.loc['g2s', 'existing'],
-                                               maximum=utils.conv_add_max(self.size.loc['g2s', 'additional_max']))
+                                               maximum=utils.conv_nan2none(self.size.loc['g2s', 'additional_max']))
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(nominal_value=(solph.Investment(ep_costs=self.opex_ep_spec_peak,
@@ -1736,7 +1736,7 @@ class MobileCommodity(SubBlock):
                                                    outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.parent.capex_ep_spec,
                                                                                              existing=self.size.loc['block', 'existing'],
-                                                                                             maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+                                                                                             maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
                                                    min_storage_level=soc_min,
                                                    max_storage_level=soc_max
                                                    )
@@ -2102,7 +2102,7 @@ class StationaryEnergyStorage(InvestBlock):
                                                    outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
                                                    nominal_storage_capacity=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                              existing=self.size.loc['block', 'existing'],
-                                                                                             maximum=utils.conv_add_max(self.size.loc['block', 'additional_max'])),
+                                                                                             maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
                                                    max_storage_level=pd.Series(data=self.soc_max,
                                                                                index=utils.extend_dti(horizon.dti_ph)),
                                                    min_storage_level=pd.Series(data=self.soc_min,
@@ -2227,7 +2227,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.ac_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                    existing=self.size.loc['acdc', 'existing'],
-                                                                                   maximum=utils.conv_add_max(self.size.loc['acdc', 'additional_max'])),
+                                                                                   maximum=utils.conv_nan2none(self.size.loc['acdc', 'additional_max'])),
                                                     variable_costs=self.opex_ep_spec[horizon.dti_ph])},
                                                 outputs={self.dc_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},
@@ -2237,7 +2237,7 @@ class SystemCore(InvestBlock):
                                                 inputs={self.dc_bus: solph.Flow(
                                                     nominal_value=solph.Investment(ep_costs=self.capex_ep_spec,
                                                                                    existing=self.size.loc['dcac', 'existing'],
-                                                                                   maximum=utils.conv_add_max(self.size.loc['dcac', 'additional_max'])),
+                                                                                   maximum=utils.conv_nan2none(self.size.loc['dcac', 'additional_max'])),
                                                     variable_costs=self.opex_ep_spec[horizon.dti_ph])},
                                                 outputs={self.ac_bus: solph.Flow(
                                                     variable_costs=self.scenario.cost_eps)},

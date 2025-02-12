@@ -90,8 +90,10 @@ def get_dataframe_results(df: pd.DataFrame,
     return result_series
 
 
-
-def conv_add_max(value):
+def conv_nan2none(value):
+    """
+    Convert NaN values to None as oemof components require None instead of NaN.
+    """
     return value if pd.notna(value) else None
 
 
