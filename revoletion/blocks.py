@@ -1822,7 +1822,6 @@ class ElectricFleetUnit(Block, StorageBlock):
 
 class Vehicle:
     pass
-    # todo glider, charger, battery are pois
 
 
 class ElectricVehicle(ElectricFleetUnit, Vehicle):

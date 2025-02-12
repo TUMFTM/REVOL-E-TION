@@ -193,7 +193,7 @@ def read_input_log(fleet):
     """
     Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
     consumption must be meaned, while booleans, distances and dsocs must not. Function has to be callable for
-     ICEVSystems as well
+    ICEVSystems as well
     """
 
     log_path = os.path.join(fleet.scenario.run.path_input_data,
