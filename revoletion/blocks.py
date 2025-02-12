@@ -113,9 +113,6 @@ class Block:
 
         self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
-                                  # ToDo: check whether there is a better solution for initialization
-                                  data=0,  # sizes sometimes exist, although they cannot be optimized (e.g. GridMarkets)
-                                           # if a existing sizes is nan, the economic calculation fails
                                   dtype='float64')
         self.sizes['invest'] = False
 
@@ -248,7 +245,7 @@ class Block:
                                                               y=self.flows['total'],
                                                               mode='lines',
                                                               name=self.get_legend_entry(),
-                                                              line=dict(width=2, dash=None))
+                                                              line=dict(width=2, dash=None, shape='hv'))
                                                    )
 
     def get_legend_entry(self):
@@ -408,14 +405,14 @@ class SystemCore(Block):
                                                                mode='lines',
                                                                name=f'{self.name} DC-AC power (max. '
                                                                     f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
-                                                               line=dict(width=2, dash=None),
+                                                               line=dict(width=2, dash=None, shape='hv'),
                                                                visible='legendonly'),
                                                     go.Scatter(x=self.flows.index,
                                                                y=self.flows['acdc'],
                                                                mode='lines',
                                                                name=f'{self.name} AC-DC power (max. '
                                                                     f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
-                                                               line=dict(width=2, dash=None),
+                                                               line=dict(width=2, dash=None, shape='hv'),
                                                                visible='legendonly')])
 
 
@@ -448,6 +445,8 @@ class RenewableSource(Block):
 
         self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
+
+        self.share_curtailment = None
 
         self.scenario.renewable_sources[self.name] = self
 
@@ -515,8 +514,13 @@ class RenewableSource(Block):
     def calc_results_energies(self):
         super().calc_results_energies()
         # add curt and pot to scenario.energies
-        self.scenario.energies.loc[('renewable', 'curt'), :] += self.energies.loc['curt', :]
-        self.scenario.energies.loc[('renewable', 'pot'), :] += self.energies.loc['pot', :]
+        self.scenario.energies.loc[('renewable', 'act'), :] += self.energies.loc['out', :]
+
+        # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
+        if self.energies.loc['pot', 'sim'] == 0:
+            self.scenario.logger.warning(f'Block {self.name}: Curtailment share calculation: division by zero')
+        else:
+            self.share_curtailment = self.energies.loc['curt', 'sim'] / self.energies.loc['pot', 'sim']
 
     def add_plot_traces(self):
         super().add_plot_traces()
@@ -524,13 +528,13 @@ class RenewableSource(Block):
                                                                y=-1 * self.flows['curt'],
                                                                mode='lines',
                                                                name=f'{self.name} curtailed power',
-                                                               line=dict(width=2, dash=None),
+                                                               line=dict(width=2, dash=None, shape='hv'),
                                                                visible='legendonly'),
                                                     go.Scatter(x=self.flows.index,
                                                                y=self.flows['pot'],
                                                                mode='lines',
                                                                name=f'{self.name} potential power',
-                                                               line=dict(width=2, dash=None),
+                                                               line=dict(width=2, dash=None, shape='hv'),
                                                                visible='legendonly')])
 
     def get_legend_entry(self):
@@ -1245,8 +1249,26 @@ class GridMarket(Block):
 
     def initialize_sizes(self,
                          pois: dict = None):
-        # ToDo: implement logic for GridMarket sizes
-        pass
+        """
+        Initialize the sizes DataFrame for GridMarkets -> has sizes, but is not investable
+        """
+
+        sizes = [name for name in [poi.get(('size', 'name')) for poi in pois.values()] if name is not None]
+
+        if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
+            raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
+
+        self.sizes = pd.DataFrame(index=sizes,
+                                  columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
+                                  dtype='float64')
+        self.sizes['invest'] = False
+        self.sizes[['total_max', 'expansion_max']] = np.nan
+        self.sizes['expansion'] = 0
+
+        for size_str in self.sizes.index:
+            attr_str = f'pwr_{size_str}'
+            self.sizes.loc[size_str, 'preexisting'] = getattr(self, attr_str, 0)
+            delattr(self, attr_str)
 
     def define_oemof_components(self,
                                 horizon):
@@ -1263,7 +1285,8 @@ class GridMarket(Block):
         self.components['src'] = solph.components.Source(
             label=f'{self.name}_src',
             outputs={self.parent.components['bus']: solph.Flow(
-                nominal_value=(self.pwr_g2s if not pd.isna(self.pwr_g2s) else None),
+                nominal_value=(self.sizes.loc['g2s', 'preexisting']
+                               if not pd.isna(self.sizes.loc['g2s', 'preexisting']) else None),  # ToDo: use conv_add_max()
                 variable_costs=self.evaluators['g2s'].opex['spec_ep'][horizon.dti_ph])
             }
         )
@@ -1272,7 +1295,8 @@ class GridMarket(Block):
             label=f'{self.name}_snk',
             inputs={
                 self.parent.components['bus']: solph.Flow(
-                    nominal_value=(self.pwr_s2g if not pd.isna(self.pwr_s2g) else None),
+                    nominal_value=(self.sizes.loc['s2g', 'preexisting']
+                                   if not pd.isna(self.sizes.loc['s2g', 'preexisting']) else None),  # ToDo: use conv_add_max()
                     variable_costs=(self.evaluators['s2g'].opex['spec_ep'][horizon.dti_ph]),
                 )
             }
@@ -1291,9 +1315,13 @@ class GridMarket(Block):
                                                                  self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max.'
-                f' {(self.parent.sizes.loc["g2s", "total"] if pd.isna(self.pwr_g2s) else self.pwr_g2s) / 1e3:.1f} kW from /'
-                f' {(self.parent.sizes.loc["s2g", "total"] if pd.isna(self.pwr_s2g) else self.pwr_s2g) / 1e3:.1f} kW to grid)')
+        powers = {power: min(self.parent.sizes.loc[power, 'total'],
+                         (self.sizes.loc[power, 'total']
+                          if pd.notna(self.sizes.loc[power, 'total'])
+                          else self.parent.sizes.loc[power, 'total']))
+                for power in ['g2s', 's2g']}
+
+        return f'{self.name} power (max. {powers["g2s"] / 1e3:.1f} kW from / {powers["s2g"] / 1e3:.1f} kW to grid)'
 
 
 class StorageBlock:

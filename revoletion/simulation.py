@@ -422,17 +422,14 @@ class Scenario:
                             'states': []}
 
         # Result variables - Energy
-        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'pot'),
-                                                                             ('renewable', 'curt'),
-                                                                             ('renewable', 'act'),],
+        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),],
                                                                      names=['block', 'key']),
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,
                                      dtype=float)
 
         self.e_eta = None
-        self.renewable_curtailment = self.renewable_share = None
-        self.e_renewable_act = self.e_renewable_pot = self.e_renewable_curt = 0
+        self.renewable_share = None
 
         self.lcoe_total = self.lcoe_wocs = None
         self.npv = self.irr = self.mirr = None
@@ -444,48 +441,31 @@ class Scenario:
         # TODO implement commodity v2s usage share
         # TODO implement energy storage usage share
 
-        # ToDo: check whether if/else/try/except structure is necessary
+        energy_pro = self.energies.loc[(self.energies['sim'] > 0) &
+                                       (self.energies.index.get_level_values(1) == 'total'), :].sum()
 
-        if self.energies.loc[self.energies['sim'] > 0, 'sim'].sum() == 0:
+        energy_del = abs(self.energies.loc[(self.energies['sim'] < 0) &
+                                           (self.energies.index.get_level_values(1) == 'total'), :].sum())
+
+        # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
+        if energy_pro['sim'] == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
-            try:
-                self.e_eta = (self.energies.loc[self.energies['sim'] < 0, 'sim'].sum() /
-                              self.energies.loc[self.energies['sim'] > 0, 'sim'].sum())
-            except ZeroDivisionError:
-                self.logger.warning(f'Core efficiency calculation: division by zero')
+            self.e_eta = energy_del['sim'] / energy_pro['sim']
 
-        if self.energies.loc[('renewable', 'pot'), 'sim'] == 0:
-            self.logger.warning(f'Renewable curtailment calculation: division by zero')
-        else:
-            try:
-                self.renewable_curtailment = (self.energies.loc[('renewable', 'curt'), 'sim'] /
-                                              self.energies.loc[('renewable', 'pot'), 'sim'])
-            except ZeroDivisionError:
-                self.logger.warning(f'Renewable curtailment calculation: division by zero')
-
-        if self.energies.loc[self.energies['sim'] > 0, 'sim'].sum() == 0:
+        if energy_pro['sim'] == 0:
             self.logger.warning(f'Renewable share calculation: division by zero')
         else:
-            try:
-                self.renewable_share = (self.energies.loc[('renewable', 'act'), 'sim'] /
-                                        self.energies.loc[self.energies['sim'] > 0, 'sim'].sum())
-            except ZeroDivisionError:
-                self.logger.warning(f'Renewable share calculation: division by zero')
+            self.renewable_share = self.energies.loc[('renewable', 'act'), 'sim'] / energy_pro['sim']
 
-        if self.energies.loc[self.energies['dis'] < 0, 'dis'].sum() == 0:
+        if energy_del['dis'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            try:
-                self.lcoe_total = (self.aggregator.totex['dis'] /
-                                   self.energies.loc[self.energies['dis'] < 0, 'dis'].sum())
-                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                self.lcoe_wocs = ((self.aggregator.totex['dis'] -
-                                  sum([fleet.aggregator.totex['dis'] for fleet in self.fleets])) /
-                                  self.energies.loc[self.energies['dis'] < 0, 'dis'].sum())
-            except ZeroDivisionError:
-                self.lcoe_total = self.lcoe_wocs = None
-                self.logger.warning(f'LCOE calculation: division by zero')
+            self.lcoe_total = self.aggregator.totex['dis'] / energy_del['dis']
+            self.lcoe_wocs = ((self.aggregator.totex['dis'] -
+                               # ToDo: check whether calculation of totex['dis'] of fleets is correct
+                               sum([fleet.aggregator.totex['dis'] for fleet in self.fleets.values()])) /
+                              energy_del['dis'])
 
         self.npc = self.aggregator.totex['dis']
         self.npv = self.aggregator.value['dis']
@@ -494,14 +474,10 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} -'
-                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} -'
-                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh -'
-                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} % -'
-                         f' Renewable Share:'
-                         f' {f"{self.renewable_share * 100:.1f}" if pd.notna(self.renewable_share) else "-"} % -'
-                         f' Renewable Curtailment:'
-                         f' {f"{self.renewable_curtailment * 100:.1f}" if pd.notna(self.renewable_curtailment) else "-"} %')
+        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} |'
+                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} |'
+                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh |'
+                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
 
     def create_block_objects(self):
         class_dict = self.blocks
