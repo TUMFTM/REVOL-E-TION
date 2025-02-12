@@ -233,6 +233,9 @@ class EconomicPointOfInterest:
         """
         aggregate all economic values (except capex preexisting) one level up
         """
+
+        # ToDo: aggregate cashflow dataframes
+
         for key in ['expansion', 'init', 'replacement', 'prj', 'dis', 'ann']:
             target.capex[key] += self.capex[key]
         for key in ['sim', 'yrl', 'prj', 'dis', 'ann']:
@@ -379,6 +382,10 @@ class EconomicEvaluator(EconomicPointOfInterest):
     def post_scenario(self):
 
         # region capex
+
+        # ToDo: firstly calculate cashflow dataframes (capex, mntex, opex, crev and then calculate the economic values
+        #  and calculate prj, dis and ann values based on cashflows df
+
         self.capex['expansion'] = self.capex['spec'] * self.get_size(self.size_name, 'expansion')
         self.capex['init'] = self.capex['preexisting'] + self.capex['expansion']
         self.capex['replacement'] = (self.capex['spec'] * self.get_size(self.size_name, 'total') +
