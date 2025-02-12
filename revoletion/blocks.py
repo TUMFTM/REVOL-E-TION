@@ -113,6 +113,7 @@ class Block:
 
         self.sizes = pd.DataFrame(index=sizes,
                                   columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
+                                  data=np.nan,
                                   dtype='float64')
         self.sizes['invest'] = False
 
@@ -231,8 +232,7 @@ class Block:
                                                         axis=1)
 
     def add_result_msgs(self, unit='kW'):
-        if self.sizes.shape[0] == 0:  # ToDo: fix sizes in GridMarket
-            return
+
         self.scenario.print_results_msgs.extend(
             [msg for msg in self.sizes.apply(lambda size: (
                 f'Optimized size of component "{size.name}" in block "{self.name}": {size["total"] / 1e3:.1f} {unit}'
@@ -1528,39 +1528,82 @@ class Fleet(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'sys_chg': {('opex', 'spec'): 'opex_spec_sys_chg',
-                                           ('flow', 'name'): 'in'},
-                               'sys_dis': {('opex', 'spec'): 'opex_spec_sys_dis',
-                                           ('flow', 'name'): 'out'}},
+                         pois={'f2s': {('opex', 'spec'): 'opex_spec_f2s',
+                                       ('flow', 'name'): 'out',
+                                       ('size', 'name'): 'f2s',},
+                               's2f': {('opex', 'spec'): 'opex_spec_s2f',
+                                       ('flow', 'name'): 'in',
+                                       ('size', 'name'): 's2f',}
+                             },
                          state_names=None,
                          params=None,
                          parent=scenario)
 
         self.scenario.fleets[self.name] = self
 
-        # region get dispatch mode and get data accordingly
-        if self.mode_scheduling in self.scenario.run.apriori_lvls:  # uc, equal, soc, fcfs
-            if self.mode_scheduling == 'uc':
-                self.mode_dispatch = 'apriori_unlimited'
-            elif isinstance(self.power_lim_static, (int, float)):
-                self.mode_dispatch = 'apriori_static'
-            elif self.power_lim_static is None:
-                self.mode_dispatch = 'apriori_dynamic'
+        # todo init subfleets
 
-        elif self.scenario.strategy == 'rh':
-            self.mode_dispatch = 'opt_myopic'
-        elif self.scenario.strategy == 'go':
-            self.mode_dispatch = 'opt_global'
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
+        """
+        pre horizon method
 
-        # static load management is deactivated for 'uc' mode
-        if self.power_lim_static and self.mode_scheduling == 'uc':
-            self.scenario.logger.warning(f'CommoditySystem "{self.name}": static load management is not implemented'
-                                         f' for scheduling mode "uc". deactivating static load management')
-            self.power_lim_static = None
+        x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
 
-        if self.invest and self.mode_scheduling in self.scenario.run.apriori_lvls:
-            raise ValueError(f'CommoditySystem "{self.name}": commodity size optimization not '
-                             f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
+        bus_connected        name_bus
+          |<-x---name_outflow---|---(ElectricFleetUnit Instance)
+          |                     |
+          |-x----name_inflow--->|---(ElectricFleetUnit Instance)
+          |                     |
+          |                     |   (CombustionVehicle Instance)
+        """
+
+        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+
+        self.components['inflow'] = solph.components.Converter(
+            label=f'xc_{self.name}',
+            inputs={self.bus_connected: solph.Flow(
+                variable_costs=self.evaluators['s2f'].opex['spec_ep'][horizon.dti_ph],
+                nominal_value=self.sizes.loc['s2f', 'preexisting'],)},
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: 1}
+        )
+
+        self.components['outflow'] = solph.components.Converter(
+            label=f'{self.name}_xc',
+            inputs={self.components['bus']: solph.Flow(
+                variable_costs=self.evaluators['f2s'].opex['spec_ep'][horizon.dti_ph],
+                nominal_value=self.sizes.loc['f2s', 'preexisting'],)},
+            outputs={self.bus_connected: solph.Flow(
+                variable_costs=self.scenario.cost_eps)},
+            conversion_factors={self.bus_connected: 1}
+        )
+
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        """
+        post horizon method
+        """
+        self.sizes['expansion'] = 0  # set value initialized as np.nan to 0 for both sizes to enable preexisting add
+
+        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
+
+    def get_legend_entry(self):
+        return (f'{self.name} power (max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW from / '
+                f'{self.sizes.loc["s2f", "total"] / 1e3:.1f} kW to fleet)')
+
+
+
+class SubFleet(Block, NonElectricBlock):
+
+    def __init__(self):
+        # self.demand = mobility.VehicleFleetDemand(scenario, self)  # todo modify
+        # self.demand = mobility.BatteryFleetDemand(scenario, self)
 
         self.unit_names = [f'{self.name}_{i}' for i in range(self.num)]
         if self.data_source == 'usecases':
@@ -1573,9 +1616,7 @@ class Fleet(Block):
             self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
-        # endregion
 
-        # region define params for subblocks
         params_units_list = ['invest',
                              'aging',
                              'dsoc_buffer',
@@ -1610,82 +1651,11 @@ class Fleet(Block):
         self.params_units = {key: getattr(self, key) for key in params_units_list}
         for param in params_units_list:
             delattr(self, param)
-        # endregion
 
-    def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
-        """
-        pre horizon method
-
-        x denotes the flow measurement point in results
-        xc denotes ac or dc, depending on the parameter 'system'
-
-        bus_connected        name_bus
-          |<-x---name_outflow---|---(FleetUnit Instance)
-          |                     |
-          |-x----name_inflow--->|---(FleetUnit Instance)
-        """
-
-        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
-
-        self.components['inflow'] = solph.components.Converter(
-            label=f'xc_{self.name}',
-            inputs={self.bus_connected: solph.Flow(
-                variable_costs=self.evaluators['sys_chg'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=self.power_lim_static,
-                max=1 if self.power_lim_static else None
-            )},
-            outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: 1}
-        )
-
-        self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_xc',
-            inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['sys_dis'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=(self.power_lim_static if self.lvl_cap == 'v2s' else 0),
-                max=(1 if self.power_lim_static is not None else None))},
-            outputs={self.bus_connected: solph.Flow(
-                variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.bus_connected: 1}
-        )
-
-
-class ElectricVehicleFleet(Fleet):
-
-    def __init__(self,
-                 name: str,
-                 scenario: 'Scenario'):
-
-        self.demand = mobility.VehicleFleetDemand(scenario, self)
-
-        super().__init__(name=name,
-                         scenario=scenario)
-
-        self.subblocks = {name: ElectricVehicle(name=name,
-                                                parent=self,
-                                                scenario=scenario) for name in self.unit_names}
-        for attr in ['unit_names', 'params_units']:
-            delattr(self, attr)
-
-
-class BatteryFleet(Fleet):
-
-    def __init__(self,
-                 name: str,
-                 scenario: 'Scenario'):
-
-        self.demand = mobility.BatteryFleetDemand(scenario, self)
-
-        super().__init__(name=name,
-                         scenario=scenario)
-
-        self.subblocks = {name: MobileBattery(name=name,
-                                              parent=self,
-                                              scenario=scenario) for name in self.unit_names}
-        for attr in ['unit_names', 'params_inherit']:
-            delattr(self, attr)
+        # todo move to pre scenario of commodities
+        for fleet in [fleet for fleet in self.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
+            for fleet_unit in fleet.subblocks.values():
+                fleet_unit.data = fleet.data.loc[:, (fleet_unit.name, slice(None))].droplevel(0, axis=1)
 
 
 class ElectricFleetUnit(Block, StorageBlock):
@@ -1728,6 +1698,20 @@ class ElectricFleetUnit(Block, StorageBlock):
 
         StorageBlock.__init__(self)
 
+        # region get dispatch mode and get data accordingly
+        if self.mode_scheduling in self.scenario.run.apriori_lvls:  # uc, equal, soc, fcfs
+            if self.mode_scheduling == 'uc':
+                self.mode_dispatch = 'apriori_unlimited'
+            elif isinstance(self.power_lim_static, (int, float)):
+                self.mode_dispatch = 'apriori_static'
+            elif self.power_lim_static is None:
+                self.mode_dispatch = 'apriori_dynamic'
+
+        elif self.scenario.strategy == 'rh':
+            self.mode_dispatch = 'opt_myopic'
+        elif self.scenario.strategy == 'go':
+            self.mode_dispatch = 'opt_global'
+
         self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.system]
         self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.system]
         delattr(self, 'eff_chg_ac')
@@ -1740,8 +1724,16 @@ class ElectricFleetUnit(Block, StorageBlock):
             # downrate assumed power for a priori dispatch simulation
             self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
 
+        # todo invest not possible with dispatch
+        if self.invest and self.mode_scheduling in self.scenario.run.apriori_lvls:
+            raise ValueError(f'CommoditySystem "{self.name}": commodity size optimization not '
+                             f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
+
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
+
+
+
         """
         pre horizon method
 

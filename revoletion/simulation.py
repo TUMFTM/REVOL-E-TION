@@ -377,38 +377,36 @@ class Scenario:
 
         # Execute commodity system discrete event simulation
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        if any([fleet.data_source in ['demand', 'usecases'] for fleet in self.fleets.values()]):
-            dispatch.execute_des(self, self.run)
+        # if any([fleet.data_source in ['demand', 'usecases'] for fleet in self.fleets.values()]):
+        #     dispatch.execute_des(self, self.run)  # todo implement des across fleets
 
-        # todo move to pre scenario of commodities
-        for fleet in [fleet for fleet in self.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
-            for fleet_unit in fleet.subblocks.values():
-                fleet_unit.data = fleet.data.loc[:, (fleet_unit.name, slice(None))].droplevel(0, axis=1)
 
-        # check example parameter configuration of rulebased charging for validity
-        if fleet_unlim := [fleet for fleet in self.fleets.values() if
-                        (fleet.mode_scheduling in self.run.apriori_lvls)
-                        and fleet.mode_scheduling != 'uc'
-                        and not fleet.power_lim_static]:
-            if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-                raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-                                 f'without static load management (lm_static) is not compatible'
-                                 f' with size optimization')
-            if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryBattery)]:
-                raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-                                 f'without static load management (lm_static) is not implemented for systems with '
-                                 f'stationary energy storage')
-            if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-                raise ValueError(f'All rulebased CommoditySystems with dynamic load management '
-                                 f'have to follow the same strategy. Different strategies are not possible')
-            if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-                raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
-                                 f' dynamic load management, all CommoditySystems with dynamic load management have to'
-                                 f' be connected to the same bus')
+        # todo adapt to new fleet structure
+        # # check example parameter configuration of rulebased charging for validity
+        # if fleet_unlim := [fleet for fleet in self.fleets.values() if
+        #                 (fleet.mode_scheduling in self.run.apriori_lvls)
+        #                 and fleet.mode_scheduling != 'uc'
+        #                 and not fleet.power_lim_static]:
+        #     if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
+        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
+        #                          f'without static load management (lm_static) is not compatible'
+        #                          f' with size optimization')
+        #     if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryBattery)]:
+        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
+        #                          f'without static load management (lm_static) is not implemented for systems with '
+        #                          f'stationary energy storage')
+        #     if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
+        #         raise ValueError(f'All rulebased CommoditySystems with dynamic load management '
+        #                          f'have to follow the same strategy. Different strategies are not possible')
+        #     if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
+        #         raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
+        #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
+        #                          f' be connected to the same bus')
 
         self.scheduler = None
-        if any([fleet for fleet in self.fleets.values() if fleet.mode_scheduling in self.run.apriori_lvls]):
-            self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
+        # todo adapt to new fleet structure
+        # if any([fleet for fleet in self.fleets.values() if fleet.mode_scheduling in self.run.apriori_lvls]):
+        #     self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
