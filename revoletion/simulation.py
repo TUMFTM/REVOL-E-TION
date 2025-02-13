@@ -222,20 +222,24 @@ class PredictionHorizon:
 
 class Scenario:
 
-    def __init__(self, name, run, logger, lock, status_queue):
-
+    def __init__(self, name, run, log_queue, lock, status_queue=None):
         self.name = name
         self.run = run
-        self.logger = logger
+        self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
         self.logger.propagate = False
         self.status_queue = status_queue
+
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
             if not 'Optimization ended with status warning and termination condition' in str(message):
-                logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
+                self.logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
 
         warnings.showwarning = custom_warning_handler
+
+        self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                status_msg={'scenario': self.name,
+                                                            'status': 'started'})
 
         # General Information --------------------------------
 
@@ -245,8 +249,9 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)} '
-                         f'- Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else '')
+        msg_parallel = (f' on {self.worker.name.ljust(18)} - Parent: {self.worker._parent_name}'
+                        if hasattr(self.worker, '_parent_name') else '')
+        self.logger.info(f'Scenario initialized{msg_parallel}')
 
         self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
@@ -439,9 +444,8 @@ class Scenario:
                                                 status_msg={'scenario': self.name,
                                                             'status': 'fully initialized'})
 
-    def simulate(self):
-
-        self.pre_scenario()
+        for block in self.blocks.values():
+            block.pre_scenario()
 
         try:
             for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
@@ -485,16 +489,18 @@ class Scenario:
                 self.save_result_summary()
 
                 if self.run.save_results_timeseries:
-                    self.save_result_timeseries()
+                    self.result_timeseries.to_csv(self.path_result_ts_file)
+
                 if self.run.print_results:
-                    self.print_results()
+                    for msg in self.print_results_msgs:
+                        self.logger.info(msg)
 
                 if self.run.generate_plots:
                     self.generate_plots()
                     if self.run.save_plots:
-                        self.save_plots()
+                        self.figure.write_html(self.plot_file_path)
                     if self.run.show_plots:
-                        self.show_plots()
+                        self.figure.show(renderer='browser')
 
                 self.run.trigger_scenario_status_update(queue=self.status_queue,
                                                         status_msg={'scenario': self.name,
@@ -502,6 +508,9 @@ class Scenario:
 
             except Exception as e:
                 self.logger.error(e, exc_info=True)
+
+        logging.shutdown()
+
 
 
 
@@ -600,16 +609,6 @@ class Scenario:
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
-    def pre_scenario(self):
-        for block in self.blocks.values():
-            block.pre_scenario()
-
-    def print_results(self):
-        for msg in self.print_results_msgs:
-            self.logger.info(msg)
-
-    def save_plots(self):
-        self.figure.write_html(self.plot_file_path)
 
     def save_result_summary(self):
         """
@@ -647,11 +646,6 @@ class Scenario:
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
 
-    def save_result_timeseries(self):
-        self.result_timeseries.to_csv(self.path_result_ts_file)
-
-    def show_plots(self):
-        self.figure.show(renderer='browser')
 
 
 class SimulationRun:
@@ -935,96 +929,15 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
-        logger = logger_fcs.setup_logger(name, log_queue, self)
-
-        # self.process = mp.current_process() if self.parallel else None
-
-        self.trigger_scenario_status_update(queue=status_queue,
-                                            status_msg={'scenario': name,
-                                                        'status': 'started'})
-
-        scenario = None
-
         try:
             scenario = Scenario(name=name,
                                 run=self,
-                                logger=logger,
+                                log_queue=log_queue,
                                 lock=lock,
                                 status_queue=status_queue)  # Create scenario instance
-
-            scenario.simulate()
-
         except:
             self.logger.info(f'Error occurred in scenario {name}')
 
-
-        # try:
-        #     scenario = Scenario(name, self, logger, lock)  # Create scenario instance
-        #
-        #     # todo move to scenario init?
-        #     self.trigger_scenario_status_update(queue=status_queue,
-        #                                         status_msg={'scenario': name,
-        #                                                     'status': 'fully initialized'})
-        #
-        #     scenario.pre_scenario()
-        #
-        #
-        #     for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-        #         horizon = PredictionHorizon(horizon_index, scenario)
-        #         horizon.run_optimization()
-        #         horizon.get_results()
-        #         self.trigger_scenario_status_update(queue=status_queue,
-        #                                             status_msg={'scenario': name,
-        #                                                         'status': f'completed horizon {horizon_index + 1} out of'
-        #                                                                   f' {scenario.nhorizons}'})
-        #
-        #     self.trigger_scenario_status_update(queue=status_queue,
-        #                                         status_msg={'scenario': name,
-        #                                                     'status': 'successful'})
-        #
-        #     scenario.end_timing()  # todo move after result getting?
-        #
-        # except Exception as e:
-        #     # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-        #     status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-        #     self.trigger_scenario_status_update(queue=status_queue,
-        #                                         status_msg={'scenario': name,
-        #                                                     'status': status,
-        #                                                     'exception': str(e),
-        #                                                     'traceback': traceback.format_exc()})
-        #
-        #     # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
-        #     logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
-        #
-        #     if scenario is not None:  # scenario initialization can fail
-        #         scenario.exception = str(e)
-        #         scenario.end_timing()
-        #
-        # finally:
-        #     try:
-        #         for block in scenario.blocks.values():
-        #             block.post_scenario()
-        #         scenario.aggregator.post_scenario()
-        #
-        #         scenario.calc_meta_results()
-        #         scenario.save_result_summary()
-        #
-        #         if self.save_results_timeseries:
-        #             scenario.save_result_timeseries()
-        #         if self.print_results:
-        #             scenario.print_results()
-        #
-        #         if self.save_plots or self.show_plots:
-        #             scenario.generate_plots()
-        #             if self.save_plots:
-        #                 scenario.save_plots()
-        #             if self.show_plots:
-        #                 scenario.show_plots()
-        #
-        #     except Exception as e:
-        #         logger.error(e, exc_info=True)
-
-            logging.shutdown()
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -1037,3 +950,5 @@ class SimulationRun:
             self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
         self.scenario_status.to_csv(self.path_result_status_file,
                                     index=True)
+
+
