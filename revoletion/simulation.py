@@ -124,6 +124,9 @@ class PredictionHorizon:
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Model build completed')
 
+        self.run_optimization()
+        self.get_results()
+
     def draw_energy_system(self):
         """
         This method draws a directed graph of the scenario's energy system and saves it as a pdf file
@@ -449,16 +452,14 @@ class Scenario:
 
         try:
             for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
-                    horizon = PredictionHorizon(index=horizon_index,
-                                                scenario=self)
-                    horizon.run_optimization()
-                    horizon.get_results()
+                PredictionHorizon(index=horizon_index,
+                                  scenario=self)
 
-                    self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                            status_msg={'scenario': self.name,
-                                                                        'status': f'completed horizon '
-                                                                                  f'{horizon_index + 1} out of '
-                                                                                  f'{self.nhorizons}'})
+                self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                        status_msg={'scenario': self.name,
+                                                                    'status': f'completed horizon '
+                                                                              f'{horizon_index + 1} out of '
+                                                                              f'{self.nhorizons}'})
             self.run.trigger_scenario_status_update(queue=self.status_queue,
                                                     status_msg={'scenario': self.name,
                                                                 'status': 'successful'})
@@ -501,10 +502,6 @@ class Scenario:
                         self.figure.write_html(self.plot_file_path)
                     if self.run.show_plots:
                         self.figure.show(renderer='browser')
-
-                self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                        status_msg={'scenario': self.name,
-                                                                    'status': 'successful and saved results'})
 
             except Exception as e:
                 self.logger.error(e, exc_info=True)
@@ -929,12 +926,14 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
+        # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
+        # objects which cannot be pickled.
         try:
-            scenario = Scenario(name=name,
-                                run=self,
-                                log_queue=log_queue,
-                                lock=lock,
-                                status_queue=status_queue)  # Create scenario instance
+            Scenario(name=name,
+                     run=self,
+                     log_queue=log_queue,
+                     lock=lock,
+                     status_queue=status_queue)
         except:
             self.logger.info(f'Error occurred in scenario {name}')
 
