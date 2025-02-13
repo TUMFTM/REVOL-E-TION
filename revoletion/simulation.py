@@ -447,6 +447,7 @@ class Scenario:
                                                 status_msg={'scenario': self.name,
                                                             'status': 'fully initialized'})
 
+        # region execute scenario
         for block in self.blocks.values():
             block.pre_scenario()
 
@@ -507,9 +508,7 @@ class Scenario:
                 self.logger.error(e, exc_info=True)
 
         logging.shutdown()
-
-
-
+        # endregion
 
     def calc_meta_results(self):
 
