@@ -124,9 +124,6 @@ class PredictionHorizon:
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Model build completed')
 
-        self.run_optimization()
-        self.get_results()
-
     def draw_energy_system(self):
         """
         This method draws a directed graph of the scenario's energy system and saves it as a pdf file
@@ -225,24 +222,19 @@ class PredictionHorizon:
 
 class Scenario:
 
-    def __init__(self, name, run, log_queue, lock, status_queue=None):
+    def __init__(self, name, run, logger, lock):
+
         self.name = name
         self.run = run
-        self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
+        self.logger = logger
         self.logger.propagate = False
-        self.status_queue = status_queue
-
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
             if not 'Optimization ended with status warning and termination condition' in str(message):
-                self.logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
+                logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
 
         warnings.showwarning = custom_warning_handler
-
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'started'})
 
         # General Information --------------------------------
 
@@ -252,9 +244,8 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        msg_parallel = (f' on {self.worker.name.ljust(18)} - Parent: {self.worker._parent_name}'
-                        if hasattr(self.worker, '_parent_name') else '')
-        self.logger.info(f'Scenario initialized{msg_parallel}')
+        self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)}' +
+                         (f' - Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else ''))
 
         self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
@@ -278,8 +269,8 @@ class Scenario:
             if location:
                 self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
         except geopy.exc.GeocoderUnavailable:
-            self.logger.warning(f'Connection to Geocoder failed. '
-                                f'Using default country ({self.country}) and state ({self.state}).')
+            self.logger.warning(f'Connection to Geocoder failed.'
+                                f' Using default country ({self.country}) and state ({self.state}).')
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
@@ -336,12 +327,12 @@ class Scenario:
             try:
                 self.holiday_dates = sorted(
                     getattr(holidays, self.country)(years=years))
-                self.logger.warning(f'Holidays for state {self.state} not available. '
-                                    f'Country-wide holidays for {self.country} are used instead.')
+                self.logger.warning(f'Holidays for state {self.state} not available.'
+                                    f' Country-wide holidays for {self.country} are used instead.')
             except AttributeError:  # not all countries worldwide are available
                 self.holiday_dates = []
-                self.logger.warning(f'Holidays for country {self.country} not available. '
-                                    f'No public holidays are considered in this scenario.')
+                self.logger.warning(f'Holidays for country {self.country} not available.'
+                                    f' No public holidays are considered in this scenario.')
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
@@ -443,73 +434,6 @@ class Scenario:
 
         self.logger.debug(f'Scenario initialization completed')
 
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'fully initialized'})
-
-        # region execute scenario
-        for block in self.blocks.values():
-            block.pre_scenario()
-
-        try:
-            for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
-                PredictionHorizon(index=horizon_index,
-                                  scenario=self)
-
-                self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                        status_msg={'scenario': self.name,
-                                                                    'status': f'completed horizon '
-                                                                              f'{horizon_index + 1} out of '
-                                                                              f'{self.nhorizons}'})
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': 'successful'})
-
-        except Exception as e:
-            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-            status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': status,
-                                                                'exception': str(e),
-                                                                'traceback': traceback.format_exc()})
-
-            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
-            self.logger.error(msg=f'{str(e)} - continue on next scenario',
-                              exc_info=(not isinstance(e, OptimizationError)))
-
-            self.exception = str(e)
-            self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
-
-        finally:
-            try:
-                for block in self.blocks.values():
-                    block.post_scenario()
-                self.aggregator.post_scenario()
-
-                self.calc_meta_results()
-                self.save_result_summary()
-
-                if self.run.save_results_timeseries:
-                    self.result_timeseries.to_csv(self.path_result_ts_file)
-
-                if self.run.print_results:
-                    for msg in self.print_results_msgs:
-                        self.logger.info(msg)
-
-                if self.run.generate_plots:
-                    self.generate_plots()
-                    if self.run.save_plots:
-                        self.figure.write_html(self.plot_file_path)
-                    if self.run.show_plots:
-                        self.figure.show(renderer='browser')
-
-            except Exception as e:
-                self.logger.error(e, exc_info=True)
-
-        logging.shutdown()
-        # endregion
-
     def calc_meta_results(self):
 
         # TODO implement commodity v2s usage share
@@ -548,10 +472,10 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} | '
-                         f'NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} | '
-                         f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
-                         f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
+        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} |'
+                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} |'
+                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh |'
+                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
 
     def create_block_objects(self):
         class_dict = self.blocks
@@ -605,6 +529,16 @@ class Scenario:
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
+    def pre_scenario(self):
+        for block in self.blocks.values():
+            block.pre_scenario()
+
+    def print_results(self):
+        for msg in self.print_results_msgs:
+            self.logger.info(msg)
+
+    def save_plots(self):
+        self.figure.write_html(self.plot_file_path)
 
     def save_result_summary(self):
         """
@@ -642,6 +576,11 @@ class Scenario:
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
 
+    def save_result_timeseries(self):
+        self.result_timeseries.to_csv(self.path_result_ts_file)
+
+    def show_plots(self):
+        self.figure.show(renderer='browser')
 
 
 class SimulationRun:
@@ -677,8 +616,6 @@ class SimulationRun:
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
-
-        self.generate_plots = True if self.show_plots or self.save_plots else False
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
         self.define_paths()
@@ -747,9 +684,9 @@ class SimulationRun:
     def define_logger(self):
 
         self.logger = logging.getLogger()
-        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
-                                          f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
-                                          f'%(message)s')
+        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s'
+                                          f'  %(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s'
+                                          f'  %(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
         log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.path_log_file))
@@ -925,17 +862,83 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
-        # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
-        # objects which cannot be pickled.
-        try:
-            Scenario(name=name,
-                     run=self,
-                     log_queue=log_queue,
-                     lock=lock,
-                     status_queue=status_queue)
-        except:
-            self.logger.info(f'Error occurred in scenario {name}')
+        logger = logger_fcs.setup_logger(name, log_queue, self)
 
+        self.process = mp.current_process() if self.parallel else None
+
+        self.trigger_scenario_status_update(queue=status_queue,
+                                            status_msg={'scenario': name,
+                                                        'status': 'started'})
+
+        scenario = None
+
+        try:
+            scenario = Scenario(name, self, logger, lock)  # Create scenario instance
+
+            # todo move to scenario init?
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': 'fully initialized'})
+
+            scenario.pre_scenario()
+
+
+            for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
+                horizon = PredictionHorizon(horizon_index, scenario)
+                horizon.run_optimization()
+                horizon.get_results()
+                self.trigger_scenario_status_update(queue=status_queue,
+                                                    status_msg={'scenario': name,
+                                                                'status': f'completed horizon {horizon_index + 1} out of'
+                                                                          f' {scenario.nhorizons}'})
+
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': 'successful'})
+
+            scenario.end_timing()  # todo move after result getting?
+
+        except Exception as e:
+            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
+            status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'status': status,
+                                                            'exception': str(e),
+                                                            'traceback': traceback.format_exc()})
+
+            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
+            logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
+
+            if scenario is not None:  # scenario initialization can fail
+                scenario.exception = str(e)
+                scenario.end_timing()
+
+        finally:
+            try:
+                for block in scenario.blocks.values():
+                    block.post_scenario()
+                scenario.aggregator.post_scenario()
+
+                scenario.calc_meta_results()
+                scenario.save_result_summary()
+
+                if self.save_results_timeseries:
+                    scenario.save_result_timeseries()
+                if self.print_results:
+                    scenario.print_results()
+
+                if self.save_plots or self.show_plots:
+                    scenario.generate_plots()
+                    if self.save_plots:
+                        scenario.save_plots()
+                    if self.show_plots:
+                        scenario.show_plots()
+
+            except Exception as e:
+                logger.error(e, exc_info=True)
+
+            logging.shutdown()
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -948,5 +951,3 @@ class SimulationRun:
             self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
         self.scenario_status.to_csv(self.path_result_status_file,
                                     index=True)
-
-
