@@ -1752,7 +1752,6 @@ class ElectricFleetUnit(Block, StorageBlock):
 
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
-
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
 
@@ -1769,6 +1768,8 @@ class ElectricFleetUnit(Block, StorageBlock):
             |                   |<--name_ext_dc (external charging DC)
             |
         """
+
+
 
         self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
 
@@ -1799,6 +1800,16 @@ class ElectricFleetUnit(Block, StorageBlock):
                 fix=self.log.loc[horizon.dti_ph, 'consumption']
             )})
 
+        # region calc minimum soc targets before usage for myopic optimization
+        dsoc_ph = self.log.loc[horizon.dti_ph, 'dsoc']
+        if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
+            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(lower=self.soc_min, upper=self.soc_max)
+        elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
+            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(lower=self.soc_min, upper=self.soc_max)
+        else:  # a priori or global optimization
+            soc_min_hor = pd.Series(self.soc_min, index=horizon.dti_ph)
+        # endregion
+
         self.components['storage'] = solph.components.GenericStorage(
             label=f'{self.name}_ess',
             inputs={self.components['bus']: solph.Flow(variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph])},
@@ -1816,8 +1827,8 @@ class ElectricFleetUnit(Block, StorageBlock):
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.size.loc['block', 'existing'],
                 maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
-            min_storage_level=soc_min,
-            max_storage_level=soc_max
+            min_storage_level=soc_min_hor,
+            max_storage_level=pd.Series(data=self.soc_max, index=horizon.dti_ph.index)
         )
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
