@@ -179,8 +179,13 @@ class Block:
         self.write_result_timeseries()
 
     def calc_results_energies(self):
-        # process flows and calculate energies from flows
+        """
+        post scenario method
+        process flows and calculate energies from flows
+        """
+
         self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
+
         self.check_bidi_flows()
 
         for flow_name, flow in self.flows.items():
@@ -195,6 +200,7 @@ class Block:
     def check_bidi_flows(self):
         """
         post scenario method
+        check whether bidirectional blocks had an inflow and outflow at the same time
         """
         if {'in', 'out'}.issubset(set(self.flows.columns)):
             if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
@@ -527,6 +533,7 @@ class RenewableSource(Block):
                                                                   self.components['exc'])]['sequences']['flow'][horizon.dti_ch]
 
     def calc_results_energies(self):
+
         super().calc_results_energies()
         # add curt and pot to scenario.energies
         self.scenario.energies.loc[('renewable', 'act'), :] += self.energies.loc['out', :]
@@ -1729,17 +1736,15 @@ class ElectricFleetUnit(Block, StorageBlock):
 
         self.log = None
 
-        self.eff_chg = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
-        self.eff_dis = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
-        delattr(self, 'eff_chg_ac')
-        delattr(self, 'eff_chg_dc')
+        self.eff_chg_int = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
+        self.eff_dis_int = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
 
         # todo move to dispatch
         if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
             # estimate maximum power drawn by self discharge
             self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
             # downrate assumed power for a priori dispatch simulation
-            self.pwr_chg_des = (self.pwr_chg * self.eff_chg - self.pwr_loss_max) * self.factor_pwr_des
+            self.pwr_chg_des = (self.pwr_chg * self.eff_chg_int - self.pwr_loss_max) * self.factor_pwr_des
 
         if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.run.apriori_lvls:
             raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
@@ -1758,19 +1763,18 @@ class ElectricFleetUnit(Block, StorageBlock):
         """
         pre horizon method
 
-        parent_bus            name_bus
-            |<--x--name_fleet---|<->name_storage
+        parent.parent_bus     name_bus
+            |<--x--name_fleet---|<-x->name_storage
             |                   |
             |---x--fleet_name-->|-->name_snk
             |                   |
-            |                   |<--name_ext_ac (external charging AC)
+            |                   |<--name_ext_ac-x- (external charging AC)
             |                   |
-            |                   |<--name_ext_dc (external charging DC)
+            |                   |<--name_ext_dc-x- (external charging DC)
             |
         """
 
-
-
+        self.bus_connected = self.parent.parent.components['bus']
         self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
 
         self.components['inflow'] = solph.components.Converter(
@@ -1780,18 +1784,18 @@ class ElectricFleetUnit(Block, StorageBlock):
                 max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
                 fix=None)},  # todo fix for apriori scheduling
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff_chg})
+            conversion_factors={self.components['bus']: self.eff_chg_int})
 
         self.components['outflow'] = solph.components.Converter(
             label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.parent.parent.components['bus']: solph.Flow(
-                nominal_value=self.pwr_dis_max * self.eff_dis if pd.notna(self.pwr_dis_max) else 0,
+                nominal_value=self.pwr_dis_max * self.eff_dis_int if pd.notna(self.pwr_dis_max) else 0,
                 max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
                 fix=None,  # todo fix for apriori scheduling
                 variable_costs=self.scenario.cost_eps)
             },
-            conversion_factors={self.parent.parent.components['bus']: self.eff_dis})
+            conversion_factors={self.parent.parent.components['bus']: self.eff_dis_int})
 
         self.components['snk'] = solph.components.Sink(
             label=f'{self.name}_snk',
@@ -1800,14 +1804,15 @@ class ElectricFleetUnit(Block, StorageBlock):
                 fix=self.log.loc[horizon.dti_ph, 'consumption']
             )})
 
-        # region calc minimum soc targets before usage for myopic optimization
-        dsoc_ph = self.log.loc[horizon.dti_ph, 'dsoc']
+        # region calc minimum soc targets before usage and max soc for myopic optimization
+        dsoc_ph = self.log.loc[utils.extend_dti(horizon.dti_ph), 'dsoc']
         if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(lower=self.soc_min, upper=self.soc_max)
         elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(lower=self.soc_min, upper=self.soc_max)
         else:  # a priori or global optimization
-            soc_min_hor = pd.Series(self.soc_min, index=horizon.dti_ph)
+            soc_min_hor = pd.Series(self.soc_min, index=utils.extend_dti(horizon.dti_ph))
+        soc_max_hor = pd.Series(data=self.soc_max, index=utils.extend_dti(horizon.dti_ph))
         # endregion
 
         self.components['storage'] = solph.components.GenericStorage(
@@ -1818,17 +1823,17 @@ class ElectricFleetUnit(Block, StorageBlock):
             loss_rate=self.loss_rate,
             balanced=False,
             initial_storage_level=statistics.median(
-                [soc_min[horizon.starttime],
-                 self.storage_timeseries.loc[horizon.starttime, 'soc'],
-                 soc_max[horizon.starttime]]),
+                [soc_min_hor[horizon.starttime],
+                 self.states.loc[horizon.starttime, 'soc'],
+                 soc_max_hor[horizon.starttime]]),
             inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
-                existing=self.size.loc['block', 'existing'],
-                maximum=utils.conv_nan2none(self.size.loc['block', 'additional_max'])),
+                existing=self.sizes.loc['block', 'preexisting'],
+                maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
             min_storage_level=soc_min_hor,
-            max_storage_level=pd.Series(data=self.soc_max, index=horizon.dti_ph.index)
+            max_storage_level=soc_max_hor
         )
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
@@ -1837,17 +1842,17 @@ class ElectricFleetUnit(Block, StorageBlock):
         self.components['src_ext_ac'] = solph.components.Source(
             label=f'{self.name}_src_ext_ac',
             outputs={self.components['bus_ext_ac']: solph.Flow(
-                nominal_value=self.pwr_ext_ac,
+                nominal_value=self.pwr_ext_ac_max,
                 max=self.log.loc[horizon.dti_ph, 'atac'].astype(int),  # todo deactivate for apriori scheduling
                 fix=None,  # todo fix for apriori scheduling
-                variable_costs=self.parent.opex_ep_spec_ext_ac[horizon.dti_ph])}
+                variable_costs=self.evaluators['ext_ac'].opex['spec_ep'][horizon.dti_ph])}
         )
 
         self.components['conv_ext_ac'] = solph.components.Converter(
             label=f'{self.name}_conv_ext_ac',
             inputs={self.components['bus_ext_ac']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.parent.eff_chg_ac}
+            conversion_factors={self.components['bus']: self.eff_chg_ac}
         )
 
         self.components['bus_ext_dc'] = solph.Bus(label=f'{self.name}_bus_ext_dc')
@@ -1855,22 +1860,33 @@ class ElectricFleetUnit(Block, StorageBlock):
         self.components['src_ext_dc'] = solph.components.Source(
             label=f'{self.name}_src_ext_dc',
             outputs={self.components['bus_ext_dc']: solph.Flow(
-                nominal_value=self.pwr_ext_dc,
+                nominal_value=self.pwr_ext_dc_max,
                 max=self.log.loc[horizon.dti_ph, 'atdc'].astype(int),  # todo deactivate for apriori scheduling
                 fix=None,  # todo fix for apriori scheduling
-                variable_costs=self.parent.opex_ep_spec_ext_dc[horizon.dti_ph])}
+                variable_costs=self.evaluators['ext_dc'].opex['spec_ep'][horizon.dti_ph])}
         )
 
         self.components['conv_ext_dc'] = solph.components.Converter(
             label=f'{self.name}_conv_ext_dc',
             inputs={self.components['bus_ext_dc']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: 1}
+            conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
                                              capex_spec=self.evaluators['storage'].capex['spec'],
                                              invest_type='storage')
+
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        """
+        post horizon method
+        """
+
+        self.flows.loc[horizon.dti_ch, 'ext_ac'] = horizon.results[(self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[(self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
+
+        StorageBlock.get_horizon_results(self=self, horizon=horizon)
 
 
 class Vehicle:

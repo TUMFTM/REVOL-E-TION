@@ -1,4 +1,4 @@
-parameter,grid1,grid2
+parameter,market1,market2
 res_only,False,False
 opex_spec_g2s,grid_opex_g2s,grid_opex_g2s
 opex_spec_s2g,grid_opex_s2g,grid_opex_s2g

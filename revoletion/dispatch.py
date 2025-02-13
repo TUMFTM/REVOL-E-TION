@@ -387,7 +387,7 @@ class BatteryRentalSystem(RentalSystem):
         self.processes['energy_primary'] = self.processes['energy_pc_primary'] * self.processes['num_primary']
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
             self.processes['energy_pc_primary'] / (self.fleet.pwr_chg *
-                                                   self.fleet.eff_chg *  # charger efficiency (into unit's bus)
+                                                   self.fleet.eff_chg_int *  # charger efficiency (into unit's bus)
                                                    # storage component efficiency (both ways)
                                                    self.fleet.eff_storage_roundtrip),
             unit='hour')
