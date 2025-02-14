@@ -12,7 +12,7 @@ class InputChecker:
     def __init__(self, run):
 
         self.run = run
-        self.path_readme = os.path.join(run.path_pkg, 'README.md')
+        self.path_readme = os.path.join(run.paths['revoletion'], 'README.md')
         self.settings_target = self.read_settings_from_readme()
         self.scenarios_target = self.read_scenarios_from_readme()
 
@@ -72,13 +72,19 @@ class InputChecker:
     def check_settings(self):
 
         # Check for completeness
-        missing_params = [attr for attr in self.settings_target['Parameter'] if not hasattr(self.run, attr)]
+        missing_params = [attr for attr in self.settings_target['Parameter']
+                          if (not hasattr(self.run, attr)) and
+                          (''.join(attr.split('_')[1:]) not in self.run.paths.keys())]
         if len(missing_params) > 0:
             raise AttributeError(f'Not all required settings defined. Missing: {", ".join(missing_params)}')
 
         # Individual parameter checks
         for param in self.settings_target['Parameter']:
-            value = getattr(self.run, param)
+
+            if param.startswith('path_'):
+                value = self.run.paths.get(''.join(param.split('_')[1:]))
+            else:
+                value = getattr(self.run, param)
 
             # check for correct dtypes
             dtype_target_str = self.settings_target.loc[self.settings_target['Parameter'] == param, 'Type'].values[0]

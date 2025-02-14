@@ -2,8 +2,8 @@ key,value
 solver,gurobi
 parallel,True
 max_process_num,max
-path_input_data,example
-path_output_data,package
+path_input,example
+path_output,package
 save_results_timeseries,True
 save_results_dispatch,True
 save_plots,True

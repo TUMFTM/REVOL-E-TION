@@ -154,7 +154,7 @@ def read_demand_file(block):
     """
     Read in a CommodityDemand csv file
     """
-    path_demand_file = os.path.join(block.scenario.run.path_input_data,
+    path_demand_file = os.path.join(block.scenario.run.paths['input'],
                                     set_extension(block.filename))
     df = pd.read_csv(path_demand_file,
                      index_col=0)
@@ -199,7 +199,7 @@ def read_input_log(fleet):
     ICEVSystems as well
     """
 
-    log_path = os.path.join(fleet.scenario.run.path_input_data,
+    log_path = os.path.join(fleet.scenario.run.paths['input'],
                             set_extension(fleet.filename))
     df = read_timeseries_csv(path_input_file=log_path,
                              block=fleet,
@@ -243,7 +243,7 @@ def read_usecase_file(fleet):
     Function has to be callable for ICEVSystems as well.
     """
 
-    usecase_path = os.path.join(fleet.scenario.run.path_input_data,
+    usecase_path = os.path.join(fleet.scenario.run.paths['input'],
                                 set_extension(fleet.filename))
     df = pd.read_csv(usecase_path,
                      header=[0, 1],
@@ -298,7 +298,7 @@ def transform_scalar_var(value, scenario, block=None):
     """
     if isinstance(value, str):  # value contains filename
         filename = set_extension(filename=value, default_extension='.csv')
-        df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.path_input_data, filename),
+        df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
                                  block=block,
                                  scenario=scenario,
                                  multiheader=False,

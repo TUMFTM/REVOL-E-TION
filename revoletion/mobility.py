@@ -17,7 +17,7 @@ class CommodityDemand:
         self.fleet = fleet
         self.requests = pd.DataFrame()  # main DataFrame for demand
 
-        self.path_mapper = os.path.join(self.scenario.run.path_input_data,
+        self.path_mapper = os.path.join(self.scenario.run.paths['input'],
                                         f'{self.scenario.filename_mapper}.py')
         self.mapper_timeframe = utils.import_module_from_path(module_name=self.scenario.filename_mapper,
                                                               file_path=self.path_mapper)
@@ -136,7 +136,7 @@ class CommodityDemand:
         requests_path = os.path.join(
             self.scenario.run.path_result_dir,
             f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.scenario_file_name}_'
+            f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
             f'{self.fleet.name}_'
             f'demand.csv')

@@ -190,7 +190,7 @@ class RentalSystem:
         processes_path = os.path.join(
             self.scenario.run.path_result_dir,
             f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.scenario_file_name}_'
+            f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
             f'{self.fleet.name}_'
             f'processes.csv')
@@ -199,7 +199,7 @@ class RentalSystem:
         log_path = os.path.join(
             self.scenario.run.path_result_dir,
             f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.scenario_file_name}_'
+            f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
             f'{self.fleet.name}_'
             f'log.csv')

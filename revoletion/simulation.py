@@ -53,17 +53,20 @@ class OptimizationSuccessfulFilter(logging.Filter):
 
 class SimulationRun:
 
-    def __init__(self, path_scenarios, path_settings, rerun=False, rerun_infeasible=True, execute=False):
+    def __init__(self,
+                 path_scenarios,
+                 path_settings,
+                 rerun=False,
+                 rerun_infeasible=True,
+                 execute=False):
 
-        self.name = 'run'
-        self.path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.process = self.process_num = None
-
-        self.scenarios_file_path = path_scenarios
-        self.settings_file_path = path_settings
+        self.paths = {'revoletion': os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      'scenarios': path_scenarios,
+                      'settings': path_settings}
         self.rerun = rerun
         self.rerun_infeasible = rerun_infeasible
 
+        # region start runtime
         self.runtime_start = time.perf_counter()
         if not self.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
@@ -71,41 +74,85 @@ class SimulationRun:
             # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
             self.runtimestamp = '_'.join(os.path.basename(os.path.normpath(self.rerun)).split('_')[0:2])
         self.runtime_end = self.runtime_len = None
+        # endregion
 
+        # region get version information
         self.version_solph = solph.__version__
         self.version_revoletion = importlib.metadata.version('revoletion')
 
-        try:
+        try:  # todo additionally get commit hash of revoletion if possible
             self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
         except subprocess.CalledProcessError:
             self.commit_hash = 'unknown'
+        # endregion
 
-        self.settings = pd.read_csv(self.settings_file_path, index_col=[0])
+        self.name = pathlib.Path(self.paths['scenarios']).stem
+        self.input_checker = checker.InputChecker(self)
+
+        # region read and check settings
+        self.settings = pd.read_csv(self.paths['settings'],
+                                    index_col=[0])
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
-            setattr(self, key, value)  # this sets all the parameters defined in the settings file
+            if key.startswith('path_'):
+                self.paths[''.join(key.split('_')[1:])] = value
+            else:
+                setattr(self, key, value)
+        self.input_checker.check_settings()
+        # endregion
 
-        self.generate_plots = True if self.show_plots or self.save_plots else False
+        # region define paths
+        if self.paths['input'] == 'example':
+            self.paths['input'] = os.path.join(self.paths['revoletion'], 'example')
+        elif self.paths['input'] == 'scenario_file_dir':
+            self.paths['input'] = os.path.dirname(self.paths['scenarios'])
+        elif os.path.isdir(self.paths['input']):
+            pass  # no modification of path necessary
+        else:
+            raise NotADirectoryError(f'Input directory not found: {self.paths["input"]}')
 
-        self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
-        self.define_paths()
-        self.scenario_data = pd.read_csv((self.path_result_scenario_file if self.rerun else self.scenarios_file_path),
+        if self.paths['output'] in ['package', 'example']:
+            self.paths['output'] = os.path.join(self.paths['revoletion'],
+                                                'results',
+                                                f'{self.runtimestamp}_{self.name}')
+        elif os.path.isdir(self.path_output_data):
+            self.paths['output'] = os.path.join(self.paths['output'],
+                                                f'{self.runtimestamp}_{self.name}')  # no modification of path necessary
+        else:
+            raise NotADirectoryError(f'Output directory not found: {self.paths["output"]}')
+
+        if not os.path.isdir(self.paths['output']):
+            os.mkdir(self.paths['output'])
+
+        self.paths['data_persist'] = os.path.join(self.paths['revoletion'], 'data')
+
+        basename = f'{self.runtimestamp}_{self.name}'
+
+        self.paths['summary_csv'] = os.path.join(self.paths['output'], f'{basename}_summary.csv')
+        self.paths['summary_pkl'] = os.path.join(self.paths['output'], f'{basename}_summary.pkl')
+        self.paths['status'] = os.path.join(self.paths['output'], f'{basename}_status.csv')
+        self.paths['dump'] = os.path.join(self.paths['output'], f'{basename}_model.lp')
+        self.paths['log'] = os.path.join(self.paths['output'], f'{basename}.log')
+        # endregion
+
+        # region read, copy and check scenario data
+        self.scenario_data = pd.read_csv(self.paths['scenarios'],
                                          index_col=[0, 1],
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
-        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]  # Get list of column names, each column is one scenario
+        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
 
         if self.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
-            self.scenario_status = pd.read_csv(os.path.join(self.path_result_dir,
+            self.scenario_status = pd.read_csv(os.path.join(self.paths['output'],
                                                             f'{self.runtimestamp}_'
-                                                            f'{self.scenario_file_name}_'
+                                                            f'{self.name}_'
                                                             f'scenarios_status.csv'),
                                                index_col=0)
 
             dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
-            scenarios_failed = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
-            self.scenario_names = [name for name in self.scenario_names if name in scenarios_failed]
+            scenarios_rerun = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
+            self.scenario_names = [name for name in self.scenario_names if name in scenarios_rerun]
 
             # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
             for scenario in self.scenario_names:
@@ -113,8 +160,8 @@ class SimulationRun:
                              f'{scenario}_results.csv',
                              f'{scenario}_graph.pdf',
                              f'{scenario}_graph.html']:
-                    if os.path.isfile(os.path.join(self.path_result_dir, file)):
-                        os.remove(os.path.join(self.path_result_dir, file))
+                    if os.path.isfile(os.path.join(self.paths['output'], file)):
+                        os.remove(os.path.join(self.paths['output'], file))
 
             # reset status of scenarios to be run to 'queued'
             self.scenario_status.loc[self.scenario_names, ['status', 'exception', 'traceback']] = (
@@ -126,30 +173,32 @@ class SimulationRun:
                                                 data={'status': 'queued',
                                                       'exception': None,
                                                       'traceback': None}).rename_axis('scenario')
-        self.scenario_num = len(self.scenario_names)
-
-        self.input_checker = checker.InputChecker(self)
-        self.input_checker.check_settings()
-
-        self.get_process_num()
-        if not self.rerun:
             self.copy_scenario_file()
+        self.scenario_num = len(self.scenario_names)
+        # endregion
+
+        self.process = self.process_num = None
+        self.get_process_num()
 
         self.logger = None
         self.define_logger()
 
+
+
         # integration levels at which power consumption is determined a priori
-        self.result_df = pd.DataFrame  # blank DataFrame for technoeconomic result saving
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
+        self.generate_plots = True if self.show_plots or self.save_plots else False
+
         if execute:
-            self.execute_simulation()
+            self.execute()
 
     def copy_scenario_file(self):
-        try:
-            shutil.copy2(self.scenarios_file_path, self.path_result_scenario_file)  # writes metadata
+        target = os.path.join(self.paths['output'], f'{self.name}.csv')
+        try:  # with metadata
+            shutil.copy2(self.paths['scenarios'], target)
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
-            shutil.copyfile(self.scenarios_file_path, self.path_result_scenario_file)  # does not write metadata
+            shutil.copyfile(self.paths['scenarios'], target)
 
     def define_logger(self):
 
@@ -159,7 +208,7 @@ class SimulationRun:
                                           f'%(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
-        log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.path_log_file))
+        log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.paths['log']))
         log_file_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_stream_handler)
         self.logger.addHandler(log_file_handler)
@@ -189,50 +238,13 @@ class SimulationRun:
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
 
-    def define_paths(self):
-
-        if self.path_input_data == 'example':
-            self.path_input_data = os.path.join(self.path_pkg, 'example')
-        elif self.path_input_data == 'scenario_file_dir':
-            self.path_input_data = os.path.dirname(self.scenarios_file_path)
-        elif os.path.isdir(self.path_input_data):
-            pass  # no modification of path necessary
-        else:
-            raise NotADirectoryError(f'Input directory not found: {self.path_input_data}')
-
-        if self.path_output_data == 'package':
-            self.path_output_data = os.path.join(self.path_pkg, 'results')
-        elif os.path.isdir(self.path_output_data):
-            pass  # no modification of path necessary
-        else:
-            raise NotADirectoryError(f'Output directory not found: {self.path_output_data}')
-
-        self.path_data_immut = os.path.join(self.path_pkg, 'data')
-
-        self.path_result_dir = os.path.join(self.path_output_data,
-                                            f'{self.runtimestamp}_{self.scenario_file_name}')
-
-        if not os.path.isdir(self.path_result_dir):
-            os.mkdir(self.path_result_dir)
-
-        self.path_result_scenario_file = os.path.join(self.path_result_dir,
-                                                      f'{self.runtimestamp}_{self.scenario_file_name}_scenarios.csv')
-        self.path_result_summary_file_csv = os.path.join(self.path_result_dir,
-                                                         f'{self.runtimestamp}_{self.scenario_file_name}_summary.csv')
-        self.path_result_summary_file_pkl = os.path.join(self.path_result_dir,
-                                                         f'{self.runtimestamp}_{self.scenario_file_name}_summary.pkl')
-        self.path_result_status_file = os.path.join(self.path_result_dir,
-                                                    f'{self.runtimestamp}_{self.scenario_file_name}_scenarios_status.csv')
-        self.path_dump_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.lp')
-        self.path_log_file = os.path.join(self.path_result_dir, f'{self.runtimestamp}_{self.scenario_file_name}.log')
-
     def end_timing(self):
 
         self.runtime_end = time.perf_counter()
         self.runtime_len = self.runtime_end - self.runtime_start
         self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
 
-    def execute_simulation(self):
+    def execute(self):
         # parallelization activated in settings file
         if self.parallel:
             with mp.Manager() as manager:
@@ -294,7 +306,7 @@ class SimulationRun:
 
     def join_results(self):
 
-        files = [filename for filename in os.listdir(self.path_result_dir) if filename.endswith('_summary_temp.pkl')]
+        files = [filename for filename in os.listdir(self.paths['output']) if filename.endswith('_summary_temp.pkl')]
 
         scenario_frames = []
 
@@ -302,7 +314,7 @@ class SimulationRun:
             # only add results of successful scenarios to summary
             if self.scenario_status.loc[file.removesuffix('_summary_temp.pkl'), 'status'] != 'successful':
                 continue
-            file_path = os.path.join(self.path_result_dir, file)
+            file_path = os.path.join(self.paths['output'], file)
             file_results = pd.read_pickle(file_path)
             scenario_frames.append(file_results)
 
@@ -315,13 +327,13 @@ class SimulationRun:
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
             # apply same order of scenarios as in scenario input file
             joined_results = joined_results[[col for col in self.scenario_data.columns if col in joined_results.columns]]
-            joined_results.to_csv(self.path_result_summary_file_csv, index=True)
-            joined_results.to_pickle(self.path_result_summary_file_pkl)
+            joined_results.to_csv(self.paths['summary_csv'], index=True)
+            joined_results.to_pickle(self.paths['summary_pkl'])
             self.logger.info('Result summary file created')
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in files:
-            file_path = os.path.join(self.path_result_dir, file)
+            file_path = os.path.join(self.paths['output'], file)
             os.remove(file_path)
 
     def read_status_queue(self, queue):
@@ -343,7 +355,6 @@ class SimulationRun:
         # except:
         #     self.logger.info(f'Error occurred in scenario {name}')  # todo
 
-
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
             queue.put(status_msg)
@@ -353,7 +364,7 @@ class SimulationRun:
     def update_scenario_status(self, status_msg):
         for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
             self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
-        self.scenario_status.to_csv(self.path_result_status_file,
+        self.scenario_status.to_csv(self.paths['status'],
                                     index=True)
 
 
@@ -478,25 +489,25 @@ class Scenario:
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
-            self.run.path_result_dir,
-            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_system_graph.pdf')
+            self.run.paths['output'],
+            f'{self.run.runtimestamp}_{self.run.name}_{self.name}_system_graph.pdf')
 
         # prepare for dispatch plot saving later on
-        self.plot_file_path = os.path.join(self.run.path_result_dir, f'{run.runtimestamp}_'
-                                                                     f'{run.scenario_file_name}_'
+        self.plot_file_path = os.path.join(self.run.paths['output'], f'{run.runtimestamp}_'
+                                                                     f'{run.name}_'
                                                                      f'{self.name}.html')
 
         # prepare for cumulative result saving later on
         self.result_summary = pd.Series(index=pd.MultiIndex.from_tuples(tuples=[], names=['block', 'key']))
-        self.path_result_summary_tempfile = os.path.join(self.run.path_result_dir,
+        self.path_result_summary_tempfile = os.path.join(self.run.paths['output'],
                                                          f'{self.name}_summary_temp.pkl')
 
         self.result_timeseries = pd.DataFrame(index=utils.extend_dti(self.dti_sim_extd),
                                               columns=pd.MultiIndex.from_tuples(tuples=[],
                                                                                 names=['block', 'timeseries']))
         self.path_result_ts_file = os.path.join(
-            self.run.path_result_dir,
-            f'{self.run.runtimestamp}_{self.run.scenario_file_name}_{self.name}_results_ts.csv')
+            self.run.paths['output'],
+            f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
 
         self.exception = None  # placeholder for possible infeasibility
 
@@ -529,7 +540,6 @@ class Scenario:
         # can only be started after all blocks have been initialized, as the different systems depend on each other.
         # if any([fleet.data_source in ['demand', 'usecases'] for fleet in self.fleets.values()]):
         #     dispatch.execute_des(self, self.run)  # todo implement des across fleets
-
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
@@ -734,11 +744,11 @@ class Scenario:
 
         if self.strategy == 'go':
             self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.run.scenario_file_name} - '
+                                            f'{self.run.name} - '
                                             f'Scenario: {self.name}')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.run.scenario_file_name} - '
+                                            f'{self.run.name} - '
                                             f'Scenario: {self.name} - '
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
@@ -825,14 +835,13 @@ class PredictionHorizon:
 
         # region build energy system model
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Building oemof model')
+                                  f'Building oemof model')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
 
         for block in self.scenario.blocks.values():
             block.pre_horizon(self)
-
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Model build completed')
@@ -892,23 +901,18 @@ class PredictionHorizon:
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Building optimization problem from oemof model')
 
-        # Build the mathematical linear optimization model with pyomo
         self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
-
-        # Apply custom constraints
         self.constraints.apply_constraints(model=self.model)
 
         if self.scenario.run.dump_model and self.scenario.strategy != 'rh':
             self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
-
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Optimization problem build completed')
         # endregion
 
         # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
         results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
+
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -928,15 +932,11 @@ class PredictionHorizon:
         else:
             raise Exception(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                             f'Optimization terminated with unknown status: {results.solver.termination_condition}')
-
         # endregion
 
         # region get results
         # Get result data slice for current CH from results and save in result dataframes for later analysis
         # Get (possibly optimized) component sizes from results to handle outputs more easily
-
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
-
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
         if self.scenario.run.debugmode:
