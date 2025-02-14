@@ -175,33 +175,28 @@ class SimulationRun:
                                                       'traceback': None}).rename_axis('scenario')
             self.copy_scenario_file()
         self.scenario_num = len(self.scenario_names)
+
+        if self.scenario_num == 0:
+            raise ValueError('No executable scenarios found in scenario file')
         # endregion
 
-        self.process = self.process_num = None
-        self.get_process_num()
+        # region calculate number of threads to use
+        self.process = None
+        if self.max_process_num == 'max':
+            self.max_process_num = os.cpu_count()
+        elif self.max_process_num == 'physical':
+            self.max_process_num = psutil.cpu_count(logical=False)
+        else:
+            self.max_process_num = int(self.max_process_num)
+        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
 
-        self.logger = None
-        self.define_logger()
+        if (len(self.scenario_names) <= 1 or self.process_num == 1) and self.parallel:
+            # logger not defined yet, use print as logger definition needs to be done after process_num is defined
+            print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
+            self.parallel = False
+        # endregion
 
-
-
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
-
-        self.generate_plots = True if self.show_plots or self.save_plots else False
-
-        if execute:
-            self.execute()
-
-    def copy_scenario_file(self):
-        target = os.path.join(self.paths['output'], f'{self.name}.csv')
-        try:  # with metadata
-            shutil.copy2(self.paths['scenarios'], target)
-        except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
-            shutil.copyfile(self.paths['scenarios'], target)
-
-    def define_logger(self):
-
+        # region define logger structure
         self.logger = logging.getLogger()
         log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
                                           f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
@@ -237,12 +232,22 @@ class SimulationRun:
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
+        # endregion
 
-    def end_timing(self):
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = self.runtime_end - self.runtime_start
-        self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
+        self.generate_plots = True if self.show_plots or self.save_plots else False
+
+        if execute:
+            self.execute()
+
+    def copy_scenario_file(self):
+        target = os.path.join(self.paths['output'], f'{self.name}.csv')
+        try:  # with metadata
+            shutil.copy2(self.paths['scenarios'], target)
+        except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
+            shutil.copyfile(self.paths['scenarios'], target)
 
     def execute(self):
         # parallelization activated in settings file
@@ -259,7 +264,7 @@ class SimulationRun:
                 log_thread.start()
 
                 with mp.Pool(processes=self.process_num) as pool:
-                    pool.starmap(self.simulate_scenario,
+                    pool.starmap(self.execute_scenario,
                                  zip(self.scenario_names,
                                      itertools.repeat(log_queue),
                                      itertools.repeat(status_queue),
@@ -270,27 +275,15 @@ class SimulationRun:
                 log_thread.join()
         else:
             for scenario_name in self.scenario_names:
-                self.simulate_scenario(scenario_name)
+                self.execute_scenario(scenario_name)
 
-        self.end_timing()
-        self.join_results()  # includes endtimestamp, therefore after end_timing
+        # region end runtime
+        self.runtime_end = time.perf_counter()
+        self.runtime_len = self.runtime_end - self.runtime_start
+        self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
+        # endregion
 
-    def get_process_num(self):
-        if self.max_process_num == 'max':
-            self.max_process_num = os.cpu_count()
-        elif self.max_process_num == 'physical':
-            self.max_process_num = psutil.cpu_count(logical=False)
-        else:
-            self.max_process_num = int(self.max_process_num)
-        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
-
-        if (len(self.scenario_names) <= 1 or self.process_num == 1) and self.parallel:
-            # logger not defined yet, use print as logger definition needs to be done after process_num is defined
-            print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
-            self.parallel = False
-
-        if len(self.scenario_names) <= 0:
-            raise ValueError('No executable scenarios found in scenario file')
+        self.join_results()
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -343,17 +336,21 @@ class SimulationRun:
                 break
             self.update_scenario_status(status_msg)
 
-    def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
+    def execute_scenario(self,
+                         name: str,
+                         log_queue=None,
+                         status_queue=None,
+                         lock=None):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
-        # try:
-        Scenario(name=name,
-                 run=self,
-                 log_queue=log_queue,
-                 lock=lock,
-                 status_queue=status_queue)
-        # except:
-        #     self.logger.info(f'Error occurred in scenario {name}')  # todo
+        try:
+            Scenario(name=name,
+                     run=self,
+                     log_queue=log_queue,
+                     lock=lock,
+                     status_queue=status_queue)
+        except:
+            self.logger.info(f'Error occurred in scenario {name}')
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
