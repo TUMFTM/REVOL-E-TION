@@ -58,7 +58,10 @@ class PredictionHorizon:
         self.index = index
         self.scenario = scenario
 
-        # Time and data slicing --------------------------------
+        self.results = None
+        self.meta_results = None
+
+        # region time and data generation and slicing
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
         self.ch_endtime = self.starttime + self.scenario.len_ch
         self.ph_endtime = self.starttime + self.scenario.len_ph
@@ -84,14 +87,16 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=self.scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=self.scenario.timestep, inclusive='left')
 
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Initializing model build')
-
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                       f'Calculating power schedules for commodities with rulebased charging strategies')
             self.scenario.scheduler.calc_ph_schedule(self)
+        # endregion
+
+        # region build energy system model
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Building oemof model')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -99,19 +104,64 @@ class PredictionHorizon:
         for block in self.scenario.blocks.values():
             block.pre_horizon(self)
 
-        self.results = None
-        self.meta_results = None
 
-        # Build energy system model --------------------------------
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Model build completed')
+        # endregion
 
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Building oemof model')
-
+        # region draw graph of energy model
         if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
-            self.draw_energy_system()
+            # Initialize the graph with the filepath without extension
+            dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
 
+            # Define drawing styles for certain components
+            dot.node('Bus', shape='rectangle', fontsize='10', color='red')
+            dot.node('Sink', shape='trapezium', fontsize='10')
+            dot.node('Source', shape='invtrapezium', fontsize='10')
+            dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
+
+            busses = []
+            # draw a node for each of the network's components.
+            for nd in self.es.nodes:
+                if isinstance(nd, solph.Bus):
+                    dot.node(nd.label,
+                             shape='rectangle',
+                             fontsize='10',
+                             fixedsize='shape',
+                             width='2.4',
+                             height='0.6',
+                             color='red')
+                    # keep the bus reference for drawing edges later
+                    busses.append(nd)
+                elif isinstance(nd, solph.components.Sink):
+                    dot.node(nd.label, shape='trapezium', fontsize='10')
+                elif isinstance(nd, solph.components.Source):
+                    dot.node(nd.label, shape='invtrapezium', fontsize='10')
+                elif isinstance(nd, solph.components.Converter):
+                    dot.node(nd.label, shape='rectangle', fontsize='10')
+                elif isinstance(nd, solph.components.GenericStorage):
+                    dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
+                else:
+                    self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
+
+            # draw the edges between the nodes based on each bus inputs/outputs
+            for bus in busses:
+                for component in bus.inputs:
+                    # draw an arrow from the component to the bus
+                    dot.edge(component.label, bus.label)
+                for component in bus.outputs:
+                    # draw an arrow from the bus to the component
+                    dot.edge(bus.label, component.label)
+
+            try:
+                dot.render(cleanup=True)
+            except Exception as e:  # inhibiting failing renderer from stopping model execution
+                self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
+        # endregion
+
+        # region build optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Building optimization problem')
+                                  f'Building optimization problem from oemof model')
 
         # Build the mathematical linear optimization model with pyomo
         self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
@@ -123,80 +173,10 @@ class PredictionHorizon:
             self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Model build completed')
+                                   f'Optimization problem build completed')
+        # endregion
 
-    def draw_energy_system(self):
-        """
-        This method draws a directed graph of the scenario's energy system and saves it as a pdf file
-        """
-        # Initialize the graph with the filepath without extension
-        dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
-
-        # Define drawing styles for certain components
-        dot.node('Bus', shape='rectangle', fontsize='10', color='red')
-        dot.node('Sink', shape='trapezium', fontsize='10')
-        dot.node('Source', shape='invtrapezium', fontsize='10')
-        dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
-
-        busses = []
-        # draw a node for each of the network's components.
-        for nd in self.es.nodes:
-            if isinstance(nd, solph.Bus):
-                dot.node(nd.label,
-                         shape='rectangle',
-                         fontsize='10',
-                         fixedsize='shape',
-                         width='2.4',
-                         height='0.6',
-                         color='red')
-                # keep the bus reference for drawing edges later
-                busses.append(nd)
-            elif isinstance(nd, solph.components.Sink):
-                dot.node(nd.label, shape='trapezium', fontsize='10')
-            elif isinstance(nd, solph.components.Source):
-                dot.node(nd.label, shape='invtrapezium', fontsize='10')
-            elif isinstance(nd, solph.components.Converter):
-                dot.node(nd.label, shape='rectangle', fontsize='10')
-            elif isinstance(nd, solph.components.GenericStorage):
-                dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
-            else:
-                self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
-
-        # draw the edges between the nodes based on each bus inputs/outputs
-        for bus in busses:
-            for component in bus.inputs:
-                # draw an arrow from the component to the bus
-                dot.edge(component.label, bus.label)
-            for component in bus.outputs:
-                # draw an arrow from the bus to the component
-                dot.edge(bus.label, component.label)
-
-        try:
-            dot.render(cleanup=True)
-        except Exception as e:  # inhibiting failing renderer from stopping model execution
-            self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
-
-    def get_results(self):
-        """
-        Get result data slice for current CH from results and save in result dataframes for later analysis
-        Get (possibly optimized) component sizes from results to handle outputs more easily
-        """
-
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
-
-        self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
-
-        if self.scenario.run.debugmode:
-            self.meta_results = solph.processing.meta_results(self.model)
-            pprint.pprint(self.meta_results)
-
-        # free up RAM
-        del self.model
-
-        for block in self.scenario.blocks.values():
-            block.post_horizon(self)
-
-    def run_optimization(self):
+        # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
         results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
@@ -220,22 +200,48 @@ class PredictionHorizon:
             raise Exception(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                             f'Optimization terminated with unknown status: {results.solver.termination_condition}')
 
+        # endregion
+
+        # region get results
+        # Get result data slice for current CH from results and save in result dataframes for later analysis
+        # Get (possibly optimized) component sizes from results to handle outputs more easily
+
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
+
+        self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
+
+        if self.scenario.run.debugmode:
+            self.meta_results = solph.processing.meta_results(self.model)
+            pprint.pprint(self.meta_results)
+
+        # free up RAM
+        del self.model
+
+        for block in self.scenario.blocks.values():
+            block.post_horizon(self)
+        # endregion
+
 
 class Scenario:
 
-    def __init__(self, name, run, logger, lock):
-
+    def __init__(self, name, run, log_queue, lock, status_queue=None):
         self.name = name
         self.run = run
-        self.logger = logger
+        self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
         self.logger.propagate = False
+        self.status_queue = status_queue
+
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
             if not 'Optimization ended with status warning and termination condition' in str(message):
-                logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
+                self.logger.warning(f'{category.__name__}: {message} (in {filename}, line {lineno})')
 
         warnings.showwarning = custom_warning_handler
+
+        self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                status_msg={'scenario': self.name,
+                                                            'status': 'started'})
 
         # General Information --------------------------------
 
@@ -245,8 +251,9 @@ class Scenario:
 
         self.worker = mp.current_process()
 
-        self.logger.info(f'Scenario initialized on {self.worker.name.ljust(18)}' +
-                         (f' - Parent: {self.worker._parent_name}' if hasattr(self.worker, '_parent_name') else ''))
+        msg_parallel = (f' on {self.worker.name.ljust(18)} - Parent: {self.worker._parent_name}'
+                        if hasattr(self.worker, '_parent_name') else '')
+        self.logger.info(f'Scenario initialized{msg_parallel}')
 
         self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
@@ -270,8 +277,8 @@ class Scenario:
             if location:
                 self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
         except geopy.exc.GeocoderUnavailable:
-            self.logger.warning(f'Connection to Geocoder failed.'
-                                f' Using default country ({self.country}) and state ({self.state}).')
+            self.logger.warning(f'Connection to Geocoder failed. '
+                                f'Using default country ({self.country}) and state ({self.state}).')
 
         # convert to datetime and calculate time(delta) values
         # simulation and project timeframe start simultaneously
@@ -328,12 +335,12 @@ class Scenario:
             try:
                 self.holiday_dates = sorted(
                     getattr(holidays, self.country)(years=years))
-                self.logger.warning(f'Holidays for state {self.state} not available.'
-                                    f' Country-wide holidays for {self.country} are used instead.')
+                self.logger.warning(f'Holidays for state {self.state} not available. '
+                                    f'Country-wide holidays for {self.country} are used instead.')
             except AttributeError:  # not all countries worldwide are available
                 self.holiday_dates = []
-                self.logger.warning(f'Holidays for country {self.country} not available.'
-                                    f' No public holidays are considered in this scenario.')
+                self.logger.warning(f'Holidays for country {self.country} not available. '
+                                    f'No public holidays are considered in this scenario.')
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
@@ -443,6 +450,73 @@ class Scenario:
 
         self.logger.debug(f'Scenario initialization completed')
 
+        self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                status_msg={'scenario': self.name,
+                                                            'status': 'fully initialized'})
+
+        # region execute scenario
+        for block in self.blocks.values():
+            block.pre_scenario()
+
+        try:
+            for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
+                PredictionHorizon(index=horizon_index,
+                                  scenario=self)
+
+                self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                        status_msg={'scenario': self.name,
+                                                                    'status': f'completed horizon '
+                                                                              f'{horizon_index + 1} out of '
+                                                                              f'{self.nhorizons}'})
+            self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                    status_msg={'scenario': self.name,
+                                                                'status': 'successful'})
+
+        except Exception as e:
+            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
+            status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
+            self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                    status_msg={'scenario': self.name,
+                                                                'status': status,
+                                                                'exception': str(e),
+                                                                'traceback': traceback.format_exc()})
+
+            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
+            self.logger.error(msg=f'{str(e)} - continue on next scenario',
+                              exc_info=(not isinstance(e, OptimizationError)))
+
+            self.exception = str(e)
+            self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
+
+        finally:
+            try:
+                for block in self.blocks.values():
+                    block.post_scenario()
+                self.aggregator.post_scenario()
+
+                self.calc_meta_results()
+                self.save_result_summary()
+
+                if self.run.save_results_timeseries:
+                    self.result_timeseries.to_csv(self.path_result_ts_file)
+
+                if self.run.print_results:
+                    for msg in self.print_results_msgs:
+                        self.logger.info(msg)
+
+                if self.run.generate_plots:
+                    self.generate_plots()
+                    if self.run.save_plots:
+                        self.figure.write_html(self.plot_file_path)
+                    if self.run.show_plots:
+                        self.figure.show(renderer='browser')
+
+            except Exception as e:
+                self.logger.error(e, exc_info=True)
+
+        logging.shutdown()
+        # endregion
+
     def calc_meta_results(self):
 
         # TODO implement commodity v2s usage share
@@ -481,10 +555,10 @@ class Scenario:
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
 
         # print basic results
-        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} |'
-                         f' NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} |'
-                         f' LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh |'
-                         f' mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
+        self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} | '
+                         f'NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} | '
+                         f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
+                         f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
 
     def create_block_objects(self):
         class_dict = self.blocks
@@ -538,16 +612,6 @@ class Scenario:
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
 
-    def pre_scenario(self):
-        for block in self.blocks.values():
-            block.pre_scenario()
-
-    def print_results(self):
-        for msg in self.print_results_msgs:
-            self.logger.info(msg)
-
-    def save_plots(self):
-        self.figure.write_html(self.plot_file_path)
 
     def save_result_summary(self):
         """
@@ -585,11 +649,6 @@ class Scenario:
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
 
-    def save_result_timeseries(self):
-        self.result_timeseries.to_csv(self.path_result_ts_file)
-
-    def show_plots(self):
-        self.figure.show(renderer='browser')
 
 
 class SimulationRun:
@@ -625,6 +684,8 @@ class SimulationRun:
         self.settings = self.settings.map(utils.infer_dtype)
         for key, value in self.settings['value'].items():
             setattr(self, key, value)  # this sets all the parameters defined in the settings file
+
+        self.generate_plots = True if self.show_plots or self.save_plots else False
 
         self.scenario_file_name = pathlib.Path(self.scenarios_file_path).stem  # file name without extension
         self.define_paths()
@@ -693,9 +754,9 @@ class SimulationRun:
     def define_logger(self):
 
         self.logger = logging.getLogger()
-        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s'
-                                          f'  %(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s'
-                                          f'  %(message)s')
+        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
+                                          f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
+                                          f'%(message)s')
         log_stream_handler = logging.StreamHandler(sys.stdout)
         log_stream_handler.setFormatter(log_formatter)
         log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.path_log_file))
@@ -871,83 +932,17 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
-        logger = logger_fcs.setup_logger(name, log_queue, self)
-
-        self.process = mp.current_process() if self.parallel else None
-
-        self.trigger_scenario_status_update(queue=status_queue,
-                                            status_msg={'scenario': name,
-                                                        'status': 'started'})
-
-        scenario = None
-
+        # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
+        # objects which cannot be pickled.
         try:
-            scenario = Scenario(name, self, logger, lock)  # Create scenario instance
+            Scenario(name=name,
+                     run=self,
+                     log_queue=log_queue,
+                     lock=lock,
+                     status_queue=status_queue)
+        except:
+            self.logger.info(f'Error occurred in scenario {name}')
 
-            # todo move to scenario init?
-            self.trigger_scenario_status_update(queue=status_queue,
-                                                status_msg={'scenario': name,
-                                                            'status': 'fully initialized'})
-
-            scenario.pre_scenario()
-
-
-            for horizon_index in range(scenario.nhorizons):  # Inner optimization loop over all prediction horizons
-                horizon = PredictionHorizon(horizon_index, scenario)
-                horizon.run_optimization()
-                horizon.get_results()
-                self.trigger_scenario_status_update(queue=status_queue,
-                                                    status_msg={'scenario': name,
-                                                                'status': f'completed horizon {horizon_index + 1} out of'
-                                                                          f' {scenario.nhorizons}'})
-
-            self.trigger_scenario_status_update(queue=status_queue,
-                                                status_msg={'scenario': name,
-                                                            'status': 'successful'})
-
-            scenario.end_timing()  # todo move after result getting?
-
-        except Exception as e:
-            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-            status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.trigger_scenario_status_update(queue=status_queue,
-                                                status_msg={'scenario': name,
-                                                            'status': status,
-                                                            'exception': str(e),
-                                                            'traceback': traceback.format_exc()})
-
-            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
-            logger.error(msg=f'{str(e)} - continue on next scenario', exc_info=(not isinstance(e, OptimizationError)))
-
-            if scenario is not None:  # scenario initialization can fail
-                scenario.exception = str(e)
-                scenario.end_timing()
-
-        finally:
-            try:
-                for block in scenario.blocks.values():
-                    block.post_scenario()
-                scenario.aggregator.post_scenario()
-
-                scenario.calc_meta_results()
-                scenario.save_result_summary()
-
-                if self.save_results_timeseries:
-                    scenario.save_result_timeseries()
-                if self.print_results:
-                    scenario.print_results()
-
-                if self.save_plots or self.show_plots:
-                    scenario.generate_plots()
-                    if self.save_plots:
-                        scenario.save_plots()
-                    if self.show_plots:
-                        scenario.show_plots()
-
-            except Exception as e:
-                logger.error(e, exc_info=True)
-
-            logging.shutdown()
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -960,3 +955,5 @@ class SimulationRun:
             self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
         self.scenario_status.to_csv(self.path_result_status_file,
                                     index=True)
+
+
