@@ -12,7 +12,7 @@ from revoletion import economics as eco
 
 def infer_dtype(value):
     """
-    Infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
+    infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
     """
     try:
         return int(value)
@@ -233,34 +233,6 @@ def read_input_log(fleet):
         if fleet.unit_names != unit_names_log:
             unit_names_map = {log_name: f'{fleet.name}_{log_name}' for log_name in unit_names_log}
             df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
-
-    return df
-
-
-def read_usecase_file(fleet):
-    """
-    Function reads a usecase definition csv file for DES and performs necessary normalization for each timeframe.
-    Function has to be callable for ICEVSystems as well.
-    """
-
-    usecase_path = os.path.join(fleet.scenario.run.paths['input'],
-                                set_extension(fleet.filename))
-    df = pd.read_csv(usecase_path,
-                     header=[0, 1],
-                     index_col=0)
-    for timeframe in df.columns.levels[0]:
-        df.loc[:, (timeframe, 'rel_prob_norm')] = (df.loc[:, (timeframe, 'rel_prob')] /
-                                                   df.loc[:, (timeframe, 'rel_prob')].sum())
-        df.loc[:, (timeframe, 'sum_dep_magn')] = (df.loc[:, (timeframe, 'dep1_magnitude')] +
-                                                  df.loc[:, (timeframe, 'dep2_magnitude')])
-
-        # catch cases where the sum of both departure magnitudes is not one
-        df.loc[:, (timeframe, 'dep1_magnitude')] = (df.loc[:, (timeframe, 'dep1_magnitude')] /
-                                                    df.loc[:, (timeframe, 'sum_dep_magn')])
-        df.loc[:, (timeframe, 'dep2_magnitude')] = (df.loc[:, (timeframe, 'dep2_magnitude')] /
-                                                    df.loc[:, (timeframe, 'sum_dep_magn')])
-
-        df.drop(columns=[(timeframe, 'sum_dep_magn')], inplace=True)
 
     return df
 

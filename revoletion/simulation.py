@@ -529,9 +529,10 @@ class Scenario:
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
 
         # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
-        self.storage_blocks = {}
-        self.fleets = {}
-        self.renewable_sources = {}
+        self.storage_blocks = dict()
+        self.fleets = dict()
+        self.renewable_sources = dict()
+        self.subfleets_dispatch = dict()
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:

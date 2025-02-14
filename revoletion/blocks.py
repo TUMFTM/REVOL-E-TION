@@ -1668,38 +1668,36 @@ class SubFleet(NonElectricBlock, Block):
 
         self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
         if self.type_unit in ['ev']:
-            # todo generate logfile
-            pass
             self.subblocks = {name: ElectricVehicle(name=name,
                                                     scenario=self.scenario,
                                                     params=params,
                                                     parent=self) for name in self.unit_names}
+            self.demand = mobility.VehicleDemand(scenario, self)
         elif self.type_unit in ['icev']:
             self.subblocks = {name: CombustionVehicle(name=name,
                                                       scenario=self.scenario,
                                                       params=params,
                                                       parent=self) for name in self.unit_names}
+            self.demand = mobility.VehicleDemand(scenario, self)
         elif self.type_unit in ['mb']:
             self.subblocks = {name: MobileBattery(name=name,
                                                   scenario=self.scenario,
                                                   params=params,
                                                   parent=self) for name in self.unit_names}
+            self.demand = mobility.BatteryDemand(scenario, self)
         else:
             raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" has invalid unit type')
 
-        self.demand = mobility.VehicleFleetDemand(scenario, self)  # todo modify
-        # self.demand = mobility.BatteryFleetDemand(scenario, self)
-
         if self.data_source == 'usecases':
-            self.usecases = utils.read_usecase_file(self)
-            self.demand = self.demand.sample()
-            # todo enter into dispatcher dict
+            self.demand.read_usecase_file()
+            self.demand.sample()
+            self.scenario.subfleets_dispatch[self.name] = self
         elif self.data_source == 'demand':
-            self.demand = utils.read_demand_file(self)
-            # todo enter into dispatcher dict
+            self.demand.read_demand_file(self)
+            self.scenario.subfleets_dispatch[self.name] = self
         elif self.data_source in ['log', 'logfile']:
             self.log = utils.read_input_log(self)
-            # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()
+            # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()  # todo reenable
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
