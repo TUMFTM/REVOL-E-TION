@@ -57,7 +57,10 @@ class PredictionHorizon:
         self.index = index
         self.scenario = scenario
 
-        # Time and data slicing --------------------------------
+        self.results = None
+        self.meta_results = None
+
+        # region time and data generation and slicing
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
         self.ch_endtime = self.starttime + self.scenario.len_ch
         self.ph_endtime = self.starttime + self.scenario.len_ph
@@ -83,14 +86,16 @@ class PredictionHorizon:
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=self.scenario.timestep, inclusive='left')
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=self.scenario.timestep, inclusive='left')
 
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Initializing model build')
-
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
             self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                       f'Calculating power schedules for commodities with rulebased charging strategies')
             self.scenario.scheduler.calc_ph_schedule(self)
+        # endregion
+
+        # region build energy system model
+        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Building oemof model')
 
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
@@ -98,19 +103,64 @@ class PredictionHorizon:
         for block in self.scenario.blocks.values():
             block.pre_horizon(self)
 
-        self.results = None
-        self.meta_results = None
 
-        # Build energy system model --------------------------------
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                   f'Model build completed')
+        # endregion
 
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Building oemof model')
-
+        # region draw graph of energy model
         if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
-            self.draw_energy_system()
+            # Initialize the graph with the filepath without extension
+            dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
 
+            # Define drawing styles for certain components
+            dot.node('Bus', shape='rectangle', fontsize='10', color='red')
+            dot.node('Sink', shape='trapezium', fontsize='10')
+            dot.node('Source', shape='invtrapezium', fontsize='10')
+            dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
+
+            busses = []
+            # draw a node for each of the network's components.
+            for nd in self.es.nodes:
+                if isinstance(nd, solph.Bus):
+                    dot.node(nd.label,
+                             shape='rectangle',
+                             fontsize='10',
+                             fixedsize='shape',
+                             width='2.4',
+                             height='0.6',
+                             color='red')
+                    # keep the bus reference for drawing edges later
+                    busses.append(nd)
+                elif isinstance(nd, solph.components.Sink):
+                    dot.node(nd.label, shape='trapezium', fontsize='10')
+                elif isinstance(nd, solph.components.Source):
+                    dot.node(nd.label, shape='invtrapezium', fontsize='10')
+                elif isinstance(nd, solph.components.Converter):
+                    dot.node(nd.label, shape='rectangle', fontsize='10')
+                elif isinstance(nd, solph.components.GenericStorage):
+                    dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
+                else:
+                    self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
+
+            # draw the edges between the nodes based on each bus inputs/outputs
+            for bus in busses:
+                for component in bus.inputs:
+                    # draw an arrow from the component to the bus
+                    dot.edge(component.label, bus.label)
+                for component in bus.outputs:
+                    # draw an arrow from the bus to the component
+                    dot.edge(bus.label, component.label)
+
+            try:
+                dot.render(cleanup=True)
+            except Exception as e:  # inhibiting failing renderer from stopping model execution
+                self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
+        # endregion
+
+        # region build optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Building optimization problem')
+                                  f'Building optimization problem from oemof model')
 
         # Build the mathematical linear optimization model with pyomo
         self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
@@ -122,83 +172,10 @@ class PredictionHorizon:
             self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Model build completed')
+                                   f'Optimization problem build completed')
+        # endregion
 
-        self.run_optimization()
-        self.get_results()
-
-    def draw_energy_system(self):
-        """
-        This method draws a directed graph of the scenario's energy system and saves it as a pdf file
-        """
-        # Initialize the graph with the filepath without extension
-        dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
-
-        # Define drawing styles for certain components
-        dot.node('Bus', shape='rectangle', fontsize='10', color='red')
-        dot.node('Sink', shape='trapezium', fontsize='10')
-        dot.node('Source', shape='invtrapezium', fontsize='10')
-        dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
-
-        busses = []
-        # draw a node for each of the network's components.
-        for nd in self.es.nodes:
-            if isinstance(nd, solph.Bus):
-                dot.node(nd.label,
-                         shape='rectangle',
-                         fontsize='10',
-                         fixedsize='shape',
-                         width='2.4',
-                         height='0.6',
-                         color='red')
-                # keep the bus reference for drawing edges later
-                busses.append(nd)
-            elif isinstance(nd, solph.components.Sink):
-                dot.node(nd.label, shape='trapezium', fontsize='10')
-            elif isinstance(nd, solph.components.Source):
-                dot.node(nd.label, shape='invtrapezium', fontsize='10')
-            elif isinstance(nd, solph.components.Converter):
-                dot.node(nd.label, shape='rectangle', fontsize='10')
-            elif isinstance(nd, solph.components.GenericStorage):
-                dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
-            else:
-                self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
-
-        # draw the edges between the nodes based on each bus inputs/outputs
-        for bus in busses:
-            for component in bus.inputs:
-                # draw an arrow from the component to the bus
-                dot.edge(component.label, bus.label)
-            for component in bus.outputs:
-                # draw an arrow from the bus to the component
-                dot.edge(bus.label, component.label)
-
-        try:
-            dot.render(cleanup=True)
-        except Exception as e:  # inhibiting failing renderer from stopping model execution
-            self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
-
-    def get_results(self):
-        """
-        Get result data slice for current CH from results and save in result dataframes for later analysis
-        Get (possibly optimized) component sizes from results to handle outputs more easily
-        """
-
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
-
-        self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
-
-        if self.scenario.run.debugmode:
-            self.meta_results = solph.processing.meta_results(self.model)
-            pprint.pprint(self.meta_results)
-
-        # free up RAM
-        del self.model
-
-        for block in self.scenario.blocks.values():
-            block.post_horizon(self)
-
-    def run_optimization(self):
+        # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
         results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
@@ -221,6 +198,27 @@ class PredictionHorizon:
         else:
             raise Exception(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                             f'Optimization terminated with unknown status: {results.solver.termination_condition}')
+
+        # endregion
+
+        # region get results
+        # Get result data slice for current CH from results and save in result dataframes for later analysis
+        # Get (possibly optimized) component sizes from results to handle outputs more easily
+
+        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Getting results')
+
+        self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
+
+        if self.scenario.run.debugmode:
+            self.meta_results = solph.processing.meta_results(self.model)
+            pprint.pprint(self.meta_results)
+
+        # free up RAM
+        del self.model
+
+        for block in self.scenario.blocks.values():
+            block.post_horizon(self)
+        # endregion
 
 
 class Scenario:
