@@ -322,9 +322,3 @@ def set_extension(filename, default_extension='.csv'):
     if not ext:
         filename = base + default_extension
     return filename
-
-
-def lognormal_params(mean, stdev):
-    mu = np.log(mean ** 2 / np.sqrt((mean ** 2) + (stdev ** 2)))
-    sig = np.sqrt(np.log(1 + (stdev ** 2) / (mean ** 2)))
-    return mu, sig

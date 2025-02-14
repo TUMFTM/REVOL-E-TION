@@ -41,45 +41,55 @@ class MultiStore(simpy.resources.base.BaseResource):
             self.items = self.items[:(len(self.items) - event.amount - 0)]
             event.succeed(elements)
 
+# todo move to dispatch
+
+#         if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
+#             # estimate maximum power drawn by self discharge
+#             self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
+#             # downrate assumed power for a priori dispatch simulation
+#             self.pwr_chg_des = (self.pwr_chg_max * self.eff_chg_int - self.pwr_loss_max) * self.factor_pwr_des
+
 
 class RentalSystem:
 
-    def __init__(self, fleet, scenario):
+    def __init__(self,
+                 subfleet: blocks.SubFleet,
+                 scenario: 'simulation.Scenario'):
 
-        self.fleet = fleet
+        self.subfleet = subfleet
         self.scenario = scenario
-        self.name = self.fleet.name
+        self.name = self.subfleet.name
 
         self.soc_max_init = min([unit.soc_max
-                                 for unit in self.fleet.subblocks.values()])
+                                 for unit in self.subfleet.subblocks.values()])
         self.soc_min_init = max([unit.soc_min
-                                 for unit in self.fleet.subblocks.values()])
+                                 for unit in self.subfleet.subblocks.values()])
 
         # calculate usable energy to expect
 
         self.dsoc_usable_high = (statistics.median([self.soc_min_init,
-                                                    self.fleet.soc_target_high,
+                                                    self.subfleet.soc_target_high,
                                                     self.soc_max_init]) -
                                  statistics.median([self.soc_min_init,
-                                                    self.fleet.soc_return,
+                                                    self.subfleet.soc_return,
                                                     self.soc_max_init]))
         self.dsoc_usable_low = (statistics.median([self.soc_min_init,
-                                                   self.fleet.soc_target_low,
+                                                   self.subfleet.soc_target_low,
                                                    self.soc_max_init]) -
                                 statistics.median([self.soc_min_init,
-                                                   self.fleet.soc_return,
+                                                   self.subfleet.soc_return,
                                                    self.soc_max_init]))
 
         if (self.dsoc_usable_high <= 0) or (self.dsoc_usable_low <= 0):
-            raise ValueError(f'Usable dSOC for {self.fleet.name} '
+            raise ValueError(f'Usable dSOC for {self.subfleet.name} '
                              f'is zero or negative. Check SOC targets and aging.')
 
         self.energy_usable_pc_high = (self.dsoc_usable_high *
-                                      self.fleet.size.loc['pc', 'existing'] *
-                                      np.sqrt(self.fleet.eff_storage_roundtrip))
+                                      self.subfleet.size.loc['pc', 'existing'] *
+                                      np.sqrt(self.subfleet.eff_storage_roundtrip))
         self.energy_usable_pc_low = (self.dsoc_usable_low *
-                                     self.fleet.size.loc['pc', 'existing'] *
-                                     np.sqrt(self.fleet.eff_storage_roundtrip))
+                                     self.subfleet.size.loc['pc', 'existing'] *
+                                     np.sqrt(self.subfleet.eff_storage_roundtrip))
 
         self.n_processes = self.processes = self.demand_daily = self.store = None
         self.use_rate = self.fail_rate = None
@@ -90,12 +100,12 @@ class RentalSystem:
         Add empty columns to process frame that are iteratively filled during actual dispatch (i.e. in DES)
         """
         self.processes['commodities_primary'] = None
-        if (hasattr(self.fleet, 'rex_fleet')) and (self.fleet.rex_fleet):
+        if (hasattr(self.subfleet, 'rex_fleet')) and (self.subfleet.rex_fleet):
             self.processes['commodities_secondary'] = None
 
     def create_store(self):
-        self.store = MultiStore(self.scenario.env_des, capacity=self.fleet.num)
-        for unit in self.fleet.subblocks.values():
+        self.store = MultiStore(self.scenario.env_des, capacity=self.subfleet.num)
+        for unit in self.subfleet.subblocks.values():
             self.store.put([unit.name])
 
     def calc_performance_metrics(self):
@@ -107,16 +117,16 @@ class RentalSystem:
 
         # calculate percentage of DES (not sim, the latter is shorter) time
         # occupied by active, idle & recharge times
-        for unit in list(self.fleet.subblocks.keys()):
+        for unit in list(self.subfleet.subblocks.keys()):
             processes = processes_exploded.loc[processes_exploded['commodities_primary'] == unit, :]
             steps_blocked = processes['steps_charge_primary'].sum() + processes['steps_rental'].sum()
             self.use_rate[unit] = steps_blocked / steps_total
-        self.fleet.use_rate = np.mean(list(self.use_rate.values()))
+        self.subfleet.use_rate = np.mean(list(self.use_rate.values()))
 
         # calculate overall percentage of failed trips
         n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
-        self.fail_rate = self.fleet.fail_rate = 1 - (n_success / n_total)
+        self.fail_rate = self.subfleet.fail_rate = 1 - (n_success / n_total)
 
     def convert_process_log(self):
         """
@@ -124,7 +134,7 @@ class RentalSystem:
         as required by the energy system model as an example
         """
 
-        commodities = list(self.fleet.subblocks.keys())
+        commodities = list(self.subfleet.subblocks.keys())
         column_names = []
         for unit in commodities:
             column_names.extend([(unit,'atbase'), (unit,'dsoc'), (unit,'consumption'),
@@ -159,11 +169,11 @@ class RentalSystem:
                     # set distance in first timestep of rental (for distance based revenue calculation)
                     self.data.loc[process['time_dep'], (unit, 'dist')] = process['distance']
 
-        self.fleet.data = self.data
+        self.subfleet.data = self.data
 
     def generate_process_frame(self):
 
-        self.processes = self.fleet.demand.copy()
+        self.processes = self.subfleet.demand.copy()
         self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
         self.calc_process_data()
 
@@ -192,7 +202,7 @@ class RentalSystem:
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
-            f'{self.fleet.name}_'
+            f'{self.subfleet.name}_'
             f'processes.csv')
         self.processes.to_csv(processes_path)
 
@@ -201,7 +211,7 @@ class RentalSystem:
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
-            f'{self.fleet.name}_'
+            f'{self.subfleet.name}_'
             f'log.csv')
         self.data.to_csv(log_path)
 
@@ -213,24 +223,24 @@ class VehicleRentalSystem(RentalSystem):
         super().__init__(fleet, scenario)
 
         # replace the rex system name read in from scenario file with the actual Fleet object
-        if self.fleet.rex_fleet:
+        if self.subfleet.rex_fleet:
             self.check_rex_inputs()
-            self.fleet.rex_fleet = self.scenario.blocks[self.fleet.rex_fleet]
+            self.subfleet.rex_fleet = self.scenario.blocks[self.subfleet.rex_fleet]
 
-        self.dsoc_usable_rex_high = (self.fleet.rex_fleet.soc_target_high -
-                                     self.fleet.rex_fleet.soc_return)\
-            if self.fleet.rex_fleet else 0
-        self.dsoc_usable_rex_low = (self.fleet.rex_fleet.soc_target_low -
-                                    self.fleet.rex_fleet.soc_return)\
-            if self.fleet.rex_fleet else 0
+        self.dsoc_usable_rex_high = (self.subfleet.rex_fleet.soc_target_high -
+                                     self.subfleet.rex_fleet.soc_return)\
+            if self.subfleet.rex_fleet else 0
+        self.dsoc_usable_rex_low = (self.subfleet.rex_fleet.soc_target_low -
+                                    self.subfleet.rex_fleet.soc_return)\
+            if self.subfleet.rex_fleet else 0
 
-        if self.fleet.rex_fleet:  # system can extend range
+        if self.subfleet.rex_fleet:  # system can extend range
             self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
-                                              self.fleet.rex_fleet.size.loc['pc', 'existing'] *
-                                              np.sqrt(self.fleet.rex_fleet.eff_storage_roundtrip))
+                                              self.subfleet.rex_fleet.size.loc['pc', 'existing'] *
+                                              np.sqrt(self.subfleet.rex_fleet.eff_storage_roundtrip))
             self.energy_usable_rex_pc_low = (self.dsoc_usable_rex_low *
-                                             self.fleet.rex_fleet.size.loc['pc', 'existing'] *
-                                             np.sqrt(self.fleet.rex_fleet.eff_storage_roundtrip))
+                                             self.subfleet.rex_fleet.size.loc['pc', 'existing'] *
+                                             np.sqrt(self.subfleet.rex_fleet.eff_storage_roundtrip))
         else:  # no rex defined
             self.energy_usable_rex_pc_high = 0
             self.energy_usable_rex_pc_low = 0
@@ -255,7 +265,7 @@ class VehicleRentalSystem(RentalSystem):
         self.processes['range_usable_high'] = self.energy_usable_pc_high / self.processes['consumption']
         self.processes['range_usable_low'] = self.energy_usable_pc_low / self.processes['consumption']
 
-        if self.fleet.rex_fleet:  # system can extend range
+        if self.subfleet.rex_fleet:  # system can extend range
             # determine number of rex needed to cover missing distance and calc available energy
             self.processes['distance_missing'] = np.maximum(
                 0,
@@ -268,16 +278,16 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
                                                     (self.processes['num_secondary'] *
                                                      self.energy_usable_rex_pc_high))
-            self.processes['energy_total_both'] = (self.fleet.size.loc['pc', 'existing'] +
+            self.processes['energy_total_both'] = (self.subfleet.size.loc['pc', 'existing'] +
                                                    (self.processes['num_secondary'] *
-                                                    self.fleet.rex_fleet.size.loc['pc', 'existing']))
+                                                    self.subfleet.rex_fleet.size.loc['pc', 'existing']))
 
         else:  # no rex defined
             self.processes['num_secondary'] = 0
             self.processes['rex_request'] = False
 
             self.processes['energy_usable_both'] = self.energy_usable_pc_high
-            self.processes['energy_total_both'] = self.fleet.size.loc['pc', 'existing']
+            self.processes['energy_total_both'] = self.subfleet.size.loc['pc', 'existing']
             # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
             self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable_pc_high)
 
@@ -288,37 +298,37 @@ class VehicleRentalSystem(RentalSystem):
                                             self.processes['energy_usable_both']) * self.processes['rex_request']
 
         self.processes['energy_pc_primary'] = (self.processes['dsoc_primary'] *
-                                               self.fleet.size.loc['pc', 'existing'])
+                                               self.subfleet.size.loc['pc', 'existing'])
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / self.fleet.pwr_chg_des,
+            self.processes['energy_pc_primary'] / self.subfleet.pwr_chg_des,
             unit='hour')
 
-        if self.fleet.rex_fleet:
+        if self.subfleet.rex_fleet:
             self.processes['energy_pc_secondary'] = (self.processes['dsoc_secondary'] *
-                                                     self.fleet.rex_fleet.size.loc['pc', 'existing'])
+                                                     self.subfleet.rex_fleet.size.loc['pc', 'existing'])
             self.processes['dtime_charge_secondary'] = pd.to_timedelta(
-                self.processes['energy_pc_secondary'] / self.fleet.rex_fleet.pwr_chg_des,
+                self.processes['energy_pc_secondary'] / self.subfleet.rex_fleet.pwr_chg_des,
                 unit='hour')
         else:
             self.processes['energy_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
     def check_rex_inputs(self):
-        if self.fleet.rex_fleet not in self.scenario.blocks.keys():
+        if self.subfleet.rex_fleet not in self.scenario.blocks.keys():
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.fleet.name}":'
-                             f'Selected range extender system "{self.fleet.rex_fleet}" '
+                             f'Block "{self.subfleet.name}":'
+                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
                              f'does not exist')
-        elif not isinstance(self.scenario.blocks[self.fleet.rex_fleet], blocks.BatteryFleet):
+        elif not isinstance(self.scenario.blocks[self.subfleet.rex_fleet], blocks.BatteryFleet):
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.fleet.name}":'
-                             f'Selected range extender system "{self.fleet.rex_fleet}" '
+                             f'Block "{self.subfleet.name}":'
+                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
                              f'is not a BatteryFleet')
-        elif not self.scenario.blocks[self.fleet.rex_fleet].data_source in ['usecases', 'demand']:
+        elif not self.scenario.blocks[self.subfleet.rex_fleet].data_source in ['usecases', 'demand']:
             raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.fleet.name}":'
-                             f'Selected range extender system "{self.fleet.rex_fleet}" '
-                             f'has data source"{self.fleet.rex_fleet.data_source}". '
+                             f'Block "{self.subfleet.name}":'
+                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
+                             f'has data source"{self.subfleet.rex_fleet.data_source}". '
                              f'Allowed values: [\'usecases\', \'demand\']')
 
     def transfer_rex_processes(self):
@@ -332,7 +342,7 @@ class VehicleRentalSystem(RentalSystem):
 
         # convert values for target BatteryRentalSystem
         rex_processes['usecase_id'] = -1
-        rex_processes['usecase_name'] = f'rex_{self.fleet.name}'
+        rex_processes['usecase_name'] = f'rex_{self.subfleet.name}'
 
         def swap_primary_secondary(col_name):
             if 'primary' in col_name:
@@ -348,10 +358,10 @@ class VehicleRentalSystem(RentalSystem):
         rex_processes['step_preblock_primary'] = rex_processes['step_req']
 
         # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
-        self.fleet.rex_fleet.rental_system.processes = pd.concat(
-            [self.fleet.rex_fleet.rental_system.processes, rex_processes],
+        self.subfleet.rex_fleet.rental_system.processes = pd.concat(
+            [self.subfleet.rex_fleet.rental_system.processes, rex_processes],
             join='inner')
-        self.fleet.rex_fleet.rental_system.processes.sort_values(
+        self.subfleet.rex_fleet.rental_system.processes.sort_values(
             by='time_preblock_primary',
             inplace=True,
             ignore_index=True)
@@ -363,7 +373,7 @@ class BatteryRentalSystem(RentalSystem):
 
         super().__init__(fleet, scenario)
 
-        self.fleet.rex_fleet = None  # needs to be set for later check
+        self.subfleet.rex_fleet = None  # needs to be set for later check
 
         self.generate_process_frame()
         self.add_dispatch_columns()
@@ -380,16 +390,16 @@ class BatteryRentalSystem(RentalSystem):
         """
         self.processes['rex_request'] = False
         self.processes['num_primary'] = np.ceil(self.processes['energy_req'] / self.energy_usable_pc_high).astype(int)
-        self.processes['energy_total_both'] = self.processes['num_primary'] * self.fleet.size.loc['pc', 'existing']
+        self.processes['energy_total_both'] = self.processes['num_primary'] * self.subfleet.size.loc['pc', 'existing']
         self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc_high
         self.processes['dsoc_primary'] = self.processes['energy_req'] / self.processes['energy_total_both']
-        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.fleet.size.loc['pc', 'existing']
+        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.subfleet.size.loc['pc', 'existing']
         self.processes['energy_primary'] = self.processes['energy_pc_primary'] * self.processes['num_primary']
         self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / (self.fleet.pwr_chg *
-                                                   self.fleet.eff_chg_int *  # charger efficiency (into unit's bus)
+            self.processes['energy_pc_primary'] / (self.subfleet.pwr_chg *
+                                                   self.subfleet.eff_chg_int *  # charger efficiency (into unit's bus)
                                                    # storage component efficiency (both ways)
-                                                   self.fleet.eff_storage_roundtrip),
+                                                   self.subfleet.eff_storage_roundtrip),
             unit='hour')
 
 

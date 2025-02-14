@@ -1,8 +1,9 @@
-key,bev,mc
+key,bev,#mc
 num,2,2
 type_unit,ev,icev
-data_source,log,log
-filename,bev_log,mc_log
+data_source,usecases,log
+filename,bev_usecases,mc_log
+filename_mapper,mtf,mtf
 rex,True,True
 size_preexisting,30000,30000
 capex_preexisting,True,True
@@ -16,8 +17,7 @@ temp_battery,pv,pv
 q_loss_cal_init,0,0
 q_loss_cyc_init,0,0
 soc_init,1,1
-soc_target_high,1,1
-soc_target_low,0.8,0.8
+soc_target,0.2,1
 soc_return,0.1,0.1
 dsoc_buffer,0.05,0.05
 capex_fix_glider,25000,25000

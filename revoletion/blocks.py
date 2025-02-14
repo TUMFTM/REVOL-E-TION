@@ -1652,7 +1652,12 @@ class SubFleet(NonElectricBlock, Block):
                  params,
                  parent):
 
-        params_subfleet = {key: params.pop(key) for key in ['num', 'type_unit', 'data_source', 'filename', 'rex']}
+        params_subfleet = {key: params.pop(key) for key in ['num',
+                                                            'type_unit',
+                                                            'data_source',
+                                                            'filename',
+                                                            'filename_mapper',
+                                                            'rex']}
 
         super().__init__(name=name,
                          scenario=scenario,
@@ -1682,7 +1687,7 @@ class SubFleet(NonElectricBlock, Block):
         else:
             raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" has invalid unit type')
 
-        # self.demand = mobility.VehicleFleetDemand(scenario, self)  # todo modify
+        self.demand = mobility.VehicleFleetDemand(scenario, self)  # todo modify
         # self.demand = mobility.BatteryFleetDemand(scenario, self)
 
         if self.data_source == 'usecases':
@@ -1761,13 +1766,6 @@ class ElectricFleetUnit(Block, StorageBlock):
 
         self.eff_chg_int = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
         self.eff_dis_int = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
-
-        # todo move to dispatch
-        if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
-            # estimate maximum power drawn by self discharge
-            self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
-            # downrate assumed power for a priori dispatch simulation
-            self.pwr_chg_des = (self.pwr_chg * self.eff_chg_int - self.pwr_loss_max) * self.factor_pwr_des
 
         if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.run.apriori_lvls:
             raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
@@ -1948,17 +1946,17 @@ class CombustionVehicle(NonElectricBlock, Block):
 
 
 class ElectricVehicle(ElectricFleetUnit):
+    """
+    dummy class to enable tracking
+    """
     pass
 
 
 class MobileBattery(ElectricFleetUnit):
+    """
+    dummy class to enable tracking
+    """
     pass
-
-
-    # only a single target value is set for BatteryCommoditySystems, as these are assumed to always be charged
-    # to one SOC before rental
-    # self.soc_target_high = self.soc_target
-    # self.soc_target_low = self.soc_target
 
 
 
