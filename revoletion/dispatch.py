@@ -50,15 +50,20 @@ class MultiStore(simpy.resources.base.BaseResource):
 #             self.pwr_chg_des = (self.pwr_chg_max * self.eff_chg_int - self.pwr_loss_max) * self.factor_pwr_des
 
 
-class RentalSystem:
+class Dispatcher:
 
     def __init__(self,
                  subfleet: blocks.SubFleet,
+                 demand: 'mobility.SubFleetDemand',
                  scenario: 'simulation.Scenario'):
 
         self.subfleet = subfleet
         self.scenario = scenario
         self.name = self.subfleet.name
+
+
+
+        # todo let fleetunits enter themselves into dict
 
         self.soc_max_init = min([unit.soc_max
                                  for unit in self.subfleet.subblocks.values()])
@@ -216,16 +221,21 @@ class RentalSystem:
         self.data.to_csv(log_path)
 
 
-class VehicleRentalSystem(RentalSystem):
+class VehicleDispatcher(Dispatcher):
 
-    def __init__(self, fleet, scenario):
+    def __init__(self,
+                 subfleet: 'blocks.VehicleFleet',
+                 demand: 'mobility.SubFleetDemand',
+                 scenario: 'simulation.Scenario',
+                 rex_fleet: 'blocks.BatteryFleet' = None):
 
-        super().__init__(fleet, scenario)
+        if self.rex_fleet is not None:
+            self.rex_fleet = scenario.blocks.get(rex_fleet, None) # get actual object by name
+            self.check_rex_fleet()
 
-        # replace the rex system name read in from scenario file with the actual Fleet object
-        if self.subfleet.rex_fleet:
-            self.check_rex_inputs()
-            self.subfleet.rex_fleet = self.scenario.blocks[self.subfleet.rex_fleet]
+        super().__init__(subfleet=subfleet,
+                         demand=demand,
+                         scenario=scenario)
 
         self.dsoc_usable_rex_high = (self.subfleet.rex_fleet.soc_target_high -
                                      self.subfleet.rex_fleet.soc_return)\
@@ -313,23 +323,21 @@ class VehicleRentalSystem(RentalSystem):
             self.processes['energy_pc_secondary'] = 0
             self.processes['dtime_charge_secondary'] = None
 
-    def check_rex_inputs(self):
-        if self.subfleet.rex_fleet not in self.scenario.blocks.keys():
-            raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.subfleet.name}":'
-                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
-                             f'does not exist')
-        elif not isinstance(self.scenario.blocks[self.subfleet.rex_fleet], blocks.BatteryFleet):
-            raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.subfleet.name}":'
-                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
-                             f'is not a BatteryFleet')
-        elif not self.scenario.blocks[self.subfleet.rex_fleet].data_source in ['usecases', 'demand']:
-            raise ValueError(f'Scenario "{self.scenario.name}" -'
-                             f'Block "{self.subfleet.name}":'
-                             f'Selected range extender system "{self.subfleet.rex_fleet}" '
-                             f'has data source"{self.subfleet.rex_fleet.data_source}". '
-                             f'Allowed values: [\'usecases\', \'demand\']')
+    def check_rex_fleet(self):
+        base_msg = f'Scenario "{self.scenario.name}" -'
+        f'Block "{self.subfleet.parent.name}" -'
+        f'Subfleet "{self.subfleet.name}":'
+        f'selected range extender fleet "{self.rex_fleet}"'
+
+        if self.rex_fleet is None:
+            raise ValueError(f'{base_msg} does not exist')
+        elif not isinstance(self.rex_fleet, blocks.BatteryFleet):
+            raise ValueError(f'{base_msg} is not a BatteryFleet')
+        elif len(self.rex_fleet.subfleets) > 1:  # only one subfleet allowed
+            raise ValueError(f'{base_msg} must have exactly one subfleet')
+        elif not self.rex_fleet.subfleets[0].data_source in ['usecases', 'demand']:
+            raise ValueError(f'{base_msg} - data source"{self.rex_fleet.subfleet[0].data_source}" is not allowed. '
+                             f'Allowed values: ["usecases", "demand"]')
 
     def transfer_rex_processes(self):
         """
@@ -367,7 +375,7 @@ class VehicleRentalSystem(RentalSystem):
             ignore_index=True)
 
 
-class BatteryRentalSystem(RentalSystem):
+class BatteryDispatcher(Dispatcher):
 
     def __init__(self, fleet, scenario):
 
@@ -403,7 +411,7 @@ class BatteryRentalSystem(RentalSystem):
             unit='hour')
 
 
-class RentalProcess:
+class Tour:
 
     def __init__(self, id, data, rental_system):
 
