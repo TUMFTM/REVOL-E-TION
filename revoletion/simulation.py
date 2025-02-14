@@ -295,7 +295,8 @@ class SimulationRun:
         self.logger.error('Traceback:')
         self.logger.error(''.join(traceback.format_tb(exc_traceback)))
 
-        self.logger.error('Uncaught exception', exc_info=(exc_type, exc_value, exc_traceback))
+        self.logger.error(msg='Uncaught exception',
+                          exc_info=(exc_type, exc_value, exc_traceback))
 
     def join_results(self):
 
@@ -352,11 +353,12 @@ class SimulationRun:
         except Exception as e:
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
+                                                            'status': 'failed',
                                                             'exception': str(e),
                                                             'traceback': traceback.format_exc()})
 
-            self.logger.error(msg=f'{str(e)} - continue on next scenario',
-                              exc_info=(not isinstance(e, OptimizationError)))
+            self.logger.error(msg=f'{str(e)} - continue on next scenario', # todo is not written to log or stream
+                              exc_info=True)
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -458,8 +460,7 @@ class Scenario:
             self.len_ch = self.sim_duration
             self.nhorizons = 1
         else:
-            self.exception = f'Optimization strategy "{self.strategy}" unknown'
-            raise ValueError(self.exception)
+            raise ValueError(f'Optimization strategy "{self.strategy}" unknown')
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
@@ -511,8 +512,6 @@ class Scenario:
         self.path_result_ts_file = os.path.join(
             self.run.paths['output'],
             f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
-
-        self.exception = None  # placeholder for possible infeasibility
 
         # Energy System Blocks --------------------------------
         # initialize variable to store initial investment costs given in scenario definition
@@ -622,10 +621,18 @@ class Scenario:
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
             status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.exception = e
+            self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                    status_msg={'scenario': self.name,
+                                                                'status': status,
+                                                                'exception': str(e),
+                                                                'traceback': traceback.format_exc()})
+
+            self.logger.error(msg=f'{str(e)} - continue on next scenario',
+                              exc_info=(not isinstance(e, OptimizationError)))
+
             self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
 
-        finally:
+        finally:  # save results up to exception - valuable in RH strategy
 
             for block in self.blocks.values():
                 block.post_scenario()
