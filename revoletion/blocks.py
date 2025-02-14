@@ -820,8 +820,9 @@ class FixedDemand(Block):
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'block': {('crev', 'spec'): 'crev_spec',
-                                       ('flow', 'name'): 'in'}
+                             'block': ('EconomicEvaluator',
+                                       {('crev', 'spec'): 'crev_spec',
+                                        ('flow', 'name'): 'in'})
                          },
                          state_names=None,
                          params=None,
@@ -952,14 +953,15 @@ class ControllableSource(Block):
                          scenario=scenario,
                          state_names=None,
                          pois={
-                             'block': {('capex', 'preexisting'): 'capex_preexisting',
-                                      ('capex', 'spec'): 'capex_spec',
-                                      ('mntex', 'spec'): 'mntex_spec',
-                                      ('opex', 'spec'): 'opex_spec',
-                                      ('size', 'name'): 'block',
-                                      ('flow', 'name'): 'out',
-                                      ('aux', 'ls'): 'ls',
-                                      ('aux', 'ccr'): 'ccr'},
+                             'block': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('mntex', 'spec'): 'mntex_spec',
+                                        ('opex', 'spec'): 'opex_spec',
+                                        ('size', 'name'): 'block',
+                                        ('flow', 'name'): 'out',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
                          },
                          params=None,
                          parent=scenario)
@@ -1011,20 +1013,22 @@ class GridConnection(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'g2s': {('capex', 'preexisting'): 'capex_preexisting_g2s',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('size', 'name'): 'g2s',
-                                       ('flow', 'name'): 'out',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'},
-                               's2g': {('capex', 'preexisting'): 'capex_preexisting_s2g',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('size', 'name'): 's2g',
-                                       ('flow', 'name'): 'in',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'},
+                         pois={'g2s': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting_g2s',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('mntex', 'spec'): 'mntex_spec',
+                                        ('size', 'name'): 'g2s',
+                                        ('flow', 'name'): 'out',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                               's2g': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting_s2g',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('mntex', 'spec'): 'mntex_spec',
+                                        ('size', 'name'): 's2g',
+                                        ('flow', 'name'): 'in',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
                                },
                          state_names=None,
                          params=None,
@@ -1060,34 +1064,15 @@ class GridConnection(Block):
             'None': lambda x: 'sim_duration'
         }
 
-        # Pre-calculate peakshaving type
-        peakshaving = str(self.peakshaving)
-
         # Get dummies directly from the 'periods' data
         self.bus_activation = pd.get_dummies(
-            self.scenario.dti_sim_extd.to_series().map(periods_func[peakshaving])).astype(int)
-
+            self.scenario.dti_sim_extd.to_series().map(periods_func[str(self.peakshaving)])).astype(int)
 
         # Create a series to store peak power values
         self.peakshaving_periods = pd.DataFrame(index=self.bus_activation.columns,
                                                 columns=['power'],
                                                 data=0.0,  # cumulative variable
                                                 dtype='float64')
-
-        self.opex_spec_peak = self.opex_spec_peak if self.peakshaving is not None else 0
-
-        # calculate the fraction of each period that is covered by the sim time (NOT sim_extd!)
-        # for period in self.peakshaving_periods.index:
-        #     self.peakshaving_periods.loc[period, 'period_fraction'] = utils.get_period_fraction(
-        #         dti=self.bus_activation.loc[self.scenario.dti_sim][
-        #             self.bus_activation.loc[self.scenario.dti_sim, period] == 1].index,
-        #         period=self.peakshaving,
-        #         freq=self.scenario.timestep)
-        #
-        #     # Get first and last timestep of each peakshaving interval -> used for rh calculation later on
-        #     dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-        #     self.peakshaving_periods.loc[period, 'start'] = dti_period.min()
-        #     self.peakshaving_periods.loc[period, 'end'] = dti_period.max()
 
         # slice sim dataframe from activation bus (compared to sim_extd)
         bus_activation_sim = self.bus_activation.loc[self.scenario.dti_sim]
@@ -1116,7 +1101,7 @@ class GridConnection(Block):
                                                        end=self.scenario.starttime + pd.DateOffset(years=1),
                                                        freq=self.scenario.timestep,
                                                        inclusive='left')
-                                         .to_series().apply(periods_func[peakshaving])).unique().size
+                                         .to_series().apply(periods_func[str(peakshaving)])).unique().size
 
         self.evaluators.update({period: eco.PeakEvaluator(
             name=period,
@@ -1258,12 +1243,14 @@ class GridMarket(Block):
         super().__init__(name=name,
                          scenario=scenario,
                          state_names=None,
-                         pois={'g2s': {('opex', 'spec'): 'opex_spec_g2s',
+                         pois={'g2s': ('EconomicEvaluator',
+                                       {('opex', 'spec'): 'opex_spec_g2s',
                                        ('size', 'name'): 'g2s',
-                                       ('flow', 'name'): 'out'},
-                               's2g': {('opex', 'spec'): 'opex_spec_s2g',
-                                       ('size', 'name'): 's2g',
-                                       ('flow', 'name'): 'in'},
+                                       ('flow', 'name'): 'out'}),
+                               's2g': ('EconomicEvaluator',
+                                       {('opex', 'spec'): 'opex_spec_s2g',
+                                        ('size', 'name'): 's2g',
+                                        ('flow', 'name'): 'in'}),
                                },
                          params=params,
                          parent=parent)
@@ -1547,12 +1534,14 @@ class Fleet(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'f2s': {('opex', 'spec'): 'opex_spec_f2s',
-                                       ('flow', 'name'): 'out',
-                                       ('size', 'name'): 'f2s',},
-                               's2f': {('opex', 'spec'): 'opex_spec_s2f',
-                                       ('flow', 'name'): 'in',
-                                       ('size', 'name'): 's2f',}
+                         pois={'f2s': ('EconomicEvaluator',
+                                       {('opex', 'spec'): 'opex_spec_f2s',
+                                        ('flow', 'name'): 'out',
+                                        ('size', 'name'): 'f2s',}),
+                               's2f': ('EconomicEvaluator',
+                                       {('opex', 'spec'): 'opex_spec_s2f',
+                                        ('flow', 'name'): 'in',
+                                        ('size', 'name'): 's2f',})
                              },
                          state_names=None,
                          params=None,
