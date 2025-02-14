@@ -349,8 +349,14 @@ class SimulationRun:
                      log_queue=log_queue,
                      lock=lock,
                      status_queue=status_queue)
-        except:
-            self.logger.info(f'Error occurred in scenario {name}')
+        except Exception as e:
+            self.trigger_scenario_status_update(queue=status_queue,
+                                                status_msg={'scenario': name,
+                                                            'exception': str(e),
+                                                            'traceback': traceback.format_exc()})
+
+            self.logger.error(msg=f'{str(e)} - continue on next scenario',
+                              exc_info=(not isinstance(e, OptimizationError)))
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -616,44 +622,31 @@ class Scenario:
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
             status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': status,
-                                                                'exception': str(e),
-                                                                'traceback': traceback.format_exc()})
-
-            # show error message and traceback in console; suppress traceback if problem was infeasible or unbounded
-            self.logger.error(msg=f'{str(e)} - continue on next scenario',
-                              exc_info=(not isinstance(e, OptimizationError)))
-
-            self.exception = str(e)
+            self.exception = e
             self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
 
         finally:
-            try:
-                for block in self.blocks.values():
-                    block.post_scenario()
-                self.aggregator.post_scenario()
 
-                self.calc_meta_results()
-                self.save_result_summary()
+            for block in self.blocks.values():
+                block.post_scenario()
+            self.aggregator.post_scenario()
 
-                if self.run.save_results_timeseries:
-                    self.result_timeseries.to_csv(self.path_result_ts_file)
+            self.calc_meta_results()
+            self.save_result_summary()
 
-                if self.run.print_results:
-                    for msg in self.print_results_msgs:
-                        self.logger.info(msg)
+            if self.run.save_results_timeseries:
+                self.result_timeseries.to_csv(self.path_result_ts_file)
 
-                if self.run.generate_plots:
-                    self.generate_plots()
-                    if self.run.save_plots:
-                        self.figure.write_html(self.plot_file_path)
-                    if self.run.show_plots:
-                        self.figure.show(renderer='browser')
+            if self.run.print_results:
+                for msg in self.print_results_msgs:
+                    self.logger.info(msg)
 
-            except Exception as e:
-                self.logger.error(e, exc_info=True)
+            if self.run.generate_plots:
+                self.generate_plots()
+                if self.run.save_plots:
+                    self.figure.write_html(self.plot_file_path)
+                if self.run.show_plots:
+                    self.figure.show(renderer='browser')
 
         logging.shutdown()
         # endregion
