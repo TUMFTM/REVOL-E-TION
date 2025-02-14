@@ -336,20 +336,11 @@ class EconomicEvaluator(EconomicPointOfInterest):
                                     occurs_at='beginning')
         # endregion
 
-        # region opex sim
-        if isinstance(self, PeakEvaluator):
-            self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\
-                               self.block.peakshaving_periods.loc[self.name, 'period_fraction']
-        else:
-            self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
-                                self.scenario.timestep_hours) if self.flow_name is not None else 0
-
-        if ('dist' in self.opex.keys()) and ('dist' in self.block.log.columns):
-            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
-                                 self.opex['dist'][self.scenario.dti_sim])
-        # endregion
-
         # region opex
+        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
+                            self.scenario.timestep_hours) if self.flow_name is not None else 0
+        self.calc_opex_sim_additional()
+
         self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
         self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
 
@@ -364,14 +355,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # region crev
         self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.scenario.dti_sim] *
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
-
-        if ('dist' in self.crev.keys()) and ('dist' in self.block.log.columns):
-            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
-                                 self.crev['dist'][self.scenario.dti_sim])
-        if 'time' in self.crev.keys():
-            self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_sim, 'atbase'] @
-                                 self.crev['time'][self.scenario.dti_sim]) *
-                                 self.scenario.timestep_hours)
+        self.calc_crev_sim_additional()
 
         self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.scenario)
         self.cashflows.loc[:, 'crev'] = self.crev['yrl']
@@ -403,6 +387,37 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
         return value
 
+    def calc_opex_sim_additional(self):
+        """
+        dummy method
+        """
+        pass
+
+    def calc_crev_sim_additional(self):
+        """
+        dummy method
+        """
+        pass
+
+
+class FleetUnitEvaluator(EconomicEvaluator):
+
+    def calc_opex_sim_additional(self):
+
+        if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
+            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
+                                 self.opex['dist'][self.scenario.dti_sim])
+
+    def calc_crev_sim_additional(self):
+
+        if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
+            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
+                                 self.crev['dist'][self.scenario.dti_sim])
+
+        self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_sim, 'atbase'] @
+                             self.crev['time'][self.scenario.dti_sim]) *
+                             self.scenario.timestep_hours)
+
 
 class PeakEvaluator(EconomicEvaluator):
 
@@ -416,3 +431,7 @@ class PeakEvaluator(EconomicEvaluator):
                                   if self.scenario.compensate_sim_prj else 1)
 
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
+
+    def calc_opex_sim_additional(self):
+        self.opex['sim'] += self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] * \
+                            self.block.peakshaving_periods.loc[self.name, 'period_fraction']

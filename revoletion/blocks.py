@@ -70,7 +70,7 @@ class Block:
         self.flows_apriori = pd.DataFrame()  # partially recalculated for every horizon
         flow_names = ['total',
                       *[name for name in
-                        [poi.get(('flow', 'name')) for poi in pois.values()]
+                        [poi[1].get(('flow', 'name')) for poi in pois.values()]
                         if name is not None]]
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
                                   columns=flow_names,
@@ -91,14 +91,11 @@ class Block:
 
         self.aggregator = eco.EconomicAggregator(name=self.name,
                                                  block=self)
-        self.evaluators = {name: eco.EconomicEvaluator(name=name,
-                                                       block=self,
-                                                       params=params) for name, params in pois.items()}
-
+        self.evaluators = self.create_evaluator_objects(pois=pois)
         self.aggregator.pre_scenario()  # aggregate capex preexisting
 
         # Delete ccr and ls as they are now contained in evaluators
-        for attribute in set(value for poi in pois.values() for value in poi.values()):
+        for attribute in set(value for poi in pois.values() for value in poi[1].values()):
             if hasattr(self, attribute):
                 delattr(self, attribute)
         # endregion
@@ -109,7 +106,7 @@ class Block:
         Initialize the sizes DataFrame for the block
         """
 
-        sizes = [name for name in [poi.get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [name for name in [poi[1].get(('size', 'name')) for poi in pois.values()] if name is not None]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -138,6 +135,26 @@ class Block:
         if self.sizes['invest'].any() and self.scenario.strategy != 'go':
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
+
+    def create_evaluator_objects(self,
+                                 pois: dict):
+        """
+        Create EconomicEvaluator objects for each POI depending on the class name defined
+        """
+
+        evaluators = dict()
+        for name, poi_definition in pois.items():
+            class_name = poi_definition[0]
+            params = poi_definition[1]
+            class_obj = getattr(eco, class_name, None)
+            if class_obj is not None and isinstance(class_obj, type):
+                evaluators[name] = class_obj(name=name,
+                                             block=self,
+                                             params=params)
+            else:
+                raise ValueError(f'Class "{class_name}" not found in economics.py file - '
+                                 f'Check for typos or add class.')
+        return evaluators
 
     def pre_scenario(self):
         """
@@ -316,22 +333,24 @@ class SystemCore(Block):
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'acdc': {('capex', 'preexisting'): 'capex_preexisting_acdc',
-                                      ('capex', 'spec'): 'capex_spec',
-                                      ('mntex', 'spec'): 'mntex_spec',
-                                      ('opex', 'spec'): 'opex_spec',
-                                      ('size', 'name'): 'acdc',
-                                      ('flow', 'name'): 'acdc',
-                                      ('aux', 'ls'): 'ls',
-                                      ('aux', 'ccr'): 'ccr'},
-                             'dcac': {('capex', 'preexisting'): 'capex_preexisting_dcac',
-                                      ('capex', 'spec'): 'capex_spec',
-                                      ('mntex', 'spec'): 'mntex_spec',
-                                      ('opex', 'spec'): 'opex_spec',
-                                      ('size', 'name'): 'dcac',
-                                      ('flow', 'name'): 'dcac',
-                                      ('aux', 'ls'): 'ls',
-                                      ('aux', 'ccr'): 'ccr'},
+                             'acdc': ('EconomicEvaluator',
+                                      {('capex', 'preexisting'): 'capex_preexisting_acdc',
+                                       ('capex', 'spec'): 'capex_spec',
+                                       ('mntex', 'spec'): 'mntex_spec',
+                                       ('opex', 'spec'): 'opex_spec',
+                                       ('size', 'name'): 'acdc',
+                                       ('flow', 'name'): 'acdc',
+                                       ('aux', 'ls'): 'ls',
+                                       ('aux', 'ccr'): 'ccr'}),
+                             'dcac': ('EconomicEvaluator',
+                                      {('capex', 'preexisting'): 'capex_preexisting_dcac',
+                                       ('capex', 'spec'): 'capex_spec',
+                                       ('mntex', 'spec'): 'mntex_spec',
+                                       ('opex', 'spec'): 'opex_spec',
+                                       ('size', 'name'): 'dcac',
+                                       ('flow', 'name'): 'dcac',
+                                       ('aux', 'ls'): 'ls',
+                                       ('aux', 'ccr'): 'ccr'}),
                          },
                          state_names=None,
                          params=None,
@@ -449,16 +468,19 @@ class RenewableSource(Block):
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'block': {('capex', 'preexisting'): 'capex_preexisting',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('opex', 'spec'): 'opex_spec',
-                                       ('size', 'name'): 'block',
-                                       ('flow', 'name'): 'out',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'},
-                             'curt': {('flow', 'name'): 'curt'},
-                             'pot': {('flow', 'name'): 'pot'}
+                             'block': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('mntex', 'spec'): 'mntex_spec',
+                                        ('opex', 'spec'): 'opex_spec',
+                                        ('size', 'name'): 'block',
+                                        ('flow', 'name'): 'out',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                             'curt': ('EconomicEvaluator',
+                                      {('flow', 'name'): 'curt'}),
+                             'pot': ('EconomicEvaluator',
+                                     {('flow', 'name'): 'pot'})
                          },
                          state_names=None,
                          params=None,
@@ -1101,7 +1123,7 @@ class GridConnection(Block):
                                                        end=self.scenario.starttime + pd.DateOffset(years=1),
                                                        freq=self.scenario.timestep,
                                                        inclusive='left')
-                                         .to_series().apply(periods_func[str(peakshaving)])).unique().size
+                                         .to_series().apply(periods_func[str(self.peakshaving)])).unique().size
 
         self.evaluators.update({period: eco.PeakEvaluator(
             name=period,
@@ -1245,8 +1267,8 @@ class GridMarket(Block):
                          state_names=None,
                          pois={'g2s': ('EconomicEvaluator',
                                        {('opex', 'spec'): 'opex_spec_g2s',
-                                       ('size', 'name'): 'g2s',
-                                       ('flow', 'name'): 'out'}),
+                                        ('size', 'name'): 'g2s',
+                                        ('flow', 'name'): 'out'}),
                                's2g': ('EconomicEvaluator',
                                        {('opex', 'spec'): 'opex_spec_s2g',
                                         ('size', 'name'): 's2g',
@@ -1261,7 +1283,7 @@ class GridMarket(Block):
         Initialize the sizes DataFrame for GridMarkets -> has sizes, but is not investable
         """
 
-        sizes = [name for name in [poi.get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [name for name in [poi[1].get(('size', 'name')) for poi in pois.values()] if name is not None]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -1322,10 +1344,10 @@ class GridMarket(Block):
 
     def get_legend_entry(self):
         powers = {power: min(self.parent.sizes.loc[power, 'total'],
-                         (self.sizes.loc[power, 'total']
-                          if pd.notna(self.sizes.loc[power, 'total'])
-                          else self.parent.sizes.loc[power, 'total']))
-                for power in ['g2s', 's2g']}
+                             (self.sizes.loc[power, 'total']
+                              if pd.notna(self.sizes.loc[power, 'total'])
+                              else self.parent.sizes.loc[power, 'total']))
+                  for power in ['g2s', 's2g']}
 
         return f'{self.name} power (max. {powers["g2s"] / 1e3:.1f} kW from / {powers["s2g"] / 1e3:.1f} kW to grid)'
 
@@ -1413,17 +1435,21 @@ class StationaryBattery(Block, StorageBlock):
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'block': {('capex', 'preexisting'): 'capex_preexisting',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('opex', 'spec'): 'opex_spec',
-                                       ('size', 'name'): 'block',
-                                       ('flow', 'name'): 'in',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'},
-                             'out': {('flow', 'name'): 'out'},
-                             'bat_in': {('flow', 'name'): 'bat_in'},
-                             'bat_out': {('flow', 'name'): 'bat_out'},
+                             'block': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('mntex', 'spec'): 'mntex_spec',
+                                        ('opex', 'spec'): 'opex_spec',
+                                        ('size', 'name'): 'block',
+                                        ('flow', 'name'): 'in',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                             'out': ('EconomicEvaluator',
+                                     {('flow', 'name'): 'out'}),
+                             'bat_in': ('EconomicEvaluator',
+                                        {('flow', 'name'): 'bat_in'}),
+                             'bat_out': ('EconomicEvaluator',
+                                         {('flow', 'name'): 'bat_out'}),
                          },
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
                          params=None,
@@ -1542,7 +1568,7 @@ class Fleet(Block):
                                        {('opex', 'spec'): 'opex_spec_s2f',
                                         ('flow', 'name'): 'in',
                                         ('size', 'name'): 's2f',})
-                             },
+                               },
                          state_names=None,
                          params=None,
                          parent=scenario)
@@ -1690,31 +1716,40 @@ class ElectricFleetUnit(Block, StorageBlock):
         super().__init__(name=name,
                          scenario=scenario,
                          pois={
-                             'glider': {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'fix'): 'capex_fix_glider',
-                                        ('mntex', 'fix'): 'mntex_fix_glider',
-                                        ('opex', 'dist'): 'opex_spec_dist',
-                                        ('crev', 'time'): 'crev_spec_time',
-                                        ('crev', 'dist'): 'crev_spec_dist',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'},
-                             'charger': {('capex', 'preexisting'): 'capex_preexisting',
-                                         ('capex', 'fix'): 'capex_fix_charger',
+                             'glider': ('FleetUnitEvaluator',
+                                        {('capex', 'preexisting'): 'capex_preexisting',
+                                         ('capex', 'fix'): 'capex_fix_glider',
+                                         ('mntex', 'fix'): 'mntex_fix_glider',
+                                         ('opex', 'dist'): 'opex_spec_dist',
+                                         ('crev', 'time'): 'crev_spec_time',
+                                         ('crev', 'dist'): 'crev_spec_dist',
                                          ('aux', 'ls'): 'ls',
-                                         ('aux', 'ccr'): 'ccr'},
-                             'storage': {('capex', 'preexisting'): 'capex_preexisting',
-                                         ('capex', 'spec'): 'capex_spec',
-                                         ('size', 'name'): 'block',
-                                         ('aux', 'ls'): 'ls',
-                                         ('aux', 'ccr'): 'ccr'},
-                             'ext_ac': {('opex', 'spec'): 'opex_spec_ext_ac',
-                                        ('flow', 'name'): 'ext_ac'},
-                             'ext_dc': {('opex', 'spec'): 'opex_spec_ext_dc',
-                                        ('flow', 'name'): 'ext_dc'},
-                             'out': {('flow', 'name'): 'out'},
-                             'in': {('flow', 'name'): 'in'},
-                             'bat_in': {('flow', 'name'): 'bat_in'},
-                             'bat_out': {('flow', 'name'): 'bat_out'},
+                                         ('aux', 'ccr'): 'ccr'}),
+                             'charger': ('EconomicEvaluator',
+                                         {('capex', 'preexisting'): 'capex_preexisting',
+                                          ('capex', 'fix'): 'capex_fix_charger',
+                                          ('aux', 'ls'): 'ls',
+                                          ('aux', 'ccr'): 'ccr'}),
+                             'storage': ('EconomicEvaluator',
+                                         {('capex', 'preexisting'): 'capex_preexisting',
+                                          ('capex', 'spec'): 'capex_spec',
+                                          ('size', 'name'): 'block',
+                                          ('aux', 'ls'): 'ls',
+                                          ('aux', 'ccr'): 'ccr'}),
+                             'ext_ac': ('EconomicEvaluator',
+                                        {('opex', 'spec'): 'opex_spec_ext_ac',
+                                         ('flow', 'name'): 'ext_ac'}),
+                             'ext_dc': ('EconomicEvaluator',
+                                        {('opex', 'spec'): 'opex_spec_ext_dc',
+                                         ('flow', 'name'): 'ext_dc'}),
+                             'out': ('EconomicEvaluator',
+                                     {('flow', 'name'): 'out'}),
+                             'in': ('EconomicEvaluator',
+                                    {('flow', 'name'): 'in'}),
+                             'bat_in': ('EconomicEvaluator',
+                                        {('flow', 'name'): 'bat_in'}),
+                             'bat_out': ('EconomicEvaluator',
+                                         {('flow', 'name'): 'bat_out'}),
                          },
                          state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
                          params=params,
@@ -1890,14 +1925,14 @@ class CombustionVehicle(NonElectricBlock, Block):
                          pois={
                              'glider': ('FleetUnitEvaluator',
                                         {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'fix'): 'capex_fix_glider',
-                                        ('mntex', 'fix'): 'mntex_fix_glider',
-                                        ('opex', 'dist'): 'opex_spec_dist',
-                                        ('crev', 'time'): 'crev_spec_time',
-                                        ('crev', 'dist'): 'crev_spec_dist',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                            },
+                                         ('capex', 'fix'): 'capex_fix_glider',
+                                         ('mntex', 'fix'): 'mntex_fix_glider',
+                                         ('opex', 'dist'): 'opex_spec_dist',
+                                         ('crev', 'time'): 'crev_spec_time',
+                                         ('crev', 'dist'): 'crev_spec_dist',
+                                         ('aux', 'ls'): 'ls',
+                                         ('aux', 'ccr'): 'ccr'}),
+                         },
                          state_names=None,
                          params=params,
                          parent=parent)
