@@ -10,6 +10,7 @@ import logging.handlers
 import math
 import os
 import pathlib
+import numpy as np
 import plotly.subplots
 import pprint
 import psutil
@@ -360,6 +361,14 @@ class Scenario:
 
         # Energy System Blocks --------------------------------
         # initialize variable to store initial investment costs given in scenario definition
+        self.discount_factors = pd.DataFrame(index=range(self.prj_duration_yrs),
+                                             columns=['beginning', 'mid', 'end'],
+                                             data={occ: eco.discount(future_value=1,
+                                                                     periods=np.arange(1, self.prj_duration_yrs + 1),
+                                                                     discount_rate=self.wacc,
+                                                                     occurs_at=occ)
+                                                   for occ in ['beginning', 'mid', 'end']},
+                                             dtype='float64')
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
         # add SystemCore to blocks ensuring SystemCore is the first component to be built

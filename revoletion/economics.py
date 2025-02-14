@@ -8,160 +8,81 @@ from revoletion import utils
 
 def discount(future_value: float,
              periods: int,
-             discount_rate: float) -> float:
+             discount_rate: float,
+             occurs_at: str) -> float:
     """
     This function calculates the present value of a future value in some periods at a discount rate per period
     """
     q = 1 + discount_rate
-    present_value = future_value / (q ** periods)
+    exp = {'beginning': 1,
+           'start': 1,
+           'bop': 1,
+           'middle': 0.5,
+           'mid': 0.5,
+           'mop': 0.5,
+           'end': 0,
+           'eop': 0}.get(occurs_at, 0)
+    present_value = future_value / (q ** (periods - exp))
     return present_value
 
 
 def acc_discount(nominal_value: float | pd.Series,
-                 observation_horizon: int,
+                 observation_horizon: int | pd.Series,
                  discount_rate: float,
-                 occurs_at='beginning') -> float:
+                 occurs_at: str) -> float:
     """
     This function calculates the accumulated present value of a periodical, nominally repeating cashflow in the future
     (from present to the observation horizon) at a discount rate per period
     """
-    p_delta = {'beginning': 0, 'middle': 0.5, 'end': 1}[occurs_at]
-
-    if isinstance(nominal_value, pd.Series):
-        return nominal_value.apply(lambda x: acc_discount(x, observation_horizon, discount_rate, occurs_at))
-
-    present_value = sum([discount(nominal_value, period + p_delta, discount_rate)
-                         for period in range(observation_horizon)])
-    return present_value
-
-
-def join_capex_mntex(capex: float,
-                     mntex: float,
-                     lifespan: int,
-                     discount_rate: float) -> float:
-    """
-    This function adjusts a component's capex to include accumulated present maintenance cost for time based maintenance
-    """
-    capex_adjusted = capex + acc_discount(nominal_value=mntex,
-                                          observation_horizon=lifespan,
-                                          discount_rate=discount_rate,
-                                          occurs_at='beginning')
-    return capex_adjusted
+    q = 1 + discount_rate
+    exp = {'beginning': 1,
+           'start': 1,
+           'bop': 1,
+           'middle': 0.5,
+           'mid': 0.5,
+           'mop': 0.5,
+           'end': 0,
+           'eop': 0}.get(occurs_at, 0)
+    discount_factor = (q ** exp) * (1 - (q ** -observation_horizon)) / discount_rate
+    return nominal_value * discount_factor
 
 
 def annuity(present_value: float,
             observation_horizon: int,
             discount_rate: float,
-            occurs_at='beginning') -> float:
+            occurs_at: str) -> float:
     """
     This function calculates the annuity (the equivalent periodical, nominally recurring value to generate the same
     NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
     the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
     """
     q = 1 + discount_rate
-    due_factor = {'beginning': q, 'end': 1}[occurs_at]
+    exp = {'beginning': 1,
+           'start': 1,
+           'bop': 1,
+           'middle': 0.5,
+           'mid': 0.5,
+           'mop': 0.5,
+           'end': 0,
+           'eop': 0}.get(occurs_at, 0)
     try:
-        annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * due_factor)
-    except ZeroDivisionError:
+        annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * (q ** exp))
+    except ZeroDivisionError:  # observation_horizon = 0
         annuity = present_value / observation_horizon
     return annuity
 
 
 def reinvest_periods(lifespan: int,
-                     observation_horizon: int) -> list:
+                     observation_horizon: int,
+                     include_init: bool = False) -> list:
     """
     This function returns a list of period numbers to reinvest into a component (i.e. replace it),
     given its lifespan and the observation horizon. Initial investment is removed.
     """
     reinvest_periods = [period for period in range(observation_horizon) if period % lifespan == 0]
-    reinvest_periods.remove(0)
+    if not include_init:
+        reinvest_periods.remove(0)
     return reinvest_periods
-
-
-def capex_sum(capex_init: float,
-              capex_replacement: float,
-              cost_change_ratio: float,
-              lifespan: int,
-              observation_horizon: int) -> float:
-    """
-    This function calculates the total (non-discounted) capital expenses for a component that has to be replaced
-    after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
-    """
-    capex_total = capex_init + sum([capex_replacement * (cost_change_ratio ** period)
-                                    for period in reinvest_periods(lifespan, observation_horizon)])
-    return capex_total
-
-
-def capex_present(capex_init: float,
-                  capex_replacement: float,
-                  cost_change_ratio: float,
-                  discount_rate: float,
-                  lifespan: int,
-                  observation_horizon: int) -> float:
-    """
-    This function calculates the present (discounted) capital expenses for a component that has to be replaced
-    after its lifespan during the observation horizon and changes in price at a cost change ratio every period.
-    """
-    capex_present = capex_init + sum([discount(capex_replacement * (cost_change_ratio ** period), period, discount_rate)
-                                      for period in reinvest_periods(lifespan, observation_horizon)])
-    return capex_present
-
-
-def annuity_due_capex(capex_init: float,
-                      capex_replacement: float,
-                      lifespan: int,
-                      observation_horizon: int,
-                      discount_rate: float,
-                      cost_change_ratio: float) -> float:
-    """
-    This function calculates the annuity due of a recurring (every ls years) and price changing (annual ratio ccr)
-    investment (the equivalent yearly sum to generate the same NPV) over a horizon of hor years
-    """
-    present_value = capex_present(capex_init=capex_init,
-                                  capex_replacement=capex_replacement,
-                                  cost_change_ratio=cost_change_ratio,
-                                  discount_rate=discount_rate,
-                                  lifespan=lifespan,
-                                  observation_horizon=observation_horizon)
-    annuity_due = annuity(present_value=present_value,
-                          observation_horizon=observation_horizon,
-                          discount_rate=discount_rate,
-                          occurs_at='beginning')
-    return annuity_due
-
-
-def annuity_due_recur(nominal_value: float,
-                      observation_horizon: float,
-                      discount_rate: float):
-    """
-    Calculate the annuity due of a yearly recurring (lifespan=1) and nonchanging (cost_change_ratio=1)
-    maintenance expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
-    """
-    annuity_due_recur = annuity_due_capex(capex_init=nominal_value,
-                                          capex_replacement=nominal_value,
-                                          lifespan=1,
-                                          observation_horizon=observation_horizon,
-                                          discount_rate=discount_rate,
-                                          cost_change_ratio=1)
-    return annuity_due_recur
-
-
-def annuity_recur(nominal_value: float,
-                  observation_horizon: float,
-                  discount_rate: float):
-    """
-    Calculate the annuity of a periodically recurring  and nonchanging (cost_change_ratio=1)
-    expense (the equivalent yearly sum to generate the same NPV) over an observation horizon.
-    """
-    present_value = acc_discount(nominal_value=nominal_value,
-                                 observation_horizon=observation_horizon,
-                                 discount_rate=discount_rate,
-                                 occurs_at='end')
-    annuity_recur = annuity(present_value=present_value,
-                            observation_horizon=observation_horizon,
-                            discount_rate=discount_rate,
-                            occurs_at='end')
-    return annuity_recur
 
 
 def calc_wacc(
@@ -191,35 +112,47 @@ class EconomicPointOfInterest:
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block'):
+                 block: 'blocks.Block',
+                 scenario: 'simulation.Scenario' = None):
 
         self.name = name
         self.block = block
 
-        self.capex = {'fix': 0,
-                      'preexisting': 0,
-                      'expansion': 0,
-                      'init': 0,
-                      'replacement': 0,
-                      'prj': 0,
-                      'dis': 0,
-                      'ann': 0}
-        self.mntex = {'fix': 0,
-                      'yrl': 0,
-                      'sim': 0,
-                      'prj': 0,
-                      'dis': 0,
-                      'ann': 0}
-        self.opex = {'sim': 0,
-                     'yrl': 0,
-                     'prj': 0,
-                     'dis': 0,
-                     'ann': 0}
-        self.crev = {'sim': 0,
-                     'yrl': 0,
-                     'prj': 0,
-                     'dis': 0,
-                     'ann': 0}
+        if self.block is None and scenario is None:
+            raise ValueError('At least one of the parameters "block" or "scenario" has to be provided to initialize'
+                             'an EconomicPointOfInterest instance')
+
+        self.scenario = self.block.scenario if scenario is None else scenario
+        self.discount_factors = self.scenario.discount_factors
+        self.cashflows = pd.DataFrame(index=self.discount_factors.index,
+                                      columns=['capex', 'mntex', 'opex', 'crev'],
+                                      data=0.0,
+                                      dtype='float64')
+
+        self.capex = {'fix': 0.0,
+                      'preexisting': 0.0,
+                      'expansion': 0.0,
+                      'init': 0.0,
+                      'replacement': 0.0,
+                      'prj': 0.0,
+                      'dis': 0.0,
+                      'ann': 0.0}
+        self.mntex = {'fix': 0.0,
+                      'yrl': 0.0,
+                      'sim': 0.0,
+                      'prj': 0.0,
+                      'dis': 0.0,
+                      'ann': 0.0}
+        self.opex = {'sim': 0.0,
+                     'yrl': 0.0,
+                     'prj': 0.0,
+                     'dis': 0.0,
+                     'ann': 0.0}
+        self.crev = {'sim': 0.0,
+                     'yrl': 0.0,
+                     'prj': 0.0,
+                     'dis': 0.0,
+                     'ann': 0.0}
 
     def aggregate_pre_scenario(self,
                                target: 'EconomicAggregator'):
@@ -249,16 +182,11 @@ class EconomicAggregator(EconomicPointOfInterest):
     def __init__(self,
                  name: str,
                  block: 'blocks.Block',
-                 scenario: 'simulation.Scenario'=None):
+                 scenario: 'simulation.Scenario' = None):
 
         super().__init__(name=name,
-                         block=block)
-
-        # set scenario to write values to scenario summary
-        if self.block is None and scenario is None:
-            raise ValueError('At least one of the arguments "block" or "scenario" has to be provided to initialize'
-                             'an object of type "EconomicAggregator".')
-        self.scenario = self.block.scenario if scenario is None else scenario
+                         block=block,
+                         scenario=scenario)
 
         self.totex = {'prj': 0,
                       'dis': 0,
@@ -308,18 +236,18 @@ class EconomicEvaluator(EconomicPointOfInterest):
         self.capex.update({'spec': 0})
         self.mntex.update({'spec': 0})
         self.opex.update({'spec': utils.transform_scalar_var(value=0,
-                                                             scenario=self.block.scenario,
+                                                             scenario=self.scenario,
                                                              block=block),
                           'dist': utils.transform_scalar_var(value=0,
-                                                             scenario=self.block.scenario,
+                                                             scenario=self.scenario,
                                                              block=self.block)})
         self.crev.update({'spec': utils.transform_scalar_var(value=0,
-                                                             scenario=self.block.scenario,
+                                                             scenario=self.scenario,
                                                              block=block),
                           'dist': utils.transform_scalar_var(value=0,
-                                                             scenario=self.block.scenario,
+                                                             scenario=self.scenario,
                                                              block=self.block)})
-        self.aux = {'ls': self.block.scenario.prj_duration_yrs,
+        self.aux = {'ls': self.scenario.prj_duration_yrs,
                     'ccr': 1}
         self.size_name = None
         self.flow_name = None
@@ -334,7 +262,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
                 getattr(self, dict_name)[dict_key] = utils.transform_scalar_var(value=getattr(self.block, param_name, 0),
-                                                                                scenario=self.block.scenario,
+                                                                                scenario=self.scenario,
                                                                                 block=self.block)
             else:  # capex, mntex, aux
                 getattr(self, dict_name)[dict_key] = getattr(self.block, param_name)
@@ -347,29 +275,31 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
         # region calculate equivalent present specific capex and opex for optimizer
         # include (time-based) maintenance expenses in capex calculation as equivalent present cost
-        self.capex['spec_joined'] = join_capex_mntex(capex=self.capex['spec'],
-                                                     mntex=self.mntex['spec'],
-                                                     lifespan=self.aux['ls'],
-                                                     discount_rate=self.block.scenario.wacc)
+        self.capex['spec_joined'] = self.capex['spec'] + acc_discount(nominal_value=self.mntex['spec'],
+                                                                      observation_horizon=self.aux['ls'],
+                                                                      discount_rate=self.scenario.wacc,
+                                                                      occurs_at='beginning')
 
         # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
         # component sizing; ep = equivalent present (i.e. specific values prediscounted)
-        self.capex['factor_ep'] = annuity_due_capex(capex_init=1,
-                                                    capex_replacement=1,
-                                                    lifespan=self.aux['ls'],
-                                                    observation_horizon=self.block.scenario.prj_duration_yrs,
-                                                    discount_rate=self.block.scenario.wacc,
-                                                    cost_change_ratio=self.aux['ccr']) \
-            if self.block.scenario.compensate_sim_prj else 1
+        capex_factor_present = pd.Series(index=self.discount_factors.index, data=0)
+        capex_factor_present.loc[reinvest_periods(lifespan=self.aux['ls'],
+                                                 observation_horizon=self.scenario.prj_duration_yrs,
+                                                 include_init=True)] = 1
+        capex_factor_present = capex_factor_present @ self.discount_factors['beginning']
+
+        self.capex['factor_ep'] = annuity(present_value=capex_factor_present,
+                                          observation_horizon=self.scenario.prj_duration_yrs,
+                                          discount_rate=self.scenario.wacc,
+                                          occurs_at='beginning')\
+            if self.scenario.compensate_sim_prj else 1
 
         self.capex['spec_ep'] = self.capex['spec_joined'] * self.capex['factor_ep']
 
         # runtime factor to compensate for difference between simulation and project timeframe
-        # opex is uprated in importance for short simulations
-        self.opex['factor_ep'] = annuity_recur(nominal_value=utils.scale_sim2year(1, self.block.scenario),
-                                               observation_horizon=self.block.scenario.prj_duration_yrs,
-                                               discount_rate=self.block.scenario.wacc) \
-            if self.block.scenario.compensate_sim_prj else 1
+        # annuity is equal to the already yearly recurring expense
+        self.opex['factor_ep'] = utils.scale_sim2year(1, self.scenario)\
+            if self.scenario.compensate_sim_prj else 1
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
         # endregion
 
@@ -382,72 +312,62 @@ class EconomicEvaluator(EconomicPointOfInterest):
     def post_scenario(self):
 
         # region capex
-
-        # ToDo: firstly calculate cashflow dataframes (capex, mntex, opex, crev and then calculate the economic values
-        #  and calculate prj, dis and ann values based on cashflows df
-
         self.capex['expansion'] = self.capex['spec'] * self.get_size(self.size_name, 'expansion')
         self.capex['init'] = self.capex['preexisting'] + self.capex['expansion']
+        self.cashflows.loc[0, 'capex'] -= self.capex['init']
+
         self.capex['replacement'] = (self.capex['spec'] * self.get_size(self.size_name, 'total') +
                                      self.capex['fix'])
-        self.capex['prj'] = capex_sum(capex_init=self.capex['init'],
-                                      capex_replacement=self.capex['replacement'],
-                                      cost_change_ratio=self.aux['ccr'],
-                                      lifespan=self.aux['ls'],
-                                      observation_horizon=self.block.scenario.prj_duration_yrs)
-        self.capex['dis'] = capex_present(capex_init=self.capex['init'],
-                                          capex_replacement=self.capex['replacement'],
-                                          cost_change_ratio=self.aux['ccr'],
-                                          discount_rate=self.block.scenario.wacc,
-                                          lifespan=self.aux['ls'],
-                                          observation_horizon=self.block.scenario.prj_duration_yrs)
-        self.capex['ann'] = annuity_due_capex(capex_init=self.capex['init'],
-                                              capex_replacement=self.capex['replacement'],
-                                              lifespan=self.aux['ls'],
-                                              observation_horizon=self.block.scenario.prj_duration_yrs,
-                                              discount_rate=self.block.scenario.wacc,
-                                              cost_change_ratio=self.aux['ccr'])
+        for period in reinvest_periods(self.aux['ls'], self.scenario.prj_duration_yrs):
+            self.cashflows.loc[period, 'capex'] -= self.capex['replacement'] * (self.aux['ccr'] ** period)
+
+        self.capex['prj'] = -1 * self.cashflows['capex'].sum()
+        self.capex['dis'] = -1 * self.cashflows['capex'] @ self.discount_factors['beginning']
+        self.capex['ann'] = annuity(present_value=self.capex['dis'],
+                                    observation_horizon=self.scenario.prj_duration_yrs,
+                                    discount_rate=self.scenario.wacc,
+                                    occurs_at='beginning')
         # endregion
 
         # region mntex
         self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec']
-        self.mntex['sim'] = self.mntex['yrl'] * self.block.scenario.sim_yr_rat
-        self.mntex['prj'] = utils.scale_year2prj(self.mntex['yrl'], self.block.scenario)
-        self.mntex['dis'] = acc_discount(nominal_value=self.mntex['yrl'],
-                                         observation_horizon=self.block.scenario.prj_duration_yrs,
-                                         discount_rate=self.block.scenario.wacc,
-                                         occurs_at='beginning')
-        self.mntex['ann'] = annuity_due_recur(nominal_value=self.mntex['yrl'],
-                                              observation_horizon=self.block.scenario.prj_duration_yrs,
-                                              discount_rate=self.block.scenario.wacc)
+        self.cashflows.loc[:, 'mntex'] = -1 * self.mntex['yrl']
+        self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
+
+        self.mntex['prj'] = -1 * self.cashflows['mntex'].sum()
+        self.mntex['dis'] = -1 * self.cashflows['mntex'] @ self.discount_factors['beginning']
+        self.mntex['ann'] = annuity(present_value=self.mntex['dis'],
+                                    observation_horizon=self.scenario.prj_duration_yrs,
+                                    discount_rate=self.scenario.wacc,
+                                    occurs_at='beginning')
         # endregion
 
         # region opex
-        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.block.scenario.dti_sim] *
-                            self.block.scenario.timestep_hours) if self.flow_name is not None else 0
-        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.block.scenario)
-        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.block.scenario)
-        self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
-                                        observation_horizon=self.block.scenario.prj_duration_yrs,
-                                        discount_rate=self.block.scenario.wacc,
-                                        occurs_at='end')
-        self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
-                                         observation_horizon=self.block.scenario.prj_duration_yrs,
-                                         discount_rate=self.block.scenario.wacc)
+        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
+                            self.scenario.timestep_hours) if self.flow_name is not None else 0
+        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
+        self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
+
+        self.opex['prj'] = -1 * self.cashflows['mntex'].sum()
+        self.opex['dis'] = -1 * self.cashflows['opex'] @ self.discount_factors['end']
+        self.opex['ann'] = annuity(present_value=self.opex['dis'],
+                                   observation_horizon=self.scenario.prj_duration_yrs,
+                                   discount_rate=self.scenario.wacc,
+                                   occurs_at='end')
         # endregion
 
         # region crev
-        self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.block.scenario.dti_sim] *
-                            self.block.scenario.timestep_hours) if self.flow_name is not None else 0
-        self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.block.scenario)
-        self.crev['prj'] = utils.scale_year2prj(self.crev['yrl'], self.block.scenario)
-        self.crev['dis'] = acc_discount(nominal_value=self.crev['yrl'],
-                                        observation_horizon=self.block.scenario.prj_duration_yrs,
-                                        discount_rate=self.block.scenario.wacc,
-                                        occurs_at='end')
-        self.crev['ann'] = annuity_recur(nominal_value=self.crev['yrl'],
-                                         observation_horizon=self.block.scenario.prj_duration_yrs,
-                                         discount_rate=self.block.scenario.wacc)
+        self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.scenario.dti_sim] *
+                            self.scenario.timestep_hours) if self.flow_name is not None else 0
+        self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.scenario)
+        self.cashflows.loc[:, 'crev'] = self.crev['yrl']
+
+        self.crev['prj'] = self.cashflows['crev'].sum()
+        self.crev['dis'] = self.cashflows['crev'] @ self.discount_factors['end']
+        self.crev['ann'] = annuity(present_value=self.crev['dis'],
+                                   observation_horizon=self.scenario.prj_duration_yrs,
+                                   discount_rate=self.scenario.wacc,
+                                   occurs_at='end')
         # endregion
 
         super().aggregate_post_scenario(target=self.block.aggregator)
@@ -485,7 +405,7 @@ class PeakEvaluator(EconomicEvaluator):
         self.opex['spec'] = self.opex['spec'][self.block.peakshaving_periods.loc[self.name, 'start']]
 
         self.opex['factor_ep'] = (self.block.n_peakshaving_periods_yr / self.block.peakshaving_periods.shape[0]
-                                  if self.block.scenario.compensate_sim_prj else 1)
+                                  if self.scenario.compensate_sim_prj else 1)
 
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
 
@@ -493,15 +413,15 @@ class PeakEvaluator(EconomicEvaluator):
 
         self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\
                            self.block.peakshaving_periods.loc[self.name, 'period_fraction']
-        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.block.scenario)
-        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.block.scenario)
+        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
+        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.scenario)
         self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
-                                        observation_horizon=self.block.scenario.prj_duration_yrs,
-                                        discount_rate=self.block.scenario.wacc,
+                                        observation_horizon=self.scenario.prj_duration_yrs,
+                                        discount_rate=self.scenario.wacc,
                                         occurs_at='end')
         self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
-                                         observation_horizon=self.block.scenario.prj_duration_yrs,
-                                         discount_rate=self.block.scenario.wacc)
+                                         observation_horizon=self.scenario.prj_duration_yrs,
+                                         discount_rate=self.scenario.wacc)
 
         self.aggregate_post_scenario(target=self.block.aggregator)
 
