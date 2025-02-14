@@ -45,12 +45,10 @@ class MultiStore(simpy.resources.base.BaseResource):
 
 #         if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
 #             # estimate maximum power drawn by self discharge
-#             self.pwr_loss_max = 1 - (1 - self.loss_rate) ** self.scenario.timestep_hours * self.sizes.loc['block', 'total']
-#             # downrate assumed power for a priori dispatch simulation
-#             self.pwr_chg_des = (self.pwr_chg_max * self.eff_chg_int - self.pwr_loss_max) * self.factor_pwr_des
 
 
-class Dispatcher:
+
+class SubFleetDispatcher:
 
     def __init__(self,
                  subfleet: blocks.SubFleet,
@@ -58,47 +56,39 @@ class Dispatcher:
                  scenario: 'simulation.Scenario'):
 
         self.subfleet = subfleet
+        self.demand = demand
         self.scenario = scenario
         self.name = self.subfleet.name
 
+        factor_derate = 0.9  # conservativeness factor on assumed charge power vs actually available power
 
+        self.units = self.subfleet.subblocks
+        unit_repr = self.units[self.units.keys()[0]]  # a priori, all units are representative
 
-        # todo let fleetunits enter themselves into dict
+        soc_minmax = min([unit.soc_max for unit in self.units.values()])
+        soc_maxmin = max([unit.soc_min for unit in self.units.values()])
 
-        self.soc_max_init = min([unit.soc_max
-                                 for unit in self.subfleet.subblocks.values()])
-        self.soc_min_init = max([unit.soc_min
-                                 for unit in self.subfleet.subblocks.values()])
+        soc_upper = statistics.median([soc_minmax, self.subfleet.soc_target, soc_maxmin])
+        soc_lower = statistics.median([soc_minmax, self.subfleet.soc_return, soc_maxmin])
 
-        # calculate usable energy to expect
+        self.dsoc_usable = soc_upper - soc_lower
 
-        self.dsoc_usable_high = (statistics.median([self.soc_min_init,
-                                                    self.subfleet.soc_target_high,
-                                                    self.soc_max_init]) -
-                                 statistics.median([self.soc_min_init,
-                                                    self.subfleet.soc_return,
-                                                    self.soc_max_init]))
-        self.dsoc_usable_low = (statistics.median([self.soc_min_init,
-                                                   self.subfleet.soc_target_low,
-                                                   self.soc_max_init]) -
-                                statistics.median([self.soc_min_init,
-                                                   self.subfleet.soc_return,
-                                                   self.soc_max_init]))
+        if self.dsoc_usable <= 0:
+            raise ValueError(f'Usable dSOC for {self.subfleet.name} is zero or negative. Check SOC targets and aging.')
 
-        if (self.dsoc_usable_high <= 0) or (self.dsoc_usable_low <= 0):
-            raise ValueError(f'Usable dSOC for {self.subfleet.name} '
-                             f'is zero or negative. Check SOC targets and aging.')
+        self.energy_usable = (self.dsoc_usable *
+                              self.subfleet.sizes.loc['pc', 'existing'] *
+                              np.sqrt(self.subfleet.eff_storage_roundtrip))
 
-        self.energy_usable_pc_high = (self.dsoc_usable_high *
-                                      self.subfleet.size.loc['pc', 'existing'] *
-                                      np.sqrt(self.subfleet.eff_storage_roundtrip))
-        self.energy_usable_pc_low = (self.dsoc_usable_low *
-                                     self.subfleet.size.loc['pc', 'existing'] *
-                                     np.sqrt(self.subfleet.eff_storage_roundtrip))
+        pwr_loss_max = (1 - (1 - unit_repr.loss_rate) ** self.scenario.timestep_hours * unit_repr.sizes.loc['block', 'total'])
+        self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff_chg_int - pwr_loss_max) * factor_derate
 
-        self.n_processes = self.processes = self.demand_daily = self.store = None
-        self.use_rate = self.fail_rate = None
-        self.process_objs = []
+        self.store = MultiStore(env=self.scenario.env_dispatch,
+                                capacity=self.subfleet.num)
+        for unit in self.units.values():
+            self.store.put([unit.name])
+
+        self.processes = self.demand.demand.copy()
 
     def add_dispatch_columns(self):
         """
@@ -108,10 +98,6 @@ class Dispatcher:
         if (hasattr(self.subfleet, 'rex_fleet')) and (self.subfleet.rex_fleet):
             self.processes['commodities_secondary'] = None
 
-    def create_store(self):
-        self.store = MultiStore(self.scenario.env_des, capacity=self.subfleet.num)
-        for unit in self.subfleet.subblocks.values():
-            self.store.put([unit.name])
 
     def calc_performance_metrics(self):
 
@@ -221,7 +207,7 @@ class Dispatcher:
         self.data.to_csv(log_path)
 
 
-class VehicleDispatcher(Dispatcher):
+class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
                  subfleet: 'blocks.VehicleFleet',
@@ -375,7 +361,7 @@ class VehicleDispatcher(Dispatcher):
             ignore_index=True)
 
 
-class BatteryDispatcher(Dispatcher):
+class BatteryDispatcher(SubFleetDispatcher):
 
     def __init__(self, fleet, scenario):
 
@@ -574,10 +560,7 @@ def steps2dt(series, sc, absolute=False):
     return out
 
 
-def execute_des(scenario, run):
-
-    # define a DES environment
-    scenario.env_des = simpy.Environment()
+def dispatch_subfleets(scenario, run):
 
     # extend datetimeindex to simulate in DES to cover any shifts & predictions necessary
     time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq

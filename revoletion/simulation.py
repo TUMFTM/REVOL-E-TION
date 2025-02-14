@@ -17,10 +17,13 @@ import psutil
 import pytz
 import re
 import shutil
+import simpy
 import subprocess
 import sys
 import threading
 import time
+
+import simpy
 import timezonefinder
 import traceback
 import warnings
@@ -528,21 +531,20 @@ class Scenario:
         # add SystemCore to blocks ensuring SystemCore is the first component to be built
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
 
-        # create all block objects defined in the scenario DataFrame under "scenario/blocks" as a dict
         self.storage_blocks = dict()
         self.fleets = dict()
         self.renewable_sources = dict()
         self.subfleets_dispatch = dict()
+
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
             raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
-        # Execute commodity system discrete event simulation
-        # can only be started after all blocks have been initialized, as the different systems depend on each other.
-        # if any([fleet.data_source in ['demand', 'usecases'] for fleet in self.fleets.values()]):
-        #     dispatch.execute_des(self, self.run)  # todo implement des across fleets
+        if len(self.subfleets_dispatch) > 0:
+            self.environment_des = simpy.Environment()
+            dispatch.dispatch_subfleets(self)
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
