@@ -11,7 +11,7 @@ def discount(future_value: float,
              discount_rate: float,
              occurs_at: str) -> float:
     """
-    This function calculates the present value of a future value in some periods at a discount rate per period
+    calculate the present value of a future value in some periods at a discount rate per period
     """
     q = 1 + discount_rate
     exp = {'beginning': 1,
@@ -31,7 +31,7 @@ def acc_discount(nominal_value: float | pd.Series,
                  discount_rate: float,
                  occurs_at: str) -> float:
     """
-    This function calculates the accumulated present value of a periodical, nominally repeating cashflow in the future
+    calculate the accumulated present value of a periodical, nominally repeating cashflow in the future
     (from present to the observation horizon) at a discount rate per period
     """
     q = 1 + discount_rate
@@ -52,7 +52,7 @@ def annuity(present_value: float,
             discount_rate: float,
             occurs_at: str) -> float:
     """
-    This function calculates the annuity (the equivalent periodical, nominally recurring value to generate the same
+    calculate the annuity (the equivalent periodical, nominally recurring value to generate the same
     NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
     the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
     """
@@ -76,8 +76,8 @@ def reinvest_periods(lifespan: int,
                      observation_horizon: int,
                      include_init: bool = False) -> list:
     """
-    This function returns a list of period numbers to reinvest into a component (i.e. replace it),
-    given its lifespan and the observation horizon. Initial investment is removed.
+    return a list of period numbers to reinvest into a component (i.e. replace it),
+    given its lifespan and the observation horizon. Initial investment is removed by default.
     """
     reinvest_periods = [period for period in range(observation_horizon) if period % lifespan == 0]
     if not include_init:
