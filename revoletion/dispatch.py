@@ -10,6 +10,97 @@ import simpy
 from revoletion import blocks
 
 
+def dt2steps(series, sc):
+    out = None  # default value
+    ref_time = sc.starttime - pd.Timedelta(days=1)
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        # ensure that the result is at least 1, as 0 would leave no time for any action in real life
+        out = np.maximum(1, np.ceil((series - ref_time) / sc.timestep_td).astype(int))
+
+    elif pd.api.types.is_timedelta64_dtype(series):
+        out = np.maximum(1, np.ceil(series / sc.timestep_td).astype(int))
+
+    return out
+
+
+def steps2dt(series, sc, absolute=False):
+    ref_time = sc.starttime - pd.Timedelta(days=1)
+    out = pd.to_timedelta(series * sc.timestep_hours, unit='hour')
+    if absolute:
+        out += ref_time
+    return out
+
+
+class SiteDispatcher:
+
+    def __init__(self,
+                 scenario: 'simulation.Scenario'):
+
+        self.scenario = scenario
+
+        self.subfleets = self.scenario.subfleets_dispatch
+        if not self.subfleets:
+            return
+
+        # region extend datetimeindex
+        time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
+        time_end_overhang = time_start_overhang + pd.Timedelta(days=28)
+        self.dti = scenario.dti_sim_extd.union(pd.date_range(start=time_start_overhang,
+                                                             end=time_end_overhang,
+                                                             freq=scenario.dti_sim_extd.freq))
+        # endregion
+
+        self.environment = simpy.Environment()
+
+        # region create subfleet dispatchers
+        self.dispatchers = dict()
+        for subfleet_name, subfleet in self.subfleets.items():
+            # BatteryDispatchers need to be initialized first to allow for range extension of VehicleDispatchers
+            if subfleet.type_unit in ['mb']:
+                self.dispatchers[subfleet_name] = BatteryDispatcher(subfleet=subfleet,
+                                                                    scenario=self.scenario)
+        for subfleet_name, subfleet in self.subfleets.items():
+            if subfleet.type_unit in ['ev', 'icev']:
+                self.dispatchers[subfleet_name] = VehicleDispatcher(subfleet=subfleet,
+                                                                    scenario=self.scenario)
+        # endregion
+
+        self.environment.run()
+
+        for dispatcher in self.dispatchers.values():
+            dispatcher.postprocess()
+
+        # todo move to subfleet dispatchers
+        # reconvert time steps to actual times
+        for rental_system in scenario.rental_systems.values():
+            rental_system.processes['time_dep'] = steps2dt(rental_system.processes['step_dep'],
+                                                           scenario,
+                                                           absolute=True)
+            rental_system.processes['time_return'] = steps2dt(rental_system.processes['step_return'],
+                                                              scenario,
+                                                              absolute=True)
+            rental_system.processes['time_reavail_primary'] = steps2dt(rental_system.processes['step_reavail_primary'],
+                                                                       scenario,
+                                                                       absolute=True)
+            if 'step_reavail_secondary' in rental_system.processes.columns:
+                rental_system.processes['time_reavail_secondary'] = steps2dt(rental_system.processes[
+                                                                                 'step_reavail_secondary'],
+                                                                             scenario,
+                                                                             absolute=True)
+
+        # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
+        for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.fleet.rex_fleet is not None)]:
+            rental_system.transfer_rex_processes()
+
+        # reframe logging results to resource-based view instead of process based (and save)
+        for rental_system in scenario.rental_systems.values():
+            rental_system.convert_process_log()
+            rental_system.calc_performance_metrics()
+            if run.save_results_dispatch:
+                rental_system.save_data()
+
+
 class MultiStoreGet(simpy.resources.base.Get):
     def __init__(self, store, num=1):
         self.amount = num
@@ -41,24 +132,19 @@ class MultiStore(simpy.resources.base.BaseResource):
             self.items = self.items[:(len(self.items) - event.amount - 0)]
             event.succeed(elements)
 
-# todo move to dispatch
-
-#         if self.parent.data_source in ['usecases', 'demand']:  # dispatch will run
-#             # estimate maximum power drawn by self discharge
-
-
 
 class SubFleetDispatcher:
 
     def __init__(self,
                  subfleet: blocks.SubFleet,
-                 demand: 'mobility.SubFleetDemand',
                  scenario: 'simulation.Scenario'):
 
         self.subfleet = subfleet
-        self.demand = demand
         self.scenario = scenario
         self.name = self.subfleet.name
+        self.demand = self.subfleet.demand
+
+        self.subfleet.dispatcher = self
 
         factor_derate = 0.9  # conservativeness factor on assumed charge power vs actually available power
 
@@ -89,6 +175,9 @@ class SubFleetDispatcher:
             self.store.put([unit.name])
 
         self.processes = self.demand.demand.copy()
+        for idx, row in self.processes.iterrows():
+            self.processes.loc[idx, 'process_obj'] = Process(data=row,
+                                                             dispatcher=self)
 
     def add_dispatch_columns(self):
         """
@@ -211,35 +300,16 @@ class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
                  subfleet: 'blocks.VehicleFleet',
-                 demand: 'mobility.SubFleetDemand',
-                 scenario: 'simulation.Scenario',
-                 rex_fleet: 'blocks.BatteryFleet' = None):
-
-        if self.rex_fleet is not None:
-            self.rex_fleet = scenario.blocks.get(rex_fleet, None) # get actual object by name
-            self.check_rex_fleet()
+                 scenario: 'simulation.Scenario'):
 
         super().__init__(subfleet=subfleet,
-                         demand=demand,
                          scenario=scenario)
 
-        self.dsoc_usable_rex_high = (self.subfleet.rex_fleet.soc_target_high -
-                                     self.subfleet.rex_fleet.soc_return)\
-            if self.subfleet.rex_fleet else 0
-        self.dsoc_usable_rex_low = (self.subfleet.rex_fleet.soc_target_low -
-                                    self.subfleet.rex_fleet.soc_return)\
-            if self.subfleet.rex_fleet else 0
-
-        if self.subfleet.rex_fleet:  # system can extend range
-            self.energy_usable_rex_pc_high = (self.dsoc_usable_rex_high *
-                                              self.subfleet.rex_fleet.size.loc['pc', 'existing'] *
-                                              np.sqrt(self.subfleet.rex_fleet.eff_storage_roundtrip))
-            self.energy_usable_rex_pc_low = (self.dsoc_usable_rex_low *
-                                             self.subfleet.rex_fleet.size.loc['pc', 'existing'] *
-                                             np.sqrt(self.subfleet.rex_fleet.eff_storage_roundtrip))
-        else:  # no rex defined
-            self.energy_usable_rex_pc_high = 0
-            self.energy_usable_rex_pc_low = 0
+        if subfleet.rex_fleet is not None:
+            self.rex = True
+            self.rex_fleet = scenario.blocks.get(rex_fleet, None)
+            self.check_rex_fleet()
+            self.rex_dispatcher = self.rex_fleet.dispatcher
 
         self.generate_process_frame()
         self.add_dispatch_columns()
@@ -363,7 +433,9 @@ class VehicleDispatcher(SubFleetDispatcher):
 
 class BatteryDispatcher(SubFleetDispatcher):
 
-    def __init__(self, fleet, scenario):
+    def __init__(self,
+                 subfleet: blocks.SubFleet,
+                 scenario: 'simulation.Scenario'):
 
         super().__init__(fleet, scenario)
 
@@ -397,11 +469,12 @@ class BatteryDispatcher(SubFleetDispatcher):
             unit='hour')
 
 
-class Tour:
+class Process:
 
-    def __init__(self, id, data, rental_system):
+    def __init__(self,
+                 data: pd.Series,
+                 dispatcher: SubFleetDispatcher):
 
-        self.id = id
         self.data = data
         self.rental_system = rental_system
         self.scenario = self.rental_system.scenario
@@ -538,84 +611,3 @@ class Tour:
         self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} finished at {self.env.now}')
 
 
-def dt2steps(series, sc):
-    out = None  # default value
-    ref_time = sc.starttime - pd.Timedelta(days=1)
-
-    if pd.api.types.is_datetime64_any_dtype(series):
-        # ensure that the result is at least 1, as 0 would leave no time for any action in real life
-        out = np.maximum(1, np.ceil((series - ref_time) / sc.timestep_td).astype(int))
-
-    elif pd.api.types.is_timedelta64_dtype(series):
-        out = np.maximum(1, np.ceil(series / sc.timestep_td).astype(int))
-
-    return out
-
-
-def steps2dt(series, sc, absolute=False):
-    ref_time = sc.starttime - pd.Timedelta(days=1)
-    out = pd.to_timedelta(series * sc.timestep_hours, unit='hour')
-    if absolute:
-        out += ref_time
-    return out
-
-
-def dispatch_subfleets(scenario, run):
-
-    # extend datetimeindex to simulate in DES to cover any shifts & predictions necessary
-    time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
-    dtime_overhang = pd.Timedelta(days=28)
-    time_end_overhang = time_start_overhang + dtime_overhang
-    scenario.dti_des = scenario.dti_sim_extd.union(
-        pd.date_range(start=time_start_overhang,
-                      end=time_end_overhang,
-                      freq=scenario.dti_sim_extd.freq))
-
-    # create rental systems (including stochastic pregeneration of individual rental processes)
-    scenario.rental_systems = dict()
-    for fleet in [fleet for fleet in scenario.fleets.values() if fleet.data_source in ['usecases', 'demand']]:
-        if isinstance(fleet, blocks.VehicleFleet):
-            fleet.rental_system = VehicleRentalSystem(fleet, scenario)
-        elif isinstance(fleet, blocks.BatteryFleet):
-            fleet.rental_system = BatteryRentalSystem(fleet, scenario)
-        scenario.rental_systems[fleet.name] = fleet.rental_system
-
-    # generate individual RentalProcess instances for every pregenerated process
-    for rental_system in scenario.rental_systems.values():
-        for idx, row in rental_system.processes.iterrows():
-            # VehicleRentalSystem RentalProcesses can init additional processes in BatteryRentalSystems at runtime
-            process = RentalProcess(id=idx,
-                                    data=row,
-                                    rental_system=rental_system)
-            rental_system.processes.loc[idx, 'process_obj'] = process
-
-    # actually run the discrete event simulation
-    scenario.env_des.run()
-
-    # reconvert time steps to actual times
-    for rental_system in scenario.rental_systems.values():
-        rental_system.processes['time_dep'] = steps2dt(rental_system.processes['step_dep'],
-                                                       scenario,
-                                                       absolute=True)
-        rental_system.processes['time_return'] = steps2dt(rental_system.processes['step_return'],
-                                                          scenario,
-                                                          absolute=True)
-        rental_system.processes['time_reavail_primary'] = steps2dt(rental_system.processes['step_reavail_primary'],
-                                                                   scenario,
-                                                                   absolute=True)
-        if 'step_reavail_secondary' in rental_system.processes.columns:
-            rental_system.processes['time_reavail_secondary'] = steps2dt(rental_system.processes[
-                                                                             'step_reavail_secondary'],
-                                                                         scenario,
-                                                                         absolute=True)
-
-    # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
-    for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.fleet.rex_fleet is not None)]:
-        rental_system.transfer_rex_processes()
-
-    # reframe logging results to resource-based view instead of process based (and save)
-    for rental_system in scenario.rental_systems.values():
-        rental_system.convert_process_log()
-        rental_system.calc_performance_metrics()
-        if run.save_results_dispatch:
-            rental_system.save_data()

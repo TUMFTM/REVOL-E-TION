@@ -528,23 +528,19 @@ class Scenario:
                                              dtype='float64')
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
-        # add SystemCore to blocks ensuring SystemCore is the first component to be built
-        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
-
         self.storage_blocks = dict()
         self.fleets = dict()
         self.renewable_sources = dict()
         self.subfleets_dispatch = dict()
 
+        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.capex_init_existing:
             raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
-        if len(self.subfleets_dispatch) > 0:
-            self.environment_des = simpy.Environment()
-            dispatch.dispatch_subfleets(self)
+        self.dispatcher = dispatch.SiteDispatcher(scenario=self)
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
