@@ -4,7 +4,7 @@ scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,14,50,50,50
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
-scenario,strategy,go,go,go,rh
+scenario,strategy,rh,go,go,rh
 scenario,len_ph,48,None,None,48
 scenario,len_ch,12,None,None,12
 scenario,truncate_ph,True,True,True,True

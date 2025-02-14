@@ -13,12 +13,12 @@ from revoletion import utils
 
 class BatteryPackModel:
 
-    def __init__(self, commodity):
+    def __init__(self, block):
 
-        self.commodity = commodity
-        self.scenario = self.commodity.scenario
+        self.block = block
+        self.scenario = self.block.scenario
 
-        self.chemistry = self.commodity.chemistry.lower()
+        self.chemistry = self.block.chemistry
 
         # Thermal model parameters
         # self.c_th_spec_housing = 896  # Specific heat capacity of the pack housing (made from Al) in J/(kg K)
@@ -44,14 +44,10 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.commodity.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal[0] = self.commodity.q_loss_cal_init
-        self.commodity.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc[0] = self.commodity.q_loss_cyc_init
+        self.block.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal[0] = self.block.q_loss_cal_init
+        self.block.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc[0] = self.block.q_loss_cyc_init
 
-        self.commodity.states.loc[self.scenario.starttime, 'soh'] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
-
-        # Placeholders for aging variables to be filled every aging evaluation
-        self.soc_hor = self.ocv_hor = self.cycles_hor = None
-        self.temp_hor_c = self.temp_hor_k = self.p_hor = self.t_hor = None
+        self.block.states.loc[self.scenario.starttime, 'soh'] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
 
         # Placeholders for pack level variables to be filled after component sizing in first horizon
         self.size = self.n_cells = self.m_cells = self.m_housing = self.c_th_cells = self.c_th_housing = None
@@ -121,8 +117,8 @@ class BatteryPackModel:
         """
 
         # If aging is disabled, keep initial SOH
-        if not self.commodity.aging:
-            self.commodity.states.loc[horizon.ch_endtime, 'soh'] = self.commodity.soh_init
+        if not self.block.aging:
+            self.block.states.loc[horizon.ch_endtime, 'soh'] = self.block.soh_init
             return
 
         if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
@@ -130,78 +126,93 @@ class BatteryPackModel:
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
-        if isinstance(self.commodity, blocks.MobileCommodity):
-            self.p_cell_hor = (self.commodity.flows.loc[horizon.dti_ch, 'bat_in'] - self.commodity.flows.loc[horizon.dti_ch, 'bat_out']) / self.n_cells
-        else:  # StationaryStorage
-            self.p_cell_hor = (self.commodity.flows.loc[horizon.dti_ch, 'in'] - self.commodity.flows.loc[horizon.dti_ch, 'out']) / self.n_cells
-        self.crate_hor = self.p_cell_hor / self.e_cell
+        p_cell_hor = (self.block.flows.loc[horizon.dti_ch, 'bat_in'] - self.block.flows.loc[horizon.dti_ch, 'bat_out']) / self.n_cells
+        crate_hor = p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        self.soc_hor = self.commodity.states.loc[utils.extend_dti(horizon.dti_ch), 'soc']
+        soc_hor = self.block.states.loc[utils.extend_dti(horizon.dti_ch), 'soc']
 
-        self.ocv_hor = pd.DataFrame(data=self.ocv_interp(self.soc_hor), index=self.soc_hor.index).squeeze()
+        ocv_hor = pd.DataFrame(data=self.ocv_interp(soc_hor), index=soc_hor.index).squeeze()
 
         # Calculate timespan of horizon in seconds
-        self.t_hor = (self.soc_hor.index[-1] - self.soc_hor.index[0]).total_seconds()
+        t_hor = (soc_hor.index[-1] - soc_hor.index[0]).total_seconds()
 
         # Get temperature timeseries
-        if isinstance(self.commodity.temp_battery, str):
+        if isinstance(self.block.temp_battery, str):
             try:
-                self.temp_hor_c = self.scenario.blocks[self.commodity.temp_battery].data_ph.loc[horizon.dti_ch,'temp_air']
+                temp_hor_c = self.scenario.blocks[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
-                self.scenario.logger.warning(f'Battery temp source for storage {self.commodity.name} not found,'
-                                   f' using 25°C default')
-                self.temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
-        elif isinstance(self.commodity.temp_battery, (int, float)):
-            self.temp_hor_c = pd.Series(data=self.commodity.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
+                self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found,'
+                                             f' using 25°C default')
+                temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
+        elif isinstance(self.block.temp_battery, (int, float)):
+            temp_hor_c = pd.Series(data=self.block.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
         else:
            ValueError('Battery temperature must be the name of a PVSource block or numeric')
 
-        self.temp_hor_k = self.temp_hor_c + 273.15  # temperature conversion to Kelvin
+        temp_hor_k = temp_hor_c + 273.15  # temperature conversion to Kelvin
 
         # Determine DODs and mean SOCs of (half) cycles within the horizon using the ASTM E 1049-85 norm
-        self.cycles_hor = {'depth': [], 'mean': [], 'type': []}
-        if len(self.soc_hor) == 2:
+        cycles_hor = {'depth': [], 'mean': [], 'type': []}
+        if len(soc_hor) == 2:
             # two timesteps are not enough to detect a cycle -> has to be half cycle by definition -> add manually
-            self.cycles_hor['depth'].append(abs(np.diff(self.soc_hor)[0]))  # diff of SOCs
-            self.cycles_hor['mean'].append(np.mean(self.soc_hor))  # mean SOC of cycle
-            self.cycles_hor['type'].append(0.5)  # has to be half cycle
+            cycles_hor['depth'].append(abs(np.diff(soc_hor)[0]))  # diff of SOCs
+            cycles_hor['mean'].append(np.mean(soc_hor))  # mean SOC of cycle
+            cycles_hor['type'].append(0.5)  # has to be half cycle
         else:
-            for range, mean, count, _, _ in rainflow.extract_cycles(self.soc_hor):
-                self.cycles_hor['depth'].append(range)  # depth of cycle expressed as SOC fraction
-                self.cycles_hor['mean'].append(mean)  # mean SOC of cycle
-                self.cycles_hor['type'].append(count)  # type of cycle 0.5 (half cycle) or 1 (full cycle)
-        self.cycles_hor['depth'] = np.array(self.cycles_hor['depth'])
-        self.cycles_hor['mean'] = np.array(self.cycles_hor['mean'])
-        self.cycles_hor['type'] = np.array(self.cycles_hor['type'])
+            for range, mean, count, _, _ in rainflow.extract_cycles(soc_hor):
+                cycles_hor['depth'].append(range)  # depth of cycle expressed as SOC fraction
+                cycles_hor['mean'].append(mean)  # mean SOC of cycle
+                cycles_hor['type'].append(count)  # type of cycle 0.5 (half cycle) or 1 (full cycle)
+        cycles_hor['depth'] = np.array(cycles_hor['depth'])
+        cycles_hor['mean'] = np.array(cycles_hor['mean'])
+        cycles_hor['type'] = np.array(cycles_hor['type'])
 
         # Calculate Number of Full Equivalent Cycles (1 EFC is 2 capacities of charge throughput)
-        self.fec_hor = sum(self.cycles_hor['type'] * self.cycles_hor['depth'])
-        self.q_tot_hor = self.fec_hor * (2 * self.q_nom_cell)
+        fec_hor = sum(cycles_hor['type'] * cycles_hor['depth'])
+        q_tot_hor = fec_hor * (2 * self.q_nom_cell)
 
         # Determine actual aging
         if self.chemistry == 'nmc':
-            self.calc_aging_schmalstieg(horizon)
+            self.calc_aging_schmalstieg(horizon=horizon,
+                                        t_hor=t_hor,
+                                        cycles_hor=cycles_hor,
+                                        temp_hor_k=temp_hor_k,
+                                        ocv_hor=ocv_hor,
+                                        q_tot_hor=q_tot_hor)
         elif self.chemistry == 'lfp':
-            self.calc_aging_naumann(horizon)
+            self.calc_aging_naumann(horizon=horizon,
+                                    t_hor=t_hor,
+                                    cycles_hor=cycles_hor,
+                                    fec_hor=fec_hor,
+                                    crate_hor=crate_hor,
+                                    temp_hor_k=temp_hor_k,
+                                    soc_hor=soc_hor)
 
-        # Update block / commodity storage size
-        self.commodity.states.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
-        self.commodity.states.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
-        self.commodity.states.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
-        self.commodity.soc_min = (1 - self.commodity.states.loc[horizon.ch_endtime, 'soh']) / 2
-        self.commodity.soc_max = 1 - ((1 - self.commodity.states.loc[horizon.ch_endtime, 'soh']) / 2)
+        # Update block / block storage size
+        self.block.states.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
+        self.block.states.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
+        self.block.states.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
+        self.block.soc_min = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
+        self.block.soc_max = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
 
-    def calc_aging_naumann(self, horizon):
+    def calc_aging_naumann(self,
+                           horizon,
+                           t_hor,
+                           cycles_hor,
+                           fec_hor,
+                           crate_hor,
+                           temp_hor_k,
+                           soc_hor,):
 
         # Set global tuning factor
         k_tuning = 1
 
         #  Calculate calendric stress factor timeseries (from https://doi.org/10.1016/j.est.2018.01.019)
-        k_temp_q_cal = 1.2571e-05 * np.exp((-17126 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15))
-        k_temp_r_cal = 3.419e-10 * np.exp((-71827 / 8.3145) * (1 / self.temp_hor_k - 1 / 298.15))
-        k_soc_q_cal = 2.85750 * ((self.soc_hor - 0.5) ** 3) + 0.60225
-        k_soc_r_cal = 3.3903 * ((self.soc_hor - 0.5) ** 2) + 1.56040
+        k_temp_q_cal = 1.2571e-05 * np.exp((-17126 / 8.3145) * (1 / temp_hor_k - 1 / 298.15))
+        k_temp_r_cal = 3.419e-10 * np.exp((-71827 / 8.3145) * (1 / temp_hor_k - 1 / 298.15))
+        k_soc_q_cal = 2.85750 * ((soc_hor - 0.5) ** 3) + 0.60225
+        k_soc_r_cal = 3.3903 * ((soc_hor - 0.5) ** 2) + 1.56040
 
         # Aggregate calendric stress factors (converting them to scalar)
         k_temp_q_cal = k_temp_q_cal.mean()
@@ -216,23 +227,23 @@ class BatteryPackModel:
         self.q_loss_cal[horizon.index + 1] = (k_tuning *
                                               k_temp_q_cal *
                                               k_soc_q_cal *
-                                              (np.sqrt(t_eq + self.t_hor) - np.sqrt(t_eq)))
+                                              (np.sqrt(t_eq + t_hor) - np.sqrt(t_eq)))
         self.r_inc_cal[horizon.index + 1] = (k_tuning *
                                              k_temp_r_cal *
                                              k_soc_r_cal *
-                                             self.t_hor)  # linear - no equivalent time needed
+                                             t_hor)  # linear - no equivalent time needed
 
         # Calculate cyclic stress factor series (DOD for each detected cycle, C-rate over time)
         # Methodology from https://doi.org/10.1016/j.jpowsour.2019.227666
-        k_dod_q_cyc = 4.0253 * ((self.cycles_hor['depth'] - 0.6) ** 3) + 1.09230
-        k_dod_r_cyc = 6.8477 * ((self.cycles_hor['depth'] - 0.5) ** 3) + 0.91882
-        k_crate_q_cyc = 0.0971 + 0.063 * self.crate_hor
-        k_crate_r_cyc = 0.0023 - 0.0018 * self.crate_hor
+        k_dod_q_cyc = 4.0253 * ((cycles_hor['depth'] - 0.6) ** 3) + 1.09230
+        k_dod_r_cyc = 6.8477 * ((cycles_hor['depth'] - 0.5) ** 3) + 0.91882
+        k_crate_q_cyc = 0.0971 + 0.063 * crate_hor
+        k_crate_r_cyc = 0.0023 - 0.0018 * crate_hor
 
-        if np.sum(self.cycles_hor['depth']) > 0:  # actual cycling happened
+        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
             # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-            k_dod_q_cyc = np.sum(k_dod_q_cyc * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
-            k_dod_r_cyc = np.sum(k_dod_r_cyc * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
+            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
 
             # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
             k_crate_q_cyc = k_crate_q_cyc.mean()
@@ -244,16 +255,23 @@ class BatteryPackModel:
             # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
             self.q_loss_cyc[horizon.index + 1] = (0.01 *
                                                   (k_tuning * k_dod_q_cyc * k_crate_q_cyc) *
-                                                  (np.sqrt(fec_eq + self.fec_hor) - np.sqrt(fec_eq)))
+                                                  (np.sqrt(fec_eq + fec_hor) - np.sqrt(fec_eq)))
             self.r_inc_cyc[horizon.index + 1] = (0.01 *
                                                  (k_tuning * k_dod_r_cyc * k_crate_r_cyc) *
-                                                 self.fec_hor)  # linear, not fec_eq needed
+                                                 fec_hor)  # linear, not fec_eq needed
         else:  # technically not necessary to set values here as no aging happens, eases debugging
             beta_cap = 0
             beta_res = 0
             q_eq = 0
 
-    def calc_aging_schmalstieg(self, horizon):
+    def calc_aging_schmalstieg(self,
+                               horizon,
+                               t_hor,
+                               cycles_hor,
+                               temp_hor_k,
+                               ocv_hor,
+                               q_tot_hor
+                               ):
 
         # Schmalstieg aging model is not verified yet against aging data from original paper
 
@@ -262,8 +280,8 @@ class BatteryPackModel:
         # k_tuning = 1  # deactivation of tuning factor
 
         #  Calculate calendric stress factor timeseries (from http://dx.doi.org/10.1016/j.jpowsour.2014.02.012)
-        alpha_cap = (7.543 * self.ocv_hor - 23.75) * 1e6 * np.exp(-6976 / self.temp_hor_k)  # timeseries over all steps
-        alpha_res = (5.270 * self.ocv_hor - 16.32) * 1e5 * np.exp(-5986 / self.temp_hor_k)  # timeseries over all steps
+        alpha_cap = (7.543 * ocv_hor - 23.75) * 1e6 * np.exp(-6976 / temp_hor_k)  # timeseries over all steps
+        alpha_res = (5.270 * ocv_hor - 16.32) * 1e5 * np.exp(-5986 / temp_hor_k)  # timeseries over all steps
 
         # Aggregate calendric stress factors (converting them to scalar) and limit them to zero to avoid
         # a) negative aging and b) problems in calculation of t_eq
@@ -275,31 +293,31 @@ class BatteryPackModel:
         t_eq_r = (np.sum(self.r_inc_cal) / (k_tuning * alpha_res)) ** (4 / 3)
 
         # Calculate calendric aging in this horizon
-        t_hor_days = self.t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
+        t_hor_days = t_hor / (3600 * 24)  # Schmalstieg model is evaluated in days
         self.q_loss_cal[horizon.index + 1] = k_tuning * alpha_cap * ((t_eq_q + t_hor_days) ** 0.75 - t_eq_q ** 0.75)
         self.r_inc_cal[horizon.index + 1] = k_tuning * alpha_res * ((t_eq_r + t_hor_days) ** 0.75 - t_eq_r ** 0.75)
 
         # Calculate mean OCV of each detected cycle
-        ocv_cycles_mean = self.ocv_interp(self.cycles_hor['mean']).reshape([-1,])
+        ocv_cycles_mean = self.ocv_interp(cycles_hor['mean']).reshape([-1,])
         # Caution: Schmalstieg states quadratic mean (rms) of voltage instead of arithmetic mean!
 
         # Calculate cyclic stress factor series for each cycle
-        beta_cap = 7.348E-3 * (ocv_cycles_mean - 3.667) ** 2 + 7.6E-4 + 4.081E-3 * self.cycles_hor['depth']
-        beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521E-5 + 2.798E-4 * self.cycles_hor['depth']
+        beta_cap = 7.348E-3 * (ocv_cycles_mean - 3.667) ** 2 + 7.6E-4 + 4.081E-3 * cycles_hor['depth']
+        beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521E-5 + 2.798E-4 * cycles_hor['depth']
         beta_res = np.maximum(1.5E-5, beta_res)  # limitation as per text following Eq. (21) in paper
 
-        if np.sum(self.cycles_hor['depth']) > 0:  # actual cycling happened
+        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
 
             # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
-            beta_cap = np.sum(beta_cap * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
-            beta_res = np.sum(beta_res * self.cycles_hor['depth']) / np.sum(self.cycles_hor['depth'])
+            beta_cap = np.sum(beta_cap * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            beta_res = np.sum(beta_res * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
 
             # Define previous aging state as equivalent FECs at current conditions
             q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
 
             # Calculate cyclic aging
-            self.q_loss_cyc[horizon.index + 1] = k_tuning * beta_cap * (np.sqrt(q_eq + self.q_tot_hor) - np.sqrt(q_eq))
-            self.r_inc_cyc[horizon.index + 1] = k_tuning * beta_res * self.q_tot_hor
+            self.q_loss_cyc[horizon.index + 1] = k_tuning * beta_cap * (np.sqrt(q_eq + q_tot_hor) - np.sqrt(q_eq))
+            self.r_inc_cyc[horizon.index + 1] = k_tuning * beta_res * q_tot_hor
 
         else:  # technically not necessary to set values here as no aging happens, eases debugging
             beta_cap = 0
@@ -307,7 +325,7 @@ class BatteryPackModel:
             q_eq = 0
 
     def get_pack_parameters(self):
-        self.size = self.commodity.sizes.loc['block', 'total']
+        self.size = self.block.sizes.loc['block', 'total']
         # Calculate number of cells as a float to correctly represent power split with nonreal cells
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell

@@ -1403,7 +1403,7 @@ class StorageBlock:
         self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][utils.extend_dti(horizon.dti_ch)]
         self.states['soc'] = self.states['energy'] / self.sizes.loc['block', 'total']
 
-        #self.aging_model.age(horizon=horizon)  # todo reactivate
+        self.aging_model.age(horizon=horizon)
 
     def add_state_traces(self):
         """
