@@ -129,16 +129,14 @@ class EconomicPointOfInterest:
                                       data=0.0,
                                       dtype='float64')
 
-        self.capex = {'fix': 0.0,
-                      'preexisting': 0.0,
+        self.capex = {'preexisting': 0.0,
                       'expansion': 0.0,
                       'init': 0.0,
                       'replacement': 0.0,
                       'prj': 0.0,
                       'dis': 0.0,
                       'ann': 0.0}
-        self.mntex = {'fix': 0.0,
-                      'yrl': 0.0,
+        self.mntex = {'yrl': 0.0,
                       'sim': 0.0,
                       'prj': 0.0,
                       'dis': 0.0,
@@ -233,20 +231,16 @@ class EconomicEvaluator(EconomicPointOfInterest):
                          block=block)
 
         # region set default values
-        self.capex.update({'spec': 0})
-        self.mntex.update({'spec': 0})
+        self.capex.update({'spec': 0,
+                           'fix': 0,})
+        self.mntex.update({'spec': 0,
+                           'fix': 0})
         self.opex.update({'spec': utils.transform_scalar_var(value=0,
                                                              scenario=self.scenario,
-                                                             block=block),
-                          'dist': utils.transform_scalar_var(value=0,
-                                                             scenario=self.scenario,
-                                                             block=self.block)})
+                                                             block=block)})
         self.crev.update({'spec': utils.transform_scalar_var(value=0,
                                                              scenario=self.scenario,
-                                                             block=block),
-                          'dist': utils.transform_scalar_var(value=0,
-                                                             scenario=self.scenario,
-                                                             block=self.block)})
+                                                             block=block)})
         self.aux = {'ls': self.scenario.prj_duration_yrs,
                     'ccr': 1}
         self.size_name = None
@@ -330,7 +324,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # endregion
 
         # region mntex
-        self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec']
+        self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec'] + self.mntex['fix']
         self.cashflows.loc[:, 'mntex'] = -1 * self.mntex['yrl']
         self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
 
@@ -342,9 +336,20 @@ class EconomicEvaluator(EconomicPointOfInterest):
                                     occurs_at='beginning')
         # endregion
 
+        # region opex sim
+        if isinstance(self, PeakEvaluator):
+            self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\
+                               self.block.peakshaving_periods.loc[self.name, 'period_fraction']
+        else:
+            self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
+                                self.scenario.timestep_hours) if self.flow_name is not None else 0
+
+        if ('dist' in self.opex.keys()) and ('dist' in self.block.log.columns):
+            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
+                                 self.opex['dist'][self.scenario.dti_sim])
+        # endregion
+
         # region opex
-        self.opex['sim'] = (self.block.flows[self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
-                            self.scenario.timestep_hours) if self.flow_name is not None else 0
         self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
         self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
 
@@ -359,6 +364,15 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # region crev
         self.crev['sim'] = (self.block.flows[self.flow_name] @ self.crev['spec'][self.scenario.dti_sim] *
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
+
+        if ('dist' in self.crev.keys()) and ('dist' in self.block.log.columns):
+            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
+                                 self.crev['dist'][self.scenario.dti_sim])
+        if 'time' in self.crev.keys():
+            self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_sim, 'atbase'] @
+                                 self.crev['time'][self.scenario.dti_sim]) *
+                                 self.scenario.timestep_hours)
+
         self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.scenario)
         self.cashflows.loc[:, 'crev'] = self.crev['yrl']
 
@@ -390,13 +404,6 @@ class EconomicEvaluator(EconomicPointOfInterest):
         return value
 
 
-class FleetUnitEvaluator(EconomicEvaluator):
-    """
-    dist and time shit
-    """
-    pass
-
-
 class PeakEvaluator(EconomicEvaluator):
 
     def pre_scenario(self):
@@ -408,21 +415,3 @@ class PeakEvaluator(EconomicEvaluator):
                                   if self.scenario.compensate_sim_prj else 1)
 
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
-
-    def post_scenario(self):
-
-        self.opex['sim'] = self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] *\
-                           self.block.peakshaving_periods.loc[self.name, 'period_fraction']
-        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
-        self.opex['prj'] = utils.scale_year2prj(self.opex['yrl'], self.scenario)
-        self.opex['dis'] = acc_discount(nominal_value=self.opex['yrl'],
-                                        observation_horizon=self.scenario.prj_duration_yrs,
-                                        discount_rate=self.scenario.wacc,
-                                        occurs_at='end')
-        self.opex['ann'] = annuity_recur(nominal_value=self.opex['yrl'],
-                                         observation_horizon=self.scenario.prj_duration_yrs,
-                                         discount_rate=self.scenario.wacc)
-
-        self.aggregate_post_scenario(target=self.block.aggregator)
-
-

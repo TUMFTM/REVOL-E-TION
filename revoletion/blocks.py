@@ -1121,8 +1121,7 @@ class GridConnection(Block):
         self.evaluators.update({period: eco.PeakEvaluator(
             name=period,
             block=self,
-            params={('opex', 'spec'): 'opex_spec_peak',
-                    ('flow', 'name'): f'',})
+            params={('opex', 'spec'): 'opex_spec_peak'})
             for period in self.peakshaving_periods.index})
 
     def initialize_markets(self):
@@ -1696,7 +1695,7 @@ class ElectricFleetUnit(Block, StorageBlock):
     def __init__(self,
                  name: str,
                  scenario: 'Scenario',
-                 parent: Fleet,
+                 parent: SubFleet,
                  params: dict):
 
         super().__init__(name=name,
@@ -1889,15 +1888,42 @@ class ElectricFleetUnit(Block, StorageBlock):
         StorageBlock.get_horizon_results(self=self, horizon=horizon)
 
 
-class Vehicle:
-    pass
+class CombustionVehicle(NonElectricBlock, Block):
+
+    def __init__(self,
+                 name: str,
+                 scenario: 'Scenario',
+                 parent: SubFleet,
+                 params: dict):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         pois={
+                             'glider': ('FleetUnitEvaluator',
+                                        {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'fix'): 'capex_fix_glider',
+                                        ('mntex', 'fix'): 'mntex_fix_glider',
+                                        ('opex', 'dist'): 'opex_spec_dist',
+                                        ('crev', 'time'): 'crev_spec_time',
+                                        ('crev', 'dist'): 'crev_spec_dist',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                            },
+                         state_names=None,
+                         params=params,
+                         parent=parent)
+
+        self.log = None
+
+    def pre_scenario(self):
+        """
+        slice log file from subfleet
+        """
+
+        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
 
-class ElectricVehicle(ElectricFleetUnit, Vehicle):
-    pass
-
-
-class CombustionVehicle(Vehicle, NonElectricBlock):
+class ElectricVehicle(ElectricFleetUnit):
     pass
 
 

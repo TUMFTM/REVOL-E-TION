@@ -934,14 +934,14 @@ class SimulationRun:
     def simulate_scenario(self, name: str, log_queue=None, status_queue=None, lock=None):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
-        try:
-            Scenario(name=name,
-                     run=self,
-                     log_queue=log_queue,
-                     lock=lock,
-                     status_queue=status_queue)
-        except:
-            self.logger.info(f'Error occurred in scenario {name}')
+        # try:
+        Scenario(name=name,
+                 run=self,
+                 log_queue=log_queue,
+                 lock=lock,
+                 status_queue=status_queue)
+        # except:
+        #     self.logger.info(f'Error occurred in scenario {name}')  # todo
 
 
     def trigger_scenario_status_update(self, queue, status_msg):

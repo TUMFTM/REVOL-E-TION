@@ -182,13 +182,14 @@ def read_timeseries_csv(path_input_file, block, scenario, multiheader=False, res
 
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(scenario.timezone)
-    if resampling:
+    if not resampling:
+        return df
+    else:
         df = resample_to_timestep(df, block, scenario)
         if not (scenario.dti_sim.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
-
-    return df
+        return df.loc[scenario.dti_sim_extd]
 
 
 def read_input_log(fleet):
@@ -301,7 +302,7 @@ def transform_scalar_var(value, scenario, block=None):
                                  block=block,
                                  scenario=scenario,
                                  multiheader=False,
-                                 resampling=True).loc[scenario.dti_sim_extd]
+                                 resampling=True)
         if df.shape[1] != 1:
             scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
                                     f'only first column is used.')

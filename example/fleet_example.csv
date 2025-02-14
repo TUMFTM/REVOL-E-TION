@@ -1,8 +1,8 @@
-key,bev,#motorcycle
+key,bev,mc
 num,2,2
 type_unit,ev,icev
 data_source,log,log
-filename,bev_log,bev_log
+filename,bev_log,mc_log
 rex,True,True
 size_preexisting,30000,30000
 capex_preexisting,True,True

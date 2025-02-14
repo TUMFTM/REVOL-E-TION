@@ -130,7 +130,7 @@ class RentalSystem:
             column_names.extend([(unit,'atbase'), (unit,'dsoc'), (unit,'consumption'),
                                  (unit,'atac'), (unit,'atdc')])
             if isinstance(self, VehicleRentalSystem):
-                column_names.extend([(unit,'tour_dist')])
+                column_names.extend([(unit,'dist')])
         column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
 
         # Initialize dataframe for time based log
@@ -157,7 +157,7 @@ class RentalSystem:
 
                 if isinstance(self, VehicleRentalSystem):
                     # set distance in first timestep of rental (for distance based revenue calculation)
-                    self.data.loc[process['time_dep'], (unit, 'tour_dist')] = process['distance']
+                    self.data.loc[process['time_dep'], (unit, 'dist')] = process['distance']
 
         self.fleet.data = self.data
 
