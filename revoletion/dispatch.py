@@ -56,14 +56,17 @@ class SiteDispatcher:
         # region create subfleet dispatchers
         self.dispatchers = dict()
         for subfleet_name, subfleet in self.subfleets.items():
-            # BatteryDispatchers need to be initialized first to allow for range extension of VehicleDispatchers
+            # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
             if subfleet.type_unit in ['mb']:
                 self.dispatchers[subfleet_name] = BatteryDispatcher(subfleet=subfleet,
                                                                     scenario=self.scenario)
         for subfleet_name, subfleet in self.subfleets.items():
-            if subfleet.type_unit in ['ev', 'icev']:
-                self.dispatchers[subfleet_name] = VehicleDispatcher(subfleet=subfleet,
-                                                                    scenario=self.scenario)
+            if subfleet.type_unit in ['ev']:
+                self.dispatchers[subfleet_name] = ElectricVehicleDispatcher(subfleet=subfleet,
+                                                                            scenario=self.scenario)
+            if subfleet.type_unit in ['icev']:
+                self.dispatchers[subfleet_name] = CombustionVehicleDispatcher(subfleet=subfleet,
+                                                                              scenario=self.scenario)
         # endregion
 
         self.environment.run()
@@ -148,8 +151,11 @@ class SubFleetDispatcher:
 
         factor_derate = 0.9  # conservativeness factor on assumed charge power vs actually available power
 
+        # region estimate usable energy and power
         self.units = self.subfleet.subblocks
         unit_repr = self.units[self.units.keys()[0]]  # a priori, all units are representative
+
+        self.energy_total = unit_repr.sizes.loc['pc', 'existing']
 
         soc_minmax = min([unit.soc_max for unit in self.units.values()])
         soc_maxmin = max([unit.soc_min for unit in self.units.values()])
@@ -163,30 +169,83 @@ class SubFleetDispatcher:
             raise ValueError(f'Usable dSOC for {self.subfleet.name} is zero or negative. Check SOC targets and aging.')
 
         self.energy_usable = (self.dsoc_usable *
-                              self.subfleet.sizes.loc['pc', 'existing'] *
+                              self.energy_total *
                               np.sqrt(self.subfleet.eff_storage_roundtrip))
 
         pwr_loss_max = (1 - (1 - unit_repr.loss_rate) ** self.scenario.timestep_hours * unit_repr.sizes.loc['block', 'total'])
         self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff_chg_int - pwr_loss_max) * factor_derate
+        # endregion
+
+        # region calculate a priori process data
+        self.processes = self.demand.demand.copy()
+        self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
+
+        self.processes['steps_patience'] = dt2steps(self.processes['dtime_patience'], self.scenario)
+
+        self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
+        self.processes['steps_rental'] = dt2steps(self.processes['dtime_rental'], self.scenario)
+
+        self.processes['num_prim'] = {'mb': np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int),
+                                      'ev': 1,
+                                      'icev': 1}[self.subfleet.type_unit]
+        self.processes['energy_req'] = self.processes['distance'] * self.processes['consumption']  # todo check if not already contained in demand
+
+        if self.rex:
+            energy_missing = self.processes['energy_req'] - self.energy_usable
+            self.processes['num_rex'] = np.ceil(energy_missing / self.rex_dispatcher.energy_usable).astype(int)
+            self.processes['request_rex'] = self.processes['num_rex'] > 0
+        else:
+            self.processes['num_rex'] = 0
+            self.processes['request_rex'] = False
+            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable)  # clip to max
+
+        self.processes['energy_usable'] = (
+                self.energy_usable + (self.processes['num_rex'] * getattr(self.rex_dispatcher, 'energy_usable', 0)))
+        self.processes['energy_total'] = (
+                self.energy_total + (self.processes['num_rex'] * getattr(self.rex_dispatcher, 'energy_total', 0)))
+
+        utilization = self.processes['energy_req'] / self.processes['energy_usable']
+        self.processes['dsoc_prim'] = self.dsoc_usable * utilization
+        self.processes['dsoc_rex'] = getattr(self.rex_dispatcher, 'dsoc_usable', 0) * utilization
+
+        self.processes['energy_req_prim'] = self.processes['dsoc_prim'] * self.energy_total
+        self.processes['energy_req_rex'] = self.processes['dsoc_rex'] * getattr(self.rex_dispatcher, 'energy_total', 0)
+
+        self.processes['dtime_chg_prim'] = pd.to_timedelta(self.processes['energy_req_prim'] /
+                                                           self.pwr_chg_usable,
+                                                           unit='hour')
+        self.processes['dtime_chg_rex'] = pd.to_timedelta(self.processes['energy_req_rex'] /
+                                                          getattr(self.rex_dispatcher, 'pwr_chg_usable', np.inf),
+                                                          unit='hour')
+
+        self.processes['steps_chg_prim'] = dt2steps(self.processes['dtime_chg_prim'], self.scenario)
+        self.processes['steps_chg_rex'] = dt2steps(self.processes['dtime_chg_rex'], self.scenario)
+
+
+        self.processes['dtime_preblock_prim'] = {'icev': pd.to_timedelta(arg=0, unit='hour'),
+                                                 'mb': pd.to_timedelta(arg=0, unit='hour'),
+                                                 'ev': self.processes['dtime_chg_prim']}[self.subfleet.type_unit]
+        self.processes['step_preblock_primary'] = self.processes['step_req'] - self.processes['steps_charge_primary']
+        self.processes['time_preblock_primary'] = steps2dt(self.processes['step_preblock_primary'],
+                                                           self.scenario,
+                                                           absolute=True)
+
+
+
+        self.block_charge_time()  # block charge time pre-rental for vehicles
+
+        self.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
+        # endregion
 
         self.store = MultiStore(env=self.scenario.env_dispatch,
                                 capacity=self.subfleet.num)
+
         for unit in self.units.values():
             self.store.put([unit.name])
 
-        self.processes = self.demand.demand.copy()
         for idx, row in self.processes.iterrows():
             self.processes.loc[idx, 'process_obj'] = Process(data=row,
                                                              dispatcher=self)
-
-    def add_dispatch_columns(self):
-        """
-        Add empty columns to process frame that are iteratively filled during actual dispatch (i.e. in DES)
-        """
-        self.processes['commodities_primary'] = None
-        if (hasattr(self.subfleet, 'rex_fleet')) and (self.subfleet.rex_fleet):
-            self.processes['commodities_secondary'] = None
-
 
     def calc_performance_metrics(self):
 
@@ -251,26 +310,6 @@ class SubFleetDispatcher:
 
         self.subfleet.data = self.data
 
-    def generate_process_frame(self):
-
-        self.processes = self.subfleet.demand.copy()
-        self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
-        self.calc_process_data()
-
-        # common calculations for both types of RentalSystem
-        self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
-        self.processes['steps_rental'] = dt2steps(self.processes['dtime_rental'], self.scenario)
-
-        self.processes['steps_charge_primary'] = dt2steps(self.processes['dtime_charge_primary'], self.scenario)
-        if 'dtime_charge_secondary' in self.processes.columns:
-            self.processes['steps_charge_secondary'] = dt2steps(self.processes['dtime_charge_secondary'], self.scenario)
-
-        self.processes['steps_patience'] = dt2steps(self.processes['dtime_patience'], self.scenario)
-
-        self.block_charge_time()  # block charge time pre-rental for vehicles
-
-        self.processes.sort_values(by='time_preblock_primary', inplace=True, ignore_index=True)
-
     def save_data(self):
         """
         This function saves the converted log dataframe as a suitable example csv file for the energy system model.
@@ -296,14 +335,11 @@ class SubFleetDispatcher:
         self.data.to_csv(log_path)
 
 
-class VehicleDispatcher(SubFleetDispatcher):
+class ElectricVehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
                  subfleet: 'blocks.VehicleFleet',
                  scenario: 'simulation.Scenario'):
-
-        super().__init__(subfleet=subfleet,
-                         scenario=scenario)
 
         if subfleet.rex_fleet is not None:
             self.rex = True
@@ -311,73 +347,18 @@ class VehicleDispatcher(SubFleetDispatcher):
             self.check_rex_fleet()
             self.rex_dispatcher = self.rex_fleet.dispatcher
 
-        self.generate_process_frame()
-        self.add_dispatch_columns()
-        self.create_store()
+        super().__init__(subfleet=subfleet,
+                         scenario=scenario)
+
 
     def block_charge_time(self):
-        self.processes['step_preblock_primary'] = self.processes['step_req'] - self.processes['steps_charge_primary']
-        self.processes['time_preblock_primary'] = steps2dt(self.processes['step_preblock_primary'],
-                                                           self.scenario,
-                                                           absolute=True)
+
 
     def calc_process_data(self):
         """
-        This function fills the demand dataframe with stochastically generated values describing the rental
-        requests for each day in the simulation timeframe.
-        :return: None
+        fill the processes dataframe with calculated data
         """
-        self.processes['num_primary'] = 1  # always one vehicle per rental process
-        self.processes['range_usable_high'] = self.energy_usable_pc_high / self.processes['consumption']
-        self.processes['range_usable_low'] = self.energy_usable_pc_low / self.processes['consumption']
 
-        if self.subfleet.rex_fleet:  # system can extend range
-            # determine number of rex needed to cover missing distance and calc available energy
-            self.processes['distance_missing'] = np.maximum(
-                0,
-                self.processes['distance'] - self.processes['range_usable_high'])
-            self.processes['energy_missing'] = self.processes['distance_missing'] * self.processes['consumption']
-            self.processes['num_secondary'] = np.ceil(self.processes['energy_missing'] /
-                                                      self.energy_usable_rex_pc_high).astype(int)
-            self.processes['rex_request'] = self.processes['num_secondary'] > 0
-
-            self.processes['energy_usable_both'] = (self.energy_usable_pc_high +
-                                                    (self.processes['num_secondary'] *
-                                                     self.energy_usable_rex_pc_high))
-            self.processes['energy_total_both'] = (self.subfleet.size.loc['pc', 'existing'] +
-                                                   (self.processes['num_secondary'] *
-                                                    self.subfleet.rex_fleet.size.loc['pc', 'existing']))
-
-        else:  # no rex defined
-            self.processes['num_secondary'] = 0
-            self.processes['rex_request'] = False
-
-            self.processes['energy_usable_both'] = self.energy_usable_pc_high
-            self.processes['energy_total_both'] = self.subfleet.size.loc['pc', 'existing']
-            # for non-rex systems, dsoc_primary is clipped to max usable dSOC (equivalent to external charging)
-            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable_pc_high)
-
-        # calculate different delta SOC for primary and secondary unit due to different start SOCs (linear)
-        self.processes['dsoc_primary'] = (self.dsoc_usable_high * self.processes['energy_req'] /
-                                          self.processes['energy_usable_both'])
-        self.processes['dsoc_secondary'] = (self.dsoc_usable_rex_high * self.processes['energy_req'] /
-                                            self.processes['energy_usable_both']) * self.processes['rex_request']
-
-        self.processes['energy_pc_primary'] = (self.processes['dsoc_primary'] *
-                                               self.subfleet.size.loc['pc', 'existing'])
-        self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / self.subfleet.pwr_chg_des,
-            unit='hour')
-
-        if self.subfleet.rex_fleet:
-            self.processes['energy_pc_secondary'] = (self.processes['dsoc_secondary'] *
-                                                     self.subfleet.rex_fleet.size.loc['pc', 'existing'])
-            self.processes['dtime_charge_secondary'] = pd.to_timedelta(
-                self.processes['energy_pc_secondary'] / self.subfleet.rex_fleet.pwr_chg_des,
-                unit='hour')
-        else:
-            self.processes['energy_pc_secondary'] = 0
-            self.processes['dtime_charge_secondary'] = None
 
     def check_rex_fleet(self):
         base_msg = f'Scenario "{self.scenario.name}" -'
@@ -437,36 +418,15 @@ class BatteryDispatcher(SubFleetDispatcher):
                  subfleet: blocks.SubFleet,
                  scenario: 'simulation.Scenario'):
 
-        super().__init__(fleet, scenario)
+        self.rex = False
 
-        self.subfleet.rex_fleet = None  # needs to be set for later check
+        super().__init__(subfleet=subfleet,
+                         scenario=scenario)
 
-        self.generate_process_frame()
-        self.add_dispatch_columns()
-        self.create_store()
 
     def block_charge_time(self):
         self.processes['step_preblock_primary'] = self.processes['step_req']
         self.processes['time_preblock_primary'] = self.processes['time_req']
-
-    def calc_process_data(self):
-        """
-        This function fills the demand dataframe with stochastically generated values describing the rental
-        requests for each day in the simulation timeframe.
-        """
-        self.processes['rex_request'] = False
-        self.processes['num_primary'] = np.ceil(self.processes['energy_req'] / self.energy_usable_pc_high).astype(int)
-        self.processes['energy_total_both'] = self.processes['num_primary'] * self.subfleet.size.loc['pc', 'existing']
-        self.processes['energy_usable_both'] = self.processes['num_primary'] * self.energy_usable_pc_high
-        self.processes['dsoc_primary'] = self.processes['energy_req'] / self.processes['energy_total_both']
-        self.processes['energy_pc_primary'] = self.processes['dsoc_primary'] * self.subfleet.size.loc['pc', 'existing']
-        self.processes['energy_primary'] = self.processes['energy_pc_primary'] * self.processes['num_primary']
-        self.processes['dtime_charge_primary'] = pd.to_timedelta(
-            self.processes['energy_pc_primary'] / (self.subfleet.pwr_chg *
-                                                   self.subfleet.eff_chg_int *  # charger efficiency (into unit's bus)
-                                                   # storage component efficiency (both ways)
-                                                   self.subfleet.eff_storage_roundtrip),
-            unit='hour')
 
 
 class Process:
@@ -476,18 +436,16 @@ class Process:
                  dispatcher: SubFleetDispatcher):
 
         self.data = data
-        self.rental_system = rental_system
-        self.scenario = self.rental_system.scenario
-        self.env = self.scenario.env_des
-
-        self.rental_system.process_objs.append(self)
+        self.dispatcher = dispatcher
+        self.logger = self.disp.scenario
+        self.env = self.dispatcher.scenario.dispatcher.environment
 
         self.primary_result = self.secondary_result = [False]  # defaults equal to insuccessful request
         self.primary_request = self.secondary_request = False
         self.status = None
 
-        # initiate the simpy process function (define_process is not executed here, but only when the env is run)
-        self.env.process(self.define_process())
+        # define_process is not executed here, but only when the environment is run
+        self.environment.process(self.define_process())
 
     def define_process(self):
 
