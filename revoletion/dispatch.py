@@ -10,28 +10,6 @@ import simpy
 from revoletion import blocks
 
 
-def dt2steps(series, sc):
-    out = None  # default value
-    ref_time = sc.starttime - pd.Timedelta(days=1)
-
-    if pd.api.types.is_datetime64_any_dtype(series):
-        # ensure that the result is at least 1, as 0 would leave no time for any action in real life
-        out = np.maximum(1, np.ceil((series - ref_time) / sc.timestep_td).astype(int))
-
-    elif pd.api.types.is_timedelta64_dtype(series):
-        out = np.maximum(1, np.ceil(series / sc.timestep_td).astype(int))
-
-    return out
-
-
-def steps2dt(series, sc, absolute=False):
-    ref_time = sc.starttime - pd.Timedelta(days=1)
-    out = pd.to_timedelta(series * sc.timestep_hours, unit='hour')
-    if absolute:
-        out += ref_time
-    return out
-
-
 class MultiStoreGet(simpy.resources.base.Get):
     def __init__(self, store, num=1):
         self.amount = num
@@ -76,6 +54,7 @@ class SiteDispatcher:
             return
 
         # region extend datetimeindex
+        self.time_ref = self.scenario.starttime - pd.Timedelta(days=1)  # reference time for DES steps
         time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
         time_end_overhang = time_start_overhang + pd.Timedelta(days=28)
         self.dti = scenario.dti_sim_extd.union(pd.date_range(start=time_start_overhang,
@@ -91,102 +70,92 @@ class SiteDispatcher:
             # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
             if subfleet.type_unit in ['mb']:
                 self.dispatchers[subfleet_name] = BatteryDispatcher(subfleet=subfleet,
+                                                                    parent=self,
                                                                     scenario=self.scenario)
         for subfleet_name, subfleet in self.subfleets.items():
             if subfleet.type_unit in ['ev', 'icev']:
-                self.dispatchers[subfleet_name] = ElectricVehicleDispatcher(subfleet=subfleet,
-                                                                            scenario=self.scenario)
+                self.dispatchers[subfleet_name] = VehicleDispatcher(subfleet=subfleet,
+                                                                    parent=self,
+                                                                    scenario=self.scenario)
         # endregion
 
         self.environment.run()
 
-        for dispatcher in self.dispatchers.values():
-            dispatcher.postprocess()
+        # rex process transfer is required before all processes can be evaluated
+        for vehicle_dispatcher in [disp for disp in self.dispatchers.values() if isinstance(disp, VehicleDispatcher)]:
+            vehicle_dispatcher.transfer_rex_processes()
 
-        # todo move to subfleet dispatchers
-        # reconvert time steps to actual times
-        for rental_system in scenario.rental_systems.values():
-            rental_system.processes['time_dep'] = steps2dt(rental_system.processes['step_dep'],
-                                                           scenario,
-                                                           absolute=True)
-            rental_system.processes['time_return'] = steps2dt(rental_system.processes['step_return'],
-                                                              scenario,
-                                                              absolute=True)
-            rental_system.processes['time_reavail_primary'] = steps2dt(rental_system.processes['step_reavail_primary'],
-                                                                       scenario,
-                                                                       absolute=True)
-            if 'step_reavail_secondary' in rental_system.processes.columns:
-                rental_system.processes['time_reavail_secondary'] = steps2dt(rental_system.processes[
-                                                                                 'step_reavail_secondary'],
-                                                                             scenario,
-                                                                             absolute=True)
-
-        # add additional rex processes from VehicleRentalSystems with rex to BatteryRentalSystems to complete process dataframe
-        for rental_system in [rs for rs in scenario.rental_systems.values() if (rs.fleet.rex_fleet is not None)]:
-            rental_system.transfer_rex_processes()
-
-        # reframe logging results to resource-based view instead of process based (and save)
-        for rental_system in scenario.rental_systems.values():
-            rental_system.convert_process_log()
-            rental_system.calc_performance_metrics()
-            if run.save_results_dispatch:
-                rental_system.save_data()
-
+        for disp in self.dispatchers.values():
+            disp.postprocess()
 
 
 class SubFleetDispatcher:
 
     def __init__(self,
                  subfleet: blocks.SubFleet,
+                 parent: SiteDispatcher,
                  scenario: 'simulation.Scenario'):
 
         self.subfleet = subfleet
+        self.parent = parent
         self.scenario = scenario
+
         self.name = self.subfleet.name
         self.demand = self.subfleet.demand
+        self.env = self.parent.environment
 
         self.subfleet.dispatcher = self
+
+        self.units = self.subfleet.subblocks
+        log_columns = pd.MultiIndex.from_tuples(
+            [(unit, lbl) for unit in self.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
+            names=['unit', 'time']
+        )
+        self.log = pd.DataFrame(index=self.parent.dti, columns=log_columns)
+        self.kpis = dict()
 
         factor_derate = 0.9  # conservativeness factor on assumed charge power vs actually available power
 
         # region estimate usable energy and power
-        self.units = self.subfleet.subblocks
-        unit_repr = self.units[self.units.keys()[0]]  # a priori, all units are representative
+        unit_repr = self.units[next(iter(self.units))]  # all units are equal and representative a priori
 
-        self.energy_total = unit_repr.sizes.loc['pc', 'existing']
+        self.energy_total = unit_repr.sizes.loc['block', 'preexisting']
 
         soc_minmax = min([unit.soc_max for unit in self.units.values()])
         soc_maxmin = max([unit.soc_min for unit in self.units.values()])
 
-        soc_upper = statistics.median([soc_minmax, self.subfleet.soc_target, soc_maxmin])
-        soc_lower = statistics.median([soc_minmax, self.subfleet.soc_return, soc_maxmin])
+        soc_upper = statistics.median([soc_minmax, unit_repr.soc_target, soc_maxmin])
+        soc_lower = statistics.median([soc_minmax, unit_repr.soc_return, soc_maxmin])
 
         self.dsoc_usable = soc_upper - soc_lower
 
         if self.dsoc_usable <= 0:
-            raise ValueError(f'Usable dSOC for {self.subfleet.name} is zero or negative. Check SOC targets and aging.')
+            raise ValueError(f'Usable dSOC for subfleet {self.subfleet.name} is zero or negative. '
+                             f'Check SOC targets and aging.')
 
         self.energy_usable = (self.dsoc_usable *
                               self.energy_total *
-                              np.sqrt(self.subfleet.eff_storage_roundtrip))
+                              np.sqrt(unit_repr.eff_storage_roundtrip))
 
-        pwr_loss_max = (1 - (1 - unit_repr.loss_rate) ** self.scenario.timestep_hours * unit_repr.sizes.loc['block', 'total'])
+        pwr_loss_max = (1 - (1 - unit_repr.loss_rate) ** self.scenario.timestep_hours * self.energy_total)
         self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff_chg_int - pwr_loss_max) * factor_derate
         # endregion
 
         # region calculate a priori process data
         self.processes = self.demand.demand.copy()
-        self.processes['step_req'] = dt2steps(self.processes['time_req'], self.scenario)
+        self.processes['step_req'] = dt2steps(values=self.processes['time_req'],
+                                              scenario=self.scenario)
 
-        self.processes['steps_patience'] = dt2steps(self.processes['dtime_patience'], self.scenario)
+        self.processes['steps_patience'] = dt2steps(values=self.processes['dtime_patience'],
+                                                    scenario=self.scenario)
 
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
-        self.processes['steps_rental'] = dt2steps(self.processes['dtime_rental'], self.scenario)
+        self.processes['steps_rental'] = dt2steps(values=self.processes['dtime_rental'],
+                                                  self.scenario)
 
         self.processes['num_prim'] = {'mb': np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int),
                                       'ev': 1,
                                       'icev': 1}[self.subfleet.type_unit]
-        self.processes['energy_req'] = self.processes['distance'] * self.processes['consumption']  # todo check if not already contained in demand
 
         if self.rex:
             energy_missing = self.processes['energy_req'] - self.energy_usable
@@ -233,25 +202,223 @@ class SubFleetDispatcher:
         self.processes['step_preblock_rex'] = self.processes['step_req'] - self.processes['steps_preblock_rex']
         self.processes['step_postblock_rex'] = self.processes['step_req'] + self.processes['steps_postblock_rex']
 
-        self.processes.sort_values(by='time_req', inplace=True, ignore_index=True)
+        self.processes.sort_values(by='step_preblock_prim',
+                                   inplace=True,
+                                   ignore_index=True)
         # endregion
 
-        self.store = MultiStore(env=self.scenario.env_dispatch,
+        self.store = MultiStore(env=self.parent.environment,
                                 capacity=self.subfleet.num)
 
         for unit in self.units.values():
             self.store.put([unit.name])
 
         for idx, row in self.processes.iterrows():
-            self.processes.loc[idx, 'process_obj'] = Process(data=row,
-                                                             dispatcher=self)
+            self.parent.environment.process(self.define_process(id=idx))
 
-    def calc_performance_metrics(self):
+    def dt2steps(self,
+                 values: pd.Series):
+        """
+        utility method
+        convert pandas datetime or timedelta values to DES steps
+        """
+        if pd.api.types.is_datetime64_any_dtype(values):
+            # ensure that the result is at least 1, as 0 would leave no time for any action in real life
+            return np.maximum(1, np.ceil((values - self.parent.time_ref) / self.scenario.timestep_td).astype(int))
+        elif pd.api.types.is_timedelta64_dtype(values):
+            return np.maximum(1, np.ceil(values / self.scenario.timestep_td).astype(int))
+        else:
+            raise ValueError(f'Unsupported type {values.dtype} for conversion to steps')
 
-        self.use_rate = dict()
-        steps_total = self.data.shape[0]
+    def steps2dt(self,
+                 steps: pd.Series,
+                 absolute: bool = False):
+        """
+        utility method
+        convert DES steps to pandas datetime or timedelta values
+        """
+        td = pd.to_timedelta(steps * self.scenario.timestep_hours, unit='hour')
+        if not absolute:
+            return td
+        else:
+            return td + self.parent.time_ref
+
+    def define_process(self,
+                       id: int):
+        """
+        runtime DES method
+        actual definition of the runtime process steps for DES
+        """
+        # region initialize process as unsuccessful
+        self.processes['status'] = 'unprocessed'
+        self.processes['units_prim'] = None
+        self.processes['units_rex'] = None
+
+        result_prim = [False]
+        result_rex = [False]
+        request_prim = False
+        request_rex = False
+        # endregion
+
+        # region request primary resource(s) at preblock time
+        yield self.env.timeout(self.processes.at[id, 'step_preblock_prim'])
+
+        self.scenario.logger.debug(f'{self.name} process {id} preblocked at {self.env.now}')
+
+        with self.store.get(self.processes.at[id, 'num_prim']) as request_prim:
+            result_prim = (yield request_prim | self.env.timeout(self.processes.at[id, 'steps_patience']))
+
+        self.scenario.logger.debug(f'{self.name} process {id} requested {self.processes.at[id, "num_prim"]}'
+                                   f' primary resource(s) at {self.env.now}')
+        # endregion
+
+        yield self.env.timeout(self.processes.at[id, 'steps_preblock_prim'])
+
+        # region request rex resource(s) at actual request time
+        if self.processes.at[id, 'request_rex']:
+            with self.rex_dispatcher.store.get(self.processes.at[id, 'num_rex']) as request_rex:
+                result_rex = yield request_rex | self.env.timeout(self.processes.at[id, 'steps_patience'])
+
+            self.scenario.logger.debug(f'{self.name} process {id} requested '
+                                       f'{self.processes.at[id, "num_rex"]} secondary resource(s) '
+                                       f'at {self.env.now}')
+        # endregion
+
+        if (request_prim in result_prim) and (request_rex in result_rex):
+            # region postprocessing if all requests are successful
+            self.processes.loc[id, 'status'] = 'success'
+            self.processes.loc[id, 'step_dep'] = self.env.now
+
+            self.processes.loc[id, 'units_prim'] = request_prim.value
+            self.scenario.logger.debug(f'{self.name} process {id} received primary resource '
+                                       f'{self.processes.loc[id, "units_prim"]} at {self.env.now}')
+
+            if self.processes.at[id, 'request_rex']:
+                self.processes.loc[id, 'units_rex'] = request_rex.value
+                self.scenario.logger.debug(f'{self.name} process {id} received secondary resource'
+                                           f' {self.processes.loc[id, "units_rex"]} at {self.env.now}')
+
+            # cover the usage & idle time
+            yield self.env.timeout(self.processes.at[id, 'steps_rental'])
+            self.processes.loc[id, 'step_return'] = self.env.now
+
+            # cover the postblock time
+            yield self.env.timeout(self.processes.at[id, 'steps_postblock_prim'])
+            self.processes.loc[id, 'step_reavail_primary'] = self.env.now
+            yield self.env.timeout(self.processes.at[id, 'steps_postblock_rex'] -
+                                   self.processes.at[id, 'steps_postblock_prim'])
+            self.processes.loc[id, 'step_reavail_secondary'] = self.env.now
+
+            # put back resources
+            self.store.put(result_prim[request_prim])
+            self.scenario.logger.debug(
+                f'{self.name} process {id} returned resource(s) {self.processes.at[id, "units_prim"]}'
+                f' at {self.env.now}. Primary store content after return: {self.store.items}')
+
+            if self.processes.at[id, 'request_rex']:
+                self.rex_dispatcher.store.put(result_rex[self.request_rex])
+                self.scenario.logger.debug(f'{self.name} process {id} returned secondary resource(s)'
+                                           f'{self.request_rex.value} at {self.env.now}. '
+                                           f'Secondary store content after return: '
+                                           f'{self.rex_dispatcher.store.items}')
+            # endregion
+
+        else:
+            # region postprocessing if at least one request is unsuccessful
+
+            # record type of failure
+            if (request_prim not in result_prim) and (request_rex not in result_rex):
+                self.processes.loc[id, 'status'] = 'failure_both'
+                self.scenario.logger.debug(f'{self.name} process {id} failed '
+                                           f'(did not receive either resource) at {self.env.now}. '
+                                           f'Primary store content after failure: {self.store.items}. '
+                                           f'Secondary store content after failure: '
+                                           f'{self.rex_dispatcher.store.items}')
+
+            elif request_prim not in result_prim:
+                self.processes.loc[id, 'status'] = 'failure_primary'
+                if self.processes.at[id, 'request_rex']:
+                    self.scenario.logger.debug(f'{self.name} process {id} failed '
+                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
+                                               f'Primary store content after fail: {self.store.items}. '
+                                               f'Secondary store content after failure: '
+                                               f'{self.rex_dispatcher.store.items}')
+                else:
+                    self.scenario.logger.debug(f'{self.name} process {id} failed '
+                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
+                                               f'Primary store content after fail: {self.store.items}')
+
+            elif request_rex not in result_rex:
+                self.processes.loc[id, 'status'] = 'failure_secondary'
+                self.scenario.logger.debug(f'{self.name} process {id} failed '
+                                           f'(didn´t receive secondary resource(s)) at {self.env.now}. '
+                                           f'Primary store content after fail: {self.store.items}. '
+                                           f'Secondary store content after failure: '
+                                           f'{self.rex_dispatcher.store.items}')
+            # endregion
+
+            # region ensure resources are put back
+            # https://stackoverflow.com/q/75371166
+            if request_prim.triggered:
+                primary_resource = yield request_prim
+                self.store.put(primary_resource)
+                self.scenario.logger.debug(f'{self.name} process {id} returned '
+                                           f'primary resource {primary_resource} at {self.env.now}. '
+                                           f'Primary store content after return: {self.store.items}.')
+
+            if hasattr(request_rex, 'triggered'):
+                if request_rex.triggered:
+                    secondary_resource = yield request_rex
+                    self.rex_dispatcher.store.put(secondary_resource)
+                    self.scenario.logger.debug(f'{self.name} process {id} returned '
+                                               f'secondary resource {secondary_resource} at {self.env.now}. '
+                                               f'Primary store content after return: {self.store.items}. '
+                                               f'Secondary store content after return: '
+                                               f'{self.rex_dispatcher.store.items}')
+            # endregion
+
+        self.scenario.logger.debug(f'{self.name} process {id} finished at {self.env.now}')
+
+    def postprocess(self):
+        """
+        post DES method
+        convert processes to time based log and calculate KPIs
+        """
+        # calculate actual time points from steps
+        for point in ['preblock_prim', 'preblock_rex', 'dep', 'return', 'reavail_prim', 'reavail_rex']:
+            self.processes[f'time_{point}'] = steps2dt(steps=self.processes[f'step_{point}'],
+                                                       scenario=self.scenario,
+                                                       absolute=True)
+
+        # region convert processes to time based log
+        self.log.loc[:, (slice(None), 'atbase')] = True
+        self.log.loc[:, (slice(None), 'atac')] = False
+        self.log.loc[:, (slice(None), 'atdc')] = False
+        self.log.loc[:, (slice(None), 'dsoc')] = 0.0
+        self.log.loc[:, (slice(None), 'dist')] = 0.0
+        self.log.loc[:, (slice(None), 'consumption')] = 0.0
+
+        for process in [row for id, row in self.processes.iterrows() if row['status'] == 'success']:
+            for unit in process['units_prim']:
+
+                time_end = process['time_return'] - self.scenario.timestep_td
+                power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.scenario.timestep_hours)
+                dist_avg = process['distance'] / process['steps_rental']
+
+                self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
+                self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
+                self.log.loc[process['time_dep']:time_end, (unit, 'atdc')] = True
+                self.log.loc[process['time_dep']:time_end, (unit, 'consumption')] = power_avg
+                self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
+                self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
+        # endregion
+
+        self.log = self.log.loc[self.scenario.dti_sim_extd, :]
+
+        # region calculate KPIs
+        steps_total = self.log.shape[0]
         # make an individual row for each used unit in a process
-        processes_exploded = self.processes.explode('commodities_primary')
+        processes_exploded = self.processes.explode('units_prim')
 
         # calculate percentage of DES (not sim, the latter is shorter) time
         # occupied by active, idle & recharge times
@@ -265,49 +432,7 @@ class SubFleetDispatcher:
         n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
         n_total = self.processes.shape[0]
         self.fail_rate = self.subfleet.fail_rate = 1 - (n_success / n_total)
-
-    def convert_process_log(self):
-        """
-        This function converts the process based log from DES execution into a time based log for each unit
-        as required by the energy system model as an example
-        """
-
-        commodities = list(self.subfleet.subblocks.keys())
-        column_names = []
-        for unit in commodities:
-            column_names.extend([(unit,'atbase'), (unit,'dsoc'), (unit,'consumption'),
-                                 (unit,'atac'), (unit,'atdc')])
-            if isinstance(self, VehicleRentalSystem):
-                column_names.extend([(unit,'dist')])
-        column_index = pd.MultiIndex.from_tuples(column_names, names=['time', 'time'])
-
-        # Initialize dataframe for time based log
-        self.data = pd.DataFrame(data=0, index=self.scenario.dti_des, columns=column_index)
-        for col, dtype in {(com, col): ('bool' if 'at' in col else 'float') for com, col in column_index}.items():
-            self.data[col] = self.data[col].astype(dtype)
-        self.data.loc[:, (slice(None), 'atbase')] = True
-        self.data.loc[:, (slice(None), 'atac')] = False
-        self.data.loc[:, (slice(None), 'atdc')] = False
-
-        for process in [row for _, row in self.processes.iterrows() if row['status'] == 'success']:
-            for unit in process['commodities_primary']:
-                # Set Availability at base for charging
-                self.data.loc[process['time_dep']:(process['time_return'] - self.scenario.timestep_td),
-                (unit, 'atbase')] = False
-
-                # set consumption power as constant while rented out
-                self.data.loc[process['time_dep']:(process['time_return'] - self.scenario.timestep_td),
-                (unit, 'consumption')] = (process['energy_pc_primary'] /
-                                               (process['steps_rental'] * self.scenario.timestep_hours))
-
-                # Set minimum SOC at departure makes sure that only vehicles with at least that SOC are rented out
-                self.data.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_primary']
-
-                if isinstance(self, VehicleRentalSystem):
-                    # set distance in first timestep of rental (for distance based revenue calculation)
-                    self.data.loc[process['time_dep'], (unit, 'dist')] = process['distance']
-
-        self.subfleet.data = self.data
+        # endregion
 
     def save_data(self):
         """
@@ -331,230 +456,87 @@ class SubFleetDispatcher:
             f'{self.scenario.name}_'
             f'{self.subfleet.name}_'
             f'log.csv')
-        self.data.to_csv(log_path)
+        self.log.to_csv(log_path)
 
 
 class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
                  subfleet: 'blocks.VehicleFleet',
+                 parent: SiteDispatcher,
                  scenario: 'simulation.Scenario'):
 
-        if subfleet.rex_fleet is not None:
+        if subfleet.rex is not None:
             self.rex = True
-            self.rex_fleet = scenario.blocks.get(rex_fleet, None)
-            self.check_rex_fleet()
-            self.rex_dispatcher = self.rex_fleet.dispatcher
+            self.rex_fleet = scenario.blocks.get(subfleet.rex, None)
+            self.rex_dispatcher = self.rex_fleet.get('dispatcher', None)
+
+            base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
+                       f'Subfleet "{subfleet.name}": selected range extender fleet "{self.rex}"'
+
+            if self.rex is None:
+                raise ValueError(f'{base_msg} does not exist')
+            elif not isinstance(self.rex_fleet, blocks.BatteryFleet):
+                raise ValueError(f'{base_msg} is not a BatteryFleet')
+            elif len(self.rex.subfleets) > 1:  # only one subfleet allowed
+                raise ValueError(f'{base_msg} must have exactly one subfleet')
+            elif not self.rex.subfleets[0].data_source in ['usecases', 'demand']:
+                raise ValueError(f'{base_msg} - data source"{self.rex.subfleet[0].data_source}" is not allowed. '
+                                 f'Allowed values: ["usecases", "demand"]')
+
+        else:
+            self.rex = False
+            self.rex_fleet = None
+            self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,
+                         parent=parent,
                          scenario=scenario)
-
-    def check_rex_fleet(self):
-        base_msg = f'Scenario "{self.scenario.name}" -'
-        f'Block "{self.subfleet.parent.name}" -'
-        f'Subfleet "{self.subfleet.name}":'
-        f'selected range extender fleet "{self.rex_fleet}"'
-
-        if self.rex_fleet is None:
-            raise ValueError(f'{base_msg} does not exist')
-        elif not isinstance(self.rex_fleet, blocks.BatteryFleet):
-            raise ValueError(f'{base_msg} is not a BatteryFleet')
-        elif len(self.rex_fleet.subfleets) > 1:  # only one subfleet allowed
-            raise ValueError(f'{base_msg} must have exactly one subfleet')
-        elif not self.rex_fleet.subfleets[0].data_source in ['usecases', 'demand']:
-            raise ValueError(f'{base_msg} - data source"{self.rex_fleet.subfleet[0].data_source}" is not allowed. '
-                             f'Allowed values: ["usecases", "demand"]')
 
     def transfer_rex_processes(self):
         """
-        This function takes processes requiring REX from the VehicleRentalSystem and adds them to the target
-        BatteryRentalSystem's processes dataframe as these don't originate from the latter's demand pregeneration
-        and are not logged there yet.
+        copy data for rex unit usage from VehicleDispatcher process frame to rex (BatteryDispatcher) process frame
         """
-        mask = (self.processes['status'] == 'success') & (self.processes['rex_request'])
-        rex_processes = self.processes.loc[mask, :].copy()
 
-        # convert values for target BatteryRentalSystem
-        rex_processes['usecase_id'] = -1
-        rex_processes['usecase_name'] = f'rex_{self.subfleet.name}'
+        if not self.rex:
+            return
 
-        def swap_primary_secondary(col_name):
-            if 'primary' in col_name:
-                return col_name.replace('primary', 'secondary')
-            elif 'secondary' in col_name:
-                return col_name.replace('secondary', 'primary')
+        rex_processes = self.processes.loc[(self.processes['status'] == 'success') &
+                                           (self.processes['request_rex']), :].copy()
+
+        rex_processes['name_usecase'] = f'rex_{self.subfleet.name}'
+
+        def swap_rex(col_name):
+            if 'prim' in col_name:
+                return col_name.replace('prim', 'carrier')
+            elif 'rex' in col_name:
+                return col_name.replace('rex', 'prim')
             return col_name
-        rex_processes.columns = [swap_primary_secondary(col) for col in rex_processes.columns]
+        rex_processes.columns = [swap_rex(col) for col in rex_processes.columns]
+        rex_processes.drop([col for col in rex_processes.columns if 'carrier' in col], axis=1, inplace=True)
 
-        # drop all secondary columns
-        #rex_processes.drop([col for col in rex_processes.columns if 'secondary' in col], axis=1, inplace=True)
-        rex_processes['time_preblock_primary'] = rex_processes['time_req']
-        rex_processes['step_preblock_primary'] = rex_processes['step_req']
-
-        # add rex processes to end of target BatteryRentalSystem's processes dataframe and create new sorted index
-        self.subfleet.rex_fleet.rental_system.processes = pd.concat(
-            [self.subfleet.rex_fleet.rental_system.processes, rex_processes],
-            join='inner')
-        self.subfleet.rex_fleet.rental_system.processes.sort_values(
-            by='time_preblock_primary',
-            inplace=True,
-            ignore_index=True)
+        self.rex_dispatcher.processes = pd.concat(objs=[getattr(self.rex_dispatcher, 'processes', None), rex_processes],
+                                                  join='inner')
+        self.rex_dispatcher.sort_values(by='step_preblock_prim',
+                                        inplace=True,
+                                        ignore_index=True)
 
 
 class BatteryDispatcher(SubFleetDispatcher):
 
     def __init__(self,
                  subfleet: blocks.SubFleet,
+                 parent: SiteDispatcher,
                  scenario: 'simulation.Scenario'):
 
         self.rex = False
+        self.rex_fleet = None
+        self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,
+                         parent=parent,
                          scenario=scenario)
 
 
-class Process:
-
-    def __init__(self,
-                 data: pd.Series,
-                 dispatcher: SubFleetDispatcher):
-
-        self.data = data
-        self.dispatcher = dispatcher
-        self.logger = self.disp.scenario
-        self.env = self.dispatcher.scenario.dispatcher.environment
-
-        self.primary_result = self.secondary_result = [False]  # defaults equal to insuccessful request
-        self.primary_request = self.secondary_request = False
-        self.status = None
-
-        # define_process is not executed here, but only when the environment is run
-        self.environment.process(self.define_process())
-
-    def define_process(self):
-
-        # region request primary resource(s) at preblock time
-        yield self.env.timeout(self.data['step_preblock_prim'])
-
-        self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} preblocked at {self.env.now}')
-
-        with self.rental_system.store.get(self.data['num_prim']) as self.primary_request:
-            self.primary_result = yield self.primary_request | self.env.timeout(
-                self.data['steps_patience'])
-
-        self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} requested {self.data["num_prim"]}'
-                                   f' primary resource(s) at {self.env.now}')
-        # endregion
-
-        if isinstance(self.rental_system, VehicleRentalSystem):
-            yield self.env.timeout(self.data['steps_charge_prim'])
-
-        # region request rex resource(s) at actual request time
-        if self.data['request_rex']:
-            with (self.rental_system.fleet.rex_fleet.rental_system.store.get(self.data['num_rex'])
-                  as self.secondary_request):
-                self.secondary_result = yield self.secondary_request | self.env.timeout(self.data['steps_patience'])
-
-            self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} requested '
-                                       f'{self.data["num_secondary"]} secondary resource(s) at {self.env.now}')
-        # endregion
-
-        # region postprocessing if all requests are successful
-        if (self.primary_request in self.primary_result) and (self.secondary_request in self.secondary_result):
-            self.rental_system.processes.loc[self.id, 'status'] = self.status = 'success'
-            self.rental_system.processes.at[self.id, 'commodities_primary'] = self.primary_request.value
-            self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} received primary resource'
-                                       f' {self.primary_request.value} at {self.env.now}')
-
-            if self.secondary_request:
-                self.rental_system.processes.at[self.id, 'commodities_secondary'] = self.secondary_request.value
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} received secondary resource'
-                                           f' {self.secondary_request.value} at {self.env.now}')
-
-            self.rental_system.processes.loc[self.id, 'step_dep'] = self.env.now
-
-            # cover the usage & idle time
-            yield self.env.timeout(self.data['steps_rental'])
-            self.rental_system.processes.loc[self.id, 'step_return'] = self.env.now
-
-            # cover the recharge time for BatteryFleets
-            if isinstance(self.rental_system, VehicleRentalSystem):
-                self.rental_system.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
-                if self.secondary_request:
-                    yield self.env.timeout(self.data['steps_charge_secondary'])
-                    self.rental_system.processes.loc[self.id, 'step_reavail_secondary'] = self.env.now
-
-            elif isinstance(self.rental_system, BatteryRentalSystem):
-                yield self.env.timeout(self.data['steps_charge_primary'])
-                self.rental_system.processes.loc[self.id, 'step_reavail_primary'] = self.env.now
-
-            self.rental_system.store.put(self.primary_result[self.primary_request])
-            self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned resource(s) {self.primary_request.value}'
-                                       f' at {self.env.now}. Primary store content after return: {self.rental_system.store.items}')
-
-            if self.secondary_request:
-                self.rental_system.fleet.rex_fleet.rental_system.store.put(self.secondary_result[self.secondary_request])
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned secondary resource(s)'
-                                           f'{self.secondary_request.value} at {self.env.now}. '
-                                           f'Secondary store content after return: '
-                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items} ')
-        # endregion
-
-        # region postprocessing if at least one request is unsuccessful
-        else:
-
-            # log type of failure
-            if ((self.primary_request not in self.primary_result)
-                    and (self.secondary_request not in self.secondary_result)):
-                self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_both'
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
-                                           f'(didn´t receive either resource) at {self.env.now}. '
-                                           f'Primary store content after failure: {self.rental_system.store.items}. '
-                                           f'Secondary store content after failure: '
-                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
-
-            elif self.primary_request not in self.primary_result:
-                self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_primary'
-                if self.secondary_request:
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
-                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
-                                               f'Primary store content after fail: {self.rental_system.store.items}. '
-                                               f'Secondary store content after failure: '
-                                               f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
-                else:
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
-                                               f'(didn´t receive primary resource(s)) at {self.env.now}. '
-                                               f'Primary store content after fail: {self.rental_system.store.items}')
-
-            elif self.secondary_request not in self.secondary_result:
-                self.rental_system.processes.loc[self.id, 'status'] = self.status = 'failure_secondary'
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} failed '
-                                           f'(didn´t receive secondary resource(s)) at {self.env.now}. '
-                                           f'Primary store content after fail: {self.rental_system.store.items}. '
-                                           f'Secondary store content after failure: '
-                                           f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
-        # endregion
-
-            # region ensure resources are put back
-            # https://stackoverflow.com/q/75371166
-            if self.primary_request.triggered:
-                primary_resource = yield self.primary_request
-                self.rental_system.store.put(primary_resource)
-                self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned '
-                                           f'primary resource {primary_resource} at {self.env.now}. '
-                                           f'Primary store content after return: {self.rental_system.store.items}.')
-
-            if hasattr(self.secondary_request, 'triggered'):
-                if self.secondary_request.triggered:
-                    secondary_resource = yield self.secondary_request
-                    self.rental_system.fleet.rex_fleet.rental_system.store.put(secondary_resource)
-                    self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} returned '
-                                               f'secondary resource {secondary_resource} at {self.env.now}. '
-                                               f'Primary store content after return: {self.rental_system.store.items}. '
-                                               f'Secondary store content after return: '
-                                               f'{self.rental_system.fleet.rex_fleet.rental_system.store.items}')
-            # endregion
-
-        self.scenario.logger.debug(f'{self.rental_system.name} process {self.id} finished at {self.env.now}')
 
 
