@@ -8,6 +8,7 @@ import pandas as pd
 import simpy
 
 from revoletion import blocks
+from revoletion import utils
 
 
 class MultiStoreGet(simpy.resources.base.Get):
@@ -143,15 +144,12 @@ class SubFleetDispatcher:
 
         # region calculate a priori process data
         self.processes = self.demand.demand.copy()
-        self.processes['step_req'] = dt2steps(values=self.processes['time_req'],
-                                              scenario=self.scenario)
+        self.processes['step_req'] = self.dt2steps(values=self.processes['time_req'])
 
-        self.processes['steps_patience'] = dt2steps(values=self.processes['dtime_patience'],
-                                                    scenario=self.scenario)
+        self.processes['steps_patience'] = self.dt2steps(values=self.processes['dtime_patience'])
 
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
-        self.processes['steps_rental'] = dt2steps(values=self.processes['dtime_rental'],
-                                                  self.scenario)
+        self.processes['steps_rental'] = self.dt2steps(values=self.processes['dtime_rental'])
 
         self.processes['num_prim'] = {'mb': np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int),
                                       'ev': 1,
@@ -185,13 +183,16 @@ class SubFleetDispatcher:
                                                           getattr(self.rex_dispatcher, 'pwr_chg_usable', np.inf),
                                                           unit='hour')
 
-        self.processes['steps_chg_prim'] = dt2steps(self.processes['dtime_chg_prim'], self.scenario)
-        self.processes['steps_chg_rex'] = dt2steps(self.processes['dtime_chg_rex'], self.scenario)
+        self.processes['steps_chg_prim'] = self.dt2steps(values=self.processes['dtime_chg_prim'])
+        self.processes['steps_chg_rex'] = self.dt2steps(values=self.processes['dtime_chg_rex'])
+
+        self.processes['steps_usage_prim'] = self.processes['steps_chg_prim'] + self.processes['steps_rental']
+        self.processes['steps_usage_rex'] = self.processes['steps_chg_rex'] + self.processes['steps_rental']
 
         self.processes['steps_preblock_prim'] = {'ev': self.processes['steps_chg_prim'],
                                                  'icev': 0,
                                                  'mb': 0}[self.subfleet.type_unit]
-        self.processes['steps_postblock_prim'] = {'ev':0,
+        self.processes['steps_postblock_prim'] = {'ev': 0,
                                                   'icev': 0,
                                                   'mb': self.processes['steps_chg_prim']}[self.subfleet.type_unit]
         self.processes['steps_preblock_rex'] = 0
@@ -304,10 +305,10 @@ class SubFleetDispatcher:
 
             # cover the postblock time
             yield self.env.timeout(self.processes.at[id, 'steps_postblock_prim'])
-            self.processes.loc[id, 'step_reavail_primary'] = self.env.now
+            self.processes.loc[id, 'step_reavail_prim'] = self.env.now
             yield self.env.timeout(self.processes.at[id, 'steps_postblock_rex'] -
                                    self.processes.at[id, 'steps_postblock_prim'])
-            self.processes.loc[id, 'step_reavail_secondary'] = self.env.now
+            self.processes.loc[id, 'step_reavail_rex'] = self.env.now
 
             # put back resources
             self.store.put(result_prim[request_prim])
@@ -360,18 +361,18 @@ class SubFleetDispatcher:
             # region ensure resources are put back
             # https://stackoverflow.com/q/75371166
             if request_prim.triggered:
-                primary_resource = yield request_prim
-                self.store.put(primary_resource)
+                resource_prim = yield request_prim
+                self.store.put(resource_prim)
                 self.scenario.logger.debug(f'{self.name} process {id} returned '
-                                           f'primary resource {primary_resource} at {self.env.now}. '
+                                           f'primary resource {resource_prim} at {self.env.now}. '
                                            f'Primary store content after return: {self.store.items}.')
 
             if hasattr(request_rex, 'triggered'):
                 if request_rex.triggered:
-                    secondary_resource = yield request_rex
-                    self.rex_dispatcher.store.put(secondary_resource)
+                    resource_rex = yield request_rex
+                    self.rex_dispatcher.store.put(resource_rex)
                     self.scenario.logger.debug(f'{self.name} process {id} returned '
-                                               f'secondary resource {secondary_resource} at {self.env.now}. '
+                                               f'secondary resource {resource_rex} at {self.env.now}. '
                                                f'Primary store content after return: {self.store.items}. '
                                                f'Secondary store content after return: '
                                                f'{self.rex_dispatcher.store.items}')
@@ -386,9 +387,8 @@ class SubFleetDispatcher:
         """
         # calculate actual time points from steps
         for point in ['preblock_prim', 'preblock_rex', 'dep', 'return', 'reavail_prim', 'reavail_rex']:
-            self.processes[f'time_{point}'] = steps2dt(steps=self.processes[f'step_{point}'],
-                                                       scenario=self.scenario,
-                                                       absolute=True)
+            self.processes[f'time_{point}'] = self.steps2dt(steps=self.processes[f'step_{point}'],
+                                                            absolute=True)
 
         # region convert processes to time based log
         self.log.loc[:, (slice(None), 'atbase')] = True
@@ -398,40 +398,36 @@ class SubFleetDispatcher:
         self.log.loc[:, (slice(None), 'dist')] = 0.0
         self.log.loc[:, (slice(None), 'consumption')] = 0.0
 
-        for process in [row for id, row in self.processes.iterrows() if row['status'] == 'success']:
-            for unit in process['units_prim']:
-
-                time_end = process['time_return'] - self.scenario.timestep_td
-                power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.scenario.timestep_hours)
-                dist_avg = process['distance'] / process['steps_rental']
-
-                self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
-                self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
-                self.log.loc[process['time_dep']:time_end, (unit, 'atdc')] = True
-                self.log.loc[process['time_dep']:time_end, (unit, 'consumption')] = power_avg
-                self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
-                self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
-        # endregion
-
-        self.log = self.log.loc[self.scenario.dti_sim_extd, :]
-
-        # region calculate KPIs
-        steps_total = self.log.shape[0]
-        # make an individual row for each used unit in a process
         processes_exploded = self.processes.explode('units_prim')
 
-        # calculate percentage of DES (not sim, the latter is shorter) time
-        # occupied by active, idle & recharge times
-        for unit in list(self.subfleet.subblocks.keys()):
-            processes = processes_exploded.loc[processes_exploded['commodities_primary'] == unit, :]
-            steps_blocked = processes['steps_charge_primary'].sum() + processes['steps_rental'].sum()
-            self.use_rate[unit] = steps_blocked / steps_total
-        self.subfleet.use_rate = np.mean(list(self.use_rate.values()))
+        for process in [row for id, row in processes_exploded.iterrows() if row['status'] == 'success']:
+            unit = process['units_prim']
+            time_end = process['time_return'] - self.scenario.timestep_td
+            power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.scenario.timestep_hours)
+            dist_avg = process['distance'] / process['steps_rental']
 
-        # calculate overall percentage of failed trips
-        n_success = self.processes.loc[self.processes['status'] == 'success', 'status'].shape[0]
-        n_total = self.processes.shape[0]
-        self.fail_rate = self.subfleet.fail_rate = 1 - (n_success / n_total)
+            self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
+            self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
+            self.log.loc[process['time_dep']:time_end, (unit, 'atdc')] = True
+            self.log.loc[process['time_dep']:time_end, (unit, 'consumption')] = power_avg
+            self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
+            self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
+
+        self.log = self.log.loc[utils.extend_dti(self.scenario.dti_sim_extd), :]
+        self.subfleet.log = self.log
+        # endregion
+
+        # region calculate KPIs
+        steps_total = len(self.log.index)
+        self.kpis['rate_usage_units'] = dict()
+        for unit in self.units.keys():
+            steps_usage = processes_exploded.loc[processes_exploded['units_prim'] == unit, 'steps_usage_prim'].sum()
+            self.kpis['rate_usage_units'][unit] = steps_usage / steps_total
+        self.kpis['rate_usage_mean'] = np.mean(list(self.kpis['rate_usage_units'].values()))
+
+        self.kpis['rate_failure'] = 1 - (self.processes['status'] == 'success').mean()
+
+        self.subfleet.kpis_dispatch = self.kpis
         # endregion
 
     def save_data(self):
