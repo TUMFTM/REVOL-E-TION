@@ -93,7 +93,7 @@ grid,filename_markets,None,None,None,None
 grid,res_only,False,False,False,False
 grid,opex_spec_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s,grid_opex_g2s
 grid,opex_spec_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g,grid_opex_s2g
-ess,size_existing,0,0,0,0
+ess,size_existing,0,0,10000,10000
 ess,capex_existing,True,True,True,True
 ess,size_max,None,None,None,None
 ess,invest,False,True,True,False
