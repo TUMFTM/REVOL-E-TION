@@ -16,7 +16,7 @@ scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,filename_mapper,mapper_timeframe,mapper_timeframe,mapper_timeframe,mapper_timeframe
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'icev': 'ICEVSystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryEnergyStorage', 'bev': 'VehicleCommoditySystem', 'brs': 'BatteryCommoditySystem'}"
-core,size_acdc_existing,0,0,0,0
+core,size_acdc_existing,0,0,0,10000
 core,capex_existing_acdc,True,True,True,True
 core,size_acdc_max,None,None,None,None
 core,invest_acdc,False,True,True,False
