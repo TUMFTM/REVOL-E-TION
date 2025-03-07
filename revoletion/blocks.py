@@ -1612,8 +1612,8 @@ class Fleet(Block):
             label=f'{self.name}_inflow',
             inputs={self.bus_connected: solph.Flow(
                 variable_costs=self.evaluators['s2f'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=self.sizes.loc['s2f', 'preexisting'],
-                max=1,
+                nominal_value=utils.conv_nan2none(self.sizes.loc['s2f', 'preexisting']),
+                # default value for max is 1; not explicitly set to ensure compatibility with nominal_value=None
             )},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: 1}
@@ -1623,8 +1623,8 @@ class Fleet(Block):
             label=f'{self.name}_outflow',
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['f2s'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=self.sizes.loc['f2s', 'preexisting'],
-                max=1,
+                nominal_value=utils.conv_nan2none(self.sizes.loc['f2s', 'preexisting']),
+                # default value for max is 1; not explicitly set to ensure compatibility with nominal_value=None
             )},
             outputs={self.bus_connected: solph.Flow(
                 variable_costs=self.scenario.cost_eps)},
