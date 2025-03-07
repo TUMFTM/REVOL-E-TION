@@ -1598,7 +1598,7 @@ class Fleet(Block):
         xc denotes ac or dc, depending on the parameter 'system'
 
         bus_connected        name_bus
-          |<-x---name_outflow---|---(ElectricFleetUnit Instance)
+          |<----name_outflow--x-|---(ElectricFleetUnit Instance)
           |                     |
           |-x----name_inflow--->|---(ElectricFleetUnit Instance)
           |                     |
@@ -1609,19 +1609,23 @@ class Fleet(Block):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
         self.components['inflow'] = solph.components.Converter(
-            label=f'xc_{self.name}',
+            label=f'{self.name}_inflow',
             inputs={self.bus_connected: solph.Flow(
                 variable_costs=self.evaluators['s2f'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=self.sizes.loc['s2f', 'preexisting'],)},
+                nominal_value=self.sizes.loc['s2f', 'preexisting'],
+                max=1,
+            )},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: 1}
         )
 
         self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_xc',
+            label=f'{self.name}_outflow',
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['f2s'].opex['spec_ep'][horizon.dti_ph],
-                nominal_value=self.sizes.loc['f2s', 'preexisting'],)},
+                nominal_value=self.sizes.loc['f2s', 'preexisting'],
+                max=1,
+            )},
             outputs={self.bus_connected: solph.Flow(
                 variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.bus_connected: 1}
