@@ -38,15 +38,16 @@ class Block:
         self.scenario = scenario
         self.parent = parent
 
+        # set empty list/dict; not possible as default argument as both are mutable
         pois = pois if pois is not None else dict()
         state_names = state_names if state_names is not None else []
 
-        self.classname = self.__class__.__name__
-        self.top_level_block = True if self.parent is self.scenario else False
+        self.classname = self.__class__.__name__  # get name of class
+        self.top_level_block = True if self.parent is self.scenario else False  # distinguish top level blocks/subblocks
 
         # region set attributes from scenario file or parent
-        if self.parent is self.scenario:  # is top level block
-            self.scenario.blocks[self.name] = self
+        if self.top_level_block:
+            self.scenario.blocks[self.name] = self  # add block to scenario's blocks dict
 
             self.parameters = self.scenario.parameters.loc[self.name]
             for key, value in self.parameters.items():
@@ -1361,8 +1362,16 @@ class StorageBlock:
 
         self.scenario.storage_blocks[self.name] = self
 
-        self.loss_rate = 0
-        self.calc_loss_rate_per_hour()
+        def calc_loss_rate_per_period(period: pd.Timedelta = pd.Timedelta(hours=1)) -> float:
+            """
+            convert self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per target time step.
+            oemof specifies one hour as the target time step for the loss rate.
+            """
+            ratio_timestep = period / pd.Timedelta('30 days')  # assumption: 30 days per month
+            return (1 - (1 - self.sdr) ** ratio_timestep)
+
+        self.loss_rate_per_hour = calc_loss_rate_per_period(period=pd.Timedelta(hours=1))
+        self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep_td)
         delattr(self, 'sdr')
 
         self.states.loc[self.scenario.starttime, 'soc'] = self.soc_init
@@ -1371,15 +1380,6 @@ class StorageBlock:
         self.aging_model = bat.BatteryPackModel(self)
         self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
         self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
-
-    def calc_loss_rate_per_hour(self,
-                                target: pd.Timedelta = pd.Timedelta(hours=1)) -> float:
-        """
-        convert self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per target time step.
-        oemof specifies one hour as the target time step for the loss rate.
-        """
-        ratio_timestep = target / pd.Timedelta('30 days')  # assumption: 30 days per month
-        self.loss_rate = 1 - (1 - self.sdr) ** ratio_timestep
 
     def get_horizon_results(self,
                             horizon):
@@ -1507,7 +1507,7 @@ class StationaryBattery(Block, StorageBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={
                 self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            loss_rate=self.loss_rate,
+            loss_rate=self.loss_rate_per_hour,
             balanced={'go': True, 'rh': False}[self.scenario.strategy],
             initial_storage_level=statistics.median(
                 [self.soc_min,
@@ -1843,7 +1843,7 @@ class ElectricFleetUnit(Block, StorageBlock):
             inputs={self.components['bus']: solph.Flow(variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph])},
             # cost_eps are needed to prevent storage from being emptied in RH
             outputs={self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            loss_rate=self.loss_rate,
+            loss_rate=self.loss_rate_per_hour,
             balanced=False,
             initial_storage_level=statistics.median(
                 [soc_min_hor[horizon.starttime],
