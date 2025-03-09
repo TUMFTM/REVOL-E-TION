@@ -1405,7 +1405,7 @@ class StorageBlock:
 
         self.aging_model.age(horizon=horizon)
 
-    def add_state_traces(self):
+    def add_plot_traces(self):
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
@@ -1709,7 +1709,7 @@ class SubFleet(NonElectricBlock, Block):
             raise ValueError(f'Subfleet "{self.name}": dispatch not implemented for data source "{self.data_source}"')
 
 
-class ElectricFleetUnit(Block, StorageBlock):
+class ElectricFleetUnit(StorageBlock, Block):
     """
     abstract class
     """
@@ -1720,47 +1720,48 @@ class ElectricFleetUnit(Block, StorageBlock):
                  parent: SubFleet,
                  params: dict):
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         pois={
-                             'glider': ('FleetUnitEvaluator',
-                                        {('capex', 'preexisting'): 'capex_preexisting',
-                                         ('capex', 'fix'): 'capex_fix_glider',
-                                         ('mntex', 'fix'): 'mntex_fix_glider',
-                                         ('opex', 'dist'): 'opex_spec_dist',
-                                         ('crev', 'time'): 'crev_spec_time',
-                                         ('crev', 'dist'): 'crev_spec_dist',
-                                         ('aux', 'ls'): 'ls',
-                                         ('aux', 'ccr'): 'ccr'}),
-                             'charger': ('EconomicEvaluator',
-                                         {('capex', 'preexisting'): 'capex_preexisting',
-                                          ('capex', 'fix'): 'capex_fix_charger',
-                                          ('aux', 'ls'): 'ls',
-                                          ('aux', 'ccr'): 'ccr'}),
-                             'storage': ('EconomicEvaluator',
-                                         {('capex', 'preexisting'): 'capex_preexisting',
-                                          ('capex', 'spec'): 'capex_spec',
-                                          ('size', 'name'): 'block',
-                                          ('aux', 'ls'): 'ls',
-                                          ('aux', 'ccr'): 'ccr'}),
-                             'ext_ac': ('EconomicEvaluator',
-                                        {('opex', 'spec'): 'opex_spec_ext_ac',
-                                         ('flow', 'name'): 'ext_ac'}),
-                             'ext_dc': ('EconomicEvaluator',
-                                        {('opex', 'spec'): 'opex_spec_ext_dc',
-                                         ('flow', 'name'): 'ext_dc'}),
-                             'out': ('EconomicEvaluator',
-                                     {('flow', 'name'): 'out'}),
-                             'in': ('EconomicEvaluator',
-                                    {('flow', 'name'): 'in'}),
-                             'bat_in': ('EconomicEvaluator',
-                                        {('flow', 'name'): 'bat_in'}),
-                             'bat_out': ('EconomicEvaluator',
-                                         {('flow', 'name'): 'bat_out'}),
-                         },
-                         state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
-                         params=params,
-                         parent=parent)
+        Block.__init__(self,
+                       name=name,
+                       scenario=scenario,
+                       pois={
+                           'glider': ('FleetUnitEvaluator',
+                                      {('capex', 'preexisting'): 'capex_preexisting',
+                                       ('capex', 'fix'): 'capex_fix_glider',
+                                       ('mntex', 'fix'): 'mntex_fix_glider',
+                                       ('opex', 'dist'): 'opex_spec_dist',
+                                       ('crev', 'time'): 'crev_spec_time',
+                                       ('crev', 'dist'): 'crev_spec_dist',
+                                       ('aux', 'ls'): 'ls',
+                                       ('aux', 'ccr'): 'ccr'}),
+                           'charger': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'fix'): 'capex_fix_charger',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                           'storage': ('EconomicEvaluator',
+                                       {('capex', 'preexisting'): 'capex_preexisting',
+                                        ('capex', 'spec'): 'capex_spec',
+                                        ('size', 'name'): 'block',
+                                        ('aux', 'ls'): 'ls',
+                                        ('aux', 'ccr'): 'ccr'}),
+                           'ext_ac': ('EconomicEvaluator',
+                                      {('opex', 'spec'): 'opex_spec_ext_ac',
+                                       ('flow', 'name'): 'ext_ac'}),
+                           'ext_dc': ('EconomicEvaluator',
+                                      {('opex', 'spec'): 'opex_spec_ext_dc',
+                                       ('flow', 'name'): 'ext_dc'}),
+                           'out': ('EconomicEvaluator',
+                                   {('flow', 'name'): 'out'}),
+                           'in': ('EconomicEvaluator',
+                                  {('flow', 'name'): 'in'}),
+                           'bat_in': ('EconomicEvaluator',
+                                      {('flow', 'name'): 'bat_in'}),
+                           'bat_out': ('EconomicEvaluator',
+                                       {('flow', 'name'): 'bat_out'}),
+                       },
+                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                       params=params,
+                       parent=parent)
 
         StorageBlock.__init__(self)
 
@@ -1797,6 +1798,17 @@ class ElectricFleetUnit(Block, StorageBlock):
             |
         """
 
+        if self.mode_scheduling in self.scenario.run.apriori_lvls:
+            p_max_chg = None
+            p_max_dis = None
+            p_fix_chg = self.flows_apriori['p_int'].clip(lower=0) / self.pwr_chg_max
+            p_fix_dis = (-1) * self.flows_apriori['p_int'].clip(upper=0) / self.pwr_dis_max
+        else:
+            p_max_chg = self.log.loc[horizon.dti_ph, 'atbase'].astype(int)
+            p_max_dis = self.log.loc[horizon.dti_ph, 'atbase'].astype(int)
+            p_fix_chg = None
+            p_fix_dis = None
+
         self.bus_connected = self.parent.parent.components['bus']
         self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
 
@@ -1804,8 +1816,8 @@ class ElectricFleetUnit(Block, StorageBlock):
             label=f'mc_{self.name}',
             inputs={self.parent.parent.components['bus']: solph.Flow(
                 nominal_value=self.pwr_chg_max,
-                max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
-                fix=None)},  # todo fix for apriori scheduling
+                max=p_max_chg,
+                fix=p_fix_chg)},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: self.eff_chg_int})
 
@@ -1814,8 +1826,8 @@ class ElectricFleetUnit(Block, StorageBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.parent.parent.components['bus']: solph.Flow(
                 nominal_value=self.pwr_dis_max * self.eff_dis_int if pd.notna(self.pwr_dis_max) else 0,
-                max=self.log.loc[horizon.dti_ph, 'atbase'].astype(int),  # todo deactivate for apriori scheduling
-                fix=None,  # todo fix for apriori scheduling
+                max=p_max_dis,
+                fix=p_fix_dis,
                 variable_costs=self.scenario.cost_eps)
             },
             conversion_factors={self.parent.parent.components['bus']: self.eff_dis_int})
@@ -1910,6 +1922,29 @@ class ElectricFleetUnit(Block, StorageBlock):
         self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[(self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
 
         StorageBlock.get_horizon_results(self=self, horizon=horizon)
+
+    def add_plot_traces(self):
+        Block.add_plot_traces(self)
+
+        legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
+        legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
+        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                              y=self.flows['ext_ac'],
+                                                              mode='lines',
+                                                              name=legend_ext_ac,
+                                                              line=dict(width=2, dash=None, shape='hv')),
+                                                    go.Scatter(x=self.flows.index,
+                                                               y=self.flows['ext_dc'],
+                                                               mode='lines',
+                                                               name=legend_ext_dc,
+                                                               line=dict(width=2, dash=None, shape='hv')),
+                                                    ])
+
+        StorageBlock.add_state_traces(self)
+
+    def get_legend_entry(self):
+        return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
+                f'{(self.pwr_dis_max * self.eff_dis_int) / 1e3:.1f} kW discharge)')
 
 
 class CombustionVehicle(NonElectricBlock, Block):
