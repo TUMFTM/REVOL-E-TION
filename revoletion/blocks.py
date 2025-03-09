@@ -1432,28 +1432,29 @@ class StationaryBattery(Block, StorageBlock):
                  name: str,
                  scenario):
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         pois={
-                             'block': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('mntex', 'spec'): 'mntex_spec',
-                                        ('opex', 'spec'): 'opex_spec',
-                                        ('size', 'name'): 'block',
-                                        ('flow', 'name'): 'in',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                             'out': ('EconomicEvaluator',
-                                     {('flow', 'name'): 'out'}),
-                             'bat_in': ('EconomicEvaluator',
-                                        {('flow', 'name'): 'bat_in'}),
-                             'bat_out': ('EconomicEvaluator',
-                                         {('flow', 'name'): 'bat_out'}),
-                         },
-                         state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
-                         params=None,
-                         parent=scenario)
+        Block.__init__(self,
+                       name=name,
+                       scenario=scenario,
+                       pois={
+                           'block': ('EconomicEvaluator',
+                                     {('capex', 'preexisting'): 'capex_preexisting',
+                                      ('capex', 'spec'): 'capex_spec',
+                                      ('mntex', 'spec'): 'mntex_spec',
+                                      ('opex', 'spec'): 'opex_spec',
+                                      ('size', 'name'): 'block',
+                                      ('flow', 'name'): 'in',
+                                      ('aux', 'ls'): 'ls',
+                                      ('aux', 'ccr'): 'ccr'}),
+                           'out': ('EconomicEvaluator',
+                                   {('flow', 'name'): 'out'}),
+                           'bat_in': ('EconomicEvaluator',
+                                      {('flow', 'name'): 'bat_in'}),
+                           'bat_out': ('EconomicEvaluator',
+                                       {('flow', 'name'): 'bat_out'}),
+                       },
+                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                       params=None,
+                       parent=scenario)
 
         StorageBlock.__init__(self)
 
@@ -1541,8 +1542,8 @@ class StationaryBattery(Block, StorageBlock):
         super().add_result_msgs(unit='kWh')
 
     def add_plot_traces(self):
-        super().add_plot_traces()
-        super().add_state_traces()
+        Block.add_plot_traces(self)
+        StorageBlock.add_plot_traces(self)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.sizes.loc["block", "total"] * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
@@ -1550,9 +1551,6 @@ class StationaryBattery(Block, StorageBlock):
 
 
 class Fleet(Block):
-    """
-    abstract class
-    """
 
     def __init__(self,
                  name: str,
@@ -1940,7 +1938,7 @@ class ElectricFleetUnit(StorageBlock, Block):
                                                                line=dict(width=2, dash=None, shape='hv')),
                                                     ])
 
-        StorageBlock.add_state_traces(self)
+        StorageBlock.add_plot_traces(self)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
