@@ -2196,7 +2196,6 @@ class SystemCore(InvestBlock):
                                       f' {self.size.loc["dcac", "total"] / 1e3:.1f} kW'
                                       f' (existing: {self.size.loc["dcac", "existing"] / 1e3:.1f} kW'
                                       f' - additional: {self.size.loc["dcac", "additional"] / 1e3:.1f} kW)')
-                                      f' - additional: {self.size.loc["dcac", "additional"] / 1e3:.1f} kW)')
 
     def set_init_size(self, size_names):
         self.equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
