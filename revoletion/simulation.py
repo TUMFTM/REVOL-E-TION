@@ -564,10 +564,6 @@ class Scenario:
         #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
         #                          f' be connected to the same bus')
 
-        self.scheduler = None
-        # todo adapt to new fleet structure
-        # if any([fleet for fleet in self.fleets.values() if fleet.mode_scheduling in self.run.apriori_lvls]):
-        #     self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
@@ -602,6 +598,14 @@ class Scenario:
         # region execute scenario
         for block in self.blocks.values():
             block.pre_scenario()
+
+        self.scheduler = None
+        if any([fleet_unit
+                for fleet in self.fleets.values()
+                for subfleet in fleet.subblocks.values()
+                for fleet_unit in subfleet.subblocks.values()
+                if fleet_unit.mode_scheduling in self.run.apriori_lvls]):
+            self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         try:
             for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
@@ -824,8 +828,8 @@ class PredictionHorizon:
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
-            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                      f'Calculating power schedules for commodities with rulebased charging strategies')
+            self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
+                                       f'Calculating power schedules for commodities with rulebased charging strategies')
             self.scenario.scheduler.calc_ph_schedule(self)
         # endregion
 
