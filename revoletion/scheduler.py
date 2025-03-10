@@ -364,6 +364,7 @@ class AprioriFleetUnit:
 
     def calc_soc_target(self,
                         ts: pd.Timestamp):
+        # ToDo: add input parameter to specify target SOCs
         if self.block.log.loc[ts, 'atdc']:
             return 0.8
 
