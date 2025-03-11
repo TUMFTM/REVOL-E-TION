@@ -44,10 +44,8 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.block.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal[0] = self.block.q_loss_cal_init
-        self.block.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc[0] = self.block.q_loss_cyc_init
-
-        self.block.states.loc[self.scenario.starttime, 'soh'] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
+        self.q_loss_cal[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cal']
+        self.q_loss_cyc[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cyc']
 
         # Placeholders for pack level variables to be filled after component sizing in first horizon
         self.size = self.n_cells = self.m_cells = self.m_housing = self.c_th_cells = self.c_th_housing = None
@@ -193,8 +191,8 @@ class BatteryPackModel:
         self.block.states.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
         self.block.states.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
         self.block.states.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
-        self.block.soc_min = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
-        self.block.soc_max = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
+        self.block.states.loc[horizon.ch_endtime:, 'soc_min'] = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
+        self.block.states.loc[horizon.ch_endtime:, 'soc_max'] = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
 
     def calc_aging_naumann(self,
                            horizon,

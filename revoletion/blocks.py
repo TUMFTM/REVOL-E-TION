@@ -222,7 +222,7 @@ class Block:
         """
         if {'in', 'out'}.issubset(set(self.flows.columns)):
             if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
-                self.scenario.logger.warning(f'Block {self.name} - simultaneous in- and outflow detected!')
+                self.scenario.logger.warning(f'Block "{self.name}" - simultaneous in- and outflow detected!')
 
     def calc_results_economics(self):
         # calculate economic results and write one level up
@@ -1374,12 +1374,30 @@ class StorageBlock:
         self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep_td)
         delattr(self, 'sdr')
 
+        # set initial SOC
         self.states.loc[self.scenario.starttime, 'soc'] = self.soc_init
         delattr(self, 'soc_init')
 
+        # set initial SOH
+        self.states.loc[self.scenario.starttime, 'soh'] = 1 - self.q_loss_cal_init - self.q_loss_cyc_init
+
+        # set initial calendric loss
+        self.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal_init
+        delattr(self, 'q_loss_cal_init')
+
+        # set inital cyclic loss
+        self.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc_init
+        delattr(self, 'q_loss_cyc_init')
+
+        # initialization of aging model after all blocks are initialized to get temp from pv blocks
+        self.states.loc[:, 'soc_min'] = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2
+        self.states.loc[:, 'soc_max'] = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
+
+        self.aging_model = None
+
+
+    def pre_scenario(self):
         self.aging_model = bat.BatteryPackModel(self)
-        self.soc_min = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2  # todo move to states df
-        self.soc_max = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
 
     def get_horizon_results(self,
                             horizon):
@@ -1401,7 +1419,10 @@ class StorageBlock:
         # preemptive size calculation to enable soc calculation
         self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
         self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][utils.extend_dti(horizon.dti_ch)]
-        self.states['soc'] = self.states['energy'] / self.sizes.loc['block', 'total']
+        # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
+        self.states.loc[utils.extend_dti(horizon.dti_ch), 'soc'] = (
+                self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] /
+                self.sizes.loc['block', 'total']).fillna(0)
 
         self.aging_model.age(horizon=horizon)
 
@@ -1426,7 +1447,7 @@ class StorageBlock:
                                                     ])
 
 
-class StationaryBattery(Block, StorageBlock):
+class StationaryBattery(StorageBlock, Block):
 
     def __init__(self,
                  name: str,
@@ -1452,7 +1473,7 @@ class StationaryBattery(Block, StorageBlock):
                            'bat_out': ('EconomicEvaluator',
                                        {('flow', 'name'): 'bat_out'}),
                        },
-                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
                        params=None,
                        parent=scenario)
 
@@ -1462,6 +1483,10 @@ class StationaryBattery(Block, StorageBlock):
         self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
         for attr in ['eff_acdc', 'eff_dcac']:
             delattr(self, attr)
+
+    def pre_scenario(self):
+        Block.pre_scenario(self)
+        StorageBlock.pre_scenario(self)
 
     def define_oemof_components(self,
                                 horizon):
@@ -1510,11 +1535,7 @@ class StationaryBattery(Block, StorageBlock):
                 self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             loss_rate=self.loss_rate_per_hour,
             balanced={'go': True, 'rh': False}[self.scenario.strategy],
-            initial_storage_level=statistics.median(
-                [self.soc_min,
-                 self.states.loc[horizon.starttime, 'soc'],
-                 self.soc_max]
-            ),
+            initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             invest_relation_input_capacity=self.crate_chg,  # crate measured "outside" of conversion factor (efficiency)
             invest_relation_output_capacity=self.crate_dis,
             inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
@@ -1523,14 +1544,8 @@ class StationaryBattery(Block, StorageBlock):
                 ep_costs=self.evaluators['block'].opex['spec_ep'],
                 existing=self.sizes.loc['block', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
-            max_storage_level=pd.Series(
-                data=self.soc_max,
-                index=utils.extend_dti(horizon.dti_ph)
-            ),
-            min_storage_level=pd.Series(
-                data=self.soc_min,
-                index=utils.extend_dti(horizon.dti_ph)
-            )
+            max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'],
+            min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
         )
 
         horizon.constraints.add_invest_costs(
@@ -1757,7 +1772,7 @@ class ElectricFleetUnit(StorageBlock, Block):
                            'bat_out': ('EconomicEvaluator',
                                        {('flow', 'name'): 'bat_out'}),
                        },
-                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc'],
+                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
                        params=params,
                        parent=parent)
 
@@ -1776,7 +1791,8 @@ class ElectricFleetUnit(StorageBlock, Block):
         """
         slice log file from subfleet
         """
-
+        Block.pre_scenario(self=self)
+        StorageBlock.pre_scenario(self=self)
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
     def define_oemof_components(self,
@@ -1797,6 +1813,7 @@ class ElectricFleetUnit(StorageBlock, Block):
         """
 
         if self.mode_scheduling in self.scenario.run.apriori_lvls:
+            # ToDo: add external charging for apriori scheduling
             p_max_chg = None
             p_max_dis = None
             p_fix_chg = self.flows_apriori['p_int'].clip(lower=0) / self.pwr_chg_max
@@ -1840,12 +1857,17 @@ class ElectricFleetUnit(StorageBlock, Block):
         # region calc minimum soc targets before usage and max soc for myopic optimization
         dsoc_ph = self.log.loc[utils.extend_dti(horizon.dti_ph), 'dsoc']
         if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
-            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(lower=self.soc_min, upper=self.soc_max)
+            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
+                lower=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
+                upper=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'])
         elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
-            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(lower=self.soc_min, upper=self.soc_max)
+            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
+                lower=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
+                upper=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'])
         else:  # a priori or global optimization
-            soc_min_hor = pd.Series(self.soc_min, index=utils.extend_dti(horizon.dti_ph))
-        soc_max_hor = pd.Series(data=self.soc_max, index=utils.extend_dti(horizon.dti_ph))
+            soc_min_hor = self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
+        self.states.update({'soc_min': soc_min_hor})  # df[col].update() raises FutureWarning
+
         # endregion
 
         self.components['storage'] = solph.components.GenericStorage(
@@ -1855,18 +1877,15 @@ class ElectricFleetUnit(StorageBlock, Block):
             outputs={self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             loss_rate=self.loss_rate_per_hour,
             balanced=False,
-            initial_storage_level=statistics.median(
-                [soc_min_hor[horizon.starttime],
-                 self.states.loc[horizon.starttime, 'soc'],
-                 soc_max_hor[horizon.starttime]]),
+            initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.sizes.loc['block', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
-            min_storage_level=soc_min_hor,
-            max_storage_level=soc_max_hor
+            min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
+            max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max']
         )
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
@@ -1976,7 +1995,7 @@ class CombustionVehicle(NonElectricBlock, Block):
         """
         slice log file from subfleet
         """
-
+        Block.pre_scenario(self=self)
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
 
