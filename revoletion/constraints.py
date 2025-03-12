@@ -221,7 +221,7 @@ class CustomConstraints:
                        flows_feed_in=flows_res_from_bus['ac'],
                        flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
                                   model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac],
-                       eff_conv=[1, self.scenario.blocks['core'].eff_dcac])
+                       eff_conv=[1, self.scenario.blocks['core'].eff['dcac']])
 
         # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
         # SystemCore's converter efficiency
@@ -231,7 +231,7 @@ class CustomConstraints:
                        flows_feed_in=flows_res_from_bus['dc'],
                        flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
                                   model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc],
-                       eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
+                       eff_conv=[self.scenario.blocks['core'].eff['acdc'], 1])
 
     def external_charging_to_storage(self, model):
         # Goal:         Force all external charged power to flow into the commodity's storage.

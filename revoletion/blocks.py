@@ -7,8 +7,8 @@ import oemof.solph as solph
 import pandas as pd
 import plotly.graph_objects as go
 import pvlib
+import re
 import requests
-import statistics
 import windpowerlib
 
 from revoletion import battery as bat
@@ -27,6 +27,7 @@ class Block:
                  scenario: 'Scenario',
                  pois: dict = None,
                  state_names: list = None,
+                 flow_apriori_names: list = None,
                  params: dict = None,
                  parent: 'Block | Scenario' = None,
                  ):
@@ -41,6 +42,7 @@ class Block:
         # set empty list/dict; not possible as default argument as both are mutable
         pois = pois if pois is not None else dict()
         state_names = state_names if state_names is not None else []
+        flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
         self.classname = self.__class__.__name__  # get name of class
         self.top_level_block = True if self.parent is self.scenario else False  # distinguish top level blocks/subblocks
@@ -68,7 +70,8 @@ class Block:
         self.components = dict()
         self.bus_connected = None
 
-        self.flows_apriori = pd.DataFrame()  # partially recalculated for every horizon
+        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim_extd,
+                                          columns=flow_apriori_names)
         flow_names = ['total',
                       *[name for name in
                         [poi[1].get(('flow', 'name')) for poi in pois.values()]
@@ -89,6 +92,9 @@ class Block:
         self.sizes = pd.DataFrame()
         self.expansion_equal = False
         self.initialize_sizes(pois=pois)
+
+        self.eff = dict()
+        self.initialize_efficiencies()
 
         self.aggregator = eco.EconomicAggregator(name=self.name,
                                                  block=self)
@@ -136,6 +142,12 @@ class Block:
         if self.sizes['invest'].any() and self.scenario.strategy != 'go':
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
+
+    def initialize_efficiencies(self):
+        for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
+            if key.startswith('eff_'):
+                self.eff[re.sub(r'^[^_]+_', '', key)] = getattr(self, key)
+                delattr(self, key)
 
     def create_evaluator_objects(self,
                                  pois: dict):
@@ -354,6 +366,7 @@ class SystemCore(Block):
                                        ('aux', 'ccr'): 'ccr'}),
                          },
                          state_names=None,
+                         flow_apriori_names=None,
                          params=None,
                          parent=scenario)
 
@@ -391,7 +404,7 @@ class SystemCore(Block):
                                                maximum=utils.conv_nan2none(self.sizes.loc['acdc', 'expansion_max'])),
                 variable_costs=self.evaluators['acdc'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['dc']: self.eff_acdc})
+            conversion_factors={self.components['dc']: self.eff['acdc']})
 
         self.components['dcac'] = solph.components.Converter(
             label='dcac',
@@ -401,7 +414,7 @@ class SystemCore(Block):
                                                maximum=utils.conv_nan2none(self.sizes.loc['dcac', 'expansion_max'])),
                 variable_costs=self.evaluators['dcac'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['ac']: self.eff_dcac})
+            conversion_factors={self.components['ac']: self.eff['dcac']})
 
         horizon.constraints.add_invest_costs(
             invest=(self.components['ac'], self.components['acdc']),
@@ -484,6 +497,7 @@ class RenewableSource(Block):
                                      {('flow', 'name'): 'pot'})
                          },
                          state_names=None,
+                         flow_apriori_names=None,
                          params=None,
                          parent=scenario)
 
@@ -515,7 +529,7 @@ class RenewableSource(Block):
             label=f'{self.name}_out',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow()},
-            conversion_factors={self.bus_connected: self.eff}
+            conversion_factors={self.bus_connected: self.eff['block']}
         )
 
         # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
@@ -848,6 +862,7 @@ class FixedDemand(Block):
                                         ('flow', 'name'): 'in'})
                          },
                          state_names=None,
+                         flow_apriori_names=['demand'],
                          params=None,
                          parent=scenario)
 
@@ -987,6 +1002,7 @@ class ControllableSource(Block):
                                         ('aux', 'ccr'): 'ccr'}),
                          },
                          params=None,
+                         flow_apriori_names=None,
                          parent=scenario)
 
     def define_oemof_components(self,
@@ -1054,6 +1070,7 @@ class GridConnection(Block):
                                         ('aux', 'ccr'): 'ccr'}),
                                },
                          state_names=None,
+                         flow_apriori_names=None,
                          params=None,
                          parent=scenario)
 
@@ -1265,7 +1282,6 @@ class GridMarket(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         state_names=None,
                          pois={'g2s': ('EconomicEvaluator',
                                        {('opex', 'spec'): 'opex_spec_g2s',
                                         ('size', 'name'): 'g2s',
@@ -1275,6 +1291,8 @@ class GridMarket(Block):
                                         ('size', 'name'): 's2g',
                                         ('flow', 'name'): 'in'}),
                                },
+                         state_names=None,
+                         flow_apriori_names=None,
                          params=params,
                          parent=parent)
 
@@ -1474,15 +1492,20 @@ class StationaryBattery(StorageBlock, Block):
                                        {('flow', 'name'): 'bat_out'}),
                        },
                        state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
+                       flow_apriori_names=None,
                        params=None,
                        parent=scenario)
 
         StorageBlock.__init__(self)
 
-        self.eff_chg = self.eff_acdc if self.system == 'ac' else 1
-        self.eff_dis = self.eff_dcac if self.system == 'ac' else 1
+    def initialize_efficiencies(self):
+        self.eff['chg'] = self.eff_acdc if self.system == 'ac' else 1
+        self.eff['dis'] = self.eff_dcac if self.system == 'ac' else 1
+
         for attr in ['eff_acdc', 'eff_dcac']:
             delattr(self, attr)
+
+        super().initialize_efficiencies()
 
     def pre_scenario(self):
         Block.pre_scenario(self)
@@ -1515,7 +1538,7 @@ class StationaryBattery(StorageBlock, Block):
                 variable_costs=self.evaluators['block'].opex['spec_ep'][horizon.dti_ph]
             )},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff_chg}
+            conversion_factors={self.components['bus']: self.eff['chg']}
         )
 
         self.components['outflow'] = solph.components.Converter(
@@ -1525,7 +1548,7 @@ class StationaryBattery(StorageBlock, Block):
             outputs={self.bus_connected: solph.Flow(
                 variable_costs=self.scenario.cost_eps
             )},
-            conversion_factors={self.bus_connected: self.eff_dis}
+            conversion_factors={self.bus_connected: self.eff['dis']}
         )
 
         self.components['storage'] = solph.components.GenericStorage(
@@ -1538,8 +1561,8 @@ class StationaryBattery(StorageBlock, Block):
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             invest_relation_input_capacity=self.crate_chg,  # crate measured "outside" of conversion factor (efficiency)
             invest_relation_output_capacity=self.crate_dis,
-            inflow_conversion_factor=np.sqrt(self.eff_roundtrip),
-            outflow_conversion_factor=np.sqrt(self.eff_roundtrip),
+            inflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
+            outflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.evaluators['block'].opex['spec_ep'],
                 existing=self.sizes.loc['block', 'preexisting'],
@@ -1561,8 +1584,8 @@ class StationaryBattery(StorageBlock, Block):
         StorageBlock.add_plot_traces(self)
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["block", "total"] * self.crate_chg * self.eff_chg / 1e3:.1f} kW charge /'
-                f' {self.sizes.loc["block", "total"] * self.crate_dis * self.eff_dis / 1e3:.1f} kW discharge)')
+        return (f'{self.name} power (max. {self.sizes.loc["block", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge /'
+                f' {self.sizes.loc["block", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
 class Fleet(Block):
@@ -1583,6 +1606,7 @@ class Fleet(Block):
                                         ('size', 'name'): 's2f',})
                                },
                          state_names=None,
+                         flow_apriori_names=None,
                          params=None,
                          parent=scenario)
 
@@ -1680,6 +1704,7 @@ class SubFleet(NonElectricBlock, Block):
                          scenario=scenario,
                          state_names=None,
                          pois=None,
+                         flow_apriori_names=None,
                          params=params_subfleet,
                          parent=parent)
 
@@ -1773,6 +1798,8 @@ class ElectricFleetUnit(StorageBlock, Block):
                                        {('flow', 'name'): 'bat_out'}),
                        },
                        state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
+                       flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
+                                           'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
                        params=params,
                        parent=parent)
 
@@ -1780,12 +1807,16 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         self.log = None
 
-        self.eff_chg_int = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
-        self.eff_dis_int = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
+        self.apriori = True if self.mode_scheduling in self.scenario.run.apriori_lvls else False
 
         if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.run.apriori_lvls:
             raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
                              f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
+
+    def initialize_efficiencies(self):
+        self.eff['chg_int'] = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
+        self.eff['dis_int'] = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
+        super().initialize_efficiencies()
 
     def pre_scenario(self):
         """
@@ -1812,18 +1843,6 @@ class ElectricFleetUnit(StorageBlock, Block):
             |
         """
 
-        if self.mode_scheduling in self.scenario.run.apriori_lvls:
-            # ToDo: add external charging for apriori scheduling
-            p_max_chg = None
-            p_max_dis = None
-            p_fix_chg = self.flows_apriori['p_int'].clip(lower=0) / self.pwr_chg_max
-            p_fix_dis = (-1) * self.flows_apriori['p_int'].clip(upper=0) / self.pwr_dis_max
-        else:
-            p_max_chg = self.log.loc[horizon.dti_ph, 'atbase'].astype(int)
-            p_max_dis = self.log.loc[horizon.dti_ph, 'atbase'].astype(int)
-            p_fix_chg = None
-            p_fix_dis = None
-
         self.bus_connected = self.parent.parent.components['bus']
         self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
 
@@ -1831,21 +1850,22 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'mc_{self.name}',
             inputs={self.parent.parent.components['bus']: solph.Flow(
                 nominal_value=self.pwr_chg_max,
-                max=p_max_chg,
-                fix=p_fix_chg)},
+                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
+            )},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff_chg_int})
+            conversion_factors={self.components['bus']: self.eff['chg_int']})
 
         self.components['outflow'] = solph.components.Converter(
             label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.parent.parent.components['bus']: solph.Flow(
-                nominal_value=self.pwr_dis_max * self.eff_dis_int if pd.notna(self.pwr_dis_max) else 0,
-                max=p_max_dis,
-                fix=p_fix_dis,
+                nominal_value=self.pwr_dis_max * self.eff['dis_int'] if pd.notna(self.pwr_dis_max) else 0,
+                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
                 variable_costs=self.scenario.cost_eps)
             },
-            conversion_factors={self.parent.parent.components['bus']: self.eff_dis_int})
+            conversion_factors={self.parent.parent.components['bus']: self.eff['dis_int']})
 
         self.components['snk'] = solph.components.Sink(
             label=f'{self.name}_snk',
@@ -1872,14 +1892,18 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         self.components['storage'] = solph.components.GenericStorage(
             label=f'{self.name}_ess',
-            inputs={self.components['bus']: solph.Flow(variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph])},
+            inputs={self.components['bus']: solph.Flow(
+                variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph]
+            )},
             # cost_eps are needed to prevent storage from being emptied in RH
-            outputs={self.components['bus']: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            outputs={self.components['bus']: solph.Flow(
+                variable_costs=self.scenario.cost_eps
+            )},
             loss_rate=self.loss_rate_per_hour,
             balanced=False,
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
-            inflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
-            outflow_conversion_factor=np.sqrt(self.eff_storage_roundtrip),
+            inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
+            outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.sizes.loc['block', 'preexisting'],
@@ -1895,8 +1919,8 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'{self.name}_src_ext_ac',
             outputs={self.components['bus_ext_ac']: solph.Flow(
                 nominal_value=self.pwr_ext_ac_max,
-                max=self.log.loc[horizon.dti_ph, 'atac'].astype(int),  # todo deactivate for apriori scheduling
-                fix=None,  # todo fix for apriori scheduling
+                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atac'].astype(int),
+                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_ext_ac_chg'] if self.apriori else None,
                 variable_costs=self.evaluators['ext_ac'].opex['spec_ep'][horizon.dti_ph])}
         )
 
@@ -1904,7 +1928,7 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'{self.name}_conv_ext_ac',
             inputs={self.components['bus_ext_ac']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff_chg_ac}
+            conversion_factors={self.components['bus']: self.eff['chg_ac']}
         )
 
         self.components['bus_ext_dc'] = solph.Bus(label=f'{self.name}_bus_ext_dc')
@@ -1913,8 +1937,8 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'{self.name}_src_ext_dc',
             outputs={self.components['bus_ext_dc']: solph.Flow(
                 nominal_value=self.pwr_ext_dc_max,
-                max=self.log.loc[horizon.dti_ph, 'atdc'].astype(int),  # todo deactivate for apriori scheduling
-                fix=None,  # todo fix for apriori scheduling
+                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atdc'].astype(int),
+                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_ext_dc_chg'] if self.apriori else None,
                 variable_costs=self.evaluators['ext_dc'].opex['spec_ep'][horizon.dti_ph])}
         )
 
@@ -1961,7 +1985,7 @@ class ElectricFleetUnit(StorageBlock, Block):
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
-                f'{(self.pwr_dis_max * self.eff_dis_int) / 1e3:.1f} kW discharge)')
+                f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 
 class CombustionVehicle(NonElectricBlock, Block):
@@ -1986,6 +2010,7 @@ class CombustionVehicle(NonElectricBlock, Block):
                                          ('aux', 'ccr'): 'ccr'}),
                          },
                          state_names=None,
+                         flow_apriori_names=None,
                          params=params,
                          parent=parent)
 

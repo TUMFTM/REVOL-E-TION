@@ -47,7 +47,7 @@ wind,mntex_spec,0.084,0.084,0.084,0.084
 wind,opex_spec,0,0,0,0
 wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
-wind,eff,0.95,0.95,0.95,0.95
+wind,eff_block,0.95,0.95,0.95,0.95
 pv,size_preexisting,15000,0,0,0
 pv,capex_preexisting,True,True,True,True
 pv,size_max,None,None,None,None
@@ -60,7 +60,7 @@ pv,mntex_spec,0.01509,0.01509,0.01509,0.01509
 pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
-pv,eff,0.95,0.95,0.95,0.95
+pv,eff_block,0.95,0.95,0.95,0.95
 gen,size_preexisting,100000,0,0,0
 gen,capex_preexisting,True,True,True,True
 gen,size_max,None,None,None,None
@@ -71,7 +71,7 @@ gen,mntex_spec,0.03,0.03,0.03,0.03
 gen,opex_spec,0.0009,0.0009,0.0009,0.0009
 gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
-gen,eff,1,1,1,1
+gen,eff_block,1,1,1,1
 grid,size_preexisting_g2s,55000,0,0,43500
 grid,capex_preexisting_g2s,True,True,True,True
 grid,size_max_g2s,None,None,None,None
@@ -87,7 +87,7 @@ grid,capex_spec,0.1,0.1,0.1,0.1
 grid,mntex_spec,0,0,0,0
 grid,ls,10,10,10,10
 grid,ccr,1,1,1,1
-grid,eff,1,1,1,1
+grid,eff_block,1,1,1,1
 grid,filename_markets,grid_markets,grid_markets,grid_markets,grid_markets
 ess,size_preexisting,22000,0,0,10000
 ess,capex_preexisting,True,True,True,True

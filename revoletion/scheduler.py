@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
-import statistics
 
 from revoletion import blocks
 
@@ -89,12 +88,12 @@ class AprioriCore:
             if not block.top_level_block:
                 continue
             if isinstance(block, blocks.GridConnection):
-                self.p_sys_avail.loc[:, block.system] += block.sizes.loc['g2s', 'preexisting'] * block.eff
+                self.p_sys_avail.loc[:, block.system] += block.sizes.loc['g2s', 'preexisting'] * block.eff['block']
             elif isinstance(block, blocks.RenewableSource):
                 self.p_sys_avail.loc[:, block.system] += block.data.loc[horizon.dti_ph, 'power_spec'] * \
-                                                         block.sizes.loc['block', 'preexisting'] * block.eff
+                                                         block.sizes.loc['block', 'preexisting'] * block.eff['block']
             elif isinstance(block, blocks.ControllableSource):
-                self.p_sys_avail.loc[:, block.system] += block.sizes.loc['block', 'preexisting'] * block.eff
+                self.p_sys_avail.loc[:, block.system] += block.sizes.loc['block', 'preexisting'] * block.eff['block']
             elif isinstance(block, blocks.FixedDemand):
                 self.p_sys_fix.loc[:, block.system] += block.flows_apriori.loc[horizon.dti_ph, 'demand']
 
@@ -206,8 +205,8 @@ class AprioriCore:
 
     def _get_conv_eff(self, source, target):
         return {'ac': {'ac': 1,
-                       'dc': self.block.eff_acdc},
-                'dc': {'ac': self.block.eff_dcac,
+                       'dc': self.block.eff['acdc']},
+                'dc': {'ac': self.block.eff['dcac'],
                        'dc': 1}}[source][target]
 
 
@@ -351,10 +350,7 @@ class AprioriFleetUnit:
                                                      self._get_eff('consumption')).astype('float64')
 
         # get current SOC
-        self.data_battery.loc[horizon.dti_ph.min(), 'soc'] = statistics.median(
-            [self.block.soc_min,
-             self.block.states.loc[horizon.starttime, 'soc'],
-             self.block.soc_max])
+        self.data_battery.loc[horizon.dti_ph.min(), 'soc'] = self.block.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median()
 
         self.data_charging = self.data_charging.reindex(horizon.dti_ph)
         self.data_charging[:] = 0
@@ -363,17 +359,17 @@ class AprioriFleetUnit:
         self.soh = self.block.states.loc[horizon.starttime, 'soh']
 
     def calc_soc_target(self,
-                        ts: pd.Timestamp):
+                        ts: pd.Timestamp) -> float:
         # ToDo: add input parameter to specify target SOCs
         if self.block.log.loc[ts, 'atdc']:
             return 0.8
 
-        soc_target_low = 0.8
-        soc_target_high = 1.0
+        soc_target_low = min(0.8, self.block.states.loc[ts, 'soc_max'])
+        soc_target_high = min(1.0, self.block.states.loc[ts, 'soc_max'])
 
         # check if there are any departures after current timestep within forecast period
         departures = self.dep_base_dti[(self.dep_base_dti >= ts) &
-                                       (self.dep_base_dti <= ts + pd.Timedelta(hours=self.block.parent.forecast_hours)
+                                       (self.dep_base_dti <= ts + pd.Timedelta(hours=self.block.forecast_hours)
                                         if self.block.forecast_hours else True)]
 
         arrivals = self.arr_base_dti[self.arr_base_dti >= ts]
@@ -497,7 +493,6 @@ class AprioriFleetUnit:
                            self.scenario.timestep_hours / self.block.sizes.loc['block', 'preexisting'])
             # ToDo: add soh/aging: if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
             if soc_chg_nxt < 0.05:
-                # ToDo: fast-charging only up to SOC of 80 %
                 # calculate charging power at external DC charger (measurement point at connection to charger)
                 p_max_fleet_unit_battery = self.data_battery.loc[ts, 'p_max'] / self._get_eff('dc')
                 p_max_fleet_unit_connection = self.block.pwr_ext_dc_max
@@ -518,8 +513,23 @@ class AprioriFleetUnit:
 
     def write_power_to_flows_apriori(self,
                                      horizon: 'PredictionHorizon') -> None:
-        cols2transfer = ['p_int', 'p_ext_ac', 'p_ext_dc']
-        self.block.flows_apriori[cols2transfer] = self.data_charging[cols2transfer]
+
+        self.block.flows_apriori.update({'p_int_chg': (self.data_charging['p_int'].clip(lower=0) /
+                                                          self.block.pwr_chg_max),
+                                         'p_int_dis': ((-1) * self.data_charging['p_int'].clip(upper=0) /
+                                                          self.block.pwr_dis_max),
+                                         'p_ext_ac_chg': (self.data_charging['p_ext_ac'].clip(lower=0) /
+                                                          self.block.pwr_ext_ac_max),
+                                         'p_ext_ac_dis': ((-1) * self.data_charging['p_ext_ac'].clip(upper=0) /
+                                                          self.block.pwr_ext_ac_max),
+                                         'p_ext_dc_chg': (self.data_charging['p_ext_dc'].clip(lower=0) /
+                                                          self.block.pwr_ext_dc_max),
+                                         'p_ext_dc_dis': ((-1) * self.data_charging['p_ext_dc'].clip(upper=0) /
+                                                          self.block.pwr_ext_dc_max),
+                                         })
+
+        # fix NaN values caused by max_power = 0 leading and therefore division by 0
+        self.block.flows_apriori.loc[horizon.dti_ph, :] = self.block.flows_apriori.loc[horizon.dti_ph, :].fillna(0)
 
     def _get_eff(self,
                  mode: str):
@@ -527,7 +537,7 @@ class AprioriFleetUnit:
         if mode not in ['ac', 'dc', 'consumption']:
             raise ValueError(f'Invalid mode "{mode}" selected. Valid modes are "ac", "dc" and "consumption')
 
-        eff = {'ac': self.block.eff_chg_ac * np.sqrt(self.block.eff_storage_roundtrip),
-               'dc': self.block.eff_chg_dc * np.sqrt(self.block.eff_storage_roundtrip),
-               'consumption': np.sqrt(self.block.eff_storage_roundtrip)}[mode]
+        eff = {'ac': self.block.eff['chg_ac'] * np.sqrt(self.block.eff['storage_roundtrip']),
+               'dc': self.block.eff['chg_dc'] * np.sqrt(self.block.eff['storage_roundtrip']),
+               'consumption': np.sqrt(self.block.eff['storage_roundtrip'])}[mode]
         return eff
