@@ -22,11 +22,14 @@ class Block:
     abstract class
     """
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario: 'Scenario',
-                 pois: dict = None,
-                 state_names: list = None,
                  flow_apriori_names: list = None,
                  params: dict = None,
                  parent: 'Block | Scenario' = None,
@@ -39,9 +42,7 @@ class Block:
         self.scenario = scenario
         self.parent = parent
 
-        # set empty list/dict; not possible as default argument as both are mutable
-        pois = pois if pois is not None else dict()
-        state_names = state_names if state_names is not None else []
+        # set empty list; not possible as default argument as both are mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
         self.classname = self.__class__.__name__  # get name of class
@@ -65,16 +66,29 @@ class Block:
             raise ValueError(f'Subblock {self.name} of {self.parent.name} has no inherited parameters defined')
         # endregion
 
+        # region get poi and state name definitions
+        definitions = [cls.get_init_definitions()
+                       for cls in self.__class__.mro() if hasattr(cls, 'get_init_definitions')]
+        pois = {poi_key: poi_value
+                for definition in definitions
+                for poi_key, poi_value in
+                definition['pois'].items()}
+        state_names = [state_name for definition in definitions for state_name in definition['state_names']]
+        # endregion
+
         # region initialize data structures
         self.subblocks = dict()
         self.components = dict()
         self.bus_connected = None
 
+        # ToDo: (1) remove flow_apriori_names and use flow names instead
+        #       (2) remove flows_apriori and use flows instead to save memory
         self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim_extd,
                                           columns=flow_apriori_names)
+
         flow_names = ['total',
                       *[name for name in
-                        [poi[1].get(('flow', 'name')) for poi in pois.values()]
+                        [poi['params'].get(('flow', 'name')) for poi in pois.values()]
                         if name is not None]]
         self.flows = pd.DataFrame(index=self.scenario.dti_sim,
                                   columns=flow_names,
@@ -102,7 +116,7 @@ class Block:
         self.aggregator.pre_scenario()  # aggregate capex preexisting
 
         # Delete ccr and ls as they are now contained in evaluators
-        for attribute in set(value for poi in pois.values() for value in poi[1].values()):
+        for attribute in set(value for poi in pois.values() for value in poi['params'].values()):
             if hasattr(self, attribute):
                 delattr(self, attribute)
         # endregion
@@ -113,7 +127,7 @@ class Block:
         Initialize the sizes DataFrame for the block
         """
 
-        sizes = [name for name in [poi[1].get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in pois.values()] if name is not None]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -157,15 +171,13 @@ class Block:
 
         evaluators = dict()
         for name, poi_definition in pois.items():
-            class_name = poi_definition[0]
-            params = poi_definition[1]
-            class_obj = getattr(eco, class_name, None)
+            class_obj = getattr(eco, poi_definition['class_name'], None)
             if class_obj is not None and isinstance(class_obj, type):
                 evaluators[name] = class_obj(name=name,
                                              block=self,
-                                             params=params)
+                                             params=poi_definition['params'])
             else:
-                raise ValueError(f'Class "{class_name}" not found in economics.py file - '
+                raise ValueError(f'Class "{poi_definition["class_name"]}" not found in economics.py file - '
                                  f'Check for typos or add class.')
         return evaluators
 
@@ -306,6 +318,11 @@ class NonElectricBlock:
     abstract class
     """
 
+    @staticmethod
+    def get_init_params():
+        return dict(pois={},
+                    state_names=[])
+
     def define_oemof_components(self, *_args, **_kwargs):
         """
         dummy method
@@ -339,33 +356,35 @@ class NonElectricBlock:
 
 class SystemCore(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'acdc': {'class_name': 'EconomicEvaluator',
+                                   'params': {('capex', 'preexisting'): 'capex_preexisting_acdc',
+                                              ('capex', 'spec'): 'capex_spec',
+                                              ('mntex', 'spec'): 'mntex_spec',
+                                              ('opex', 'spec'): 'opex_spec',
+                                              ('size', 'name'): 'acdc',
+                                              ('flow', 'name'): 'acdc',
+                                              ('aux', 'ls'): 'ls',
+                                              ('aux', 'ccr'): 'ccr'}},
+                          'dcac': {'class_name': 'EconomicEvaluator',
+                                   'params': {('capex', 'preexisting'): 'capex_preexisting_dcac',
+                                              ('capex', 'spec'): 'capex_spec',
+                                              ('mntex', 'spec'): 'mntex_spec',
+                                              ('opex', 'spec'): 'opex_spec',
+                                              ('size', 'name'): 'dcac',
+                                              ('flow', 'name'): 'dcac',
+                                              ('aux', 'ls'): 'ls',
+                                              ('aux', 'ccr'): 'ccr'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name : str,
                  scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={
-                             'acdc': ('EconomicEvaluator',
-                                      {('capex', 'preexisting'): 'capex_preexisting_acdc',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('opex', 'spec'): 'opex_spec',
-                                       ('size', 'name'): 'acdc',
-                                       ('flow', 'name'): 'acdc',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'}),
-                             'dcac': ('EconomicEvaluator',
-                                      {('capex', 'preexisting'): 'capex_preexisting_dcac',
-                                       ('capex', 'spec'): 'capex_spec',
-                                       ('mntex', 'spec'): 'mntex_spec',
-                                       ('opex', 'spec'): 'opex_spec',
-                                       ('size', 'name'): 'dcac',
-                                       ('flow', 'name'): 'dcac',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'}),
-                         },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=None,
                          parent=scenario)
@@ -475,28 +494,30 @@ class RenewableSource(Block):
     abstract class
     """
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                               ('capex', 'spec'): 'capex_spec',
+                                               ('mntex', 'spec'): 'mntex_spec',
+                                               ('opex', 'spec'): 'opex_spec',
+                                               ('size', 'name'): 'block',
+                                               ('flow', 'name'): 'out',
+                                               ('aux', 'ls'): 'ls',
+                                               ('aux', 'ccr'): 'ccr'}},
+                          'curt': {'class_name': 'EconomicEvaluator',
+                                   'params': {('flow', 'name'): 'curt'}},
+                          'pot': {'class_name': 'EconomicEvaluator',
+                                  'params': {('flow', 'name'): 'pot'}}
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={
-                             'block': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('mntex', 'spec'): 'mntex_spec',
-                                        ('opex', 'spec'): 'opex_spec',
-                                        ('size', 'name'): 'block',
-                                        ('flow', 'name'): 'out',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                             'curt': ('EconomicEvaluator',
-                                      {('flow', 'name'): 'curt'}),
-                             'pot': ('EconomicEvaluator',
-                                     {('flow', 'name'): 'pot'})
-                         },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=None,
                          parent=scenario)
@@ -601,6 +622,11 @@ class RenewableSource(Block):
 
 
 class PVSource(RenewableSource):
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
 
     def get_ts_data(self):
         """
@@ -814,6 +840,11 @@ class PVSource(RenewableSource):
 
 class WindSource(RenewableSource):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
     def get_ts_data(self):
         """
         pre scenario (init) method
@@ -850,18 +881,20 @@ class WindSource(RenewableSource):
 
 class FixedDemand(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
+                                    'params': {('crev', 'spec'): 'crev_spec',
+                                               ('flow', 'name'): 'in'}}
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={
-                             'block': ('EconomicEvaluator',
-                                       {('crev', 'spec'): 'crev_spec',
-                                        ('flow', 'name'): 'in'})
-                         },
-                         state_names=None,
                          flow_apriori_names=['demand'],
                          params=None,
                          parent=scenario)
@@ -983,24 +1016,26 @@ class FixedDemand(Block):
 
 class ControllableSource(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                               ('capex', 'spec'): 'capex_spec',
+                                               ('mntex', 'spec'): 'mntex_spec',
+                                               ('opex', 'spec'): 'opex_spec',
+                                               ('size', 'name'): 'block',
+                                               ('flow', 'name'): 'out',
+                                               ('aux', 'ls'): 'ls',
+                                               ('aux', 'ccr'): 'ccr'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         state_names=None,
-                         pois={
-                             'block': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('mntex', 'spec'): 'mntex_spec',
-                                        ('opex', 'spec'): 'opex_spec',
-                                        ('size', 'name'): 'block',
-                                        ('flow', 'name'): 'out',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                         },
                          params=None,
                          flow_apriori_names=None,
                          parent=scenario)
@@ -1046,30 +1081,33 @@ class ControllableSource(Block):
 
 class GridConnection(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'g2s': {'class_name': 'EconomicEvaluator',
+                                  'params': {('capex', 'preexisting'): 'capex_preexisting_g2s',
+                                             ('capex', 'spec'): 'capex_spec',
+                                             ('mntex', 'spec'): 'mntex_spec',
+                                             ('size', 'name'): 'g2s',
+                                             ('flow', 'name'): 'out',
+                                             ('aux', 'ls'): 'ls',
+                                             ('aux', 'ccr'): 'ccr'}},
+                          's2g': {'class_name': 'EconomicEvaluator',
+                                  'params': {('capex', 'preexisting'): 'capex_preexisting_s2g',
+                                             ('capex', 'spec'): 'capex_spec',
+                                             ('mntex', 'spec'): 'mntex_spec',
+                                             ('size', 'name'): 's2g',
+                                             ('flow', 'name'): 'in',
+                                             ('aux', 'ls'): 'ls',
+                                             ('aux', 'ccr'): 'ccr'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'g2s': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting_g2s',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('mntex', 'spec'): 'mntex_spec',
-                                        ('size', 'name'): 'g2s',
-                                        ('flow', 'name'): 'out',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                               's2g': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting_s2g',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('mntex', 'spec'): 'mntex_spec',
-                                        ('size', 'name'): 's2g',
-                                        ('flow', 'name'): 'in',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                               },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=None,
                          parent=scenario)
@@ -1274,6 +1312,19 @@ class GridConnection(Block):
 
 class GridMarket(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'g2s': {'class_name': 'EconomicEvaluator',
+                                  'params': {('opex', 'spec'): 'opex_spec_g2s',
+                                             ('size', 'name'): 'g2s',
+                                             ('flow', 'name'): 'out'}},
+                          's2g': {'class_name': 'EconomicEvaluator',
+                                  'params': {('opex', 'spec'): 'opex_spec_s2g',
+                                             ('size', 'name'): 's2g',
+                                             ('flow', 'name'): 'in'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario,
@@ -1282,16 +1333,6 @@ class GridMarket(Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'g2s': ('EconomicEvaluator',
-                                       {('opex', 'spec'): 'opex_spec_g2s',
-                                        ('size', 'name'): 'g2s',
-                                        ('flow', 'name'): 'out'}),
-                               's2g': ('EconomicEvaluator',
-                                       {('opex', 'spec'): 'opex_spec_s2g',
-                                        ('size', 'name'): 's2g',
-                                        ('flow', 'name'): 'in'}),
-                               },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=params,
                          parent=parent)
@@ -1302,7 +1343,7 @@ class GridMarket(Block):
         Initialize the sizes DataFrame for GridMarkets -> has sizes, but is not investable
         """
 
-        sizes = [name for name in [poi[1].get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in pois.values()] if name is not None]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -1375,6 +1416,17 @@ class StorageBlock:
     """
     abstract class
     """
+
+    @staticmethod
+    def get_init_params():
+        return dict(pois={'out': {'class_name': 'EconomicEvaluator',
+                                  'params': {('flow', 'name'): 'out'}},
+                          'bat_in': {'class_name': 'EconomicEvaluator',
+                                     'params': {('flow', 'name'): 'bat_in'}},
+                          'bat_out': {'class_name': 'EconomicEvaluator',
+                                      'params': {('flow', 'name'): 'bat_out'}},
+                          },
+                    state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'])
 
     def __init__(self):
 
@@ -1467,6 +1519,20 @@ class StorageBlock:
 
 class StationaryBattery(StorageBlock, Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                               ('capex', 'spec'): 'capex_spec',
+                                               ('mntex', 'spec'): 'mntex_spec',
+                                               ('opex', 'spec'): 'opex_spec',
+                                               ('size', 'name'): 'block',
+                                               ('flow', 'name'): 'in',
+                                               ('aux', 'ls'): 'ls',
+                                               ('aux', 'ccr'): 'ccr'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario):
@@ -1474,24 +1540,6 @@ class StationaryBattery(StorageBlock, Block):
         Block.__init__(self,
                        name=name,
                        scenario=scenario,
-                       pois={
-                           'block': ('EconomicEvaluator',
-                                     {('capex', 'preexisting'): 'capex_preexisting',
-                                      ('capex', 'spec'): 'capex_spec',
-                                      ('mntex', 'spec'): 'mntex_spec',
-                                      ('opex', 'spec'): 'opex_spec',
-                                      ('size', 'name'): 'block',
-                                      ('flow', 'name'): 'in',
-                                      ('aux', 'ls'): 'ls',
-                                      ('aux', 'ccr'): 'ccr'}),
-                           'out': ('EconomicEvaluator',
-                                   {('flow', 'name'): 'out'}),
-                           'bat_in': ('EconomicEvaluator',
-                                      {('flow', 'name'): 'bat_in'}),
-                           'bat_out': ('EconomicEvaluator',
-                                       {('flow', 'name'): 'bat_out'}),
-                       },
-                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
                        flow_apriori_names=None,
                        params=None,
                        parent=scenario)
@@ -1590,22 +1638,25 @@ class StationaryBattery(StorageBlock, Block):
 
 class Fleet(Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'f2s': {'class_name': 'EconomicEvaluator',
+                                  'params': {('opex', 'spec'): 'opex_spec_f2s',
+                                             ('flow', 'name'): 'out',
+                                             ('size', 'name'): 'f2s',}},
+                          's2f': {'class_name': 'EconomicEvaluator',
+                                  'params': {('opex', 'spec'): 'opex_spec_s2f',
+                                             ('flow', 'name'): 'in',
+                                             ('size', 'name'): 's2f',}}
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario: 'Scenario'):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={'f2s': ('EconomicEvaluator',
-                                       {('opex', 'spec'): 'opex_spec_f2s',
-                                        ('flow', 'name'): 'out',
-                                        ('size', 'name'): 'f2s',}),
-                               's2f': ('EconomicEvaluator',
-                                       {('opex', 'spec'): 'opex_spec_s2f',
-                                        ('flow', 'name'): 'in',
-                                        ('size', 'name'): 's2f',})
-                               },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=None,
                          parent=scenario)
@@ -1687,6 +1738,11 @@ class Fleet(Block):
 
 class SubFleet(NonElectricBlock, Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario,
@@ -1702,8 +1758,6 @@ class SubFleet(NonElectricBlock, Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         state_names=None,
-                         pois=None,
                          flow_apriori_names=None,
                          params=params_subfleet,
                          parent=parent)
@@ -1752,6 +1806,39 @@ class ElectricFleetUnit(StorageBlock, Block):
     abstract class
     """
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
+                                     'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                                ('capex', 'fix'): 'capex_fix_glider',
+                                                ('mntex', 'fix'): 'mntex_fix_glider',
+                                                ('opex', 'dist'): 'opex_spec_dist',
+                                                ('crev', 'time'): 'crev_spec_time',
+                                                ('crev', 'dist'): 'crev_spec_dist',
+                                                ('aux', 'ls'): 'ls',
+                                                ('aux', 'ccr'): 'ccr'}},
+                          'charger': {'class_name': 'EconomicEvaluator',
+                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                                 ('capex', 'fix'): 'capex_fix_charger',
+                                                 ('aux', 'ls'): 'ls',
+                                                 ('aux', 'ccr'): 'ccr'}},
+                          'storage': {'class_name': 'EconomicEvaluator',
+                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                                 ('capex', 'spec'): 'capex_spec',
+                                                 ('size', 'name'): 'block',
+                                                 ('aux', 'ls'): 'ls',
+                                                 ('aux', 'ccr'): 'ccr'}},
+                          'ext_ac': {'class_name': 'EconomicEvaluator',
+                                     'params': {('opex', 'spec'): 'opex_spec_ext_ac',
+                                                ('flow', 'name'): 'ext_ac'}},
+                          'ext_dc': {'class_name': 'EconomicEvaluator',
+                                     'params': {('opex', 'spec'): 'opex_spec_ext_dc',
+                                                ('flow', 'name'): 'ext_dc'}},
+                          'in': {'class_name': 'EconomicEvaluator',
+                                 'params': {('flow', 'name'): 'in'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario: 'Scenario',
@@ -1761,43 +1848,6 @@ class ElectricFleetUnit(StorageBlock, Block):
         Block.__init__(self,
                        name=name,
                        scenario=scenario,
-                       pois={
-                           'glider': ('FleetUnitEvaluator',
-                                      {('capex', 'preexisting'): 'capex_preexisting',
-                                       ('capex', 'fix'): 'capex_fix_glider',
-                                       ('mntex', 'fix'): 'mntex_fix_glider',
-                                       ('opex', 'dist'): 'opex_spec_dist',
-                                       ('crev', 'time'): 'crev_spec_time',
-                                       ('crev', 'dist'): 'crev_spec_dist',
-                                       ('aux', 'ls'): 'ls',
-                                       ('aux', 'ccr'): 'ccr'}),
-                           'charger': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'fix'): 'capex_fix_charger',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                           'storage': ('EconomicEvaluator',
-                                       {('capex', 'preexisting'): 'capex_preexisting',
-                                        ('capex', 'spec'): 'capex_spec',
-                                        ('size', 'name'): 'block',
-                                        ('aux', 'ls'): 'ls',
-                                        ('aux', 'ccr'): 'ccr'}),
-                           'ext_ac': ('EconomicEvaluator',
-                                      {('opex', 'spec'): 'opex_spec_ext_ac',
-                                       ('flow', 'name'): 'ext_ac'}),
-                           'ext_dc': ('EconomicEvaluator',
-                                      {('opex', 'spec'): 'opex_spec_ext_dc',
-                                       ('flow', 'name'): 'ext_dc'}),
-                           'out': ('EconomicEvaluator',
-                                   {('flow', 'name'): 'out'}),
-                           'in': ('EconomicEvaluator',
-                                  {('flow', 'name'): 'in'}),
-                           'bat_in': ('EconomicEvaluator',
-                                      {('flow', 'name'): 'bat_in'}),
-                           'bat_out': ('EconomicEvaluator',
-                                       {('flow', 'name'): 'bat_out'}),
-                       },
-                       state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'],
                        flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
                                            'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
                        params=params,
@@ -1990,6 +2040,20 @@ class ElectricFleetUnit(StorageBlock, Block):
 
 class CombustionVehicle(NonElectricBlock, Block):
 
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
+                                     'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                                ('capex', 'fix'): 'capex_fix_glider',
+                                                ('mntex', 'fix'): 'mntex_fix_glider',
+                                                ('opex', 'dist'): 'opex_spec_dist',
+                                                ('crev', 'time'): 'crev_spec_time',
+                                                ('crev', 'dist'): 'crev_spec_dist',
+                                                ('aux', 'ls'): 'ls',
+                                                ('aux', 'ccr'): 'ccr'}},
+                          },
+                    state_names=[])
+
     def __init__(self,
                  name: str,
                  scenario: 'Scenario',
@@ -1998,18 +2062,6 @@ class CombustionVehicle(NonElectricBlock, Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         pois={
-                             'glider': ('FleetUnitEvaluator',
-                                        {('capex', 'preexisting'): 'capex_preexisting',
-                                         ('capex', 'fix'): 'capex_fix_glider',
-                                         ('mntex', 'fix'): 'mntex_fix_glider',
-                                         ('opex', 'dist'): 'opex_spec_dist',
-                                         ('crev', 'time'): 'crev_spec_time',
-                                         ('crev', 'dist'): 'crev_spec_dist',
-                                         ('aux', 'ls'): 'ls',
-                                         ('aux', 'ccr'): 'ccr'}),
-                         },
-                         state_names=None,
                          flow_apriori_names=None,
                          params=params,
                          parent=parent)
@@ -2028,14 +2080,22 @@ class ElectricVehicle(ElectricFleetUnit):
     """
     dummy class to enable tracking
     """
-    pass
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
 
 
 class MobileBattery(ElectricFleetUnit):
     """
     dummy class to enable tracking
     """
-    pass
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
 
 
 
