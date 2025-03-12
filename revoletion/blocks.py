@@ -799,7 +799,8 @@ class PVSource(RenewableSource):
         # data is in W for a 1kWp PV array -> convert to specific power
         self.data['power_spec'] = self.data['P'] / 1e3
 
-        self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
+        # only keep relevant columns and timestamps
+        self.data = self.data.loc[self.scenario.dti_sim_extd, ['power_spec', 'wind_speed', 'temp_air']]
         # endregion
 
         if self.scenario.run.export_data:
@@ -807,6 +808,9 @@ class PVSource(RenewableSource):
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
             )
+
+        if getattr(self, 'temp_scn', False):  # parameter only exists for instances specified in scenario.temp_air
+            self.scenario.temp_air['temp_air'] = self.data['temp_air']
 
     def calc_power_from_irradiation(self):
         """
@@ -2119,12 +2123,3 @@ class MobileBattery(ElectricFleetUnit):
     def get_init_definitions():
         return dict(pois={},
                     state_names=[])
-
-
-
-
-
-
-
-
-

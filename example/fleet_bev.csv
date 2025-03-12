@@ -24,7 +24,7 @@ mode_scheduling,oc,oc
 forecast_hours,None,None
 aging,True,True
 chemistry,nmc,nmc
-temp_battery,pv,pv
+temp_battery,None,None
 q_loss_cal_init,0.02,0
 q_loss_cyc_init,0.05,0
 soc_init,0.5,1

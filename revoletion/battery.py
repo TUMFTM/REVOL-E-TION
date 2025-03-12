@@ -140,11 +140,13 @@ class BatteryPackModel:
             try:
                 temp_hor_c = self.scenario.blocks[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
-                self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found,'
-                                             f' using 25°C default')
+                self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found - '
+                                             f'Using scenario default temperature')
                 temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
         elif isinstance(self.block.temp_battery, (int, float)):
             temp_hor_c = pd.Series(data=self.block.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
+        elif self.block.temp_battery is None:
+            temp_hor_c = self.block.scenario.temp_air.iloc[:, 0]
         else:
            ValueError('Battery temperature must be the name of a PVSource block or numeric')
 
