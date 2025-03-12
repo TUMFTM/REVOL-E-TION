@@ -802,6 +802,12 @@ class PVSource(RenewableSource):
         self.data = self.data[['power_spec', 'wind_speed', 'temp_air']]  # only keep relevant columns
         # endregion
 
+        if self.scenario.run.export_data:
+            self.data.to_csv(os.path.join(
+                self.scenario.run.paths['output'],
+                f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
+            )
+
     def calc_power_from_irradiation(self):
         """
         pre scenario (init) method
@@ -882,6 +888,12 @@ class WindSource(RenewableSource):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
+        if self.scenario.run.export_data:
+            self.data.to_csv(os.path.join(
+                self.scenario.run.paths['output'],
+                f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
+            )
+
 
 class FixedDemand(Block):
 
@@ -915,6 +927,12 @@ class FixedDemand(Block):
             self.get_demand_from_file()
         else:
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
+
+        if self.scenario.run.export_data:
+            self.flows_apriori['demand'].to_csv(os.path.join(
+                self.scenario.run.paths['output'],
+                f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
+            )
 
     def get_demand_from_file(self):
         data = utils.read_timeseries_csv(path_input_file=os.path.join(self.scenario.run.paths['input'],
