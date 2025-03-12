@@ -85,7 +85,9 @@ class Block:
         # ToDo: (1) remove flow_apriori_names and use flow names instead
         #       (2) remove flows_apriori and use flows instead to save memory
         self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim_extd,
-                                          columns=flow_apriori_names)
+                                          columns=flow_apriori_names,
+                                          dtype='float64'
+                                          )
 
         flow_names = ['total',
                       *[name for name in
