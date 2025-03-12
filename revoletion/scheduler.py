@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
@@ -319,18 +318,21 @@ class AprioriFleetUnit:
         # get the indices of all nonzero target soc rows in the data
         self.dsoc_dti = self.block.log.index[self.block.log['dsoc'] != 0]
 
-        # ToDo: check whether "1" in shift() is necessary
         # get first timesteps, where vehicle has left the base
-        self.dep_base_dti = self.block.log.index[~self.block.log['atbase'] & self.block.log['atbase'].shift(1, fill_value=False)]
+        self.dep_base_dti = self.block.log.index[~self.block.log['atbase'] &
+                                                 self.block.log['atbase'].shift(periods=1, fill_value=False)]
 
         # get first timesteps, where vehicle is at base again
-        self.arr_base_dti = self.block.log.index[self.block.log['atbase'] & ~self.block.log['atbase'].shift(fill_value=False)]
+        self.arr_base_dti = self.block.log.index[self.block.log['atbase'] &
+                                                 ~self.block.log['atbase'].shift(periods=1, fill_value=False)]
 
         # get first timesteps, where vehicle has left the destination
-        self.dep_dest_dti = self.block.log.index[~self.block.log['atac'] & self.block.log['atac'].shift(1, fill_value=False)]
+        self.dep_dest_dti = self.block.log.index[~self.block.log['atac'] &
+                                                 self.block.log['atac'].shift(periods=1, fill_value=False)]
 
         # get first timesteps, where vehicle is parking at destination
-        self.arr_dest_dti = self.block.log.index[self.block.log['atac'] & ~self.block.log['atac'].shift(fill_value=False)]
+        self.arr_dest_dti = self.block.log.index[self.block.log['atac'] &
+                                                 ~self.block.log['atac'].shift(periods=1, fill_value=False)]
 
         # get all timesteps, where charging is available (internal AC, external AC, external DC)
         self.chg_avail_dti = self.block.log.index[self.block.log[['atbase', 'atac', 'atdc']].any(axis=1)]
