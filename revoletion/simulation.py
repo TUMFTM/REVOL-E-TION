@@ -536,7 +536,7 @@ class Scenario:
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
         self.blocks = self.create_block_objects()
 
-        if self.invest_max is not None and self.invest_max < self.capex_init_existing:
+        if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
             raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 

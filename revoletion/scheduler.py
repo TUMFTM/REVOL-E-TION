@@ -389,7 +389,7 @@ class AprioriFleetUnit:
                             * self.scenario.timestep_hours)
 
         #  Convert energy consumption to delta soc taking the current soh into account
-        soc_delta = e_con / self.block.sizes.loc['block', 'preexisting']
+        soc_delta = e_con / self.block.sizes.loc['storage', 'preexisting']
         #  Set soc_target dependent on soc_delta of trip and settings of the MobileCommodity
         if soc_delta > (soc_target_low - self.block.soc_return):
             soc_target = soc_target_high
@@ -407,13 +407,13 @@ class AprioriFleetUnit:
         self.data_battery.loc[ts, 'soc_target'] = self.calc_soc_target(ts=ts)
 
         # calculate current energy content of battery
-        e_bat = self.data_battery.loc[ts, 'soc'] * self.block.sizes.loc['block', 'preexisting']
+        e_bat = self.data_battery.loc[ts, 'soc'] * self.block.sizes.loc['storage', 'preexisting']
 
         # calculate self discharge power in current timestep based on the current energy content
         self.data_battery.loc[ts, 'p_sd'] = -1 * e_bat * self.block.loss_rate_per_ts / self.scenario.timestep_hours
 
         # calculate target energy content of battery
-        e_target = self.data_battery.loc[ts, 'soc_target'] * self.block.sizes.loc['block', 'preexisting']
+        e_target = self.data_battery.loc[ts, 'soc_target'] * self.block.sizes.loc['storage', 'preexisting']
 
         # calculate maximum charging power at battery (avoid p_max < 0 caused by changing soc_target)
         self.data_battery.loc[ts, 'p_max'] = max(((e_target - e_bat) / self.scenario.timestep_hours +
@@ -468,7 +468,7 @@ class AprioriFleetUnit:
 
                 # set charging to True, if charging is necessary
                 if e_trip_remaining > ((self.data_battery.loc[ts, 'soc'] - self.block.soc_return) *
-                                       self.block.sizes.loc['block', 'preexisting']):  # ToDo: add soh/aging
+                                       self.block.sizes.loc['storage', 'preexisting']):  # ToDo: add soh/aging
                     self.parking_charging = True
                 else:
                     self.parking_charging = False
@@ -490,7 +490,7 @@ class AprioriFleetUnit:
             chg_nxt = self.chg_avail_dti[self.chg_avail_dti > ts].min()
             soc_chg_nxt = (self.data_battery.loc[ts, 'soc'] -
                           (-1) * self.data_battery.loc[ts:chg_nxt - self.scenario.timestep_td, 'p_consumption'].sum() *
-                           self.scenario.timestep_hours / self.block.sizes.loc['block', 'preexisting'])
+                           self.scenario.timestep_hours / self.block.sizes.loc['storage', 'preexisting'])
             # ToDo: add soh/aging: if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
             if soc_chg_nxt < 0.05:
                 # calculate charging power at external DC charger (measurement point at connection to charger)
@@ -507,7 +507,7 @@ class AprioriFleetUnit:
                  ts: pd.Timestamp):
         # calculate state of charge based on calculated charging powers, consumption and self discharge
         soc_delta = (self.data_battery.loc[ts, ['p_consumption', 'p_sd', 'p_chg']].sum() *
-                     self.scenario.timestep_hours / self.block.sizes.loc['block', 'preexisting'])
+                     self.scenario.timestep_hours / self.block.sizes.loc['storage', 'preexisting'])
 
         self.data_battery.loc[(ts + self.scenario.timestep_td), 'soc'] = self.data_battery.loc[ts, 'soc'] + soc_delta
 
@@ -529,7 +529,7 @@ class AprioriFleetUnit:
                                          })
 
         # fix NaN values caused by max_power = 0 leading and therefore division by 0
-        self.block.flows_apriori.loc[horizon.dti_ph, :] = self.block.flows_apriori.loc[horizon.dti_ph, :].fillna(0)
+        self.block.flows_apriori.loc[horizon.dti_ph, :] = self.block.flows_apriori.loc[horizon.dti_ph, :].fillna(0.0)
 
     def _get_eff(self,
                  mode: str):

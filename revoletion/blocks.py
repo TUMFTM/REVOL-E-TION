@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import os
+import ast
 import io
 import numpy as np
 import oemof.solph as solph
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import pvlib
@@ -127,7 +128,7 @@ class Block:
         Initialize the sizes DataFrame for the block
         """
 
-        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [k for k, v in pois.items() if ('size', 'name') in v['params'].keys()]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -139,13 +140,14 @@ class Block:
         self.sizes['invest'] = False
 
         for size in self.sizes.index:
-            size_str = '' if size == 'block' else f'_{size}'
-            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_str}', 0)
-            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_str}', 0)
-            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_str}', False)
+            size_var_ext = pois[size]['params'][('size', 'name')]
+            size_var_ext = '' if size_var_ext == '' else f'_{size_var_ext}'
+            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_var_ext}', 0)
+            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_var_ext}', 0)
+            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_var_ext}', False)
             # delete attributes if available
             for attr in ['size_preexisting', 'size_max', 'invest']:
-                attr_str = f'{attr}{size_str}'
+                attr_str = f'{attr}{size_var_ext}'
                 if hasattr(self, attr_str):
                     delattr(self, attr_str)
 
@@ -319,7 +321,7 @@ class NonElectricBlock:
     """
 
     @staticmethod
-    def get_init_params():
+    def get_init_definitions():
         return dict(pois={},
                     state_names=[])
 
@@ -501,7 +503,7 @@ class RenewableSource(Block):
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
-                                               ('size', 'name'): 'block',
+                                               ('size', 'name'): '',
                                                ('flow', 'name'): 'out',
                                                ('aux', 'ls'): 'ls',
                                                ('aux', 'ccr'): 'ccr'}},
@@ -865,7 +867,7 @@ class WindSource(RenewableSource):
                 power_curve_wind_speeds=ast.literal_eval(turbine_data.loc[0, 'power_curve_wind_speeds']),
                 power_curve_values=ast.literal_eval(turbine_data.loc[0, 'power_curve_values']),
                 density_correction=False)
-            self.data['power_spec'] = self.data['power_original'] / self.turbine_data.loc[0, 'nominal_power']
+            self.data['power_spec'] = self.data['power_original'] / turbine_data.loc[0, 'nominal_power']
             # endregion
         elif self.data_source == 'file':
             # region get data from file
@@ -1023,7 +1025,7 @@ class ControllableSource(Block):
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
-                                               ('size', 'name'): 'block',
+                                               ('size', 'name'): '',
                                                ('flow', 'name'): 'out',
                                                ('aux', 'ls'): 'ls',
                                                ('aux', 'ccr'): 'ccr'}},
@@ -1418,8 +1420,18 @@ class StorageBlock:
     """
 
     @staticmethod
-    def get_init_params():
-        return dict(pois={'out': {'class_name': 'EconomicEvaluator',
+    def get_init_definitions():
+        return dict(pois={'storage': {'class_name': 'EconomicEvaluator',
+                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                                 ('capex', 'spec'): 'capex_spec',
+                                                 ('mntex', 'spec'): 'mntex_spec',
+                                                 ('size', 'name'): '',
+                                                 ('aux', 'ls'): 'ls',
+                                                 ('aux', 'ccr'): 'ccr'}},
+                          'in': {'class_name': 'EconomicEvaluator',
+                                 'params': {('opex', 'spec'): 'opex_spec',
+                                            ('flow', 'name'): 'in'}},
+                          'out': {'class_name': 'EconomicEvaluator',
                                   'params': {('flow', 'name'): 'out'}},
                           'bat_in': {'class_name': 'EconomicEvaluator',
                                      'params': {('flow', 'name'): 'bat_in'}},
@@ -1474,7 +1486,7 @@ class StorageBlock:
         """
         post horizon method
         """
-        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['storage'], None)]['scalars']['invest']
+        self.sizes.loc['storage', 'expansion'] = horizon.results[(self.components['storage'], None)]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1492,7 +1504,7 @@ class StorageBlock:
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
         self.states.loc[utils.extend_dti(horizon.dti_ch), 'soc'] = (
                 self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] /
-                self.sizes.loc['block', 'total']).fillna(0)
+                self.sizes.loc['storage', 'total']).fillna(0)
 
         self.aging_model.age(horizon=horizon)
 
@@ -1521,16 +1533,7 @@ class StationaryBattery(StorageBlock, Block):
 
     @staticmethod
     def get_init_definitions():
-        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
-                                               ('capex', 'spec'): 'capex_spec',
-                                               ('mntex', 'spec'): 'mntex_spec',
-                                               ('opex', 'spec'): 'opex_spec',
-                                               ('size', 'name'): 'block',
-                                               ('flow', 'name'): 'in',
-                                               ('aux', 'ls'): 'ls',
-                                               ('aux', 'ccr'): 'ccr'}},
-                          },
+        return dict(pois={},
                     state_names=[])
 
     def __init__(self,
@@ -1583,7 +1586,7 @@ class StationaryBattery(StorageBlock, Block):
         self.components['inflow'] = solph.components.Converter(
             label=f'xc_{self.name}',
             inputs={self.bus_connected: solph.Flow(
-                variable_costs=self.evaluators['block'].opex['spec_ep'][horizon.dti_ph]
+                variable_costs=self.evaluators['in'].opex['spec_ep'][horizon.dti_ph]
             )},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: self.eff['chg']}
@@ -1612,16 +1615,16 @@ class StationaryBattery(StorageBlock, Block):
             inflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
             nominal_storage_capacity=solph.Investment(
-                ep_costs=self.evaluators['block'].opex['spec_ep'],
-                existing=self.sizes.loc['block', 'preexisting'],
-                maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
+                ep_costs=self.evaluators['storage'].capex['spec_ep'],
+                existing=self.sizes.loc['storage', 'preexisting'],
+                maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
             max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'],
             min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
         )
 
         horizon.constraints.add_invest_costs(
             invest=(self.components['storage'],),
-            capex_spec=self.evaluators['block'].capex['spec'],
+            capex_spec=self.evaluators['storage'].capex['spec'],
             invest_type='storage')
 
     def add_result_msgs(self, *_):
@@ -1632,8 +1635,8 @@ class StationaryBattery(StorageBlock, Block):
         StorageBlock.add_plot_traces(self)
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["block", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge /'
-                f' {self.sizes.loc["block", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
+        return (f'{self.name} power (max. {self.sizes.loc["storage", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge /'
+                f' {self.sizes.loc["storage", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
 class Fleet(Block):
@@ -1822,20 +1825,12 @@ class ElectricFleetUnit(StorageBlock, Block):
                                                  ('capex', 'fix'): 'capex_fix_charger',
                                                  ('aux', 'ls'): 'ls',
                                                  ('aux', 'ccr'): 'ccr'}},
-                          'storage': {'class_name': 'EconomicEvaluator',
-                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
-                                                 ('capex', 'spec'): 'capex_spec',
-                                                 ('size', 'name'): 'block',
-                                                 ('aux', 'ls'): 'ls',
-                                                 ('aux', 'ccr'): 'ccr'}},
                           'ext_ac': {'class_name': 'EconomicEvaluator',
                                      'params': {('opex', 'spec'): 'opex_spec_ext_ac',
                                                 ('flow', 'name'): 'ext_ac'}},
                           'ext_dc': {'class_name': 'EconomicEvaluator',
                                      'params': {('opex', 'spec'): 'opex_spec_ext_dc',
                                                 ('flow', 'name'): 'ext_dc'}},
-                          'in': {'class_name': 'EconomicEvaluator',
-                                 'params': {('flow', 'name'): 'in'}},
                           },
                     state_names=[])
 
@@ -1956,8 +1951,8 @@ class ElectricFleetUnit(StorageBlock, Block):
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_storage_capacity=solph.Investment(
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
-                existing=self.sizes.loc['block', 'preexisting'],
-                maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
+                existing=self.sizes.loc['storage', 'preexisting'],
+                maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
             min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
             max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max']
         )
@@ -2067,6 +2062,14 @@ class CombustionVehicle(NonElectricBlock, Block):
                          parent=parent)
 
         self.log = None
+
+        # delete parameters not needed for CombustionVehicles
+        for param in ['aging', 'chemistry', 'temp_battery', 'q_loss_cal_init', 'q_loss_cyc_init',
+                      'soc_init', 'soc_target', 'soc_return', 'dsoc_buffer',
+                      'pwr_chg_max', 'pwr_dis_max', 'pwr_ext_ac_max', 'pwr_ext_dc_max',
+                      'eff_storage_roundtrip', 'eff_chg_ac', 'eff_chg_dc', 'eff_dis_ac', 'eff_dis_dc', 'sdr']:
+                if hasattr(self, param):
+                    delattr(self, param)
 
     def pre_scenario(self):
         """

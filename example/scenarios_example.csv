@@ -1,4 +1,4 @@
-block,key,#icev,#bev_grid,#bev_mg,bev_mg_rh
+block,key,icev,bev_grid,bev_mg,bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
@@ -14,7 +14,7 @@ scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,blocks,"{'grid': 'GridConnection', 'dem': 'FixedDemand', 'fleet': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'fleet': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess': 'StationaryBattery', 'fleet': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess':'StationaryBattery','fleet':'Fleet'}"
+scenario,blocks,"{'grid': 'GridConnection', 'dem': 'FixedDemand', 'fleet': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'fleet': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'wind':'WindSource', 'ess': 'StationaryBattery', 'fleet':'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'ess':'StationaryBattery','fleet':'Fleet'}"
 core,size_preexisting_acdc,10000,0,0,0
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -115,7 +115,7 @@ ess,ccr,1,1,1,1
 fleet,filename,fleet_icev.csv,fleet_bev.csv,fleet_bev.csv,fleet_bev.csv
 fleet,system,ac,ac,ac,ac
 fleet,rex_fleet,brs,brs,brs,brs
-fleet,size_preexisting_f2s,43000,43000,43000,43000
-fleet,size_preexisting_s2f,43000,43000,43000,43000
+fleet,size_preexisting_f2s,43000,43000,None,43000
+fleet,size_preexisting_s2f,43000,43000,None,43000
 fleet,opex_spec_f2s,0,0,0,0
 fleet,opex_spec_s2f,0,0,0,0

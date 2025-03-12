@@ -259,7 +259,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
                                                                                 scenario=self.scenario,
                                                                                 block=self.block)
             else:  # capex, mntex, aux
-                getattr(self, dict_name)[dict_key] = getattr(self.block, param_name)
+                    getattr(self, dict_name)[dict_key] = getattr(self.block, param_name, 0)
         # endregion
 
         self.pre_scenario()
