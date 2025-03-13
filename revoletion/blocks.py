@@ -322,6 +322,11 @@ class Block:
         """
         return f'{self.name} power (max. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
 
+    def get_subblocks(self):
+        return self.subblocks | {block_name: block_obj
+                                 for subblock in self.subblocks.values()
+                                 for block_name, block_obj in subblock.get_subblocks().items()}
+
 
 class NonElectricBlock:
     """

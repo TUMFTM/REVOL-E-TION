@@ -820,6 +820,11 @@ class Scenario:
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
 
+    def get_all_blocks(self) -> dict:
+        return self.blocks | {block_name: block_obj
+                              for block in self.blocks.values()
+                              for block_name, block_obj in block.get_subblocks().items()}
+
 
 class PredictionHorizon:
 
