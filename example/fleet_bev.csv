@@ -33,8 +33,8 @@ soc_return,0.1,0.1
 dsoc_buffer,0.05,0.05
 pwr_chg_max,11000,1500
 pwr_dis_max,11000,1500
-pwr_ext_ac_max,100000,0
-pwr_ext_dc_max,11000,0
+pwr_ext_ac_max,11000,0
+pwr_ext_dc_max,100000,0
 eff_storage_roundtrip,0.95,0.95
 eff_chg_ac,0.95,0.95
 eff_chg_dc,0.95,0.95
