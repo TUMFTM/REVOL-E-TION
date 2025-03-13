@@ -254,14 +254,15 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
 
         # Apply constraints for every MobileCommodity
-        for efu in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.ElectricFleetUnit)]:
+        for efu in [block for block in self.scenario.get_all_blocks().values()
+                    if isinstance(block, blocks.ElectricFleetUnit)]:
             _equal_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
                          name=f'limit_{efu.name}_external_charging_to_storage',
                          flows_charging=[(efu.components['inflow'], efu.components['bus']),
                                         (efu.components['conv_ext_ac'], efu.components['bus']),
                                         (efu.components['conv_ext_dc'], efu.components['bus'])],
-                         flows_storage=[(efu.components['bus'], efu.components['ess'])])
+                         flows_storage=[(efu.components['bus'], efu.components['storage'])])
 
     def limit_invest_costs(self, model):
         # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)
