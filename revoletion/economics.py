@@ -424,14 +424,13 @@ class PeakEvaluator(EconomicEvaluator):
     def pre_scenario(self):
 
         # get and set the opex_spec at the first timestep of the peakshaving period
-        self.opex['spec'] = (self.opex['spec'][self.block.peakshaving_periods.loc[self.name, 'start']]
-                             if self.block.peakshaving is not None else 0)
+        self.opex['spec'] = self.opex['spec'][self.block.peak_periods.loc[self.name, 'start']]
 
-        self.opex['factor_ep'] = (self.block.n_peakshaving_periods_yr / self.block.peakshaving_periods.shape[0]
+        self.opex['factor_ep'] = (self.block.n_peak_periods_yr / self.block.peak_periods.shape[0]
                                   if self.scenario.compensate_sim_prj else 1)
 
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
 
     def calc_opex_sim_additional(self):
-        self.opex['sim'] += self.block.peakshaving_periods.loc[self.name, 'power'] * self.opex['spec'] * \
-                            self.block.peakshaving_periods.loc[self.name, 'period_fraction']
+        self.opex['sim'] += self.block.peak_periods.loc[self.name, 'power'] * self.opex['spec'] * \
+                            self.block.peak_periods.loc[self.name, 'period_fraction']

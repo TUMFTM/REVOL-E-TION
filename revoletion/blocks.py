@@ -1152,7 +1152,7 @@ class GridConnection(Block):
         self.inflows = dict()
         self.outflows = dict()
 
-        self.peakshaving_periods = pd.DataFrame()
+        self.peak_periods = pd.DataFrame()
 
         self.initialize_peakshaving()
         self.initialize_markets()
@@ -1176,15 +1176,17 @@ class GridConnection(Block):
             'month': lambda x: x.strftime('%Y-%m'),
             'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
             'year': lambda x: x.strftime('%Y'),
-            'None': lambda x: 'sim_duration'
         }
+
+        if self.peak_period not in periods_func.keys():
+            raise ValueError(f'Block {self.name}: parameter "peak_period" must be one of {periods_func.keys()}')
 
         # Get dummies directly from the 'periods' data
         self.bus_activation = pd.get_dummies(
-            self.scenario.dti_sim_extd.to_series().map(periods_func[str(self.peakshaving)])).astype(int)
+            self.scenario.dti_sim_extd.to_series().map(periods_func[str(self.peak_period)])).astype(int)
 
         # Create a series to store peak power values
-        self.peakshaving_periods = pd.DataFrame(index=self.bus_activation.columns,
+        self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
                                                 columns=['power'],
                                                 data=0.0,  # cumulative variable
                                                 dtype='float64')
@@ -1196,7 +1198,7 @@ class GridConnection(Block):
             # Calculate period fraction
             period_fraction = utils.get_period_fraction(
                 dti=bus_activation_sim[bus_activation_sim.loc[self.scenario.dti_sim, period] == 1].index,
-                period=self.peakshaving,
+                period=self.peak_period,
                 freq=self.scenario.timestep
             )
 
@@ -1209,20 +1211,20 @@ class GridConnection(Block):
                               'start': start,
                               'end': end})
 
-        # Apply the function to each period in peakshaving_periods
-        self.peakshaving_periods[['period_fraction', 'start', 'end']] = self.peakshaving_periods.index.to_series().apply(process_period)
+        # Apply the function to each period in peak_periods
+        self.peak_periods[['period_fraction', 'start', 'end']] = self.peak_periods.index.to_series().apply(process_period)
 
-        self.n_peakshaving_periods_yr = (pd.date_range(start=self.scenario.starttime,
+        self.n_peak_periods_yr = (pd.date_range(start=self.scenario.starttime,
                                                        end=self.scenario.starttime + pd.DateOffset(years=1),
                                                        freq=self.scenario.timestep,
                                                        inclusive='left')
-                                         .to_series().apply(periods_func[str(self.peakshaving)])).unique().size
+                                         .to_series().apply(periods_func[str(self.peak_period)])).unique().size
 
         self.evaluators.update({period: eco.PeakEvaluator(
             name=period,
             block=self,
             params={('opex', 'spec'): 'opex_spec_peak'})
-            for period in self.peakshaving_periods.index})
+            for period in self.peak_periods.index})
 
     def initialize_markets(self):
         # get information about GridMarkets specified in the scenario file
@@ -1281,17 +1283,17 @@ class GridConnection(Block):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=(self.evaluators['g2s'].capex['spec_ep'] if period == self.peakshaving_periods.index[0] else 0),
+                nominal_value=solph.Investment(ep_costs=(self.evaluators['g2s'].capex['spec_ep'] if period == self.peak_periods.index[0] else 0),
                                                existing=self.sizes.loc['g2s', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['g2s', 'expansion_max']))
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
                 nominal_value=(solph.Investment(ep_costs=self.evaluators[period].opex['spec_ep'],
-                                                existing=self.peakshaving_periods.loc[period, 'power'],)
+                                                existing=self.peak_periods.loc[period, 'power'],)
                                if self.peakshaving else None),
                 max=(self.bus_activation.loc[horizon.dti_ph, period] if self.peakshaving else None))},
-            conversion_factors={self.bus_connected: 1}) for period in self.peakshaving_periods.index}
+            conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
 
         self.components.update(self.outflows)
 
@@ -1300,7 +1302,7 @@ class GridConnection(Block):
                                              capex_spec=self.evaluators['s2g'].capex['spec'],
                                              invest_type='flow')
         horizon.constraints.add_invest_costs(invest=(self.components['bus'],
-                                                     self.components[f'{self.name}_outflow_{self.peakshaving_periods.index[0]}']),
+                                                     self.components[f'{self.name}_outflow_{self.peak_periods.index[0]}']),
                                              capex_spec=self.evaluators['g2s'].capex['spec'],
                                              invest_type='flow')
 
@@ -1340,7 +1342,7 @@ class GridConnection(Block):
                                               self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
             return peak_power
 
-        self.peakshaving_periods['power'] = self.peakshaving_periods.apply(get_peak_power, axis=1)
+        self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.sizes.loc["g2s", "total"] / 1e3:.1f} kW from / '
