@@ -412,6 +412,11 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
+        if not isinstance(self.blocks, dict):
+            raise ValueError(f'Scenario parameter "blocks" has to be defined in a dictionary format '
+                             '("{\'name1\':\'classname1\',\'name2\':\'classname2\'}") - '
+                             f'check for missing or additional single or double quotes')
+
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.tzfinder = timezonefinder.TimezoneFinder()
