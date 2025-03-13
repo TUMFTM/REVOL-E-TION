@@ -5,8 +5,8 @@ scenario,sim_duration,50,50,50,50
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,go,rh
-scenario,len_ph,48,None,None,48
-scenario,len_ch,12,None,None,12
+scenario,len_ph,None,None,None,48
+scenario,len_ch,None,None,None,12
 scenario,truncate_ph,True,True,True,True
 scenario,invest_max,None,None,None,None
 scenario,wacc,0.09,0.09,0.09,0.09
