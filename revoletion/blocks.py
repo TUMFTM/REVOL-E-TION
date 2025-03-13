@@ -161,6 +161,12 @@ class Block:
             raise ValueError(f'Block "{self.name}" component size optimization '
                              f'not implemented for any other strategy than "GO"')
 
+        for name, row in self.sizes.iterrows():
+            if row['preexisting'] == 0 and not row['invest']:
+                self.scenario.logger.warning(f'Block "{self.name}" - '
+                                             f'component "{name}" was defined without preexisting size and does not '
+                                             f'allow further investments. This may cause unintended system behavior.')
+
     def initialize_efficiencies(self):
         for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
             if key.startswith('eff_'):
