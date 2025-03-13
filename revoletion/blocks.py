@@ -2026,7 +2026,7 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'{self.name}_conv_ext_dc',
             inputs={self.components['bus_ext_dc']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
+            conversion_factors={self.components['bus']: self.eff['chg_dc']}
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
