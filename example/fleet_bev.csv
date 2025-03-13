@@ -25,8 +25,8 @@ forecast_hours,None,None
 aging,True,True
 chemistry,nmc,nmc
 temp_battery,None,None
-q_loss_cal_init,0.02,0
-q_loss_cyc_init,0.05,0
+q_loss_cal_init,0,0
+q_loss_cyc_init,0,0
 soc_init,0.5,1
 soc_target,0.95,0.95
 soc_return,0.1,0.1
