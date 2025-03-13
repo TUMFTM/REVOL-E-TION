@@ -1153,6 +1153,7 @@ class GridConnection(Block):
         self.outflows = dict()
 
         self.peak_periods = pd.DataFrame()
+        self.bus_activation = pd.DataFrame()
 
         self.initialize_peakshaving()
         self.initialize_markets()
@@ -1188,7 +1189,7 @@ class GridConnection(Block):
         # Create a series to store peak power values
         self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
                                                 columns=['power'],
-                                                data=0.0,  # cumulative variable
+                                                data=self.peak_power_init,  # cumulative variable
                                                 dtype='float64')
 
         # slice sim dataframe from activation bus (compared to sim_extd)

@@ -84,6 +84,7 @@ grid,invest_s2g,False,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,False,False,False,False
 grid,peak_period,year,year,year,year
+grid,peak_power_init,0,0,0,0
 grid,opex_spec_peak,0,0,0,0
 grid,capex_spec,0.1,0.1,0.1,0.1
 grid,mntex_spec,0,0,0,0
