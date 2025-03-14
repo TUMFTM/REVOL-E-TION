@@ -1370,6 +1370,19 @@ class GridConnection(Block):
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
 
+    def create_result_summary(self):
+        super().create_result_summary()
+
+        peak_power_results = {}
+        for period, row in self.peak_periods.iterrows():
+            if row['start'] < self.scenario.sim_endtime:
+                peak_power_results.update({
+                    f'{period}_peak_power': row['power'],
+                    f'{period}_peak_period_fraction': row['period_fraction'],
+                    f'{period}_peak_opex_sim': self.evaluators[period].opex['sim']
+                })
+        self.result_summary.append(pd.Series(peak_power_results))
+
     def create_result_messages(self, *_):
         super().create_result_messages(unit='kW')
 
