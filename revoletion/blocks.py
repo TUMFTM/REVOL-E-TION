@@ -1345,6 +1345,17 @@ class GridConnection(Block):
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
 
+    def add_result_msgs(self):
+        super().add_result_msgs(unit='kW')
+
+        # add peak power results
+        self.scenario.print_results_msgs.extend(
+            [f'Optimized peak power in component "{self.name}" for interval '
+             f'{period}: {row["power"] / 1e3:.1f} kW '
+             f'- OPEX in simulation period: {self.evaluators[period].opex["sim"]:.2f} {self.scenario.currency}'
+             for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.sim_endtime]
+        )
+
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.sizes.loc["g2s", "total"] / 1e3:.1f} kW from / '
                 f'{self.sizes.loc["s2g", "total"] / 1e3:.1f} kW to grid)')
