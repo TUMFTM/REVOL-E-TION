@@ -44,10 +44,8 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.block.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal[0] = self.block.q_loss_cal_init
-        self.block.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc[0] = self.block.q_loss_cyc_init
-
-        self.block.states.loc[self.scenario.starttime, 'soh'] = 1 - sum(self.q_loss_cal) - sum(self.q_loss_cyc)  # Initial soh
+        self.q_loss_cal[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cal']
+        self.q_loss_cyc[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cyc']
 
         # Placeholders for pack level variables to be filled after component sizing in first horizon
         self.size = self.n_cells = self.m_cells = self.m_housing = self.c_th_cells = self.c_th_housing = None
@@ -142,11 +140,13 @@ class BatteryPackModel:
             try:
                 temp_hor_c = self.scenario.blocks[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
-                self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found,'
-                                             f' using 25°C default')
+                self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found - '
+                                             f'Using scenario default temperature')
                 temp_hor_c = pd.Series(data=25, index=horizon.dti_ch)
         elif isinstance(self.block.temp_battery, (int, float)):
             temp_hor_c = pd.Series(data=self.block.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
+        elif self.block.temp_battery is None:
+            temp_hor_c = self.block.scenario.temp_air.iloc[:, 0]
         else:
            ValueError('Battery temperature must be the name of a PVSource block or numeric')
 
@@ -193,8 +193,8 @@ class BatteryPackModel:
         self.block.states.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
         self.block.states.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
         self.block.states.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
-        self.block.soc_min = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
-        self.block.soc_max = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
+        self.block.states.loc[horizon.ch_endtime:, 'soc_min'] = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
+        self.block.states.loc[horizon.ch_endtime:, 'soc_max'] = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
 
     def calc_aging_naumann(self,
                            horizon,
@@ -325,7 +325,7 @@ class BatteryPackModel:
             q_eq = 0
 
     def get_pack_parameters(self):
-        self.size = self.block.sizes.loc['block', 'total']
+        self.size = self.block.sizes.loc['storage', 'total']
         # Calculate number of cells as a float to correctly represent power split with nonreal cells
         self.n_cells = self.size / self.e_cell
         self.m_cells = self.n_cells * self.m_cell

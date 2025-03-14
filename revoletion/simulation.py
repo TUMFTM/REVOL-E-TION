@@ -412,6 +412,11 @@ class Scenario:
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
+        if not isinstance(self.blocks, dict):
+            raise ValueError(f'Scenario parameter "blocks" has to be defined in a dictionary format '
+                             '("{\'name1\':\'classname1\',\'name2\':\'classname2\'}") - '
+                             f'check for missing or additional single or double quotes')
+
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.tzfinder = timezonefinder.TimezoneFinder()
@@ -493,6 +498,32 @@ class Scenario:
                 self.holiday_dates = []
                 self.logger.warning(f'Holidays for country {self.country} not available. '
                                     f'No public holidays are considered in this scenario.')
+
+        # region set air temperature
+        temp_air = pd.DataFrame(index=self.dti_sim_extd,
+                                columns=['temp_air'],
+                                dtype=float)
+
+        if isinstance(self.temp_air, (float, int)):
+            temp_air['temp_air'] = self.temp_air
+            self.temp_air = temp_air
+
+        elif isinstance(self.temp_air, str) and self.temp_air in self.blocks.keys() and self.blocks[self.temp_air] == 'PVSource':
+            # PVSource checks for temp_scn in parameters and writes temperature to this variable
+            self.parameters.loc[(self.temp_air, 'temp_scn')] = True
+            self.temp_air = temp_air
+
+        elif isinstance(self.temp_air, str) and os.path.isfile(os.path.join(self.run.paths['input'], utils.set_extension(self.temp_air))):
+            self.temp_air = utils.read_timeseries_csv(path_input_file=os.path.join(self.run.paths['input'],
+                                                                                   utils.set_extension(self.temp_air)),
+                                                      block=self,  # only uses block.name -> scenario works, too
+                                                      scenario=self)
+        else:
+            self.logger.warning(f'Specified argument for scenario parameter temp_air ({self.temp_air}) not found - '
+                                f'Using default of 25 °C')
+            temp_air['temp_air'] = 25
+            self.temp_air = temp_air
+        # endregion
 
         # prepare for system graph saving later on
         self.path_system_graph_file = os.path.join(
@@ -788,6 +819,11 @@ class Scenario:
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
+
+    def get_all_blocks(self) -> dict:
+        return self.blocks | {block_name: block_obj
+                              for block in self.blocks.values()
+                              for block_name, block_obj in block.get_subblocks().items()}
 
 
 class PredictionHorizon:

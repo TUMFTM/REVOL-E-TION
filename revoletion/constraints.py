@@ -221,7 +221,7 @@ class CustomConstraints:
                        flows_feed_in=flows_res_from_bus['ac'],
                        flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
                                   model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac],
-                       eff_conv=[1, self.scenario.blocks['core'].eff_dcac])
+                       eff_conv=[1, self.scenario.blocks['core'].eff['dcac']])
 
         # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
         # SystemCore's converter efficiency
@@ -231,7 +231,7 @@ class CustomConstraints:
                        flows_feed_in=flows_res_from_bus['dc'],
                        flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
                                   model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc],
-                       eff_conv=[self.scenario.blocks['core'].eff_acdc, 1])
+                       eff_conv=[self.scenario.blocks['core'].eff['acdc'], 1])
 
     def external_charging_to_storage(self, model):
         # Goal:         Force all external charged power to flow into the commodity's storage.
@@ -254,14 +254,15 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
 
         # Apply constraints for every MobileCommodity
-        for efu in [block for block in self.scenario.blocks.values() if isinstance(block, blocks.ElectricFleetUnit)]:
+        for efu in [block for block in self.scenario.get_all_blocks().values()
+                    if isinstance(block, blocks.ElectricFleetUnit)]:
             _equal_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
                          name=f'limit_{efu.name}_external_charging_to_storage',
                          flows_charging=[(efu.components['inflow'], efu.components['bus']),
                                         (efu.components['conv_ext_ac'], efu.components['bus']),
                                         (efu.components['conv_ext_dc'], efu.components['bus'])],
-                         flows_storage=[(efu.components['bus'], efu.components['ess'])])
+                         flows_storage=[(efu.components['bus'], efu.components['storage'])])
 
     def limit_invest_costs(self, model):
         # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)

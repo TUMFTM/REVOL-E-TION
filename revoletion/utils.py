@@ -54,9 +54,6 @@ def get_period_fraction(dti, period, freq):
     if len(dti) == 0:
         return 0.0
 
-    if str(period) == 'None':  # peakshaving is not activated
-        return 1.0
-
     if period == 'day':
         start = dti.min().normalize()
         end = start + pd.DateOffset(days=1) - pd.Timedelta(freq)
@@ -168,7 +165,11 @@ def read_demand_file(block):
     return df
 
 
-def read_timeseries_csv(path_input_file, block, scenario, multiheader=False, resampling=True):
+def read_timeseries_csv(path_input_file: str,
+                        block: 'Block',
+                        scenario: 'Scenario',
+                        multiheader: bool = False,
+                        resampling: bool = True):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
     """
