@@ -1315,10 +1315,11 @@ class GridConnection(Block):
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
-                nominal_value=(solph.Investment(ep_costs=self.evaluators[period].opex['spec_ep'],
-                                                existing=self.peak_periods.loc[period, 'power'],)
-                               if self.peakshaving else None),
-                max=(self.bus_activation.loc[horizon.dti_ph, period] if self.peakshaving else None))},
+                nominal_value=(solph.Investment(ep_costs=(self.evaluators[period].opex['spec_ep']
+                                                          if self.peakshaving else 0),
+                                                existing=self.peak_periods.loc[period, 'power'])
+                               ),
+                max=(self.bus_activation.loc[horizon.dti_ph, period]))},
             conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
 
         self.components.update(self.outflows)
