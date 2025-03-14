@@ -535,18 +535,6 @@ class Scenario:
                                                                      f'{run.name}_'
                                                                      f'{self.name}.html')
 
-        # prepare for cumulative result saving later on
-        self.result_summary = pd.Series(index=pd.MultiIndex.from_tuples(tuples=[], names=['block', 'key']))
-        self.path_result_summary_tempfile = os.path.join(self.run.paths['output'],
-                                                         f'{self.name}_summary_temp.pkl')
-
-        self.result_timeseries = pd.DataFrame(index=utils.extend_dti(self.dti_sim_extd),
-                                              columns=pd.MultiIndex.from_tuples(tuples=[],
-                                                                                names=['block', 'timeseries']))
-        self.path_result_ts_file = os.path.join(
-            self.run.paths['output'],
-            f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
-
         # Energy System Blocks --------------------------------
         # initialize variable to store initial investment costs given in scenario definition
         self.discount_factors = pd.DataFrame(index=range(self.prj_duration_yrs),
@@ -603,7 +591,16 @@ class Scenario:
 
         self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
 
-        self.print_results_msgs = []
+        self.result_messages = []
+        self.result_summary = []
+        self.path_result_summary_tempfile = os.path.join(self.run.paths['output'],
+                                                         f'{self.name}_summary_temp.pkl')
+
+        self.result_timeseries = []
+
+        self.path_result_ts_file = os.path.join(self.run.paths['output'],
+                                                f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
+
         self.plot_traces = {'powers': [],
                             'states': []}
 
@@ -673,15 +670,18 @@ class Scenario:
             self.aggregator.post_scenario()
 
             self.calc_meta_results()
+
             self.save_result_summary()
 
             if self.run.save_results_timeseries:
+                self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
                 self.result_timeseries.to_csv(self.path_result_ts_file)
 
             if self.run.print_results:
-                for msg in self.print_results_msgs:
+                for msg in self.result_messages:
                     self.logger.info(msg)
 
+            # self.create_plot()
             if self.run.generate_plots:
                 self.generate_plots()
                 if self.run.save_plots:
@@ -815,7 +815,7 @@ class Scenario:
                                                            names=['block', 'key'])
 
         # write results from run and scenario to result_summary
-        self.result_summary = pd.concat([results_run, results_scenario, self.result_summary])
+        self.result_summary = pd.concat([results_run, results_scenario, *self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)

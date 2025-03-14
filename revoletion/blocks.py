@@ -122,6 +122,13 @@ class Block:
         for attribute in set(value for poi in pois.values() for value in poi['params'].values()):
             if hasattr(self, attribute):
                 delattr(self, attribute)
+
+        # initialize result data structures
+        self.result_summary = []  # -> list of pd.Series
+        self.result_timeseries = []  # -> list of pd.DataFrames
+        self.result_messages = []
+        self.plot_traces = dict(powers=[],
+                                states=[])
         # endregion
 
     def initialize_sizes(self,
@@ -223,12 +230,18 @@ class Block:
         for subblock in self.subblocks.values():
             subblock.post_scenario()
 
+        # calculate results
         self.calc_results_energies()
         self.calc_results_economics()
-        self.add_result_msgs()
-        self.add_plot_traces()
-        self.write_result_summary()
-        self.write_result_timeseries()
+
+        # create result outputs
+        self.create_result_messages()
+        self.create_plot_traces()
+        self.create_result_summary()
+        self.create_result_timeseries()
+
+        # add block results to scenario's structures
+        self.write_results_to_scenario()
 
     def calc_results_energies(self):
         """
@@ -264,27 +277,19 @@ class Block:
             evaluator.post_scenario()
         self.aggregator.post_scenario()
 
-    def write_result_summary(self):
+    def create_result_summary(self):
         # get attributes of type int, float, bool and str for scenario.result_summary
-        result_series = [pd.Series({key: value for key, value in self.__dict__.items()
-                                    if isinstance(value, (int, float, bool, str))})]
+        self.result_summary.extend([pd.Series({key: value for key, value in self.__dict__.items()
+                                               if isinstance(value, (int, float, bool, str))})])
 
         # get energies/sizes dataframes results for scenario.result_summary
-        result_series.extend([utils.get_dataframe_results(df=df, name_prefix=prefix)
+        self.result_summary.extend([utils.get_dataframe_results(df=df, name_prefix=prefix)
                               for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
 
         # get economic results for scenario.result_summary
-        result_series.append(self.aggregator.write_result_summary())
+        self.result_summary.append(self.aggregator.write_result_summary())
 
-        # concat all result_series and apply MultiIndex with
-        result_series = pd.concat(result_series)
-        result_series.index = pd.MultiIndex.from_tuples(tuples=[(self.name, key) for key in result_series.index],
-                                                        names=['block', 'key'])
-
-        # write block's results to scenario.result_summary
-        self.scenario.result_summary = pd.concat([self.scenario.result_summary, result_series])
-
-    def write_result_timeseries(self):
+    def create_result_timeseries(self):
         """
         write flows and states to scenario.result_timeseries
         """
@@ -296,25 +301,45 @@ class Block:
             self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
                                                             names=['block', 'key'])
 
-            self.scenario.result_timeseries = pd.concat(objs=[self.scenario.result_timeseries, self.flows, self.states],
-                                                        axis=1)
+            self.result_timeseries.extend([self.flows, self.states])
 
-    def add_result_msgs(self, unit='kW'):
+    def create_result_messages(self, unit='kW'):
 
-        self.scenario.print_results_msgs.extend(
+        self.result_messages.extend(
             [msg for msg in self.sizes.apply(lambda size: (
                 f'Optimized size of component "{size.name}" in block "{self.name}": {size["total"] / 1e3:.1f} {unit}'
                 f' (existing: {size["preexisting"] / 1e3:.1f} {unit}'
                 f' - additional: {size["expansion"] / 1e3:.1f} {unit})'
                 if size['invest'] else ''), axis=1).to_list() if msg != ''])
 
-    def add_plot_traces(self):
-        self.scenario.plot_traces['powers'].append(go.Scatter(x=self.flows.index,
-                                                              y=self.flows['total'],
-                                                              mode='lines',
-                                                              name=self.get_legend_entry(),
-                                                              line=dict(width=2, dash=None, shape='hv'))
-                                                   )
+    def create_plot_traces(self):
+        self.plot_traces['powers'].append(go.Scatter(x=self.flows.index,
+                                                     y=self.flows['total'],
+                                                     mode='lines',
+                                                     name=self.get_legend_entry(),
+                                                     line=dict(width=2, dash=None, shape='hv'))
+                                          )
+
+    def write_results_to_scenario(self):
+        # result_summary
+        # concat all result_series and apply MultiIndex with
+        self.result_summary = pd.concat(self.result_summary)
+        self.result_summary.index = pd.MultiIndex.from_tuples(tuples=[(self.name, key)
+                                                                      for key in self.result_summary.index],
+                                                              names=['block', 'key'])
+
+        # write block's results to scenario.result_summary
+        self.scenario.result_summary.append(self.result_summary)
+
+        # result_timeseries
+        self.scenario.result_timeseries.extend(self.result_timeseries)
+
+        # result_messages
+        self.scenario.result_messages.extend(self.result_messages)
+
+        # plot traces
+        for axis in ['powers', 'states']:
+            self.scenario.plot_traces[axis].extend(self.plot_traces[axis])
 
     def get_legend_entry(self):
         """
@@ -356,13 +381,13 @@ class NonElectricBlock:
         """
         pass
 
-    def add_plot_traces(self, *_args, **_kwargs):
+    def create_plot_traces(self, *_args, **_kwargs):
         """
         dummy method
         """
         pass
 
-    def write_result_timeseries(self, *_args, **_kwargs):
+    def create_result_timeseries(self, *_args, **_kwargs):
         """
         dummy method
         """
@@ -487,21 +512,21 @@ class SystemCore(Block):
         if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
             self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
-    def add_plot_traces(self):
-        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                               y=self.flows['dcac'],
-                                                               mode='lines',
-                                                               name=f'{self.name} DC-AC power (max. '
-                                                                    f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
-                                                               line=dict(width=2, dash=None, shape='hv'),
-                                                               visible='legendonly'),
-                                                    go.Scatter(x=self.flows.index,
-                                                               y=self.flows['acdc'],
-                                                               mode='lines',
-                                                               name=f'{self.name} AC-DC power (max. '
-                                                                    f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
-                                                               line=dict(width=2, dash=None, shape='hv'),
-                                                               visible='legendonly')])
+    def create_plot_traces(self):
+        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                      y=self.flows['dcac'],
+                                                      mode='lines',
+                                                      name=f'{self.name} DC-AC power (max. '
+                                                           f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly'),
+                                           go.Scatter(x=self.flows.index,
+                                                      y=self.flows['acdc'],
+                                                      mode='lines',
+                                                      name=f'{self.name} AC-DC power (max. '
+                                                           f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly')])
 
 
 class RenewableSource(Block):
@@ -617,20 +642,20 @@ class RenewableSource(Block):
         else:
             self.share_curtailment = self.energies.loc['curt', 'sim'] / self.energies.loc['pot', 'sim']
 
-    def add_plot_traces(self):
-        super().add_plot_traces()
-        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                               y=-1 * self.flows['curt'],
-                                                               mode='lines',
-                                                               name=f'{self.name} curtailed power',
-                                                               line=dict(width=2, dash=None, shape='hv'),
-                                                               visible='legendonly'),
-                                                    go.Scatter(x=self.flows.index,
-                                                               y=self.flows['pot'],
-                                                               mode='lines',
-                                                               name=f'{self.name} potential power',
-                                                               line=dict(width=2, dash=None, shape='hv'),
-                                                               visible='legendonly')])
+    def create_plot_traces(self):
+        super().create_plot_traces()
+        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                      y=-1 * self.flows['curt'],
+                                                      mode='lines',
+                                                      name=f'{self.name} curtailed power',
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly'),
+                                           go.Scatter(x=self.flows.index,
+                                                      y=self.flows['pot'],
+                                                      mode='lines',
+                                                      name=f'{self.name} potential power',
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly')])
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
@@ -1345,11 +1370,11 @@ class GridConnection(Block):
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
 
-    def add_result_msgs(self):
-        super().add_result_msgs(unit='kW')
+    def create_result_messages(self, *_):
+        super().create_result_messages(unit='kW')
 
         # add peak power results
-        self.scenario.print_results_msgs.extend(
+        self.result_messages.extend(
             [f'Optimized peak power in component "{self.name}" for interval '
              f'{period}: {row["power"] / 1e3:.1f} kW '
              f'- OPEX in simulation period: {self.evaluators[period].opex["sim"]:.2f} {self.scenario.currency}'
@@ -1557,25 +1582,25 @@ class StorageBlock:
 
         self.aging_model.age(horizon=horizon)
 
-    def add_plot_traces(self):
+    def create_plot_traces(self):
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
         data_soc = self.states['soc'].dropna()
         data_soh = self.states['soh'].dropna()
-        self.scenario.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
-                                                               y=data_soc,
-                                                               mode='lines',
-                                                               name=f'{self.name} SOC',
-                                                               line=dict(width=2, dash=None),
-                                                               visible='legendonly'),
-                                                    go.Scatter(x=data_soh.index,
-                                                               y=data_soh,
-                                                               mode='lines',
-                                                               name=f'{self.name} SOH',
-                                                               line=dict(width=2, dash=None),
-                                                               visible='legendonly'),
-                                                    ])
+        self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
+                                                      y=data_soc,
+                                                      mode='lines',
+                                                      name=f'{self.name} SOC',
+                                                      line=dict(width=2, dash=None),
+                                                      visible='legendonly'),
+                                           go.Scatter(x=data_soh.index,
+                                                      y=data_soh,
+                                                      mode='lines',
+                                                      name=f'{self.name} SOH',
+                                                      line=dict(width=2, dash=None),
+                                                      visible='legendonly'),
+                                           ])
 
 
 class StationaryBattery(StorageBlock, Block):
@@ -1676,12 +1701,12 @@ class StationaryBattery(StorageBlock, Block):
             capex_spec=self.evaluators['storage'].capex['spec'],
             invest_type='storage')
 
-    def add_result_msgs(self, *_):
-        super().add_result_msgs(unit='kWh')
+    def create_result_messages(self, *_):
+        super().create_result_messages(unit='kWh')
 
-    def add_plot_traces(self):
-        Block.add_plot_traces(self)
-        StorageBlock.add_plot_traces(self)
+    def create_plot_traces(self):
+        Block.create_plot_traces(self)
+        StorageBlock.create_plot_traces(self)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.sizes.loc["storage", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge /'
@@ -2058,24 +2083,24 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         StorageBlock.get_horizon_results(self=self, horizon=horizon)
 
-    def add_plot_traces(self):
-        Block.add_plot_traces(self)
+    def create_plot_traces(self):
+        Block.create_plot_traces(self)
 
         legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
         legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
-        self.scenario.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                              y=self.flows['ext_ac'],
-                                                              mode='lines',
-                                                              name=legend_ext_ac,
-                                                              line=dict(width=2, dash=None, shape='hv')),
-                                                    go.Scatter(x=self.flows.index,
-                                                               y=self.flows['ext_dc'],
-                                                               mode='lines',
-                                                               name=legend_ext_dc,
-                                                               line=dict(width=2, dash=None, shape='hv')),
-                                                    ])
+        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
+                                                      y=self.flows['ext_ac'],
+                                                      mode='lines',
+                                                      name=legend_ext_ac,
+                                                      line=dict(width=2, dash=None, shape='hv')),
+                                           go.Scatter(x=self.flows.index,
+                                                      y=self.flows['ext_dc'],
+                                                      mode='lines',
+                                                      name=legend_ext_dc,
+                                                      line=dict(width=2, dash=None, shape='hv')),
+                                           ])
 
-        StorageBlock.add_plot_traces(self)
+        StorageBlock.create_plot_traces(self)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
