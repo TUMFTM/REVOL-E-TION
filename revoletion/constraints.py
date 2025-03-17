@@ -122,16 +122,17 @@ class CustomConstraints:
                     var_name,
                     po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
 
-        # Get discharging flows of all StationaryBatterys which only allow storing renewable energy
-        storage_flows_ac = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
-                            isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'ac']
-        storage_flows_dc = [(block.bus, block.bus_connected) for block in self.scenario.blocks.values() if
-                            isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'dc']
+        # Get discharging flows of all StationaryBattery instances which only allow storing renewable energy
+        storage_flows_ac = [(block.components['bus'], block.bus_connected) for block in self.scenario.blocks.values()
+                            if isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'ac']
+        storage_flows_dc = [(block.components['bus'], block.bus_connected) for block in self.scenario.blocks.values()
+                            if isinstance(block, blocks.StationaryBattery) and block.res_only and block.system == 'dc']
 
         # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
         flows_res_from_bus = {
-            'ac': [(market.parent.bus, market.snk) for block in self.scenario.blocks.values() if
-                   isinstance(block, blocks.GridConnection) for market in block.subblocks.values() if
+            'ac': [(market.parent.components['bus'], market.components['snk'])
+                   for block in self.scenario.blocks.values()
+                   if isinstance(block, blocks.GridConnection) for market in block.subblocks.values() if
                    market.res_only] + [(fo, fi) for fi, fo in storage_flows_ac],
             'dc': [(fo, fi) for fi, fo in storage_flows_dc]  # invert discharging flows to charging flows
         }
@@ -140,10 +141,10 @@ class CustomConstraints:
         flows_res_to_bus = {
             'ac': [(block.components['outflow'], block.bus_connected)
                    for block in self.scenario.renewable_sources.values()
-                   if 'ac' in block.bus_connected.label] + storage_flows_ac,
+                   if block.system == 'ac'] + storage_flows_ac,
             'dc': [(block.components['outflow'], block.bus_connected)
                    for block in self.scenario.renewable_sources.values()
-                   if 'dc' in block.bus_connected.label] + storage_flows_dc
+                   if block.system == 'dc'] + storage_flows_dc
         }
 
         def _sum_res(m, block, name, sum_flow, split_flows):

@@ -983,7 +983,7 @@ class FixedDemand(Block):
 
         if data.shape[1] != 1:
             self.scenario.logger.warning(f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
-                                         f'"load_profile" in block "{self.block.name}" has more than one column. '
+                                         f'"load_profile" in block "{self.name}" has more than one column. '
                                          f'Sum of all columns is calculated for load profile.')
 
         data = data.sum(axis=1)[self.flows_apriori.index]  # convert to series and slice to sim timeframe

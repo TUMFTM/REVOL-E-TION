@@ -118,7 +118,7 @@ class SimulationRun:
             self.paths['output'] = os.path.join(self.paths['revoletion'],
                                                 'results',
                                                 f'{self.runtimestamp}_{self.name}')
-        elif os.path.isdir(self.path_output_data):
+        elif os.path.isdir(self.paths['output']):
             self.paths['output'] = os.path.join(self.paths['output'],
                                                 f'{self.runtimestamp}_{self.name}')  # no modification of path necessary
         else:
