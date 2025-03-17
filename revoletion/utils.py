@@ -175,11 +175,11 @@ def read_timeseries_csv(path_input_file: str,
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
+        df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
         df.sort_index(axis=1, sort_remaining=True, inplace=True)
-        df = df.set_index(pd.to_datetime(df.loc[:, ('time', 'time')], utc=True)).drop(columns='time')
     else:
         df = pd.read_csv(path_input_file)
-        df = df.set_index(pd.to_datetime(df['time'], utc=True)).drop(columns='time')
+        df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
 
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(scenario.timezone)
