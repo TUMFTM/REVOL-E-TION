@@ -1386,8 +1386,8 @@ class GridConnection(Block):
 
         # add peak power results
         self.result_messages.extend(
-            [f'Optimized peak power in component "{self.name}" for interval '
-             f'{period}: {row["power"] / 1e3:.1f} kW '
+            [f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
+             f'"{period}": {row["power"] / 1e3:.1f} kW '
              f'- OPEX in simulation period: {self.evaluators[period].opex["sim"]:.2f} {self.scenario.currency}'
              for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.sim_endtime]
         )
