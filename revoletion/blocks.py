@@ -801,7 +801,7 @@ class PVSource(RenewableSource):
 
             # region get data from PVGIS file
             if self.data_source == 'pvgis file':
-                self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(self.path_input_file, map_variables=True)
+                self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
                 self.scenario.latitude = meta['latitude']
                 self.scenario.longitude = meta['longitude']
                 self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
@@ -810,17 +810,14 @@ class PVSource(RenewableSource):
             # region get data from Solcast file
             elif self.data_source == 'solcast file':
                 # no lat/lon contained in solcast files
-                self.data = pd.read_csv(self.path_input_file)
-                self.data.rename(columns={'PeriodStart': 'period_start',
-                                          'PeriodEnd': 'period_end',
-                                          'AirTemp': 'temp_air',
-                                          'GtiFixedTilt': 'gti',
-                                          'WindSpeed10m': 'wind_speed'}, inplace=True)
+                self.data = pd.read_csv(path_input_file)
+                self.data.rename(columns={'air_temp': 'temp_air',
+                                          'wind_speed_10m': 'wind_speed'}, inplace=True)
                 self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
                 self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
                 self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
                 self.data = self.data[['temp_air', 'wind_speed', 'gti']]
-                self.calc_power_solcast()
+                self.calc_power_from_irradiation()
             # endregion
 
             else:
