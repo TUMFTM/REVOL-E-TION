@@ -229,11 +229,12 @@ def read_input_log(fleet):
     # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
     # fleet + number), the names specified in the log file names are used, with the commodity fleet name added
     # for unique identification.
-    if fleet.data_source == 'log':
-        unit_names_log = sorted(df.columns.get_level_values(0).unique()[:fleet.num].tolist())
-        if fleet.unit_names != unit_names_log:
-            unit_names_map = {log_name: f'{fleet.name}_{log_name}' for log_name in unit_names_log}
-            df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
+    # ToDo: fix and reactivate
+    # if fleet.data_source == 'log':
+    #     unit_names_log = sorted(df.columns.get_level_values(0).unique()[:fleet.num].tolist())
+    #     if fleet.unit_names != unit_names_log:
+    #         unit_names_map = {log_name: f'{fleet.name}_{log_name}' for log_name in unit_names_log}
+    #         df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
 
     return df
 
