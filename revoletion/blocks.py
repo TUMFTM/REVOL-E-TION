@@ -1757,14 +1757,16 @@ class Fleet(Block):
                                 index_col=0,
                                 keep_default_na=False).map(utils.infer_dtype)
 
-        for subfleet_name, subfleet in subfleets.items():
+        for subfleet_id, subfleet in subfleets.items():
             if ((self.subfleets is not None and subfleet.name not in self.subfleets) or
-                    subfleet_name.startswith('#')):
+                    subfleet_id.startswith('#')):
                 continue
+            subfleet_params = subfleet.to_dict()
+            subfleet_name = subfleet_params.pop('name')
             self.subblocks[subfleet_name] = SubFleet(name=subfleet_name,
-                                                     scenario=self.scenario,
-                                                     params=subfleet.to_dict(),
-                                                     parent=self)
+                                                   scenario=self.scenario,
+                                                   params=subfleet_params,
+                                                   parent=self)
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
