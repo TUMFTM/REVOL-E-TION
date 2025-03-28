@@ -140,7 +140,7 @@ class SubFleetDispatcher:
                               self.energy_total *
                               np.sqrt(unit_repr.eff['storage_roundtrip']))
 
-        pwr_loss_max = (1 - (1 - unit_repr.loss_rate_per_hour) ** self.scenario.timestep_hours * self.energy_total)
+        pwr_loss_max = unit_repr.loss_rate_per_hour * self.energy_total
         self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff['chg_int'] - pwr_loss_max) * factor_derate
         # endregion
 
