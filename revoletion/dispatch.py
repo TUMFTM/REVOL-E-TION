@@ -88,6 +88,8 @@ class SiteDispatcher:
 
         for disp in self.dispatchers.values():
             disp.postprocess()
+            if self.scenario.run.save_results_dispatch:
+                disp.save_data()
 
 
 class SubFleetDispatcher:
@@ -120,10 +122,10 @@ class SubFleetDispatcher:
         # region estimate usable energy and power
         unit_repr = self.units[next(iter(self.units))]  # all units are equal and representative a priori
 
-        self.energy_total = unit_repr.sizes.loc['block', 'preexisting']
+        self.energy_total = unit_repr.sizes.loc['storage', 'preexisting']
 
-        soc_minmax = min([unit.soc_max for unit in self.units.values()])
-        soc_maxmin = max([unit.soc_min for unit in self.units.values()])
+        soc_minmax = min([unit.states.at[self.scenario.starttime, 'soc_max'] for unit in self.units.values()])
+        soc_maxmin = max([unit.states.at[self.scenario.starttime, 'soc_min'] for unit in self.units.values()])
 
         soc_upper = statistics.median([soc_minmax, unit_repr.soc_target, soc_maxmin])
         soc_lower = statistics.median([soc_minmax, unit_repr.soc_return, soc_maxmin])
@@ -290,7 +292,7 @@ class SubFleetDispatcher:
             self.processes.loc[id, 'status'] = 'success'
             self.processes.loc[id, 'step_dep'] = self.env.now
 
-            self.processes.loc[id, 'units_prim'] = request_prim.value
+            self.processes.at[id, 'units_prim'] = request_prim.value
             self.scenario.logger.debug(f'{self.name} process {id} received primary resource '
                                        f'{self.processes.loc[id, "units_prim"]} at {self.env.now}')
 
@@ -306,8 +308,8 @@ class SubFleetDispatcher:
             # cover the postblock time
             yield self.env.timeout(self.processes.at[id, 'steps_postblock_prim'])
             self.processes.loc[id, 'step_reavail_prim'] = self.env.now
-            yield self.env.timeout(self.processes.at[id, 'steps_postblock_rex'] -
-                                   self.processes.at[id, 'steps_postblock_prim'])
+            yield self.env.timeout(max(0, self.processes.at[id, 'steps_postblock_rex'] -
+                                       self.processes.at[id, 'steps_postblock_prim']))
             self.processes.loc[id, 'step_reavail_rex'] = self.env.now
 
             # put back resources
@@ -404,7 +406,7 @@ class SubFleetDispatcher:
             unit = process['units_prim']
             time_end = process['time_return'] - self.scenario.timestep_td
             power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.scenario.timestep_hours)
-            dist_avg = process['distance'] / process['steps_rental']
+            dist_avg = process['distance'] / process['steps_rental'] if 'distance' in process else 0
 
             self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
             self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
@@ -437,7 +439,7 @@ class SubFleetDispatcher:
         delivery through execute_des.
         """
         processes_path = os.path.join(
-            self.scenario.run.path_result_dir,
+            self.scenario.run.paths['output'],
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
@@ -446,7 +448,7 @@ class SubFleetDispatcher:
         self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
-            self.scenario.run.path_result_dir,
+            self.scenario.run.paths['output'],
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'

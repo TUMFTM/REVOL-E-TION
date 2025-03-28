@@ -2020,7 +2020,6 @@ class ElectricFleetUnit(StorageBlock, Block):
         else:  # a priori or global optimization
             soc_min_hor = self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
         self.states.update({'soc_min': soc_min_hor})  # df[col].update() raises FutureWarning
-
         # endregion
 
         self.components['storage'] = solph.components.GenericStorage(
@@ -2079,7 +2078,7 @@ class ElectricFleetUnit(StorageBlock, Block):
             label=f'{self.name}_conv_ext_dc',
             inputs={self.components['bus_ext_dc']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff['chg_dc']}
+            conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
