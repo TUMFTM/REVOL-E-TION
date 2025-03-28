@@ -2019,7 +2019,7 @@ class ElectricFleetUnit(StorageBlock, Block):
                 upper=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'])
         else:  # a priori or global optimization
             soc_min_hor = self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
-        self.states.update({'soc_min': soc_min_hor})  # df[col].update() raises FutureWarning
+        self.states.update({'soc_min': soc_min_hor.astype('float64')})
         # endregion
 
         self.components['storage'] = solph.components.GenericStorage(
