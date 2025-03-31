@@ -283,8 +283,8 @@ class Block:
                                                if isinstance(value, (int, float, bool, str))})])
 
         # get energies/sizes dataframes results for scenario.result_summary
-        self.result_summary.extend([utils.get_dataframe_results(df=df, name_prefix=prefix)
-                              for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
+        self.result_summary.extend([utils.create_results_from_dataframe(df=df, name_prefix=prefix)
+                                    for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
 
         # get economic results for scenario.result_summary
         self.result_summary.append(self.aggregator.write_result_summary())

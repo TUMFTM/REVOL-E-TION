@@ -49,8 +49,8 @@ def infer_dtype(value):
     return value.lower()
 
 
-def get_dataframe_results(df: pd.DataFrame,
-                          name_prefix: str) -> pd.Series:
+def create_results_from_dataframe(df: pd.DataFrame,
+                                  name_prefix: str) -> pd.Series:
     """
     Convert results stored in a DataFrame to a Series for scenario.result_summary.
     """

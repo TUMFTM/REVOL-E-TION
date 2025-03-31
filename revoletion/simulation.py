@@ -807,7 +807,7 @@ class Scenario:
             # get dict of blocks with class names
             pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.blocks.items()})),
             # get energies dataframes results for scenario.result_summary
-            utils.get_dataframe_results(df=self.energies, name_prefix='energy'),
+            utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'),
             # get economic results for scenario.result_summary
             self.aggregator.write_result_summary()])
 
