@@ -1030,7 +1030,7 @@ class FixedDemand(Block):
         # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
         freq_slp = '15min'
         dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.starttime.floor(freq_slp),
-                                                 end=max(self.scenario.dti_sim_extd).ceil(freq_slp),
+                                                 end=self.scenario.dti_sim_extd.max().ceil(freq_slp),
                                                  freq=freq_slp))
 
         data = pd.Series(index=dti_slp, data=0, dtype='float64')
