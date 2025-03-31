@@ -1824,8 +1824,14 @@ class Fleet(Block):
                                                                 self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW from / '
-                f'{self.sizes.loc["s2f", "total"] / 1e3:.1f} kW to fleet)')
+        str_f2s = f'max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW' \
+            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+            else 'unlimited power'
+        str_s2f = f'max. {self.sizes.loc["s2f", "total"] / 1e3:.1f} kW' \
+            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+            else 'unlimited power'
+
+        return f'{self.name} power ({str_f2s} from / {str_s2f} to fleet)'
 
 
 class SubFleet(NonElectricBlock, Block):
