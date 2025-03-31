@@ -388,7 +388,12 @@ class SubFleetDispatcher:
         convert processes to time based log and calculate KPIs
         """
         # calculate actual time points from steps
-        for point in ['preblock_prim', 'preblock_rex', 'dep', 'return', 'reavail_prim', 'reavail_rex']:
+        for point in ['preblock_prim',
+                      'preblock_rex',
+                      'dep',
+                      'return',
+                      'reavail_prim',
+                      'reavail_rex']:
             self.processes[f'time_{point}'] = self.steps2dt(steps=self.processes[f'step_{point}'],
                                                             absolute=True)
 
@@ -466,25 +471,22 @@ class VehicleDispatcher(SubFleetDispatcher):
 
         if subfleet.rex is not None:
             self.rex = True
-            self.rex_fleet = scenario.blocks.get(subfleet.rex, None)
-            self.rex_dispatcher = self.rex_fleet.get('dispatcher', None)
+            self.rex_subfleet = scenario.subfleets.get(subfleet.rex, None)
+            self.rex_dispatcher = self.rex_subfleet.dispatcher
 
             base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
                        f'Subfleet "{subfleet.name}": selected range extender fleet "{self.rex}"'
 
-            if self.rex is None:
+            if self.rex_subfleet is None:
                 raise ValueError(f'{base_msg} does not exist')
-            elif not isinstance(self.rex_fleet, blocks.BatteryFleet):
-                raise ValueError(f'{base_msg} is not a BatteryFleet')
-            elif len(self.rex.subfleets) > 1:  # only one subfleet allowed
-                raise ValueError(f'{base_msg} must have exactly one subfleet')
-            elif not self.rex.subfleets[0].data_source in ['usecases', 'demand']:
-                raise ValueError(f'{base_msg} - data source"{self.rex.subfleet[0].data_source}" is not allowed. '
-                                 f'Allowed values: ["usecases", "demand"]')
+            elif not self.rex_subfleet.type_unit.lower() == 'mb':
+                raise ValueError(f'{base_msg} is not a Battery SubFleet')
+            elif self.rex_subfleet not in scenario.subfleets_dispatch.values():
+                raise ValueError(f'{base_msg} is not dispatched and cannot be used as range extender')
 
         else:
             self.rex = False
-            self.rex_fleet = None
+            self.rex_subfleet = None
             self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,
@@ -504,20 +506,15 @@ class VehicleDispatcher(SubFleetDispatcher):
 
         rex_processes['name_usecase'] = f'rex_{self.subfleet.name}'
 
-        def swap_rex(col_name):
-            if 'prim' in col_name:
-                return col_name.replace('prim', 'carrier')
-            elif 'rex' in col_name:
-                return col_name.replace('rex', 'prim')
-            return col_name
-        rex_processes.columns = [swap_rex(col) for col in rex_processes.columns]
-        rex_processes.drop([col for col in rex_processes.columns if 'carrier' in col], axis=1, inplace=True)
+        rex_processes = rex_processes.rename(columns=lambda col: col.replace('_rex', '_temp')
+                                             .replace('_prim', '_rex')
+                                             .replace('_temp', '_prim'))
 
         self.rex_dispatcher.processes = pd.concat(objs=[getattr(self.rex_dispatcher, 'processes', None), rex_processes],
                                                   join='inner')
-        self.rex_dispatcher.sort_values(by='step_preblock_prim',
-                                        inplace=True,
-                                        ignore_index=True)
+        self.rex_dispatcher.processes.sort_values(by='step_preblock_prim',
+                                                  inplace=True,
+                                                  ignore_index=True)
 
 
 class BatteryDispatcher(SubFleetDispatcher):
@@ -528,7 +525,7 @@ class BatteryDispatcher(SubFleetDispatcher):
                  scenario: 'simulation.Scenario'):
 
         self.rex = False
-        self.rex_fleet = None
+        self.rex_subfleet = None
         self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,

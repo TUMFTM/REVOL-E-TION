@@ -1875,6 +1875,7 @@ class SubFleet(NonElectricBlock, Block):
         else:
             raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" has invalid unit type')
 
+        self.scenario.subfleets[self.name] = self
         if self.data_source == 'usecases':
             self.demand.read_usecase_file()
             self.demand.sample()

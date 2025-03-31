@@ -550,6 +550,7 @@ class Scenario:
         self.storage_blocks = dict()
         self.fleets = dict()
         self.renewable_sources = dict()
+        self.subfleets = dict()
         self.subfleets_dispatch = dict()
 
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
