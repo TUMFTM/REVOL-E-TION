@@ -1,7 +1,7 @@
 block,key,PV,PV&Bat,PV&Bat&EV
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min
-scenario,sim_duration,50,50,50
+scenario,sim_duration,365,365,365
 scenario,prj_duration,25,25,25
 scenario,compensate_sim_prj,True,True,True
 scenario,strategy,go,go,go
@@ -94,7 +94,7 @@ fleet,filename,fleet_bev1.csv,fleet_bev1.csv,fleet_bev1.csv
 fleet,subfleets,"['bev_oc']","['bev_oc']","['bev_oc']"
 fleet,system,ac,ac,ac
 fleet,rex_fleet,None,None,None
-fleet,size_preexisting_f2s,43000,43000,43000
-fleet,size_preexisting_s2f,43000,43000,43000
+fleet,size_preexisting_f2s,None,None,None
+fleet,size_preexisting_s2f,None,None,None
 fleet,opex_spec_f2s,0,0,0
 fleet,opex_spec_s2f,0,0,0
