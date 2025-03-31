@@ -174,6 +174,18 @@ class Block:
                                              f'component "{name}" was defined without preexisting size and does not '
                                              f'allow further investments. This may cause unintended system behavior.')
 
+    def init_equalizable_variables(self, name_vars: list):
+        name_var1, name_var2 = name_vars
+        if (getattr(self, name_var1) == 'equal') and (getattr(self, name_var2) == 'equal'):
+            error_msg = (f'"{self.name}" parameters {name_var1} and {name_var2} were both set to equal.'
+                         f' Maximum one of these variables is allowed to be set to "equal"')
+            self.scenario.logger.error(error_msg)
+        elif getattr(self, name_var1) == 'equal':
+            setattr(self, name_var1, getattr(self, name_var2))
+        elif getattr(self, name_var2) == 'equal':
+            setattr(self, name_var2, getattr(self, name_var1))
+
+
     def initialize_efficiencies(self):
         for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
             if key.startswith('eff_'):
@@ -435,9 +447,9 @@ class SystemCore(Block):
 
         self.expansion_equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
-        utils.init_equalizable_variables(block=self, name_vars=['invest_acdc', 'invest_dcac'])
-        utils.init_equalizable_variables(block=self, name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
-        utils.init_equalizable_variables(block=self, name_vars=['size_max_acdc', 'size_max_dcac'])
+        self.init_equalizable_variables(name_vars=['invest_acdc', 'invest_dcac'])
+        self.init_equalizable_variables(name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
+        self.init_equalizable_variables(name_vars=['size_max_acdc', 'size_max_dcac'])
 
         super().initialize_sizes(pois=pois)
 
@@ -1186,9 +1198,9 @@ class GridConnection(Block):
 
         self.expansion_equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
 
-        utils.init_equalizable_variables(self, ['invest_s2g', 'invest_g2s'])
-        utils.init_equalizable_variables(self, ['size_preexisting_g2s', 'size_preexisting_s2g'])
-        utils.init_equalizable_variables(self, ['size_max_g2s', 'size_max_s2g'])
+        self.init_equalizable_variables(name_vars=['invest_s2g', 'invest_g2s'])
+        self.init_equalizable_variables(name_vars=['size_preexisting_g2s', 'size_preexisting_s2g'])
+        self.init_equalizable_variables(name_vars=['size_max_g2s', 'size_max_s2g'])
 
         super().initialize_sizes(pois=pois)
 

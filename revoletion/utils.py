@@ -68,18 +68,6 @@ def conv_nan2none(value):
     return value if pd.notna(value) else None
 
 
-def init_equalizable_variables(block, name_vars: list):
-    name_var1, name_var2 = name_vars
-    if (getattr(block, name_var1) == 'equal') and (getattr(block, name_var2) == 'equal'):
-        error_msg = (f'"{block.name}" parameters {name_var1} and {name_var2} were both set to equal.'
-                     f' Maximum one of these variables is allowed to be set to "equal"')
-        block.scenario.logger.error(error_msg)
-    elif getattr(block, name_var1) == 'equal':
-        setattr(block, name_var1, getattr(block, name_var2))
-    elif getattr(block, name_var2) == 'equal':
-        setattr(block, name_var2, getattr(block, name_var1))
-
-
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
     """
     Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
