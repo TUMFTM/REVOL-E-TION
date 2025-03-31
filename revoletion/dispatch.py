@@ -297,7 +297,7 @@ class SubFleetDispatcher:
                                        f'{self.processes.loc[id, "units_prim"]} at {self.env.now}')
 
             if self.processes.at[id, 'request_rex']:
-                self.processes.loc[id, 'units_rex'] = request_rex.value
+                self.processes.at[id, 'units_rex'] = request_rex.value
                 self.scenario.logger.debug(f'{self.name} process {id} received secondary resource'
                                            f' {self.processes.loc[id, "units_rex"]} at {self.env.now}')
 
@@ -319,9 +319,9 @@ class SubFleetDispatcher:
                 f' at {self.env.now}. Primary store content after return: {self.store.items}')
 
             if self.processes.at[id, 'request_rex']:
-                self.rex_dispatcher.store.put(result_rex[self.request_rex])
+                self.rex_dispatcher.store.put(result_rex[request_rex])
                 self.scenario.logger.debug(f'{self.name} process {id} returned secondary resource(s)'
-                                           f'{self.request_rex.value} at {self.env.now}. '
+                                           f'{request_rex.value} at {self.env.now}. '
                                            f'Secondary store content after return: '
                                            f'{self.rex_dispatcher.store.items}')
             # endregion
@@ -504,7 +504,7 @@ class VehicleDispatcher(SubFleetDispatcher):
         rex_processes = self.processes.loc[(self.processes['status'] == 'success') &
                                            (self.processes['request_rex']), :].copy()
 
-        rex_processes['name_usecase'] = f'rex_{self.subfleet.name}'
+        rex_processes['usecase'] = f'rex_{self.subfleet.name}'
 
         rex_processes = rex_processes.rename(columns=lambda col: col.replace('_rex', '_temp')
                                              .replace('_prim', '_rex')
