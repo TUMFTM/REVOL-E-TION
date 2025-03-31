@@ -14,6 +14,10 @@ def infer_dtype(value):
     """
     infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
     """
+
+    # remove whitespace at beginning or end of string (convert to string, as nan already is of type float)
+    value = str(value).strip()
+
     try:
         return int(value)
     except (ValueError or OverflowError):
