@@ -93,7 +93,7 @@ class Block:
                       *[name for name in
                         [poi['params'].get(('flow', 'name')) for poi in pois.values()]
                         if name is not None]]
-        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
+        self.flows = pd.DataFrame(index=self.scenario.dti_sim_extd,
                                   columns=flow_names,
                                   data=np.nan,
                                   dtype='float64')
@@ -101,7 +101,7 @@ class Block:
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,  # cumulative property
                                      dtype=float)
-        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim),
+        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim_extd),
                                    columns=state_names,
                                    data=np.nan,
                                    dtype='float64')
@@ -254,7 +254,7 @@ class Block:
         self.check_bidi_flows()
 
         for flow_name, flow in self.flows.items():
-            self.energies.loc[flow_name, 'sim'] = flow.sum() * self.scenario.timestep_hours
+            self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_sim].sum() * self.scenario.timestep_hours
         self.energies['yrl'] = utils.scale_sim2year(value=self.energies['sim'], scenario=self.scenario)
         self.energies['prj'] = utils.scale_year2prj(value=self.energies['yrl'], scenario=self.scenario)
         self.energies['dis'] = utils.scale_year2dis(value=self.energies['yrl'], scenario=self.scenario)
@@ -301,7 +301,8 @@ class Block:
             self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
                                                             names=['block', 'key'])
 
-            self.result_timeseries.extend([self.flows, self.states])
+            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_sim, :],
+                                           self.states.loc[self.scenario.dti_sim, :]])
 
     def create_result_messages(self, unit='kW'):
 
@@ -313,8 +314,8 @@ class Block:
                 if size['invest'] else ''), axis=1).to_list() if msg != ''])
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].append(go.Scatter(x=self.flows.index,
-                                                     y=self.flows['total'],
+        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_sim,
+                                                     y=self.flows.loc[self.scenario.dti_sim, 'total'],
                                                      mode='lines',
                                                      name=self.get_legend_entry(),
                                                      line=dict(width=2, dash=None, shape='hv'))
@@ -513,15 +514,15 @@ class SystemCore(Block):
             self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                      y=self.flows['dcac'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
+                                                      y=self.flows.loc[self.scenario.dti_sim, 'dcac'],
                                                       mode='lines',
                                                       name=f'{self.name} DC-AC power (max. '
                                                            f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly'),
-                                           go.Scatter(x=self.flows.index,
-                                                      y=self.flows['acdc'],
+                                           go.Scatter(x=self.scenario.dti_sim,
+                                                      y=self.flows.loc[self.scenario.dti_sim, 'acdc'],
                                                       mode='lines',
                                                       name=f'{self.name} AC-DC power (max. '
                                                            f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
@@ -644,14 +645,14 @@ class RenewableSource(Block):
 
     def create_plot_traces(self):
         super().create_plot_traces()
-        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                      y=-1 * self.flows['curt'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
+                                                      y=-1 * self.flows.loc[self.scenario.dti_sim, 'curt'],
                                                       mode='lines',
                                                       name=f'{self.name} curtailed power',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly'),
-                                           go.Scatter(x=self.flows.index,
-                                                      y=self.flows['pot'],
+                                           go.Scatter(x=self.scenario.dti_sim,
+                                                      y=self.flows[self.scenario.dti_sim, 'pot'],
                                                       mode='lines',
                                                       name=f'{self.name} potential power',
                                                       line=dict(width=2, dash=None, shape='hv'),
@@ -1220,7 +1221,7 @@ class GridConnection(Block):
         def process_period(period):
             # Calculate period fraction
             period_fraction = utils.get_period_fraction(
-                dti=bus_activation_sim[bus_activation_sim.loc[self.scenario.dti_sim, period] == 1].index,
+                dti=bus_activation_sim[bus_activation_sim[period] == 1].index,
                 period=self.peak_period,
                 freq=self.scenario.timestep
             )
@@ -1556,10 +1557,10 @@ class StorageBlock:
         self.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc_init
         delattr(self, 'q_loss_cyc_init')
 
-        # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.states.loc[:, 'soc_min'] = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2
         self.states.loc[:, 'soc_max'] = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
 
+        # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
 
 
@@ -1597,8 +1598,8 @@ class StorageBlock:
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
-        data_soc = self.states['soc'].dropna()
-        data_soh = self.states['soh'].dropna()
+        data_soc = self.states.loc[self.scenario.dti_sim, 'soc'].dropna()
+        data_soh = self.states.loc[self.scenario.dti_sim, 'soh'].dropna()
         self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
                                                       y=data_soc,
                                                       mode='lines',
@@ -1823,8 +1824,14 @@ class Fleet(Block):
                                                                 self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW from / '
-                f'{self.sizes.loc["s2f", "total"] / 1e3:.1f} kW to fleet)')
+        str_f2s = f'max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW' \
+            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+            else 'unlimited power'
+        str_s2f = f'max. {self.sizes.loc["s2f", "total"] / 1e3:.1f} kW' \
+            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+            else 'unlimited power'
+
+        return f'{self.name} power ({str_f2s} from / {str_s2f} to fleet)'
 
 
 class SubFleet(NonElectricBlock, Block):
@@ -2092,8 +2099,10 @@ class ElectricFleetUnit(StorageBlock, Block):
         post horizon method
         """
 
-        self.flows.loc[horizon.dti_ch, 'ext_ac'] = horizon.results[(self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[(self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'ext_ac'] = horizon.results[
+            (self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[
+            (self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
 
         StorageBlock.get_horizon_results(self=self, horizon=horizon)
 
@@ -2102,13 +2111,13 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
         legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
-        self.plot_traces['powers'].extend([go.Scatter(x=self.flows.index,
-                                                      y=self.flows['ext_ac'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
+                                                      y=self.flows.loc[self.scenario.dti_sim, 'ext_ac'],
                                                       mode='lines',
                                                       name=legend_ext_ac,
                                                       line=dict(width=2, dash=None, shape='hv')),
-                                           go.Scatter(x=self.flows.index,
-                                                      y=self.flows['ext_dc'],
+                                           go.Scatter(x=self.scenario.dti_sim,
+                                                      y=self.flows.loc[self.scenario.dti_sim, 'ext_dc'],
                                                       mode='lines',
                                                       name=legend_ext_dc,
                                                       line=dict(width=2, dash=None, shape='hv')),
