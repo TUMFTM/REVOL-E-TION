@@ -158,7 +158,7 @@ class SubFleetDispatcher:
                                       'icev': 1}[self.subfleet.type_unit]
 
         if self.rex:
-            energy_missing = self.processes['energy_req'] - self.energy_usable
+            energy_missing = (self.processes['energy_req'] - self.energy_usable).clip(lower=0)
             self.processes['num_rex'] = np.ceil(energy_missing / self.rex_dispatcher.energy_usable).astype(int)
             self.processes['request_rex'] = self.processes['num_rex'] > 0
         else:
