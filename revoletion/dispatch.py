@@ -56,11 +56,11 @@ class SiteDispatcher:
 
         # region extend datetimeindex
         self.time_ref = self.scenario.starttime - pd.Timedelta(days=1)  # reference time for DES steps
-        time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
+        time_start_overhang = scenario.dti_sim[-1] + scenario.dti_sim.freq  # ToDo: use max() and scenario.timestep_td
         time_end_overhang = time_start_overhang + pd.Timedelta(days=28)
-        self.dti = scenario.dti_sim_extd.union(pd.date_range(start=time_start_overhang,
-                                                             end=time_end_overhang,
-                                                             freq=scenario.dti_sim_extd.freq))
+        self.dti = scenario.dti_sim.union(pd.date_range(start=time_start_overhang,
+                                                        end=time_end_overhang,
+                                                        freq=scenario.dti_sim.freq))
         # endregion
 
         self.environment = simpy.Environment()
@@ -88,6 +88,8 @@ class SiteDispatcher:
 
         for disp in self.dispatchers.values():
             disp.postprocess()
+            if self.scenario.run.save_results_dispatch:
+                disp.save_data()
 
 
 class SubFleetDispatcher:
@@ -120,10 +122,10 @@ class SubFleetDispatcher:
         # region estimate usable energy and power
         unit_repr = self.units[next(iter(self.units))]  # all units are equal and representative a priori
 
-        self.energy_total = unit_repr.sizes.loc['block', 'preexisting']
+        self.energy_total = unit_repr.sizes.loc['storage', 'preexisting']
 
-        soc_minmax = min([unit.soc_max for unit in self.units.values()])
-        soc_maxmin = max([unit.soc_min for unit in self.units.values()])
+        soc_minmax = min([unit.states.at[self.scenario.starttime, 'soc_max'] for unit in self.units.values()])
+        soc_maxmin = max([unit.states.at[self.scenario.starttime, 'soc_min'] for unit in self.units.values()])
 
         soc_upper = statistics.median([soc_minmax, unit_repr.soc_target, soc_maxmin])
         soc_lower = statistics.median([soc_minmax, unit_repr.soc_return, soc_maxmin])
@@ -138,7 +140,7 @@ class SubFleetDispatcher:
                               self.energy_total *
                               np.sqrt(unit_repr.eff['storage_roundtrip']))
 
-        pwr_loss_max = (1 - (1 - unit_repr.loss_rate_per_hour) ** self.scenario.timestep_hours * self.energy_total)
+        pwr_loss_max = unit_repr.loss_rate_per_hour * self.energy_total
         self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff['chg_int'] - pwr_loss_max) * factor_derate
         # endregion
 
@@ -156,7 +158,7 @@ class SubFleetDispatcher:
                                       'icev': 1}[self.subfleet.type_unit]
 
         if self.rex:
-            energy_missing = self.processes['energy_req'] - self.energy_usable
+            energy_missing = (self.processes['energy_req'] - self.energy_usable).clip(lower=0)
             self.processes['num_rex'] = np.ceil(energy_missing / self.rex_dispatcher.energy_usable).astype(int)
             self.processes['request_rex'] = self.processes['num_rex'] > 0
         else:
@@ -290,12 +292,12 @@ class SubFleetDispatcher:
             self.processes.loc[id, 'status'] = 'success'
             self.processes.loc[id, 'step_dep'] = self.env.now
 
-            self.processes.loc[id, 'units_prim'] = request_prim.value
+            self.processes.at[id, 'units_prim'] = request_prim.value
             self.scenario.logger.debug(f'{self.name} process {id} received primary resource '
                                        f'{self.processes.loc[id, "units_prim"]} at {self.env.now}')
 
             if self.processes.at[id, 'request_rex']:
-                self.processes.loc[id, 'units_rex'] = request_rex.value
+                self.processes.at[id, 'units_rex'] = request_rex.value
                 self.scenario.logger.debug(f'{self.name} process {id} received secondary resource'
                                            f' {self.processes.loc[id, "units_rex"]} at {self.env.now}')
 
@@ -306,8 +308,8 @@ class SubFleetDispatcher:
             # cover the postblock time
             yield self.env.timeout(self.processes.at[id, 'steps_postblock_prim'])
             self.processes.loc[id, 'step_reavail_prim'] = self.env.now
-            yield self.env.timeout(self.processes.at[id, 'steps_postblock_rex'] -
-                                   self.processes.at[id, 'steps_postblock_prim'])
+            yield self.env.timeout(max(0, self.processes.at[id, 'steps_postblock_rex'] -
+                                       self.processes.at[id, 'steps_postblock_prim']))
             self.processes.loc[id, 'step_reavail_rex'] = self.env.now
 
             # put back resources
@@ -317,9 +319,9 @@ class SubFleetDispatcher:
                 f' at {self.env.now}. Primary store content after return: {self.store.items}')
 
             if self.processes.at[id, 'request_rex']:
-                self.rex_dispatcher.store.put(result_rex[self.request_rex])
+                self.rex_dispatcher.store.put(result_rex[request_rex])
                 self.scenario.logger.debug(f'{self.name} process {id} returned secondary resource(s)'
-                                           f'{self.request_rex.value} at {self.env.now}. '
+                                           f'{request_rex.value} at {self.env.now}. '
                                            f'Secondary store content after return: '
                                            f'{self.rex_dispatcher.store.items}')
             # endregion
@@ -386,7 +388,12 @@ class SubFleetDispatcher:
         convert processes to time based log and calculate KPIs
         """
         # calculate actual time points from steps
-        for point in ['preblock_prim', 'preblock_rex', 'dep', 'return', 'reavail_prim', 'reavail_rex']:
+        for point in ['preblock_prim',
+                      'preblock_rex',
+                      'dep',
+                      'return',
+                      'reavail_prim',
+                      'reavail_rex']:
             self.processes[f'time_{point}'] = self.steps2dt(steps=self.processes[f'step_{point}'],
                                                             absolute=True)
 
@@ -404,7 +411,7 @@ class SubFleetDispatcher:
             unit = process['units_prim']
             time_end = process['time_return'] - self.scenario.timestep_td
             power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.scenario.timestep_hours)
-            dist_avg = process['distance'] / process['steps_rental']
+            dist_avg = process['distance'] / process['steps_rental'] if 'distance' in process else 0
 
             self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
             self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
@@ -413,7 +420,7 @@ class SubFleetDispatcher:
             self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
             self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
 
-        self.log = self.log.loc[utils.extend_dti(self.scenario.dti_sim_extd), :]
+        self.log = self.log.loc[self.scenario.dti_sim_extd, :]
         self.subfleet.log = self.log
         # endregion
 
@@ -437,7 +444,7 @@ class SubFleetDispatcher:
         delivery through execute_des.
         """
         processes_path = os.path.join(
-            self.scenario.run.path_result_dir,
+            self.scenario.run.paths['output'],
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
@@ -446,7 +453,7 @@ class SubFleetDispatcher:
         self.processes.to_csv(processes_path)
 
         log_path = os.path.join(
-            self.scenario.run.path_result_dir,
+            self.scenario.run.paths['output'],
             f'{self.scenario.run.runtimestamp}_'
             f'{self.scenario.run.name}_'
             f'{self.scenario.name}_'
@@ -464,25 +471,22 @@ class VehicleDispatcher(SubFleetDispatcher):
 
         if subfleet.rex is not None:
             self.rex = True
-            self.rex_fleet = scenario.blocks.get(subfleet.rex, None)
-            self.rex_dispatcher = self.rex_fleet.get('dispatcher', None)
+            self.rex_subfleet = scenario.subfleets.get(subfleet.rex, None)
+            self.rex_dispatcher = self.rex_subfleet.dispatcher
 
             base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
                        f'Subfleet "{subfleet.name}": selected range extender fleet "{self.rex}"'
 
-            if self.rex is None:
+            if self.rex_subfleet is None:
                 raise ValueError(f'{base_msg} does not exist')
-            elif not isinstance(self.rex_fleet, blocks.BatteryFleet):
-                raise ValueError(f'{base_msg} is not a BatteryFleet')
-            elif len(self.rex.subfleets) > 1:  # only one subfleet allowed
-                raise ValueError(f'{base_msg} must have exactly one subfleet')
-            elif not self.rex.subfleets[0].data_source in ['usecases', 'demand']:
-                raise ValueError(f'{base_msg} - data source"{self.rex.subfleet[0].data_source}" is not allowed. '
-                                 f'Allowed values: ["usecases", "demand"]')
+            elif not self.rex_subfleet.type_unit.lower() == 'mb':
+                raise ValueError(f'{base_msg} is not a Battery SubFleet')
+            elif self.rex_subfleet not in scenario.subfleets_dispatch.values():
+                raise ValueError(f'{base_msg} is not dispatched and cannot be used as range extender')
 
         else:
             self.rex = False
-            self.rex_fleet = None
+            self.rex_subfleet = None
             self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,
@@ -500,22 +504,17 @@ class VehicleDispatcher(SubFleetDispatcher):
         rex_processes = self.processes.loc[(self.processes['status'] == 'success') &
                                            (self.processes['request_rex']), :].copy()
 
-        rex_processes['name_usecase'] = f'rex_{self.subfleet.name}'
+        rex_processes['usecase'] = f'rex_{self.subfleet.name}'
 
-        def swap_rex(col_name):
-            if 'prim' in col_name:
-                return col_name.replace('prim', 'carrier')
-            elif 'rex' in col_name:
-                return col_name.replace('rex', 'prim')
-            return col_name
-        rex_processes.columns = [swap_rex(col) for col in rex_processes.columns]
-        rex_processes.drop([col for col in rex_processes.columns if 'carrier' in col], axis=1, inplace=True)
+        rex_processes = rex_processes.rename(columns=lambda col: col.replace('_rex', '_temp')
+                                             .replace('_prim', '_rex')
+                                             .replace('_temp', '_prim'))
 
         self.rex_dispatcher.processes = pd.concat(objs=[getattr(self.rex_dispatcher, 'processes', None), rex_processes],
                                                   join='inner')
-        self.rex_dispatcher.sort_values(by='step_preblock_prim',
-                                        inplace=True,
-                                        ignore_index=True)
+        self.rex_dispatcher.processes.sort_values(by='step_preblock_prim',
+                                                  inplace=True,
+                                                  ignore_index=True)
 
 
 class BatteryDispatcher(SubFleetDispatcher):
@@ -526,7 +525,7 @@ class BatteryDispatcher(SubFleetDispatcher):
                  scenario: 'simulation.Scenario'):
 
         self.rex = False
-        self.rex_fleet = None
+        self.rex_subfleet = None
         self.rex_dispatcher = None
 
         super().__init__(subfleet=subfleet,

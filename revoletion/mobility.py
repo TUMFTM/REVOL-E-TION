@@ -69,7 +69,7 @@ class SubFleetDemand:
         """
 
         # region sample daily total demand from timeframe mapper and lognormal distribution
-        daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim_extd.date)))
+        daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim.date)))
         daily_total['timeframe'], daily_total['demand_mean'], daily_total['demand_std'] = \
             self.mapper_timeframe.map_timeframes(daily_total, self.subfleet.name, self.scenario)
         daily_total['mu'], daily_total['sigma'] = lognormal_params(daily_total['demand_mean'],
@@ -183,7 +183,21 @@ class SubFleetDemand:
             self.demand.to_csv(demand_path)
         # endregion
 
+    def read_demand_file(self):
+        """
+        read in a subfleet demand csv file directly
+        """
+        path_demand_file = os.path.join(self.scenario.run.paths['input'],
+                                        utils.set_extension(self.subfleet.filename))
+        self.demand = pd.read_csv(path_demand_file,
+                         index_col=0)
 
+        self.demand['time_req'] = pd.to_datetime(self.demand['time_req'], utc=True).dt.tz_convert(self.scenario.timezone)
+        self.demand['dtime_active'] = pd.to_timedelta(self.demand['dtime_active'])
+        self.demand['dtime_idle'] = pd.to_timedelta(self.demand['dtime_idle'])
+        self.demand['dtime_patience'] = pd.to_timedelta(self.demand['dtime_patience'])
+
+        self.demand = self.demand.loc[self.demand['time_req'].isin(self.scenario.dti_eval), :]
 
 
 class BatteryDemand(SubFleetDemand):
@@ -210,6 +224,7 @@ class BatteryDemand(SubFleetDemand):
         self.demand['energy_req'] = (self.demand
                                      .groupby(['usecase', 'timeframe'])['energy_req']
                                      .transform(sample_energy_usecase))
+
         def calc_time_active_usecase(group):
             """
             groupby function

@@ -1,4 +1,4 @@
-,A,A,A,A,A,A,A,A,A,A,A,A,A
+,day,day,day,day,day,day,day,day,day,day,day,day,day
 ,rel_prob,dep1_magnitude,dep1_time_mean,dep1_time_std,dep2_magnitude,dep2_time_mean,dep2_time_std,energy_mean,energy_std,power_avg,idle_mean,idle_std,patience
 lighting_construction,1,0.5,18,1,0.5,18,1,2000,500,420,6,1,1
 lighting_search,1,0.5,20,1,0.5,20,1,2000,500,84,1,0.5,1
