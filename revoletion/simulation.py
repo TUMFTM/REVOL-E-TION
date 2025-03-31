@@ -470,20 +470,22 @@ class Scenario:
         else:
             raise ValueError(f'Optimization strategy "{self.strategy}" unknown')
 
-        # generate a datetimeindex for the energy system model to run on
-        self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
-        # extended index covers PHs that are not truncated after simulation end time
-        self.dti_sim_extd = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
-                                          inclusive='left')
-
         # generate variables for calculations
-        self.timestep_td = pd.Timedelta(self.dti_sim_extd.freq)
+        self.timestep_td = pd.Timedelta(self.timestep)
         self.timestep_hours = self.timestep_td.total_seconds() / 3600
         self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
         self.sim_prj_rat = self.sim_duration / self.prj_duration
 
+        # generate a datetimeindex for the energy system model to run on
+        self.dti_eval = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
+        self.dti_eval_extd = utils.extend_dti(dti=self.dti_eval, freq=self.timestep_td)
+        # extended index covers PHs that are not truncated after simulation end time
+        self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
+                                     inclusive='left')
+        self.dti_sim_extd = utils.extend_dti(dti=self.dti_sim, freq=self.timestep_td)
+
         # get holidays during simulation timeframe
-        years = range(min(self.dti_sim_extd).year, max(self.dti_sim_extd).year + 1)
+        years = range(min(self.dti_sim).year, max(self.dti_sim).year + 1)
         try:
             self.holiday_dates = sorted(
                 getattr(holidays, self.country)(years=years,
@@ -500,7 +502,7 @@ class Scenario:
                                     f'No public holidays are considered in this scenario.')
 
         # region set air temperature
-        temp_air = pd.DataFrame(index=self.dti_sim_extd,
+        temp_air = pd.DataFrame(index=self.dti_sim,
                                 columns=['temp_air'],
                                 dtype=float)
 
@@ -861,7 +863,9 @@ class PredictionHorizon:
 
         # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
         self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=self.scenario.timestep, inclusive='left')
+        self.dti_ph_extd = utils.extend_dti(dti=self.dti_ph, freq=self.scenario.timestep_td)
         self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=self.scenario.timestep, inclusive='left')
+        self.dti_ch_extd = utils.extend_dti(dti=self.dti_ch, freq=self.scenario.timestep_td)
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:

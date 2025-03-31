@@ -128,7 +128,7 @@ class BatteryPackModel:
         crate_hor = p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        soc_hor = self.block.states.loc[utils.extend_dti(horizon.dti_ch), 'soc']
+        soc_hor = self.block.states.loc[horizon.dti_ch_extd, 'soc']
 
         ocv_hor = pd.DataFrame(data=self.ocv_interp(soc_hor), index=soc_hor.index).squeeze()
 

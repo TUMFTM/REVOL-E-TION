@@ -68,11 +68,12 @@ def conv_nan2none(value):
     return value if pd.notna(value) else None
 
 
-def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
+def extend_dti(dti: pd.DatetimeIndex,
+               freq: pd.DateOffset | pd.Timedelta | str) -> pd.DatetimeIndex:
     """
     Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
     """
-    dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+    dti_ext = dti.union(dti.shift(periods=1, freq=freq)[-1:])
     return dti_ext
 
 
@@ -131,10 +132,10 @@ def read_timeseries_csv(path_input_file: str,
         return df
     else:
         df = resample_to_timestep(df, block, scenario)
-        if not (scenario.dti_sim.isin(df.index).all()):
+        if not (scenario.dti_eval.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
-        return df.loc[scenario.dti_sim_extd]
+        return df.loc[scenario.dti_sim]
 
 
 def read_input_log(fleet):
@@ -167,7 +168,7 @@ def read_input_log(fleet):
         df_new[consumption_columns] = df[consumption_columns].resample(fleet.scenario.timestep).mean().ffill().bfill()
         df_new[bool_columns] = df[bool_columns].resample(fleet.scenario.timestep).ffill().bfill()
         df = df_new
-    if not (fleet.scenario.dti_sim.isin(df.index).all()):
+    if not (fleet.scenario.dti_eval.isin(df.index).all()):
         raise IndexError(f'Block "{fleet.name}": Input timeseries data does not cover simulation timeframe')
 
     # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
@@ -229,7 +230,7 @@ def transform_scalar_var(value, scenario, block=None):
 
     else:  # value is given as scalar
         return pd.Series(data=value,
-                         index=scenario.dti_sim_extd)
+                         index=scenario.dti_sim)
 
 
 def set_extension(filename, default_extension='.csv'):

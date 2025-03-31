@@ -84,7 +84,7 @@ class Block:
 
         # ToDo: (1) remove flow_apriori_names and use flow names instead
         #       (2) remove flows_apriori and use flows instead to save memory
-        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim_extd,
+        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim,
                                           columns=flow_apriori_names,
                                           dtype='float64'
                                           )
@@ -93,7 +93,7 @@ class Block:
                       *[name for name in
                         [poi['params'].get(('flow', 'name')) for poi in pois.values()]
                         if name is not None]]
-        self.flows = pd.DataFrame(index=self.scenario.dti_sim_extd,
+        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
                                   columns=flow_names,
                                   data=np.nan,
                                   dtype='float64')
@@ -101,7 +101,7 @@ class Block:
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,  # cumulative property
                                      dtype=float)
-        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim_extd),
+        self.states = pd.DataFrame(index=self.scenario.dti_sim_extd,
                                    columns=state_names,
                                    data=np.nan,
                                    dtype='float64')
@@ -266,7 +266,7 @@ class Block:
         self.check_bidi_flows()
 
         for flow_name, flow in self.flows.items():
-            self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_sim].sum() * self.scenario.timestep_hours
+            self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
         self.energies['yrl'] = utils.scale_sim2year(value=self.energies['sim'], scenario=self.scenario)
         self.energies['prj'] = utils.scale_year2prj(value=self.energies['yrl'], scenario=self.scenario)
         self.energies['dis'] = utils.scale_year2dis(value=self.energies['yrl'], scenario=self.scenario)
@@ -313,8 +313,8 @@ class Block:
             self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
                                                             names=['block', 'key'])
 
-            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_sim, :],
-                                           self.states.loc[self.scenario.dti_sim, :]])
+            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_eval, :],
+                                           self.states.loc[self.scenario.dti_eval, :]])
 
     def create_result_messages(self, unit='kW'):
 
@@ -326,8 +326,8 @@ class Block:
                 if size['invest'] else ''), axis=1).to_list() if msg != ''])
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_sim,
-                                                     y=self.flows.loc[self.scenario.dti_sim, 'total'],
+        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_eval,
+                                                     y=self.flows.loc[self.scenario.dti_eval, 'total'],
                                                      mode='lines',
                                                      name=self.get_legend_entry(),
                                                      line=dict(width=2, dash=None, shape='hv'))
@@ -526,15 +526,15 @@ class SystemCore(Block):
             self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows.loc[self.scenario.dti_sim, 'dcac'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
+                                                      y=self.flows.loc[self.scenario.dti_eval, 'dcac'],
                                                       mode='lines',
                                                       name=f'{self.name} DC-AC power (max. '
                                                            f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly'),
-                                           go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows.loc[self.scenario.dti_sim, 'acdc'],
+                                           go.Scatter(x=self.scenario.dti_eval,
+                                                      y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
                                                       mode='lines',
                                                       name=f'{self.name} AC-DC power (max. '
                                                            f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
@@ -657,14 +657,14 @@ class RenewableSource(Block):
 
     def create_plot_traces(self):
         super().create_plot_traces()
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
-                                                      y=-1 * self.flows.loc[self.scenario.dti_sim, 'curt'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
+                                                      y=-1 * self.flows.loc[self.scenario.dti_eval, 'curt'],
                                                       mode='lines',
                                                       name=f'{self.name} curtailed power',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly'),
-                                           go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows.loc[self.scenario.dti_sim, 'pot'],
+                                           go.Scatter(x=self.scenario.dti_eval,
+                                                      y=self.flows.loc[self.scenario.dti_eval, 'pot'],
                                                       mode='lines',
                                                       name=f'{self.name} potential power',
                                                       line=dict(width=2, dash=None, shape='hv'),
@@ -846,7 +846,7 @@ class PVSource(RenewableSource):
         self.data['power_spec'] = self.data['P'] / 1e3
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.dti_sim_extd, ['power_spec', 'wind_speed', 'temp_air']]
+        self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'wind_speed', 'temp_air']]
         # endregion
 
         if self.scenario.run.export_data:
@@ -968,7 +968,7 @@ class FixedDemand(Block):
         self.get_flows_apriori()
 
     def get_flows_apriori(self):
-        self.flows_apriori.index = self.scenario.dti_sim_extd
+        self.flows_apriori.index = self.scenario.dti_sim  # ToDo: Why needs this to be set explicitly? Should be done in init()
         if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
             self.get_demand_from_slp()
         elif self.load_profile in ['const', 'constant']:
@@ -1030,7 +1030,7 @@ class FixedDemand(Block):
         # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
         freq_slp = '15min'
         dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.starttime.floor(freq_slp),
-                                                 end=self.scenario.dti_sim_extd.max().ceil(freq_slp),
+                                                 end=self.scenario.dti_sim.max().ceil(freq_slp),
                                                  freq=freq_slp))
 
         data = pd.Series(index=dti_slp, data=0, dtype='float64')
@@ -1219,7 +1219,7 @@ class GridConnection(Block):
 
         # Get dummies directly from the 'periods' data
         self.bus_activation = pd.get_dummies(
-            self.scenario.dti_sim_extd.to_series().map(periods_func[str(self.peak_period)])).astype(int)
+            self.scenario.dti_sim.to_series().map(periods_func[str(self.peak_period)])).astype(int)
 
         # Create a series to store peak power values
         self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
@@ -1229,7 +1229,7 @@ class GridConnection(Block):
 
         def process_period(period):
             dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-            dti_period_sim = dti_period[dti_period.isin(self.scenario.dti_sim)]  # remove non-sim timestamps
+            dti_period_sim = dti_period[dti_period.isin(self.scenario.dti_eval)]  # remove non-sim timestamps
 
             # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
             if len(dti_period_sim) == 0:
@@ -1611,10 +1611,10 @@ class StorageBlock:
 
         # preemptive size calculation to enable soc calculation
         self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
-        self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][utils.extend_dti(horizon.dti_ch)]
+        self.states.loc[horizon.dti_ch_extd, 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[utils.extend_dti(horizon.dti_ch), 'soc'] = (
-                self.states.loc[utils.extend_dti(horizon.dti_ch), 'energy'] /
+        self.states.loc[horizon.dti_ch_extd, 'soc'] = (
+                self.states.loc[horizon.dti_ch_extd, 'energy'] /
                 self.sizes.loc['storage', 'total']).fillna(0)
 
         self.aging_model.age(horizon=horizon)
@@ -1623,8 +1623,8 @@ class StorageBlock:
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
-        data_soc = self.states.loc[self.scenario.dti_sim, 'soc'].dropna()
-        data_soh = self.states.loc[self.scenario.dti_sim, 'soh'].dropna()
+        data_soc = self.states.loc[self.scenario.dti_eval, 'soc'].dropna()
+        data_soh = self.states.loc[self.scenario.dti_eval, 'soh'].dropna()
         self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
                                                       y=data_soc,
                                                       mode='lines',
@@ -1729,8 +1729,8 @@ class StationaryBattery(StorageBlock, Block):
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.sizes.loc['storage', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
-            max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'],
-            min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
+            max_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_max'],
+            min_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_min']
         )
 
         horizon.constraints.add_invest_costs(
@@ -2041,17 +2041,17 @@ class ElectricFleetUnit(StorageBlock, Block):
             )})
 
         # region calc minimum soc targets before usage and max soc for myopic optimization
-        dsoc_ph = self.log.loc[utils.extend_dti(horizon.dti_ph), 'dsoc']
+        dsoc_ph = self.log.loc[horizon.dti_ph_extd, 'dsoc']
         if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
-                lower=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
-                upper=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'])
+                lower=self.states.loc[horizon.dti_ph_extd, 'soc_min'],
+                upper=self.states.loc[horizon.dti_ph_extd, 'soc_max'])
         elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
-                lower=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
-                upper=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max'])
+                lower=self.states.loc[horizon.dti_ph_extd, 'soc_min'],
+                upper=self.states.loc[horizon.dti_ph_extd, 'soc_max'])
         else:  # a priori or global optimization
-            soc_min_hor = self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min']
+            soc_min_hor = self.states.loc[horizon.dti_ph_extd, 'soc_min']
         self.states.update({'soc_min': soc_min_hor.astype('float64')})
         # endregion
 
@@ -2073,8 +2073,8 @@ class ElectricFleetUnit(StorageBlock, Block):
                 ep_costs=self.evaluators['storage'].capex['spec_ep'],
                 existing=self.sizes.loc['storage', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
-            min_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_min'],
-            max_storage_level=self.states.loc[utils.extend_dti(horizon.dti_ph), 'soc_max']
+            min_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_min'],
+            max_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_max']
         )
 
         # always add charger -> reduce different paths of result calculations; no chargers -> power is set to 0 kW
@@ -2136,13 +2136,13 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
         legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows.loc[self.scenario.dti_sim, 'ext_ac'],
+        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
+                                                      y=self.flows.loc[self.scenario.dti_eval, 'ext_ac'],
                                                       mode='lines',
                                                       name=legend_ext_ac,
                                                       line=dict(width=2, dash=None, shape='hv')),
-                                           go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows.loc[self.scenario.dti_sim, 'ext_dc'],
+                                           go.Scatter(x=self.scenario.dti_eval,
+                                                      y=self.flows.loc[self.scenario.dti_eval, 'ext_dc'],
                                                       mode='lines',
                                                       name=legend_ext_dc,
                                                       line=dict(width=2, dash=None, shape='hv')),
