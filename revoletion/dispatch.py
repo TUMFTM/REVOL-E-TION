@@ -56,11 +56,11 @@ class SiteDispatcher:
 
         # region extend datetimeindex
         self.time_ref = self.scenario.starttime - pd.Timedelta(days=1)  # reference time for DES steps
-        time_start_overhang = scenario.dti_sim_extd[-1] + scenario.dti_sim_extd.freq
+        time_start_overhang = scenario.dti_sim[-1] + scenario.dti_sim.freq  # ToDo: use max() and scenario.timestep_td
         time_end_overhang = time_start_overhang + pd.Timedelta(days=28)
-        self.dti = scenario.dti_sim_extd.union(pd.date_range(start=time_start_overhang,
-                                                             end=time_end_overhang,
-                                                             freq=scenario.dti_sim_extd.freq))
+        self.dti = scenario.dti_sim.union(pd.date_range(start=time_start_overhang,
+                                                        end=time_end_overhang,
+                                                        freq=scenario.dti_sim.freq))
         # endregion
 
         self.environment = simpy.Environment()
@@ -430,7 +430,7 @@ class SubFleetDispatcher:
             self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
             self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
 
-        self.log = self.log.loc[utils.extend_dti(self.scenario.dti_sim_extd), :]
+        self.log = self.log.loc[self.scenario.dti_sim_extd, :]
         self.subfleet.log = self.log
         # endregion
 

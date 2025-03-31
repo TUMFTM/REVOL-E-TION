@@ -69,7 +69,7 @@ class SubFleetDemand:
         """
 
         # region sample daily total demand from timeframe mapper and lognormal distribution
-        daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim_extd.date)))
+        daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim.date)))
         daily_total['timeframe'], daily_total['demand_mean'], daily_total['demand_std'] = \
             self.mapper_timeframe.map_timeframes(daily_total, self.subfleet.name, self.scenario)
         daily_total['mu'], daily_total['sigma'] = lognormal_params(daily_total['demand_mean'],
@@ -197,7 +197,7 @@ class SubFleetDemand:
         self.demand['dtime_idle'] = pd.to_timedelta(self.demand['dtime_idle'])
         self.demand['dtime_patience'] = pd.to_timedelta(self.demand['dtime_patience'])
 
-        self.demand = self.demand.loc[self.demand['time_req'].isin(self.scenario.dti_sim), :]
+        self.demand = self.demand.loc[self.demand['time_req'].isin(self.scenario.dti_eval), :]
 
 
 class BatteryDemand(SubFleetDemand):

@@ -14,6 +14,10 @@ def infer_dtype(value):
     """
     infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
     """
+
+    # remove whitespace at beginning or end of string (convert to string, as nan already is of type float)
+    value = str(value).strip()
+
     try:
         return int(value)
     except (ValueError or OverflowError):
@@ -45,38 +49,8 @@ def infer_dtype(value):
     return value.lower()
 
 
-def get_period_fraction(dti, period, freq):
-    """
-    Calculate the fraction of a period that is covered by a datetime index. Used in peakshaving calculations for
-    edges of simulation timeframe
-    """
-    # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
-    if len(dti) == 0:
-        return 0.0
-
-    if period == 'day':
-        start = dti.min().normalize()
-        end = start + pd.DateOffset(days=1) - pd.Timedelta(freq)
-    elif period == 'week':
-        start = dti.min().normalize() - pd.Timedelta(days=dti[0].weekday())
-        end = start + pd.DateOffset(weeks=1) - pd.Timedelta(freq)
-    elif period == 'month':
-        start = dti.min().normalize().replace(day=1)
-        end = start + pd.DateOffset(months=1) - pd.Timedelta(freq)
-    elif period == 'quarter':
-        start = dti.min().normalize().replace(day=1, month=((dti[0].month - 1) // 3) * 3 + 1)
-        end = start + pd.DateOffset(months=3) - pd.Timedelta(freq)
-    elif period == 'year':
-        start = dti.min().normalize().replace(day=1, month=1)
-        end = start + pd.DateOffset(years=1) - pd.Timedelta(freq)
-
-    period_fraction = len(dti) / len(pd.date_range(start, end, freq=freq))
-
-    return period_fraction
-
-
-def get_dataframe_results(df: pd.DataFrame,
-                          name_prefix: str) -> pd.Series:
+def create_results_from_dataframe(df: pd.DataFrame,
+                                  name_prefix: str) -> pd.Series:
     """
     Convert results stored in a DataFrame to a Series for scenario.result_summary.
     """
@@ -94,23 +68,12 @@ def conv_nan2none(value):
     return value if pd.notna(value) else None
 
 
-def init_equalizable_variables(block, name_vars: list):
-    name_var1, name_var2 = name_vars
-    if (getattr(block, name_var1) == 'equal') and (getattr(block, name_var2) == 'equal'):
-        error_msg = (f'"{block.name}" parameters {name_var1} and {name_var2} were both set to equal.'
-                     f' Maximum one of these variables is allowed to be set to "equal"')
-        block.scenario.logger.error(error_msg)
-    elif getattr(block, name_var1) == 'equal':
-        setattr(block, name_var1, getattr(block, name_var2))
-    elif getattr(block, name_var2) == 'equal':
-        setattr(block, name_var2, getattr(block, name_var1))
-
-
-def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
+def extend_dti(dti: pd.DatetimeIndex,
+               freq: pd.DateOffset | pd.Timedelta | str) -> pd.DatetimeIndex:
     """
     Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
     """
-    dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
+    dti_ext = dti.union(dti.shift(periods=1, freq=freq)[-1:])
     return dti_ext
 
 
@@ -169,10 +132,10 @@ def read_timeseries_csv(path_input_file: str,
         return df
     else:
         df = resample_to_timestep(df, block, scenario)
-        if not (scenario.dti_sim.isin(df.index).all()):
+        if not (scenario.dti_eval.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
-        return df.loc[scenario.dti_sim_extd]
+        return df.loc[scenario.dti_sim]
 
 
 def read_input_log(fleet):
@@ -205,7 +168,7 @@ def read_input_log(fleet):
         df_new[consumption_columns] = df[consumption_columns].resample(fleet.scenario.timestep).mean().ffill().bfill()
         df_new[bool_columns] = df[bool_columns].resample(fleet.scenario.timestep).ffill().bfill()
         df = df_new
-    if not (fleet.scenario.dti_sim.isin(df.index).all()):
+    if not (fleet.scenario.dti_eval.isin(df.index).all()):
         raise IndexError(f'Block "{fleet.name}": Input timeseries data does not cover simulation timeframe')
 
     # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
@@ -267,7 +230,7 @@ def transform_scalar_var(value, scenario, block=None):
 
     else:  # value is given as scalar
         return pd.Series(data=value,
-                         index=scenario.dti_sim_extd)
+                         index=scenario.dti_sim)
 
 
 def set_extension(filename, default_extension='.csv'):
