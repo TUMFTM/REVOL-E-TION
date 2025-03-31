@@ -652,7 +652,7 @@ class RenewableSource(Block):
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly'),
                                            go.Scatter(x=self.scenario.dti_sim,
-                                                      y=self.flows[self.scenario.dti_sim, 'pot'],
+                                                      y=self.flows.loc[self.scenario.dti_sim, 'pot'],
                                                       mode='lines',
                                                       name=f'{self.name} potential power',
                                                       line=dict(width=2, dash=None, shape='hv'),
@@ -1888,7 +1888,7 @@ class SubFleet(NonElectricBlock, Block):
             self.demand.sample()
             self.scenario.subfleets_dispatch[self.name] = self
         elif self.data_source == 'demand':
-            self.demand.read_demand_file(self)
+            self.demand.read_demand_file()
             self.scenario.subfleets_dispatch[self.name] = self
         elif self.data_source in ['log', 'logfile']:
             self.log = utils.read_input_log(self)

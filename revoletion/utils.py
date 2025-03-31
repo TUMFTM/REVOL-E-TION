@@ -147,24 +147,6 @@ def scale_year2dis(value, scenario):
     return value * factor
 
 
-def read_demand_file(block):
-    """
-    Read in a CommodityDemand csv file
-    """
-    path_demand_file = os.path.join(block.scenario.run.paths['input'],
-                                    set_extension(block.filename))
-    df = pd.read_csv(path_demand_file,
-                     index_col=0)
-    df['time_req'] = pd.to_datetime(df['time_req'], utc=True).dt.tz_convert(block.scenario.timezone)
-    df['dtime_active'] = pd.to_timedelta(df['dtime_active'])
-    df['dtime_idle'] = pd.to_timedelta(df['dtime_idle'])
-    df['dtime_patience'] = pd.to_timedelta(df['dtime_patience'])
-
-    df = df.loc[df['time_req'].isin(block.scenario.dti_sim), :]
-
-    return df
-
-
 def read_timeseries_csv(path_input_file: str,
                         block: 'Block',
                         scenario: 'Scenario',
