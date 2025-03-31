@@ -1215,25 +1215,38 @@ class GridConnection(Block):
                                                 data=self.peak_power_init,  # cumulative variable
                                                 dtype='float64')
 
-        # slice sim dataframe from activation bus (compared to sim_extd)
-        bus_activation_sim = self.bus_activation.loc[self.scenario.dti_sim]
-
         def process_period(period):
-            # Calculate period fraction
-            period_fraction = utils.get_period_fraction(
-                dti=bus_activation_sim[bus_activation_sim[period] == 1].index,
-                period=self.peak_period,
-                freq=self.scenario.timestep
-            )
-
-            # Get first and last timestep of the peakshaving interval
             dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-            start = dti_period.min()
-            end = dti_period.max()
+            dti_period_sim = dti_period[dti_period.isin(self.scenario.dti_sim)]  # remove non-sim timestamps
+
+            # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
+            if len(dti_period_sim) == 0:
+                period_fraction = 0.0
+            else:
+                if period == 'day':
+                    start = dti_period_sim.min().normalize()
+                    end = start + pd.DateOffset(days=1) - self.scenario.timestep_td
+                elif period == 'week':
+                    start = dti_period_sim.min().normalize() - pd.Timedelta(days=dti_period_sim[0].weekday())
+                    end = start + pd.DateOffset(weeks=1) - self.scenario.timestep_td
+                elif period == 'month':
+                    start = dti_period_sim.min().normalize().replace(day=1)
+                    end = start + pd.DateOffset(months=1) - self.scenario.timestep_td
+                elif period == 'quarter':
+                    start = dti_period_sim.min().normalize().replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
+                    end = start + pd.DateOffset(months=3) - self.scenario.timestep_td
+                elif period == 'year':
+                    start = dti_period_sim.min().normalize().replace(day=1, month=1)
+                    end = start + pd.DateOffset(years=1) - self.scenario.timestep_td
+                else:
+                    start = dti_period_sim.min()
+                    end = dti_period_sim.max()
+
+                period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep_td))
 
             return pd.Series({'period_fraction': period_fraction,
-                              'start': start,
-                              'end': end})
+                              'start': dti_period.min(),
+                              'end': dti_period.max()})
 
         # Apply the function to each period in peak_periods
         self.peak_periods[['period_fraction', 'start', 'end']] = self.peak_periods.index.to_series().apply(process_period)
