@@ -175,8 +175,8 @@ bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,sdr,0.02,0.02,0.02,0.02
 icev,num,5,5,5,5
 icev,type_unit,icev,icev,icev,icev
-icev,data_source,log,log,log,log
-icev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
+icev,data_source,usecases,usecases,usecases,usecases
+icev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 icev,filename_mapper,mtf,mtf,mtf,mtf
 icev,capex_preexisting,True,True,True,True
 icev,capex_fix_glider,25000,25000,25000,25000
@@ -187,7 +187,6 @@ icev,mntex_fix_glider,500,500,500,500
 icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
-icev,invest,False,False,False,False
 brs,subfleets,['mb'],['mb'],['mb'],['mb']
 brs,system,ac,ac,ac,ac
 brs,size_preexisting_f2s,43000,None,None,None

@@ -554,6 +554,7 @@ class Scenario:
         self.renewable_sources = dict()
         self.subfleets = dict()
         self.subfleets_dispatch = dict()
+        self.subfleets_scheduling = dict()
 
         self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
         self.blocks = self.create_block_objects()
@@ -587,7 +588,6 @@ class Scenario:
         #                          f' be connected to the same bus')
 
 
-        # Result variables --------------------------------
         self.figure = None  # placeholder for plotting
 
         self.cashflows = pd.DataFrame()
@@ -631,11 +631,7 @@ class Scenario:
             block.pre_scenario()
 
         self.scheduler = None
-        if any([fleet_unit
-                for fleet in self.fleets.values()
-                for subfleet in fleet.subblocks.values()
-                for fleet_unit in subfleet.subblocks.values()
-                if fleet_unit.mode_scheduling in self.run.apriori_lvls]):
+        if self.subfleets_scheduling:
             self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
 
         try:

@@ -1881,7 +1881,7 @@ class SubFleet(NonElectricBlock, Block):
                                                   parent=self) for name in self.unit_names}
             self.demand = mobility.BatteryDemand(scenario, self)
         else:
-            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" has invalid unit type')
+            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" - invalid unit type')
 
         self.scenario.subfleets[self.name] = self
         if self.data_source == 'usecases':
@@ -1897,8 +1897,11 @@ class SubFleet(NonElectricBlock, Block):
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
-        if params['invest'] and self.data_source in ['usecases', 'demand']:
-            raise ValueError(f'Subfleet "{self.name}": dispatch not implemented for data source "{self.data_source}"')
+        if params.get('mode_scheduling') in scenario.run.apriori_lvls:  # mode scheduling attr is in FleetUnit
+            self.scenario.subfleets_scheduling[self.name] = self
+
+        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
+            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
 
 class ElectricFleetUnit(StorageBlock, Block):
