@@ -1,0 +1,16 @@
+key,value
+solver,gurobi
+parallel,True
+max_process_num,max
+path_input,example
+path_output,package
+save_results_timeseries,True
+save_results_dispatch,True
+save_plots,True
+save_system_graphs,True
+print_results,False
+show_plots,False
+dump_model,False
+debugmode,False
+export_data,False
+key_api_solcast,123456abcdef

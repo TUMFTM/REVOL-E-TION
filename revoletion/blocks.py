@@ -52,19 +52,12 @@ class Block:
         # region set attributes from scenario file or parent
         if self.top_level_block:
             self.scenario.blocks[self.name] = self  # add block to scenario's blocks dict
-
-            self.parameters = self.scenario.parameters.loc[self.name]
-            for key, value in self.parameters.items():
-                setattr(self, key, value)  # this sets all the parameters defined in the scenario file
-
-        elif params is not None:  # is subblock with inherited params
+        else:  # is subblock
             self.parent.subblocks[self.name] = self
 
-            for key, value in params.items():
-                setattr(self, key, value)
-
-        else:  # is subblock without params defined
-            raise ValueError(f'Subblock {self.name} of {self.parent.name} has no inherited parameters defined')
+        params = params if params is not None else self.scenario.parameters.loc[self.name]
+        for key, value in params.items():
+            setattr(self, key, value)
         # endregion
 
         # region get poi and state name definitions
@@ -1192,7 +1185,13 @@ class GridConnection(Block):
         self.bus_activation = pd.DataFrame()
 
         self.initialize_peakshaving()
-        self.initialize_markets()
+
+        self.subblocks = {market: GridMarket(name=market,
+                                             scenario=self.scenario,
+                                             params=None,
+                                             parent=self)
+                          for market in self.markets}
+        del self.markets
 
     def initialize_sizes(self,
                          pois: dict = None):
@@ -1275,19 +1274,6 @@ class GridConnection(Block):
             block=self,
             params={('opex', 'spec'): 'opex_spec_peak'})
             for period in self.peak_periods.index})
-
-    def initialize_markets(self):
-        # get information about GridMarkets specified in the scenario file
-        markets = pd.read_csv(os.path.join(self.scenario.run.paths['input'],
-                                           utils.set_extension(self.filename_markets)),
-                              index_col=[0]).map(utils.infer_dtype)
-
-        # Generate individual GridMarkets instances
-        self.subblocks = {market_name: GridMarket(name=market_name,
-                                                  scenario=self.scenario,
-                                                  params=dict(markets.loc[:, market_name]),
-                                                  parent=self)
-                          for market_name in markets.columns}
 
     def define_oemof_components(self,
                                 horizon):
@@ -1778,22 +1764,10 @@ class Fleet(Block):
 
         self.scenario.fleets[self.name] = self
 
-        path_fleet_definition = os.path.join(self.scenario.run.paths['input'],
-                                             utils.set_extension(self.filename))
-        subfleets = pd.read_csv(path_fleet_definition,
-                                index_col=0,
-                                keep_default_na=False).map(utils.infer_dtype)
-
-        for subfleet_id, subfleet in subfleets.items():
-            if ((self.subfleets is not None and subfleet.name not in self.subfleets) or
-                    subfleet_id.startswith('#')):
-                continue
-            subfleet_params = subfleet.to_dict()
-            subfleet_name = subfleet_params.pop('name')
-            self.subblocks[subfleet_name] = SubFleet(name=subfleet_name,
-                                                   scenario=self.scenario,
-                                                   params=subfleet_params,
-                                                   parent=self)
+        self.subblocks = {name: SubFleet(name=name,
+                                         scenario=self.scenario,
+                                         parent=self) for name in self.subfleets}
+        del self.subfleets
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
@@ -1870,15 +1844,16 @@ class SubFleet(NonElectricBlock, Block):
     def __init__(self,
                  name: str,
                  scenario,
-                 params,
                  parent):
 
-        params_subfleet = {key: params.pop(key) for key in ['num',
-                                                            'type_unit',
-                                                            'data_source',
-                                                            'filename',
-                                                            'filename_mapper',
-                                                            'rex']}
+        # subfleet parameters contain FleetUnit parameters
+        params = scenario.parameters.loc[name]
+        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num',
+                                                                                       'type_unit',
+                                                                                       'data_source',
+                                                                                       'filename',
+                                                                                       'filename_mapper',
+                                                                                       'rex']}
 
         super().__init__(name=name,
                          scenario=scenario,

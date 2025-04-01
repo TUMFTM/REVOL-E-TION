@@ -122,26 +122,32 @@ class SubFleetDispatcher:
         # region estimate usable energy and power
         unit_repr = self.units[next(iter(self.units))]  # all units are equal and representative a priori
 
-        self.energy_total = unit_repr.sizes.loc['storage', 'preexisting']
+        if isinstance(unit_repr, blocks.ElectricFleetUnit):
+            self.energy_total = unit_repr.sizes.loc['storage', 'preexisting']
 
-        soc_minmax = min([unit.states.at[self.scenario.starttime, 'soc_max'] for unit in self.units.values()])
-        soc_maxmin = max([unit.states.at[self.scenario.starttime, 'soc_min'] for unit in self.units.values()])
+            soc_minmax = min([unit.states.at[self.scenario.starttime, 'soc_max'] for unit in self.units.values()])
+            soc_maxmin = max([unit.states.at[self.scenario.starttime, 'soc_min'] for unit in self.units.values()])
 
-        soc_upper = statistics.median([soc_minmax, unit_repr.soc_target, soc_maxmin])
-        soc_lower = statistics.median([soc_minmax, unit_repr.soc_return, soc_maxmin])
+            soc_upper = statistics.median([soc_minmax, unit_repr.soc_target, soc_maxmin])
+            soc_lower = statistics.median([soc_minmax, unit_repr.soc_return, soc_maxmin])
 
-        self.dsoc_usable = soc_upper - soc_lower
+            self.dsoc_usable = soc_upper - soc_lower
 
-        if self.dsoc_usable <= 0:
-            raise ValueError(f'Usable dSOC for subfleet {self.subfleet.name} is zero or negative. '
-                             f'Check SOC targets and aging.')
+            if self.dsoc_usable <= 0:
+                raise ValueError(f'Usable dSOC for subfleet {self.subfleet.name} is zero or negative. '
+                                 f'Check SOC targets and aging.')
 
-        self.energy_usable = (self.dsoc_usable *
-                              self.energy_total *
-                              np.sqrt(unit_repr.eff['storage_roundtrip']))
+            self.energy_usable = (self.dsoc_usable *
+                                  self.energy_total *
+                                  np.sqrt(unit_repr.eff['storage_roundtrip']))
 
-        pwr_loss_max = unit_repr.loss_rate_per_hour * self.energy_total
-        self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff['chg_int'] - pwr_loss_max) * factor_derate
+            pwr_loss_max = unit_repr.loss_rate_per_hour * self.energy_total
+            self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff['chg_int'] - pwr_loss_max) * factor_derate
+        else:  # ICEV
+            self.energy_total = np.inf
+            self.energy_usable = np.inf
+            self.dsoc_usable = 1
+            self.pwr_chg_usable = np.inf
         # endregion
 
         # region calculate a priori process data
@@ -164,7 +170,7 @@ class SubFleetDispatcher:
         else:
             self.processes['num_rex'] = 0
             self.processes['request_rex'] = False
-            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable)  # clip to max
+            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable)
 
         self.processes['energy_usable'] = (
                 self.energy_usable + (self.processes['num_rex'] * getattr(self.rex_dispatcher, 'energy_usable', 0)))
@@ -175,8 +181,12 @@ class SubFleetDispatcher:
         self.processes['dsoc_prim'] = self.dsoc_usable * utilization
         self.processes['dsoc_rex'] = getattr(self.rex_dispatcher, 'dsoc_usable', 0) * utilization
 
-        self.processes['energy_req_prim'] = self.processes['dsoc_prim'] * self.energy_total
-        self.processes['energy_req_rex'] = self.processes['dsoc_rex'] * getattr(self.rex_dispatcher, 'energy_total', 0)
+        if np.isfinite(self.energy_total):  # ElectricFleetUnit
+            self.processes['energy_req_prim'] = self.processes['dsoc_prim'] * self.energy_total
+            self.processes['energy_req_rex'] = self.processes['dsoc_rex'] * getattr(self.rex_dispatcher, 'energy_total', 0)
+        else:  # ICEV
+            self.processes['energy_req_prim'] = self.processes['energy_req']
+            self.processes['energy_req_rex'] = 0
 
         self.processes['dtime_chg_prim'] = pd.to_timedelta(self.processes['energy_req_prim'] /
                                                            self.pwr_chg_usable,
@@ -472,10 +482,9 @@ class VehicleDispatcher(SubFleetDispatcher):
         if subfleet.rex is not None:
             self.rex = True
             self.rex_subfleet = scenario.subfleets.get(subfleet.rex, None)
-            self.rex_dispatcher = self.rex_subfleet.dispatcher
 
             base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
-                       f'Subfleet "{subfleet.name}": selected range extender fleet "{self.rex}"'
+                       f'Subfleet "{subfleet.name}": selected range extender fleet "{subfleet.rex}"'
 
             if self.rex_subfleet is None:
                 raise ValueError(f'{base_msg} does not exist')
@@ -484,6 +493,7 @@ class VehicleDispatcher(SubFleetDispatcher):
             elif self.rex_subfleet not in scenario.subfleets_dispatch.values():
                 raise ValueError(f'{base_msg} is not dispatched and cannot be used as range extender')
 
+            self.rex_dispatcher = self.rex_subfleet.dispatcher
         else:
             self.rex = False
             self.rex_subfleet = None
