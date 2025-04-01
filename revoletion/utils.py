@@ -111,25 +111,25 @@ def read_timeseries_csv(path_input_file: str,
     if not resampling:
         return df
     else:
-        df = resample_to_timestep(df, block, scenario)
+        df = resample_to_timestep(df, scenario)
         if not (scenario.dti_eval.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
         return df.loc[scenario.dti_sim]
 
 
-def read_input_log(fleet):
+def read_input_log(subfleet):
     """
     Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
     consumption must be meaned, while booleans, distances and dsocs must not. Function has to be callable for
     ICEVSystems as well
     """
 
-    log_path = os.path.join(fleet.scenario.run.paths['input'],
-                            set_extension(fleet.filename))
+    log_path = os.path.join(subfleet.scenario.run.paths['input'],
+                            set_extension(subfleet.filename))
     df = read_timeseries_csv(path_input_file=log_path,
-                             block=fleet,
-                             scenario=fleet.scenario,
+                             block=subfleet,
+                             scenario=subfleet.scenario,
                              multiheader=True,
                              resampling=False)
 
@@ -139,54 +139,41 @@ def read_input_log(fleet):
     freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
 
     # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
-    if freq_log != fleet.scenario.timestep_td:
-        fleet.scenario.logger.warning(f'Block "{fleet.name}": input data does not match specified timestep - Resampling')
+    if freq_log != subfleet.scenario.timestep_td:
+        subfleet.scenario.logger.warning(f'Block "{subfleet.name}": input data does not match specified timestep - Resampling')
         consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
         bool_columns = df.columns.difference(consumption_columns)
         # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
         df_new = pd.DataFrame()
-        df_new[consumption_columns] = df[consumption_columns].resample(fleet.scenario.timestep).mean().ffill().bfill()
-        df_new[bool_columns] = df[bool_columns].resample(fleet.scenario.timestep).ffill().bfill()
+        df_new[consumption_columns] = df[consumption_columns].resample(subfleet.scenario.timestep).mean().ffill().bfill()
+        df_new[bool_columns] = df[bool_columns].resample(subfleet.scenario.timestep).ffill().bfill()
         df = df_new
-    if not (fleet.scenario.dti_eval.isin(df.index).all()):
-        raise IndexError(f'Block "{fleet.name}": Input timeseries data does not cover simulation timeframe')
+    if not (subfleet.scenario.dti_eval.isin(df.index).all()):
+        raise IndexError(f'Block "{subfleet.name}": Input timeseries data does not cover simulation timeframe')
 
-    # if the names of the commodities in the log file differ from the usual naming scheme (name of the commodity
-    # fleet + number), the names specified in the log file names are used, with the commodity fleet name added
-    # for unique identification.
-    # ToDo: fix and reactivate
-    # if fleet.data_source == 'log':
-    #     unit_names_log = sorted(df.columns.get_level_values(0).unique()[:fleet.num].tolist())
-    #     if fleet.unit_names != unit_names_log:
-    #         unit_names_map = {log_name: f'{fleet.name}_{log_name}' for log_name in unit_names_log}
-    #         df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
+    # rename fleet units according to schema subfleet.name{idx}
+    unit_names_log = sorted(df.columns.get_level_values(0).unique()[:subfleet.num].tolist())
+    unit_names_map = {log_name: f'{subfleet.name}{idx}' for idx, log_name in enumerate(unit_names_log)}
+    df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
 
     return df
 
 
-def resample_to_timestep(data: pd.DataFrame, block, scenario):
+def resample_to_timestep(data: pd.DataFrame, scenario):
     """
     Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
     """
 
-    dti = data.index
-    # Add one element to the dataframe to include the last timesteps
-    # ToDo: use function extend_dti() instead of dti.union()?
-    try:
-        dti_ext = dti.union(dti.shift(periods=1, freq=pd.infer_freq(dti))[-1:])
-    except pandas.errors.NullFrequencyError:
-        dti_ext = dti.union(dti.shift(periods=1, freq=pd.Timedelta('15min'))[-1:])
-        scenario.logger.warning(f'Block "{block.name}": Timestep of csv data could not be inferred - using 15 min default')
-
-    data_ext = data.reindex(dti_ext).ffill()
+    # Add one element to the dataframe to include the last timestep
+    data_extd = data.reindex(extend_dti(dti=data.index, freq=scenario.timestep_td)).ffill()
 
     def resample_column(column):
-        if data_ext[column].dtype == bool:
-            return data_ext[column].resample(scenario.timestep).ffill().bfill()
+        if data_extd[column].dtype == bool:
+            return data_extd[column].resample(scenario.timestep).ffill().bfill()
         else:
-            return data_ext[column].resample(scenario.timestep).mean().ffill().bfill()
+            return data_extd[column].resample(scenario.timestep).mean().ffill().bfill()
 
-    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_ext.columns})[:-1]
+    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_extd.columns})[:-1]
     return resampled_data
 
 
