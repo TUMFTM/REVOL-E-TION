@@ -843,7 +843,7 @@ class PVSource(RenewableSource):
         self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'wind_speed', 'temp_air']]
         # endregion
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.data.to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
@@ -932,7 +932,7 @@ class WindSource(RenewableSource):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.data.to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
@@ -972,7 +972,7 @@ class FixedDemand(Block):
         else:
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.flows_apriori['demand'].to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
@@ -1892,7 +1892,7 @@ class SubFleet(NonElectricBlock, Block):
             self.demand.read_demand_file()
             self.scenario.subfleets_dispatch[self.name] = self
         elif self.data_source in ['log', 'logfile']:
-            self.log = utils.read_input_log(self)
+            self.log = self.read_input_log()
             # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()  # todo reenable
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
@@ -1902,6 +1902,55 @@ class SubFleet(NonElectricBlock, Block):
 
         if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
+
+    def read_input_log(self) -> pd.DataFrame:
+        """
+        Read in a predetermined log file for the SubFleet behavior.
+        """
+
+        log_path = os.path.join(self.scenario.run.paths['input'],
+                                utils.set_extension(self.filename))
+
+        df = utils.read_timeseries_csv(path_input_file=log_path,
+                                       block=self,
+                                       scenario=self.scenario,
+                                       multiheader=True,
+                                       resampling=False)  # Normal resampling cannot be used as consumption must be
+                                                          # meaned, while booleans, distances and dsocs must not.
+
+        # Timedelta of frequency of log file
+        freq_log = pd.infer_freq(df.index).lower()
+        # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
+        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
+
+        # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
+        if freq_log != self.scenario.timestep_td:
+            self.scenario.logger.warning(f'Block "{self.name}": '
+                                         f'log file does not match specified timestep - Resampling')
+
+            cols = df.columns  # save orignal column sorting to apply after resampling
+            cols_consumption = df.columns[df.columns.get_level_values(1) == 'consumption']
+            cols_dist = df.columns[df.columns.get_level_values(1) == 'dist']
+            cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
+            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+            df_new = pd.DataFrame()
+            df_new[cols_consumption] = df[cols_consumption].resample(self.scenario.timestep).mean().ffill().bfill()
+            df_new[cols_dist] = df[cols_dist].resample(self.scenario.timestep).sum().ffill().bfill()
+            df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep).ffill().bfill()
+            df = df_new[cols]  # ensure right sorting
+
+        if not (self.scenario.dti_eval.isin(df.index).all()):
+            raise IndexError(f'Block "{self.name}": Input timeseries data does not cover simulation timeframe')
+
+        # extract the relevant time series
+        df = df.loc[self.scenario.dti_sim_extd]  # need dsoc for last timestep
+
+        # rename fleet units according to schema subfleet.name{idx}
+        unit_names_log = sorted(df.columns.get_level_values(0).unique()[:self.num].tolist())
+        unit_names_map = {log_name: f'{self.name}{idx}' for idx, log_name in enumerate(unit_names_log)}
+        df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
+
+        return df
 
 
 class ElectricFleetUnit(StorageBlock, Block):

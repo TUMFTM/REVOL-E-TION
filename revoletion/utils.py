@@ -111,93 +111,20 @@ def read_timeseries_csv(path_input_file: str,
     if not resampling:
         return df
     else:
-        df = resample_to_timestep(df, scenario)
+        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep_td)).ffill()
+
+        def resample_column(column):
+            if df_extd[column].dtype == bool:
+                return df_extd[column].resample(scenario.timestep).ffill().bfill()
+            else:
+                return df_extd[column].resample(scenario.timestep).mean().ffill().bfill()
+
+        df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+
         if not (scenario.dti_eval.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
         return df.loc[scenario.dti_sim]
-
-
-def read_input_log(subfleet):
-    """
-    Read in a predetermined log file for the CommoditySystem behavior. Normal resampling cannot be used as
-    consumption must be meaned, while booleans, distances and dsocs must not. Function has to be callable for
-    ICEVSystems as well
-    """
-
-    log_path = os.path.join(subfleet.scenario.run.paths['input'],
-                            set_extension(subfleet.filename))
-    df = read_timeseries_csv(path_input_file=log_path,
-                             block=subfleet,
-                             scenario=subfleet.scenario,
-                             multiheader=True,
-                             resampling=False)
-
-    # Timedelta of frequency of log file
-    freq_log = pd.infer_freq(df.index).lower()
-    # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
-    freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
-
-    # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
-    if freq_log != subfleet.scenario.timestep_td:
-        subfleet.scenario.logger.warning(f'Block "{subfleet.name}": input data does not match specified timestep - Resampling')
-        consumption_columns = list(filter(lambda x: 'consumption' in x[1], df.columns))
-        bool_columns = df.columns.difference(consumption_columns)
-        # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-        df_new = pd.DataFrame()
-        df_new[consumption_columns] = df[consumption_columns].resample(subfleet.scenario.timestep).mean().ffill().bfill()
-        df_new[bool_columns] = df[bool_columns].resample(subfleet.scenario.timestep).ffill().bfill()
-        df = df_new
-    if not (subfleet.scenario.dti_eval.isin(df.index).all()):
-        raise IndexError(f'Block "{subfleet.name}": Input timeseries data does not cover simulation timeframe')
-
-    # rename fleet units according to schema subfleet.name{idx}
-    unit_names_log = sorted(df.columns.get_level_values(0).unique()[:subfleet.num].tolist())
-    unit_names_map = {log_name: f'{subfleet.name}{idx}' for idx, log_name in enumerate(unit_names_log)}
-    df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
-
-    return df
-
-
-def resample_to_timestep(data: pd.DataFrame, scenario):
-    """
-    Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-    """
-
-    # Add one element to the dataframe to include the last timestep
-    data_extd = data.reindex(extend_dti(dti=data.index, freq=scenario.timestep_td)).ffill()
-
-    def resample_column(column):
-        if data_extd[column].dtype == bool:
-            return data_extd[column].resample(scenario.timestep).ffill().bfill()
-        else:
-            return data_extd[column].resample(scenario.timestep).mean().ffill().bfill()
-
-    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_extd.columns})[:-1]
-    return resampled_data
-
-
-def transform_scalar_var(value, scenario, block=None):
-    """
-    Transform a value holding either the filename of a csv file containing a timeseries or a scalar
-    to a pandas Series with the same DatetimeIndex as the simulation.
-    """
-    if isinstance(value, str):  # value contains filename
-        filename = set_extension(filename=value, default_extension='.csv')
-        df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
-                                 block=block,
-                                 scenario=scenario,
-                                 multiheader=False,
-                                 resampling=True)
-        if df.shape[1] != 1:
-            scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
-                                    f'only first column is used.')
-
-        return df.iloc[:, 0]  # return only first column
-
-    else:  # value is given as scalar
-        return pd.Series(data=value,
-                         index=scenario.dti_sim)
 
 
 def set_extension(filename, default_extension='.csv'):
