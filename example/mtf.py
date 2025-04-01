@@ -14,7 +14,7 @@ def map_timeframes_vehicles(df):
     df.loc[condition, 'demand_std'] = 2
 
     df.loc[~condition, 'timeframe'] = 'weekday'
-    df.loc[~condition, 'demand_mean'] = 15
+    df.loc[~condition, 'demand_mean'] = 10
     df.loc[~condition, 'demand_std'] = 4
 
     return df['timeframe'], df['demand_mean'], df['demand_std']
