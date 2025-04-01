@@ -91,6 +91,7 @@ def import_module_from_path(module_name, file_path):
 
 
 def read_timeseries_csv(path_input_file: str,
+                        block: 'Block',
                         scenario: 'Scenario',
                         multiheader: bool = False,
                         resampling: bool = True):
@@ -112,7 +113,8 @@ def read_timeseries_csv(path_input_file: str,
     else:
         df = resample_to_timestep(df, block, scenario)
         if not (scenario.dti_eval.isin(df.index).all()):
-            raise IndexError(f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
+            raise IndexError(f'Block "{block.name}":'
+                             f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
         return df.loc[scenario.dti_sim]
 
 
@@ -126,6 +128,7 @@ def read_input_log(fleet):
     log_path = os.path.join(fleet.scenario.run.paths['input'],
                             set_extension(fleet.filename))
     df = read_timeseries_csv(path_input_file=log_path,
+                             block=fleet,
                              scenario=fleet.scenario,
                              multiheader=True,
                              resampling=False)
@@ -195,6 +198,7 @@ def transform_scalar_var(value, scenario, block=None):
     if isinstance(value, str):  # value contains filename
         filename = set_extension(filename=value, default_extension='.csv')
         df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
+                                 block=block,
                                  scenario=scenario,
                                  multiheader=False,
                                  resampling=True)

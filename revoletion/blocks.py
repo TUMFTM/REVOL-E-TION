@@ -926,6 +926,7 @@ class WindSource(RenewableSource):
             path_input_file = os.path.join(self.scenario.run.paths['input'],
                                            utils.set_extension(self.filename))
             self.data = utils.read_timeseries_csv(path_input_file=path_input_file,
+                                                  block=self,
                                                   scenario=self.scenario)
             # endregion
         else:
@@ -980,6 +981,7 @@ class FixedDemand(Block):
     def get_demand_from_file(self):
         data = utils.read_timeseries_csv(path_input_file=os.path.join(self.scenario.run.paths['input'],
                                                                       utils.set_extension(self.load_profile)),
+                                         block=self,
                                          scenario=self.scenario,
                                          )
 
