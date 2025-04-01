@@ -476,9 +476,9 @@ class Scenario:
         self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
         self.sim_prj_rat = self.sim_duration / self.prj_duration
 
-        if self.len_ch == self.timestep_td:
+        if self.len_ph == self.timestep_td:
             raise ValueError('Single timestep optimization not possible. Adjust simulation duration, timestep or '
-                             'control horizon length (for RH only)')
+                             'prediction horizon length / truncate_ph (for RH only)')
 
         # generate a datetimeindex for the energy system model to run on
         self.dti_eval = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
