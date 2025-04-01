@@ -1943,7 +1943,7 @@ class SubFleet(NonElectricBlock, Block):
             raise IndexError(f'Block "{self.name}": Input timeseries data does not cover simulation timeframe')
 
         # extract the relevant time series
-        df = df.loc[self.scenario.dti_sim]
+        df = df.loc[self.scenario.dti_sim_extd]  # need dsoc for last timestep
 
         # rename fleet units according to schema subfleet.name{idx}
         unit_names_log = sorted(df.columns.get_level_values(0).unique()[:self.num].tolist())
