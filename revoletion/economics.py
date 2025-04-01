@@ -292,8 +292,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # annuity is equal to the already yearly recurring expense
-        self.opex['factor_ep'] = utils.scale_sim2year(1, self.scenario)\
-            if self.scenario.compensate_sim_prj else 1
+        self.opex['factor_ep'] = (1 / self.scenario.sim_yr_rat) if self.scenario.compensate_sim_prj else 1
         self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
         # endregion
 
@@ -341,7 +340,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
         self.calc_opex_sim_additional()
 
-        self.opex['yrl'] = utils.scale_sim2year(self.opex['sim'], self.scenario)
+        self.opex['yrl'] = self.opex['sim'] / self.scenario.sim_yr_rat
         self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
 
         self.opex['prj'] = -1 * self.cashflows['mntex'].sum()
@@ -357,7 +356,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
         self.calc_crev_sim_additional()
 
-        self.crev['yrl'] = utils.scale_sim2year(self.crev['sim'], self.scenario)
+        self.crev['yrl'] = self.crev['sim'] / self.scenario.sim_yr_rat
         self.cashflows.loc[:, 'crev'] = self.crev['yrl']
 
         self.crev['prj'] = self.cashflows['crev'].sum()

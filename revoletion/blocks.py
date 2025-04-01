@@ -267,9 +267,10 @@ class Block:
 
         for flow_name, flow in self.flows.items():
             self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
-        self.energies['yrl'] = utils.scale_sim2year(value=self.energies['sim'], scenario=self.scenario)
-        self.energies['prj'] = utils.scale_year2prj(value=self.energies['yrl'], scenario=self.scenario)
-        self.energies['dis'] = utils.scale_year2dis(value=self.energies['yrl'], scenario=self.scenario)
+        self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
+        self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
+        self.energies['dis'] = self.energies['yrl'] * self.scenario.discount_factors['end'].sum()
+
         # only add total energies of top level blocks to scenario.energies
         if self.top_level_block:
             self.scenario.energies.loc[(self.name, 'total'), :] = self.energies.loc['total', :]

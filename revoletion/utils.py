@@ -90,26 +90,6 @@ def import_module_from_path(module_name, file_path):
     return module
 
 
-def scale_sim2year(value, scenario):
-    return value / scenario.sim_yr_rat
-
-
-def scale_year2prj(value, scenario):
-    return value * scenario.prj_duration_yrs
-
-
-def scale_sim2prj(value, scenario):
-    return scale_year2prj(scale_sim2year(value, scenario), scenario)
-
-
-def scale_year2dis(value, scenario):
-    factor = eco.acc_discount(nominal_value=1,
-                              observation_horizon=scenario.prj_duration_yrs,
-                              discount_rate=scenario.wacc,
-                              occurs_at='end')
-    return value * factor
-
-
 def read_timeseries_csv(path_input_file: str,
                         block: 'Block',
                         scenario: 'Scenario',
