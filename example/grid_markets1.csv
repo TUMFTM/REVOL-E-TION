@@ -1,6 +1,0 @@
-parameter,market1
-res_only,True
-opex_spec_g2s,3.2e-04
-opex_spec_s2g,6e-05
-pwr_g2s,None
-pwr_s2g,None
