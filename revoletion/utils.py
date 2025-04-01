@@ -111,52 +111,20 @@ def read_timeseries_csv(path_input_file: str,
     if not resampling:
         return df
     else:
-        df = resample_to_timestep(df, scenario)
+        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep_td)).ffill()
+
+        def resample_column(column):
+            if df_extd[column].dtype == bool:
+                return df_extd[column].resample(scenario.timestep).ffill().bfill()
+            else:
+                return df_extd[column].resample(scenario.timestep).mean().ffill().bfill()
+
+        df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+
         if not (scenario.dti_eval.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
         return df.loc[scenario.dti_sim]
-
-
-def resample_to_timestep(data: pd.DataFrame, scenario):
-    """
-    Resample the data to the timestep of the scenario, conserving the proper index end even in upsampling
-    """
-
-    # Add one element to the dataframe to include the last timestep
-    data_extd = data.reindex(extend_dti(dti=data.index, freq=scenario.timestep_td)).ffill()
-
-    def resample_column(column):
-        if data_extd[column].dtype == bool:
-            return data_extd[column].resample(scenario.timestep).ffill().bfill()
-        else:
-            return data_extd[column].resample(scenario.timestep).mean().ffill().bfill()
-
-    resampled_data = pd.DataFrame({col: resample_column(col) for col in data_extd.columns})[:-1]
-    return resampled_data
-
-
-def transform_scalar_var(value, scenario, block=None):
-    """
-    Transform a value holding either the filename of a csv file containing a timeseries or a scalar
-    to a pandas Series with the same DatetimeIndex as the simulation.
-    """
-    if isinstance(value, str):  # value contains filename
-        filename = set_extension(filename=value, default_extension='.csv')
-        df = read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
-                                 block=block,
-                                 scenario=scenario,
-                                 multiheader=False,
-                                 resampling=True)
-        if df.shape[1] != 1:
-            scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
-                                    f'only first column is used.')
-
-        return df.iloc[:, 0]  # return only first column
-
-    else:  # value is given as scalar
-        return pd.Series(data=value,
-                         index=scenario.dti_sim)
 
 
 def set_extension(filename, default_extension='.csv'):

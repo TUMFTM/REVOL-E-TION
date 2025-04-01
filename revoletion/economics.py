@@ -105,6 +105,29 @@ def calc_wacc(
     return wacc_nominal, wacc_real
 
 
+def transform_scalar_var(value, scenario, block=None):
+    """
+    Transform a value holding either the filename of a csv file containing a timeseries or a scalar
+    to a pandas Series with the same DatetimeIndex as the simulation.
+    """
+    if isinstance(value, str):  # value contains filename
+        filename = utils.set_extension(filename=value, default_extension='.csv')
+        df = utils.read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
+                                       block=block,
+                                       scenario=scenario,
+                                       multiheader=False,
+                                       resampling=True)
+        if df.shape[1] != 1:
+            scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
+                                    f'only first column is used.')
+
+        return df.iloc[:, 0]  # return only first column
+
+    else:  # value is given as scalar
+        return pd.Series(data=value,
+                         index=scenario.dti_sim)
+
+
 class EconomicPointOfInterest:
     """
     abstractclass
@@ -235,12 +258,12 @@ class EconomicEvaluator(EconomicPointOfInterest):
                            'fix': 0,})
         self.mntex.update({'spec': 0,
                            'fix': 0})
-        self.opex.update({'spec': utils.transform_scalar_var(value=0,
-                                                             scenario=self.scenario,
-                                                             block=block)})
-        self.crev.update({'spec': utils.transform_scalar_var(value=0,
-                                                             scenario=self.scenario,
-                                                             block=block)})
+        self.opex.update({'spec': transform_scalar_var(value=0,
+                                                       scenario=self.scenario,
+                                                       block=block)})
+        self.crev.update({'spec': transform_scalar_var(value=0,
+                                                       scenario=self.scenario,
+                                                       block=block)})
         self.aux = {'ls': self.scenario.prj_duration_yrs,
                     'ccr': 1}
         self.size_name = None
@@ -255,9 +278,9 @@ class EconomicEvaluator(EconomicPointOfInterest):
             elif param_tuple == ('flow', 'name'):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
-                getattr(self, dict_name)[dict_key] = utils.transform_scalar_var(value=getattr(self.block, param_name, 0),
-                                                                                scenario=self.scenario,
-                                                                                block=self.block)
+                getattr(self, dict_name)[dict_key] = transform_scalar_var(value=getattr(self.block, param_name, 0),
+                                                                          scenario=self.scenario,
+                                                                          block=self.block)
             else:  # capex, mntex, aux
                     getattr(self, dict_name)[dict_key] = getattr(self.block, param_name, 0)
         # endregion
