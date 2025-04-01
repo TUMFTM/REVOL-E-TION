@@ -359,7 +359,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # endregion
 
         # region opex
-        self.opex['sim'] = (self.block.flows.loc[self.scenario.dti_sim, self.flow_name] @ self.opex['spec'][self.scenario.dti_sim] *
+        self.opex['sim'] = (self.block.flows.loc[self.scenario.dti_eval, self.flow_name] @ self.opex['spec'][self.scenario.dti_eval] *
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
         self.calc_opex_sim_additional()
 
@@ -375,7 +375,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         # endregion
 
         # region crev
-        self.crev['sim'] = (self.block.flows.loc[self.scenario.dti_sim, self.flow_name] @ self.crev['spec'][self.scenario.dti_sim] *
+        self.crev['sim'] = (self.block.flows.loc[self.scenario.dti_eval, self.flow_name] @ self.crev['spec'][self.scenario.dti_eval] *
                             self.scenario.timestep_hours) if self.flow_name is not None else 0
         self.calc_crev_sim_additional()
 
@@ -427,17 +427,17 @@ class FleetUnitEvaluator(EconomicEvaluator):
     def calc_opex_sim_additional(self):
 
         if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
-            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
-                                 self.opex['dist'][self.scenario.dti_sim])
+            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_eval, 'dist'] @
+                                 self.opex['dist'][self.scenario.dti_eval])
 
     def calc_crev_sim_additional(self):
 
         if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
-            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_sim, 'dist'] @
-                                 self.crev['dist'][self.scenario.dti_sim])
+            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_eval, 'dist'] @
+                                 self.crev['dist'][self.scenario.dti_eval])
 
-        self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_sim, 'atbase'] @
-                             self.crev['time'][self.scenario.dti_sim]) *
+        self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_eval, 'atbase'] @
+                             self.crev['time'][self.scenario.dti_eval]) *
                              self.scenario.timestep_hours)
 
 
