@@ -88,7 +88,7 @@ class SiteDispatcher:
 
         for disp in self.dispatchers.values():
             disp.postprocess()
-            if self.scenario.run.save_results_dispatch:
+            if self.scenario.run.save_generated_data:
                 disp.save_data()
 
 

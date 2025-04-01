@@ -843,7 +843,7 @@ class PVSource(RenewableSource):
         self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'wind_speed', 'temp_air']]
         # endregion
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.data.to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
@@ -932,7 +932,7 @@ class WindSource(RenewableSource):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.data.to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
@@ -972,7 +972,7 @@ class FixedDemand(Block):
         else:
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
-        if self.scenario.run.export_data:
+        if self.scenario.run.save_generated_data:
             self.flows_apriori['demand'].to_csv(os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
