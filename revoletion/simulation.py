@@ -518,7 +518,6 @@ class Scenario:
         elif isinstance(self.temp_air, str) and os.path.isfile(os.path.join(self.run.paths['input'], utils.set_extension(self.temp_air))):
             self.temp_air = utils.read_timeseries_csv(path_input_file=os.path.join(self.run.paths['input'],
                                                                                    utils.set_extension(self.temp_air)),
-                                                      block=self,  # only uses block.name -> scenario works, too
                                                       scenario=self)
         else:
             self.logger.warning(f'Specified argument for scenario parameter temp_air ({self.temp_air}) not found - '
