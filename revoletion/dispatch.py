@@ -142,7 +142,11 @@ class SubFleetDispatcher:
                                   np.sqrt(unit_repr.eff['storage_roundtrip']))
 
             pwr_loss_max = unit_repr.loss_rate_per_hour * self.energy_total
-            self.pwr_chg_usable = (unit_repr.pwr_chg_max * unit_repr.eff['chg_int'] - pwr_loss_max) * factor_derate
+            self.pwr_chg_usable = ((unit_repr.pwr_chg_max *
+                                   unit_repr.eff['chg_int'] *  # charger efficiency
+                                   np.sqrt(unit_repr.eff['storage_roundtrip'])  # storage charging efficiency
+                                   - pwr_loss_max)  # self discharge
+                                   * factor_derate)
         else:  # ICEV
             self.energy_total = np.inf
             self.energy_usable = np.inf

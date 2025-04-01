@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,blocks,"{'grid': 'GridConnection', 'ess': 'StationaryBattery', 'dem': 'FixedDemand', 'pv': 'PVSource', 'wind': 'WindSource', 'gen': 'ControllableSource', 'vehicles': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
+scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
 core,size_preexisting_acdc,10000,0,0,55000
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -62,7 +62,7 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff_block,0.95,0.95,0.95,0.95
-gen,size_preexisting,100000,0,0,0
+gen,size_preexisting,15000,15000,15000,15000
 gen,capex_preexisting,True,True,True,True
 gen,size_max,None,None,None,None
 gen,invest,False,True,True,False
@@ -73,14 +73,14 @@ gen,opex_spec,0.0009,0.0009,0.0009,0.0009
 gen,ls,10,10,10,10
 gen,ccr,1,1,1,1
 gen,eff_block,1,1,1,1
-grid,size_preexisting_g2s,55000,0,0,43500
+grid,size_preexisting_g2s,43500,43500,43500,43500
 grid,capex_preexisting_g2s,True,True,True,True
 grid,size_max_g2s,None,None,None,None
-grid,invest_g2s,False,True,True,False
+grid,invest_g2s,True,True,True,False
 grid,size_preexisting_s2g,equal,equal,equal,equal
 grid,capex_preexisting_s2g,True,True,True,True
 grid,size_max_s2g,equal,equal,equal,equal
-grid,invest_s2g,False,equal,equal,equal
+grid,invest_s2g,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,False,False,False,False
 grid,peak_period,year,year,year,year
@@ -127,8 +127,8 @@ ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
 vehicles,subfleets,['icev'],"['icev', 'bev']","['icev', 'bev']","['icev', 'bev']"
 vehicles,system,ac,ac,ac,ac
-vehicles,size_preexisting_f2s,43000,None,None,None
-vehicles,size_preexisting_s2f,43000,None,None,None
+vehicles,size_preexisting_f2s,43000,43000,43000,43000
+vehicles,size_preexisting_s2f,43000,43000,43000,43000
 vehicles,opex_spec_f2s,0,0,0,0
 vehicles,opex_spec_s2f,0,0,0,0
 bev,num,5,5,5,5
@@ -148,18 +148,18 @@ bev,crev_spec_dist,0.2,0.2,0.2,0.2
 bev,opex_spec_ext_ac,49e-5,49e-5,49e-5,49e-5
 bev,opex_spec_ext_dc,79e-5,79e-5,79e-5,79e-5
 bev,invest,False,False,False,False
-bev,size_preexisting,18000,18000,18000,18000
+bev,size_preexisting,16500,16500,16500,16500
 bev,size_max,None,None,None,None
 bev,capex_spec,0.3,0.3,0.3,0.3
 bev,rex,mb,mb,mb,mb
-bev,mode_scheduling,oc,oc,oc,oc
+bev,mode_scheduling,fcfd,fcfs,fcfs,fcfs
 bev,forecast_hours,None,None,None,None
 bev,aging,True,True,True,True
 bev,chemistry,nmc,nmc,nmc,nmc
 bev,temp_battery,None,None,None,None
 bev,q_loss_cal_init,0,0,0,0
 bev,q_loss_cyc_init,0,0,0,0
-bev,soc_init,0.5,0.5,0.5,0.5
+bev,soc_init,1,1,1,1
 bev,soc_target,0.95,0.95,0.95,0.95
 bev,soc_return,0.1,0.1,0.1,0.1
 bev,dsoc_buffer,0.05,0.05,0.05,0.05
@@ -189,8 +189,8 @@ icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
 brs,subfleets,['mb'],['mb'],['mb'],['mb']
 brs,system,ac,ac,ac,ac
-brs,size_preexisting_f2s,43000,None,None,None
-brs,size_preexisting_s2f,43000,None,None,None
+brs,size_preexisting_f2s,7200,7200,7200,7200
+brs,size_preexisting_s2f,7200,7200,7200,7200
 brs,opex_spec_f2s,0,0,0,0
 brs,opex_spec_s2f,0,0,0,0
 mb,num,5,5,5,5
@@ -214,7 +214,7 @@ mb,size_preexisting,3000,3000,3000,3000
 mb,size_max,None,None,None,None
 mb,capex_spec,0.3,0.3,0.3,0.3
 mb,rex,None,None,None,None
-mb,mode_scheduling,oc,oc,oc,oc
+mb,mode_scheduling,fcfs,fcfs,fcfs,fcfs
 mb,forecast_hours,None,None,None,None
 mb,aging,True,True,True,True
 mb,chemistry,nmc,nmc,nmc,nmc
