@@ -720,15 +720,17 @@ class PVSource(RenewableSource):
                                  pd.to_datetime(f'{api_endyear}-01-01 00:00:00+00:00'))
                     api_endyear = API_MAX_YEAR
                     api_startyear = API_MAX_YEAR - api_length
-                    self.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by {abs(api_shift)}'
-                                        f' year{s if abs(api_shift) == 1 else ""} to end in {API_MAX_YEAR}')
+                    self.scenario.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by '
+                                                 f'{abs(api_shift)} year{s if abs(api_shift) == 1 else ""} to '
+                                                 f'end in {API_MAX_YEAR}')
                 elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
                     api_shift = (pd.to_datetime(f'{API_MIN_YEAR}-01-01 00:00:00+00:00') -
                                  pd.to_datetime(f'{api_startyear}-01-01 00:00:00+00:00'))
                     api_startyear = API_MIN_YEAR
                     api_endyear = API_MIN_YEAR + api_length
-                    self.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by {abs(api_shift)}'
-                                        f' year{s if abs(api_shift) == 1 else ""} to start in {API_MIN_YEAR}')
+                    self.scenario.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by '
+                                                 f'{abs(api_shift)} year{s if abs(api_shift) == 1 else ""} to '
+                                                 f'start in {API_MIN_YEAR}')
                 # Todo leap years can result in data shifting not landing at the same point in time
 
                 # revert lower() in reading data as pvgis is case-sensitive
