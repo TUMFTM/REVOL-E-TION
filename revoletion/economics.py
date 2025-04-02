@@ -128,6 +128,20 @@ def transform_scalar_var(value, scenario, block=None):
                          index=scenario.dti_sim)
 
 
+def calc_frac_remaining_ls(ls: int,
+                           project_duration: int) -> float:
+    """
+    Calculate the fraction of the remaining lifespan of a component after the project duration.
+    A remaining lifespan fraction of 1 is considered as 0 as the component is not replaced anymore.
+    """
+
+    frac_remaining_ls = 1 - (project_duration % ls) / ls
+    if frac_remaining_ls == 1:
+        frac_remaining_ls = 0
+
+    return frac_remaining_ls
+
+
 class EconomicPointOfInterest:
     """
     abstractclass
@@ -302,20 +316,21 @@ class EconomicEvaluator(EconomicPointOfInterest):
                                                        observation_horizon=self.scenario.prj_duration_yrs,
                                                        include_init=True)] = self.capex['spec']
 
+        # apply specific salvage value after project duration considering the remaining lifespan
+        # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
+        # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
+        # beginning of the last project year
+        self.capex['spec_prj_ep'].loc[self.scenario.prj_duration_yrs] = (
+                -1 * self.capex['spec'] * calc_frac_remaining_ls(ls=self.aux['ls'],
+                                                                 project_duration=self.scenario.prj_duration_yrs)
+        )
+
         # adjust specific capex by appropriate cost change ratio
         self.capex['spec_prj_ep'] *= pd.Series(index=self.discount_factors.index,
                                                data=self.aux['ccr'] ** self.discount_factors.index)
 
         # sum up all specific discounted capex for the project duration
         self.capex['spec_prj_ep'] = self.capex['spec_prj_ep'] @ self.discount_factors['beginning']
-
-        # adjust by salvage value occurring at the end of the last year of the project duration
-        frac_ls_remaining = (self.scenario.prj_duration_yrs % self.aux['ls']) / self.aux['ls']
-        self.capex['spec_prj_ep'] -= discount(
-            future_value=(self.aux['ccr'] ** self.scenario.prj_duration_yrs) * self.capex['spec'] * frac_ls_remaining,
-            periods=self.scenario.prj_duration_yrs,
-            discount_rate=self.scenario.wacc,
-            occurs_at='end')
 
         # calculate specific present value of mntex for the project duration
         self.mntex['spec_prj_ep'] = acc_discount(nominal_value=self.mntex['spec'],
@@ -355,15 +370,22 @@ class EconomicEvaluator(EconomicPointOfInterest):
         self.capex['init'] = self.capex['preexisting'] + self.capex['expansion']
         self.cashflows.loc[0, 'capex'] -= self.capex['init']
 
+        # Add replacement capex
         self.capex['replacement'] = (self.capex['spec'] * self.get_size(self.size_name, 'total') +
                                      self.capex['fix'])
-        for period in reinvest_periods(self.aux['ls'], self.scenario.prj_duration_yrs):
+        for period in reinvest_periods(lifespan=self.aux['ls'],
+                                       observation_horizon=self.scenario.prj_duration_yrs,
+                                       include_init=False):
             self.cashflows.loc[period, 'capex'] -= self.capex['replacement'] * (self.aux['ccr'] ** period)
 
-        # ToDo: add negative salvage value to cashflow at the end of the project duration
+        # Add salvage value capex (positive cashflow)
+        self.cashflows.loc[self.scenario.prj_duration_yrs, 'capex'] += (
+                self.capex['replacement'] * (self.aux['ccr'] ** self.scenario.prj_duration_yrs) *
+                calc_frac_remaining_ls(ls=self.aux['ls'],
+                                       project_duration=self.scenario.prj_duration_yrs)
+        )
 
         self.capex['prj'] = -1 * self.cashflows['capex'].sum()
-        # ToDo: add salvage value with discount factor occurring at the end of the last year of the project duration
         self.capex['dis'] = -1 * self.cashflows['capex'] @ self.discount_factors['beginning']
         self.capex['ann'] = annuity(present_value=self.capex['dis'],
                                     observation_horizon=self.scenario.prj_duration_yrs,
@@ -373,7 +395,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
         # region mntex
         self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec'] + self.mntex['fix']
-        self.cashflows.loc[:, 'mntex'] = -1 * self.mntex['yrl']
+        self.cashflows.loc[self.scenario.periods_prj, 'mntex'] = -1 * self.mntex['yrl']
         self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
 
         self.mntex['prj'] = -1 * self.cashflows['mntex'].sum()
@@ -390,7 +412,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         self.calc_opex_sim_additional()
 
         self.opex['yrl'] = self.opex['sim'] / self.scenario.sim_yr_rat
-        self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
+        self.cashflows.loc[self.scenario.periods_prj, 'opex'] = -1 * self.opex['yrl']
 
         self.opex['prj'] = -1 * self.cashflows['opex'].sum()
         self.opex['dis'] = -1 * self.cashflows['opex'] @ self.discount_factors['end']
@@ -406,7 +428,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         self.calc_crev_sim_additional()
 
         self.crev['yrl'] = self.crev['sim'] / self.scenario.sim_yr_rat
-        self.cashflows.loc[:, 'crev'] = self.crev['yrl']
+        self.cashflows.loc[self.scenario.periods_prj, 'crev'] = self.crev['yrl']
 
         self.crev['prj'] = self.cashflows['crev'].sum()
         self.crev['dis'] = self.cashflows['crev'] @ self.discount_factors['end']
