@@ -366,7 +366,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         self.opex['yrl'] = self.opex['sim'] / self.scenario.sim_yr_rat
         self.cashflows.loc[:, 'opex'] = -1 * self.opex['yrl']
 
-        self.opex['prj'] = -1 * self.cashflows['mntex'].sum()
+        self.opex['prj'] = -1 * self.cashflows['opex'].sum()
         self.opex['dis'] = -1 * self.cashflows['opex'] @ self.discount_factors['end']
         self.opex['ann'] = annuity(present_value=self.opex['dis'],
                                    observation_horizon=self.scenario.prj_duration_yrs,
