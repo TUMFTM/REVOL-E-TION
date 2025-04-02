@@ -1526,7 +1526,7 @@ class StorageBlock:
                                       'params': {('capex', 'preexisting'): 'capex_preexisting',
                                                  ('capex', 'spec'): 'capex_spec',
                                                  ('mntex', 'spec'): 'mntex_spec',
-                                                 ('size', 'name'): 'block',
+                                                 ('size', 'name'): 'storage',
                                                  ('aux', 'ls'): 'ls',
                                                  ('aux', 'ccr'): 'ccr'}},
                           'in': {'class_name': 'EconomicEvaluator',
