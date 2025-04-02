@@ -465,7 +465,7 @@ class SystemCore(Block):
         self.components['acdc'] = solph.components.Converter(
             label='acdc',
             inputs={self.components['ac']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.evaluators['acdc'].capex['spec_ep'],
+                nominal_value=solph.Investment(ep_costs=self.evaluators['acdc'].capex['spec_opt'],
                                                existing=self.sizes.loc['acdc', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['acdc', 'expansion_max'])),
                 variable_costs=self.evaluators['acdc'].opex['spec_ep'][horizon.dti_ph])},
@@ -475,7 +475,7 @@ class SystemCore(Block):
         self.components['dcac'] = solph.components.Converter(
             label='dcac',
             inputs={self.components['dc']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.evaluators['dcac'].capex['spec_ep'],
+                nominal_value=solph.Investment(ep_costs=self.evaluators['dcac'].capex['spec_opt'],
                                                existing=self.sizes.loc['dcac', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['dcac', 'expansion_max'])),
                 variable_costs=self.evaluators['dcac'].opex['spec_ep'][horizon.dti_ph])},
@@ -611,7 +611,7 @@ class RenewableSource(Block):
         self.components['src'] = solph.components.Source(
             label=f'{self.name}_src',
             outputs={self.components['bus']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_ep'],
+                nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
                                                existing=self.sizes.loc['block', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
                 fix=self.data.loc[horizon.dti_ph, 'power_spec'],
@@ -1123,7 +1123,7 @@ class ControllableSource(Block):
         self.components['src'] = solph.components.Source(
             label=f'{self.name}_src',
             outputs={self.bus_connected: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_ep'],
+                nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
                                                existing=self.sizes.loc['block', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
                 variable_costs=self.evaluators['block'].opex['spec_ep'][horizon.dti_ph])}
@@ -1306,7 +1306,7 @@ class GridConnection(Block):
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
             outputs={self.components['bus']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=self.evaluators['s2g'].capex['spec_ep'],
+                nominal_value=solph.Investment(ep_costs=self.evaluators['s2g'].capex['spec_opt'],
                                                existing=self.sizes.loc['s2g', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['s2g', 'expansion_max'])),
                 variable_costs=self.scenario.cost_eps)},
@@ -1319,7 +1319,7 @@ class GridConnection(Block):
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
-                nominal_value=solph.Investment(ep_costs=(self.evaluators['g2s'].capex['spec_ep'] if period == self.peak_periods.index[0] else 0),
+                nominal_value=solph.Investment(ep_costs=(self.evaluators['g2s'].capex['spec_opt'] if period == self.peak_periods.index[0] else 0),
                                                existing=self.sizes.loc['g2s', 'preexisting'],
                                                maximum=utils.conv_nan2none(self.sizes.loc['g2s', 'expansion_max']))
             )},
@@ -1713,7 +1713,7 @@ class StationaryBattery(StorageBlock, Block):
             inflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['roundtrip']),
             nominal_storage_capacity=solph.Investment(
-                ep_costs=self.evaluators['storage'].capex['spec_ep'],
+                ep_costs=self.evaluators['storage'].capex['spec_opt'],
                 existing=self.sizes.loc['storage', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
             max_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_max'],
@@ -2098,7 +2098,7 @@ class ElectricFleetUnit(StorageBlock, Block):
             inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_storage_capacity=solph.Investment(
-                ep_costs=self.evaluators['storage'].capex['spec_ep'],
+                ep_costs=self.evaluators['storage'].capex['spec_opt'],
                 existing=self.sizes.loc['storage', 'preexisting'],
                 maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
             min_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_min'],

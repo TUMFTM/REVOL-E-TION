@@ -291,27 +291,50 @@ class EconomicEvaluator(EconomicPointOfInterest):
     def pre_scenario(self):
 
         # region calculate equivalent present specific capex and opex for optimizer
-        # include (time-based) maintenance expenses in capex calculation as equivalent present cost
-        self.capex['spec_joined'] = self.capex['spec'] + acc_discount(nominal_value=self.mntex['spec'],
-                                                                      observation_horizon=self.aux['ls'],
-                                                                      discount_rate=self.scenario.wacc,
-                                                                      occurs_at='beginning')
 
-        # annuity due factor (incl. replacements) to compensate for difference between simulation and project time in
-        # component sizing; ep = equivalent present (i.e. specific values prediscounted)
-        capex_factor_present = pd.Series(index=self.discount_factors.index, data=0)
-        capex_factor_present.loc[reinvest_periods(lifespan=self.aux['ls'],
+        # calculate specific present value of capex for the project duration
+        # initialize Series for all years of the project duration
+        self.capex['spec_prj_ep'] = pd.Series(index=self.discount_factors.index,
+                                              data=0.0)
+
+        # apply specific capex for replacement periods
+        self.capex['spec_prj_ep'].loc[reinvest_periods(lifespan=self.aux['ls'],
+                                                       observation_horizon=self.scenario.prj_duration_yrs,
+                                                       include_init=True)] = self.capex['spec']
+
+        # adjust specific capex by appropriate cost change ratio
+        self.capex['spec_prj_ep'] *= pd.Series(index=self.discount_factors.index,
+                                               data=self.aux['ccr'] ** self.discount_factors.index)
+
+        # sum up all specific discounted capex for the project duration
+        self.capex['spec_prj_ep'] = self.capex['spec_prj_ep'] @ self.discount_factors['beginning']
+
+        # adjust by salvage value occurring at the end of the last year of the project duration
+        frac_ls_remaining = (self.scenario.prj_duration_yrs % self.aux['ls']) / self.aux['ls']
+        self.capex['spec_prj_ep'] -= discount(
+            future_value=(self.aux['ccr'] ** self.scenario.prj_duration_yrs) * self.capex['spec'] * frac_ls_remaining,
+            periods=self.scenario.prj_duration_yrs,
+            discount_rate=self.scenario.wacc,
+            occurs_at='end')
+
+        # calculate specific present value of mntex for the project duration
+        self.mntex['spec_prj_ep'] = acc_discount(nominal_value=self.mntex['spec'],
                                                  observation_horizon=self.scenario.prj_duration_yrs,
-                                                 include_init=True)] = 1
-        capex_factor_present = capex_factor_present @ self.discount_factors['beginning']
+                                                 discount_rate=self.scenario.wacc,
+                                                 occurs_at='beginning')
 
-        self.capex['factor_ep'] = annuity(present_value=capex_factor_present,
+        # join maintenance and capex specific present values for the project duration
+        self.capex['spec_prj_ep_joined'] = self.capex['spec_prj_ep'] + self.mntex['spec_prj_ep']
+
+        # calculate annuity due factor to compensate for difference between simulation and project time
+        self.capex['factor_ep'] = annuity(present_value=1,
                                           observation_horizon=self.scenario.prj_duration_yrs,
                                           discount_rate=self.scenario.wacc,
                                           occurs_at='beginning')\
             if self.scenario.compensate_sim_prj else 1
 
-        self.capex['spec_ep'] = self.capex['spec_joined'] * self.capex['factor_ep']
+        # calculate specific capex/mntex value used for the optimization problem
+        self.capex['spec_opt'] = self.capex['spec_prj_ep_joined'] * self.capex['factor_ep']
 
         # runtime factor to compensate for difference between simulation and project timeframe
         # annuity is equal to the already yearly recurring expense
@@ -337,7 +360,10 @@ class EconomicEvaluator(EconomicPointOfInterest):
         for period in reinvest_periods(self.aux['ls'], self.scenario.prj_duration_yrs):
             self.cashflows.loc[period, 'capex'] -= self.capex['replacement'] * (self.aux['ccr'] ** period)
 
+        # ToDo: add negative salvage value to cashflow at the end of the project duration
+
         self.capex['prj'] = -1 * self.cashflows['capex'].sum()
+        # ToDo: add salvage value with discount factor occurring at the end of the last year of the project duration
         self.capex['dis'] = -1 * self.cashflows['capex'] @ self.discount_factors['beginning']
         self.capex['ann'] = annuity(present_value=self.capex['dis'],
                                     observation_horizon=self.scenario.prj_duration_yrs,
