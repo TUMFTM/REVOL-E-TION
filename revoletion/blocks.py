@@ -801,7 +801,7 @@ class PVSource(RenewableSource):
                 self.calc_power_solcast()
             # endregion
 
-        else:
+        elif 'file' in self.data_source:
 
             # region get data from file
             path_input_file = os.path.join(
@@ -809,38 +809,47 @@ class PVSource(RenewableSource):
                 utils.set_extension(self.filename)
             )
 
-            # region get data from PVGIS file
-            if self.data_source == 'pvgis file':
-                self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                self.scenario.latitude = meta['latitude']
-                self.scenario.longitude = meta['longitude']
-                self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
+            # region read input data from timeseries csv with specific power
+            if self.data_source == 'file':
+                self.data = utils.read_timeseries_csv(path_input_file=path_input_file,
+                                                      block=self,
+                                                      scenario=self.scenario,
+                                                      multiheader=False,
+                                                      resampling=False)
             # endregion
+            elif self.data_source in ['pvgis file', 'solcast file']:
+                # region get data from PVGIS file
+                if self.data_source == 'pvgis file':
+                    self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
+                    self.scenario.latitude = meta['latitude']
+                    self.scenario.longitude = meta['longitude']
+                    self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
+                # endregion
 
-            # region get data from Solcast file
-            elif self.data_source == 'solcast file':
-                # no lat/lon contained in solcast files
-                self.data = pd.read_csv(path_input_file)
-                self.data.rename(columns={'air_temp': 'temp_air',
-                                          'wind_speed_10m': 'wind_speed'}, inplace=True)
-                self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
-                self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
-                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-                self.data = self.data[['temp_air', 'wind_speed', 'gti']]
-                self.calc_power_from_irradiation()
-            # endregion
+                # region get data from Solcast file
+                elif self.data_source == 'solcast file':
+                    # no lat/lon contained in solcast files
+                    self.data = pd.read_csv(path_input_file)
+                    self.data.rename(columns={'air_temp': 'temp_air',
+                                              'wind_speed_10m': 'wind_speed'}, inplace=True)
+                    self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
+                    self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
+                    self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                    self.data = self.data[['temp_air', 'wind_speed', 'gti']]
+                    self.calc_power_from_irradiation()
+                # endregion
 
             else:
                 raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified')
 
         # region resample, localize, and transform data
-
+        # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
+        if 'power_spec' not in self.data.columns:
+            self.data['power_spec'] = self.data['P'] / 1e3
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
         # convert to local time
         self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
-        # data is in W for a 1kWp PV array -> convert to specific power
-        self.data['power_spec'] = self.data['P'] / 1e3
 
         # only keep relevant columns and timestamps
         self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'wind_speed', 'temp_air']]
