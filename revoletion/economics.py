@@ -274,7 +274,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         for param_tuple, param_name in params.items():
             dict_name, dict_key = param_tuple
             if param_tuple == ('size', 'name'):
-                self.size_name = param_name
+                self.size_name = param_name if param_name != '' else 'block'
             elif param_tuple == ('flow', 'name'):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
