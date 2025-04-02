@@ -99,7 +99,7 @@ dynamic,pwr_g2s,1e5,1e5,1e5,1e5
 dynamic,pwr_s2g,1e5,1e5,1e5,1e5
 pv_feedin,res_only,True,True,True,True
 pv_feedin,opex_spec_g2s,0,0,0,0
-pv_feedin,opex_spec_s2g,5e-5,5e-5,5e-5,5e-5
+pv_feedin,opex_spec_s2g,-5e-5,-5e-5,-5e-5,-5e-5
 pv_feedin,pwr_g2s,0,0,0,0
 pv_feedin,pwr_s2g,1e5,1e5,1e5,1e5
 ess,size_preexisting,0,0,0,20000
