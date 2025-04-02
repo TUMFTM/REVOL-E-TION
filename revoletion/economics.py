@@ -288,7 +288,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
         for param_tuple, param_name in params.items():
             dict_name, dict_key = param_tuple
             if param_tuple == ('size', 'name'):
-                self.size_name = param_name if param_name != '' else 'block'
+                self.size_name = param_name
             elif param_tuple == ('flow', 'name'):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
@@ -452,10 +452,12 @@ class EconomicEvaluator(EconomicPointOfInterest):
             value = self.block.sizes.loc[size_name, scope_name]
             if pd.isna(value):  # sizes in GridMarkets may be None (inherit limit of GridConnection)
                 value = default_value
+            return value
+        elif size_name is None:
+            return default_value
         else:
-            value = default_value
+            raise ValueError(f'Block "{self.block.name}": Size "{size_name}" not found in size dataframe.')
 
-        return value
 
     def calc_opex_sim_additional(self):
         """
