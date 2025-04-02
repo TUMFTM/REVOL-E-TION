@@ -125,7 +125,7 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-vehicles,subfleets,['icev'],"['icev', 'bev']","['icev', 'bev']","['icev', 'bev']"
+vehicles,subfleets,"['icev']","['icev', 'bev']","['icev', 'bev']","['icev', 'bev']"
 vehicles,system,ac,ac,ac,ac
 vehicles,size_preexisting_f2s,43000,43000,43000,43000
 vehicles,size_preexisting_s2f,43000,43000,43000,43000
@@ -187,7 +187,7 @@ icev,mntex_fix_glider,500,500,500,500
 icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
-brs,subfleets,['mb'],['mb'],['mb'],['mb']
+brs,subfleets,"['mb']","['mb']","['mb']","['mb']"
 brs,system,ac,ac,ac,ac
 brs,size_preexisting_f2s,7200,7200,7200,7200
 brs,size_preexisting_s2f,7200,7200,7200,7200
