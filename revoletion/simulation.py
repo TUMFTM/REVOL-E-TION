@@ -531,18 +531,7 @@ class Scenario:
             self.temp_air = temp_air
         # endregion
 
-        # prepare for system graph saving later on
-        self.path_system_graph_file = os.path.join(
-            self.run.paths['output'],
-            f'{self.run.runtimestamp}_{self.run.name}_{self.name}_system_graph.pdf')
-
-        # prepare for dispatch plot saving later on
-        self.plot_file_path = os.path.join(self.run.paths['output'], f'{run.runtimestamp}_'
-                                                                     f'{run.name}_'
-                                                                     f'{self.name}.html')
-
-        # Energy System Blocks --------------------------------
-        # initialize variable to store initial investment costs given in scenario definition
+        # region initialize result variables
         self.periods_prj = np.arange(0, self.prj_duration_yrs)
         self.periods_prj_extd = np.arange(0, self.prj_duration_yrs + 1)  # add. year for salvage values
         self.discount_factors = pd.DataFrame(index=self.periods_prj_extd,
@@ -569,7 +558,54 @@ class Scenario:
             raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
+        self.paths = dict()
+        self.paths['summary_temp'] = os.path.join(self.run.paths['output'],
+                                                  f'{self.name}_summary_temp.pkl')
+        self.paths['timeseries'] = os.path.join(self.run.paths['output'],
+                                                f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
+        self.paths['graph'] = os.path.join(self.run.paths['output'],
+                                           f'{self.run.runtimestamp}_{self.run.name}_{self.name}_system_graph.pdf')
+        self.paths['figure'] = os.path.join(self.run.paths['output'],
+                                            f'{self.run.runtimestamp}_{self.run.name}_{self.name}.html')
+
+        self.objective_opt = None  # unused for rh strategy
+        self.cashflows = pd.DataFrame()
+        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),],
+                                                                     names=['block', 'key']),
+                                     columns=['sim', 'yrl', 'prj', 'dis'],
+                                     data=0,
+                                     dtype=float)
+
+        self.figure = None
+        self.plot_traces = {'powers': [],
+                            'states': []}
+
+        self.result_messages = []
+        self.result_summary = []
+        self.result_timeseries = []
+
+        self.e_eta = None
+        self.renewable_share = None
+        self.lcoe_total = self.lcoe_wocs = None
+        self.npv = self.irr = self.mirr = None
+        # endregion
+
+        # region preexecution
         self.dispatcher = dispatch.SiteDispatcher(scenario=self)
+
+        for block in self.blocks.values():
+            block.pre_scenario()
+
+        self.scheduler = None
+        if self.subfleets_scheduling:
+            self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
+        # endregion
+
+        self.logger.debug(f'Scenario initialization completed')
+
+        self.run.trigger_scenario_status_update(queue=self.status_queue,
+                                                status_msg={'scenario': self.name,
+                                                            'status': 'fully initialized'})
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
@@ -593,53 +629,7 @@ class Scenario:
         #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
         #                          f' be connected to the same bus')
 
-
-        self.figure = None  # placeholder for plotting
-
-        self.cashflows = pd.DataFrame()
-
-        self.objective_opt = None  # placeholder for objective optimised by the optimizer. Not used for Rolling Horizon
-
-        self.result_messages = []
-        self.result_summary = []
-        self.path_result_summary_tempfile = os.path.join(self.run.paths['output'],
-                                                         f'{self.name}_summary_temp.pkl')
-
-        self.result_timeseries = []
-
-        self.path_result_ts_file = os.path.join(self.run.paths['output'],
-                                                f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
-
-        self.plot_traces = {'powers': [],
-                            'states': []}
-
-        # Result variables - Energy
-        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),],
-                                                                     names=['block', 'key']),
-                                     columns=['sim', 'yrl', 'prj', 'dis'],
-                                     data=0,
-                                     dtype=float)
-
-        self.e_eta = None
-        self.renewable_share = None
-
-        self.lcoe_total = self.lcoe_wocs = None
-        self.npv = self.irr = self.mirr = None
-
-        self.logger.debug(f'Scenario initialization completed')
-
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'fully initialized'})
-
         # region execute scenario
-        for block in self.blocks.values():
-            block.pre_scenario()
-
-        self.scheduler = None
-        if self.subfleets_scheduling:
-            self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
-
         try:
             for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
                 PredictionHorizon(index=horizon_index,
@@ -680,7 +670,7 @@ class Scenario:
 
             if self.run.save_results_timeseries:
                 self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
-                self.result_timeseries.to_csv(self.path_result_ts_file)
+                self.result_timeseries.to_csv(self.paths['timeseries'])
 
             if self.run.print_results:
                 for msg in self.result_messages:
@@ -690,7 +680,7 @@ class Scenario:
             if self.run.generate_plots:
                 self.generate_plots()
                 if self.run.save_plots:
-                    self.figure.write_html(self.plot_file_path)
+                    self.figure.write_html(self.paths['figure'])
                 if self.run.show_plots:
                     self.figure.show(renderer='browser')
 
@@ -823,7 +813,7 @@ class Scenario:
         self.result_summary = pd.concat([results_run, results_scenario, *self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
-        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.path_result_summary_tempfile)
+        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.paths['summary_temp'])
 
     def get_all_blocks(self) -> dict:
         return self.blocks | {block_name: block_obj
@@ -893,7 +883,7 @@ class PredictionHorizon:
         # region draw graph of energy model
         if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
             # Initialize the graph with the filepath without extension
-            dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.path_system_graph_file)[0])
+            dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.paths['graph'])[0])
 
             # Define drawing styles for certain components
             dot.node('Bus', shape='rectangle', fontsize='10', color='red')
