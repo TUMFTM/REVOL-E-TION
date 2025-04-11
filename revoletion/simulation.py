@@ -57,17 +57,28 @@ class OptimizationSuccessfulFilter(logging.Filter):
 class SimulationRun:
 
     def __init__(self,
-                 path_scenarios,
-                 path_settings,
-                 rerun=False,
-                 rerun_infeasible=True,
-                 execute=False):
+                 path_scenarios: str,
+                 path_input: str,
+                 path_output: str,
+                 solver: str = 'gurobi',
+                 n_processes: int = 1,
+                 largescalemode: bool = False,
+                 debugmode: bool = False,
+                 rerun: bool = False,
+                 rerun_infeasible: bool = True,
+                 key_solcast_api: str = None):
 
         self.paths = {'revoletion': os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       'scenarios': path_scenarios,
-                      'settings': path_settings}
+                      'input': path_input,
+                      'output': path_output}
+        self.solver = solver
+        self.n_processes = min(n_processes, os.cpu_count())
+        self.largescalemode = largescalemode
+        self.debugmode = debugmode
         self.rerun = rerun
         self.rerun_infeasible = rerun_infeasible
+        self.key_solcast_api = key_solcast_api  # todo find more elegant solution
 
         # region start runtime
         self.runtime_start = time.perf_counter()
@@ -77,6 +88,25 @@ class SimulationRun:
             # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
             self.runtimestamp = '_'.join(os.path.basename(os.path.normpath(self.rerun)).split('_')[0:2])
         self.runtime_end = self.runtime_len = None
+        # endregion
+
+        # region define paths
+        self.name = pathlib.Path(self.paths['scenarios']).stem
+        self.paths['basename'] = f'{self.runtimestamp}_{self.name}'
+
+        self.paths['output'] = os.path.join(self.paths['output'], self.paths['basename'])
+        if not os.path.isdir(self.paths['output']):
+            os.mkdir(self.paths['output'])
+
+        if not os.path.isdir(self.paths['input']):
+            raise NotADirectoryError(f'Input directory {self.paths["input"]} does not exist')
+
+        self.paths['data_persist'] = os.path.join(self.paths['revoletion'], 'data')
+        self.paths['summary_csv'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_summary.csv")
+        self.paths['summary_pkl'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_summary.pkl")
+        self.paths['status'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_status.csv")
+        self.paths['dump'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_model.lp")
+        self.paths['log'] = os.path.join(self.paths['output'], f"{self.paths['basename']}.log")
         # endregion
 
         # region get version information
@@ -89,53 +119,10 @@ class SimulationRun:
             self.commit_hash = 'unknown'
         # endregion
 
-        self.name = pathlib.Path(self.paths['scenarios']).stem
         self.input_checker = checker.InputChecker(self)
 
         # region read and check settings
-        self.settings = pd.read_csv(self.paths['settings'],
-                                    index_col=[0])
-        self.settings = self.settings.map(utils.infer_dtype)
-        for key, value in self.settings['value'].items():
-            if key.startswith('path_'):
-                self.paths[''.join(key.split('_')[1:])] = value
-            else:
-                setattr(self, key, value)
-        self.input_checker.check_settings()
-        # endregion
-
-        # region define paths
-        if self.paths['input'] == 'example':
-            self.paths['input'] = os.path.join(self.paths['revoletion'], 'example')
-        elif self.paths['input'] == 'scenario_file_dir':
-            self.paths['input'] = os.path.dirname(self.paths['scenarios'])
-        elif os.path.isdir(self.paths['input']):
-            pass  # no modification of path necessary
-        else:
-            raise NotADirectoryError(f'Input directory not found: {self.paths["input"]}')
-
-        if self.paths['output'] in ['package', 'example']:
-            self.paths['output'] = os.path.join(self.paths['revoletion'],
-                                                'results',
-                                                f'{self.runtimestamp}_{self.name}')
-        elif os.path.isdir(self.paths['output']):
-            self.paths['output'] = os.path.join(self.paths['output'],
-                                                f'{self.runtimestamp}_{self.name}')  # no modification of path necessary
-        else:
-            raise NotADirectoryError(f'Output directory not found: {self.paths["output"]}')
-
-        if not os.path.isdir(self.paths['output']):
-            os.mkdir(self.paths['output'])
-
-        self.paths['data_persist'] = os.path.join(self.paths['revoletion'], 'data')
-
-        basename = f'{self.runtimestamp}_{self.name}'
-
-        self.paths['summary_csv'] = os.path.join(self.paths['output'], f'{basename}_summary.csv')
-        self.paths['summary_pkl'] = os.path.join(self.paths['output'], f'{basename}_summary.pkl')
-        self.paths['status'] = os.path.join(self.paths['output'], f'{basename}_status.csv')
-        self.paths['dump'] = os.path.join(self.paths['output'], f'{basename}_model.lp')
-        self.paths['log'] = os.path.join(self.paths['output'], f'{basename}.log')
+        # self.input_checker.check_settings()  #todo reenable
         # endregion
 
         # region read, copy and check scenario data
@@ -147,10 +134,7 @@ class SimulationRun:
 
         if self.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
-            self.scenario_status = pd.read_csv(os.path.join(self.paths['output'],
-                                                            f'{self.runtimestamp}_'
-                                                            f'{self.name}_'
-                                                            f'scenarios_status.csv'),
+            self.scenario_status = pd.read_csv(self.paths['status'],
                                                index_col=0)
 
             dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
@@ -183,22 +167,6 @@ class SimulationRun:
             raise ValueError('No executable scenarios found in scenario file')
         # endregion
 
-        # region calculate number of threads to use
-        self.process = None
-        if self.max_process_num == 'max':
-            self.max_process_num = os.cpu_count()
-        elif self.max_process_num == 'physical':
-            self.max_process_num = psutil.cpu_count(logical=False)
-        else:
-            self.max_process_num = int(self.max_process_num)
-        self.process_num = min(self.scenario_num, os.cpu_count(), self.max_process_num)
-
-        if (len(self.scenario_names) <= 1 or self.process_num == 1) and self.parallel:
-            # logger not defined yet, use print as logger definition needs to be done after process_num is defined
-            print('Single scenario or process: Parallel mode not possible - switching to sequential mode')
-            self.parallel = False
-        # endregion
-
         # region define logger structure
         self.logger = logging.getLogger()
         log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
@@ -215,23 +183,19 @@ class SimulationRun:
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
 
-        if self.parallel:
+        if self.debugmode:
+            log_stream_handler.setLevel(logging.DEBUG)
+            self.logger.setLevel(logging.DEBUG)
+        else:
             log_stream_handler.setLevel(logging.INFO)
             self.logger.setLevel(logging.INFO)
-        else:
-            if self.debugmode:
-                self.logger.setLevel(os.environ.get('LOGLEVEL', 'DEBUG'))
-                log_stream_handler.setLevel(logging.DEBUG)
-            else:
-                self.logger.setLevel(os.environ.get('LOGLEVEL', 'INFO'))
-                log_stream_handler.setLevel(logging.INFO)
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
-        pe2 = 'es' if self.process_num > 1 else ''
+        pe2 = 'es' if self.n_processes > 1 else ''
 
-        mode = f'parallel mode with {self.process_num} process{pe2}' if self.parallel else 'sequential mode'
-        self.logger.info(f'Global settings read - running {self.scenario_num} scenario{pe1} in {mode}')
+        self.logger.info(f'Global settings read - running {self.scenario_num} scenario{pe1}'
+                         f' with {self.n_processes} process{pe2}')
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
@@ -240,10 +204,7 @@ class SimulationRun:
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
-        self.generate_plots = True if self.show_plots or self.save_plots else False
-
-        if execute:
-            self.execute()
+        self.execute()
 
     def copy_scenario_file(self):
         target = os.path.join(self.paths['output'], f'{self.name}.csv')
@@ -253,32 +214,27 @@ class SimulationRun:
             shutil.copyfile(self.paths['scenarios'], target)
 
     def execute(self):
-        # parallelization activated in settings file
-        if self.parallel:
-            with mp.Manager() as manager:
-                lock = manager.Lock()
+        with mp.Manager() as manager:
+            lock = manager.Lock()
 
-                status_queue = manager.Queue()
-                status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
-                status_thread.start()
+            status_queue = manager.Queue()
+            status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
+            status_thread.start()
 
-                log_queue = manager.Queue()
-                log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
-                log_thread.start()
+            log_queue = manager.Queue()
+            log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
+            log_thread.start()
 
-                with mp.Pool(processes=self.process_num) as pool:
-                    pool.starmap(self.execute_scenario,
-                                 zip(self.scenario_names,
-                                     itertools.repeat(log_queue),
-                                     itertools.repeat(status_queue),
-                                     itertools.repeat(lock)))
-                status_queue.put(None)
-                status_thread.join()
-                log_queue.put(None)
-                log_thread.join()
-        else:
-            for scenario_name in self.scenario_names:
-                self.execute_scenario(scenario_name)
+            with mp.Pool(processes=self.n_processes) as pool:
+                pool.starmap(self.execute_scenario,
+                             zip(self.scenario_names,
+                                 itertools.repeat(log_queue),
+                                 itertools.repeat(status_queue),
+                                 itertools.repeat(lock)))
+            status_queue.put(None)
+            status_thread.join()
+            log_queue.put(None)
+            log_thread.join()
 
         # region end runtime
         self.runtime_end = time.perf_counter()
@@ -671,21 +627,14 @@ class Scenario:
 
             self.save_result_summary()
 
-            if self.run.save_results_timeseries:
+            if not self.run.largescalemode:
                 self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
                 self.result_timeseries.to_csv(self.paths['timeseries'])
-
-            if self.run.print_results:
                 for msg in self.result_messages:
                     self.logger.info(msg)
-
-            # self.create_plot()
-            if self.run.generate_plots:
                 self.generate_plots()
-                if self.run.save_plots:
-                    self.figure.write_html(self.paths['figure'])
-                if self.run.show_plots:
-                    self.figure.show(renderer='browser')
+                self.figure.write_html(self.paths['figure'])
+                self.figure.show(renderer='browser')
 
         logging.shutdown()
         # endregion
@@ -879,7 +828,7 @@ class PredictionHorizon:
         # endregion
 
         # region draw graph of energy model
-        if self.index == 0 and self.scenario.run.save_system_graphs:  # first horizon - create graph of energy system
+        if self.index == 0 and not self.scenario.run.largescalemode:  # first horizon - create graph of energy system
             # Initialize the graph with the filepath without extension
             dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.paths['graph'])[0])
 
@@ -935,7 +884,7 @@ class PredictionHorizon:
         self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
         self.constraints.apply_constraints(model=self.model)
 
-        if self.scenario.run.dump_model and self.scenario.strategy != 'rh':
+        if self.scenario.run.debugmode and self.index == 1:
             self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
         # endregion
 

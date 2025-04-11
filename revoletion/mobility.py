@@ -172,7 +172,7 @@ class SubFleetDemand:
         # endregion
 
         # region save results
-        if self.scenario.run.save_generated_data:
+        if not self.scenario.run.largescalemode:
             demand_path = os.path.join(
                 self.scenario.run.paths['output'],
                 f'{self.scenario.run.runtimestamp}_'

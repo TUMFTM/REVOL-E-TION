@@ -13,45 +13,47 @@ class DefaultFileLocationWarning(UserWarning):
     pass
 
 
-def get_path(path_cwd, path_pkg, arg, file_type):
-    # Option 1: No argument passed -> select file via GUI
-    if arg is None:
-        root = tk.Tk()
-        root.withdraw()  # hide small tk-window
-        root.lift()  # make sure all tk windows appear in front of other windows
-
-        # get file
-        default_dir = os.path.join(path_cwd, 'example')
-        file_path = tk.filedialog.askopenfilename(initialdir=default_dir,
-                                                  title=f'Select {file_type} file',
-                                                  filetypes=(('CSV files', '*.csv'),
-                                                             ('All files', '*.*')))
-        if not file_path:
-            raise FileNotFoundError(f'No {file_type} file selected')
-    # Option 2: Full absolute or relative file path (works from anywhere)
-    elif os.path.isfile(arg):
-        file_path = arg
-    # Option 3: File name in the working directory (works from within project directory only)
-    elif os.path.isfile(os.path.join(path_cwd, arg)):
-        file_path = os.path.join(path_cwd, arg)
-    # Option 4: Example file in example project in package directory (works from anywhere)
-    elif os.path.isfile(os.path.join(path_pkg, 'example', arg)):
-        file_path = os.path.join(path_pkg, 'example', arg)
-        warnings.warn(f'Using default {file_type} file \"{arg}\" from REVOL-E-TION package directory '
-                      f'- disregard if this is intended', DefaultFileLocationWarning)
-    else:
-        raise FileNotFoundError(f'{file_type[0].upper()}{file_type[1:]} file or path not interpretable: {arg}')
+def get_filepath(path_cwd, path_pkg, arg, file_type):
 
     return file_path
 
+
 def main():
+    root = tk.Tk()
+    root.withdraw()  # hide small tk-window
+    root.lift()  # make sure all tk windows appear in front of other windows
+
     parser = argparse.ArgumentParser()
+
     parser.add_argument('-scn', '--scenario',
                         type=str,
+                        default=None,
                         help='Path to the scenario CSV file')
-    parser.add_argument('-set', '--settings',
+    parser.add_argument('-in', '--inputdir',
                         type=str,
-                        help='Path to the settings CSV file')
+                        default=None,
+                        help='Path to the input data directory')
+    parser.add_argument('-out', '--outputdir',
+                        type=str,
+                        default=None,
+                        help='Path to the results directory')
+    parser.add_argument('-slv', '--solver',
+                        type=str,
+                        default='gurobi',
+                        help='Pyomo compatible solver to be used for the optimization problem.')
+    parser.add_argument('-np', '--n_processes',
+                        type=int,
+                        default=1,
+                        help='Number of processes (i.e. cores) to use in parallel operation')
+    parser.add_argument('-ls', '--largescalemode',
+                        type=bool,
+                        default=False,
+                        help='Omit detailed output data (generated input timeseries, system graphs, '
+                             'result timeseries, and timeseries plots)')
+    parser.add_argument('-db', '--debugmode',
+                        type=bool,
+                        default=False,
+                        help='Generate debug output and dump .lp model file for external solving')
     parser.add_argument('-rer', '--rerun',
                         type=str,
                         default=False,
@@ -60,24 +62,93 @@ def main():
                         type=str,
                         default=True,
                         help='Rerun infeasible or unbounded scenarios')
-    parser.add_argument('-exe', '--execute',
+    parser.add_argument('-ksc', '--key_solcast_api',
                         type=str,
-                        default=True,
-                        help='Immediately execute run')
+                        default=None,
+                        help='API key for Solcast API')
 
     args = parser.parse_args()
 
     path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path_cwd = os.getcwd()
 
-    path_scenario = get_path(path_cwd, path_pkg, args.scenario, 'scenarios')
-    path_settings = get_path(path_cwd, path_pkg, args.settings, 'settings')
+    scenarios_example = False
+
+    # region interpret scenario file path
+    # Option 1: No scenario file argument passed -> select via GUI
+    if args.scenario is None:
+        path_scenario = tk.filedialog.askopenfilename(initialdir=path_cwd,
+                                                      title=f'Select scenario file',
+                                                      filetypes=(('CSV files', '*.csv'),
+                                                                 ('All files', '*.*')))
+        if not path_scenario:
+            raise FileNotFoundError(f'No {file_type} file selected')
+    # Option 2: Full absolute or relative file path (works from anywhere)
+    elif os.path.isfile(args.scenario):
+        path_scenario = args.scenario
+    # Option 3: File name in the working directory (works from within project directory only)
+    elif os.path.isfile(os.path.join(path_cwd, args.scenario)):
+        path_scenario = os.path.join(path_cwd, args.scenario)
+    # Option 4: Example file in example project in package directory (works from anywhere)
+    elif args.scenario in ['example', 'ex']:
+        scenarios_example = True
+        path_scenario = os.path.join(path_pkg, 'example', 'scenarios_example.csv')
+        warnings.warn(f'Using example scenario file \"{args.scenario}\", data, and output directory from '
+                      f'REVOL-E-TION - disregard if this is intended', DefaultFileLocationWarning)
+    else:
+        raise FileNotFoundError(f'Scenario file or path not interpretable: {arg}')
+    # endregion
+
+    # region interpret input directory path
+    # Option 1: Example file in example project in package directory (works from anywhere)
+    if scenarios_example:
+        path_input = os.path.dirname(path_scenario)
+    # Option 2: No input directory argument passed -> select via GUI
+    elif args.inputdir is None:
+        path_input = tk.filedialog.askdirectory(initialdir=path_cwd,
+                                                title='Select input data directory')
+        if not path_input:
+            raise NotADirectoryError(f'No input data directory selected')
+    # Option 3: Full absolute or relative file path (works from anywhere)
+    elif os.path.isdir(args.inputdir):
+        path_input = args.inputdir
+    # Option 4: Subdirectory of working directory (works from within project directory only)
+    elif os.path.isdir(os.path.join(path_cwd, args.inputdir)):
+        path_input = os.path.join(path_cwd, args.inputdir)
+    else:
+        raise NotADirectoryError(f'Input directory path not interpretable: {args.inputdir}')
+    # endregion
+
+    # region interpret output directory path
+    # Option 1: Example file in example project in package directory (works from anywhere)
+    if scenarios_example:
+        path_output = os.path.join(path_pkg, 'results')
+    # Option 2: No output directory argument passed -> select via GUI
+    elif args.outputdir is None:
+        path_output = tk.filedialog.askdirectory(initialdir=path_cwd,
+                                                 title='Select output data directory')
+        if not path_output:
+            raise NotADirectoryError(f'No output data directory selected')
+    # Option 3: Full absolute or relative file path (works from anywhere)
+    elif os.path.isdir(args.outputdir):
+        path_output = args.outputdir
+    # Option 4: Subdirectory of working directory (works from within project directory only)
+    elif os.path.isdir(os.path.join(path_cwd, args.outputdir)):
+        path_output = os.path.join(path_cwd, args.outputdir)
+    else:
+        raise NotADirectoryError(f'Output directory path not interpretable: {args.outputdir}')
+    # endregion
 
     sim.SimulationRun(path_scenarios=path_scenario,
-                      path_settings=path_settings,
+                      path_input=path_input,
+                      path_output=path_output,
+                      solver=args.solver,
+                      n_processes=args.n_processes,
+                      largescalemode=args.largescalemode,
+                      debugmode=args.debugmode,
                       rerun=args.rerun,
                       rerun_infeasible=args.rerun_infeasible,
-                      execute=args.execute)
+                      key_solcast_api=args.key_solcast_api)
 
 
 if __name__ == '__main__':
