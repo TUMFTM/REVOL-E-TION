@@ -542,6 +542,7 @@ class Scenario:
                                                                      occurs_at=occ)
                                                    for occ in ['beginning', 'mid', 'end']},
                                              dtype='float64')
+
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
         self.storage_blocks = dict()

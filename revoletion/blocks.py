@@ -236,6 +236,7 @@ class Block:
             subblock.post_scenario()
 
         # calculate results
+        self.calc_results_flows()
         self.calc_results_energies()
         self.calc_results_economics()
 
@@ -248,16 +249,15 @@ class Block:
         # add block results to scenario's structures
         self.write_results_to_scenario()
 
+    def calc_results_flows(self):
+        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
+        self.check_bidi_flows()
+
     def calc_results_energies(self):
         """
         post scenario method
         process flows and calculate energies from flows
         """
-
-        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
-
-        self.check_bidi_flows()
-
         for flow_name, flow in self.flows.items():
             self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
         self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
@@ -513,10 +513,12 @@ class SystemCore(Block):
         self.flows.loc[horizon.dti_ch, 'dcac'] = horizon.results[(self.components['dc'],
                                                                   self.components['dcac'])]['sequences']['flow'][horizon.dti_ch]
 
-    def check_bidi_flows(self):
+    def calc_results_flows(self):
         """
         post scenario method
         """
+        self.flows['total'] = self.flows.get(key='dcac', default=0) - self.flows.get(key='acdc', default=0)
+
         if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
             self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
 
