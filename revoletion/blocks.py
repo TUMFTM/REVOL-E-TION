@@ -265,10 +265,6 @@ class Block:
         self.energies['dis'] = (self.energies['yrl'] *
                                 self.scenario.discount_factors.loc[self.scenario.periods_prj, 'end'].sum())
 
-        # only add total energies of top level blocks to scenario.energies
-        if self.top_level_block:
-            self.scenario.energies.loc[(self.name, 'total'), :] = self.energies.loc['total', :]
-
     def check_bidi_flows(self):
         """
         post scenario method
@@ -359,6 +355,31 @@ class Block:
         return self.subblocks | {block_name: block_obj
                                  for subblock in self.subblocks.values()
                                  for block_name, block_obj in subblock.get_subblocks().items()}
+
+
+class SourceBlock(Block):
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
+
+
+
+class SinkBlock(Block):
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        self.scenario.energies.loc[('sinks', 'del'), :] -= self.energies.loc['total', :]
 
 
 class NonElectricBlock:
@@ -539,7 +560,7 @@ class SystemCore(Block):
                                                       visible='legendonly')])
 
 
-class RenewableSource(Block):
+class RenewableSource(SourceBlock):
     """
     abstract class
     """
@@ -953,7 +974,7 @@ class WindSource(RenewableSource):
             )
 
 
-class FixedDemand(Block):
+class FixedDemand(SinkBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -1094,7 +1115,7 @@ class FixedDemand(Block):
         return f'{self.name} power'
 
 
-class ControllableSource(Block):
+class ControllableSource(SourceBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -1394,6 +1415,11 @@ class GridConnection(Block):
             return peak_power
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
+
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['out', :]
+        self.scenario.energies.loc[('sinks', 'del'), :] += self.energies.loc['in', :]
 
     def create_result_summary(self):
         super().create_result_summary()
@@ -1751,7 +1777,7 @@ class StationaryBattery(StorageBlock, Block):
                 f' {self.sizes.loc["storage", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
-class Fleet(Block):
+class Fleet(SinkBlock):
 
     @staticmethod
     def get_init_definitions():

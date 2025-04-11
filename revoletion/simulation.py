@@ -571,7 +571,9 @@ class Scenario:
 
         self.objective_opt = None  # unused for rh strategy
         self.cashflows = pd.DataFrame()
-        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),],
+        self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),
+                                                                             ('sources', 'pro'),
+                                                                             ('sinks', 'del')],
                                                                      names=['block', 'key']),
                                      columns=['sim', 'yrl', 'prj', 'dis'],
                                      data=0,
@@ -690,31 +692,26 @@ class Scenario:
 
     def calc_meta_results(self):
 
-        energy_pro = self.energies.loc[(self.energies['sim'] > 0) &
-                                       (self.energies.index.get_level_values(1) == 'total'), :].sum()
-
-        energy_del = abs(self.energies.loc[(self.energies['sim'] < 0) &
-                                           (self.energies.index.get_level_values(1) == 'total'), :].sum())
-
         # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        if energy_pro['sim'] == 0:
+        if self.energies.loc[('sources', 'pro'), 'sim'] == 0:
             self.logger.warning(f'Core efficiency calculation: division by zero')
         else:
-            self.e_eta = energy_del['sim'] / energy_pro['sim']
+            self.e_eta = self.energies.loc[('sinks', 'del'), 'sim'] / self.energies.loc[('sources', 'pro'), 'sim']
 
-        if energy_pro['sim'] == 0:
+        if self.energies.loc[('sources', 'pro'), 'sim'] == 0:
             self.logger.warning(f'Renewable share calculation: division by zero')
         else:
-            self.renewable_share = self.energies.loc[('renewable', 'act'), 'sim'] / energy_pro['sim']
+            self.renewable_share = (self.energies.loc[('renewable', 'act'), 'sim'] /
+                                    self.energies.loc[('sources', 'pro'), 'sim'])
 
-        if energy_del['dis'] == 0:
+        if self.energies.loc[('sinks', 'del'), 'sim'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            self.lcoe_total = self.aggregator.totex['dis'] / energy_del['dis']
+            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'sim']
             self.lcoe_wocs = ((self.aggregator.totex['dis'] -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
                                sum([fleet.aggregator.totex['dis'] for fleet in self.fleets.values()])) /
-                              energy_del['dis'])
+                              self.energies.loc[('sinks', 'del'), 'sim'])
 
         self.npc = self.aggregator.totex['dis']
         self.npv = self.aggregator.value['dis']
