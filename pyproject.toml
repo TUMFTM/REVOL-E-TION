@@ -23,7 +23,6 @@ dependencies = [
     "plotly",
     "psutil",
     "pvlib",
-    "pyomo==6.7.0",
     "pytz",
     "rainflow",
     "scipy",

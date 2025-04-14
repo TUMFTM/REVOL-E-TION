@@ -250,8 +250,8 @@ class Block:
         self.write_results_to_scenario()
 
     def calc_results_flows(self):
+        # total flow calculation is duplicated in StorageBlock
         self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
-        self.check_bidi_flows()
 
     def calc_results_energies(self):
         """
@@ -259,20 +259,15 @@ class Block:
         process flows and calculate energies from flows
         """
         for flow_name, flow in self.flows.items():
-            self.energies.loc[flow_name, 'sim'] = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
+            energy = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
+            self.energies.loc[flow_name, 'sim'] = energy
+            if ('circular' in flow_name) and (energy != 0):
+                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected - check energy results')
+
         self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
         self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
         self.energies['dis'] = (self.energies['yrl'] *
                                 self.scenario.discount_factors.loc[self.scenario.periods_prj, 'end'].sum())
-
-    def check_bidi_flows(self):
-        """
-        post scenario method
-        check whether bidirectional blocks had an inflow and outflow at the same time
-        """
-        if {'in', 'out'}.issubset(set(self.flows.columns)):
-            if any(~(self.flows['in'] == 0) & ~(self.flows['out'] == 0)):
-                self.scenario.logger.warning(f'Block "{self.name}" - simultaneous in- and outflow detected!')
 
     def calc_results_economics(self):
         # calculate economic results and write one level up
@@ -538,10 +533,8 @@ class SystemCore(Block):
         """
         post scenario method
         """
-        self.flows['total'] = self.flows.get(key='dcac', default=0) - self.flows.get(key='acdc', default=0)
-
-        if any(~(self.flows['acdc'] == 0) & ~(self.flows['dcac'] == 0)):
-            self.scenario.logger.warning(f'Block {self.name} - simultaneous AC/DC and DC/AC conversion detected!')
+        super().calc_results_flows()
+        self.flows['circular'] = self.flows[['dcac', 'acdc']].min(axis=1)
 
     def create_plot_traces(self):
         self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
@@ -1417,6 +1410,10 @@ class GridConnection(Block):
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
 
+    def calc_results_flows(self):
+        super().calc_results_flows()
+        self.flows['circular'] = self.flows[['in', 'out']].min(axis=1)
+
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['out', :]
@@ -1646,6 +1643,13 @@ class StorageBlock:
                 self.sizes.loc['storage', 'total']).fillna(0)
 
         self.aging_model.age(horizon=horizon)
+
+    def calc_results_flows(self):
+        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)  # same as Block
+        self.flows['bat_total'] = self.flows.get(key='bat_out', default=0) - self.flows.get(key='bat_in', default=0)
+
+        self.flows['circular'] = self.flows[['in', 'out']].min(axis=1)
+        self.flows['bat_circular'] = self.flows[['bat_in', 'bat_out']].min(axis=1)
 
     def create_plot_traces(self):
         """
