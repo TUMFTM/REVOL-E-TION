@@ -119,11 +119,7 @@ class SimulationRun:
             self.commit_hash = 'unknown'
         # endregion
 
-        self.input_checker = checker.InputChecker(self)
-
-        # region read and check settings
-        # self.input_checker.check_settings()  #todo reenable
-        # endregion
+        self.input_checker = checker.InputChecker(self)  # todo enable scenario check
 
         # region read, copy and check scenario data
         self.scenario_data = pd.read_csv(self.paths['scenarios'],
@@ -194,7 +190,7 @@ class SimulationRun:
         pe1 = 's' if self.scenario_num > 1 else ''
         pe2 = 'es' if self.n_processes > 1 else ''
 
-        self.logger.info(f'Global settings read - running {self.scenario_num} scenario{pe1}'
+        self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
                          f' with {self.n_processes} process{pe2}')
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile

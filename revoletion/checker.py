@@ -13,7 +13,6 @@ class InputChecker:
 
         self.run = run
         self.path_readme = os.path.join(run.paths['revoletion'], 'README.md')
-        self.settings_target = self.read_settings_from_readme()
         self.scenarios_target = self.read_scenarios_from_readme()
 
         self.dtype_map = {
@@ -30,13 +29,6 @@ class InputChecker:
         end_str = '<!EXIT_POINT_SCENARIOS_TABLE>'
         df = self.read_table_from_readme(start_str, end_str, multiindex=True)
         df['Block'] = df['Block'].ffill()
-        return df
-
-    def read_settings_from_readme(self):
-        start_str = '<!ENTRY_POINT_SETTINGS_TABLE>'
-        end_str = '<!EXIT_POINT_SETTINGS_TABLE>'
-        df = self.read_table_from_readme(start_str, end_str, multiindex=False)
-        df['Valid values or format'] = df['Valid values or format'].str.replace("\'", "")
         return df
 
     def read_table_from_readme(self, start_str, end_str, multiindex=False):
