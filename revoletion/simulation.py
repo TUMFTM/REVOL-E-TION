@@ -119,7 +119,8 @@ class SimulationRun:
             self.commit_hash = 'unknown'
         # endregion
 
-        self.input_checker = checker.InputChecker(self)  # todo enable scenario check
+        input_checker = checker.InputChecker(self)
+        input_checker.check_scenarios()
 
         # region read, copy and check scenario data
         self.scenario_data = pd.read_csv(self.paths['scenarios'],

@@ -88,11 +88,5 @@ class InputChecker:
 
             # Todo check for value in range
 
-    def check_scenario(self):
-        pass
-
-
-class OutputChecker:
-
-    def __init__(self):
+    def check_scenarios(self):
         pass
