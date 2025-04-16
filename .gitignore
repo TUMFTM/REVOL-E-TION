@@ -15,9 +15,16 @@ results/*
 
 utils/*
 
+
 # VS Code
 .vscode/
 .vscode/*
+
+# Latex helper files
+*.aux
+*.bbl
+*.synctex.gz
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
