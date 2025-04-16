@@ -15,6 +15,11 @@ results/*
 
 utils/*
 
+# Latex helper files
+*.aux
+*.bbl
+*.synctex.gz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -181,3 +186,6 @@ $RECYCLE.BIN/
 
 # MacOS folder setup files
 .DS_Store
+
+# VS Code settings
+.vscode/*
