@@ -123,7 +123,7 @@
 
 % %ControllableSource
 \draw[dashed, color=tum_orange, thick] (0.615\figwidth,-4.3) rectangle (0.83\figwidth,-5.4);
-\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-4.35) {\texttt{ControllableSource}};
+\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-4.3) {\texttt{ControllableSource}};
 
 \draw[latex-] (0.6\figwidth,-4.9) to (0.63\figwidth,-4.9) node[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Fossil fuel generator $\blacktriangle$\\Hydropower plant $\blacktriangle$};
 
@@ -185,35 +185,44 @@
 \draw[latex-] (0.375\figwidth,-5.7) to (efu1_in.west);
 \draw[latex-] (efu1_in.east) to (0.5\figwidth,-5.7);
 
-\draw[latex-latex] (0.375\figwidth,-4.7) to (0.325\figwidth,-4.7) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {\faBatteryHalf\ Battery storage};
-\draw[-latex] (0.375\figwidth,-5.225) to (0.325\figwidth,-5.225) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Consumption};
-\draw[latex-] (0.375\figwidth,-5.9) to (0.325\figwidth,-5.9) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {External AC/DC\\$\blacktriangle\blacktriangle$  charging};
+\draw[latex-latex] (0.375\figwidth,-4.7) to (0.325\figwidth,-4.7) node (efu_storage) [left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {\faBatteryHalf\ Battery storage};
+\draw[-latex] (0.375\figwidth,-5.225) to (0.325\figwidth,-5.225) node (efu_consumption) [left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Consumption};
+\draw[latex-] (0.375\figwidth,-5.9) to (0.325\figwidth,-5.9) node (efu_external) [left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {External AC/DC\\$\blacktriangle\blacktriangle$  charging};
 
 \node(efu_dots) at (0.3\figwidth,-6.7) {\textcolor{tum_orange}{$\vdots$}};
 
 % CombustionVehicle
-\draw[dashed, color=tum_grey_50, thick] (0.26\figwidth,-7.5) rectangle (0.475\figwidth,-9.4);
-\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.27\figwidth,-7.5) {\texttt{Subfleet}};
+\draw[dashed, color=tum_grey_50, thick] (0.28\figwidth,-7.5) rectangle (0.475\figwidth,-9.4);
+\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.29\figwidth,-7.5) {\texttt{Subfleet}};
 
-\draw[dashed, color=tum_orange, thick] (0.27\figwidth,-7.7) rectangle (0.46\figwidth,-8.6);
+\draw[dashed, color=tum_orange, thick] (0.29\figwidth,-7.7) rectangle (0.46\figwidth,-8.6);
 \node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.45\figwidth,-7.7) {\texttt{CombustionVehicle}};
 
-\node[left,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt, anchor=east] at (0.445\figwidth, -8.2) {\faFire\ ICEV};
+\node(icev)[left,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt, anchor=east] at (0.445\figwidth, -8.2) {\faFire\ ICEV};
 
 \node(icev_dots) at (0.365\figwidth,-8.9) {\textcolor{tum_orange}{$\vdots$}};
 \node(subfleet_dots) at (0.365\figwidth,-9.7) {\textcolor{tum_grey_50}{$\vdots$}};
 
 %Fleet Inputs
-\node(logfile)[font=\scriptsize, anchor=north east, rotate=90, tum_grey_50, draw=tum_grey_50] at (0\figwidth,-4.2) {\parbox{2.1cm}{\centering Connection status\\Consumption\\Ext.\ charger\ avail.\\(Scheduled power)}};
-\node[font=\scriptsize, anchor=center, tum_grey_50, fill=tum_white, inner sep=0pt] at (logfile.east) {Logfile};
+\node(logfile)[font=\scriptsize, anchor=north east, rotate=90, tum_grey_50, draw=tum_grey_50] at (0\figwidth,-6) {\parbox{2.1cm}{\centering Connection status\\Consumption\\Ext.\ charger\ avail.\\(Scheduled power)}};
+\node(logfile_title)[font=\scriptsize, anchor=center, tum_grey_50, fill=tum_white, inner sep=0pt] at (logfile.east) {Logfile};
 
-\node(scheduler)[font=\scriptsize, draw=tum_grey_50, dashed, color=tum_grey_50, anchor=west] at (0\figwidth,-7.4) {\parbox{1.3cm}{\centering \faRandom\ Power\\scheduler}};
+\node(scheduler)[font=\scriptsize, draw=tum_grey_50, dashed, color=tum_grey_50, anchor=west] at (0\figwidth,-5.2) {\parbox{1.3cm}{\centering \faPowerOff\ Charge\\scheduler}};
+\draw[-latex, tum_grey_50] (scheduler.south-|logfile_title.north) to (logfile_title.north);
 
-\node(dispatcher)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-8.5) {\parbox{1.3cm}{\centering \faRandom\ DES\\dispatcher}};
+\node(dispatcher)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-4.1) {\parbox{1.3cm}{\centering \faRandom\ DES\\dispatcher}};
+\draw[-latex, tum_grey_50] (dispatcher.south-|logfile_title.north) to (scheduler.north-|logfile_title.north);
 
-\node(sampler)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-9.6) {\parbox{1.3cm}{\centering \faRandom\ Demand\\sampling}};
+\node(sampler)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-3) {\parbox{1.3cm}{\centering \faList\ Demand\\sampling}};
+\draw[-latex, tum_grey_50] (sampler.south-|logfile_title.north) to (dispatcher.north-|logfile_title.north);
 
-\node(sampler)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-10.7) {\parbox{1.3cm}{\centering \faRandom\ Subfleet\\usecases}};
+\node(usecases)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-1.9) {\parbox{1.3cm}{\centering \faCar\ Subfleet\\usecases}};
+\draw[-latex, tum_grey_50] (usecases.south-|logfile_title.north) to (sampler.north-|logfile_title.north);
+
+\node(verticalarrow) at (0.13\figwidth,0) {};
+\draw[-latex, tum_grey_50] ([yshift=-1mm]logfile.south) to ([yshift=-1mm]verticalarrow|-logfile.south) to (verticalarrow|-icev.west) to (icev.west);
+\draw[-latex, tum_grey_50] ([yshift=1mm]logfile.south) to ([yshift=1mm, xshift=-0.01\figwidth]verticalarrow|-logfile.south) to ([xshift=-0.01\figwidth]verticalarrow|-efu_consumption.west) to (efu_consumption.west);
+\draw[-latex, tum_grey_50] (logfile.south) to (verticalarrow|-logfile.south) to (verticalarrow|-efu_external.west) to (efu_external.west);
 
 % \node(stochastic)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=west] at (0.05,-3) {\parbox{1cm}{\centering Stochastic\\behavior}};
 % \node(logging)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=west] at (0.05,-2) {\parbox{1cm} {\centering Logging\\ \faCar\, data}};
