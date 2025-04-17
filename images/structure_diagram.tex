@@ -35,196 +35,199 @@
 \draw[color=tum_blue, ultra thick] (0.4\figwidth,-3.5) to (0.4\figwidth,-0.3) node (dc_bus)[above, font=\scriptsize, xshift=0.02\figwidth] {\texttt{DC bus}};
 \draw[color=tum_blue, ultra thick] (0.6\figwidth,-7.7) to (0.6\figwidth,-0.3) node (ac_bus)[above, font=\scriptsize, xshift=-0.02\figwidth] {\texttt{AC bus}};
 
-\node[font=\scriptsize,tum_orange] at (0.5\figwidth,-1) {\texttt{SystemCore}};
+\node[font=\scriptsize,tum_orange] at (0.5\figwidth,-0.7) {\texttt{SystemCore}};
 
-\node(dcac_conv)[sdcacshape, scale=0.5] at (0.5\figwidth,-1.5) {};
-\draw[-latex] (0.4\figwidth,-1.5) to (dcac_conv.west);
-\draw[-latex] (dcac_conv.east) to (0.6\figwidth,-1.5);
+\node(dcac_conv)[sdcacshape, scale=0.5] at (0.5\figwidth,-1.3) {};
+\draw[-latex] (0.4\figwidth,-1.3) to (dcac_conv.west);
+\draw[-latex] (dcac_conv.east) to (0.6\figwidth,-1.3);
 
-\node(acdc_conv)[sdcacshape, scale=0.5] at (0.5\figwidth,-2.3) {};
-\draw[-latex] (0.6\figwidth,-2.3) to (acdc_conv.east);
-\draw[-latex] (acdc_conv.west) to (0.4\figwidth,-2.3);
+\node(acdc_conv)[sdcacshape, scale=0.5] at (0.5\figwidth,-2) {};
+\draw[-latex] (0.6\figwidth,-2) to (acdc_conv.east);
+\draw[-latex] (acdc_conv.west) to (0.4\figwidth,-2);
 
 %PVSource
-\draw[dashed, color=tum_orange, thick] (0.12\figwidth,0) rectangle (0.385\figwidth,-1.6);
+\draw[dashed, color=tum_orange, thick] (0.12\figwidth,0) rectangle (0.385\figwidth,-1.5);
 \node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.375\figwidth,0) {\texttt{PVSource}};
 
-\draw[color=tum_blue, ultra thick] (0.3\figwidth,-0.2) to (0.3\figwidth,-1.4) node (pv_bus) {};
+\draw[color=tum_blue, ultra thick] (0.3\figwidth,-0.2) to (0.3\figwidth,-1.3) node (pv_bus) {};
 
-\node(pv_conv)[sdcdcshape, scale=0.5] at (0.35\figwidth,-0.8) {};
-\draw[-latex] (0.3\figwidth,-0.8) to (pv_conv.west);
-\draw[-latex] (pv_conv.east) to (0.4\figwidth,-0.8);
+\node(pv_conv)[sdcdcshape, scale=0.5] at (0.35\figwidth,-0.75) {};
+\draw[-latex] (0.3\figwidth,-0.75) to (pv_conv.west);
+\draw[-latex] (pv_conv.east) to (0.4\figwidth,-0.75);
 
 \draw[latex-] (0.3\figwidth,-0.5) to (0.25\figwidth,-0.5) node (pv_array)[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangle$ PV array};
-\draw[-latex] (0.3\figwidth,-1.1) to (0.25\figwidth,-1.1) node (pv_curtailment)[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Curtailment};
+\draw[-latex] (0.3\figwidth,-1) to (0.25\figwidth,-1) node (pv_curtailment)[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Curtailment};
 
 %PVSource Inputs
-% \node(insolation)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50] at ([xshift=2.5mm]0.0425\figwidth,0.4) {Insolation API};
-% \node(pvpower)[font=\scriptsize, anchor=center, draw=tum_grey_50, tum_grey_50] at (0.0425\figwidth,-0.5) {\parbox{1.2cm} {\centering PV power\\model}};
-% \draw[-latex, tum_grey_50] (pvpower.north|-insolation.south) to (pvpower.north);
-% \draw[-latex, tum_grey_50] (pvpower.east) to (pv_array.west);
+\node(insolation)[font=\scriptsize, anchor=north west, draw=tum_grey_50, color=tum_grey_50] at (0\figwidth,0.6) {Insolation API};
+\node(pvpower)[font=\scriptsize, anchor=west, draw=tum_grey_50, tum_grey_50] at (0\figwidth,-0.5) {\parbox{1.4cm} {\centering Specific\\power model}};
+\draw[-latex, tum_grey_50] (pvpower.north|-insolation.south) to (pvpower.north);
+\draw[-latex, tum_grey_50] (pvpower.east) to (pv_array.west);
 
 %StationaryBattery
-\draw[dashed, color=tum_orange, thick] (0.14\figwidth,-1.9) rectangle (0.385\figwidth,-3.7);
-\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.375\figwidth,-1.9) {\texttt{StationaryBattery}};
+\draw[dashed, color=tum_orange, thick] (0.14\figwidth,-1.8) rectangle (0.385\figwidth,-3.5);
+\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.375\figwidth,-1.8) {\texttt{StationaryBattery}};
 
-\draw[color=tum_blue, ultra thick] (0.3\figwidth,-2.1) to (0.3\figwidth,-3.5) node (ess_bus) {};
+\draw[color=tum_blue, ultra thick] (0.3\figwidth,-2) to (0.3\figwidth,-3.3) node (ess_bus) {};
 
-\node(ess_out)[sdcdcshape, scale=0.5] at (0.35\figwidth,-2.4) {};
-\draw[-latex] (ess_out.east) to (0.4\figwidth,-2.4);
-\draw[-latex] (0.3\figwidth,-2.4) to (ess_out.west);
+\node(ess_out)[sdcdcshape, scale=0.5] at (0.35\figwidth,-2.3) {};
+\draw[-latex] (ess_out.east) to (0.4\figwidth,-2.3);
+\draw[-latex] (0.3\figwidth,-2.3) to (ess_out.west);
 
-\node(ess_in)[sdcdcshape, scale=0.5] at (0.35\figwidth,-3.2) {};
-\draw[-latex] (0.4\figwidth,-3.2) to (ess_in.east);
-\draw[-latex] (ess_in.west) to (0.3\figwidth,-3.2);
+\node(ess_in)[sdcdcshape, scale=0.5] at (0.35\figwidth,-3) {};
+\draw[-latex] (0.4\figwidth,-3) to (ess_in.east);
+\draw[-latex] (ess_in.west) to (0.3\figwidth,-3);
 
-\draw[latex-latex] (0.3\figwidth,-2.8) to (0.25\figwidth,-2.8) node[left,font=\scriptsize,align=right, draw=tum_black, anchor=east, inner sep=2pt]{\faBatteryHalf\ Battery\\storage};
+\draw[latex-latex] (0.3\figwidth,-2.7) to (0.25\figwidth,-2.7) node[left,font=\scriptsize,align=right, draw=tum_black, anchor=east, inner sep=2pt]{\faBatteryHalf\ Battery\\storage};
 
 %WindSource
-\draw[dashed, color=tum_orange, thick] (0.615\figwidth,0) rectangle (0.885\figwidth,-1.6);
+\draw[dashed, color=tum_orange, thick] (0.615\figwidth,0) rectangle (0.88\figwidth,-1.5);
 \node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth, 0) {\texttt{WindSource}};
 
-\draw[color=tum_blue, ultra thick] (0.7\figwidth,-0.2) to (0.7\figwidth,-1.4) node (wind_bus) {};
+\draw[color=tum_blue, ultra thick] (0.7\figwidth,-0.2) to (0.7\figwidth,-1.3) node (wind_bus) {};
 
-\node[sacacshape, scale=0.5] at (0.65\figwidth,-0.8) (wind_conv) {};
-\draw[-latex] (0.7\figwidth,-0.8) to (wind_conv.east);
-\draw[-latex] (wind_conv.west) to (0.6\figwidth,-0.8);
+\node[sacacshape, scale=0.5] at (0.65\figwidth,-0.75) (wind_conv) {};
+\draw[-latex] (0.7\figwidth,-0.75) to (wind_conv.east);
+\draw[-latex] (wind_conv.west) to (0.6\figwidth,-0.75);
 
 \draw[latex-] (0.7\figwidth,-0.5) to (0.75\figwidth,-0.5) node (wind_turbine)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Wind turbine $\blacktriangle$};
-\draw[-latex] (0.7\figwidth,-1.1) to (0.75\figwidth,-1.1) node (wind_curt)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Curtailment $\blacktriangledown$};
+\draw[-latex] (0.7\figwidth,-1) to (0.75\figwidth,-1) node (wind_curt)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Curtailment $\blacktriangledown$};
 
 %WindSource Inputs
-% \node(windspd)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=east] at (\figwidth,0.4) {Wind speed API};
-% \node(windmdl)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=east] at (\figwidth,-0.5) {\parbox{1.2cm} {\centering Wind turbine model}};
-% \draw[-latex, tum_grey_50] (windmdl.north|-windspd.south) to (windmdl.north);
-% \draw[-latex, tum_grey_50] (windmdl.west) to (wind_turbine.east);
+\node(windspd)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=north east] at (\figwidth,0.6) {Wind speed API};
+\node(windmdl)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=east] at (\figwidth,-0.5) {\parbox{1.4cm} {\centering Specific\\power model}};
+\draw[-latex, tum_grey_50] (windmdl.north|-windspd.south) to (windmdl.north);
+\draw[-latex, tum_grey_50] (windmdl.west) to (wind_turbine.east);
 
 %GridConnection
-\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-1.9) rectangle (0.885\figwidth,-4.1);
-\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth, -1.9) {\texttt{GridConnection}};
+\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-1.8) rectangle (0.88\figwidth,-4.0);
+\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth, -1.8) {\texttt{GridConnection}};
 
-\draw[color=tum_blue, ultra thick] (0.7\figwidth,-2.1) to (0.7\figwidth,-3.9);
+\draw[color=tum_blue, ultra thick] (0.7\figwidth,-2) to (0.7\figwidth,-3.8);
 
-\draw[latex-] (0.6\figwidth,-2.4) to (0.7\figwidth,-2.4);
-\node(plim_t1) [font=\tiny, anchor=south] at (0.66\figwidth, -2.4) {period 1};
-\node(grid_dots) at (0.66\figwidth,-2.575) {$\vdots$};
-\draw[latex-] (0.6\figwidth,-3) to (0.7\figwidth,-3);
-\node(plim_tn) at (0.66\figwidth, -3) [font=\tiny, anchor=north] {period n};
-\draw[-latex] (0.6\figwidth,-3.6) -> (0.7\figwidth,-3.6);
+\draw[latex-] (0.6\figwidth,-2.3) to (0.7\figwidth,-2.3);
+\node(plim_t1) [font=\tiny, anchor=south] at (0.66\figwidth, -2.3) {period 1};
+\node(grid_dots) at (0.66\figwidth,-2.475) {$\vdots$};
+\draw[latex-] (0.6\figwidth,-2.9) to (0.7\figwidth,-2.9);
+\node(plim_tn) at (0.66\figwidth, -2.9) [font=\tiny, anchor=north] {period n};
+\draw[-latex] (0.6\figwidth,-3.5) -> (0.7\figwidth,-3.5);
 
-\draw[latex-latex] (0.7\figwidth,-2.4) to (0.75\figwidth,-2.4) node (energymarket1)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Market 1 $\blacktriangle\blacktriangledown$};
-\node(market_dots) at (0.8\figwidth,-2.875) {$\vdots$};
-\draw[latex-latex] (0.7\figwidth,-3.6) to (0.75\figwidth,-3.6) node (energymarketn)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Market n $\blacktriangle\blacktriangledown$};
+\draw[latex-latex] (0.7\figwidth,-2.3) to (0.75\figwidth,-2.3) node (energymarket1)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Market 1 $\blacktriangle\blacktriangledown$};
+\node(market_dots) at (0.8\figwidth,-2.775) {$\vdots$};
+\draw[latex-latex] (0.7\figwidth,-3.5) to (0.75\figwidth,-3.5) node (energymarketn)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Market n $\blacktriangle\blacktriangledown$};
 
 %GridConnection Inputs
-% \node(gridprice)[font=\scriptsize, rotate=90, tum_grey_50, draw=tum_grey_50, anchor=south] at (\figwidth,-2.8) {\faMoney\, Buy/sell pricing data};
-% \draw[-latex, tum_grey_50] (gridprice.north|-energymarket1.east) to (energymarket1.east);
-% \draw[-latex, tum_grey_50] (gridprice.north|-energymarketn.east) to (energymarketn.east);
+\node(gridprice)[font=\scriptsize, tum_grey_50, draw=tum_grey_50, anchor=east] at (\figwidth,-2.9) {\parbox{1.4cm} {\centering Dynamic\\pricing \faMoney}};
+\draw[-latex, tum_grey_50] (gridprice.north) to (gridprice.north|-energymarket1.east) to (energymarket1.east);
+\draw[-latex, tum_grey_50] (gridprice.south) to (gridprice.south|-energymarketn.east) to (energymarketn.east);
 
 % %ControllableSource
-\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-4.4) rectangle (0.83\figwidth,-5.4);
-\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-4.4) {\texttt{ControllableSource}};
+\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-4.3) rectangle (0.83\figwidth,-5.4);
+\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-4.35) {\texttt{ControllableSource}};
 
 \draw[latex-] (0.6\figwidth,-4.9) to (0.63\figwidth,-4.9) node[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Fossil fuel generator $\blacktriangle$\\Hydropower plant $\blacktriangle$};
 
 %FixedDemand
-\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-5.7) rectangle (0.79\figwidth,-6.5);
+\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-5.7) rectangle (0.77\figwidth,-6.5);
 \node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-5.7) {\texttt{FixedDemand}};
 
 \draw[-latex] (0.6\figwidth,-6.1) to (0.63\figwidth,-6.1) node (fixeddemand)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Inflexible load $\blacktriangledown$};
 
 %FixedDemand Inputs
-% \node(demdata)[font=\scriptsize, tum_grey_50, draw=tum_grey_50, anchor=east] at (\figwidth,-6) {\parbox{2.2cm} {\centering\faLightbulbO\, Consumption data\\(including SLP)}};
-% \draw[-latex, tum_grey_50] (demdata.west) to (fixeddemand.east);
+\node(demdata)[font=\scriptsize, tum_grey_50, draw=tum_grey_50, anchor=east] at (\figwidth,-6.1) {\parbox{1.4cm} {\centering Consumption\\or SLP \faLightbulbO}};
+\draw[-latex, tum_grey_50] (demdata.west) to (fixeddemand.east);
 
 %ThermalDemand
-\draw[dashed, color=tum_orange, thick] (0.615\figwidth,-6.8) rectangle (0.9\figwidth,-7.9);
-\node[font=\scriptsize,tum_orange,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-6.8) {\texttt{ThermalDemand}};
+\draw[dashed, color=tum_orange!50!tum_white, thick] (0.615\figwidth,-6.8) rectangle (0.895\figwidth,-7.9);
+\node[font=\scriptsize,tum_orange!50!tum_white,anchor=west, fill=tum_white, inner sep=0pt] at (0.625\figwidth,-6.8) {\texttt{ThermalDemand}};
 
-\node(cop_conv)[twoportsplitshape, scale=0.5, t1=\LARGE{$\sim$}] at (0.65\figwidth,-7.4) {};
-\draw[-latex] (0.6\figwidth,-7.4) to (cop_conv.west);
-\draw[-latex] (cop_conv.east) to (0.7\figwidth,-7.4) node (thermal_storage)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Thermal \Thermo{4}\\capacity};
-\draw[-latex] (thermal_storage.east) to (0.81\figwidth,-7.4) node (thermal_losses)[right,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt] {Thermal\\losses $\blacktriangledown$};
+\node(cop_conv)[twoportsplitshape, scale=0.5, t1=\LARGE{$\sim$}, draw=tum_grey_50] at (0.65\figwidth,-7.4) {};
+\draw[-latex, draw=tum_grey_50] (0.6\figwidth,-7.4) to (cop_conv.west);
+\draw[-latex, draw=tum_grey_50] (cop_conv.east) to (0.7\figwidth,-7.4) node (thermal_storage)[right,font=\scriptsize,align=left, draw=tum_grey_50, color=tum_grey_50, inner sep=2pt] {Thermal \Thermo{4}\\capacity};
+\draw[-latex, draw=tum_grey_50] (thermal_storage.east) to (0.81\figwidth,-7.4) node (thermal_losses)[right,font=\scriptsize,align=left, draw=tum_grey_50, color=tum_grey_50, inner sep=2pt] {Thermal\\losses $\blacktriangledown$};
 
+%ThermalDemand Inputs
+\node(ambdata)[font=\scriptsize, tum_grey_20, draw=tum_grey_20, anchor=east] at (\figwidth,-7.4) {\parbox{1.1cm} {\centering Ambient\\temp. API}};
+\draw[-latex, tum_grey_20] (ambdata.west) to (thermal_losses.east);
+
+\node(thermdata)[font=\scriptsize, tum_grey_20, draw=tum_grey_20, anchor=east] at (\figwidth,-8.4) {Target temperature range \Thermo{4}};
+\draw[-latex, tum_grey_20] (thermdata.west) to (cop_conv.south|-thermdata.west) to (cop_conv.south);
 
 %Fleet
-\draw[dashed, color=tum_orange, thick] (0.14\figwidth,-4) rectangle (0.585\figwidth, -10.4);
-\node[font=\scriptsize,tum_orange, fill=tum_white, anchor=east, inner sep=0pt] at (0.575\figwidth,-4) {\texttt{Fleet}};
+\draw[dashed, color=tum_orange, thick] (0.14\figwidth,-3.8) rectangle (0.585\figwidth, -10.2);
+\node[font=\scriptsize,tum_orange, fill=tum_white, anchor=east, inner sep=0pt] at (0.575\figwidth,-3.8) {\texttt{Fleet}};
 
-\draw[color=tum_blue, ultra thick] (0.5\figwidth,-4.8) to (0.5\figwidth,-9.6);
-\node(fleetbus_dots) at (0.5\figwidth,-9.9) {\textcolor{tum_blue}{$\vdots$}};
+\draw[color=tum_blue, ultra thick] (0.5\figwidth,-4.6) to (0.5\figwidth,-9.4);
+\node(fleetbus_dots) at (0.5\figwidth,-9.7) {\textcolor{tum_blue}{$\vdots$}};
 
-\node(fleet_out)[twoportsplitshape, scale=0.5, t2=\LARGE{$\sim$}] at (0.55\figwidth,-5.1) {};
-\draw[-latex] (fleet_out.east) to (0.6\figwidth,-5.1);
-\draw[-latex] (0.5\figwidth,-5.1) to (fleet_out.west);
+\node(fleet_out)[twoportsplitshape, scale=0.5, t2=\LARGE{$\sim$}] at (0.55\figwidth,-4.9) {};
+\draw[-latex] (fleet_out.east) to (0.6\figwidth,-4.9);
+\draw[-latex] (0.5\figwidth,-4.9) to (fleet_out.west);
 
-\node(fleet_in)[twoportsplitshape, scale=0.5, t2=\LARGE{$\sim$}] at (0.55\figwidth,-5.9) {};
-\draw[latex-] (0.5\figwidth,-5.9) to (fleet_in.west);
-\draw[latex-] (fleet_in.east) to (0.6\figwidth,-5.9);
-
-% \draw[latex-latex] (0.55\figwidth,-5.85) to (0.6\figwidth,-5.85);
-% \node[twoportsplitshape, scale=0.5, t2=\LARGE{$\sim$}] at (0.55\figwidth,-5.75) (csac_conv) {};
-% \node[twoportsplitshape, scale=0.5, t1=\LARGE{$=$}] at (0.45\figwidth,-2.1) (csdc_conv) {};
-%\draw[latex-latex] (0.4\figwidth,-2.1) to (csdc_conv.west);
-%\draw[latex-latex] (csdc_conv.east) to (0.5\figwidth,-2.1);
-% \node[fill=tum_white, anchor=north] at (0.3475\figwidth,-5.3) {$\vdots$};
+\node(fleet_in)[twoportsplitshape, scale=0.5, t2=\LARGE{$\sim$}] at (0.55\figwidth,-5.7) {};
+\draw[latex-] (0.5\figwidth,-5.7) to (fleet_in.west);
+\draw[latex-] (fleet_in.east) to (0.6\figwidth,-5.7);
 
 %ElectricFleetUnit
-\draw[dashed, color=tum_grey_50, thick] (0.15\figwidth,-4.2) rectangle (0.475\figwidth,-7.4);
-\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.16\figwidth,-4.2) {\texttt{Subfleet}};
+\draw[dashed, color=tum_grey_50, thick] (0.15\figwidth,-4.0) rectangle (0.475\figwidth,-7.2);
+\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.16\figwidth,-4.0) {\texttt{Subfleet}};
 
-\draw[dashed, color=tum_orange, thick] (0.16\figwidth,-4.4) rectangle (0.46\figwidth,-6.6);
-\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.45\figwidth,-4.4) {\texttt{ElectricFleetUnit}};
+\draw[dashed, color=tum_orange, thick] (0.16\figwidth,-4.2) rectangle (0.46\figwidth,-6.4);
+\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.45\figwidth,-4.2) {\texttt{ElectricFleetUnit}};
 
-\draw[color=tum_blue, ultra thick] (0.375\figwidth,-4.6) to (0.375\figwidth,-6.4);
+\draw[color=tum_blue, ultra thick] (0.375\figwidth,-4.4) to (0.375\figwidth,-6.2);
 
-\node[twoportsplitshape, scale=0.5, t1=\LARGE{$=$}] at (0.425\figwidth,-5.1) (efu1_out) {};
-\draw[-latex] (0.375\figwidth,-5.1) to (efu1_out.west);
-\draw[-latex] (efu1_out.east) to (0.5\figwidth,-5.1);
+\node[twoportsplitshape, scale=0.5, t1=\LARGE{$=$}] at (0.425\figwidth,-4.9) (efu1_out) {};
+\draw[-latex] (0.375\figwidth,-4.9) to (efu1_out.west);
+\draw[-latex] (efu1_out.east) to (0.5\figwidth,-4.9);
 
-\node[twoportsplitshape, scale=0.5, t1=\LARGE{$=$}] at (0.425\figwidth,-5.9) (efu1_in) {};
-\draw[latex-] (0.375\figwidth,-5.9) to (efu1_in.west);
-\draw[latex-] (efu1_in.east) to (0.5\figwidth,-5.9);
+\node[twoportsplitshape, scale=0.5, t1=\LARGE{$=$}] at (0.425\figwidth,-5.7) (efu1_in) {};
+\draw[latex-] (0.375\figwidth,-5.7) to (efu1_in.west);
+\draw[latex-] (efu1_in.east) to (0.5\figwidth,-5.7);
 
-\draw[latex-latex] (0.375\figwidth,-4.9) to (0.325\figwidth,-4.9) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {\faBatteryHalf\ Battery storage};
-\draw[-latex] (0.375\figwidth,-5.425) to (0.325\figwidth,-5.425) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Consumption};
-\draw[latex-] (0.375\figwidth,-6.1) to (0.325\figwidth,-6.1) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {External AC/DC\\$\blacktriangle\blacktriangle$  charging};
+\draw[latex-latex] (0.375\figwidth,-4.7) to (0.325\figwidth,-4.7) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {\faBatteryHalf\ Battery storage};
+\draw[-latex] (0.375\figwidth,-5.225) to (0.325\figwidth,-5.225) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {$\blacktriangledown$ Consumption};
+\draw[latex-] (0.375\figwidth,-5.9) to (0.325\figwidth,-5.9) node[left,font=\scriptsize,align=right, draw=tum_black, inner sep=2pt] {External AC/DC\\$\blacktriangle\blacktriangle$  charging};
 
-\node(efu_dots) at (0.3\figwidth,-6.9) {\textcolor{tum_orange}{$\vdots$}};
+\node(efu_dots) at (0.3\figwidth,-6.7) {\textcolor{tum_orange}{$\vdots$}};
 
 % CombustionVehicle
-\draw[dashed, color=tum_grey_50, thick] (0.26\figwidth,-7.7) rectangle (0.475\figwidth,-9.6);
-\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.27\figwidth,-7.7) {\texttt{Subfleet}};
+\draw[dashed, color=tum_grey_50, thick] (0.26\figwidth,-7.5) rectangle (0.475\figwidth,-9.4);
+\node[font=\scriptsize,tum_grey_50,anchor=west, fill=tum_white, inner sep=0pt] at (0.27\figwidth,-7.5) {\texttt{Subfleet}};
 
-\draw[dashed, color=tum_orange, thick] (0.27\figwidth,-7.9) rectangle (0.46\figwidth,-8.8);
-\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.45\figwidth,-7.9) {\texttt{CombustionVehicle}};
+\draw[dashed, color=tum_orange, thick] (0.27\figwidth,-7.7) rectangle (0.46\figwidth,-8.6);
+\node[font=\scriptsize,tum_orange,anchor=east, fill=tum_white, inner sep=0pt] at (0.45\figwidth,-7.7) {\texttt{CombustionVehicle}};
 
-\node[left,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt, anchor=east] at (0.445\figwidth, -8.4) {\faFire\ ICEV};
+\node[left,font=\scriptsize,align=left, draw=tum_black, inner sep=2pt, anchor=east] at (0.445\figwidth, -8.2) {\faFire\ ICEV};
 
-\node(icev_dots) at (0.365\figwidth,-9.1) {\textcolor{tum_orange}{$\vdots$}};
-\node(subfleet_dots) at (0.365\figwidth,-9.9) {\textcolor{tum_grey_50}{$\vdots$}};
+\node(icev_dots) at (0.365\figwidth,-8.9) {\textcolor{tum_orange}{$\vdots$}};
+\node(subfleet_dots) at (0.365\figwidth,-9.7) {\textcolor{tum_grey_50}{$\vdots$}};
 
+%Fleet Inputs
+\node(logfile)[font=\scriptsize, anchor=north east, rotate=90, tum_grey_50, draw=tum_grey_50] at (0\figwidth,-4.2) {\parbox{2.1cm}{\centering Connection status\\Consumption\\Ext.\ charger\ avail.\\(Scheduled power)}};
+\node[font=\scriptsize, anchor=center, tum_grey_50, fill=tum_white, inner sep=0pt] at (logfile.east) {Logfile};
 
-%CommoditySystem Inputs
-% \node[font=\scriptsize, rotate=90, anchor=north, tum_grey_50] at ([xshift=1mm]0.05,-5.75) {\parbox{2cm}{\centering Arrival\,/\,Departure\\Consumption\\Charger availability}};
-% \draw[color=tum_grey_50] (0.05,-4.6) rectangle ([xshift=1.2cm]0.05,-6.85);
-% \node(logfile)[font=\scriptsize,tum_grey_50,anchor=center, fill=tum_white, inner sep=0mm] at ([xshift=6mm]0.05,-4.6) {Logfile};
-% \draw[-latex, tum_grey_50] ([xshift=12mm]0.05,-5.075) to (0.16\figwidth,-5.075);
-% \draw[-latex, tum_grey_50] ([xshift=12mm]0.05,-6.475) to (0.16\figwidth,-6.475);
-% \node(des)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=west] at (0.05,-3.9) {\parbox{1cm}{\centering \faRandom\, DES}};
+\node(scheduler)[font=\scriptsize, draw=tum_grey_50, dashed, color=tum_grey_50, anchor=west] at (0\figwidth,-7.4) {\parbox{1.3cm}{\centering \faRandom\ Power\\scheduler}};
+
+\node(dispatcher)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-8.5) {\parbox{1.3cm}{\centering \faRandom\ DES\\dispatcher}};
+
+\node(sampler)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-9.6) {\parbox{1.3cm}{\centering \faRandom\ Demand\\sampling}};
+
+\node(sampler)[font=\scriptsize, draw=tum_grey_50, color=tum_grey_50, anchor=west] at (0\figwidth,-10.7) {\parbox{1.3cm}{\centering \faRandom\ Subfleet\\usecases}};
+
 % \node(stochastic)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=west] at (0.05,-3) {\parbox{1cm}{\centering Stochastic\\behavior}};
 % \node(logging)[font=\scriptsize,anchor=center, draw=tum_grey_50, tum_grey_50, anchor=west] at (0.05,-2) {\parbox{1cm} {\centering Logging\\ \faCar\, data}};
 % \draw[-latex, tum_grey_50] (logging.south) to (stochastic.north);
 % \draw[-latex, tum_grey_50] (stochastic.south) to (des.north);
 % \draw[-latex, tum_grey_50] (des.south) to (des.south|-logfile.north);
 
-%\draw (0.35\figwidth,-4.75) to (0.3\figwidth,-4.75) node[left,font=\scriptsize,align=right, draw=tum_black] (bev1_con) {EV\textsubscript{1} consumption $\blacktriangledown$};
-%\node (bevn_dots) at (0.35\figwidth,-5.5) {$\vdots$};
-%\draw (0.35\figwidth,-6.8) to (0.3\figwidth,-6.8) node[left,font=\scriptsize,align=right, draw=tum_black] (bevn_sto) {EV\textsubscript{n} battery storage};
-%\draw (0.35\figwidth,-7.45) to (0.3\figwidth,-7.45) node[left,font=\scriptsize,align=right, draw=tum_black] (bevn_con) {EV\textsubscript{n} consumption $\blacktriangledown$};
-%\draw[color=tum_p300] ([xshift=-1mm]bev1_con.west|-bev1_bus.north) rectangle ([xshift=-3.5mm,yshift=-4mm]bevn_dcdc.east|-bevn_con.south) node[font=\scriptsize,tum_p300,anchor=west,yshift=2mm] (ind_rep) {CommoditySystem};
-%\draw (0.35\figwidth,-4.1) to[sdcdc,blocks/scale=0.5] ++(0.15\figwidth,0);
-%\draw (0.35\figwidth,-6.8) to[sdcdc,blocks/scale=0.5] ++(0.15\figwidth,0) node (bevn_dcdc) {};
+% \draw (0.35\figwidth,-4.75) to (0.3\figwidth,-4.75) node[left,font=\scriptsize,align=right, draw=tum_black] (bev1_con) {EV\textsubscript{1} consumption $\blacktriangledown$};
+% \node (bevn_dots) at (0.35\figwidth,-5.5) {$\vdots$};
+% \draw (0.35\figwidth,-6.8) to (0.3\figwidth,-6.8) node[left,font=\scriptsize,align=right, draw=tum_black] (bevn_sto) {EV\textsubscript{n} battery storage};
+% \draw (0.35\figwidth,-7.45) to (0.3\figwidth,-7.45) node[left,font=\scriptsize,align=right, draw=tum_black] (bevn_con) {EV\textsubscript{n} consumption $\blacktriangledown$};
+% \draw[color=tum_p300] ([xshift=-1mm]bev1_con.west|-bev1_bus.north) rectangle ([xshift=-3.5mm,yshift=-4mm]bevn_dcdc.east|-bevn_con.south) node[font=\scriptsize,tum_p300,anchor=west,yshift=2mm] (ind_rep) {CommoditySystem};
+% \draw (0.35\figwidth,-4.1) to[sdcdc,blocks/scale=0.5] ++(0.15\figwidth,0);
+% \draw (0.35\figwidth,-6.8) to[sdcdc,blocks/scale=0.5] ++(0.15\figwidth,0) node (bevn_dcdc) {};
 
 \end{circuitikz}
 \end{document}
