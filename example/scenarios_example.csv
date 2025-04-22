@@ -115,7 +115,7 @@ ess,capex_spec,0.25,0.25,0.25,0.25
 ess,mntex_spec,0.00625,0.00625,0.00625,0.00625
 ess,opex_spec,0,0,0,0
 ess,ls,10,10,10,10
-ess,eff_roundtrip,0.9,0.9,0.9,0.9
+ess,eff_storage_roundtrip,0.9,0.9,0.9,0.9
 ess,eff_acdc,0.95,0.95,0.95,0.95
 ess,eff_dcac,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8

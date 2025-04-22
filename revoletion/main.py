@@ -13,11 +13,6 @@ class DefaultFileLocationWarning(UserWarning):
     pass
 
 
-def get_filepath(path_cwd, path_pkg, arg, file_type):
-
-    return file_path
-
-
 def main():
     root = tk.Tk()
     root.withdraw()  # hide small tk-window
