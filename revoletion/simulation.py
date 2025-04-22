@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import geopy
-import graphviz
 import holidays
 import importlib.metadata
 import itertools
@@ -141,9 +140,7 @@ class SimulationRun:
             # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
             for scenario in self.scenario_names:
                 for file in [f'{scenario}_summary_temp.csv',
-                             f'{scenario}_results.csv',
-                             f'{scenario}_graph.pdf',
-                             f'{scenario}_graph.html']:
+                             f'{scenario}_results.csv']:
                     if os.path.isfile(os.path.join(self.paths['output'], file)):
                         os.remove(os.path.join(self.paths['output'], file))
 
@@ -517,8 +514,6 @@ class Scenario:
                                                   f'{self.name}_summary_temp.pkl')
         self.paths['timeseries'] = os.path.join(self.run.paths['output'],
                                                 f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
-        self.paths['graph'] = os.path.join(self.run.paths['output'],
-                                           f'{self.run.runtimestamp}_{self.run.name}_{self.name}_system_graph.pdf')
         self.paths['figure'] = os.path.join(self.run.paths['output'],
                                             f'{self.run.runtimestamp}_{self.run.name}_{self.name}.html')
 
@@ -822,56 +817,6 @@ class PredictionHorizon:
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                    f'Model build completed')
-        # endregion
-
-        # region draw graph of energy model
-        if self.index == 0 and not self.scenario.run.largescalemode:  # first horizon - create graph of energy system
-            # Initialize the graph with the filepath without extension
-            dot = graphviz.Digraph(filename=os.path.splitext(self.scenario.paths['graph'])[0])
-
-            # Define drawing styles for certain components
-            dot.node('Bus', shape='rectangle', fontsize='10', color='red')
-            dot.node('Sink', shape='trapezium', fontsize='10')
-            dot.node('Source', shape='invtrapezium', fontsize='10')
-            dot.node('Storage', shape='rectangle', style='dashed', fontsize='10', color='green')
-
-            busses = []
-            # draw a node for each of the network's components.
-            for nd in self.es.nodes:
-                if isinstance(nd, solph.Bus):
-                    dot.node(nd.label,
-                             shape='rectangle',
-                             fontsize='10',
-                             fixedsize='shape',
-                             width='2.4',
-                             height='0.6',
-                             color='red')
-                    # keep the bus reference for drawing edges later
-                    busses.append(nd)
-                elif isinstance(nd, solph.components.Sink):
-                    dot.node(nd.label, shape='trapezium', fontsize='10')
-                elif isinstance(nd, solph.components.Source):
-                    dot.node(nd.label, shape='invtrapezium', fontsize='10')
-                elif isinstance(nd, solph.components.Converter):
-                    dot.node(nd.label, shape='rectangle', fontsize='10')
-                elif isinstance(nd, solph.components.GenericStorage):
-                    dot.node(nd.label, shape='rectangle', style='dashed', fontsize='10', color='green')
-                else:
-                    self.scenario.logger.debug(f'System Node {nd.label} - Type {type(nd)} not recognized')
-
-            # draw the edges between the nodes based on each bus inputs/outputs
-            for bus in busses:
-                for component in bus.inputs:
-                    # draw an arrow from the component to the bus
-                    dot.edge(component.label, bus.label)
-                for component in bus.outputs:
-                    # draw an arrow from the bus to the component
-                    dot.edge(bus.label, component.label)
-
-            try:
-                dot.render(cleanup=True)
-            except Exception as e:  # inhibiting failing renderer from stopping model execution
-                self.scenario.logger.warning(f'System graph rendering failed - Traceback: {e}')
         # endregion
 
         # region build optimization problem

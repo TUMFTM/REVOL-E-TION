@@ -476,11 +476,10 @@ class SystemCore(Block):
           |<---acdc-x-|
         """
 
-        self.components['ac'] = solph.Bus(label='ac')
-        self.components['dc'] = solph.Bus(label='dc')
+        self.components['ac'] = solph.Bus()
+        self.components['dc'] = solph.Bus()
 
         self.components['acdc'] = solph.components.Converter(
-            label='acdc',
             inputs={self.components['ac']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.evaluators['acdc'].capex['spec_opt'],
                                                existing=self.sizes.loc['acdc', 'preexisting'],
@@ -490,7 +489,6 @@ class SystemCore(Block):
             conversion_factors={self.components['dc']: self.eff['acdc']})
 
         self.components['dcac'] = solph.components.Converter(
-            label='dcac',
             inputs={self.components['dc']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.evaluators['dcac'].capex['spec_opt'],
                                                existing=self.sizes.loc['dcac', 'preexisting'],
@@ -608,10 +606,9 @@ class RenewableSource(SourceBlock):
 
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
-        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+        self.components['bus'] = solph.Bus()
 
         self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_out',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow()},
             conversion_factors={self.bus_connected: self.eff['block']}
@@ -621,12 +618,10 @@ class RenewableSource(SourceBlock):
         # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
         # All other components such as converters and storages only have cost_eps in the output direction.
         self.components['exc'] = solph.components.Sink(
-            label=f'{self.name}_exc',
             inputs={self.components['bus']: solph.Flow(variable_costs=2 * self.scenario.cost_eps)}
         )
 
         self.components['src'] = solph.components.Source(
-            label=f'{self.name}_src',
             outputs={self.components['bus']: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
                                                existing=self.sizes.loc['block', 'preexisting'],
@@ -1092,7 +1087,6 @@ class FixedDemand(SinkBlock):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
         self.components['snk'] = solph.components.Sink(
-            label=f'{self.name}_snk',
             inputs={self.bus_connected: solph.Flow(nominal_value=1,
                                                    fix=self.flows_apriori['demand'][horizon.dti_ph])}
         )
@@ -1150,7 +1144,6 @@ class ControllableSource(SourceBlock):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
         self.components['src'] = solph.components.Source(
-            label=f'{self.name}_src',
             outputs={self.bus_connected: solph.Flow(
                 nominal_value=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
                                                existing=self.sizes.loc['block', 'preexisting'],
@@ -1327,10 +1320,9 @@ class GridConnection(Block):
 
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
-        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+        self.components['bus'] = solph.Bus()
 
         self.inflows = {f'{self.name}_inflow_1': solph.components.Converter(
-            label=f'xc_{self.name}',
             # Peakshaving not implemented for feed-in into grid
             inputs={self.bus_connected: solph.Flow()},
             # Size optimization
@@ -1344,7 +1336,6 @@ class GridConnection(Block):
         self.components.update(self.inflows)
 
         self.outflows = {f'{self.name}_outflow_{period}': solph.components.Converter(
-            label=f'{self.name}_xc_{period}',
             # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
@@ -1511,7 +1502,6 @@ class GridMarket(Block):
         """
 
         self.components['src'] = solph.components.Source(
-            label=f'{self.name}_src',
             outputs={self.parent.components['bus']: solph.Flow(
                 nominal_value=utils.conv_nan2none(self.sizes.loc['g2s', 'preexisting']),
                 variable_costs=self.evaluators['g2s'].opex['spec_ep'][horizon.dti_ph])
@@ -1519,7 +1509,6 @@ class GridMarket(Block):
         )
 
         self.components['snk'] = solph.components.Sink(
-            label=f'{self.name}_snk',
             inputs={
                 self.parent.components['bus']: solph.Flow(
                     nominal_value=utils.conv_nan2none(self.sizes.loc['s2g', 'preexisting']),
@@ -1632,19 +1621,15 @@ class StorageBlock:
 
         """
 
-        self.components['bus'] = solph.Bus(
-            label=f'{self.name}_bus'
-        )
+        self.components['bus'] = solph.Bus()
 
         self.components['inflow'] = solph.components.Converter(
-            label=f'xc_{self.name}',
             inputs={self.bus_connected: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: self.eff['chg_int']}
         )
 
         self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_xc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
                 variable_costs=self.scenario.cost_eps
@@ -1653,7 +1638,6 @@ class StorageBlock:
         )
 
         self.components['storage'] = solph.components.GenericStorage(
-            label=f'{self.name}_storage',
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['storage'].opex['spec_ep'][horizon.dti_ph]
             )},
@@ -1838,11 +1822,10 @@ class Fleet(SinkBlock):
           |                     |   (CombustionVehicle Instance)
         """
 
-        self.components['bus'] = solph.Bus(label=f'{self.name}_bus')
+        self.components['bus'] = solph.Bus()
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
 
         self.components['inflow'] = solph.components.Converter(
-            label=f'{self.name}_inflow',
             inputs={self.bus_connected: solph.Flow(
                 variable_costs=self.evaluators['s2f'].opex['spec_ep'][horizon.dti_ph],
                 nominal_value=utils.conv_nan2none(self.sizes.loc['s2f', 'preexisting']),
@@ -1853,7 +1836,6 @@ class Fleet(SinkBlock):
         )
 
         self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_outflow',
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['f2s'].opex['spec_ep'][horizon.dti_ph],
                 nominal_value=utils.conv_nan2none(self.sizes.loc['f2s', 'preexisting']),
@@ -2110,10 +2092,9 @@ class ElectricFleetUnit(StorageBlock, Block):
         StorageBlock.define_oemof_components(self=self,
                                              horizon=horizon)
 
-        self.components['bus_ext_ac'] = solph.Bus(label=f'{self.name}_bus_ext_ac')
+        self.components['bus_ext_ac'] = solph.Bus()
 
         self.components['src_ext_ac'] = solph.components.Source(
-            label=f'{self.name}_src_ext_ac',
             outputs={self.components['bus_ext_ac']: solph.Flow(
                 nominal_value=self.pwr_ext_ac_max,
                 max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atac'].astype(int),
@@ -2122,16 +2103,14 @@ class ElectricFleetUnit(StorageBlock, Block):
         )
 
         self.components['conv_ext_ac'] = solph.components.Converter(
-            label=f'{self.name}_conv_ext_ac',
             inputs={self.components['bus_ext_ac']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: self.eff['chg_ac']}
         )
 
-        self.components['bus_ext_dc'] = solph.Bus(label=f'{self.name}_bus_ext_dc')
+        self.components['bus_ext_dc'] = solph.Bus()
 
         self.components['src_ext_dc'] = solph.components.Source(
-            label=f'{self.name}_src_ext_dc',
             outputs={self.components['bus_ext_dc']: solph.Flow(
                 nominal_value=self.pwr_ext_dc_max,
                 max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atdc'].astype(int),
@@ -2140,7 +2119,6 @@ class ElectricFleetUnit(StorageBlock, Block):
         )
 
         self.components['conv_ext_dc'] = solph.components.Converter(
-            label=f'{self.name}_conv_ext_dc',
             inputs={self.components['bus_ext_dc']: solph.Flow()},
             outputs={self.components['bus']: solph.Flow()},
             conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
