@@ -77,7 +77,7 @@ def main():
                                                       filetypes=(('CSV files', '*.csv'),
                                                                  ('All files', '*.*')))
         if not path_scenario:
-            raise FileNotFoundError(f'No {file_type} file selected')
+            raise FileNotFoundError(f'No scenario file selected')
     # Option 2: Full absolute or relative file path (works from anywhere)
     elif os.path.isfile(args.scenario):
         path_scenario = args.scenario
@@ -91,7 +91,7 @@ def main():
         warnings.warn(f'Using example scenario file \"{args.scenario}\", data, and output directory from '
                       f'REVOL-E-TION - disregard if this is intended', DefaultFileLocationWarning)
     else:
-        raise FileNotFoundError(f'Scenario file or path not interpretable: {arg}')
+        raise FileNotFoundError(f'Scenario file or path not interpretable: {args.scenario}')
     # endregion
 
     # region interpret input directory path
