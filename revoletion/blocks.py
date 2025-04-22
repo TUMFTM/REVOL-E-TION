@@ -618,7 +618,7 @@ class RenewableSource(SourceBlock):
         # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
         # All other components such as converters and storages only have cost_eps in the output direction.
         self.components['exc'] = solph.components.Sink(
-            inputs={self.components['bus']: solph.Flow(variable_costs=2 * self.scenario.cost_eps)}
+            inputs={self.components['bus']: solph.Flow()}
         )
 
         self.components['src'] = solph.components.Source(
@@ -1625,14 +1625,16 @@ class StorageBlock:
 
         self.components['inflow'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow()},
-            outputs={self.components['bus']: solph.Flow()},
+            outputs={self.components['bus']: solph.Flow(
+                variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
+            )},
             conversion_factors={self.components['bus']: self.eff['chg_int']}
         )
 
         self.components['outflow'] = solph.components.Converter(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
-                variable_costs=self.scenario.cost_eps
+                variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be posiive)
                 )},
             conversion_factors={self.bus_connected: self.eff['dis_int']}
         )
