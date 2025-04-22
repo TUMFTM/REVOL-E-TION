@@ -14,7 +14,6 @@ requires-python = ">=3.11"
 dependencies = [
     "geopy",
     "graphviz",
-    "gurobipy",
     "holidays",
     "numpy",
     "numpy_financial",
