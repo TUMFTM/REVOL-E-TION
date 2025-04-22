@@ -14,9 +14,6 @@ class DefaultFileLocationWarning(UserWarning):
 
 
 def main():
-    root = tk.Tk()
-    root.withdraw()  # hide small tk-window
-    root.lift()  # make sure all tk windows appear in front of other windows
 
     parser = argparse.ArgumentParser()
 
@@ -72,6 +69,9 @@ def main():
     # region interpret scenario file path
     # Option 1: No scenario file argument passed -> select via GUI
     if args.scenario is None:
+        root = tk.Tk()
+        root.withdraw()  # hide small tk-window
+        root.lift()  # make sure all tk windows appear in front of other windows
         path_scenario = tk.filedialog.askopenfilename(initialdir=path_cwd,
                                                       title=f'Select scenario file',
                                                       filetypes=(('CSV files', '*.csv'),
