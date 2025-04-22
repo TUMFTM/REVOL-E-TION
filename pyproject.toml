@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoletion"
-version = "1.1"
+version = "1.2"
 description = "Resilient Electric Vehicle Optimization model for Local Energy TransitION"
 authors = [
     { name = "Philipp Rosner", email = "philipp.rosner@tum.de" },
