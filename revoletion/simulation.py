@@ -72,7 +72,6 @@ class SimulationRun:
                       'input': path_input,
                       'output': path_output}
         self.solver = solver
-        self.n_processes = min(n_processes, os.cpu_count())
         self.largescalemode = largescalemode
         self.debugmode = debugmode
         self.rerun = rerun
@@ -159,6 +158,8 @@ class SimulationRun:
 
         if self.scenario_num == 0:
             raise ValueError('No executable scenarios found in scenario file')
+        
+        self.n_processes = min(n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
         # region define logger structure
