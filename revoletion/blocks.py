@@ -1668,8 +1668,8 @@ class StorageBlock:
             balanced={'go': True, 'rh': False}[self.scenario.strategy],
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             # crate measured "outside" of conversion factor (efficiency)
-            invest_relation_input_capacity=params['crate_chg_max'],
-            invest_relation_output_capacity=params['crate_dis_max'],
+            invest_relation_input_capacity=params['invest_relation_input_capacity'],
+            invest_relation_output_capacity=params['invest_relation_output_capacity'],
             inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_capacity=solph.Investment(
@@ -1784,8 +1784,8 @@ class StationaryBattery(StorageBlock, Block):
                   'outflow_max': None,
                   'inflow_fix': None,
                   'outflow_fix': None,
-                  'crate_chg_max': self.crate_chg,
-                  'crate_dis_max': self.crate_dis,
+                  'invest_relation_input_capacity': self.crate_chg * self.scenario.timestep_hours,
+                  'invest_relation_output_capacity': self.crate_dis * self.scenario.timestep_hours,
                   }
         super().define_oemof_components(horizon, params)
 
