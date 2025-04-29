@@ -1623,11 +1623,11 @@ class StorageBlock:
 
         """
 
-        params['inflow_max'] = None
-        params['inflow_fix'] = 0.0
-
-        params['outflow_max'] = None
-        params['outflow_fix'] = 0.01
+        # params['inflow_max'] = None
+        # params['inflow_fix'] = 0.0
+        #
+        # params['outflow_max'] = None
+        # params['outflow_fix'] = 0.01
 
 
         self.components['bus'] = solph.Bus()
