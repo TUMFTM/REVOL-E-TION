@@ -1607,7 +1607,9 @@ class StorageBlock:
         self.aging_model = bat.BatteryPackModel(self)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
+                                horizon: 'PredictionHorizon',
+                                params: dict,
+                                ):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1624,20 +1626,28 @@ class StorageBlock:
         self.components['bus'] = solph.Bus()
 
         self.components['inflow'] = solph.components.Converter(
-            inputs={self.bus_connected: solph.Flow()},
+            label=f'mc_{self.name}',
+            inputs={self.bus_connected: solph.Flow(
+                nominal_capacity=params['pwr_chg_max'],
+                max=params['atbase'],
+                fix=params['pwr_chg_fix'],
+            )},
             outputs={self.components['bus']: solph.Flow(
                 variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
             )},
-            conversion_factors={self.components['bus']: self.eff['chg_int']}
-        )
+            conversion_factors={self.components['bus']: self.eff['chg_int']})
 
         self.components['outflow'] = solph.components.Converter(
+            label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
-                variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be posiive)
-                )},
-            conversion_factors={self.bus_connected: self.eff['dis_int']}
-        )
+                nominal_capacity=params['pwr_dis_max'],
+                max=params['atbase'],
+                fix=params['pwr_dis_fix'],
+                variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be positive)
+                )
+            },
+            conversion_factors={self.bus_connected: self.eff['dis_int']})
 
         self.components['storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow(
@@ -1649,10 +1659,10 @@ class StorageBlock:
                     )},
             loss_rate=self.loss_rate_per_hour,
             balanced={'go': True, 'rh': False}[self.scenario.strategy],
-            initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),#
+            initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             # crate measured "outside" of conversion factor (efficiency)
-            invest_relation_input_capacity=self.crate_chg if isinstance(self, StationaryBattery) else None,  
-            invest_relation_output_capacity=self.crate_dis if isinstance(self, StationaryBattery) else None,
+            invest_relation_input_capacity=params['crate_chg_max'],
+            invest_relation_output_capacity=params['crate_dis_max'],
             inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_capacity=solph.Investment(
@@ -1664,8 +1674,8 @@ class StorageBlock:
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
-                                        capex_spec=self.evaluators['storage'].capex['spec'],
-                                        invest_type='storage')
+                                             capex_spec=self.evaluators['storage'].capex['spec'],
+                                             invest_type='storage')
 
     def get_horizon_results(self,
                             horizon):
@@ -1760,9 +1770,15 @@ class StationaryBattery(StorageBlock, Block):
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
-        
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
-        super().define_oemof_components(horizon)
+        params = {'pwr_chg_max': None,
+                  'pwr_dis_max': None,
+                  'atbase': None,
+                  'pwr_chg_fix': None,
+                  'pwr_dis_fix': None,
+                  'crate_chg_max': self.crate_chg,
+                  'crate_dis_max': self.crate_dis,}
+        super().define_oemof_components(horizon, params)
 
     def create_result_messages(self, *_):
         super().create_result_messages(unit='kWh')
@@ -2091,8 +2107,16 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         self.bus_connected = self.parent.parent.components['bus']
 
-        StorageBlock.define_oemof_components(self=self,
-                                             horizon=horizon)
+        params = {'pwr_chg_max': self.pwr_chg_max,
+                  'pwr_dis_max': self.pwr_dis_max * self.eff['dis_int'],
+                  'atbase': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                  'pwr_chg_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
+                  'pwr_dis_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
+                  'crate_chg_max': None,
+                  'crate_dis_max': None,}
+
+        super().define_oemof_components(horizon=horizon,
+                                        params=params)
 
         self.components['bus_ext_ac'] = solph.Bus()
 

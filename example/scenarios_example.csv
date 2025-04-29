@@ -1,7 +1,7 @@
-block,key,icev,bev_grid,bev_mg,bev_mg_rh
+block,key,#icev,bev_grid,#bev_mg,#bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,50,50,50,50
+scenario,sim_duration,50,0.25,50,50
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,go,rh
@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
+scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'ess': 'StationaryBattery', 'vehicles': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
 core,size_preexisting_acdc,0,0,0,55000
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -131,7 +131,7 @@ vehicles,size_preexisting_f2s,43000,43000,43000,43000
 vehicles,size_preexisting_s2f,43000,43000,43000,43000
 vehicles,opex_spec_f2s,0,0,0,0
 vehicles,opex_spec_s2f,0,0,0,0
-bev,num,5,5,5,5
+bev,num,5,1,5,5
 bev,type_unit,ev,ev,ev,ev
 bev,data_source,usecases,usecases,usecases,usecases
 bev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
@@ -151,8 +151,8 @@ bev,size_preexisting_storage,16500,16500,16500,16500
 bev,size_max_storage,None,None,None,None
 bev,invest_storage,False,False,False,False
 bev,capex_spec,0.3,0.3,0.3,0.3
-bev,rex,mb,mb,mb,mb
-bev,mode_scheduling,fcfs,fcfs,fcfs,fcfs
+bev,rex,mb,None,mb,mb
+bev,mode_scheduling,fcfs,uc,fcfs,fcfs
 bev,forecast_hours,None,None,None,None
 bev,aging,True,True,True,True
 bev,chemistry,nmc,nmc,nmc,nmc
