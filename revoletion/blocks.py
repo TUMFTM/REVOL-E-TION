@@ -316,7 +316,9 @@ class Block:
                                                      y=self.flows.loc[self.scenario.dti_eval, 'total'],
                                                      mode='lines',
                                                      name=self.get_legend_entry(),
-                                                     line=dict(width=2, dash=None, shape='hv'))
+                                                     line=dict(width=2, dash=None, shape='hv'),
+                                                     visible=True if self.top_level_block else 'legendonly',
+                                                     )
                                           )
 
     def write_results_to_scenario(self):
@@ -541,14 +543,16 @@ class SystemCore(Block):
                                                       name=f'{self.name} DC-AC power (max. '
                                                            f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
                                                       mode='lines',
                                                       name=f'{self.name} AC-DC power (max. '
                                                            f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly')])
+                                                      visible='legendonly',
+                                                      )])
 
 
 class RenewableSource(SourceBlock):
@@ -668,13 +672,15 @@ class RenewableSource(SourceBlock):
                                                       mode='lines',
                                                       name=f'{self.name} curtailed power',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'pot'],
                                                       mode='lines',
                                                       name=f'{self.name} potential power',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly')])
+                                                      visible='legendonly',
+                                                      )])
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
@@ -1722,13 +1728,15 @@ class StorageBlock:
                                                       mode='lines',
                                                       name=f'{self.name} SOC',
                                                       line=dict(width=2, dash=None),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=data_soh.index,
                                                       y=data_soh,
                                                       mode='lines',
                                                       name=f'{self.name} SOH',
                                                       line=dict(width=2, dash=None),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            ])
 
 
@@ -2162,7 +2170,6 @@ class ElectricFleetUnit(StorageBlock, Block):
             conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
         )
 
-
     def get_horizon_results(self,
                             horizon: 'PredictionHorizon'):
         """
@@ -2185,12 +2192,16 @@ class ElectricFleetUnit(StorageBlock, Block):
                                                       y=self.flows.loc[self.scenario.dti_eval, 'ext_ac'],
                                                       mode='lines',
                                                       name=legend_ext_ac,
-                                                      line=dict(width=2, dash=None, shape='hv')),
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'ext_dc'],
                                                       mode='lines',
                                                       name=legend_ext_dc,
-                                                      line=dict(width=2, dash=None, shape='hv')),
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly',
+                                                      ),
                                            ])
 
         StorageBlock.create_plot_traces(self)
