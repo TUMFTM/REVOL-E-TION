@@ -1623,12 +1623,12 @@ class StorageBlock:
 
         """
 
-        # params['atbase_chg'] = 1
-        # params['pwr_chg_fix'] = None
+        params['inflow_max'] = None
+        params['inflow_fix'] = 0.0
 
+        params['outflow_max'] = None
+        params['outflow_fix'] = 0.01
 
-        # params['atbase_dis'] = 1
-        # params['pwr_dis_fix'] = None
 
         self.components['bus'] = solph.Bus()
 
@@ -2122,8 +2122,8 @@ class ElectricFleetUnit(StorageBlock, Block):
                   'outflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
                   'inflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
                   'outflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
-                  'crate_chg_max': None,
-                  'crate_dis_max': None,
+                  'invest_relation_input_capacity': None,
+                  'invest_relation_output_capacity': None,
                   }
 
         super().define_oemof_components(horizon=horizon,
