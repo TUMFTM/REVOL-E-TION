@@ -2124,6 +2124,12 @@ class ElectricFleetUnit(StorageBlock, Block):
         super().define_oemof_components(horizon=horizon,
                                         params=params)
 
+        self.components['snk'] = solph.components.Sink(
+            inputs={self.components['bus']: solph.Flow(
+                nominal_capacity=1,
+                fix=self.log.loc[horizon.dti_ph, 'consumption']
+            )})
+
         self.components['bus_ext_ac'] = solph.Bus()
 
         self.components['src_ext_ac'] = solph.components.Source(
