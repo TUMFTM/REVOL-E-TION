@@ -1623,13 +1623,6 @@ class StorageBlock:
 
         """
 
-        # params['inflow_max'] = None
-        # params['inflow_fix'] = 0.0
-        #
-        # params['outflow_max'] = None
-        # params['outflow_fix'] = 0.01
-
-
         self.components['bus'] = solph.Bus()
 
         self.components['inflow'] = solph.components.Converter(
@@ -1665,7 +1658,7 @@ class StorageBlock:
                     variable_costs=self.scenario.cost_eps
                     )},
             loss_rate=self.loss_rate_per_hour,
-            balanced={'go': True, 'rh': False}[self.scenario.strategy],
+            balanced=params['storage_balanced'],
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             # crate measured "outside" of conversion factor (efficiency)
             invest_relation_input_capacity=params['invest_relation_input_capacity'],
@@ -1786,6 +1779,7 @@ class StationaryBattery(StorageBlock, Block):
                   'outflow_fix': None,
                   'invest_relation_input_capacity': self.crate_chg * self.scenario.timestep_hours,
                   'invest_relation_output_capacity': self.crate_dis * self.scenario.timestep_hours,
+                  'storage_balanced': True if self.scenario.strategy == 'go' else False,
                   }
         super().define_oemof_components(horizon, params)
 
@@ -2124,6 +2118,7 @@ class ElectricFleetUnit(StorageBlock, Block):
                   'outflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
                   'invest_relation_input_capacity': None,
                   'invest_relation_output_capacity': None,
+                  'storage_balanced': False,
                   }
 
         super().define_oemof_components(horizon=horizon,
