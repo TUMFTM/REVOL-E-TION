@@ -133,8 +133,8 @@ vehicles,opex_spec_f2s,0,0,0,0
 vehicles,opex_spec_s2f,0,0,0,0
 bev,num,5,5,5,5
 bev,type_unit,ev,ev,ev,ev
-bev,data_source,usecases,usecases,usecases,usecases
-bev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
+bev,data_source,log,log,log,log
+bev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 bev,filename_mapper,mtf,mtf,mtf,mtf
 bev,capex_preexisting,True,True,True,True
 bev,capex_fix_glider,25000,25000,25000,25000
@@ -147,11 +147,11 @@ bev,crev_spec_time,0.1,0.1,0.1,0.1
 bev,crev_spec_dist,0.2,0.2,0.2,0.2
 bev,opex_spec_ext_ac,49e-5,49e-5,49e-5,49e-5
 bev,opex_spec_ext_dc,79e-5,79e-5,79e-5,79e-5
-bev,size_preexisting_storage,16500,16500,16500,16500
+bev,size_preexisting_storage,30000,30000,30000,30000
 bev,size_max_storage,None,None,None,None
 bev,invest_storage,False,False,False,False
 bev,capex_spec,0.3,0.3,0.3,0.3
-bev,rex,mb,mb,mb,mb
+bev,rex,None,None,None,None
 bev,mode_scheduling,fcfs,fcfs,fcfs,fcfs
 bev,forecast_hours,None,None,None,None
 bev,aging,True,True,True,True
@@ -175,8 +175,8 @@ bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,sdr,0.02,0.02,0.02,0.02
 icev,num,5,5,5,5
 icev,type_unit,icev,icev,icev,icev
-icev,data_source,usecases,usecases,usecases,usecases
-icev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
+icev,data_source,log,log,log,log
+icev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 icev,filename_mapper,mtf,mtf,mtf,mtf
 icev,capex_preexisting,True,True,True,True
 icev,capex_fix_glider,25000,25000,25000,25000
