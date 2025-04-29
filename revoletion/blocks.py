@@ -1623,14 +1623,21 @@ class StorageBlock:
 
         """
 
+        # params['atbase_chg'] = 1
+        # params['pwr_chg_fix'] = None
+
+
+        # params['atbase_dis'] = 1
+        # params['pwr_dis_fix'] = None
+
         self.components['bus'] = solph.Bus()
 
         self.components['inflow'] = solph.components.Converter(
             label=f'mc_{self.name}',
             inputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['pwr_chg_max'],
-                max=params['atbase'],
-                fix=params['pwr_chg_fix'],
+                nominal_capacity=params['inflow_nominal_capacity'],
+                max=params['inflow_max'],
+                fix=params['inflow_fix'],
             )},
             outputs={self.components['bus']: solph.Flow(
                 variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
@@ -1641,9 +1648,9 @@ class StorageBlock:
             label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['pwr_dis_max'],
-                max=params['atbase'],
-                fix=params['pwr_dis_fix'],
+                nominal_capacity=params['outflow_nominal_capacity'],
+                max=params['outflow_max'],
+                fix=params['outflow_fix'],
                 variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be positive)
                 )
             },
@@ -1771,13 +1778,15 @@ class StationaryBattery(StorageBlock, Block):
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
-        params = {'pwr_chg_max': None,
-                  'pwr_dis_max': None,
-                  'atbase': None,
-                  'pwr_chg_fix': None,
-                  'pwr_dis_fix': None,
+        params = {'inflow_nominal_capacity': None,
+                  'outflow_nominal_capacity': None,
+                  'inflow_max': None,
+                  'outflow_max': None,
+                  'inflow_fix': None,
+                  'outflow_fix': None,
                   'crate_chg_max': self.crate_chg,
-                  'crate_dis_max': self.crate_dis,}
+                  'crate_dis_max': self.crate_dis,
+                  }
         super().define_oemof_components(horizon, params)
 
     def create_result_messages(self, *_):
@@ -2107,13 +2116,15 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         self.bus_connected = self.parent.parent.components['bus']
 
-        params = {'pwr_chg_max': self.pwr_chg_max,
-                  'pwr_dis_max': self.pwr_dis_max * self.eff['dis_int'],
-                  'atbase': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
-                  'pwr_chg_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
-                  'pwr_dis_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
+        params = {'inflow_nominal_capacity': self.pwr_chg_max,
+                  'outflow_nominal_capacity': self.pwr_dis_max * self.eff['dis_int'],
+                  'inflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                  'outflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                  'inflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
+                  'outflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
                   'crate_chg_max': None,
-                  'crate_dis_max': None,}
+                  'crate_dis_max': None,
+                  }
 
         super().define_oemof_components(horizon=horizon,
                                         params=params)
