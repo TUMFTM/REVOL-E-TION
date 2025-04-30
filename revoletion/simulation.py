@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import webbrowser
 
 import geopy
 import holidays
@@ -631,7 +632,10 @@ class Scenario:
                     self.logger.info(msg)
                 self.generate_plots()
                 self.figure.write_html(self.paths['figure'])
-                self.figure.show(renderer='browser')
+                try:
+                    self.figure.show(renderer='browser')
+                except webbrowser.Error:  # webbrowser is not available on most remote machines
+                    pass
 
         logging.shutdown()
         # endregion
