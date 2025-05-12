@@ -1,5 +1,31 @@
+Dockerfile
 example/
 results/
 images/
 
 README.md
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+
+# Development environments
+.env
+.venv
+.devenv
+.direnv
+venv/
+
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
