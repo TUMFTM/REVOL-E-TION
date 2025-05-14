@@ -2,13 +2,18 @@
 
 import ast
 import importlib.util
+import importlib.metadata
+import logging
 import numpy as np
 import pandas as pd
 import pandas.errors
 import os
+import shutil
+import subprocess
 
 from revoletion import economics as eco
 
+_LOGGER = logging.getLogger(__name__)
 
 def infer_dtype(value):
     """
@@ -135,3 +140,46 @@ def set_extension(filename, default_extension='.csv'):
     if not ext:
         filename = base + default_extension
     return filename
+
+UNKNOWN_VERSION = "unknown"
+
+def get_current_project_git_commit_hash() -> str:
+    """
+    Retrieves the short git commit hash of the current repository.
+    
+    Returns:
+        The first 6 characters of the current git commit hash if available, otherwise `UNKNOWN_VERSION`.             
+    """
+    git_binary = shutil.which("git")
+    if git_binary is None:
+        # Some environments (e.g. docker, pip distribution) might not have git available.
+        return UNKNOWN_VERSION
+
+    try:
+        commit_hash = (
+            subprocess.check_output([git_binary, "rev-parse", "HEAD"])
+            .strip()
+            .decode()[0:6]
+        )
+        return commit_hash
+    except subprocess.CalledProcessError:
+        return UNKNOWN_VERSION
+
+
+def get_revoletion_python_package_version() -> str:
+    """
+    Retrieves the version of the installed 'revoletion' package.
+
+    Returns: 
+        The version string of the 'revoletion' package if installed, otherwise `UNKNOWN_VERSION`.
+    """
+    try:
+        return importlib.metadata.version("revoletion")
+    except importlib.metadata.PackageNotFoundError:
+        # If REVOL-E-TION is executed as script, the module might not be available in the current context.
+        # This is usually the case, if only the dependencies of the project were installed
+        # but the project itself was not explicitly installed (e.g. docker, script).
+        _LOGGER.warning(
+            "Failed to query REVOL-E_TION package version. This probably means that the package is not correctly installed in your current python environment."
+        )
+        return UNKNOWN_VERSION

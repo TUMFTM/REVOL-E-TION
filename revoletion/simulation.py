@@ -105,12 +105,8 @@ class SimulationRun:
 
         # region get version information
         self.version_solph = solph.__version__
-        self.version_revoletion = importlib.metadata.version('revoletion')
-
-        try:  # todo additionally get commit hash of revoletion if possible
-            self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
-        except subprocess.CalledProcessError:
-            self.commit_hash = 'unknown'
+        self.version_revoletion = utils.get_revoletion_python_package_version()
+        self.commit_hash = utils.get_current_project_git_commit_hash()
         # endregion
 
         input_checker = checker.InputChecker(self)
