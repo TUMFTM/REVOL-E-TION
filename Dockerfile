@@ -22,13 +22,11 @@ RUN mkdir -p /opt/cbc && \
     wget "https://github.com/coin-or/Cbc/releases/download/releases%2F${CBC_VERSION}/Cbc-releases.${CBC_VERSION}-${CBC_BUILD}.tar.gz" && \
     tar xvf "Cbc-releases.${CBC_VERSION}-${CBC_BUILD}.tar.gz" --directory=/opt/cbc
 
-# Enable bytecode compilation
+# Enable bytecode compilation.
 ENV UV_COMPILE_BYTECODE=1
 
-# Copy from the cache instead of linking since it's a mounted volume
+# Copy from the cache instead of linking since it's a mounted volume.
 ENV UV_LINK_MODE=copy
-
-ENV UV_SYSTEM_PYTHON=1
 
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -36,6 +34,17 @@ RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
     uv sync --no-install-project --no-editable
 
 FROM python:${PYTHON_VERSION} AS runtime
+
+WORKDIR /app
+
+# Normally, revoletion would be executed as root in the container, and
+# the result files it creates would therefore be owned by root.
+# For non-root host users, this complicates hanlding the result files.
+# To circumvent this, an extra user to execute revoletion is created.
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} -r revoletion && \
+ useradd --no-log-init --no-create-home --home-dir /app -r --uid ${UID}  -g revoletion revoletion
 
 # Copy Gurobi from builder stage.
 COPY --from=builder /opt/gurobi /opt/gurobi
@@ -49,12 +58,19 @@ COPY --from=builder /opt/cbc /opt/cbc
 ENV PATH="/opt/cbc/bin:${PATH}" \
     LD_LIBRARY_PATH="/opt/cbc/lib:${LD_LIBRARY_PATH:-}"
 
-WORKDIR /app
 
+# Fetch the virtual environment with the necessary python dependencies.
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Install revoletion into the container.
 COPY . .
+RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv sync --no-dev
+
+# Finally switch over, *after* uv sync, so the cache privileges are not messed up.
+USER revoletion
 
 ENTRYPOINT ["python", "-m", "revoletion.main"]
 CMD []

@@ -3,7 +3,6 @@ example/
 results/
 images/
 
-README.md
 # Version control
 .git/
 .gitignore

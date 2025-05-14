@@ -158,7 +158,7 @@ def main():
             initialdir=path_cwd, title="Select input data directory"
         )
         if not path_input:
-            raise NotADirectoryError(f"No input data directory selected")
+            raise NotADirectoryError("No input data directory selected")
     # Option 3: Full absolute or relative file path (works from anywhere)
     elif os.path.isdir(args.inputdir):
         path_input = args.inputdir
