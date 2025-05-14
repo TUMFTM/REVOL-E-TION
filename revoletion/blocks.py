@@ -316,7 +316,9 @@ class Block:
                                                      y=self.flows.loc[self.scenario.dti_eval, 'total'],
                                                      mode='lines',
                                                      name=self.get_legend_entry(),
-                                                     line=dict(width=2, dash=None, shape='hv'))
+                                                     line=dict(width=2, dash=None, shape='hv'),
+                                                     visible=True if self.top_level_block else 'legendonly',
+                                                     )
                                           )
 
     def write_results_to_scenario(self):
@@ -541,14 +543,16 @@ class SystemCore(Block):
                                                       name=f'{self.name} DC-AC power (max. '
                                                            f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
                                                       mode='lines',
                                                       name=f'{self.name} AC-DC power (max. '
                                                            f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly')])
+                                                      visible='legendonly',
+                                                      )])
 
 
 class RenewableSource(SourceBlock):
@@ -668,13 +672,15 @@ class RenewableSource(SourceBlock):
                                                       mode='lines',
                                                       name=f'{self.name} curtailed power',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'pot'],
                                                       mode='lines',
                                                       name=f'{self.name} potential power',
                                                       line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly')])
+                                                      visible='legendonly',
+                                                      )])
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
@@ -1628,9 +1634,9 @@ class StorageBlock:
         self.components['inflow'] = solph.components.Converter(
             label=f'mc_{self.name}',
             inputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['pwr_chg_max'],
-                max=params['atbase'],
-                fix=params['pwr_chg_fix'],
+                nominal_capacity=params['inflow_nominal_capacity'],
+                max=params['inflow_max'],
+                fix=params['inflow_fix'],
             )},
             outputs={self.components['bus']: solph.Flow(
                 variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
@@ -1641,9 +1647,9 @@ class StorageBlock:
             label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['pwr_dis_max'],
-                max=params['atbase'],
-                fix=params['pwr_dis_fix'],
+                nominal_capacity=params['outflow_nominal_capacity'],
+                max=params['outflow_max'],
+                fix=params['outflow_fix'],
                 variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be positive)
                 )
             },
@@ -1658,11 +1664,11 @@ class StorageBlock:
                     variable_costs=self.scenario.cost_eps
                     )},
             loss_rate=self.loss_rate_per_hour,
-            balanced={'go': True, 'rh': False}[self.scenario.strategy],
+            balanced=params['storage_balanced'],
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
             # crate measured "outside" of conversion factor (efficiency)
-            invest_relation_input_capacity=params['crate_chg_max'],
-            invest_relation_output_capacity=params['crate_dis_max'],
+            invest_relation_input_capacity=params['invest_relation_input_capacity'],
+            invest_relation_output_capacity=params['invest_relation_output_capacity'],
             inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_capacity=solph.Investment(
@@ -1722,13 +1728,15 @@ class StorageBlock:
                                                       mode='lines',
                                                       name=f'{self.name} SOC',
                                                       line=dict(width=2, dash=None),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=data_soh.index,
                                                       y=data_soh,
                                                       mode='lines',
                                                       name=f'{self.name} SOH',
                                                       line=dict(width=2, dash=None),
-                                                      visible='legendonly'),
+                                                      visible='legendonly',
+                                                      ),
                                            ])
 
 
@@ -1771,13 +1779,16 @@ class StationaryBattery(StorageBlock, Block):
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
-        params = {'pwr_chg_max': None,
-                  'pwr_dis_max': None,
-                  'atbase': None,
-                  'pwr_chg_fix': None,
-                  'pwr_dis_fix': None,
-                  'crate_chg_max': self.crate_chg,
-                  'crate_dis_max': self.crate_dis,}
+        params = {'inflow_nominal_capacity': None,
+                  'outflow_nominal_capacity': None,
+                  'inflow_max': None,
+                  'outflow_max': None,
+                  'inflow_fix': None,
+                  'outflow_fix': None,
+                  'invest_relation_input_capacity': self.crate_chg * self.scenario.timestep_hours,
+                  'invest_relation_output_capacity': self.crate_dis * self.scenario.timestep_hours,
+                  'storage_balanced': True if self.scenario.strategy == 'go' else False,
+                  }
         super().define_oemof_components(horizon, params)
 
     def create_result_messages(self, *_):
@@ -2107,16 +2118,25 @@ class ElectricFleetUnit(StorageBlock, Block):
 
         self.bus_connected = self.parent.parent.components['bus']
 
-        params = {'pwr_chg_max': self.pwr_chg_max,
-                  'pwr_dis_max': self.pwr_dis_max * self.eff['dis_int'],
-                  'atbase': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
-                  'pwr_chg_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
-                  'pwr_dis_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
-                  'crate_chg_max': None,
-                  'crate_dis_max': None,}
+        params = {'inflow_nominal_capacity': self.pwr_chg_max,
+                  'outflow_nominal_capacity': self.pwr_dis_max * self.eff['dis_int'],
+                  'inflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                  'outflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
+                  'inflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
+                  'outflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
+                  'invest_relation_input_capacity': None,
+                  'invest_relation_output_capacity': None,
+                  'storage_balanced': False,
+                  }
 
         super().define_oemof_components(horizon=horizon,
                                         params=params)
+
+        self.components['snk'] = solph.components.Sink(
+            inputs={self.components['bus']: solph.Flow(
+                nominal_capacity=1,
+                fix=self.log.loc[horizon.dti_ph, 'consumption']
+            )})
 
         self.components['bus_ext_ac'] = solph.Bus()
 
@@ -2150,7 +2170,6 @@ class ElectricFleetUnit(StorageBlock, Block):
             conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
         )
 
-
     def get_horizon_results(self,
                             horizon: 'PredictionHorizon'):
         """
@@ -2173,12 +2192,16 @@ class ElectricFleetUnit(StorageBlock, Block):
                                                       y=self.flows.loc[self.scenario.dti_eval, 'ext_ac'],
                                                       mode='lines',
                                                       name=legend_ext_ac,
-                                                      line=dict(width=2, dash=None, shape='hv')),
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly',
+                                                      ),
                                            go.Scatter(x=self.scenario.dti_eval,
                                                       y=self.flows.loc[self.scenario.dti_eval, 'ext_dc'],
                                                       mode='lines',
                                                       name=legend_ext_dc,
-                                                      line=dict(width=2, dash=None, shape='hv')),
+                                                      line=dict(width=2, dash=None, shape='hv'),
+                                                      visible='legendonly',
+                                                      ),
                                            ])
 
         StorageBlock.create_plot_traces(self)

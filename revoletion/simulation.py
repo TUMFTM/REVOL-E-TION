@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import webbrowser
 
 import geopy
 import holidays
@@ -204,27 +205,31 @@ class SimulationRun:
             shutil.copyfile(self.paths['scenarios'], target)
 
     def execute(self):
-        with mp.Manager() as manager:
-            lock = manager.Lock()
+        if self.n_processes > 1:
+            with mp.Manager() as manager:
+                lock = manager.Lock()
 
-            status_queue = manager.Queue()
-            status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
-            status_thread.start()
+                status_queue = manager.Queue()
+                status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
+                status_thread.start()
 
-            log_queue = manager.Queue()
-            log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
-            log_thread.start()
+                log_queue = manager.Queue()
+                log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
+                log_thread.start()
 
-            with mp.Pool(processes=self.n_processes) as pool:
-                pool.starmap(self.execute_scenario,
-                             zip(self.scenario_names,
-                                 itertools.repeat(log_queue),
-                                 itertools.repeat(status_queue),
-                                 itertools.repeat(lock)))
-            status_queue.put(None)
-            status_thread.join()
-            log_queue.put(None)
-            log_thread.join()
+                with mp.Pool(processes=self.n_processes) as pool:
+                    pool.starmap(self.execute_scenario,
+                                 zip(self.scenario_names,
+                                     itertools.repeat(log_queue),
+                                     itertools.repeat(status_queue),
+                                     itertools.repeat(lock)))
+                status_queue.put(None)
+                status_thread.join()
+                log_queue.put(None)
+                log_thread.join()
+        else:
+            for scenario_name in self.scenario_names:
+                self.execute_scenario(scenario_name)
 
         # region end runtime
         self.runtime_end = time.perf_counter()
@@ -622,7 +627,10 @@ class Scenario:
                     self.logger.info(msg)
                 self.generate_plots()
                 self.figure.write_html(self.paths['figure'])
-                self.figure.show(renderer='browser')
+                try:
+                    self.figure.show(renderer='browser')
+                except webbrowser.Error:  # webbrowser is not available on most remote machines
+                    pass
 
         logging.shutdown()
         # endregion
