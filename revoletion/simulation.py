@@ -5,24 +5,19 @@ import holidays
 import importlib.metadata
 import itertools
 import logging
-import logging.handlers
 import math
 import os
 import pathlib
 import numpy as np
 import plotly.subplots
 import pprint
-import psutil
 import pytz
-import re
 import shutil
-import simpy
 import subprocess
 import sys
 import threading
 import time
 
-import simpy
 import timezonefinder
 import traceback
 import warnings
