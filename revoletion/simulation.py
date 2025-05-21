@@ -109,8 +109,9 @@ class SimulationRun:
         self.commit_hash = utils.get_current_project_git_commit_hash()
         # endregion
 
-        input_checker = checker.InputChecker(self)
-        input_checker.check_scenarios()
+        # TODO: InputChecker requires the README to be present, which might not be the case if REVOL-E-TION is packaged.
+        # input_checker = checker.InputChecker(self)
+        # input_checker.check_scenarios()
 
         # region read, copy and check scenario data
         self.scenario_data = pd.read_csv(self.paths['scenarios'],

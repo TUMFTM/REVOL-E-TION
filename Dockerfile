@@ -1,7 +1,7 @@
 ARG PYTHON_VERSION=3.11-slim
 FROM python:${PYTHON_VERSION} AS builder
 
-WORKDIR /app
+WORKDIR /app/revoletion
 
 # Install system dependencies
 RUN apt-get update && \
@@ -28,23 +28,15 @@ ENV UV_COMPILE_BYTECODE=1
 # Copy from the cache instead of linking since it's a mounted volume.
 ENV UV_LINK_MODE=copy
 
+# Only install the dependencies, to improve layer caching.
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --no-editable
+    --mount=type=cache,target=/app/revoletion/.cache/uv \
+    uv sync --no-install-project
 
 FROM python:${PYTHON_VERSION} AS runtime
 
-WORKDIR /app
-
-# Normally, revoletion would be executed as root in the container, and
-# the result files it creates would therefore be owned by root.
-# For non-root host users, this complicates hanlding the result files.
-# To circumvent this, an extra user to execute revoletion is created.
-ARG UID=1000
-ARG GID=1000
-RUN groupadd -g ${GID} -r revoletion && \
- useradd --no-log-init --no-create-home --home-dir /app -r --uid ${UID}  -g revoletion revoletion
+WORKDIR /app/revoletion
 
 # Copy Gurobi from builder stage.
 COPY --from=builder /opt/gurobi /opt/gurobi
@@ -58,19 +50,36 @@ COPY --from=builder /opt/cbc /opt/cbc
 ENV PATH="/opt/cbc/bin:${PATH}" \
     LD_LIBRARY_PATH="/opt/cbc/lib:${LD_LIBRARY_PATH:-}"
 
+# Normally, revoletion would be executed as root in the container, and
+# the result files it creates would therefore be owned by root.
+# For non-root host users, this complicates hanlding the result files.
+# To circumvent this, an extra user to execute revoletion is created.
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} -r revoletion && \
+ useradd --no-log-init --no-create-home --home-dir /app/revoletion -r --uid ${UID}  -g revoletion revoletion
 
-# Fetch the virtual environment with the necessary python dependencies.
-COPY --from=builder /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
 
-# Install revoletion into the container.
-COPY . .
+# Enable bytecode compilation.
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy from the cache instead of linking since it's a mounted volume.
+ENV UV_LINK_MODE=copy
+
+COPY --from=builder --chown=revoletion:revoletion /app/revoletion/.venv /app/revoletion/.venv
+COPY --from=builder --chown=revoletion:revoletion /app/revoletion/uv.lock /app/revoletion/uv.lock
+ENV VIRTUAL_ENV="/app/revoletion/.venv"
+
+# Install the project source into the container.
+COPY --chown=revoletion:revoletion . .
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
-    --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    --mount=type=cache,target=/app/revoletion/.cache/uv \
+    uv sync --no-dev --locked --no-editable --active
 
-# Finally switch over, *after* uv sync, so the cache privileges are not messed up.
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+RUN chown -R revoletion:revoletion /app
 USER revoletion
 
-ENTRYPOINT ["python", "-m", "revoletion.main"]
+ENTRYPOINT ["revoletion"]
 CMD []

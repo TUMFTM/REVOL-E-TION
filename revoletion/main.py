@@ -146,7 +146,7 @@ def main():
 
     # region interpret input directory path
     # Option 1: Example file in example project in package directory (works from anywhere)
-    if scenarios_example:
+    if scenarios_example and args.inputdir is not None:
         path_input = os.path.dirname(path_scenario)
     # Option 2: No input directory argument passed -> select via GUI
     elif args.inputdir is None:
@@ -173,7 +173,7 @@ def main():
 
     # region interpret output directory path
     # Option 1: Example file in example project in package directory (works from anywhere)
-    if scenarios_example:
+    if scenarios_example and args.outputdir is None:
         path_output = os.path.join(path_pkg, "results")
     # Option 2: No output directory argument passed -> select via GUI
     elif args.outputdir is None:
