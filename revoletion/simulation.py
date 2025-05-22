@@ -512,7 +512,7 @@ class Scenario:
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
-            raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
+            raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         self.paths = dict()
