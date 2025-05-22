@@ -781,7 +781,7 @@ class PVSource(RenewableSource):
                     usehorizon=api_params.get('usehorizon', True),
                     userhorizon=api_params.get('userhorizon', None),
                 )
-                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots not as full hours
+                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
                 self.data.index = self.data.index - api_shift
             # endregion
 
