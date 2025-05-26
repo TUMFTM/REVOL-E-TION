@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 
 import ast
-import importlib.util
 import importlib.metadata
+import importlib.util
 import logging
-import numpy as np
-import pandas as pd
-import pandas.errors
 import os
+import re
 import shutil
 import subprocess
 
-from revoletion import economics as eco
+import pandas as pd
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,7 +104,15 @@ def read_timeseries_csv(path_input_file: str,
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
         df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
-        df.sort_index(axis=1, sort_remaining=True, inplace=True)
+        df.sort_index(axis=1,
+                      level=0,
+                      key=lambda x: x.map(lambda s: int(m.group(1))
+                                            # get the last continuous sequence of digits if possible
+                                            if (m := re.search(r'(\d+)(?!.*\d)', s))
+                                            else s
+                                          ),
+                      sort_remaining=True,
+                      inplace=True)
     else:
         df = pd.read_csv(path_input_file)
         df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)

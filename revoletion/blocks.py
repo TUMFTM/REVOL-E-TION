@@ -781,7 +781,7 @@ class PVSource(RenewableSource):
                     usehorizon=api_params.get('usehorizon', True),
                     userhorizon=api_params.get('userhorizon', None),
                 )
-                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots not as full hours
+                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
                 self.data.index = self.data.index - api_shift
             # endregion
 
@@ -1785,8 +1785,8 @@ class StationaryBattery(StorageBlock, Block):
                   'outflow_max': None,
                   'inflow_fix': None,
                   'outflow_fix': None,
-                  'invest_relation_input_capacity': self.crate_chg * self.scenario.timestep_hours,
-                  'invest_relation_output_capacity': self.crate_dis * self.scenario.timestep_hours,
+                  'invest_relation_input_capacity': self.crate_chg,
+                  'invest_relation_output_capacity': self.crate_dis,
                   'storage_balanced': True if self.scenario.strategy == 'go' else False,
                   }
         super().define_oemof_components(horizon, params)

@@ -403,9 +403,15 @@ class Scenario:
         self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
         self.prj_duration = self.prj_endtime - self.starttime  # takes leap years into account
 
+        # generate variables for calculations
+        self.timestep_td = pd.Timedelta(self.timestep)
+        self.timestep_hours = self.timestep_td.total_seconds() / 3600
+        self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
+        self.sim_prj_rat = self.sim_duration / self.prj_duration
+
         if self.strategy == 'rh':
-            self.len_ph = pd.Timedelta(hours=self.len_ph)
-            self.len_ch = pd.Timedelta(hours=self.len_ch)
+            self.len_ph = pd.Timedelta(hours=self.len_ph).floor(self.timestep_td)
+            self.len_ch = pd.Timedelta(hours=self.len_ch).floor(self.timestep_td)
             self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
             if not self.truncate_ph:
                 # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
@@ -417,12 +423,6 @@ class Scenario:
             self.nhorizons = 1
         else:
             raise ValueError(f'Optimization strategy "{self.strategy}" unknown')
-
-        # generate variables for calculations
-        self.timestep_td = pd.Timedelta(self.timestep)
-        self.timestep_hours = self.timestep_td.total_seconds() / 3600
-        self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
-        self.sim_prj_rat = self.sim_duration / self.prj_duration
 
         if self.len_ph == self.timestep_td:
             raise ValueError('Single timestep optimization not possible. Adjust simulation duration, timestep or '
@@ -504,7 +504,7 @@ class Scenario:
         self.blocks = self.create_block_objects()
 
         if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
-            raise ValueError(f'Initial investment costs of {self.capex_init_existing:.2f} {self.currency} '
+            raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         self.paths = dict()
