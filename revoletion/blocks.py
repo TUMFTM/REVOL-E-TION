@@ -772,7 +772,7 @@ class PVSource(RenewableSource):
         # region get data from Solcast API
         elif self.data_source == 'solcast api':  # solcast API example selected
             # set api key as bearer token
-            if not hasattr(self.scenario.run, 'key_api_solcast'):
+            if self.scenario.run.key_solcast_api is None:
                 raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: '
                                  f'No Solcast API key specified in run arguments')
 
@@ -830,7 +830,7 @@ class PVSource(RenewableSource):
 
             # get data from Solcast API
             response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
-                                    headers={'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'},
+                                    headers={'Authorization': f'Bearer {self.scenario.run.key_solcast_api}'},
                                     params=params)
             self.data = pd.json_normalize(response.json()['estimated_actuals'])
             # save solcast file
