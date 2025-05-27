@@ -883,9 +883,49 @@ class PVSource(RenewableSource):
                     self.data = pd.read_csv(path_input_file)
                     self.data.rename(columns={'air_temp': 'temp_air',
                                               'wind_speed_10m': 'wind_speed'}, inplace=True)
-                    self.data['period_start'] = pd.to_datetime(self.data['period_start'], utc=True)
-                    self.data['period_end'] = pd.to_datetime(self.data['period_end'], utc=True)
+                    self.data['period_start'] = (pd.to_datetime(self.data['period_end'], utc=True) -
+                                                 pd.to_timedelta(self.data['period']))
                     self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                    self.data = self.data.tz_convert(self.scenario.timezone)
+
+                    # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
+                    if self.azimuth is not None or self.tilt is not None:
+                        if self.azimuth is None or self.azimuth == 'optimal':
+                            azimuth = 0 if self.scenario.latitude < 0 else 180  # Solcast "optimum"
+                        else:
+                            azimuth = self.azimuth
+
+                        if self.tilt is None or self.tilt == 'optimal':
+                            abs(self.scenario.latitude)  # Something close to Solcast "optimum"
+                        else:
+                            tilt = self.tilt
+
+                        # calculate solar position for location (gets altitude from lookup table)
+                        solar_position = (pvlib.location.Location(latitude=self.scenario.latitude,
+                                                                  longitude=self.scenario.longitude)
+                                          .get_solarposition(times=self.data.index,
+                                                             method='nrel_numpy')
+                                          )
+                        solar_azimuth = solar_position['azimuth']
+                        solar_zenith = solar_position['zenith']
+
+                        # alternatively use solcast data, but this data is rounded to integers  # ToDo: benchmark
+                        # solar_azimuth = self.data['azimuth']
+                        # solar_zenith = self.data['zenith']
+
+                        self.data['gti'] = pvlib.irradiance.get_total_irradiance(
+                            surface_tilt=tilt,
+                            surface_azimuth=azimuth,
+                            solar_zenith=solar_zenith,
+                            solar_azimuth=solar_azimuth,
+                            dni=self.data['dni'],
+                            ghi=self.data['ghi'],
+                            dhi=self.data['dhi'],
+                            dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
+                            model='haydavies',  # 'haydavies', 'reindl', 'klucher', or 'isotropic' too
+                            albedo=self.data['albedo'],
+                        )['poa_global']
+
                     self.data = self.data[['temp_air', 'wind_speed', 'gti']]
                     self.calc_power_from_irradiation()
                 # endregion
