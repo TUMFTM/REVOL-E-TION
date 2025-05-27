@@ -731,31 +731,36 @@ class PVSource(RenewableSource):
                                                  f'start in {API_MIN_YEAR}')
                 # Todo leap years can result in data shifting not landing at the same point in time
 
+                optimal_tilt = True if self.tilt == 'optimal' else False
+                optimal_angles = True if self.azimuth == 'optimal' else False
+                if optimal_angles and not optimal_tilt:
+                    raise ValueError('Optimal azimuth requires optimal tilt as well')
+
                 self.data, *_ = pvlib.iotools.get_pvgis_hourly(
                     latitude=self.scenario.latitude,
                     longitude=self.scenario.longitude,
                     start=api_startyear,
                     end=api_endyear,
                     # PVGIS API is case sensitive and all inputs are lowered -> revert
-                    raddatabase=getattr(self, 'raddatabase', 'PVGIS-SARAH3').upper(),
+                    raddatabase=self.raddatabase.upper(),
                     components=True,  # output solar radiation components (beam, diffuse, and reflected)
-                    surface_tilt=getattr(self, 'surface_tilt', 0),  # tilt angle from horizontal plane, ignored for two-axis tracking
-                    surface_azimuth=getattr(self, 'surface_azimuth', 180),  # Clockwise from north (north=0, east=90, south=180, west=270) -> 180 degree offset to PVGIS definition
+                    surface_tilt=self.tilt if self.tilt != 'optimal' else 0,  # has to be numeric
+                    surface_azimuth=self.azimuth if self.azimuth != 'optimal' else 0,  # has to be numeric
                     outputformat='json',
-                    usehorizon=getattr(self, 'usehorizon', True),
-                    userhorizon=getattr(self, 'userhorizon', None),
+                    usehorizon=self.horizon,
+                    userhorizon=self.horizon_custom,
                     pvcalculation=True,
                     peakpower=1,
                     # PVGIS API is case sensitive and all inputs are lowered -> revert
                     pvtechchoice={'crystsi': 'crystSi',
                                   'cis': 'CIS',
                                   'cdte': 'CdTe',
-                                  'unknown': 'Unknown'}[getattr(self, 'pvtechchoice', 'crystsi')],
-                    mountingplace=getattr(self, 'mountingplace', 'free'),
+                                  'unknown': 'Unknown'}[self.pvtechchoice],
+                    mountingplace=self.mountingplace,
                     loss=0,
-                    trackingtype=getattr(self, 'trackingtype', 0),
-                    optimal_surface_tilt=getattr(self, 'optimal_surface_tilt', False),
-                    optimalangles=getattr(self, 'optimalangles', True),
+                    trackingtype=self.trackingtype,
+                    optimal_surface_tilt=optimal_tilt,
+                    optimalangles=optimal_angles,
                     url='https://re.jrc.ec.europa.eu/api/v5_3/',
                     map_variables=True,
                     timeout=30,  # default value

@@ -67,7 +67,7 @@ pv,tilt,optimal,optimal,optimal,optimal
 pv,trackingtype,0,0,0,0
 pv,horizon,False,False,False,False
 pv,horizon_custom,None,None,None,None
-pv,raddatebase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
+pv,raddatabase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
 pv,pvtechchoice,crystSi,crytSi,crystSi,crystSi
 pv,mountingplace,free,free,free,free
 gen,size_preexisting_block,15000,15000,15000,15000
