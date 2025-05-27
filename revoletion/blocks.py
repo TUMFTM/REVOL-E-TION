@@ -700,25 +700,6 @@ class PVSource(RenewableSource):
         """
 
         if 'api' in self.data_source.lower():  # PVGIS API or Solcast API example selected
-
-            # region get API parameters
-            if self.filename:
-                try:
-                    api_params = pd.read_csv(
-                        os.path.join(
-                            self.scenario.run.paths['input'],
-                            utils.set_extension(self.filename)
-                        ),
-                        index_col=[0],
-                        na_filter=False)
-                    api_params = api_params.map(utils.infer_dtype)['value'].to_dict() \
-                        if api_params.index.name == 'parameter' and all(api_params.columns == 'value') else {}
-                except FileNotFoundError:
-                    api_params = {}
-            else:
-                api_params = {}
-            # endregion
-
             # region get data from PVGIS API
             if self.data_source == 'pvgis api':  # PVGIS API example selected
                 api_startyear = self.scenario.starttime.tz_convert('utc').year
@@ -750,37 +731,36 @@ class PVSource(RenewableSource):
                                                  f'start in {API_MIN_YEAR}')
                 # Todo leap years can result in data shifting not landing at the same point in time
 
-                # revert lower() in reading data as pvgis is case-sensitive
-                # ToDo: move to checker.py
-                api_params['raddatabase'] = api_params.get('raddatabase', 'PVGIS-SARAH3').upper()
-                api_params['pvtechchoice'] = {'crystsi': 'crystSi',
-                                              'cis': 'CIS',
-                                              'cdte': 'CdTe',
-                                              'unknown': 'Unknown'}[api_params.get('pvtechchoice', 'crystsi')]
-
                 self.data, *_ = pvlib.iotools.get_pvgis_hourly(
-                    self.scenario.latitude,
-                    self.scenario.longitude,
+                    latitude=self.scenario.latitude,
+                    longitude=self.scenario.longitude,
                     start=api_startyear,
                     end=api_endyear,
-                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
-                    components=False,
+                    # PVGIS API is case sensitive and all inputs are lowered -> revert
+                    raddatabase=getattr(self, 'raddatabase', 'PVGIS-SARAH3').upper(),
+                    components=True,  # output solar radiation components (beam, diffuse, and reflected)
+                    surface_tilt=getattr(self, 'surface_tilt', 0),  # tilt angle from horizontal plane, ignored for two-axis tracking
+                    surface_azimuth=getattr(self, 'surface_azimuth', 180),  # Clockwise from north (north=0, east=90, south=180, west=270) -> 180 degree offset to PVGIS definition
                     outputformat='json',
+                    usehorizon=getattr(self, 'usehorizon', True),
+                    userhorizon=getattr(self, 'userhorizon', None),
                     pvcalculation=True,
                     peakpower=1,
-                    map_variables=True,
+                    # PVGIS API is case sensitive and all inputs are lowered -> revert
+                    pvtechchoice={'crystsi': 'crystSi',
+                                  'cis': 'CIS',
+                                  'cdte': 'CdTe',
+                                  'unknown': 'Unknown'}[getattr(self, 'pvtechchoice', 'crystsi')],
+                    mountingplace=getattr(self, 'mountingplace', 'free'),
                     loss=0,
-                    raddatabase=api_params['raddatabase'],  # conversion above ensures that the parameter exists
-                    pvtechchoice=api_params['pvtechchoice'],  # conversion above ensures that the parameter exists
-                    mountingplace=api_params.get('mountingplace', 'free'),
-                    optimalangles=api_params.get('optimalangles', True),
-                    optimal_surface_tilt=api_params.get('optimal_surface_tilt', False),
-                    surface_azimuth=api_params.get('surface_azimuth', 180),
-                    surface_tilt=api_params.get('surface_tilt', 0),
-                    trackingtype=api_params.get('trackingtype', 0),
-                    usehorizon=api_params.get('usehorizon', True),
-                    userhorizon=api_params.get('userhorizon', None),
+                    trackingtype=getattr(self, 'trackingtype', 0),
+                    optimal_surface_tilt=getattr(self, 'optimal_surface_tilt', False),
+                    optimalangles=getattr(self, 'optimalangles', True),
+                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                    map_variables=True,
+                    timeout=30,  # default value
                 )
+
                 self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
                 self.data.index = self.data.index - api_shift
             # endregion

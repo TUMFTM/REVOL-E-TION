@@ -62,6 +62,16 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff_block,0.95,0.95,0.95,0.95
+pv,raddatabase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
+pv,pvtechchoice,crystSi,crystSi,crystSi,crystSi
+pv,mountingplace,free,free,free,free
+pv,optimalangles,True,True,True,True
+pv,optimal_surface_tilt,True,True,True,True
+pv,surface_azimuth,0,0,0,0
+pv,surface_tilt,0,0,0,0
+pv,trackingtype,0,0,0,0
+pv,usehorizon,False,False,False,False
+pv,userhorizon,None,None,None,None
 gen,size_preexisting_block,15000,15000,15000,15000
 gen,capex_preexisting,True,True,True,True
 gen,size_max_block,None,None,None,None
