@@ -699,112 +699,161 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
-        if 'api' in self.data_source.lower():  # PVGIS API or Solcast API example selected
-            # region get data from PVGIS API
-            if self.data_source == 'pvgis api':  # PVGIS API example selected
-                api_startyear = self.scenario.starttime.tz_convert('utc').year
-                api_endyear = self.scenario.sim_extd_endtime.tz_convert('utc').year
-                api_length = api_endyear - api_startyear
-                api_shift = pd.to_timedelta('0 days')
+        # region get data from PVGIS API
+        if self.data_source == 'pvgis api':  # PVGIS API example selected
+            api_startyear = self.scenario.starttime.tz_convert('utc').year
+            api_endyear = self.scenario.sim_extd_endtime.tz_convert('utc').year
+            api_length = api_endyear - api_startyear
+            api_shift = pd.to_timedelta('0 days')
 
-                API_MAX_YEAR = 2023
-                API_MIN_YEAR = 2005
-                API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
+            API_MAX_YEAR = 2023
+            API_MIN_YEAR = 2005
+            API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
 
-                if api_length > API_MAX_LENGTH:
-                    raise ValueError('PVGIS API request exceeds maximum length of available data')
-                elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-                    api_shift = (pd.to_datetime(f'{API_MAX_YEAR}-01-01 00:00:00+00:00') -
-                                 pd.to_datetime(f'{api_endyear}-01-01 00:00:00+00:00'))
-                    api_endyear = API_MAX_YEAR
-                    api_startyear = API_MAX_YEAR - api_length
-                    self.scenario.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by '
-                                                 f'{abs(api_shift)} year{s if abs(api_shift) == 1 else ""} to '
-                                                 f'end in {API_MAX_YEAR}')
-                elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-                    api_shift = (pd.to_datetime(f'{API_MIN_YEAR}-01-01 00:00:00+00:00') -
-                                 pd.to_datetime(f'{api_startyear}-01-01 00:00:00+00:00'))
-                    api_startyear = API_MIN_YEAR
-                    api_endyear = API_MIN_YEAR + api_length
-                    self.scenario.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by '
-                                                 f'{abs(api_shift)} year{s if abs(api_shift) == 1 else ""} to '
-                                                 f'start in {API_MIN_YEAR}')
-                # Todo leap years can result in data shifting not landing at the same point in time
+            if api_length > API_MAX_LENGTH:
+                raise ValueError('PVGIS API request exceeds maximum length of available data')
+            elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
+                api_shift = (pd.to_datetime(f'{API_MAX_YEAR}-01-01 00:00:00+00:00') -
+                             pd.to_datetime(f'{api_endyear}-01-01 00:00:00+00:00'))
+                api_endyear = API_MAX_YEAR
+                api_startyear = API_MAX_YEAR - api_length
+                self.scenario.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by '
+                                             f'{abs(api_shift)} year{"s" if abs(api_shift) == 1 else ""} to '
+                                             f'end in {API_MAX_YEAR}')
+            elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
+                api_shift = (pd.to_datetime(f'{API_MIN_YEAR}-01-01 00:00:00+00:00') -
+                             pd.to_datetime(f'{api_startyear}-01-01 00:00:00+00:00'))
+                api_startyear = API_MIN_YEAR
+                api_endyear = API_MIN_YEAR + api_length
+                self.scenario.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by '
+                                             f'{abs(api_shift)} year{"s" if abs(api_shift) == 1 else ""} to '
+                                             f'start in {API_MIN_YEAR}')
+            # Todo leap years can result in data shifting not landing at the same point in time
 
-                optimal_tilt = True if self.tilt == 'optimal' else False
-                optimal_angles = True if self.azimuth == 'optimal' else False
-                if optimal_angles and not optimal_tilt:
-                    raise ValueError('Optimal azimuth requires optimal tilt as well')
+            optimal_tilt = True if self.tilt == 'optimal' else False
+            optimal_angles = True if self.azimuth == 'optimal' else False
+            if optimal_angles and not optimal_tilt:
+                raise ValueError('Optimal azimuth requires optimal tilt as well')
 
-                self.data, *_ = pvlib.iotools.get_pvgis_hourly(
-                    latitude=self.scenario.latitude,
-                    longitude=self.scenario.longitude,
-                    start=api_startyear,
-                    end=api_endyear,
-                    # PVGIS API is case sensitive and all inputs are lowered -> revert
-                    raddatabase=self.raddatabase.upper(),
-                    components=True,  # output solar radiation components (beam, diffuse, and reflected)
-                    surface_tilt=self.tilt if self.tilt != 'optimal' else 0,  # has to be numeric
-                    surface_azimuth=self.azimuth if self.azimuth != 'optimal' else 0,  # has to be numeric
-                    outputformat='json',
-                    usehorizon=self.horizon,
-                    userhorizon=self.horizon_custom,
-                    pvcalculation=True,
-                    peakpower=1,
-                    # PVGIS API is case sensitive and all inputs are lowered -> revert
-                    pvtechchoice={'crystsi': 'crystSi',
-                                  'cis': 'CIS',
-                                  'cdte': 'CdTe',
-                                  'unknown': 'Unknown'}[self.pvtechchoice],
-                    mountingplace=self.mountingplace,
-                    loss=0,
-                    trackingtype=self.trackingtype,
-                    optimal_surface_tilt=optimal_tilt,
-                    optimalangles=optimal_angles,
-                    url='https://re.jrc.ec.europa.eu/api/v5_3/',
-                    map_variables=True,
-                    timeout=30,  # default value
+            self.data, *_ = pvlib.iotools.get_pvgis_hourly(
+                latitude=self.scenario.latitude,
+                longitude=self.scenario.longitude,
+                start=api_startyear,
+                end=api_endyear,
+                # PVGIS API is case sensitive and all inputs are lowered -> revert
+                raddatabase=self.raddatabase.upper(),
+                components=True,  # output solar radiation components (beam, diffuse, and reflected)
+                surface_tilt=self.tilt if self.tilt != 'optimal' else 0,  # has to be numeric
+                surface_azimuth=self.azimuth if self.azimuth != 'optimal' else 0,  # has to be numeric
+                outputformat='json',
+                usehorizon=self.horizon,
+                userhorizon=self.horizon_custom,
+                pvcalculation=True,
+                peakpower=1,
+                # PVGIS API is case sensitive and all inputs are lowered -> revert
+                pvtechchoice={'crystsi': 'crystSi',
+                              'cis': 'CIS',
+                              'cdte': 'CdTe',
+                              'unknown': 'Unknown'}[self.pvtechchoice],
+                mountingplace=self.mountingplace,
+                loss=0,
+                trackingtype=self.trackingtype,
+                optimal_surface_tilt=optimal_tilt,
+                optimalangles=optimal_angles,
+                url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                map_variables=True,
+                timeout=30,  # default value
+            )
+
+            self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
+            self.data.index = self.data.index - api_shift
+        # endregion
+
+        # region get data from Solcast API
+        elif self.data_source == 'solcast api':  # solcast API example selected
+            # set api key as bearer token
+            if not hasattr(self.scenario.run, 'key_api_solcast'):
+                raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: '
+                                 f'No Solcast API key specified in run arguments')
+
+            latitude = self.scenario.latitude  # unmetered location for testing 41.89021
+            longitude = self.scenario.longitude  # unmetered location for testing 12.492231,
+
+            # Avoid unintended use of metered coordinates
+            if latitude != 41.89021 or longitude != 12.492231:
+                raise ValueError('Remove this line if you want to proceed with metered coordinates!')
+
+            params = dict(latitude=latitude,
+                          longitude=longitude,
+                          start=self.scenario.starttime,
+                          end=self.scenario.sim_extd_endtime,
+                          period='PT5M',
+                          output_parameters=['air_temp',
+                                 'albedo',
+                                 'azimuth',
+                                 'clearsky_dhi',
+                                 'clearsky_dni',
+                                 'clearsky_ghi',
+                                 'clearsky_gti',
+                                 'cloud_opacity',
+                                 'dewpoint_temp',
+                                 'dhi',
+                                 'dni',
+                                 'ghi',
+                                 'gti',
+                                 'precipitable_water',
+                                 'precipitation_rate',
+                                 'relative_humidity',
+                                 'surface_pressure',
+                                 'snow_depth',
+                                 'snow_water_equivalent',
+                                 'snow_soiling_rooftop',
+                                 'snow_soiling_ground',
+                                 'wind_direction_100m',
+                                 'wind_direction_10m',
+                                 'wind_speed_100m',
+                                 'wind_speed_10m',
+                                 'zenith'],
+                          format='json',
+                          array_type={0: 'fixed', 1: 'horizontal_single_axis'}[self.trackingtype],
+                          time_zone='utc',
+                          include_etadata=False,
+                          terrain_shading=self.horizon,
+                          )
+
+            # add parameters azimuth and tilt. If not specified, Solcast uses default/optimized values
+            if self.tilt != 'optimal':
+                params['tilt'] = self.tilt
+            if self.azimuth != 'optimal':
+                # Convert to Solcast convention: (-180, 180], north=0, east=-90, south=180, west=90
+                params['azimuth'] = x - 360 if (x := (-1 * self.azimuth) % 360) > 180 else x
+
+            # get data from Solcast API
+            response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
+                                    headers={'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'},
+                                    params=params)
+            self.data = pd.json_normalize(response.json()['estimated_actuals'])
+            # save solcast file
+            if not self.scenario.run.largescalemode:
+                self.data.to_csv(os.path.join(
+                    self.scenario.run.paths['output'],
+                    f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_'
+                    f'{self.name}_log_solcast_raw.csv'),
+                    index=False,
                 )
 
-                self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
-                self.data.index = self.data.index - api_shift
-            # endregion
-
-            # region get data from Solcast API
-            elif self.data_source == 'solcast api':  # solcast API example selected
-                # set api key as bearer token
-                headers = {'Authorization': f'Bearer {self.scenario.run.key_api_solcast}'}
-
-                params = {
-                    **{'latitude': self.scenario.latitude,  # unmetered location for testing 41.89021,
-                       'longitude': self.scenario.longitude,  # unmetered location for testing 12.492231,
-                       'period': 'PT5M',
-                       'output_parameters': ['air_temp', 'gti', 'wind_speed_10m'],
-                       'start': self.scenario.starttime,
-                       'end': self.scenario.sim_extd_endtime,
-                       'format': 'csv',
-                       'time_zone': 'utc',},
-                    **{parameter: value for parameter, value in api_params.items() if value is not None}}
-
-                url = 'https://api.solcast.com.au/data/historic/radiation_and_weather'
-
-                # get data from Solcast API
-                response = requests.get(url, headers=headers, params=params)
-                # convert to csv
-                self.data = pd.read_csv(io.StringIO(response.text))
-                # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-                self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
-                self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-                self.data = self.data.tz_convert(self.scenario.timezone)
-                self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
-                # rename columns according to further processing steps
-                self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
-                # calculate specific pv power
-                self.calc_power_solcast()
-            # endregion
+            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
+            self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
+            self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+            self.data = self.data.tz_convert(self.scenario.timezone)
+            self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+            # rename columns according to further processing steps
+            self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+            # calculate specific pv power
+            self.calc_power_from_irradiation()
+        # endregion
 
         elif 'file' in self.data_source:
-
             # region get data from file
             path_input_file = os.path.join(
                 self.scenario.run.paths['input'],
