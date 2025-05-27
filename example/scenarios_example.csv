@@ -1,7 +1,7 @@
-block,key,icev,bev_grid,bev_mg,bev_mg_rh
-scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
+block,key,icev,#bev_grid,#bev_mg,#bev_mg_rh
+scenario,starttime,1.7.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,50,50,50,50
+scenario,sim_duration,2,50,50,50
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
 scenario,strategy,go,go,go,rh
@@ -15,7 +15,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
+scenario,blocks,"{'pv': 'PVSource'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
 core,size_preexisting_acdc,0,0,0,55000
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -49,7 +49,7 @@ wind,opex_spec,0,0,0,0
 wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
 wind,eff_block,0.95,0.95,0.95,0.95
-pv,size_preexisting_block,0,0,0,30000
+pv,size_preexisting_block,1000,0,0,30000
 pv,capex_preexisting,True,True,True,True
 pv,size_max_block,None,None,None,None
 pv,invest_block,True,True,True,False
@@ -62,16 +62,14 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff_block,0.95,0.95,0.95,0.95
-pv,raddatabase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
-pv,pvtechchoice,crystSi,crystSi,crystSi,crystSi
-pv,mountingplace,free,free,free,free
-pv,optimalangles,True,True,True,True
-pv,optimal_surface_tilt,True,True,True,True
-pv,surface_azimuth,0,0,0,0
-pv,surface_tilt,0,0,0,0
+pv,azimuth,optimal,optimal,optimal,optimal
+pv,tilt,optimal,optimal,optimal,optimal
 pv,trackingtype,0,0,0,0
-pv,usehorizon,False,False,False,False
-pv,userhorizon,None,None,None,None
+pv,horizon,False,False,False,False
+pv,horizon_custom,None,None,None,None
+pv,raddatebase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
+pv,pvtechchoice,crystSi,crytSi,crystSi,crystSi
+pv,mountingplace,free,free,free,free
 gen,size_preexisting_block,15000,15000,15000,15000
 gen,capex_preexisting,True,True,True,True
 gen,size_max_block,None,None,None,None
