@@ -1288,6 +1288,10 @@ class GridConnection(Block):
 
         self.initialize_peakshaving()
 
+        if len(self.markets) == 0:
+            self.scenario.logger.warning(f'Block "{self.name}": '
+                                         f'No markets defined! Buying and selling energy to the grid is not possible.')
+
         self.subblocks = {market: GridMarket(name=market,
                                              scenario=self.scenario,
                                              params=None,
