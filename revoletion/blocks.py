@@ -1288,9 +1288,9 @@ class GridConnection(Block):
 
         self.initialize_peakshaving()
 
-        if len(self.markets) == 0:
-            self.scenario.logger.warning(f'Block "{self.name}": '
-                                         f'No markets defined! Buying and selling energy to the grid is not possible.')
+        if not self.markets:
+            raise ValueError(f'Block "{self.name}": No markets defined! '
+                             f'At least one market has to be defined to buy and sell energy to the grid.')
 
         self.subblocks = {market: GridMarket(name=market,
                                              scenario=self.scenario,
@@ -1907,6 +1907,9 @@ class Fleet(SinkBlock):
                          parent=scenario)
 
         self.scenario.fleets[self.name] = self
+
+        if not self.subfleets:
+            raise ValueError(f'Block "{self.name}": No subfleets defined! At least one subfleet has to be defined.')
 
         self.subblocks = {name: SubFleet(name=name,
                                          scenario=self.scenario,
