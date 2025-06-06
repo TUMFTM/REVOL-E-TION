@@ -757,6 +757,45 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
+        def calc_power_from_irradiation():
+            """
+            pre scenario (init) method
+            calculate PV potential output power from insolation and weather data
+            function is necessary for solcast input that does not contain power data
+            """
+
+            u0 = 26.9  # W/(˚C.m2) - cSi Free standing
+            u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
+            mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['wind_speed'])))
+
+            # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
+            # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
+            # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
+            k1 = -0.017237
+            k2 = -0.040465
+            k3 = -0.004702
+            k4 = 0.000149
+            k5 = 0.000170
+            k6 = 0.000005
+            g = self.data['gti'] / 1000
+            t = mod_temp - 25
+            lng = np.zeros_like(g)
+            lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
+
+            # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
+            # Prog. Photovolt. Res. Appl.2008, 16, 307–315
+            eff_rel = (1 +
+                       (k1 * lng) +
+                       (k2 * (lng ** 2)) +
+                       (k3 * t) +
+                       (k4 * t * lng) +
+                       (k5 * t * (lng ** 2)) +
+                       (k6 * (t ** 2)))
+            eff_rel = eff_rel.fillna(0)
+
+            # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
+            self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
+
         # region get data from PVGIS API
         if self.data_source == 'pvgis api':  # PVGIS API example selected
             api_startyear = self.scenario.starttime.tz_convert('utc').year
@@ -835,7 +874,7 @@ class PVSource(RenewableSource):
                                  f'No Solcast API key specified in run arguments')
 
             latitude = self.scenario.latitude  # unmetered location for testing 41.89021
-            longitude = self.scenario.longitude  # unmetered location for testing 12.492231,
+            longitude = self.scenario.longitude  # unmetered location for testing 12.492231
 
             # Avoid unintended use of metered coordinates
             if latitude != 41.89021 or longitude != 12.492231:
@@ -908,7 +947,7 @@ class PVSource(RenewableSource):
             # rename columns according to further processing steps
             self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
             # calculate specific pv power
-            self.calc_power_from_irradiation()
+            calc_power_from_irradiation()
         # endregion
 
         elif 'file' in self.data_source:
@@ -985,7 +1024,7 @@ class PVSource(RenewableSource):
                         )['poa_global']
 
                     self.data = self.data[['temp_air', 'wind_speed', 'gti']]
-                    self.calc_power_from_irradiation()
+                    calc_power_from_irradiation()
                 # endregion
 
             else:
@@ -1012,45 +1051,6 @@ class PVSource(RenewableSource):
 
         if getattr(self, 'temp_scn', False):  # parameter only exists for instances specified in scenario.temp_air
             self.scenario.temp_air['temp_air'] = self.data['temp_air']
-
-    def calc_power_from_irradiation(self):
-        """
-        pre scenario (init) method
-        calculate PV potential output power from insolation and weather data
-        function is necessary for solcast input that does not contain power data
-        """
-
-        u0 = 26.9  # W/(˚C.m2) - cSi Free standing
-        u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-        mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['wind_speed'])))
-
-        # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
-        # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
-        # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
-        k1 = -0.017237
-        k2 = -0.040465
-        k3 = -0.004702
-        k4 = 0.000149
-        k5 = 0.000170
-        k6 = 0.000005
-        g = self.data['gti'] / 1000
-        t = mod_temp - 25
-        lng = np.zeros_like(g)
-        lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
-
-        # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
-        # Prog. Photovolt. Res. Appl.2008, 16, 307–315
-        eff_rel = (1 +
-                   (k1 * lng) +
-                   (k2 * (lng ** 2)) +
-                   (k3 * t) +
-                   (k4 * t * lng) +
-                   (k5 * t * (lng ** 2)) +
-                   (k6 * (t ** 2)))
-        eff_rel = eff_rel.fillna(0)
-
-        # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-        self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
 
 
 class WindSource(RenewableSource):
