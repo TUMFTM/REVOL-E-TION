@@ -21,8 +21,8 @@ from revoletion import utils
 
 
 class BlockScenarioInterface(ABC):
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def get_init_definitions() -> dict:
         """
         Returns a dict containing:
@@ -33,7 +33,8 @@ class BlockScenarioInterface(ABC):
                 - 'params' (dict): tuples for parameters in evaluator as keys, name of class attribute as values
         - state_names (list): state names used as columns for the 'states' DataFrame
         """
-        pass
+        return dict(pois={},
+                    state_names=[])
 
     @abstractmethod
     def pre_scenario(self) -> None:
