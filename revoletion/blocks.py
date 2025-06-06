@@ -12,13 +12,66 @@ import re
 import requests
 import windpowerlib
 
+from abc import ABC, abstractmethod
+
 from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import mobility
 from revoletion import utils
 
 
-class Block:
+class BlockScenarioInterface(ABC):
+    @abstractmethod
+    @staticmethod
+    def get_init_definitions() -> dict:
+        """
+        Returns a dict containing:
+        - 'pois' (dict):
+            - keys: POI names
+            - values: dicts containing:
+                - 'class_name' (str): type of Evaluator
+                - 'params' (dict): tuples for parameters in evaluator as keys, name of class attribute as values
+        - state_names (list): state names used as columns for the 'states' DataFrame
+        """
+        pass
+
+    @abstractmethod
+    def pre_scenario(self) -> None:
+        """
+        Trigger actions to be executed after all inits.
+        """
+        pass
+
+    @abstractmethod
+    def pre_horizon(self) -> None:
+        """
+        Trigger actions to be executed before each horizon.
+        """
+        pass
+
+    @abstractmethod
+    def post_horizon(self) -> None:
+        """
+        Trigger actions to be executed after each horizon.
+        """
+        pass
+
+    @abstractmethod
+    def post_scenario(self) -> None:
+        """
+        Trigger actions to be executed after the scenario has been run.
+        """
+        pass
+
+    @abstractmethod
+    def get_subblocks(self) -> dict:
+        """
+        Returns a dict of subblocks with their names as keys and the subblock objects as values.
+        """
+        pass
+
+
+class Block(BlockScenarioInterface):
     """
     abstract class
     """
@@ -594,6 +647,10 @@ class RenewableSource(SourceBlock):
         self.share_curtailment = None
 
         self.scenario.renewable_sources[self.name] = self
+
+    @abstractmethod
+    def get_ts_data(self):
+        pass
 
     def define_oemof_components(self,
                                 horizon):
