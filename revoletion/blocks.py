@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import ast
-import io
 import numpy as np
 import oemof.solph as solph
 import os
@@ -44,14 +43,16 @@ class BlockScenarioInterface(ABC):
         pass
 
     @abstractmethod
-    def pre_horizon(self) -> None:
+    def pre_horizon(self,
+                    horizon: 'PredictionHorizon') -> None:
         """
         Trigger actions to be executed before each horizon.
         """
         pass
 
     @abstractmethod
-    def post_horizon(self) -> None:
+    def post_horizon(self,
+                     horizon: 'PredictionHorizon') -> None:
         """
         Trigger actions to be executed after each horizon.
         """
@@ -72,7 +73,7 @@ class BlockScenarioInterface(ABC):
         pass
 
 
-class Block(BlockScenarioInterface):
+class BaseBlock(BlockScenarioInterface):
     """
     abstract class
     """
@@ -85,7 +86,6 @@ class Block(BlockScenarioInterface):
     def __init__(self,
                  name: str,
                  scenario: 'Scenario',
-                 flow_apriori_names: list = None,
                  params: dict = None,
                  parent: 'Block | Scenario' = None,
                  ):
@@ -96,9 +96,6 @@ class Block(BlockScenarioInterface):
         self.name = name
         self.scenario = scenario
         self.parent = parent
-
-        # set empty list; not possible as default argument as both are mutable
-        flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
         self.classname = self.__class__.__name__  # get name of class
         self.top_level_block = True if self.parent is self.scenario else False  # distinguish top level blocks/subblocks
@@ -117,37 +114,16 @@ class Block(BlockScenarioInterface):
         # region get poi and state name definitions
         definitions = [cls.get_init_definitions()
                        for cls in self.__class__.mro() if hasattr(cls, 'get_init_definitions')]
-        pois = {poi_key: poi_value
-                for definition in definitions
-                for poi_key, poi_value in
-                definition['pois'].items()}
+        self.pois = {poi_key: poi_value
+                     for definition in definitions
+                     for poi_key, poi_value in
+                     definition['pois'].items()}
         state_names = [state_name for definition in definitions for state_name in definition['state_names']]
         # endregion
 
         # region initialize data structures
         self.subblocks = dict()
-        self.components = dict()
-        self.bus_connected = None
 
-        # ToDo: (1) remove flow_apriori_names and use flow names instead
-        #       (2) remove flows_apriori and use flows instead to save memory
-        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim,
-                                          columns=flow_apriori_names,
-                                          dtype='float64'
-                                          )
-
-        flow_names = ['total',
-                      *[name for name in
-                        [poi['params'].get(('flow', 'name')) for poi in pois.values()]
-                        if name is not None]]
-        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
-                                  columns=flow_names,
-                                  data=np.nan,
-                                  dtype='float64')
-        self.energies = pd.DataFrame(index=flow_names,
-                                     columns=['sim', 'yrl', 'prj', 'dis'],
-                                     data=0,  # cumulative property
-                                     dtype=float)
         self.states = pd.DataFrame(index=self.scenario.dti_sim_extd,
                                    columns=state_names,
                                    data=np.nan,
@@ -155,18 +131,15 @@ class Block(BlockScenarioInterface):
 
         self.sizes = pd.DataFrame()
         self.expansion_equal = False
-        self.initialize_sizes(pois=pois)
-
-        self.eff = dict()
-        self.initialize_efficiencies()
+        self.initialize_sizes()
 
         self.aggregator = eco.EconomicAggregator(name=self.name,
                                                  block=self)
-        self.evaluators = self.create_evaluator_objects(pois=pois)
+        self.evaluators = self.create_evaluator_objects()
         self.aggregator.pre_scenario()  # aggregate capex preexisting
 
         # Delete ccr and ls as they are now contained in evaluators
-        for attribute in set(value for poi in pois.values() for value in poi['params'].values()):
+        for attribute in set(value for poi in self.pois.values() for value in poi['params'].values()):
             if hasattr(self, attribute):
                 delattr(self, attribute)
 
@@ -175,7 +148,8 @@ class Block(BlockScenarioInterface):
         self.result_timeseries = []  # -> list of pd.DataFrames
         self.result_messages = []
         self.plot_traces = dict(powers=[],
-                                states=[])
+                                states=[],
+                                )
         # endregion
 
     def initialize_sizes(self,
@@ -184,7 +158,7 @@ class Block(BlockScenarioInterface):
         Initialize the sizes DataFrame for the block
         """
 
-        sizes = [k for k, v in pois.items() if ('size', 'name') in v['params'].keys()]
+        sizes = [k for k, v in self.pois.items() if ('size', 'name') in v['params'].keys()]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -196,7 +170,7 @@ class Block(BlockScenarioInterface):
         self.sizes['invest'] = False
 
         for size in self.sizes.index:
-            size_var_ext = pois[size]['params'][('size', 'name')]
+            size_var_ext = self.pois[size]['params'][('size', 'name')]
             size_var_ext = '' if size_var_ext == '' else f'_{size_var_ext}'
             self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_var_ext}', 0)
             self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_var_ext}', 0)
@@ -232,21 +206,13 @@ class Block(BlockScenarioInterface):
         elif getattr(self, name_var2) == 'equal':
             setattr(self, name_var2, getattr(self, name_var1))
 
-
-    def initialize_efficiencies(self):
-        for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
-            if key.startswith('eff_'):
-                self.eff[re.sub(r'^[^_]+_', '', key)] = getattr(self, key)
-                delattr(self, key)
-
-    def create_evaluator_objects(self,
-                                 pois: dict):
+    def create_evaluator_objects(self):
         """
         Create EconomicEvaluator objects for each POI depending on the class name defined
         """
 
         evaluators = dict()
-        for name, poi_definition in pois.items():
+        for name, poi_definition in self.pois.items():
             class_obj = getattr(eco, poi_definition['class_name'], None)
             if class_obj is not None and isinstance(class_obj, type):
                 evaluators[name] = class_obj(name=name,
@@ -266,23 +232,15 @@ class Block(BlockScenarioInterface):
 
     def pre_horizon(self,
                     horizon: 'PredictionHorizon'):
-        """
-        build energy system components before each horizon
-        """
-        self.define_oemof_components(horizon=horizon)
-        horizon.es.add(*self.components.values())
 
         for subblock in self.subblocks.values():
             subblock.pre_horizon(horizon=horizon)
 
     def post_horizon(self,
-                     horizon):
+                     horizon: 'PredictionHorizon'):
 
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
-
-        self.get_horizon_results(horizon=horizon)
-        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
 
     def post_scenario(self):
 
@@ -290,8 +248,6 @@ class Block(BlockScenarioInterface):
             subblock.post_scenario()
 
         # calculate results
-        self.calc_results_flows()
-        self.calc_results_energies()
         self.calc_results_economics()
 
         # create result outputs
@@ -302,26 +258,6 @@ class Block(BlockScenarioInterface):
 
         # add block results to scenario's structures
         self.write_results_to_scenario()
-
-    def calc_results_flows(self):
-        # total flow calculation is duplicated in StorageBlock
-        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
-
-    def calc_results_energies(self):
-        """
-        post scenario method
-        process flows and calculate energies from flows
-        """
-        for flow_name, flow in self.flows.items():
-            energy = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
-            self.energies.loc[flow_name, 'sim'] = energy
-            if ('circular' in flow_name) and (energy != 0):
-                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected - check energy results')
-
-        self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
-        self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
-        self.energies['dis'] = (self.energies['yrl'] *
-                                self.scenario.discount_factors.loc[self.scenario.periods_prj, 'end'].sum())
 
     def calc_results_economics(self):
         # calculate economic results and write one level up
@@ -334,27 +270,15 @@ class Block(BlockScenarioInterface):
         self.result_summary.extend([pd.Series({key: value for key, value in self.__dict__.items()
                                                if isinstance(value, (int, float, bool, str))})])
 
-        # get energies/sizes dataframes results for scenario.result_summary
-        self.result_summary.extend([utils.create_results_from_dataframe(df=df, name_prefix=prefix)
-                                    for df, prefix in zip([self.energies, self.sizes], ['energy', 'size'])])
+        # get energy results for scenario.result_summary
+        self.result_summary.append(utils.create_results_from_dataframe(df=self.sizes, name_prefix='size'))
 
         # get economic results for scenario.result_summary
         self.result_summary.append(self.aggregator.write_result_summary())
 
+    @abstractmethod
     def create_result_timeseries(self):
-        """
-        write flows and states to scenario.result_timeseries
-        """
-        if not self.scenario.run.largescalemode:
-            # write flows and states to scenario.result_timeseries
-            self.flows.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.flows.columns],
-                                                           names=['block', 'key'])
-
-            self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
-                                                            names=['block', 'key'])
-
-            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_eval, :],
-                                           self.states.loc[self.scenario.dti_eval, :]])
+        pass
 
     def create_result_messages(self, unit='kW'):
 
@@ -365,15 +289,9 @@ class Block(BlockScenarioInterface):
                 f' - additional: {size["expansion"] / 1e3:.1f} {unit})'
                 if size['invest'] else ''), axis=1).to_list() if msg != ''])
 
+    @abstractmethod
     def create_plot_traces(self):
-        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_eval,
-                                                     y=self.flows.loc[self.scenario.dti_eval, 'total'],
-                                                     mode='lines',
-                                                     name=self.get_legend_entry(),
-                                                     line=dict(width=2, dash=None, shape='hv'),
-                                                     visible=True if self.top_level_block else 'legendonly',
-                                                     )
-                                          )
+        pass
 
     def write_results_to_scenario(self):
         # result_summary
@@ -408,32 +326,140 @@ class Block(BlockScenarioInterface):
                                  for block_name, block_obj in subblock.get_subblocks().items()}
 
 
-class SourceBlock(Block):
+class ElectricBlock(BaseBlock):
+    def __init__(self,
+                 name: str,
+                 scenario: 'Scenario',
+                 flow_apriori_names: list = None,
+                 params: dict = None,
+                 parent: 'Block | Scenario' = None,
+                 ):
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
+        super().__init__(name=name,
+                         scenario=scenario,
+                         params=params,
+                         parent=parent)
+
+        # set empty list; not possible as default argument as both are mutable
+        flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
+
+        self.components = dict()
+        self.bus_connected = None
+
+        # ToDo: (1) remove flow_apriori_names and use flow names instead
+        #       (2) remove flows_apriori and use flows instead to save memory
+        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim,
+                                          columns=flow_apriori_names,
+                                          dtype='float64'
+                                          )
+
+        flow_names = ['total',
+                      *[name for name in
+                        [poi['params'].get(('flow', 'name')) for poi in self.pois.values()]
+                        if name is not None]]
+        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
+                                  columns=flow_names,
+                                  data=np.nan,
+                                  dtype='float64')
+        self.energies = pd.DataFrame(index=flow_names,
+                                     columns=['sim', 'yrl', 'prj', 'dis'],
+                                     data=0,  # cumulative property
+                                     dtype=float)
+
+        self.eff = dict()
+        self.initialize_efficiencies()
+
+    def initialize_efficiencies(self):
+        for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
+            if key.startswith('eff_'):
+                self.eff[re.sub(r'^[^_]+_', '', key)] = getattr(self, key)
+                delattr(self, key)
+
+    def pre_horizon(self,
+                    horizon: 'PredictionHorizon'):
+
+        self.define_oemof_components(horizon=horizon)
+        horizon.es.add(*self.components.values())
+
+        super().pre_horizon(horizon=horizon)  # executes pre_horizon for subblocks
+
+    def post_horizon(self,
+                     horizon: 'PredictionHorizon'):
+
+        super().post_horizon(horizon=horizon)  # executes post_horizon for subblocks
+
+        self.get_horizon_results(horizon=horizon)
+        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
+
+    def post_scenario(self):
+        # ToDo: check, whether this requires SubBlock's post_scenario() execution triggered in super().post_scenario()
+        self.calc_results_flows()
+        self.calc_results_energies()
+
+        super().post_scenario()
+
+    @abstractmethod
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon'):
+        pass
+
+    @abstractmethod
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        pass
+
+    def calc_results_flows(self):
+        # total flow calculation is duplicated in StorageBlock
+        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
 
     def calc_results_energies(self):
-        super().calc_results_energies()
-        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
+        """
+        post scenario method
+        process flows and calculate energies from flows
+        """
+        for flow_name, flow in self.flows.items():
+            energy = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
+            self.energies.loc[flow_name, 'sim'] = energy
+            if ('circular' in flow_name) and (energy != 0):
+                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected - check energy results')
+
+        self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
+        self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
+        self.energies['dis'] = (self.energies['yrl'] *
+                                self.scenario.discount_factors.loc[self.scenario.periods_prj, 'end'].sum())
+
+    def create_result_summary(self):
+        super().create_result_summary()
+        # get energy results for scenario.result_summary
+        self.result_summary.append(utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'))
+
+    def create_result_timeseries(self):
+        """
+        write flows and states to scenario.result_timeseries
+        """
+        if not self.scenario.run.largescalemode:
+            # write flows and states to scenario.result_timeseries
+            self.flows.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.flows.columns],
+                                                           names=['block', 'key'])
+
+            self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
+                                                            names=['block', 'key'])
+
+            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_eval, :],
+                                           self.states.loc[self.scenario.dti_eval, :]])
+
+    def create_plot_traces(self):
+        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_eval,
+                                                     y=self.flows.loc[self.scenario.dti_eval, 'total'],
+                                                     mode='lines',
+                                                     name=self.get_legend_entry(),
+                                                     line=dict(width=2, dash=None, shape='hv'),
+                                                     visible=True if self.top_level_block else 'legendonly',
+                                                     )
+                                          )
 
 
-
-class SinkBlock(Block):
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
-
-    def calc_results_energies(self):
-        super().calc_results_energies()
-        self.scenario.energies.loc[('sinks', 'del'), :] -= self.energies.loc['total', :]
-
-
-class NonElectricBlock:
+class NonElectricBlock(BaseBlock):
     """
     abstract class
     """
@@ -474,7 +500,30 @@ class NonElectricBlock:
         pass
 
 
-class SystemCore(Block):
+class SourceBlock(ElectricBlock):
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
+
+
+class SinkBlock(ElectricBlock):
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
+    def calc_results_energies(self):
+        super().calc_results_energies()
+        self.scenario.energies.loc[('sinks', 'del'), :] -= self.energies.loc['total', :]
+
+
+class SystemCore(ElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -509,8 +558,7 @@ class SystemCore(Block):
                          params=None,
                          parent=scenario)
 
-    def initialize_sizes(self,
-                         pois: dict = None):
+    def initialize_sizes(self):
 
         self.expansion_equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
 
@@ -518,7 +566,7 @@ class SystemCore(Block):
         self.init_equalizable_variables(name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
         self.init_equalizable_variables(name_vars=['size_max_acdc', 'size_max_dcac'])
 
-        super().initialize_sizes(pois=pois)
+        super().initialize_sizes()
 
     def define_oemof_components(self,
                                 horizon):
@@ -1306,7 +1354,7 @@ class ControllableSource(SourceBlock):
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
 
 
-class GridConnection(Block):
+class GridConnection(ElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -1358,8 +1406,7 @@ class GridConnection(Block):
                           for market in self.markets}
         del self.markets
 
-    def initialize_sizes(self,
-                         pois: dict = None):
+    def initialize_sizes(self):
 
         self.expansion_equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
 
@@ -1367,7 +1414,7 @@ class GridConnection(Block):
         self.init_equalizable_variables(name_vars=['size_preexisting_g2s', 'size_preexisting_s2g'])
         self.init_equalizable_variables(name_vars=['size_max_g2s', 'size_max_s2g'])
 
-        super().initialize_sizes(pois=pois)
+        super().initialize_sizes()
 
     def initialize_peakshaving(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
@@ -1582,7 +1629,7 @@ class GridConnection(Block):
                 f'{self.sizes.loc["s2g", "total"] / 1e3:.1f} kW to grid)')
 
 
-class GridMarket(Block):
+class GridMarket(ElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -1609,13 +1656,12 @@ class GridMarket(Block):
                          params=params,
                          parent=parent)
 
-    def initialize_sizes(self,
-                         pois: dict = None):
+    def initialize_sizes(self):
         """
         Initialize the sizes DataFrame for GridMarkets -> has sizes, but is not investable
         """
 
-        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in pois.values()] if name is not None]
+        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in self.pois.values()] if name is not None]
 
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
@@ -1877,7 +1923,7 @@ class StorageBlock:
                                            ])
 
 
-class StationaryBattery(StorageBlock, Block):
+class StationaryBattery(StorageBlock, ElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -1888,12 +1934,12 @@ class StationaryBattery(StorageBlock, Block):
                  name: str,
                  scenario):
 
-        Block.__init__(self,
-                       name=name,
-                       scenario=scenario,
-                       flow_apriori_names=None,
-                       params=None,
-                       parent=scenario)
+        ElectricBlock.__init__(self,
+                               name=name,
+                               scenario=scenario,
+                               flow_apriori_names=None,
+                               params=None,
+                               parent=scenario)
         
         self.eff['chg_int'] = self.eff['chg']  # necessary for common efficiency definition with ElectricFleetUnit
         self.eff['dis_int'] = self.eff['dis']
@@ -1910,7 +1956,7 @@ class StationaryBattery(StorageBlock, Block):
         super().initialize_efficiencies()
 
     def pre_scenario(self):
-        Block.pre_scenario(self)
+        ElectricBlock.pre_scenario(self)
         StorageBlock.pre_scenario(self)
 
     def define_oemof_components(self,
@@ -1932,7 +1978,7 @@ class StationaryBattery(StorageBlock, Block):
         super().create_result_messages(unit='kWh')
 
     def create_plot_traces(self):
-        Block.create_plot_traces(self)
+        ElectricBlock.create_plot_traces(self)
         StorageBlock.create_plot_traces(self)
 
     def get_legend_entry(self):
@@ -2038,7 +2084,7 @@ class Fleet(SinkBlock):
         return f'{self.name} power ({str_f2s} from / {str_s2f} to fleet)'
 
 
-class SubFleet(NonElectricBlock, Block):
+class SubFleet(NonElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -2061,7 +2107,6 @@ class SubFleet(NonElectricBlock, Block):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_apriori_names=None,
                          params=params_subfleet,
                          parent=parent)
 
@@ -2157,7 +2202,7 @@ class SubFleet(NonElectricBlock, Block):
         return df
 
 
-class ElectricFleetUnit(StorageBlock, Block):
+class ElectricFleetUnit(StorageBlock, ElectricBlock):
     """
     abstract class
     """
@@ -2193,13 +2238,13 @@ class ElectricFleetUnit(StorageBlock, Block):
                  parent: SubFleet,
                  params: dict):
 
-        Block.__init__(self,
-                       name=name,
-                       scenario=scenario,
-                       flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
-                                           'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
-                       params=params,
-                       parent=parent)
+        ElectricBlock.__init__(self,
+                               name=name,
+                               scenario=scenario,
+                               flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
+                                                   'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
+                               params=params,
+                               parent=parent)
 
         StorageBlock.__init__(self)
 
@@ -2220,7 +2265,7 @@ class ElectricFleetUnit(StorageBlock, Block):
         """
         slice log file from subfleet
         """
-        Block.pre_scenario(self=self)
+        ElectricBlock.pre_scenario(self=self)
         StorageBlock.pre_scenario(self=self)
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
@@ -2324,7 +2369,7 @@ class ElectricFleetUnit(StorageBlock, Block):
         StorageBlock.get_horizon_results(self=self, horizon=horizon)
 
     def create_plot_traces(self):
-        Block.create_plot_traces(self)
+        ElectricBlock.create_plot_traces(self)
 
         legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
         legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
@@ -2351,7 +2396,7 @@ class ElectricFleetUnit(StorageBlock, Block):
                 f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 
-class CombustionVehicle(NonElectricBlock, Block):
+class CombustionVehicle(NonElectricBlock, ElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -2393,7 +2438,7 @@ class CombustionVehicle(NonElectricBlock, Block):
         """
         slice log file from subfleet
         """
-        Block.pre_scenario(self=self)
+        ElectricBlock.pre_scenario(self=self)
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
 

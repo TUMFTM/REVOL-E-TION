@@ -5,7 +5,7 @@ from revoletion import blocks
 
 
 def get_mode_scheduling(fleet_units: dict,
-                        block: blocks.Block) -> str | None:
+                        block: blocks.BaseBlock) -> str | None:
     mode_scheduling = list({fu.block.mode_scheduling for fu in fleet_units.values()})
     if len(mode_scheduling) > 1:
         raise ValueError(f'Fleet units in fleet "{block.name}" have different scheduling modes: '
@@ -211,7 +211,7 @@ class AprioriCore:
 
 class AprioriFleet:
     def __init__(self,
-                 block: blocks.Block,
+                 block: blocks.BaseBlock,
                  scheduler: AprioriPowerScheduler):
         self.block=block
         self.scheduler=scheduler

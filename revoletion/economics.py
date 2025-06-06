@@ -149,7 +149,7 @@ class EconomicPointOfInterest:
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  scenario: 'simulation.Scenario' = None):
 
         self.name = name
@@ -216,7 +216,7 @@ class EconomicAggregator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  scenario: 'simulation.Scenario' = None):
 
         super().__init__(name=name,
@@ -261,7 +261,7 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  params: dict):
 
         super().__init__(name=name,
