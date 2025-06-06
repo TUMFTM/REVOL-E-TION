@@ -929,6 +929,12 @@ class PVSource(RenewableSource):
             response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
                                     headers={'Authorization': f'Bearer {self.scenario.run.key_solcast_api}'},
                                     params=params)
+
+            if response.status_code != 200:
+                raise ValueError(f'Block {self.name} - '
+                                 f'Solcast API returned {response.status_code} instead of 200: '
+                                 f'{response.json()["response_status"]["message"]}')
+
             self.data = pd.json_normalize(response.json()['estimated_actuals'])
             # save solcast file
             if not self.scenario.run.largescalemode:
