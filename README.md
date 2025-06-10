@@ -49,17 +49,20 @@ Electric vehicles (in fact any mobile storage devices) are modeled individually 
 Their behavior (i.e. when they depart and arrive again, how much energy they use in between and whether they can be charged externally) is described in a so called log file.
 Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through a Battery CommoditySystem as well as multiple use cases in different time frames (e.g. summer/winter) for the commoditites.
 
-The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):
-![System diagram](./images/structure_diagram.png)
+The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
+
+<div align="center">
+  <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
+</div>
 
 ## Installation
 REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 Sequoia.
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
-REVOL-E-TION is available at the institute's [GitHub](https://github.com/TUMFTM/REVOL-E-TION) and can be cloned from there using 
+REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodelling/revol-e-tion) and can be cloned from there using 
 ```
-git clone https://github.com/TUMFTM/REVOL-E-TION.git
+git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 ```
 
 #### Step 2: Create a clean virtual environment
