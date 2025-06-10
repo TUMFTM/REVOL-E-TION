@@ -50,7 +50,10 @@ Their behavior (i.e. when they depart and arrive again, how much energy they use
 Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through a Battery CommoditySystem as well as multiple use cases in different time frames (e.g. summer/winter) for the commoditites.
 
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
-<img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 90%; max-width: 90%; height: auto; background-color: white;">
+
+<div align="center">
+  <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 90%; max-width: 90%; height: auto; background-color: white;">
+</div>
 
 ## Installation
 REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 Sequoia.
