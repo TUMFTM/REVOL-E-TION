@@ -20,21 +20,6 @@ from revoletion import utils
 
 
 class BlockScenarioInterface(ABC):
-    @staticmethod
-    @abstractmethod
-    def get_init_definitions() -> dict:
-        """
-        Returns a dict containing:
-        - 'pois' (dict):
-            - keys: POI names
-            - values: dicts containing:
-                - 'class_name' (str): type of Evaluator
-                - 'params' (dict): tuples for parameters in evaluator as keys, name of class attribute as values
-        - state_names (list): state names used as columns for the 'states' DataFrame
-        """
-        return dict(pois={},
-                    state_names=[])
-
     @abstractmethod
     def pre_scenario(self) -> None:
         """
@@ -79,9 +64,11 @@ class BaseBlock(BlockScenarioInterface):
     """
 
     @staticmethod
+    @abstractmethod
     def get_init_definitions():
         return dict(pois={},
                     state_names=[])
+
 
     def __init__(self,
                  name: str,
@@ -112,8 +99,16 @@ class BaseBlock(BlockScenarioInterface):
         # endregion
 
         # region get poi and state name definitions
+        # combine all previously defined POIs and state names from class hierarchy
         definitions = [cls.get_init_definitions()
-                       for cls in self.__class__.mro() if hasattr(cls, 'get_init_definitions')]
+                       for cls in self.__class__.mro()
+                       if ('get_init_definitions' in vars(cls) and  # distinguish implemented and inherited methods
+                           cls.get_init_definitions() is not None)  # avoid None return value of @abstractmethod
+                       ]
+
+        if not definitions:
+            raise ValueError(f'Block "{self.name}" has no POIs or state names defined in its class hierarchy.')
+
         self.pois = {poi_key: poi_value
                      for definition in definitions
                      for poi_key, poi_value in
@@ -327,10 +322,6 @@ class BaseBlock(BlockScenarioInterface):
 
 
 class NonElectricBlock(BaseBlock):
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
 
     def create_plot_traces(self, *_args, **_kwargs):
         """
@@ -479,10 +470,6 @@ class ElectricBlock(BaseBlock):
 
 
 class SourceBlock(ElectricBlock):
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -490,11 +477,6 @@ class SourceBlock(ElectricBlock):
 
 
 class SinkBlock(ElectricBlock):
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -771,11 +753,6 @@ class RenewableSource(SourceBlock):
 
 
 class PVSource(RenewableSource):
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
 
     def get_ts_data(self):
         """
@@ -1086,11 +1063,6 @@ class PVSource(RenewableSource):
 
 
 class WindSource(RenewableSource):
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
 
     def get_ts_data(self):
         """
@@ -1903,11 +1875,6 @@ class StorageBlock:
 
 class StationaryBattery(StorageBlock, ElectricBlock):
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
-
     def __init__(self,
                  name: str,
                  scenario):
@@ -2068,6 +2035,7 @@ class SubFleet(NonElectricBlock):
     def get_init_definitions():
         return dict(pois={},
                     state_names=[])
+
 
     def __init__(self,
                  name: str,
@@ -2424,10 +2392,7 @@ class ElectricVehicle(ElectricFleetUnit):
     dummy class to enable tracking
     """
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
+    pass
 
 
 class MobileBattery(ElectricFleetUnit):
@@ -2435,7 +2400,4 @@ class MobileBattery(ElectricFleetUnit):
     dummy class to enable tracking
     """
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
+    pass
