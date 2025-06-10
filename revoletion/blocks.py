@@ -99,6 +99,7 @@ class BaseBlock(BlockScenarioInterface):
         # endregion
 
         # region get poi and state name definitions
+        # ToDo: find a more elegant way to combine POIs and state names from class hierarchy
         # combine all previously defined POIs and state names from class hierarchy
         definitions = [cls.get_init_definitions()
                        for cls in self.__class__.mro()
@@ -114,6 +115,8 @@ class BaseBlock(BlockScenarioInterface):
                      for poi_key, poi_value in
                      definition['pois'].items()}
         state_names = [state_name for definition in definitions for state_name in definition['state_names']]
+        if len(state_names) != len(set(state_names)):
+            raise ValueError(f'Block "{self.name}" has duplicate state names in its class hierarchy definitions.')
         # endregion
 
         # region initialize data structures
