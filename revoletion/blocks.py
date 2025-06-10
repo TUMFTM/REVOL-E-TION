@@ -326,6 +326,25 @@ class BaseBlock(BlockScenarioInterface):
                                  for block_name, block_obj in subblock.get_subblocks().items()}
 
 
+class NonElectricBlock(BaseBlock):
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={},
+                    state_names=[])
+
+    def create_plot_traces(self, *_args, **_kwargs):
+        """
+        dummy method
+        """
+        pass
+
+    def create_result_timeseries(self, *_args, **_kwargs):
+        """
+        dummy method
+        """
+        pass
+
+
 class ElectricBlock(BaseBlock):
     def __init__(self,
                  name: str,
@@ -340,7 +359,7 @@ class ElectricBlock(BaseBlock):
                          params=params,
                          parent=parent)
 
-        # set empty list; not possible as default argument as both are mutable
+        # empty list not possible as default argument as it is mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
         self.components = dict()
@@ -457,47 +476,6 @@ class ElectricBlock(BaseBlock):
                                                      visible=True if self.top_level_block else 'legendonly',
                                                      )
                                           )
-
-
-class NonElectricBlock(BaseBlock):
-    """
-    abstract class
-    """
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
-
-    def define_oemof_components(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-    def get_horizon_results(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-    def calc_energies(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-    def create_plot_traces(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-    def create_result_timeseries(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
 
 
 class SourceBlock(ElectricBlock):
@@ -2396,7 +2374,7 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
                 f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 
-class CombustionVehicle(NonElectricBlock, ElectricBlock):
+class CombustionVehicle(NonElectricBlock):
 
     @staticmethod
     def get_init_definitions():
@@ -2420,7 +2398,6 @@ class CombustionVehicle(NonElectricBlock, ElectricBlock):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_apriori_names=None,
                          params=params,
                          parent=parent)
 
@@ -2438,7 +2415,7 @@ class CombustionVehicle(NonElectricBlock, ElectricBlock):
         """
         slice log file from subfleet
         """
-        ElectricBlock.pre_scenario(self=self)
+        super().pre_scenario()
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
 
