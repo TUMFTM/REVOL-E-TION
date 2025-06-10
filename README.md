@@ -50,12 +50,7 @@ Their behavior (i.e. when they depart and arrive again, how much energy they use
 Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through a Battery CommoditySystem as well as multiple use cases in different time frames (e.g. summer/winter) for the commoditites.
 
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
-<!--
-When updating the SVG file using any online editor such as pdf24 make sure to add the following line after the opening svg tag to create a white background:
-SVG Tag: <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="body_1" width="573" height="421">
-Line to add: <rect width="100%" height="100%" fill="white"/>
--->
-![System diagram](./images/structure_diagram.svg)
+<img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 90%; max-width: 90%; height: auto; background-color: white;">
 
 ## Installation
 REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 Sequoia.
