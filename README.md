@@ -57,9 +57,9 @@ REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
-REVOL-E-TION is available at the institute's [GitHub](https://github.com/TUMFTM/REVOL-E-TION) and can be cloned from there using 
+REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodelling/revol-e-tion) and can be cloned from there using 
 ```
-git clone https://github.com/TUMFTM/REVOL-E-TION.git
+git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 ```
 
 #### Step 2: Create a clean virtual environment
