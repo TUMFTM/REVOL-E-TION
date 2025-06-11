@@ -413,7 +413,8 @@ class ElectricBlock(BaseBlock):
 
     @abstractmethod
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         pass
 
     @abstractmethod
@@ -532,7 +533,8 @@ class SystemCore(ElectricBlock):
         super().initialize_sizes()
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -665,7 +667,8 @@ class RenewableSource(SourceBlock):
         pass
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1213,7 +1216,8 @@ class FixedDemand(SinkBlock):
             )
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1270,7 +1274,8 @@ class ControllableSource(SourceBlock):
                          parent=scenario)
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1441,7 +1446,8 @@ class GridConnection(ElectricBlock):
             for period in self.peak_periods.index})
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1632,7 +1638,8 @@ class GridMarket(ElectricBlock):
             delattr(self, attr_str)
 
     def define_oemof_components(self,
-                                horizon):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
 
@@ -1762,7 +1769,7 @@ class StorageBlock(ElectricBlock):
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
-                                params: dict,
+                                params: dict = None,
                                 ):
         """
         pre horizon method
@@ -1776,6 +1783,10 @@ class StorageBlock(ElectricBlock):
              |             |
 
         """
+
+        if params is None:
+            raise ValueError(f'Block "{self.name}": Parameter "params" is required for StorageBlock method '
+                             f'define_oemof_components()')
 
         self.components['bus'] = solph.Bus()
 
@@ -1919,7 +1930,8 @@ class StationaryBattery(StorageBlock):
         super().initialize_efficiencies()
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         self.bus_connected = self.scenario.blocks['core'].components[self.system]
         params = {'inflow_nominal_capacity': None,
                   'outflow_nominal_capacity': None,
@@ -1977,7 +1989,8 @@ class Fleet(SinkBlock):
         del self.subfleets
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
         """
         pre horizon method
 
@@ -2235,7 +2248,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         FleetUnit.pre_scenario(self=self)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon'):
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
 
         """
         pre horizon method
