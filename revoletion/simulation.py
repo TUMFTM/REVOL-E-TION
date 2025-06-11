@@ -374,6 +374,9 @@ class Scenario:
                              '("{\'name1\':\'classname1\',\'name2\':\'classname2\'}") - '
                              f'check for missing or additional single or double quotes')
 
+        if not self.blocks:
+            raise ValueError(f'Scenario parameter "blocks" is empty - Definition of at least one block is required')
+
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.tzfinder = timezonefinder.TimezoneFinder()
