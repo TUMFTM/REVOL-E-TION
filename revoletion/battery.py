@@ -138,7 +138,7 @@ class BatteryPackModel:
         # Get temperature timeseries
         if isinstance(self.block.temp_battery, str):
             try:
-                temp_hor_c = self.scenario.blocks[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
+                temp_hor_c = self.scenario.block_registry.get('TopLevelBlock', {})[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
                 self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found - '
                                              f'Using scenario default temperature')

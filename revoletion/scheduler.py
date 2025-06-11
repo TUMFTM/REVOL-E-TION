@@ -20,7 +20,7 @@ class AprioriPowerScheduler:
     def __init__(self, scenario):
         self.scenario = scenario
 
-        self.core = AprioriCore(block=self.scenario.blocks['core'],
+        self.core = AprioriCore(block=self.scenario.block_registry.get('TopLevelBlock', {})['core'],
                                 scheduler=self)
 
         pass
@@ -56,7 +56,7 @@ class AprioriCore:
 
         self.fleets = {fleet.name: AprioriFleet(block=fleet,
                                                 scheduler=self.scheduler)
-                       for fleet in self.scenario.fleets.values()}
+                       for fleet in self.scenario.block_registry.get('Fleet', {}).values()}
 
         self.fu_uc = {k: v for fleet in self.fleets.values() for k, v in fleet.fu_uc.items()}
         self.fu_stat = {k: v for fleet in self.fleets.values() for k, v in fleet.fu_stat.items()}
@@ -83,9 +83,7 @@ class AprioriCore:
         self.p_sys_fix[:] = 0
 
         # get power production and consumption for each non-fleet top level block
-        for block in self.scenario.blocks.values():
-            if not block.top_level_block:
-                continue
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             if isinstance(block, blocks.GridConnection):
                 self.p_sys_avail.loc[:, block.system] += block.sizes.loc['g2s', 'preexisting'] * block.eff['block']
             elif isinstance(block, blocks.RenewableSource):

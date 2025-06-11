@@ -50,7 +50,7 @@ class SiteDispatcher:
 
         self.scenario = scenario
 
-        self.subfleets = self.scenario.subfleets_dispatch
+        self.subfleets = self.scenario.block_registry.get('SubFleetDispatch', {})
         if not self.subfleets:
             return
 
@@ -485,7 +485,7 @@ class VehicleDispatcher(SubFleetDispatcher):
 
         if subfleet.rex is not None:
             self.rex = True
-            self.rex_subfleet = scenario.subfleets.get(subfleet.rex, None)
+            self.rex_subfleet = scenario.block_registry.get('SubFleet', {}).get(subfleet.rex, None)
 
             base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
                        f'Subfleet "{subfleet.name}": selected range extender fleet "{subfleet.rex}"'
@@ -494,7 +494,7 @@ class VehicleDispatcher(SubFleetDispatcher):
                 raise ValueError(f'{base_msg} does not exist')
             elif not self.rex_subfleet.type_unit.lower() == 'mb':
                 raise ValueError(f'{base_msg} is not a Battery SubFleet')
-            elif self.rex_subfleet not in scenario.subfleets_dispatch.values():
+            elif self.rex_subfleet not in scenario.block_registry.get('SubFleetDispatch', {}).values():
                 raise ValueError(f'{base_msg} is not dispatched and cannot be used as range extender')
 
             self.rex_dispatcher = self.rex_subfleet.dispatcher
@@ -545,7 +545,3 @@ class BatteryDispatcher(SubFleetDispatcher):
         super().__init__(subfleet=subfleet,
                          parent=parent,
                          scenario=scenario)
-
-
-
-

@@ -502,16 +502,15 @@ class Scenario:
 
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
-        self.blocks_all = dict()
-        self.storage_blocks = dict()
-        self.fleets = dict()
-        self.renewable_sources = dict()
-        self.subfleets = dict()
-        self.subfleets_dispatch = dict()
-        self.subfleets_scheduling = dict()
+        self.block_registry = dict()
 
-        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
-        self.blocks = self.create_block_objects()
+        for name, class_name in {'core': 'SystemCore', **self.blocks}.items():
+            class_obj = getattr(blocks, class_name, None)
+            if class_obj is not None and isinstance(class_obj, type):
+                class_obj(name, self)
+            else:
+                raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
+                                 f'Check for typos or add class.')
 
         if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
             raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
@@ -552,11 +551,11 @@ class Scenario:
         # region preexecution
         self.dispatcher = dispatch.SiteDispatcher(scenario=self)
 
-        for block in self.blocks.values():
+        for block in self.block_registry.get('TopLevelBlock', {}).values():
             block.pre_scenario()
 
         self.scheduler = None
-        if self.subfleets_scheduling:
+        if self.block_registry.get('SubFleetScheduling', {}):
             self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
         # endregion
 
@@ -568,7 +567,7 @@ class Scenario:
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
-        # if fleet_unlim := [fleet for fleet in self.fleets.values() if
+        # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
         #                 (fleet.mode_scheduling in self.run.apriori_lvls)
         #                 and fleet.mode_scheduling != 'uc'
         #                 and not fleet.power_lim_static]:
@@ -619,7 +618,7 @@ class Scenario:
 
         finally:  # save results up to exception - valuable in RH strategy
 
-            for block in self.blocks.values():
+            for block in self.block_registry.get('TopLevelBlock', {}).values():
                 block.post_scenario()
             self.aggregator.post_scenario()
 
@@ -662,7 +661,7 @@ class Scenario:
             self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'sim']
             self.lcoe_wocs = ((self.aggregator.totex['dis'] -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                               sum([fleet.aggregator.totex['dis'] for fleet in self.fleets.values()])) /
+                               sum([fleet.aggregator.totex['dis'] for fleet in self.block_registry.get('Fleet', {}).values()])) /
                               self.energies.loc[('sinks', 'del'), 'sim'])
 
         self.npc = self.aggregator.totex['dis']
@@ -676,18 +675,6 @@ class Scenario:
                          f'NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} | '
                          f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
                          f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
-
-    def create_block_objects(self):
-        class_dict = self.blocks
-        objects = {}
-        for name, class_name in class_dict.items():
-            class_obj = getattr(blocks, class_name, None)
-            if class_obj is not None and isinstance(class_obj, type):
-                objects[name] = class_obj(name, self)
-            else:
-                raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
-                                 f'Check for typos or add class.')
-        return objects
 
     def end_timing(self):
         self.runtime_end = time.perf_counter()
@@ -749,7 +736,7 @@ class Scenario:
             pd.Series({key: value for key, value in self.__dict__.items()
                        if isinstance(value, (int, float, bool, str))}),
             # get dict of blocks with class names
-            pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.blocks.items()})),
+            pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.block_registry.get('TopLevelBlock', {}).items()})),
             # get energies dataframes results for scenario.result_summary
             utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'),
             # get economic results for scenario.result_summary
@@ -818,7 +805,7 @@ class PredictionHorizon:
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
 
-        for block in self.scenario.blocks.values():
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             block.pre_horizon(self)
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -874,6 +861,6 @@ class PredictionHorizon:
         # free up RAM
         del self.model
 
-        for block in self.scenario.blocks.values():
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             block.post_horizon(self)
         # endregion

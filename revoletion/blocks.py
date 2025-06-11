@@ -80,15 +80,9 @@ class BaseBlock(BlockScenarioInterface):
         self.classname = self.__class__.__name__  # get name of class
         self.top_level_block = True if self.parent is self.scenario else False  # distinguish top level blocks/subblocks
 
-        # add block to scenario's blocks_all dict
-        self.scenario.blocks_all[self.name] = self
+        self.register_block()
 
         # region set attributes from scenario file or parent
-        if self.top_level_block:
-            self.scenario.blocks[self.name] = self  # add block to scenario's blocks dict
-        else:  # is subblock
-            self.parent.subblocks[self.name] = self
-
         params = params if params is not None else self.scenario.parameters.loc[self.name]
         for key, value in params.items():
             setattr(self, key, value)
@@ -145,6 +139,19 @@ class BaseBlock(BlockScenarioInterface):
                                 states=[],
                                 )
         # endregion
+
+    def register_block(self):
+        for cls in self.__class__.__mro__:
+            if cls in (object, ABC, BlockScenarioInterface):
+                continue
+            name_class = cls.__name__
+            # Initialize per-class registry if not present and register self
+            self.scenario.block_registry.setdefault(name_class, {})[self.name] = self
+
+        if self.top_level_block:
+            self.scenario.block_registry.setdefault('TopLevelBlock', {})[self.name] = self
+        else:  # is subblock
+            self.parent.subblocks[self.name] = self
 
     def initialize_sizes(self,
                          pois: dict = None):
@@ -674,8 +681,6 @@ class RenewableSource(SourceBlock):
 
         self.share_curtailment = None
 
-        self.scenario.renewable_sources[self.name] = self
-
     @abstractmethod
     def get_ts_data(self):
         pass
@@ -694,7 +699,7 @@ class RenewableSource(SourceBlock):
           |                   |-->name_exc
         """
 
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['bus'] = solph.Bus()
 
@@ -1089,9 +1094,9 @@ class WindSource(RenewableSource):
         pre scenario (init) method
         get potential power profile from PVSource block or file
         """
-        if self.data_source in self.scenario.blocks.keys():
+        if self.data_source in self.scenario.block_registry.get('TopLevelBlock', {}).keys():
             # region get data from PVSource block
-            self.data = self.scenario.blocks[self.data_source].data.copy()
+            self.data = self.scenario.block_registry.get('TopLevelBlock', {})[self.data_source].data.copy()
             self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
 
             path_turbine_data_file = os.path.join(self.scenario.run.paths['data_persist'], 'turbine_data.pkl')
@@ -1242,7 +1247,7 @@ class FixedDemand(SinkBlock):
           |
         """
 
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['snk'] = solph.components.Sink(
             inputs={self.bus_connected: solph.Flow(nominal_capacity=1,
@@ -1300,7 +1305,7 @@ class ControllableSource(SourceBlock):
           |
         """
 
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['src'] = solph.components.Source(
             outputs={self.bus_connected: solph.Flow(
@@ -1481,7 +1486,7 @@ class GridConnection(ElectricBlock):
           |<--name_outflow_n--x----|
         """
 
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['bus'] = solph.Bus()
 
@@ -1742,8 +1747,6 @@ class StorageBlock(ElectricBlock):
                          params=params,
                          parent=parent)
 
-        self.scenario.storage_blocks[self.name] = self
-
         def calc_loss_rate_per_period(period: pd.Timedelta = pd.Timedelta(hours=1)) -> float:
             """
             convert self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per target time step.
@@ -1946,7 +1949,7 @@ class StationaryBattery(StorageBlock):
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
                                 params: dict = None):
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
         params = {'inflow_nominal_capacity': None,
                   'outflow_nominal_capacity': None,
                   'inflow_max': None,
@@ -1992,8 +1995,6 @@ class Fleet(SinkBlock):
                          params=None,
                          parent=scenario)
 
-        self.scenario.fleets[self.name] = self
-
         if not self.subfleets:
             raise ValueError(f'Block "{self.name}": No subfleets defined! At least one subfleet has to be defined.')
 
@@ -2020,7 +2021,7 @@ class Fleet(SinkBlock):
         """
 
         self.components['bus'] = solph.Bus()
-        self.bus_connected = self.scenario.blocks['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['inflow'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow(
@@ -2115,14 +2116,13 @@ class SubFleet(NonElectricBlock):
         else:
             raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" - invalid unit type')
 
-        self.scenario.subfleets[self.name] = self
         if self.data_source == 'usecases':
             self.demand.read_usecase_file()
             self.demand.sample()
-            self.scenario.subfleets_dispatch[self.name] = self
+            self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
         elif self.data_source == 'demand':
             self.demand.read_demand_file()
-            self.scenario.subfleets_dispatch[self.name] = self
+            self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
         elif self.data_source in ['log', 'logfile']:
             self.log = self.read_input_log()
             # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()  # todo reenable
@@ -2130,7 +2130,7 @@ class SubFleet(NonElectricBlock):
             raise ValueError(f'Block "{self.name}": invalid data source')
 
         if params.get('mode_scheduling') in scenario.run.apriori_lvls:  # mode scheduling attr is in FleetUnit
-            self.scenario.subfleets_scheduling[self.name] = self
+            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
 
         if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
