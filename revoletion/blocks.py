@@ -475,12 +475,35 @@ class ElectricBlock(BaseBlock):
 
 class SourceBlock(ElectricBlock):
 
+    @abstractmethod
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
+        pass
+
+    @abstractmethod
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        pass
+
+
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
 
 
 class SinkBlock(ElectricBlock):
+
+    @abstractmethod
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
+        pass
+
+    @abstractmethod
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        pass
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -2186,6 +2209,9 @@ class FleetUnit:
                           },
                     state_names=[])
 
+    def __init__(self):
+        self.log = None
+
     def pre_scenario(self):
         """
         slice log file from subfleet
@@ -2220,14 +2246,15 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                  parent: SubFleet,
                  params: dict):
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
-                                             'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
-                         params=params,
-                         parent=parent)
+        StorageBlock.__init__(self=self,
+                              name=name,
+                              scenario=scenario,
+                              flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
+                                                  'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
+                              params=params,
+                              parent=parent)
 
-        self.log = None
+        FleetUnit.__init__(self=self)
 
         self.apriori = True if self.mode_scheduling in self.scenario.run.apriori_lvls else False
 
@@ -2241,9 +2268,6 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         super().initialize_efficiencies()
 
     def pre_scenario(self):
-        """
-        slice log file from subfleet
-        """
         StorageBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
 
@@ -2386,12 +2410,13 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
                  parent: SubFleet,
                  params: dict):
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         params=params,
-                         parent=parent)
+        NonElectricBlock.__init__(self=self,
+                                  name=name,
+                                  scenario=scenario,
+                                  params=params,
+                                  parent=parent)
 
-        self.log = None
+        FleetUnit.__init__(self=self)
 
         # delete parameters not needed for CombustionVehicles
         # ToDo: specify required parameters instead of obsolete ones
@@ -2403,9 +2428,6 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
                     delattr(self, param)
 
     def pre_scenario(self):
-        """
-        slice log file from subfleet
-        """
         NonElectricBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
 
