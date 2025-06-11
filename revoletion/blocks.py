@@ -651,7 +651,7 @@ class RenewableSource(SourceBlock):
     @staticmethod
     def get_init_definitions():
         return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
@@ -1271,7 +1271,7 @@ class ControllableSource(SourceBlock):
     @staticmethod
     def get_init_definitions():
         return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
@@ -1715,7 +1715,7 @@ class StorageBlock(ElectricBlock):
     @staticmethod
     def get_init_definitions():
         return dict(pois={'storage': {'class_name': 'EconomicEvaluator',
-                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                      'params': {('capex', 'preexisting'): 'capex_preexisting_storage',
                                                  ('capex', 'spec'): 'capex_spec',
                                                  ('mntex', 'spec'): 'mntex_spec',
                                                  ('size', 'name'): 'storage',
@@ -2189,7 +2189,7 @@ class FleetUnit:
     @staticmethod
     def get_init_definitions():
         return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
-                                     'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                     'params': {('capex', 'preexisting'): 'capex_preexisting_glider',
                                                 ('capex', 'fix'): 'capex_fix_glider',
                                                 ('mntex', 'fix'): 'mntex_fix_glider',
                                                 ('opex', 'dist'): 'opex_spec_dist',
@@ -2218,7 +2218,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     @staticmethod
     def get_init_definitions():
         return dict(pois={'charger': {'class_name': 'EconomicEvaluator',
-                                      'params': {('capex', 'preexisting'): 'capex_preexisting',
+                                      'params': {('capex', 'preexisting'): 'capex_preexisting_charger',
                                                  ('capex', 'fix'): 'capex_fix_charger',
                                                  ('aux', 'ls'): 'ls',
                                                  ('aux', 'ccr'): 'ccr'}},

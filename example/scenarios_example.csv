@@ -36,7 +36,7 @@ dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size_preexisting_block,0,0,0,10000
-wind,capex_preexisting,True,True,True,True
+wind,capex_preexisting_block,True,True,True,True
 wind,size_max_block,None,None,None,None
 wind,invest_block,True,True,True,False
 wind,system,ac,ac,ac,ac
@@ -50,7 +50,7 @@ wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
 wind,eff_block,0.95,0.95,0.95,0.95
 pv,size_preexisting_block,1000,0,0,30000
-pv,capex_preexisting,True,True,True,True
+pv,capex_preexisting_block,True,True,True,True
 pv,size_max_block,None,None,None,None
 pv,invest_block,True,True,True,False
 pv,data_source,PVGIS API,PVGIS API,PVGIS API,PVGIS API
@@ -71,7 +71,7 @@ pv,raddatabase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
 pv,pvtechchoice,crystSi,crytSi,crystSi,crystSi
 pv,mountingplace,free,free,free,free
 gen,size_preexisting_block,15000,15000,15000,15000
-gen,capex_preexisting,True,True,True,True
+gen,capex_preexisting_block,True,True,True,True
 gen,size_max_block,None,None,None,None
 gen,invest_block,True,True,True,False
 gen,system,ac,ac,ac,ac
@@ -111,7 +111,7 @@ pv_feedin,opex_spec_s2g,-5e-5,-5e-5,-5e-5,-5e-5
 pv_feedin,pwr_g2s,0,0,0,0
 pv_feedin,pwr_s2g,1e5,1e5,1e5,1e5
 ess,size_preexisting_storage,0,0,0,20000
-ess,capex_preexisting,True,True,True,True
+ess,capex_preexisting_storage,True,True,True,True
 ess,size_max_storage,None,None,None,None
 ess,invest_storage,True,True,True,False
 ess,system,dc,dc,dc,dc
@@ -147,9 +147,11 @@ bev,filename_mapper,mtf,mtf,mtf,mtf
 bev,size_preexisting_storage,16500,16500,16500,16500
 bev,size_max_storage,None,None,None,None
 bev,invest_storage,False,False,False,False
-bev,capex_preexisting,True,True,True,True
+bev,capex_preexisting_storage,True,True,True,True
 bev,capex_fix_glider,25000,25000,25000,25000
+bev,capex_preexisting_glider,True,True,True,True
 bev,capex_fix_charger,1500,1500,1500,1500
+bev,capex_preexisting_charger,True,True,True,True
 bev,ccr,1,1,1,1
 bev,ls,10,10,10,10
 bev,mntex_fix_glider,500,500,500,500
@@ -186,9 +188,8 @@ icev,type_unit,icev,icev,icev,icev
 icev,data_source,usecases,usecases,usecases,usecases
 icev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 icev,filename_mapper,mtf,mtf,mtf,mtf
-icev,capex_preexisting,True,True,True,True
 icev,capex_fix_glider,25000,25000,25000,25000
-icev,capex_fix_charger,1500,1500,1500,1500
+icev,capex_preexisting_glider,True,True,True,True
 icev,ccr,1,1,1,1
 icev,ls,10,10,10,10
 icev,mntex_fix_glider,500,500,500,500
@@ -206,9 +207,10 @@ mb,type_unit,mb,mb,mb,mb
 mb,data_source,usecases,usecases,usecases,usecases
 mb,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
 mb,filename_mapper,mtf,mtf,mtf,mtf
-mb,capex_preexisting,True,True,True,True
 mb,capex_fix_glider,500,500,500,500
+mb,capex_preexisting_glider,True,True,True,True
 mb,capex_fix_charger,200,200,200,200
+mb,capex_preexisting_charger,True,True,True,True
 mb,ccr,1,1,1,1
 mb,ls,10,10,10,10
 mb,mntex_fix_glider,30,30,30,30
@@ -218,6 +220,7 @@ mb,crev_spec_dist,0,0,0,0
 mb,opex_spec_ext_ac,0,0,0,0
 mb,opex_spec_ext_dc,0,0,0,0
 mb,size_preexisting_storage,3000,3000,3000,3000
+mb,capex_preexisting_storage,True,True,True,True
 mb,size_max_storage,None,None,None,None
 mb,invest_storage,False,False,False,False
 mb,capex_spec,0.3,0.3,0.3,0.3
