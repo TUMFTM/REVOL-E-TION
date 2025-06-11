@@ -185,7 +185,9 @@ class SimulationRun:
         else:
             log_stream_handler.setLevel(logging.INFO)
             self.logger.setLevel(logging.INFO)
-            logging.getLogger('gurobipy.gurobipy').setLevel(logging.WARNING)
+
+        # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
+        logging.getLogger('gurobipy').disabled=True
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
@@ -764,7 +766,6 @@ class PredictionHorizon:
         self.scenario = scenario
 
         self.results = None
-        self.meta_results = None
 
         # region time and data generation and slicing
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
@@ -829,7 +830,8 @@ class PredictionHorizon:
         # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
-        results = self.model.solve(solver=self.scenario.run.solver)
+        results = self.model.solve(solver=self.scenario.run.solver,
+                                   solve_kwargs={'tee': self.scenario.run.debugmode})
 
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
@@ -857,9 +859,7 @@ class PredictionHorizon:
         # Get (possibly optimized) component sizes from results to handle outputs more easily
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if self.scenario.run.debugmode:
-            self.meta_results = solph.processing.meta_results(self.model)
-            pprint.pprint(self.meta_results)
+        self.scenario.logger.debug(pprint.pformat(solph.processing.meta_results(self.model)))
 
         # free up RAM
         del self.model

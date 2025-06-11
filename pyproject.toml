@@ -13,7 +13,6 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "geopy",
-    "graphviz",
     "holidays",
     "numpy",
     "numpy_financial",
