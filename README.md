@@ -67,15 +67,15 @@ git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 
 #### Step 2: Create a clean virtual environment
 It is recommended to create and activate a clean virtual environment for the installation of REVOL-E-TION.
-This can be done using the following command:
-```
-python -m venv <path_to_virtual_environment>
-source <path_to_virtual_environment>/bin/activate
-```
-or alternatively with conda:
+This can be done using conda:
 ```
 conda create -n <name_of_virtual_environment> python=3.11
 conda activate <name_of_virtual_environment>
+```
+or alternatively with the following command:
+```
+python -m venv <path_to_virtual_environment>
+source <path_to_virtual_environment>/bin/activate
 ```
 
 #### Step 3: Install package and dependencies locally
