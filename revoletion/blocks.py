@@ -50,13 +50,6 @@ class BlockScenarioInterface(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_subblocks(self) -> dict:
-        """
-        Returns a dict of subblocks with their names as keys and the subblock objects as values.
-        """
-        pass
-
 
 class BaseBlock(BlockScenarioInterface):
     """
@@ -86,6 +79,9 @@ class BaseBlock(BlockScenarioInterface):
 
         self.classname = self.__class__.__name__  # get name of class
         self.top_level_block = True if self.parent is self.scenario else False  # distinguish top level blocks/subblocks
+
+        # add block to scenario's blocks_all dict
+        self.scenario.blocks_all[self.name] = self
 
         # region set attributes from scenario file or parent
         if self.top_level_block:
@@ -317,11 +313,6 @@ class BaseBlock(BlockScenarioInterface):
         Standard legend entry for simple blocks using power as their size
         """
         return f'{self.name} power (max. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
-
-    def get_subblocks(self):
-        return self.subblocks | {block_name: block_obj
-                                 for subblock in self.subblocks.values()
-                                 for block_name, block_obj in subblock.get_subblocks().items()}
 
 
 class NonElectricBlock(BaseBlock):

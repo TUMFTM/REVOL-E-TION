@@ -502,6 +502,7 @@ class Scenario:
 
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
+        self.blocks_all = dict()
         self.storage_blocks = dict()
         self.fleets = dict()
         self.renewable_sources = dict()
@@ -763,11 +764,6 @@ class Scenario:
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.paths['summary_temp'])
-
-    def get_all_blocks(self) -> dict:
-        return self.blocks | {block_name: block_obj
-                              for block in self.blocks.values()
-                              for block_name, block_obj in block.get_subblocks().items()}
 
 
 class PredictionHorizon:

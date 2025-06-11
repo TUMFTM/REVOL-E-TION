@@ -259,8 +259,8 @@ class CustomConstraints:
             setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
             setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
 
-        # Apply constraints for every MobileCommodity
-        for efu in [block for block in self.scenario.get_all_blocks().values()
+        # Apply constraints for every ElectricFleetUnit
+        for efu in [block for block in self.scenario.blocks_all.values()
                     if isinstance(block, blocks.ElectricFleetUnit)]:
             _equal_flows(m=model,
                          block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
