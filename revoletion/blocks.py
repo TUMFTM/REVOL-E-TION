@@ -1681,7 +1681,7 @@ class GridMarket(ElectricBlock):
         return f'{self.name} power (max. {powers["g2s"] / 1e3:.1f} kW from / {powers["s2g"] / 1e3:.1f} kW to grid)'
 
 
-class StorageBlock:
+class StorageBlock(ElectricBlock):
     """
     abstract class
     """
@@ -1707,7 +1707,19 @@ class StorageBlock:
                           },
                     state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'])
 
-    def __init__(self):
+    def __init__(self,
+                 name: str,
+                 scenario: 'Scenario',
+                 flow_apriori_names: list = None,
+                 params: dict = None,
+                 parent: 'Block | Scenario' = None,
+                 ):
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=flow_apriori_names,
+                         params=params,
+                         parent=parent)
 
         self.scenario.storage_blocks[self.name] = self
 
@@ -1744,8 +1756,8 @@ class StorageBlock:
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
 
-
     def pre_scenario(self):
+        super().pre_scenario()
         self.aging_model = bat.BatteryPackModel(self)
 
     def define_oemof_components(self,
@@ -1857,6 +1869,9 @@ class StorageBlock:
         """
         post-scenario plotting of SOC and SOH traces in timeseries plot
         """
+
+        super().create_plot_traces()
+
         data_soc = self.states.loc[self.scenario.dti_eval, 'soc'].dropna()
         data_soh = self.states.loc[self.scenario.dti_eval, 'soh'].dropna()
         self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
@@ -1876,36 +1891,32 @@ class StorageBlock:
                                            ])
 
 
-class StationaryBattery(StorageBlock, ElectricBlock):
+class StationaryBattery(StorageBlock):
 
     def __init__(self,
                  name: str,
-                 scenario):
+                 scenario: 'Scenario',
+                 ):
 
-        ElectricBlock.__init__(self,
-                               name=name,
-                               scenario=scenario,
-                               flow_apriori_names=None,
-                               params=None,
-                               parent=scenario)
-        
-        self.eff['chg_int'] = self.eff['chg']  # necessary for common efficiency definition with ElectricFleetUnit
-        self.eff['dis_int'] = self.eff['dis']
-
-        StorageBlock.__init__(self)
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=None,
+                         params=None,
+                         parent=scenario,
+                         )
 
     def initialize_efficiencies(self):
         self.eff['chg'] = self.eff_acdc if self.system == 'ac' else 1
         self.eff['dis'] = self.eff_dcac if self.system == 'ac' else 1
 
+        # necessary for common efficiency definition with ElectricFleetUnit
+        self.eff['chg_int'] = self.eff['chg']
+        self.eff['dis_int'] = self.eff['dis']
+
         for attr in ['eff_acdc', 'eff_dcac']:
             delattr(self, attr)
 
         super().initialize_efficiencies()
-
-    def pre_scenario(self):
-        ElectricBlock.pre_scenario(self)
-        StorageBlock.pre_scenario(self)
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
@@ -1925,13 +1936,9 @@ class StationaryBattery(StorageBlock, ElectricBlock):
     def create_result_messages(self, *_):
         super().create_result_messages(unit='kWh')
 
-    def create_plot_traces(self):
-        ElectricBlock.create_plot_traces(self)
-        StorageBlock.create_plot_traces(self)
-
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["storage", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge /'
-                f' {self.sizes.loc["storage", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
+        return (f'{self.name} power (max. {self.sizes.loc["storage", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
+                f'{self.sizes.loc["storage", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
 class Fleet(SinkBlock):
@@ -2151,11 +2158,7 @@ class SubFleet(NonElectricBlock):
         return df
 
 
-class ElectricFleetUnit(StorageBlock, ElectricBlock):
-    """
-    abstract class
-    """
-
+class FleetUnit:
     @staticmethod
     def get_init_definitions():
         return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
@@ -2167,7 +2170,24 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
                                                 ('crev', 'dist'): 'crev_spec_dist',
                                                 ('aux', 'ls'): 'ls',
                                                 ('aux', 'ccr'): 'ccr'}},
-                          'charger': {'class_name': 'EconomicEvaluator',
+                          },
+                    state_names=[])
+
+    def pre_scenario(self):
+        """
+        slice log file from subfleet
+        """
+        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+
+
+class ElectricFleetUnit(StorageBlock, FleetUnit):
+    """
+    abstract class
+    """
+
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'charger': {'class_name': 'EconomicEvaluator',
                                       'params': {('capex', 'preexisting'): 'capex_preexisting',
                                                  ('capex', 'fix'): 'capex_fix_charger',
                                                  ('aux', 'ls'): 'ls',
@@ -2187,15 +2207,12 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
                  parent: SubFleet,
                  params: dict):
 
-        ElectricBlock.__init__(self,
-                               name=name,
-                               scenario=scenario,
-                               flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
-                                                   'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
-                               params=params,
-                               parent=parent)
-
-        StorageBlock.__init__(self)
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
+                                             'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
+                         params=params,
+                         parent=parent)
 
         self.log = None
 
@@ -2214,9 +2231,8 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
         """
         slice log file from subfleet
         """
-        ElectricBlock.pre_scenario(self=self)
         StorageBlock.pre_scenario(self=self)
-        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        FleetUnit.pre_scenario(self=self)
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon'):
@@ -2315,10 +2331,10 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
         self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[
             (self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
 
-        StorageBlock.get_horizon_results(self=self, horizon=horizon)
+        super().get_horizon_results(horizon=horizon)
 
     def create_plot_traces(self):
-        ElectricBlock.create_plot_traces(self)
+        super().create_plot_traces()
 
         legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
         legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
@@ -2338,27 +2354,16 @@ class ElectricFleetUnit(StorageBlock, ElectricBlock):
                                                       ),
                                            ])
 
-        StorageBlock.create_plot_traces(self)
-
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
                 f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 
-class CombustionVehicle(NonElectricBlock):
+class CombustionVehicle(NonElectricBlock, FleetUnit):
 
     @staticmethod
     def get_init_definitions():
-        return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
-                                     'params': {('capex', 'preexisting'): 'capex_preexisting',
-                                                ('capex', 'fix'): 'capex_fix_glider',
-                                                ('mntex', 'fix'): 'mntex_fix_glider',
-                                                ('opex', 'dist'): 'opex_spec_dist',
-                                                ('crev', 'time'): 'crev_spec_time',
-                                                ('crev', 'dist'): 'crev_spec_dist',
-                                                ('aux', 'ls'): 'ls',
-                                                ('aux', 'ccr'): 'ccr'}},
-                          },
+        return dict(pois={},
                     state_names=[])
 
     def __init__(self,
@@ -2375,6 +2380,7 @@ class CombustionVehicle(NonElectricBlock):
         self.log = None
 
         # delete parameters not needed for CombustionVehicles
+        # ToDo: specify required parameters instead of obsolete ones
         for param in ['aging', 'chemistry', 'temp_battery', 'q_loss_cal_init', 'q_loss_cyc_init',
                       'soc_init', 'soc_target', 'soc_return', 'dsoc_buffer',
                       'pwr_chg_max', 'pwr_dis_max', 'pwr_ext_ac_max', 'pwr_ext_dc_max',
@@ -2386,8 +2392,8 @@ class CombustionVehicle(NonElectricBlock):
         """
         slice log file from subfleet
         """
-        super().pre_scenario()
-        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        NonElectricBlock.pre_scenario(self=self)
+        FleetUnit.pre_scenario(self=self)
 
 
 class ElectricVehicle(ElectricFleetUnit):
