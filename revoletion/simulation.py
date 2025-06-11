@@ -185,7 +185,9 @@ class SimulationRun:
         else:
             log_stream_handler.setLevel(logging.INFO)
             self.logger.setLevel(logging.INFO)
-            logging.getLogger('gurobipy.gurobipy').setLevel(logging.WARNING)
+
+        # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
+        logging.getLogger('gurobipy').disabled=True
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
@@ -842,7 +844,8 @@ class PredictionHorizon:
         # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
-        results = self.model.solve(solver=self.scenario.run.solver)
+        results = self.model.solve(solver=self.scenario.run.solver,
+                                   solve_kwargs={'tee': self.scenario.run.debugmode})
 
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
