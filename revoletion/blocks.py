@@ -794,7 +794,7 @@ class PVSource(RenewableSource):
 
             u0 = 26.9  # W/(˚C.m2) - cSi Free standing
             u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-            mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['wind_speed'])))
+            mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['speed_wind'])))
 
             # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
             # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
@@ -890,6 +890,9 @@ class PVSource(RenewableSource):
                 timeout=30,  # default value
             )
 
+            # rename column wind_speed to speed_wind
+            self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
+
             self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
             self.data.index = self.data.index - api_shift
         # endregion
@@ -979,7 +982,8 @@ class PVSource(RenewableSource):
             self.data = self.data.tz_convert(self.scenario.timezone)
             self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
             # rename columns according to further processing steps
-            self.data.rename(columns={'air_temp': 'temp_air', 'wind_speed_10m': 'wind_speed'}, inplace=True)
+            self.data.rename(columns={'air_temp': 'temp_air',
+                                      'wind_speed_10m': 'speed_wind'}, inplace=True)
             # calculate specific pv power
             calc_power_from_irradiation()
         # endregion
@@ -1005,6 +1009,8 @@ class PVSource(RenewableSource):
                     self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
                     self.scenario.latitude = meta['latitude']
                     self.scenario.longitude = meta['longitude']
+                    # rename column wind_speed to speed_wind
+                    self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
                     self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
                 # endregion
 
@@ -1013,7 +1019,7 @@ class PVSource(RenewableSource):
                     # no lat/lon contained in solcast files
                     self.data = pd.read_csv(path_input_file)
                     self.data.rename(columns={'air_temp': 'temp_air',
-                                              'wind_speed_10m': 'wind_speed'}, inplace=True)
+                                              'wind_speed_10m': 'speed_wind'}, inplace=True)
                     self.data['period_start'] = (pd.to_datetime(self.data['period_end'], utc=True) -
                                                  pd.to_timedelta(self.data['period']))
                     self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
@@ -1057,7 +1063,7 @@ class PVSource(RenewableSource):
                             albedo=self.data['albedo'],
                         )['poa_global']
 
-                    self.data = self.data[['temp_air', 'wind_speed', 'gti']]
+                    self.data = self.data[['temp_air', 'speed_wind', 'gti']]
                     calc_power_from_irradiation()
                 # endregion
 
@@ -1074,7 +1080,7 @@ class PVSource(RenewableSource):
         self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'wind_speed', 'temp_air']]
+        self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'speed_wind', 'temp_air']]
         # endregion
 
         if not self.scenario.run.largescalemode:
@@ -1097,7 +1103,7 @@ class WindSource(RenewableSource):
         if self.data_source in self.scenario.block_registry.get('TopLevelBlock', {}).keys():
             # region get data from PVSource block
             self.data = self.scenario.block_registry.get('TopLevelBlock', {})[self.data_source].data.copy()
-            self.data['wind_speed_adj'] = windpowerlib.wind_speed.hellman(self.data['wind_speed'], 10, self.height)
+            self.data['speed_wind_adj'] = windpowerlib.wind_speed.hellman(self.data['speed_wind'], 10, self.height)
 
             path_turbine_data_file = os.path.join(self.scenario.run.paths['data_persist'], 'turbine_data.pkl')
             turbine_data = pd.read_pickle(path_turbine_data_file)
@@ -1105,7 +1111,7 @@ class WindSource(RenewableSource):
             turbine_data = turbine_data.loc[turbine_data['turbine_type'] == 'E-53/800'].reset_index()
 
             self.data['power_original'] = windpowerlib.power_output.power_curve(
-                wind_speed=self.data['wind_speed_adj'],
+                wind_speed=self.data['speed_wind_adj'],
                 power_curve_wind_speeds=ast.literal_eval(turbine_data.loc[0, 'power_curve_wind_speeds']),
                 power_curve_values=ast.literal_eval(turbine_data.loc[0, 'power_curve_values']),
                 density_correction=False)
