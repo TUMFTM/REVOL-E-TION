@@ -778,7 +778,6 @@ class PredictionHorizon:
         self.scenario = scenario
 
         self.results = None
-        self.meta_results = None
 
         # region time and data generation and slicing
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
@@ -871,9 +870,7 @@ class PredictionHorizon:
         # Get (possibly optimized) component sizes from results to handle outputs more easily
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if self.scenario.run.debugmode:
-            self.meta_results = solph.processing.meta_results(self.model)
-            pprint.pprint(self.meta_results)
+        self.scenario.logger.debug(pprint.pformat(solph.processing.meta_results(self.model)))
 
         # free up RAM
         del self.model
