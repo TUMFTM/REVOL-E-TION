@@ -125,7 +125,9 @@ class SubFleetDemand:
             return pd.DataFrame(data=time_samples, index=group.index)
 
         self.demand['hour'] = (self.demand.groupby(['usecase', 'timeframe'])
-                               .apply(sample_time_usecase).reset_index(level=[0, 1], drop=True).sort_index())
+                               .apply(sample_time_usecase, include_groups=False)
+                               .reset_index(level=[0, 1], drop=True)
+                               .sort_index())
         self.demand['time_req'] = pd.to_datetime(self.demand[['year', 'month', 'day', 'hour']])
         self.demand.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
         self.demand['time_req'] = self.demand['time_req'].dt.tz_localize(self.scenario.timezone,
@@ -166,7 +168,7 @@ class SubFleetDemand:
 
         self.demand['dtime_patience'] = (self.demand
                                          .groupby(['usecase','timeframe'])
-                                         .apply(get_patience_usecase)
+                                         .apply(get_patience_usecase, include_groups=False)
                                          .reset_index(level=[0, 1], drop=True)
                                          .sort_index())
         # endregion
@@ -237,7 +239,7 @@ class BatteryDemand(SubFleetDemand):
 
         self.demand['dtime_active'] = (self.demand
                                        .groupby(['usecase', 'timeframe'])
-                                       .apply(calc_time_active_usecase)
+                                       .apply(calc_time_active_usecase, include_groups=False)
                                        .reset_index(level=[0, 1], drop=True)
                                        .sort_index())
 
@@ -280,7 +282,7 @@ class VehicleDemand(SubFleetDemand):
                                 index=group.index)
 
         self.demand[['consumption', 'speed_avg']] = (self.demand.groupby(['usecase', 'timeframe'])
-                                                     .apply(get_consumption_speed_usecase)
+                                                     .apply(get_consumption_speed_usecase, include_groups=False)
                                                      .reset_index(level=[0, 1], drop=True)
                                                      .sort_index())
 

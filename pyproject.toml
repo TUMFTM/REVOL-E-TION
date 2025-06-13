@@ -17,7 +17,7 @@ dependencies = [
     "numpy",
     "numpy_financial",
     "oemof.solph==0.6.0a3",
-    "pandas",
+    "pandas>=2.1",
     "plotly",
     "psutil",
     "pvlib>=0.13.0",
