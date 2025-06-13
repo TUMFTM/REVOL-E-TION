@@ -59,8 +59,8 @@ class SimulationRun:
 
     def __init__(self,
                  path_scenarios: Path,
-                 path_input: Path,
-                 path_output: Path,
+                 path_input: Path = None,
+                 path_output: Path = None,
                  solver: str = 'gurobi',
                  n_processes: int = 1,
                  largescalemode: bool = False,
@@ -69,17 +69,33 @@ class SimulationRun:
                  rerun_infeasible: bool = True,
                  key_solcast_api: str = None):
 
-        self.paths = {'revoletion': files(__package__),
-                      'cwd': Path.cwd(),
-                      'scenarios': Path.cwd() / Path(path_scenarios),
-                      'input': Path.cwd() / Path(path_input),
-                      'output': Path.cwd() / Path(path_output)}
+        cwd = Path.cwd()
+        def to_abs_path(p: Path):
+            return p if p.is_absolute() else cwd / p
+
+        self.paths = {
+            'revoletion': files(__package__),
+            'cwd': cwd,
+            'scenarios': to_abs_path(path_scenarios),
+            'input': to_abs_path(path_input) if path_input else to_abs_path(path_scenarios).parent,
+            'output': to_abs_path(path_output) if path_output else cwd / 'results',
+        }
+        del cwd, to_abs_path, path_scenarios, path_input, path_output
+
         self.solver = solver
+        self.n_processes = n_processes
         self.largescalemode = largescalemode
         self.debugmode = debugmode
         self.rerun = rerun
         self.rerun_infeasible = rerun_infeasible
         self.key_solcast_api = key_solcast_api  # todo find more elegant solution
+        del solver, n_processes, largescalemode, debugmode, rerun, rerun_infeasible, key_solcast_api
+
+        # check whether scenario file exists and input directory is valid -> output directory is created if not existing
+        if not self.paths['scenarios'].is_file():
+            raise FileNotFoundError(f'Scenario file not found: {self.paths["scenarios"]}')
+        if not self.paths['input'].is_dir():
+            raise NotADirectoryError(f'Input directory path not interpretable: {self.paths['input']}')
 
         # region start runtime
         self.runtime_start = time.perf_counter()
@@ -175,7 +191,7 @@ class SimulationRun:
         if self.scenario_num == 0:
             raise ValueError('No executable scenarios found in scenario file')
         
-        self.n_processes = min(n_processes, os.cpu_count(), self.scenario_num)
+        self.n_processes = min(self.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
         # region define logger structure
