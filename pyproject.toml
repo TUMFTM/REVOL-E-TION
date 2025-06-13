@@ -30,8 +30,9 @@ dependencies = [
     "windpowerlib"
 ]
 
-[tool.setuptools]
-packages = ["revoletion"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["revoletion", "revoletion.*"]
 
 [tool.setuptools.package-data]
 "revoletion.data" = ["*"]
