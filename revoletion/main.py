@@ -80,8 +80,6 @@ def main():
     elif args.scenario  == 'example':
         scenarios_example = True
         path_scenario = files(__package__) / 'example' / 'scenarios_example.csv'
-        warnings.warn(f'Using example project provided with REVOL-E-TION. -> Disregard if this is intended',
-                      DefaultFileLocationWarning)
     # Option 3: Full absolute or relative (to working directory) file path
     else:
         path_scenario = Path(args.scenario)
