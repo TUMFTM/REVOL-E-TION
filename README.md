@@ -18,7 +18,6 @@ September 2nd, 2021
 
 #### Contributors
 Marcel Brödel, M.Sc. - Research Associate 01/2024-
-
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
 Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022  
@@ -45,9 +44,9 @@ Simulation results are later extrapolated and discounted to a project timeframe 
 Please note that this split between simulation and extrapolation improves computational effort, but creates possibly unwanted incentives for the optimizer (e.g. preferring low initial cost but operationally expensive power sources), especially when sizing components.
 
 REVOL-E-TION groups oemof components and buses into blocks representing real-world systems (e.g. a PV array) for easy application.
-Electric vehicles (in fact, any mobile storage devices) are modeled individually within a block called a CommoditySystem.
+Electric vehicles (in fact, any mobile storage devices) as well as Internal Combustion Engine Vehicles are modeled individually as instances of class FleetUnit within a Fleet block.
 Their behavior (i.e. when they depart and arrive again, how much energy they use in between and whether they can be charged externally) is described in a so-called log file.
-Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through mobile batteries as well as multiple use cases in different time frames (e.g. summer/winter) for the commoditites.
+Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through mobile batteries as well as multiple use cases in different time frames (e.g. summer/winter) for the FleetUnits.
 
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
 
@@ -56,7 +55,7 @@ The following system diagram shows the basic structure including one example of 
 </div>
 
 ## Installation
-REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and MacOS 15 Sequoia.
+REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and macOS 15 Sequoia.
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
@@ -129,11 +128,11 @@ A runnable example scenario file is provided in the example directory.
 Some parameters in the scenario file reference to other files specified by file name, mostly for timeseries data.
 These are searched within the input directory specified.
 
-Furthermore, to describe the mapping of different timeframes defining behavior of CommoditySystems (see below), modification of the ```mapper_timeframe_example.py``` code file might be necessary to fit the scenario as this is not simply and flexibly done in parameter files.
-The filename of the modified file has to be given in the scenario file under the key ```filename_mapper``` and the file has to be placed in the input directory specified in the settings file.
+Furthermore, to describe the mapping of different timeframes defining behavior of Fleets (see below), modification of the ```mapper_timeframe_example.py``` code file might be necessary to fit the scenario as this is not simply and flexibly done in parameter files.
+The filename of the modified file has to be given in the scenario file under the key ```filename_mapper``` and the file has to be placed in the input directory specified in ```--inputdir```.
 
 Concerning computational effort, REVOL-E-TION relies heavily on single core computing power for each scenario and uses significant memory, especially in the 'go' strategy.
-To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed in the settings file depending on the hardware used.
+To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed using ```--n_processes``` depending on the available hardware.
 
 #### Common Problems & Troubleshooting
 | Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -147,7 +146,7 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 
 
 ## General Terms & Definitions
-The following table details common terms occuring in further descriptions and the code:
+The following table details common terms occurring in further descriptions and the code:
 
 | Term      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 |-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -183,13 +182,13 @@ Each instance requires a certain set of parameters dependent on its class. These
 The scenario file defines all noncomplex (i.e. integer, float, string, boolean) parameters of the scenarios.
 Complex (multidimensional) parameters are mostly defined through links to other files (by filename) in the scenario file.
 The following table specifies each parameter for each possible block class in the scenario file.
-If and only if a block of a certain class exists within the scenario are these parameters required and read in. 
-Therefore not every scenario file contains all possible parameters.
+If and only if a block of a certain class exists within the scenario, these parameters are required and read in. 
+Therefore, not every scenario file contains all possible parameters.
 Multiple scenarios can be defined as multiple columns.
-The first row (header) of each scenario column defines the scenarios name.
-By adding a '#' to the start of the name of a scenario column, the scenario is ignored during the simulation process.
+The first row (header) of each scenario column defines the scenario's name.
+To ignore a scenario during the simulation process, add a '#' in front of the scenario's name.
 The first column of the scenario file defines the name of the block the parameter in the second column applies to.
-An example scenario file is provided in the ```./example``` directory.
+An example scenario file is provided in the ```.revoletion/example``` directory.
 As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
@@ -372,7 +371,7 @@ As all string values specified in the scenario definition file are converted to 
 |                        | ```eff_storage_roundtrip```     | Storage roundtrip efficiency                                    | float        | ```type_unit``` == 'icev' | Roundtrip efficiency of the Fleet unit's storage measured at the connection between the Fleet unit's bus and the storage. Charge and discharge efficiency is calculated using ```sqrt(eff_storage_roundtrip)```.                                                                                                                                                                                                                                        | [0, 1]                                                                                            |
 |                        | ```eff_chg_ac```                | AC charging efficiency                                          | float        | ```type_unit``` == 'icev' | Efficiency of the Fleet unit's On-Board-Charger (OBC) in charging direction. Taken into account for AC charging at the local grid (if Fleet's ```system``` is set to AC) and external AC charging.                                                                                                                                                                                                                                                      | [0, 1]                                                                                            |
 |                        | ```eff_chg_dc```                | DC charging efficiency                                          | float        | ```type_unit``` == 'icev' | Efficiency of a DC charging station in charging direction. Taken into account for DC charging at the local grid only, as losses at public charging stations are not relevant for an fleet operator but the charging station operator only.                                                                                                                                                                                                              | [0, 1]                                                                                            |
-|                        | ```eff_dis_ac```                | AC discharging efficiency                                       | float        | ```type_unit``` == 'icev' | Efficiency of the commodity's On-Board-Charger (OBC) in discharging direction. Taken into account for DC charging at the local grid (if Fleet's ```system``` is set to AC) and external AC charging.                                                                                                                                                                                                                                                    | [0, 1]                                                                                            |
+|                        | ```eff_dis_ac```                | AC discharging efficiency                                       | float        | ```type_unit``` == 'icev' | Efficiency of the FleetUnit's On-Board-Charger (OBC) in discharging direction. Taken into account for DC charging at the local grid (if Fleet's ```system``` is set to AC) and external AC charging.                                                                                                                                                                                                                                                    | [0, 1]                                                                                            |
 |                        | ```eff_dis_dc```                | DC discharging efficiency                                       | float        | ```type_unit``` == 'icev' | Efficiency of a DC charging station in discharging direction. Taken into account for DC discharging at the local grid only, as losses at public charging stations are not relevant for an fleet operator but the charging station operator only.                                                                                                                                                                                                        | [0, 1]                                                                                            |
 |                        | ```sdr```                       | Self discharge rate                                             | float        | ```type_unit``` == 'icev' | Self discharge rate of storage component related to its nominal capacity per month (30 days).                                                                                                                                                                                                                                                                                                                                                           | [0, inf[                                                                                          |
 
@@ -380,69 +379,70 @@ As all string values specified in the scenario definition file are converted to 
 
 
 ## EV-Specific submodules
-Since REVOL-E-TION's main purpose is optimum EV integration, this is where focus lies in modelling detail, resulting in the DES and a priori power scheduling submodules.
+Since REVOL-E-TION's main purpose is optimum EV integration, this is where focus lies in modeling detail, resulting in the DES and a priori power scheduling submodules.
 The following sections give more detail on these submodules:
 
 ###  Discrete Event Simulation (DES)
-The DES takes stochastically defined mobility or energy demand in multiple use cases and timeframes, samples an actual demand and assigns it to a CommoditySystem (more specifically to the individual MobileCommodities within it) in a first-come-first-serve approach.
-This enables to model the mobility/energy demand independently from the commodity fleet size.
-However, the DES is run a priori to the dispatch/sizing optimization, so no consideration of whether the resulting commodity dispatch is beneficial to the energy system is taken and limitations through battery aging and/or other limitations have to be covered by safety margins in dispatch to achieve a feasible energy system.
+The DES takes stochastically defined mobility or energy demand in multiple use cases and timeframes, samples an actual demand and assigns it to a Fleet (more specifically to the individual FleetUnit within it) in a first-come-first-serve approach.
+This enables to model the mobility/energy demand independently from the (Sub)Fleet's size.
+However, the DES is run a priori to the dispatch/sizing optimization, so no consideration of whether the resulting FleetUnit dispatch is beneficial to the energy system is taken and limitations through battery aging and/or other limitations have to be covered by safety margins in dispatch to achieve a feasible solution to the energy system's optimization problem.
 Through the sampling, the DES also makes REVOL-E-TION outputs non-deterministic once it is activated even though the actual core optimization is deterministic.
-The DES is run separately for every scenario in a simulation run, but only once per scenario, as some CommoditySystems might be linked and can therefore not be simulated independently.
-It is built on the [simpy](https://simpy.readthedocs.io/en/latest/) library and is implemented in the ```commodity_des.py``` file.
-A modification is made to simpy in order to enable processes to require multiple resources at once, which is necessary for battery commodity use cases requiring high energy.
+The DES is run separately for every scenario in a simulation run, but only once per scenario, as some Fleets might be linked and can therefore not be simulated independently.
+It is built on the [simpy](https://simpy.readthedocs.io/en/latest/) library and is implemented in the ```dispatch.py``` file.
+A modification is made to simpy to enable processes to require multiple resources at once, which is necessary for mobile battery use cases requiring high energy.
 
-The core element of the DES is a so-called environment which is populated with processes that each represent one rental of a commodity from a store holding those commodities.
+The core element of the DES is a so-called environment which is populated with processes that each represent one rental of a FleetUnit from a store holding those FleetUnits.
 The request time for each rental is sampled from a dual normal distribution over time of day defined for each timeframe and use case in the use case definition csv file.
-An example usecase file is distributed with REVOL-E-TION for both VehicleCommoditySystems and BatteryCommoditySystems (explanation see chapter "Classes of Blocks") in the respective input directories.
-Inside the code for the DES, RentalSystem instances are created for each CommoditySystem in the scenario as well as a RentalProcess instance for each process.
+An example use case file is distributed with REVOL-E-TION for both Vehicles and mobile batteries (for explanation see chapter "Classes of Blocks") in the respective input directories.
+Inside the code for the DES, RentalSystem instances are created for each SubFleet in the scenario as well as a RentalProcess instance for each process.
 
-Each process not only covers the actual rental time (which itself is made up of an active part and idle time, both of which are sampled stochastically), but also a block time to give the energy system enough time to recharge before renting the commodity out again to a new request.
-For VehicleCommoditySystems, this block time is placed before each rental, while for BatteryCommoditySystems it is placed after.
+Each process not only covers the actual rental time (which itself is made up of an active part and idle time, both of which are sampled stochastically), but also a block time to give the energy system enough time to recharge before renting the FleetUnit out again to a new request.
+For vehicle SubFleets, this block time is placed before each rental, while for mobile battery SubFleets it is placed after.
 <mark>explanation of block time placement not clear</mark>.
 
-Since VehicleCommoditySystems can be linked to BatteryCommoditySystems through the scenario parameter "rex_cs" for range extension, VehicleRentalSystems can also populate BatteryRentalSystems with additional processes representing range extension as a use case.
-Such a process then has a primary and secondary commodity, both of which need to be available for the process to be successful.
-For each RentalSystem, the primary commodity is the one from that RentalSystem, while the secondary is from the linked one.
+Since vehicle SubFleets can be linked to mobile battery SubFleets through the scenario parameter "rex_cs" for range extension, VehicleRentalSystems can also populate BatteryRentalSystems with additional processes representing range extension as a use case.
+Such a process then has a primary and secondary FleetUnit, both of which need to be available for the process to be successful.
+For each RentalSystem, the primary FleetUnit is the one from that RentalSystem, while the secondary is from the linked one.
 This results in range extension batteries being treated as primary in the BatteryRentalSystem and as secondary in the VehicleRentalSystem.
 
-Once all stores have been populated with commodities and all processes have been created, the environment is run and determines which processes are successful (i.e. get their required commodities) and which ones fail.
+Once all stores have been populated with FleetUnits and all processes have been created, the environment is run and determines which processes are successful (i.e. get their required FleetUnits) and which ones fail.
 The successful processes are then converted to a time based log format for the core energy system optimization to use as input.
-This contains columns of availability in the energy system(called "<commodity_name>_atbase"), energy consumption while not at base, availability of external AC and DC charging and the Delta SOC ("<commodity_name>_dsoc") of a rental for every commodity and timestep.
-For VehicleCommoditySystems, this is expanded by a column with the trip distance, as even with a constant consumption this is no more traceable from the energy consumption due to the possibility of range extension.
-Only if the dispatch of the commodities is left to the optimizer (as opposed to the a priori power scheduling) myopically (i.e. in the "rh" strategy"), the dsoc column is actually transferred to a hard minimum SOC constraint for the optimizer, as all other cases handle this intrinsically.
+This contains columns of availability in the energy system(called "<FleetUnit_name>_atbase"), energy consumption while not at base, availability of external AC and DC charging and the Delta SOC ("<FleetUnit_name>_dsoc") of a rental for every FleetUnit and timestep.
+For vehicle SubFleets, this is expanded by a column with the trip distance, as even with a constant consumption this is no more traceable from the energy consumption due to the possibility of range extension.
+Only if the dispatch of the FleetUnits is left to the optimizer (as opposed to the a priori power scheduling) myopically (i.e. in the "rh" strategy"), the 'dsoc' column is actually transferred to a hard minimum SOC constraint for the optimizer, as all other cases handle this intrinsically.
 
 ### A Priori Power Scheduling
-Dependent on the chosen scheduling method ("mode_scheduling") of a commodity system a charging schedule for the commodity system's commodities is calculated before the linear optimization starts (a priori).
-This approach is applied to commodities in commodity systems with optimization level of all types of uncoordinated charging ('uc') and rule-based strategies ('equal', 'fcfs', 'soc').
-All optimization levels causing an a priori calculation of the commodity's charging power require a unidirectional ('ud') integration level ("lvl_cap").  
+Dependent on the chosen scheduling method ("mode_scheduling") of a SubFleet a charging schedule for the SubFleet's FleetUnits is calculated before the linear optimization starts (a priori).
+This approach is applied to FleetUnits in SubFleets with optimization level of all types of uncoordinated charging ('uc') and rule-based strategies ('equal', 'fcfs', 'soc').
+All optimization levels causing an a priori calculation of the FleetUnit's charging power require a unidirectional ('ud') integration level ("lvl_cap").  
 In addition to the optimization level, rule-based systems may implement a static load management system by defining the maximum available power using the "power_lim_static" parameter.
 If "power_lim_static" is set to 'None', static load management is disabled, and the system defaults to dynamic load management.
-For all commodities within uncoordinated or rule-based commodity systems in addition to the charging power when being plugged in at the local energy system the required charging power on-route at external charging infrastructure is calculated.
+For all FleetUnits within uncoordinated or rule-based SubFleets in addition to the charging power when being plugged in at the local energy system the required charging power on-route at external charging infrastructure is calculated.
 The precomputed charging schedules are then enforced in the linear optimization model by applying them as fixed power constraints to the relevant model flows.
 
 #### General Approach of A Priori Power Scheduling
 The a priori power scheduling process is iterative and operates on a per-timestep basis as the State of Charge (SOC) at each timestep is influenced by the previous timestep.
-Within a single timestep in a first step the charging powers for all commodities plugged in to the local energy system (column 'atbase' in log file is set to True) are calculated.
-Initially, the charging power calculation for uncoordinated commodities connected to the local energy system is determined, followed by rule-based commodity systems with static load management.
-In the next step the remaining available power within the local energy system is allocated to all commodities being part of the dynamic load management. The linear optimization algorithm subsequently handles the allocation of any excess power.
-Lastly, the external AC and DC charging power is calculated for commodities for which this infrastructure is currently available (indicated by the 'atac' or 'atdc' columns being True in the log file).
+Within a single timestep in a first step the charging powers for all FleetUnits plugged in to the local energy system (column 'atbase' in log file is set to True) are calculated.
+Initially, the charging power calculation for uncoordinated FleetUnits connected to the local energy system is determined, followed by rule-based FleetUnits with static load management.
+In the next step the remaining available power within the local energy system is allocated to all FleetUnits being part of the dynamic load management.
+The linear optimization algorithm subsequently handles the allocation of any excess power.
+Lastly, the external AC and DC charging power is calculated for FleetUnits for which this infrastructure is currently available (indicated by the 'atac' or 'atdc' columns being True in the log file).
 
 #### Load management system
 For rule-based FleetUnit instances within a Fleet instance, a static power limit can be defined in the scenario file, which restricts the cumulative charging power of all FleetUnits within the Fleet.
 If no static power limit is set, the Fleet's FleetUnits will be part of a dynamic load management.
 In this case, the available power within the local energy system is distributed among all FleetUnits that are part of the dynamic load management.
-The available power is calculated by subtracting the required power of FixedDemand blocks and the power already allocated to all uncoordinated commodities and rule-based FleetUnits in Fleets with static load management from the maximum available power.
+The available power is calculated by subtracting the required power of FixedDemand blocks and the power already allocated to all uncoordinated FleetUnits and rule-based FleetUnits in Fleets with static load management from the maximum available power.
 The maximum available power within the local grid is calculated by summing up the output powers of GridConnection, PVSource, WindSource, and ControllableSource blocks.
 All Fleets without a static power limit that include rule-based FleetUnits have to be of the same integration level as they are all controlled by the same dynamic load management system; the rule-based charging strategy is applied as described.
-Furthermore, if this integration level is supposed to be 'equal', all commodity systems have to be connected to the same bus.
+Furthermore, if this integration level is supposed to be 'equal', all SubFleets have to be connected to the same bus via their corresponding Fleet.
 As a dynamic load management system requires knowledge about the available power within the local energy system for each timestep, it is not possible to combine a dynamic load management system with a StationaryBattery block.
 This would require an a priori calculation of the StationaryBattery's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
 
 #### Charge Scheduling Modes  ("mode_scheduling")
-- uncoordinated charging: only a single FleetUnit neglecting effects caused by other commodities is taken into account to determine its charging power.  
-  - 'uc':Once plugged in to the local energy system, the commodity charges at the maximum charging power specified for the FleetUnit in the scenario file until the target SOC is reached.
-         Charging power is determined for a single commodity in isolation, neither considering the influence of other FleetUnits nor any type of load management system.
+- uncoordinated charging: only a single FleetUnit neglecting effects caused by other FleetUnits and the local energy system's limitations is taken into account to determine its charging power.  
+  - 'uc':Once plugged in to the local energy system, the FleetUnit charges at the maximum charging power specified for the FleetUnit in the scenario file until the target SOC is reached.
+         Charging power is determined for a single FleetUnit in isolation, neither considering the influence of other FleetUnits nor any type of load management system.
 - rule-based charging strategies: multiple FleetUnits (within the same Fleet for static load management or across several Fleets for dynamic load management) are considered to determine their charging power.
   - 'equal': Charging power is evenly distributed among all FleetUnits within the Fleet. Any surplus power, resulting from a FleetUnit reaching its target SOC, is redistributed among the remaining FleetUnits until all available power is allocated.
   - 'fcfs': FleetUnits are prioritized by their plug-in time, with the earliest plug-in receiving the highest priority. In cases where plug-in times are identical, FleetUnits are prioritized alphabetically by name.
@@ -456,7 +456,7 @@ The power for all FleetUnits with available external charging infrastructure (co
 - DC charging: If DC charging is available and the SOC at the next timestep with a charging possibility is below 5 %, DC charging is activated for the current timestep. The maximum SOC for DC charging is 80 % neglecting "soc_target". 
 
 ### A Posteriori Aging Model (also available for StationaryEnergyStorage)
-Simple semi-empirical aging models are implemented for the BatteryCommoditySystem and StationaryEnergyStorage classes.
+Simple semi-empirical aging models are implemented for a blocks containing electric storages (ElectricFleetUnit and StationaryBattery).
 More specifically, these are the Naumann model ([publication 1](https://doi.org/10.1016/j.est.2018.01.019) and [publication 2](https://doi.org/10.1016/j.jpowsour.2019.227666)) for LFP batteries and the [Schmalstieg model](https://doi.org/10.1016/j.jpowsour.2014.02.012) for NMC batteries.
 They are both contained within the ```battery.py``` file and work on superposing calendric and cycle aging.
 The latter is based on cycling parameters (e.g. depths of discharge) determined using a rainflow algorithm for each horizon.
