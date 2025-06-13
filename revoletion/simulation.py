@@ -95,7 +95,7 @@ class SimulationRun:
         if not self.paths['scenarios'].is_file():
             raise FileNotFoundError(f'Scenario file not found: {self.paths["scenarios"]}')
         if not self.paths['input'].is_dir():
-            raise NotADirectoryError(f'Input directory path not interpretable: {self.paths['input']}')
+            raise NotADirectoryError(f'Input directory path not interpretable: {self.paths["input"]}')
 
         # region start runtime
         self.runtime_start = time.perf_counter()
@@ -164,8 +164,8 @@ class SimulationRun:
                     f'Parameter "--rerun" was set to {self.rerun}, but the status file contains no scenarios to rerun.\n'
                     f'All scenarios were {"either infeasible or " if self.rerun_infeasible else ""}'
                     f'already completed successfully.\n'
-                    f'Check {(Path(self.paths['status'].parent.name) / 
-                              self.paths['status'].name)} for additional information.')
+                    f'Check {(Path(self.paths["status"].parent.name) / self.paths["status"].name)} '
+                    f'for additional information.')
 
             # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
             for scenario in self.scenario_names:
