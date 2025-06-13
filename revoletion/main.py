@@ -110,7 +110,7 @@ def main():
     if scenarios_example:
         path_output = path_cwd / 'results'
     # Option 2: No output directory argument passed -> create results folder in current working directory
-    if args.outputdir is None:
+    elif args.outputdir is None:
         path_output = path_cwd / 'results'
         warnings.warn(f'Outputs will be saved to the directory "results" in the current working directory.\n'
                       f'-> Disregard if this is intended',
