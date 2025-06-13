@@ -65,7 +65,7 @@ class SimulationRun:
                  n_processes: int = 1,
                  largescalemode: bool = False,
                  debugmode: bool = False,
-                 rerun: bool = False,
+                 rerun: bool | Path = False,
                  rerun_infeasible: bool = True,
                  key_solcast_api: str = None):
 
@@ -93,8 +93,9 @@ class SimulationRun:
 
         # region define paths
         self.name = Path(self.paths['scenarios']).stem
-        self.paths['basename'] = f'{self.runtimestamp}_{self.name}'
+        self.paths['basename'] = Path(f'{self.runtimestamp}_{self.name}')
 
+        # create run-specific output directory and update path accordingly
         self.paths['output'] = self.paths['output'] / self.paths['basename']
         if not self.paths['output'].is_dir():
             self.paths['output'].mkdir(parents=True)  # create parents if missing -> relevant for default "results"
@@ -103,11 +104,11 @@ class SimulationRun:
             raise NotADirectoryError(f'Input directory {self.paths["input"]} does not exist')
 
         self.paths['data_persist'] = files(__package__) / 'data'
-        self.paths['summary_csv'] = self.paths['output'] / f'{self.paths["basename"]}_summary.csv'
-        self.paths['summary_pkl'] = self.paths['output'] / f'{self.paths["basename"]}_summary.pkl'
-        self.paths['status'] = self.paths['output'] / f'{self.paths["basename"]}_status.csv'
-        self.paths['dump'] = self.paths['output'] / f'{self.paths["basename"]}_model.lp'
-        self.paths['log'] = self.paths['output'] / f'{self.paths["basename"]}.log'
+        self.paths['summary_csv'] = self.paths['output'] / f'{self.paths["basename"].name}_summary.csv'
+        self.paths['summary_pkl'] = self.paths['output'] / f'{self.paths["basename"].name}_summary.pkl'
+        self.paths['status'] = self.paths['output'] / f'{self.paths["basename"].name}_status.csv'
+        self.paths['dump'] = self.paths['output'] / f'{self.paths["basename"].name}_model.lp'
+        self.paths['log'] = self.paths['output'] / f'{self.paths["basename"].name}.log'
         # endregion
 
         # region get version information
@@ -134,11 +135,21 @@ class SimulationRun:
         if self.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
             self.scenario_status = pd.read_csv(self.paths['status'],
-                                               index_col=0)
+                                               index_col=0,
+                                               dtype=str,  # empty columns are interpreted as float -> avoid
+                                               )
 
             dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
             scenarios_rerun = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
             self.scenario_names = [name for name in self.scenario_names if name in scenarios_rerun]
+
+            if not self.scenario_names:
+                raise ValueError(
+                    f'Parameter "--rerun" was set to {self.rerun}, but the status file contains no scenarios to rerun.\n'
+                    f'All scenarios were {"either infeasible or " if self.rerun_infeasible else ""}'
+                    f'already completed successfully.\n'
+                    f'Check {(Path(self.paths['status'].parent.name) / 
+                              self.paths['status'].name)} for additional information.')
 
             # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
             for scenario in self.scenario_names:
@@ -151,7 +162,7 @@ class SimulationRun:
             # reset status of scenarios to be run to 'queued'
             self.scenario_status.loc[self.scenario_names, ['status', 'exception', 'traceback']] = (
                     [['queued', pd.NA, pd.NA]] * len(self.scenario_names))
-            self.scenario_status.to_csv(self.path_result_status_file, index=True)
+            self.scenario_status.to_csv(self.paths['status'], index=True)
 
         else:
             self.scenario_status = pd.DataFrame(index=self.scenario_names,
@@ -279,9 +290,8 @@ class SimulationRun:
             joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
             joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
 
-            # ToDo: define self.path_result_summary_file_pkl in self.paths
-            if self.rerun and self.path_result_summary_file_pkl.is_file():
-                results_summary_prev = pd.read_pickle(self.path_result_summary_file_pkl)
+            if self.rerun and self.paths['summary_pkl'].is_file():  # only happens for infeasible scenarios
+                results_summary_prev = pd.read_pickle(self.paths['summary_pkl'])
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
 
             # apply same order of scenarios as in scenario input file
