@@ -1004,9 +1004,9 @@ class PVSource(RenewableSource):
             elif self.data_source in ['pvgis file', 'solcast file']:
                 # region get data from PVGIS file
                 if self.data_source == 'pvgis file':
-                    self.data, meta, *_ = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                    self.scenario.latitude = meta['latitude']
-                    self.scenario.longitude = meta['longitude']
+                    self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
+                    self.scenario.latitude = meta['inputs']['latitude']
+                    self.scenario.longitude = meta['inputs']['longitude']
                     # rename column wind_speed to speed_wind
                     self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
                     self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals

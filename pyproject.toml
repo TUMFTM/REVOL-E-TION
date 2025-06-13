@@ -20,7 +20,7 @@ dependencies = [
     "pandas",
     "plotly",
     "psutil",
-    "pvlib",
+    "pvlib>=0.13.0",
     "pytz",
     "rainflow",
     "scipy",
