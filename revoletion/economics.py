@@ -111,8 +111,10 @@ def transform_scalar_var(value, scenario, block=None):
     to a pandas Series with the same DatetimeIndex as the simulation.
     """
     if isinstance(value, str):  # value contains filename
-        filename = utils.set_extension(filename=value, default_extension='.csv')
-        df = utils.read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
+        filename = utils.set_extension(filename=value,
+                                       default_extension='.csv')
+
+        df = utils.read_timeseries_csv(path_input_file=scenario.run.paths['input'] / filename,
                                        block=block,
                                        scenario=scenario,
                                        multiheader=False,

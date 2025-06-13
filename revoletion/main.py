@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
+from importlib.resources import files
+from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
 import warnings
@@ -61,8 +62,8 @@ def main():
 
     args = parser.parse_args()
 
-    path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path_cwd = os.getcwd()
+    path_pkg = files(__package__)
+    path_cwd = Path.cwd()
 
     scenarios_example = False
 
@@ -78,38 +79,28 @@ def main():
                                                                  ('All files', '*.*')))
         if not path_scenario:
             raise FileNotFoundError(f'No scenario file selected')
-    # Option 2: Full absolute or relative file path (works from anywhere)
-    elif os.path.isfile(args.scenario):
-        path_scenario = args.scenario
-    # Option 3: File name in the working directory (works from within project directory only)
-    elif os.path.isfile(os.path.join(path_cwd, args.scenario)):
-        path_scenario = os.path.join(path_cwd, args.scenario)
-    # Option 4: Example file in example project in package directory (works from anywhere)
-    elif args.scenario in ['example', 'ex']:
+    # Option 2: Example file in example project in package directory (works from anywhere)
+    elif args.scenario  == 'example':
         scenarios_example = True
-        path_scenario = os.path.join(path_pkg, 'example', 'scenarios_example.csv')
-        warnings.warn(f'Using example scenario file \"{args.scenario}\", data, and output directory from '
-                      f'REVOL-E-TION - disregard if this is intended', DefaultFileLocationWarning)
+        path_scenario = path_pkg / 'example' / 'scenarios_example.csv'
+        warnings.warn(f'Using example project provided with REVOL-E-TION. '
+                      f'Outputs will be saved to the directory "results" in the current working directory.\n'
+                      f'-> Disregard if this is intended',
+                      DefaultFileLocationWarning)
+    # Option 3: Full absolute or relative (to working directory) file path
+    elif (path_scenario := Path(args.scenario)).is_file():
+        path_scenario = path_scenario if path_scenario.is_absolute() else Path.cwd() / path_scenario
     else:
         raise FileNotFoundError(f'Scenario file or path not interpretable: {args.scenario}')
     # endregion
 
     # region interpret input directory path
     # Option 1: Example file in example project in package directory (works from anywhere)
-    if scenarios_example:
-        path_input = os.path.dirname(path_scenario)
-    # Option 2: No input directory argument passed -> select via GUI
-    elif args.inputdir is None:
-        path_input = tk.filedialog.askdirectory(initialdir=path_cwd,
-                                                title='Select input data directory')
-        if not path_input:
-            raise NotADirectoryError(f'No input data directory selected')
-    # Option 3: Full absolute or relative file path (works from anywhere)
-    elif os.path.isdir(args.inputdir):
-        path_input = args.inputdir
-    # Option 4: Subdirectory of working directory (works from within project directory only)
-    elif os.path.isdir(os.path.join(path_cwd, args.inputdir)):
-        path_input = os.path.join(path_cwd, args.inputdir)
+    if scenarios_example or args.inputdir is None:
+        path_input = path_scenario.parent
+    # Option 2: Full absolute or relative (to working directory) path
+    elif (path_input := Path(args.inputdir)).is_dir():
+        path_input = path_input if path_input.is_absolute() else Path.cwd() / path_input
     else:
         raise NotADirectoryError(f'Input directory path not interpretable: {args.inputdir}')
     # endregion
@@ -117,19 +108,16 @@ def main():
     # region interpret output directory path
     # Option 1: Example file in example project in package directory (works from anywhere)
     if scenarios_example:
-        path_output = os.path.join(path_pkg, 'results')
-    # Option 2: No output directory argument passed -> select via GUI
-    elif args.outputdir is None:
-        path_output = tk.filedialog.askdirectory(initialdir=path_cwd,
-                                                 title='Select output data directory')
-        if not path_output:
-            raise NotADirectoryError(f'No output data directory selected')
-    # Option 3: Full absolute or relative file path (works from anywhere)
-    elif os.path.isdir(args.outputdir):
-        path_output = args.outputdir
-    # Option 4: Subdirectory of working directory (works from within project directory only)
-    elif os.path.isdir(os.path.join(path_cwd, args.outputdir)):
-        path_output = os.path.join(path_cwd, args.outputdir)
+        path_output = path_cwd / 'results'
+    # Option 2: No output directory argument passed -> create results folder in current working directory
+    if args.outputdir is None:
+        path_output = path_cwd / 'results'
+        warnings.warn(f'Outputs will be saved to the directory "results" in the current working directory.\n'
+                      f'-> Disregard if this is intended',
+                      DefaultFileLocationWarning)
+    # Option 3: Full absolute or relative (to working directory) path
+    elif (path_output := Path(args.outputdir)).is_dir():
+        path_output = path_output if path_output.is_absolute() else Path.cwd() / path_output
     else:
         raise NotADirectoryError(f'Output directory path not interpretable: {args.outputdir}')
     # endregion

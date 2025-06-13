@@ -969,10 +969,10 @@ class PVSource(RenewableSource):
             self.data = pd.json_normalize(response.json()['estimated_actuals'])
             # save solcast file
             if not self.scenario.run.largescalemode:
-                self.data.to_csv(os.path.join(
-                    self.scenario.run.paths['output'],
+                self.data.to_csv(
+                    self.scenario.run.paths['output'] /
                     f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_'
-                    f'{self.name}_log_solcast_raw.csv'),
+                    f'{self.name}_log_solcast_raw.csv',
                     index=False,
                 )
 
@@ -990,10 +990,8 @@ class PVSource(RenewableSource):
 
         elif 'file' in self.data_source:
             # region get data from file
-            path_input_file = os.path.join(
-                self.scenario.run.paths['input'],
-                utils.set_extension(self.filename)
-            )
+            path_input_file = self.scenario.run.paths['input'] / utils.set_extension(filename=self.filename,
+                                                                                     default_extension='.csv')
 
             # region read input data from timeseries csv with specific power
             if self.data_source == 'file':
@@ -1084,10 +1082,8 @@ class PVSource(RenewableSource):
         # endregion
 
         if not self.scenario.run.largescalemode:
-            self.data.to_csv(os.path.join(
-                self.scenario.run.paths['output'],
+            self.data.to_csv(self.scenario.run.paths['output'] /
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
-            )
 
         if getattr(self, 'temp_scn', False):  # parameter only exists for instances specified in scenario.temp_air
             self.scenario.temp_air['temp_air'] = self.data['temp_air']
@@ -1105,7 +1101,7 @@ class WindSource(RenewableSource):
             self.data = self.scenario.block_registry.get('TopLevelBlock', {})[self.data_source].data.copy()
             self.data['speed_wind_adj'] = windpowerlib.wind_speed.hellman(self.data['speed_wind'], 10, self.height)
 
-            path_turbine_data_file = os.path.join(self.scenario.run.paths['data_persist'], 'turbine_data.pkl')
+            path_turbine_data_file = self.scenario.run.paths['data_persist'] / 'turbine_data.pkl'
             turbine_data = pd.read_pickle(path_turbine_data_file)
             # smallest fully filled wind turbine in dataseta as per June 2024
             turbine_data = turbine_data.loc[turbine_data['turbine_type'] == 'E-53/800'].reset_index()
@@ -1119,9 +1115,9 @@ class WindSource(RenewableSource):
             # endregion
         elif self.data_source == 'file':
             # region get data from file
-            path_input_file = os.path.join(self.scenario.run.paths['input'],
-                                           utils.set_extension(self.filename))
-            self.data = utils.read_timeseries_csv(path_input_file=path_input_file,
+            self.data = utils.read_timeseries_csv(path_input_file=(self.scenario.run.paths['input'] /
+                                                                   utils.set_extension(filename=self.filename,
+                                                                                       default_extension='.csv')),
                                                   block=self,
                                                   scenario=self.scenario)
             # endregion
@@ -1129,10 +1125,8 @@ class WindSource(RenewableSource):
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
         if not self.scenario.run.largescalemode:
-            self.data.to_csv(os.path.join(
-                self.scenario.run.paths['output'],
+            self.data.to_csv(self.scenario.run.paths['output'] /
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
-            )
 
 
 class FixedDemand(SinkBlock):
@@ -1180,7 +1174,7 @@ class FixedDemand(SinkBlock):
                     return 'Workday'
 
             # Read BDEW SLP profiles
-            slp = pd.read_csv(os.path.join(self.scenario.run.paths['data_persist'], 'slp_bdew.csv'),
+            slp = pd.read_csv(self.scenario.run.paths['data_persist'] / 'slp_bdew.csv',
                               skiprows=[0],
                               header=[0, 1, 2],
                               index_col=0)
@@ -1217,8 +1211,9 @@ class FixedDemand(SinkBlock):
         elif self.load_profile in ['const', 'constant']:
             self.flows_apriori['demand'] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
-            data = utils.read_timeseries_csv(path_input_file=os.path.join(self.scenario.run.paths['input'],
-                                                                          utils.set_extension(self.load_profile)),
+            data = utils.read_timeseries_csv(path_input_file=(self.scenario.run.paths['input'] /
+                                                              utils.set_extension(filename=self.load_profile,
+                                                                                  default_extension='.csv')),
                                              block=self,
                                              scenario=self.scenario,
                                              )
@@ -1234,11 +1229,9 @@ class FixedDemand(SinkBlock):
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
         if not self.scenario.run.largescalemode:
-            self.flows_apriori['demand'].to_csv(
-                os.path.join(
-                    self.scenario.run.paths['output'],
-                    f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_flow.csv')
-            )
+            self.flows_apriori['demand'].to_csv(self.scenario.run.paths['output'] /
+                                                f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_'
+                                                f'{self.scenario.name}_{self.name}_flow.csv')
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
@@ -2146,10 +2139,9 @@ class SubFleet(NonElectricBlock):
         Read in a predetermined log file for the SubFleet behavior.
         """
 
-        log_path = os.path.join(self.scenario.run.paths['input'],
-                                utils.set_extension(self.filename))
-
-        df = utils.read_timeseries_csv(path_input_file=log_path,
+        df = utils.read_timeseries_csv(path_input_file=(self.scenario.run.paths['input'] /
+                                                        utils.set_extension(filename=self.filename,
+                                                                            default_extension='.csv')),
                                        block=self,
                                        scenario=self.scenario,
                                        multiheader=True,

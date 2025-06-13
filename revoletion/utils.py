@@ -4,6 +4,7 @@ import ast
 import importlib.util
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import pandas.errors
 import os
 import re
@@ -35,8 +36,6 @@ def infer_dtype(value):
         return False
     elif value.lower() in ['none', 'null', 'nan', '']:
         return None
-    elif os.path.isdir(value):
-        return value
 
     try:
         evaluated = ast.literal_eval(value)
@@ -136,11 +135,10 @@ def read_timeseries_csv(path_input_file: str,
         return df.loc[scenario.dti_sim]
 
 
-def set_extension(filename, default_extension='.csv'):
+def set_extension(filename: Path | str,
+                  default_extension: str = '.csv') -> Path:
     """
     Add a default extension to a filename if none is given. If the filename already has an extension, it is kept.
     """
-    base, ext = os.path.splitext(filename)
-    if not ext:
-        filename = base + default_extension
-    return filename
+
+    return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path

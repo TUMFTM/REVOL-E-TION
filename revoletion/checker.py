@@ -12,7 +12,7 @@ class InputChecker:
     def __init__(self, run):
 
         self.run = run
-        self.path_readme = os.path.join(run.paths['revoletion'], 'README.md')
+        self.path_readme = run.paths['revoletion'].parent / 'README.md'
         self.scenarios_target = self.read_scenarios_from_readme()
 
         self.dtype_map = {

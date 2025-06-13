@@ -33,5 +33,9 @@ dependencies = [
 [tool.setuptools]
 packages = ["revoletion"]
 
+[tool.setuptools.package-data]
+"revoletion.data" = ["*"]
+"revoletion.example" = ["*"]
+
 [project.scripts]
 revoletion = "revoletion.main:main"

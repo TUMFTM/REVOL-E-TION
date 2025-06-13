@@ -34,18 +34,18 @@ class SubFleetDemand:
 
         self.mapper_timeframe = utils.import_module_from_path(
             module_name=self.subfleet.filename_mapper,
-            file_path=os.path.join(self.scenario.run.paths['input'],
-                                   f'{self.subfleet.filename_mapper}.py'))
+            file_path=self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py')
 
         self.rng = np.random.default_rng()  # random number generator
 
     def read_usecase_file(self):
         """
-        read a usecase definition csv file and perform necessary normalization for each timeframe.
+        read a usecase definition csv file and perform neccessary normalization for each timeframe.
         """
 
-        usecase_path = os.path.join(self.scenario.run.paths['input'],
-                                    utils.set_extension(self.subfleet.filename))
+        usecase_path = self.scenario.run.paths['input'] / utils.set_extension(filename=self.subfleet.filename,
+                                                                              default_extension='.csv')
+
         self.usecases = pd.read_csv(usecase_path,
                                     header=[0,1],
                                     index_col=0)
@@ -173,13 +173,12 @@ class SubFleetDemand:
 
         # region save results
         if not self.scenario.run.largescalemode:
-            demand_path = os.path.join(
-                self.scenario.run.paths['output'],
-                f'{self.scenario.run.runtimestamp}_'
-                f'{self.scenario.run.name}_'
-                f'{self.scenario.name}_'
-                f'{self.subfleet.name}_'
-                f'demand.csv')
+            demand_path = (self.scenario.run.paths['output'] /
+                           f'{self.scenario.run.runtimestamp}_'
+                           f'{self.scenario.run.name}_'
+                           f'{self.scenario.name}_'
+                           f'{self.subfleet.name}_'
+                           f'demand.csv')
             self.demand.to_csv(demand_path)
         # endregion
 
@@ -187,10 +186,10 @@ class SubFleetDemand:
         """
         read in a subfleet demand csv file directly
         """
-        path_demand_file = os.path.join(self.scenario.run.paths['input'],
-                                        utils.set_extension(self.subfleet.filename))
-        self.demand = pd.read_csv(path_demand_file,
-                         index_col=0)
+        self.demand = pd.read_csv((self.scenario.run.paths['input'] /
+                                   utils.set_extension(filename=self.subfleet.filename,
+                                                       default_extension='.csv')),
+                                  index_col=0)
 
         self.demand['time_req'] = pd.to_datetime(self.demand['time_req'], utc=True).dt.tz_convert(self.scenario.timezone)
         self.demand['dtime_active'] = pd.to_timedelta(self.demand['dtime_active'])

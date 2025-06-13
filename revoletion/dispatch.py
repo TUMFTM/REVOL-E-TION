@@ -457,22 +457,20 @@ class SubFleetDispatcher:
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        processes_path = os.path.join(
-            self.scenario.run.paths['output'],
-            f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.name}_'
-            f'{self.scenario.name}_'
-            f'{self.subfleet.name}_'
-            f'processes.csv')
+        processes_path = (self.scenario.run.paths['output'] /
+                          f'{self.scenario.run.runtimestamp}_'
+                          f'{self.scenario.run.name}_'
+                          f'{self.scenario.name}_'
+                          f'{self.subfleet.name}_'
+                          f'processes.csv')
         self.processes.to_csv(processes_path)
 
-        log_path = os.path.join(
-            self.scenario.run.paths['output'],
-            f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.name}_'
-            f'{self.scenario.name}_'
-            f'{self.subfleet.name}_'
-            f'log.csv')
+        log_path = (self.scenario.run.paths['output'] /
+                    f'{self.scenario.run.runtimestamp}_'
+                    f'{self.scenario.run.name}_'
+                    f'{self.scenario.name}_'
+                    f'{self.subfleet.name}_'
+                    f'log.csv')
         self.log.to_csv(log_path)
 
 
