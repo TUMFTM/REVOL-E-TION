@@ -9,10 +9,6 @@ import tkinter.filedialog
 from revoletion import simulation as sim
 
 
-class DefaultFileLocationWarning(UserWarning):
-    pass
-
-
 def main():
 
     parser = argparse.ArgumentParser()
