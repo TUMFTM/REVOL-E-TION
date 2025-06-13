@@ -79,11 +79,22 @@ source <path_to_virtual_environment>/bin/activate
 ```
 
 #### Step 3: Install package and dependencies locally
-Navigate to the root directory of the cloned repository and install the package and its dependencies using pip:
+After cloning the repository, navigate to its root directory in your terminal.
+Then install the package and its dependencies using one of the following commands:
+##### a) Standard Installation
+This copies the package into your virtual environment’s site-packages directory:
+```
+pip install .
+```
+After pulling new changes from the repository, the package has to be reinstalled using the same command to take the changes into account.
+
+##### b) Editable Installation (recommended for development)
+
+This links the package to your local source code, so any changes (you make or pulled from the repository) are immediately reflected without reinstalling:
 ```
 pip install -e .
 ```
-This will install the ```revoletion``` package in editable mode, meaning that changes to the source code will be reflected in the installed package without reinstalling it.
+Use the editable mode if you plan to modify the code during development.
 
 #### Step 4: MILP Solver
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
