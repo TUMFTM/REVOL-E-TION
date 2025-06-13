@@ -220,10 +220,13 @@ class SimulationRun:
         # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
         logging.getLogger('gurobipy').disabled=True
 
+        self.logger.info(f'Reading scenarios from: {self.paths["scenarios"]}')
+        self.logger.info(f'Reading additional input data from: {self.paths["input"]}')
+        self.logger.info(f'Writing results to: {self.paths["output"]}')
+
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
         pe2 = 'es' if self.n_processes > 1 else ''
-
         self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
                          f' with {self.n_processes} process{pe2}')
 
