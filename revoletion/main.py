@@ -5,7 +5,6 @@ from importlib.resources import files
 from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
-import warnings
 
 from revoletion import simulation as sim
 
