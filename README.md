@@ -437,20 +437,20 @@ The maximum available power within the local grid is calculated by summing up th
 All Fleets without a static power limit that include rule-based FleetUnits have to be of the same integration level as they are all controlled by the same dynamic load management system; the rule-based charging strategy is applied as described.
 Furthermore, if this integration level is supposed to be 'equal', all commodity systems have to be connected to the same bus.
 As a dynamic load management system requires knowledge about the available power within the local energy system for each timestep, it is not possible to combine a dynamic load management system with a StationaryBattery block.
-This would require an a-priori calculation of the StationaryBattery's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
+This would require an a priori calculation of the StationaryBattery's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
 
 #### Charge Scheduling Modes  ("mode_scheduling")
 - uncoordinated charging: only a single FleetUnit neglecting effects caused by other commodities is taken into account to determine its charging power.  
-  - 'uc':Once plugged in to the local energy system, the commodity charges at the maximum charging power specified for the commodity in the scenario file until the target SOC is reached.
-         Charging power is determined for a single commodity in isolation, neither considering the influence of other commodities nor any type of load management system.
-- rule-based charging strategies: multiple commodities (within the same commodity system for static load management or across several commodity systems for dynamic load management) are considered to determine their charging power.
-  - 'equal': Charging power is evenly distributed among all commodities within the commodity system. Any surplus power, resulting from a commodity reaching its target SOC, is redistributed among the remaining commodities until all available power is allocated.
-  - 'fcfs': Commodities are prioritized by their plug-in time, with the earliest plug-in receiving the highest priority. In cases where plug-in times are identical, commodities are prioritized alphabetically by name.
-  - 'soc': Commodities are prioritized based on their SOC, with the lowest SOC receiving the highest priority. In cases where SOC levels are identical, priority is assigned alphabetically by name.
-- optimized charging: The charging power of the commodities is optimized by the linear optimization algorithm without any a priori calculation.
+  - 'uc':Once plugged in to the local energy system, the commodity charges at the maximum charging power specified for the FleetUnit in the scenario file until the target SOC is reached.
+         Charging power is determined for a single commodity in isolation, neither considering the influence of other FleetUnits nor any type of load management system.
+- rule-based charging strategies: multiple FleetUnits (within the same Fleet for static load management or across several Fleets for dynamic load management) are considered to determine their charging power.
+  - 'equal': Charging power is evenly distributed among all FleetUnits within the Fleet. Any surplus power, resulting from a FleetUnit reaching its target SOC, is redistributed among the remaining FleetUnits until all available power is allocated.
+  - 'fcfs': FleetUnits are prioritized by their plug-in time, with the earliest plug-in receiving the highest priority. In cases where plug-in times are identical, FleetUnits are prioritized alphabetically by name.
+  - 'soc': FleetUnits are prioritized based on their SOC, with the lowest SOC receiving the highest priority. For identical SOC levels, priorities are assigned alphabetically by the FleetUnits' names.
+- optimized charging: The charging power of the FleetUnits is optimized by the linear optimization algorithm without any a priori calculation.
 
 #### External charging
-The power for all commodities with available external charging infrastructure (column 'atac' or 'atdc' in log file is set to True) is calculated.
+The power for all FleetUnits with available external charging infrastructure (column 'atac' or 'atdc' in log file is set to True) is calculated.
 - AC charging: Once AC charging gets available, the required energy until the return to the local energy system is calculated.
   If the current SOC does not ensure a return SOC above the specified minimum return SOC (does not consider self-discharge), AC charging is activated. The specified charging power is then applied until the target SOC is reached.
 - DC charging: If DC charging is available and the SOC at the next timestep with a charging possibility is below 5 %, DC charging is activated for the current timestep. The maximum SOC for DC charging is 80 % neglecting "soc_target". 
