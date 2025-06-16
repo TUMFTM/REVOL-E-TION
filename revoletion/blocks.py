@@ -1807,7 +1807,6 @@ class StorageBlock(ElectricBlock):
         self.components['bus'] = solph.Bus()
 
         self.components['inflow'] = solph.components.Converter(
-            label=f'mc_{self.name}',
             inputs={self.bus_connected: solph.Flow(
                 nominal_capacity=params['inflow_nominal_capacity'],
                 max=params['inflow_max'],
@@ -1819,7 +1818,6 @@ class StorageBlock(ElectricBlock):
             conversion_factors={self.components['bus']: self.eff['chg_int']})
 
         self.components['outflow'] = solph.components.Converter(
-            label=f'{self.name}_mc',
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.bus_connected: solph.Flow(
                 nominal_capacity=params['outflow_nominal_capacity'],
