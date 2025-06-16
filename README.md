@@ -78,10 +78,10 @@ source <path_to_virtual_environment>/bin/activate
 ```
 
 #### Step 3: Install package and dependencies locally
-After cloning the repository, navigate to its root directory in your terminal.
-Then install the package and its dependencies using one of the following commands:
+After cloning the repository, navigate to its root directory (where ```README.md``` and ```pyproject.toml``` are located) in your terminal.
+Then install the package and its dependencies using one of the following commands depending on the chosen mode of installation:
 ##### a) Standard Installation
-This copies the package into your virtual environment’s site-packages directory:
+This copies the package into your (virtual environment’s) site-packages directory:
 ```
 pip install .
 ```
