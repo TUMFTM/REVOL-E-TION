@@ -698,11 +698,11 @@ class Scenario:
         if self.energies.loc[('sinks', 'del'), 'sim'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'sim']
+            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'dis']
             self.lcoe_wocs = ((self.aggregator.totex['dis'] -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
                                sum([fleet.aggregator.totex['dis'] for fleet in self.block_registry.get('Fleet', {}).values()])) /
-                              self.energies.loc[('sinks', 'del'), 'sim'])
+                              self.energies.loc[('sinks', 'del'), 'dis'])
 
         self.npc = self.aggregator.totex['dis']
         self.npv = self.aggregator.value['dis']
