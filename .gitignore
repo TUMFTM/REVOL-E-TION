@@ -9,6 +9,8 @@
 
 utils/*
 
+results/*
+
 
 # VS Code
 .vscode/
