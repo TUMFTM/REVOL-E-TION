@@ -17,7 +17,7 @@ philipp.rosner@tum.de
 September 2nd, 2021
 
 #### Contributors
-Marcel Brödel, M.Sc. - Research Associate 01/2024-
+Marcel Brödel, M.Sc. - Research Associate 01/2024-  
 David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
 Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
 Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022  
