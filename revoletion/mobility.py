@@ -29,19 +29,9 @@ class SubFleetDemand:
         self.scenario = scenario
         self.subfleet = subfleet
 
+        self.mapper_timeframe = None  # remains unfilled if demand is read from file
         self.usecases = None  # remains unfilled if demand is read from file
         self.demand = pd.DataFrame()  # main DataFrame for demand
-
-        if self.subfleet.filename_mapper is None:
-            raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
-                             f'Please check the subfleet definition in the scenario file.')
-        if not (self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py').is_file():
-            raise FileNotFoundError(f'Mapper file {self.subfleet.filename_mapper}.py not found in input path. '
-                                    f'Please check the subfleet definition in the scenario file.')
-
-        self.mapper_timeframe = utils.import_module_from_path(
-            module_name=self.subfleet.filename_mapper,
-            file_path=self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py')
 
         self.rng = np.random.default_rng()  # random number generator
 
@@ -74,6 +64,17 @@ class SubFleetDemand:
         """
         generate demand dataframe from usecases & timeframes including all pre-dispatch information
         """
+
+        if self.subfleet.filename_mapper is None:
+            raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
+                             f'Please check the subfleet definition in the scenario file.')
+        if not (self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py').is_file():
+            raise FileNotFoundError(f'Mapper file {self.subfleet.filename_mapper}.py not found in input path. '
+                                    f'Please check the subfleet definition in the scenario file.')
+
+        self.mapper_timeframe = utils.import_module_from_path(
+            module_name=self.subfleet.filename_mapper,
+            file_path=self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py')
 
         # region sample daily total demand from timeframe mapper and lognormal distribution
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim.date)))
