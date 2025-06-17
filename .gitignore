@@ -7,8 +7,6 @@
 .revoletion.egg-info/
 .revoletion.egg-info/*
 
-utils/*
-
 results/*
 
 
