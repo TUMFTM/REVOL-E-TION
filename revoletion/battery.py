@@ -240,10 +240,10 @@ class BatteryPackModel:
         k_crate_q_cyc = 0.0971 + 0.063 * crate_hor
         k_crate_r_cyc = 0.0023 - 0.0018 * crate_hor
 
-        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
+        if (sum_depth := np.sum(cycles_hor['depth'])) > 0:  # actual cycling happened
             # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
-            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor['depth']) / sum_depth
+            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor['depth']) / sum_depth
 
             # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
             k_crate_q_cyc = k_crate_q_cyc.mean()
@@ -306,11 +306,11 @@ class BatteryPackModel:
         beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521E-5 + 2.798E-4 * cycles_hor['depth']
         beta_res = np.maximum(1.5E-5, beta_res)  # limitation as per text following Eq. (21) in paper
 
-        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
+        if (sum_depth := np.sum(cycles_hor['depth'])) > 0:  # actual cycling happened
 
             # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
-            beta_cap = np.sum(beta_cap * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
-            beta_res = np.sum(beta_res * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            beta_cap = np.sum(beta_cap * cycles_hor['depth']) / sum_depth
+            beta_res = np.sum(beta_res * cycles_hor['depth']) / sum_depth
 
             # Define previous aging state as equivalent FECs at current conditions
             q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
