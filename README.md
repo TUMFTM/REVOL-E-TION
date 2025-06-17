@@ -125,8 +125,16 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
 <details>
-<summary style="border: 1px solid #ccc;padding: 8px; background-color: #f9f9f9; font-weight: bold; border-radius: 5px; cursor: pointer;">
-📌 <b>Table of possible arguments</b>
+<summary style="
+  border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+">
+📌 Table of possible arguments
 </summary>
 
 | Argument                        | Short form | Long form          | Default value                                                                | Description                                                                                                                                                                                                                           | Valid input                                                                                                                                    |
@@ -220,8 +228,16 @@ As all string values specified in the scenario definition file are converted to 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
 <details>
-<summary style="border: 1px solid #ccc; padding: 8px; background-color: #f9f9f9; font-weight: bold; border-radius: 5px; cursor: pointer;">
-📌 <b>Table of scenario input parameters</b>
+<summary style="
+  border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+">
+📌 Table of scenario input parameters
 </summary>
 
 | Block                  | Key                             | Name                                                            | Type         | Not required for            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                             | Valid values or format                                                                            |
