@@ -226,26 +226,16 @@ An example scenario file is provided in the ```.revoletion/example``` directory.
 As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
-<style>
-.details-summary {
-  border: 2px solid black;
+
+<details>
+<summary style="border: 2px solid black;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-}
-.emoji-span {
-  display: inline-block;
-  width: 3em;
-  text-align: center;
-}
-</style>
-
-<details>
-<summary class="details-summary">
-  <span class="emoji-span">
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     📋
   </span>
   Scenario
@@ -274,8 +264,14 @@ As all string values specified in the scenario definition file are converted to 
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     ⇄
   </span>
   SystemCore
@@ -301,8 +297,14 @@ As all string values specified in the scenario definition file are converted to 
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🏠
   </span>
 FixedDemand
@@ -318,8 +320,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     💨
   </span>
   WindSource
@@ -344,8 +352,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     ☀️
   </span>
   PVSource
@@ -377,8 +391,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🔩
   </span>
   ControllableSource
@@ -401,8 +421,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🔌⚡
   </span>
   GridConnection
@@ -432,8 +458,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     📈
   </span>
   GridMarket
@@ -449,8 +481,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🔋
   </span>
   StationaryBattery
@@ -484,8 +522,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🚚🚗
   </span>
   Fleet
@@ -502,8 +546,14 @@ FixedDemand
 </details>
 
 <details>
-<summary class="details-summary">
-  <span class="emoji-span">
+<summary style="border: 2px solid black;
+  padding: 10px;
+  background-color: #f0f0f0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+  <span style="display: inline-block;width: 3em;text-align: center;">
     🚗🚗
   </span>
   SubFleet
