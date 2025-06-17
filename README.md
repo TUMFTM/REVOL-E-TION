@@ -43,7 +43,7 @@ Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024
   - [Discrete Event Simulation (DES)](#discrete-event-simulation-des)
   - [A priori Power Scheduling](#a-priori-power-scheduling)
   - [A Posteriori Aging Model (also available for StationaryBattery)](#a-posteriori-aging-model-also-available-for-stationarybattery)
-- [REVOL-E-TION Outputs](#revol-e-tion-outputs)
+- [Outputs](#outputs)
 
 ## Licensing
 REVOL-E-TION is licensed under the Apache 2.0 open source license.  
@@ -215,6 +215,8 @@ An example scenario file is provided in the ```.revoletion/example``` directory.
 As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
+<details>
+<summary><b>Parameter table</b></summary>
 
 | Block                  | Key                             | Name                                                            | Type         | Not required for            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                             | Valid values or format                                                                            |
 |------------------------|---------------------------------|-----------------------------------------------------------------|--------------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
@@ -398,7 +400,7 @@ As all string values specified in the scenario definition file are converted to 
 |                        | ```eff_dis_ac```                | AC discharging efficiency                                       | float        | ```type_unit``` == 'icev'   | Efficiency of the FleetUnit's On-Board-Charger (OBC) in discharging direction. Taken into account for DC charging at the local grid (if Fleet's ```system``` is set to AC) and external AC charging.                                                                                                                                                                                                                                                    | [0, 1]                                                                                            |
 |                        | ```eff_dis_dc```                | DC discharging efficiency                                       | float        | ```type_unit``` == 'icev'   | Efficiency of a DC charging station in discharging direction. Taken into account for DC discharging at the local grid only, as losses at public charging stations are not relevant for an fleet operator but the charging station operator only.                                                                                                                                                                                                        | [0, 1]                                                                                            |
 |                        | ```sdr```                       | Self discharge rate                                             | float        | ```type_unit``` == 'icev'   | Self discharge rate of storage component related to its nominal capacity per month (30 days).                                                                                                                                                                                                                                                                                                                                                           | [0, inf[                                                                                          |
-
+</details>
 <!EXIT_POINT_SCENARIOS_TABLE>
 
 
@@ -490,7 +492,7 @@ This results in a dependency of the aging model output on the horizon resolution
 Please note that the lifetime used for economic extrapolation of simulation results is not connected to the aging model and sizing the battery block on its results is infeasible due to it being run a posteriori and nonlinearly.
 Therefore, the aging model's output does not have any influence on the economic results of the simulation, but is only of an informative character.
 
-## REVOL-E-TION Outputs
+## Outputs
 REVOL-E-TION creates a uniquely named (containing the runtimestamp and the scenario file name) result directory for every run.
 There, the following files are saved (some of them optionally):
 - The log file of the run named ```<runtimestamp>_<scenario_file_name>_log.csv```. This contains all terminal log messages of the run, including errors and warnings.
