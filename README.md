@@ -29,7 +29,6 @@ Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024
 Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024  
 
 ## Table of Contents
-- [Contributors](#contributors)
 - [Licensing](#licensing)
 - [Related publications](#related-publications)
 - [Description](#description)
