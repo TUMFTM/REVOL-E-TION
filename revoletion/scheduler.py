@@ -220,9 +220,8 @@ class AprioriFleet:
         self.fleet_units = {fu_name: AprioriFleetUnit(block=fu_block,
                                                       fleet=self,
                                                       scheduler=self.scheduler)
-                            for subfleet in self.block.subblocks.values()
-                            for fu_name, fu_block in subfleet.subblocks.items()
-                            if (isinstance(fu_block, blocks.ElectricFleetUnit) and
+                            for fu_name, fu_block in self.scenario.block_registry['ElectricFleetUnit'].items()
+                            if (fu_block.parent.parent==self.block and
                                 fu_block.mode_scheduling in self.scenario.run.apriori_lvls)}
 
         self.fu_uc = {fu_name: fu_block
