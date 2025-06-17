@@ -66,7 +66,7 @@ Log files can be created using the integrated Discrete Event Simulation (DES), w
 
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
 
-<div align="center">
+<div style="text-align: center;">
   <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
 </div>
 
