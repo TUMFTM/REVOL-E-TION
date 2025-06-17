@@ -439,10 +439,27 @@ class Scenario:
         self.starttime = self.starttime if len(self.starttime) > 10 else self.starttime + ' 00:00'
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y %H:%M').floor(self.timestep).tz_localize(self.timezone)
 
-        self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
-                             else pd.Timedelta(self.sim_duration)).floor(self.timestep)
+        # sim_duration and sim_endtime are defined
+        if self.sim_duration is not None and self.sim_endtime is not None:
+            raise ValueError('Both parameters "sim_duration" and "sim_endtime" are defined. '
+                             'Please define only one of these parameters.')
+        # sim_duration is defined, sim_endtime is not
+        elif self.sim_duration is not None:
+            self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
+                                 else pd.Timedelta(self.sim_duration)).floor(self.timestep)
+            self.sim_endtime = self.starttime + self.sim_duration
+        # sim_endtime is defined, sim_duration is not
+        elif self.sim_endtime is not None:
+            # ToDo: check for format not only len of string
+            # ToDo: use function for starttime and endtime conversion
+            self.sim_endtime = self.sim_endtime if len(self.sim_endtime) > 10 else self.sim_endtime + ' 00:00'
+            self.sim_endtime = (pd.to_datetime(self.sim_endtime, format='%d.%m.%Y %H:%M')
+                            .floor(self.timestep)
+                            .tz_localize(self.timezone)
+                            )
+            self.sim_duration = self.sim_endtime - self.starttime
+
         self.sim_extd_duration = self.sim_duration
-        self.sim_endtime = self.starttime + self.sim_duration
         self.sim_extd_endtime = self.sim_endtime
         self.prj_duration_yrs = self.prj_duration
         self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
