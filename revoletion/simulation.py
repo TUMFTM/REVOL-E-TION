@@ -218,11 +218,11 @@ class SimulationRun:
             self.logger.setLevel(logging.INFO)
 
         # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
-        logging.getLogger('gurobipy').disabled=True
+        logging.getLogger('gurobipy').disabled = True
 
-        self.logger.info(f'Reading scenarios from: {self.paths["scenarios"]}')
-        self.logger.info(f'Reading additional input data from: {self.paths["input"]}')
-        self.logger.info(f'Writing results to: {self.paths["output"]}')
+        self.logger.info(f'Reading scenarios from:\t\t{self.paths["scenarios"]}')
+        self.logger.info(f'Reading input data from:\t{self.paths["input"]}')
+        self.logger.info(f'Writing results to:\t\t\t{self.paths["output"]}')
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
