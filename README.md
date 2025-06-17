@@ -216,10 +216,10 @@ Each instance requires a certain set of parameters dependent on its class. These
 The scenario file defines all noncomplex (i.e. integer, float, string, boolean) parameters of the scenarios.
 The formatting of this CSV file is as follows:
 
-| Block        | Key         | <name_scenario_1>  | <name_scenario_2>  | ... | <name_scenario_n>  |
-|--------------|-------------|--------------------|--------------------|-----|--------------------|
-| <block_name> | <parameter> | <value_scenario_1> | <value_scenario_2> | ... | <value_scenario_n> |
-| ...          | ...         | ...                | ...                | ... | ...                |
+| Block              | Key               | ```<name_scenario_1>```  | ```<name_scenario_2>```  | ... | ```<name_scenario_n>```  |
+|--------------------|-------------------|--------------------------|--------------------------|-----|--------------------------|
+| ```<block_name>``` | ```<parameter>``` | ```<value_scenario_1>``` | ```<value_scenario_2>``` | ... | ```<value_scenario_n>``` |
+| ...                | ...               | ...                      | ...                      | ... | ...                      |
 
 In the first row, 'Block' and 'Key' are fixed column names. All other column names define the names of distinct scenarios.
 To ignore a scenario during the simulation process, add a '#' in front of the scenario's name.
