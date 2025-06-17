@@ -1,13 +1,13 @@
 # REVOL-E-TION ![System diagram](./images/revol-e-tion_icon.svg)
 
-### Resilient Electric Vehicle Optimization model for Local Energy TransitION
+## Resilient Electric Vehicle Optimization model for Local Energy TransitION
 
 REVOL-E-TION is an energy system model toolbox designed to optimize integration of electric vehicle fleets into 
 local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes and estimate
 the resulting technoeconomic potentials in terms of costs and revenues within the energy (and optionally also the
 mobility system). It is built as a wrapper on top of the [oemof](https://oemof.org) energy system model framework. 
 
-#### Created by 
+## Created by 
 Philipp Rosner, M.Sc. and Brian Dietermann, M.Sc.  
 Institute of Automotive Technology  
 Department of Mobility Systems Engineering  
@@ -27,6 +27,23 @@ Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023
 Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023  
 Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024  
 Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024  
+
+## Table of Contents
+- [Contributors](#contributors)
+- [Licensing](#licensing)
+- [Related publications](#related-publications)
+- [Description](#description)
+- [Installation](#installation)
+- [Basic Usage](#basic-usage)
+- [Common Problems & Troubleshooting](#common-problems--troubleshooting)
+- [General Terms & Definitions](#general-terms--definitions)
+- [Classes of Blocks](#classes-of-blocks)
+- [Scenario Input Parameters](#scenario-input-parameters)
+- [EV-Specific submodules](#ev-specific-submodules)
+  - [Discrete Event Simulation (DES)](#discrete-event-simulation-des)
+  - [A priori Power Scheduling](#a-priori-power-scheduling)
+  - [A Posteriori Aging Model (also available for StationaryBattery)](#a-posteriori-aging-model-also-available-for-stationarybattery)
+- [REVOL-E-TION Outputs](#revol-e-tion-outputs)
 
 ## Licensing
 REVOL-E-TION is licensed under the Apache 2.0 open source license.  
@@ -102,7 +119,7 @@ The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommende
 If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi and the license file have to match. The python package gurobipy is NOT required.
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
-#### Step 5: Basic Usage
+## Basic Usage
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
 1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
@@ -134,14 +151,13 @@ The filename of the modified file has to be given in the scenario file under the
 Concerning computational effort, REVOL-E-TION relies heavily on single core computing power for each scenario and uses significant memory, especially in the 'go' strategy.
 To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed using ```--n_processes``` depending on the available hardware.
 
-#### Step 6: Running the example project
 To run the provided example project, execute the following command in the terminal:
 ```
 python -m revoletion -scn example
 ```
 
 
-#### Common Problems & Troubleshooting
+## Common Problems & Troubleshooting
 | Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 |----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.11. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                                                                                     |
@@ -390,7 +406,7 @@ As all string values specified in the scenario definition file are converted to 
 Since REVOL-E-TION's main purpose is optimum EV integration, this is where focus lies in modeling detail, resulting in the DES and a priori power scheduling submodules.
 The following sections give more detail on these submodules:
 
-###  Discrete Event Simulation (DES)
+### Discrete Event Simulation (DES)
 The DES takes stochastically defined mobility or energy demand in multiple use cases and timeframes, samples an actual demand and assigns it to a Fleet (more specifically to the individual FleetUnit within it) in a first-come-first-serve approach.
 This enables to model the mobility/energy demand independently of the (Sub)Fleet's size.
 However, the DES is run a priori to the dispatch/sizing optimization, so no consideration of whether the resulting FleetUnit dispatch is beneficial to the energy system is taken and limitations through battery aging and/or other limitations have to be covered by safety margins in dispatch to achieve a feasible solution to the energy system's optimization problem.
@@ -463,7 +479,7 @@ The power for all FleetUnits with available external charging infrastructure (co
   If the current SOC does not ensure a return SOC above the specified minimum return SOC (does not consider self-discharge), AC charging is activated. The specified charging power is then applied until the target SOC is reached.
 - DC charging: If DC charging is available and the SOC at the next timestep with a charging possibility is below 5 %, DC charging is activated for the current timestep. The maximum SOC for DC charging is 80 % neglecting "soc_target". 
 
-### A Posteriori Aging Model (also available for StationaryEnergyStorage)
+### A Posteriori Aging Model (also available for StationaryBattery)
 Simple semi-empirical aging models are implemented for a blocks containing electric storages (ElectricFleetUnit and StationaryBattery).
 More specifically, these are the Naumann model ([publication 1](https://doi.org/10.1016/j.est.2018.01.019) and [publication 2](https://doi.org/10.1016/j.jpowsour.2019.227666)) for LFP batteries and the [Schmalstieg model](https://doi.org/10.1016/j.jpowsour.2014.02.012) for NMC batteries.
 They are both contained within the ```battery.py``` file and work on superposing calendric and cycle aging.
