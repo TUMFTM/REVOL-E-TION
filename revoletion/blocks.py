@@ -2091,27 +2091,28 @@ class SubFleet(NonElectricBlock):
                          params=params_subfleet,
                          parent=parent)
 
+        self.demand = self.log = None
+
+        if self.type_unit not in ['ev', 'icev', 'mb']:
+            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" - invalid type_unit "{self.type_unit}"')
+
+        cls_fu = {'ev': ElectricVehicle,
+                  'icev': CombustionVehicle,
+                  'mb': MobileBattery}.get(self.type_unit)
+
         self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
-        if self.type_unit in ['ev']:
-            self.subblocks = {name: ElectricVehicle(name=name,
-                                                    scenario=self.scenario,
-                                                    params=params,
-                                                    parent=self) for name in self.unit_names}
-            self.demand = mobility.VehicleDemand(scenario, self)
-        elif self.type_unit in ['icev']:
-            self.subblocks = {name: CombustionVehicle(name=name,
-                                                      scenario=self.scenario,
-                                                      params=params,
-                                                      parent=self) for name in self.unit_names}
-            self.demand = mobility.VehicleDemand(scenario, self)
-        elif self.type_unit in ['mb']:
-            self.subblocks = {name: MobileBattery(name=name,
-                                                  scenario=self.scenario,
-                                                  params=params,
-                                                  parent=self) for name in self.unit_names}
-            self.demand = mobility.BatteryDemand(scenario, self)
-        else:
-            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" - invalid unit type')
+        self.subblocks = {name: cls_fu(name=name,
+                                       scenario=self.scenario,
+                                       params=params,
+                                       parent=self) for name in self.unit_names}
+
+        # Create demand object
+        if self.data_source in ['usecases', 'demand']:
+            cls_demand = {'ev': mobility.VehicleDemand,
+                          'icev': mobility.VehicleDemand,
+                          'mb': mobility.BatteryDemand}.get(self.type_unit)
+            self.demand = cls_demand(scenario=self.scenario,
+                                     subfleet=self)
 
         if self.data_source == 'usecases':
             self.demand.read_usecase_file()
@@ -2122,7 +2123,6 @@ class SubFleet(NonElectricBlock):
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
         elif self.data_source in ['log', 'logfile']:
             self.log = self.read_input_log()
-            # self.unit_names = self.log.columns.get_level_values(0).unique()[:self.num].tolist()  # todo reenable
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
