@@ -124,7 +124,10 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
-The possible arguments are:
+<details>
+<summary style="border: 1px solid #ccc;padding: 8px; background-color: #f9f9f9; font-weight: bold; border-radius: 5px; cursor: pointer;">
+📌 <b>Table of possible arguments</b>
+</summary>
 
 | Argument                        | Short form | Long form          | Default value                                                                | Description                                                                                                                                                                                                                           | Valid input                                                                                                                                    |
 |---------------------------------|------------|--------------------|------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -138,6 +141,7 @@ The possible arguments are:
 | Rerun previous run              | -rer       | --rerun            | False                                                                        | Rerun scenarios of a previous run which were not completed successfully (due to unexpected termination of SimulationRun or non-deterministic infeasibilities).                                                                        | False or string with directory path (absolute or relative to output directory defined in ```--outputdir```) containing results of previous run |
 | Rerun only infeasible scenarios | -rin       | --rerun_infeasible | True                                                                         | Rerun infeasible scenarios, for which the solver did not find an optimal solution (may lead to the same result again) Neglected for ```--rerun False```                                                                               | True, False                                                                                                                                    |
 | Solcast API key                 | -ksc       | --key_solcast_api  | None                                                                         | API key to use for the proprietary Solcast PV/Wind data API                                                                                                                                                                           | string                                                                                                                                         |
+</details>
 
 The scenario file is a CSV table.
 Its exact API is described in the section "Scenario Input Parameters".
@@ -216,7 +220,9 @@ As all string values specified in the scenario definition file are converted to 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
 <details>
-<summary><b>Parameter table</b></summary>
+<summary style="border: 1px solid #ccc; padding: 8px; background-color: #f9f9f9; font-weight: bold; border-radius: 5px; cursor: pointer;">
+📌 <b>Table of scenario input parameters</b>
+</summary>
 
 | Block                  | Key                             | Name                                                            | Type         | Not required for            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                             | Valid values or format                                                                            |
 |------------------------|---------------------------------|-----------------------------------------------------------------|--------------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
