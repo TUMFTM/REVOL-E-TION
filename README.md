@@ -134,6 +134,13 @@ The filename of the modified file has to be given in the scenario file under the
 Concerning computational effort, REVOL-E-TION relies heavily on single core computing power for each scenario and uses significant memory, especially in the 'go' strategy.
 To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed using ```--n_processes``` depending on the available hardware.
 
+#### Step 6: Running the example project
+To run the provided example project, execute the following command in the terminal:
+```
+python -m revoletion -scn example
+```
+
+
 #### Common Problems & Troubleshooting
 | Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 |----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
