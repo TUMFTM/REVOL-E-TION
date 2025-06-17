@@ -545,7 +545,14 @@ class Scenario:
 
         self.block_registry = dict()
 
-        for name, class_name in {'core': 'SystemCore', **self.blocks}.items():
+        # Define priorities of blocks to ensure correct initialization order
+        priority_default = 2
+        priority_blocks = {'SystemCore': 0,  # always first -> ac and dc bus required for all other ElectricBlocks
+                           'PVSource': 1,  # holds temperature and wind data -> required by StorageBlock and WindSource
+                           }
+
+        for name, class_name in sorted({'core': 'SystemCore', **self.blocks}.items(),
+                                       key=lambda item: priority_blocks.get(item[1], priority_default),):
             class_obj = getattr(blocks, class_name, None)
             if class_obj is not None and isinstance(class_obj, type):
                 class_obj(name, self)
