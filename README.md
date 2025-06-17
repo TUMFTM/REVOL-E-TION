@@ -214,16 +214,24 @@ Each instance requires a certain set of parameters dependent on its class. These
 
 ## Scenario Input Parameters
 The scenario file defines all noncomplex (i.e. integer, float, string, boolean) parameters of the scenarios.
+The formatting of this CSV file is as follows:
+
+| Block           | Key              | <name_scenario_1>  | <name_scenario_2>  | ... | <name_scenario_n>  |
+|-----------------|------------------|--------------------|--------------------|-----|--------------------|
+| <name_of_block> | <parameter_name> | <value_scenario_1> | <value_scenario_2> | ... | <value_scenario_n> |
+| ...             | ...              | ...                | ...                | ... | ...                |
+
+In the first row, 'Block' and 'Key' are fixed column names. All other column names define the names of distinct scenarios.
+To ignore a scenario during the simulation process, add a '#' in front of the scenario's name.
+The first column defines the name of the block to which the parameter in the second column applies.
+This name is defined in the scenarios ```blocks``` parameter for all blocks except for the scenario itself and the SystemCore which have to be named 'scenario' and 'core', respectively.
+
 Complex (multidimensional) parameters are mostly defined through links to other files (by filename) in the scenario file.
+As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
 The following table specifies each parameter for each possible block class in the scenario file.
 If and only if a block of a certain class exists within the scenario, these parameters are required and read in. 
 Therefore, not every scenario file contains all possible parameters.
-Multiple scenarios can be defined as multiple columns.
-The first row (header) of each scenario column defines the scenario's name.
-To ignore a scenario during the simulation process, add a '#' in front of the scenario's name.
-The first column of the scenario file defines the name of the block the parameter in the second column applies to.
 An example scenario file is provided in the ```.revoletion/example``` directory.
-As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
 
