@@ -115,7 +115,7 @@ Use the editable mode if you plan to modify the code during development.
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
 The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
 The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
-If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi and the license file have to match. The python package gurobipy is NOT required.
+If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi and the license file have to match. The python package gurobipy is NOT required to run REVOL-E-TION.
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
@@ -123,22 +123,24 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
-<details>
+<details style="margin-bottom: 1em;">
 <summary style="
-  border: 2px solid black;
+  border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
 ">
-📌 Table of possible arguments
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
+    ⚙️
+  </span>
+  Possible arguments
 </summary>
 
 | Argument                        | Short form | Long form          | Default value                                                                | Description                                                                                                                                                                                                                           | Valid input                                                                                                                                    |
 |---------------------------------|------------|--------------------|------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| Scenario file path (mandatory)  | -scn       | --scenario         | -                                                                            | File path to scenario file. If 'example' is provided, the example project included in REVOL-E-TION is executed and ```--inputdir``` is neglected. If not provided, a graphical selection dialog opens automatically to select a file. | string with path (absolute or relative to current working directory) of scenario file or 'example'                                             |
+| Scenario file path (mandatory)  | -scn       | --scenario         |                                                                              | File path to scenario file. If 'example' is provided, the example project included in REVOL-E-TION is executed and ```--inputdir``` is neglected. If not provided, a graphical selection dialog opens automatically to select a file. | string with path (absolute or relative to current working directory) of scenario file or 'example'                                             |
 | Input directory path            | -in        | --inputdir         | Directory of the scenario file provided in ```--scenario```                  | Directory path to input data files.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
 | Output directory path           | -out       | --outputdir        | Directory "results" in the current working directory (created automatically) | Directory path to save output data.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
 | Solver                          | -slv       | --solver           | 'gurobi'                                                                     | Solver to be used for optimization                                                                                                                                                                                                    | string containing lowercase name of pyomo compatible solver to be used                                                                         |
@@ -169,14 +171,14 @@ python -m revoletion -scn example
 
 
 ## Common Problems & Troubleshooting
-| Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.11. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                                                                                     |
-| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license, or faulty Gurobipy version                                    | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). If the command prints your Gurobi version and license information, make sure Gurobipy has the same version number as Gurobi itself. |                                                                                                                                                                                                                                                                                                                                                
-| ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                                                                                       |
-| ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                                                                                    |
-| ```Scenario failed: Infeasible or Unbounded (To solve this error try to set investment limits for blocks or for the scenario)``` | Depending on the costs specified the optimization problem might be unbounded as infinite investment is beneficial | Redefine the provided cost structure (i.e. reduce prices for energy feed-in or increase CAPEX or OPEX for energy generation)                                                                                                                                                                                                                                                                                                                              |
-| Any other error messages or errors                                                                                               | various                                                                                                           | REVOL-E-TION prints specific error messages in most cases which help you to understand the cause of the error. Nevertheless, REVOL-E-TION is still in development and therefore might contain bugs and errors that are not covered yet. If you encounter a bug or an error message that you do not understand, please feel free to open an issue on GitHub or contact the developers.                                                                     |
+| Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                               |
+|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.11. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                  |
+| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). The python package gurobipy is NOT required to run REVOL-E-TION. |                                                                                                                                                                                                                                                                                                                                                
+| ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                    |
+| ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                 |
+| ```Scenario failed: Infeasible or Unbounded (To solve this error try to set investment limits for blocks or for the scenario)``` | Depending on the costs specified the optimization problem might be unbounded as infinite investment is beneficial | Redefine the provided cost structure (i.e. reduce prices for energy feed-in or increase CAPEX or OPEX for energy generation)                                                                                                                                                                                                                                                           |
+| Any other error messages or errors                                                                                               | various                                                                                                           | REVOL-E-TION prints specific error messages in most cases which help you to understand the cause of the error. Nevertheless, REVOL-E-TION is still in development and therefore might contain bugs and errors that are not covered yet. If you encounter a bug or an error message that you do not understand, please feel free to open an issue on GitHub or contact the developers.  |
 
 
 ## General Terms & Definitions
@@ -235,15 +237,15 @@ An example scenario file is provided in the ```.revoletion/example``` directory.
 
 <!ENTRY_POINT_SCENARIOS_TABLE>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     📋
   </span>
   Scenario
@@ -271,15 +273,15 @@ An example scenario file is provided in the ```.revoletion/example``` directory.
 | ```blocks```                    | Blocks                                                          | dict         |                             | All blocks present in the scenario except for the SystemCore, which is added automatically, in the format {block_name: class_name}. Non valid names are 'run', 'scenario' and 'core' (default name for block of class SystemCore). Multiple blocks of the same class can be specified by assigning different custom block names.                                                                                                                        | "{'custom block name': 'class name of block'}"                                                    |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     ⇄
   </span>
   SystemCore
@@ -304,15 +306,15 @@ An example scenario file is provided in the ```.revoletion/example``` directory.
 | ```eff_acdc```                  | AC/DC efficiency                                                | float        |                             | Efficiency of the AC/DC converter in the SystemCore.                                                                                                                                                                                                                                                                                                                                                                                                    | [0, 1]                                                                                            |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🏠
   </span>
 FixedDemand
@@ -327,15 +329,15 @@ FixedDemand
 | ```crev_spec```                 | Specific customer revenue                                       | float or str |                             | Specific customer revenue for consumed energy in currency per Wh. Can be given as float or filename of a csv file containing a timeseries.                                                                                                                                                                                                                                                                                                              | string with filename or [0, inf[                                                                  |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     💨
   </span>
   WindSource
@@ -359,15 +361,15 @@ FixedDemand
 | ```eff_block```                 | Efficiency                                                      | float        |                             | Efficiency of the wind turbine.                                                                                                                                                                                                                                                                                                                                                                                                                         | [0, 1]                                                                                            |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     ☀️
   </span>
   PVSource
@@ -380,7 +382,7 @@ FixedDemand
 | ```size_max_block```            | Maximum size                                                    | float        |                             | Maximum size of PVSource including preexisting size specified in ```size_preexisting_block```. To enable unlimited investment set this parameter to None.                                                                                                                                                                                                                                                                                               | [0, inf[ or None                                                                                  |
 | ```invest_block```              | Investment                                                      | bool         |                             | Enable additional investment into the PV system.                                                                                                                                                                                                                                                                                                                                                                                                        | True, False                                                                                       |
 | ```data_source```               | Data source                                                     | str          |                             | Data source for pv power. This can be an API (PVGIS or Solcast) or a file containing data (PVGIS, Solcast or custom file). If Solcast API is chosen a valid API key has to specified in the run's arguments. A custom file has to include the columns 'time' (timezone aware timestamps), 'power_spec' (specific power in W per W<sub>p</sub>), 'speed_wind' (in m/s), 'temp_air' (air temperature in °C).                                              | 'pvgis api', 'solcast api', pvgis file', 'solcast file', 'file'                                   |
-| ```filename```                  | Filename                                                        | str          |                             | Name of a PVGIS, Solcast, or custom csv file if ```data_source``` is set to 'pvgis file', 'solcast file', or 'file', respectively. Name of a parameter file or None to use the default values if 'pvgis api' or 'solcast api' is chosen.                                                                                                                                                                                                                | string with filename or None                                                                      |
+| ```filename```                  | Filename                                                        | str          |                             | Name of a PVGIS, Solcast, or custom csv file if ```data_source``` is set to 'pvgis file', 'solcast file', or 'file', respectively. Otherwise set to None.                                                                                                                                                                                                                                                                                               | string with filename or None                                                                      |
 | ```system```                    | System                                                          | str          |                             | The bus (AC or DC) the block is connected to.                                                                                                                                                                                                                                                                                                                                                                                                           | 'AC', 'DC'                                                                                        |
 | ```capex_spec```                | Specific capital expenditures                                   | float        |                             | Specific capital expenditures: cost in currency per installed peak power in W.                                                                                                                                                                                                                                                                                                                                                                          | [0, inf[                                                                                          |
 | ```mntex_spec```                | Specific maintenance expenditures                               | float        |                             | Specific maintenance expenditures: cost in currency per year per installed peak power in W.                                                                                                                                                                                                                                                                                                                                                             | [0, inf[                                                                                          |
@@ -398,15 +400,14 @@ FixedDemand
 | ```mountingplace```             | Mounting place                                                  | str          |                             | Type of mounting for PV system for 'PVGIS API'. Options: free = free-standing, building = building-integrated.                                                                                                                                                                                                                                                                                                                                          | 'free', 'building'                                                                                |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
-  cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+  cursor: pointer;">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🔩
   </span>
   ControllableSource
@@ -428,15 +429,15 @@ FixedDemand
 
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🔌⚡
   </span>
   GridConnection
@@ -465,15 +466,15 @@ FixedDemand
 | ```markets```                   | Markets                                                         | list         |                             | List containing names of GridMarket instances which are connected to the GridConnection.                                                                                                                                                                                                                                                                                                                                                                | "['name_of_market1', 'name_of_market2']"                                                          |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     📈
   </span>
   GridMarket
@@ -488,15 +489,15 @@ FixedDemand
 | ```pwr_s2g```                   | Power limit from local site to public grid                      | float        |                             | Power limit considered for the power flow from the local site to the public grid in W. If no additional limit for the market but only the limits of the physical grid connection should be taken into account, set to None.                                                                                                                                                                                                                             | [0, inf[ or None                                                                                  |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🔋
   </span>
   StationaryBattery
@@ -529,15 +530,15 @@ FixedDemand
 | ```ccr```                       | Cost change ratio                                               | float        |                             | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan.                                                                                                                                                                                                                                                                                                                                            | [0, inf[                                                                                          |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🚚🚗
   </span>
   Fleet
@@ -553,15 +554,15 @@ FixedDemand
 | ```opex_spec_s2f```             | Specific operational expenditures for fleet discharging         | float or str |                             | Specific operational expenditures for Fleet discharging: cost in currency per energy discharged from Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries                                                                                                        | string with filename or [0, inf[                                                                  |
 </details>
 
-<details>
-<summary style="border: 2px solid black;
+<details style="margin-bottom: 1em;">
+<summary style="border: 2px solid #333333;
   padding: 10px;
   background-color: #f0f0f0;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-  <span style="display: inline-block;width: 3em;text-align: center;">
+">
+  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
     🚗🚗
   </span>
   SubFleet
