@@ -1,6 +1,6 @@
 /* Set general body styles: white background, black text, sans-serif font */
 body {
-    background-color: #ffffff;               /* White background */
+    background-color: #ffffff !important;    /* White background */
     color: #000000 !important;               /* Force black text */
     font-family: sans-serif;                 /* Clean, modern font */
 }
