@@ -1,4 +1,4 @@
-# REVOL-E-TION ![System diagram](./images/revol-e-tion_icon.svg)
+# REVOL-E-TION ![Icon](./images/revol-e-tion_icon.svg)
 
 ## Resilient Electric Vehicle Optimization model for Local Energy TransitION
 
