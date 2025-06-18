@@ -76,19 +76,19 @@ While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
 REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodelling/revol-e-tion) and can be cloned from there using 
-```
+```bash
 git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 ```
 
 #### Step 2: Create a clean virtual environment
 It is recommended to create and activate a clean virtual environment for the installation of REVOL-E-TION.
 This can be done using conda:
-```
+```bash
 conda create -n <name_of_virtual_environment> python=3.11
 conda activate <name_of_virtual_environment>
 ```
 or alternatively with the following command:
-```
+```bash
 python -m venv <path_to_virtual_environment>
 source <path_to_virtual_environment>/bin/activate
 ```
@@ -98,7 +98,7 @@ After cloning the repository, navigate to its root directory (where ```README.md
 Then install the package and its dependencies using one of the following commands depending on the chosen mode of installation:
 ##### a) Standard Installation
 This copies the package into your (virtual environment’s) site-packages directory:
-```
+```bash
 pip install .
 ```
 After pulling new changes from the repository, the package has to be reinstalled using the same command to take the changes into account.
@@ -106,7 +106,7 @@ After pulling new changes from the repository, the package has to be reinstalled
 ##### b) Editable Installation (recommended for development)
 
 This links the package to your local source code, so any changes (you make or pulled from the repository) are immediately reflected without reinstalling:
-```
+```bash
 pip install -e .
 ```
 Use the editable mode if you plan to modify the code during development.
@@ -165,8 +165,8 @@ Concerning computational effort, REVOL-E-TION relies heavily on single core comp
 To avoid memory limitations, it is advised to limit the number of parallel scenarios to be executed using ```--n_processes``` depending on the available hardware.
 
 To run the provided example project, execute the following command in the terminal:
-```
-python -m revoletion -scn example
+```bash
+python -m revoletion.main -scn example
 ```
 
 
