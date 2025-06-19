@@ -10,7 +10,6 @@
 results/*
 
 images/auxil/*
-images/*.synctex.gz
 
 
 # VS Code
