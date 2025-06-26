@@ -339,7 +339,9 @@ class SimulationRun:
         # objects which cannot be pickled.
         try:
             Scenario(name=name,
+                     parameters=self.scenario_data[name],  # ToDo: move to method call
                      run=self,
+                     paths=self.paths,
                      log_queue=log_queue,
                      lock=lock,
                      status_queue=status_queue)
@@ -368,9 +370,36 @@ class SimulationRun:
 
 class Scenario:
 
-    def __init__(self, name, run, log_queue, lock, status_queue=None):
+    def __init__(self,
+                 name: str,
+                 parameters: pd.Series | str,
+                 run: SimulationRun,
+                 paths: dict = None,
+                 settings: dict = None,
+                 log_queue: mp.Queue = None,
+                 lock: mp.Lock = None,
+                 status_queue: mp.Queue = None):
+
         self.name = name
         self.run = run
+
+        if isinstance(parameters, pd.Series):
+            self.parameters = parameters
+        # check whether file exists
+        elif isinstance(parameters, str) and Path(parameters).is_file():
+            if parameters.endswith('.csv'):
+                # ToDo: read csv file and convert to Series using map_dtype
+                self.parameters = pd.read_csv(parameters,
+                                              index_col=[0, 1],
+                                              keep_default_na=False)
+                self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
+            elif parameters.endswith('.pkl'):
+                self.parameters = pd.read_pickle(parameters)
+        else:
+            raise ValueError('Parameters must be a pandas Series or filename of a CSV or PKL file')
+
+        self.paths = paths
+        self.settings = settings
         self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
         self.logger.propagate = False
         self.status_queue = status_queue
@@ -398,7 +427,7 @@ class Scenario:
                         if hasattr(self.worker, '_parent_name') else '')
         self.logger.info(f'Scenario initialized{msg_parallel}')
 
-        self.parameters = self.run.scenario_data[self.name]
+        # self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
