@@ -17,6 +17,7 @@ from revoletion import battery as bat
 from revoletion import economics as eco
 from revoletion import mobility
 from revoletion import utils
+from revoletion import heatpump as hp
 
 
 class BlockScenarioInterface(ABC):
@@ -2433,3 +2434,31 @@ class MobileBattery(ElectricFleetUnit):
     """
 
     pass
+
+class Heatpump(SinkBlock):
+    @staticmethod
+    def get_init_definitions():
+        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
+                                    'params': {('crev', 'spec'): 'crev_spec',
+                                               ('flow', 'name'): 'in'}}
+                          },
+                    state_names=[])
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=['demand_heatpump'],
+                         params=None,
+                         parent=scenario)
+
+        self.get_flow_heatpump_apriori()
+
+    def get_flow_heatpump_apriori(self):
+        try:
+            outdoor_temp = self.scenario.temp_air['temp_air']
+        except (AttributeError, KeyError):
+            raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
+
+
