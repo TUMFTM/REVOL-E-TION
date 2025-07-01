@@ -37,7 +37,6 @@ import pandas as pd
 import pyomo.environ as po
 
 from revoletion import blocks
-from revoletion import checker
 from revoletion import constraints
 from revoletion import dispatch
 from revoletion import economics as eco
@@ -195,10 +194,6 @@ class SimulationRun:
         except subprocess.CalledProcessError:
             self.commit_hash = 'unknown'
         # endregion
-
-        # ToDo: find better solution for input checks
-        # input_checker = checker.InputChecker(self)
-        # input_checker.check_scenarios()
 
         # region read, copy and check scenario data
         self.scenario_data = pd.read_csv(self.paths.scenarios,
