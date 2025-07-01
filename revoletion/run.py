@@ -54,7 +54,7 @@ class SimulationRun:
         # region read, copy and check scenario data
         if not self.paths.scenarios.is_file():
             raise FileNotFoundError(f'Scenario file {self.paths.scenarios} does not exist')
-        if not self.paths.scenarios.suffix == '.csv':
+        if self.paths.scenarios.suffix == '.csv':
             self.scenario_data = pd.read_csv(self.paths.scenarios,
                                              index_col=[0, 1],
                                              keep_default_na=False)
