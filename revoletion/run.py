@@ -56,8 +56,8 @@ class SimulationRun:
         self.paths = SimulationPaths(scenarios=path_scenarios,
                                      input=path_input,
                                      output=path_output,
-                                     basename=Path(f'{self.runtimestamp}_{self.name}'),
                                      )
+        self.paths.basename = Path(f'{self.runtimestamp}_{self.name}')
 
         del path_scenarios, path_input, path_output
 
@@ -264,10 +264,11 @@ class SimulationRun:
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
         try:
-            Scenario(name=name,
-                     parameters=self.scenario_data[name],
-                     paths=self.paths,
+            Scenario(paths=self.paths,
                      settings=self.settings,
+                     run_execution=True,
+                     name=name,
+                     parameters=self.scenario_data[name],
                      log_queue=log_queue,
                      lock=lock,
                      status_update=self.trigger_scenario_status_update,

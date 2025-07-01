@@ -43,7 +43,10 @@ class SimulationPaths:
     scenarios: Path
     input: Path = None
     output: Path = None
-    basename: Path = None
+
+    _basename: Path = field(default_factory=lambda: Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S')),
+                            init=True
+                            )  # internal field for basename
 
     _revoletion: Path = field(default_factory=lambda: files(__package__),
                               init=False,  # cannot be set manually
@@ -53,8 +56,6 @@ class SimulationPaths:
                        )
 
     def __post_init__(self):
-        if self.basename is None:
-            self.basename = Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S'))
         if self.input is None:
             self.input = self.scenarios.parent
         if self.output is None:
@@ -73,12 +74,25 @@ class SimulationPaths:
             raise FileNotFoundError(f'Scenario file not found: {self.scenarios}')
         if not self.input.is_dir():
             raise NotADirectoryError(f'Input directory path not interpretable: {self.input}')
-        if not self.output.is_dir():
-            self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
 
     def create_result_path(self,
                            suffix: str) -> Path:
         return self.output / f'{self.basename}_{suffix}'
+
+    @property
+    def basename(self) -> Path:
+        return self._basename
+
+    @basename.setter
+    def basename(self, value: Path):
+        self._basename = value
+        # store old output path for renaming
+        old_output = self.output
+        # recalculate the output path whenever basename is changed
+        self.output = self.output.parent / self._basename
+        # rename the output directory
+        old_output.rename(self.output)
 
     @property
     def cwd(self) -> Path:
@@ -115,49 +129,47 @@ class SimulationPaths:
 
 @dataclass
 class SimulationSettings:
-    solver: str
-    n_processes: int
-    largescalemode: bool
-    debugmode: bool
-    rerun: bool | Path
-    rerun_infeasible: bool
-    key_solcast_api: str
+    solver: str = 'gurobi'
+    n_processes: int = 1
+    largescalemode: bool = False
+    debugmode: bool = False
+    rerun: bool | Path = False
+    rerun_infeasible: bool = True
+    key_solcast_api: str = None
 
 
 class Scenario:
 
     def __init__(self,
-                 name: str,
-                 parameters: pd.Series | str,
-                 paths: SimulationPaths = None,
-                 settings: SimulationSettings = None,
+                 paths: SimulationPaths,
+                 settings: SimulationSettings,
+                 run_execution: bool = False,
+                 name: str = None,  # will be set to the stem of the scenario filename for single scenario execution
+                 parameters: pd.Series = None,
                  log_queue: mp.Queue = None,
                  lock: mp.Lock = None,
                  status_update: 'SimulationRun.trigger_scenario_status_update' = None,
                  status_queue: mp.Queue = None):
 
-        self.name = name
-
-        if isinstance(parameters, pd.Series):
-            self.parameters = parameters
-        # check whether file exists
-        elif isinstance(parameters, str) and Path(parameters).is_file():
-            if parameters.endswith('.csv'):
-                self.parameters = pd.read_csv(parameters,
-                                              index_col=[0, 1],
-                                              keep_default_na=False)
-                self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
-            elif parameters.endswith('.pkl'):
-                self.parameters = pd.read_pickle(parameters)
-        else:
-            raise ValueError('Parameters must be a pandas Series or filename of a CSV or PKL file')
-
         self.paths = paths
         self.settings = settings
 
-        if False:  # ToDo: activate for standalone execution of scenario
+        if run_execution:
+            if name is None:
+                raise ValueError('Scenario name must be provided when run_execution is True')
+            if parameters is None:
+                raise ValueError('Parameters must be provided when run_execution is True')
+
+        self.name = name
+
+        if not run_execution:
+            if name is None:
+                self.name = self.paths.scenarios.stem
+                self.paths.basename = Path(self.paths.basename.stem + '_' + self.name)
+
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
                                                      settings=self.settings,
+                                                     len_scn_max=len(self.name),
                                                      )
 
         elif log_queue is not None:
@@ -172,6 +184,27 @@ class Scenario:
 
         self.status_update = status_update
         self.status_queue = status_queue
+
+        if isinstance(parameters, pd.Series):
+            self.parameters = parameters
+        # check whether file exists
+        elif self.paths.scenarios.is_file():
+            if self.paths.scenarios.suffix == '.csv':
+                self.parameters = pd.read_csv(self.paths.scenarios,
+                                              index_col=[0, 1],
+                                              keep_default_na=False)
+                self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
+            elif self.paths.scenarios.suffix == '.pkl':
+                self.parameters = pd.read_pickle(self.paths.scenarios)
+            else:
+                raise ValueError('Scenario file specified in SimulationPaths object is neither CSV nor PKL file.')
+
+            if len(self.parameters.columns) > 1:
+                raise ValueError('More than one scenario detected. Provide a single column CSV or PKL file.')
+
+            self.parameters = self.parameters.iloc[:, 0]  # convert to Series
+        else:
+            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenarios}')
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
