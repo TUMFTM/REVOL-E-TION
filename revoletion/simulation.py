@@ -49,12 +49,6 @@ class OptimizationError(Exception):
     pass
 
 
-class OptimizationSuccessfulFilter(logging.Filter):
-    def filter(self, record):
-        # Filter out log messages from the root logger
-        return not (record.name == 'root' and record.msg == 'Optimization successful...')
-
-
 @dataclass
 class SimulationPaths:
     scenarios: Path
@@ -250,30 +244,8 @@ class SimulationRun:
         # endregion
 
         # region define logger structure
-        self.logger = logging.getLogger()
-        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
-                                          f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
-                                          f'%(message)s')
-        log_stream_handler = logging.StreamHandler(sys.stdout)
-        log_stream_handler.setFormatter(log_formatter)
-        log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.paths.log))
-        log_file_handler.setFormatter(log_formatter)
-        self.logger.addHandler(log_stream_handler)
-        self.logger.addHandler(log_file_handler)
-
-        # Adding the custom filter to prevent root logger messages
-        log_stream_handler.addFilter(OptimizationSuccessfulFilter())
-        log_file_handler.addFilter(OptimizationSuccessfulFilter())
-
-        if self.settings.debugmode:
-            log_stream_handler.setLevel(logging.DEBUG)
-            self.logger.setLevel(logging.DEBUG)
-        else:
-            log_stream_handler.setLevel(logging.INFO)
-            self.logger.setLevel(logging.INFO)
-
-        # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
-        logging.getLogger('gurobipy').disabled = True
+        self.logger = logger_fcs.get_root_logger(paths=self.paths,
+                                                 settings=self.settings)
 
         self.logger.info(f'Reading scenarios from:\t{self.paths.scenarios}')
         self.logger.info(f'Reading input data from:\t{self.paths.input}')
@@ -315,7 +287,6 @@ class SimulationRun:
                     pool.starmap(self.execute_scenario,
                                  zip(self.scenario_names,
                                      itertools.repeat(log_queue),
-                                     itertools.repeat(self.trigger_scenario_status_update),
                                      itertools.repeat(status_queue),
                                      itertools.repeat(lock)))
                 status_queue.put(None)
@@ -385,23 +356,21 @@ class SimulationRun:
 
     def execute_scenario(self,
                          name: str,
-                         log_queue=None,
-                         status_update=None,
-                         status_queue=None,
-                         lock=None):
+                         log_queue: mp.Queue = None,
+                         status_queue: mp.Queue = None,
+                         lock: mp.Lock = None):
+
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
-        if status_update is None:
-            status_update = self.trigger_scenario_status_update
         try:
             Scenario(name=name,
-                     parameters=self.scenario_data[name],
                      run=self,
+                     parameters=self.scenario_data[name],
                      paths=self.paths,
                      settings=self.settings,
                      log_queue=log_queue,
                      lock=lock,
-                     status_update=status_update,
+                     status_update=self.trigger_scenario_status_update,
                      status_queue=status_queue)
         except Exception as e:
             self.trigger_scenario_status_update(queue=status_queue,
@@ -458,8 +427,22 @@ class Scenario:
 
         self.paths = paths
         self.settings = settings
-        self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
-        self.logger.propagate = False
+
+        if False:  # ToDo: activate for standalone execution of scenario
+            self.logger = logger_fcs.get_root_logger(paths=self.paths,
+                                                     settings=self.settings,
+                                                     )
+
+        elif log_queue is not None:
+            self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
+                                                                 settings=self.settings,
+                                                                 log_queue=log_queue,
+                                                                 )
+        else:
+            self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
+                                                                   settings=self.settings,
+                                                                   )
+
         self.status_update = status_update
         self.status_queue = status_queue
 
