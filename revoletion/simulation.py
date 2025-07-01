@@ -339,6 +339,22 @@ class SimulationRun:
 
             # apply same order of scenarios as in scenario input file
             joined_results = joined_results[[c for c in self.scenario_data.columns if c in joined_results.columns]]
+
+            # get results of run
+            results_run = pd.Series({key: value for key, value in self.__dict__.items()
+                                     if isinstance(value, (int, float, bool, str))})
+            # apply MultiIndex
+            results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
+                                                          names=['block', 'key'])
+
+            # convert to DataFrame and repeat for all scenarios
+            results_run = pd.DataFrame([results_run] * len(joined_results.columns)).T
+            results_run.columns = joined_results.columns
+
+            joined_results = pd.concat([results_run,
+                                        joined_results,
+                                        ])
+
             joined_results.to_csv(self.paths.summary_csv, index=True)
             joined_results.to_pickle(self.paths.summary_pkl)
             self.logger.info('Result summary file created')
@@ -764,7 +780,6 @@ class Scenario:
 
     def update_scenario_status(self,
                                status_msg: dict):
-
         if self.status_update is not None:
             status_msg.update(scenario=self.name)
             self.status_update(queue=self.status_queue,
@@ -852,20 +867,15 @@ class Scenario:
         :return: none
         """
 
-        # get results of run
-        results_run = pd.Series({key: value for key, value in self.run.__dict__.items()
-                                 if isinstance(value, (int, float, bool, str))})
-        # apply MultiIndex
-        results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
-                                                      names=['block', 'key'])
-
         # get results of scenario
         results_scenario = pd.concat([
             # get attributes of type int, float, bool and str for scenario.result_summary
             pd.Series({key: value for key, value in self.__dict__.items()
                        if isinstance(value, (int, float, bool, str))}),
             # get dict of blocks with class names
-            pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.block_registry.get('TopLevelBlock', {}).items()})),
+            pd.Series(index=['blocks'],
+                      data=str({key: value.classname
+                                for key, value in self.block_registry.get('TopLevelBlock', {}).items()})),
             # get energies dataframes results for scenario.result_summary
             utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'),
             # get economic results for scenario.result_summary
@@ -876,7 +886,8 @@ class Scenario:
                                                            names=['block', 'key'])
 
         # write results from run and scenario to result_summary
-        self.result_summary = pd.concat([results_run, results_scenario, *self.result_summary])
+        self.result_summary = pd.concat([results_scenario,
+                                         *self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(
