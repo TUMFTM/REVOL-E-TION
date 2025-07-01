@@ -21,31 +21,17 @@ from revoletion.simulation import SimulationSettings, SimulationPaths, Scenario
 class SimulationRun:
 
     def __init__(self,
-                 path_scenarios: Path,
-                 path_input: Path = None,
-                 path_output: Path = None,
-                 solver: str = 'gurobi',
-                 n_processes: int = 1,
-                 largescalemode: bool = False,
-                 debugmode: bool = False,
-                 rerun: bool | Path = False,
-                 rerun_infeasible: bool = True,
-                 key_solcast_api: str = None):
+                 paths: SimulationPaths,
+                 settings: SimulationSettings = None,
+                 ):
+
+        self.paths = paths
+        self.settings = settings if settings is not None else SimulationSettings()
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = self.runtime_len = None
 
-        self.name = path_scenarios.stem
-
-        self.settings = SimulationSettings(solver=solver,
-                                           n_processes=n_processes,
-                                           largescalemode=largescalemode,
-                                           debugmode=debugmode,
-                                           rerun=rerun,
-                                           rerun_infeasible=rerun_infeasible,
-                                           key_solcast_api=key_solcast_api,  # ToDo: find more elegant solution
-                                           )
-        del solver, n_processes, largescalemode, debugmode, rerun, rerun_infeasible, key_solcast_api
+        self.name = self.paths.scenarios.stem
 
         if not self.settings.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
@@ -53,13 +39,7 @@ class SimulationRun:
             # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
             self.runtimestamp = '_'.join(Path(self.settings.rerun).name.split('_')[:2])
 
-        self.paths = SimulationPaths(scenarios=path_scenarios,
-                                     input=path_input,
-                                     output=path_output,
-                                     )
         self.paths.basename = Path(f'{self.runtimestamp}_{self.name}')
-
-        del path_scenarios, path_input, path_output
 
         # region get version information
         self.version_solph = solph.__version__
