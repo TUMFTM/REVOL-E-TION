@@ -751,8 +751,6 @@ class Scenario:
             self.logger.error(msg=f'{str(e)} - continue on next scenario',
                               exc_info=(not isinstance(e, OptimizationError)))
 
-            self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
-
         finally:  # save results up to exception - valuable in RH strategy
 
             for block in self.block_registry.get('TopLevelBlock', {}).values():
@@ -760,8 +758,6 @@ class Scenario:
             self.aggregator.post_scenario()
 
             self.calc_meta_results()
-
-            self.save_result_summary()
 
             if not self.settings.largescalemode:
                 self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
@@ -774,6 +770,12 @@ class Scenario:
                     self.figure.show(renderer='browser')
                 except webbrowser.Error:  # webbrowser is not available on most remote machines
                     pass
+
+            self.runtime_end = time.perf_counter()
+            self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
+            self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
+
+            self.save_result_summary()
 
         logging.shutdown()
         # endregion
@@ -819,11 +821,6 @@ class Scenario:
                          f'NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} | '
                          f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
                          f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
-
-    def end_timing(self):
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
 
     def generate_plots(self):
 
