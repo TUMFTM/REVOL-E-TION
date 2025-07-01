@@ -82,6 +82,8 @@ class SimulationRun:
         }
         del cwd, to_abs_path, path_scenarios, path_input, path_output
 
+        self.settings = dict()  # ToDo: fill!
+
         self.solver = solver
         self.n_processes = n_processes
         self.largescalemode = largescalemode
@@ -271,7 +273,7 @@ class SimulationRun:
                 log_thread.join()
         else:
             for scenario_name in self.scenario_names:
-                self.execute_scenario(scenario_name)
+                self.execute_scenario(name=scenario_name)
 
         # region end runtime
         self.runtime_end = time.perf_counter()
@@ -339,9 +341,10 @@ class SimulationRun:
         # objects which cannot be pickled.
         try:
             Scenario(name=name,
-                     parameters=self.scenario_data[name],  # ToDo: move to method call
+                     parameters=self.scenario_data[name],
                      run=self,
                      paths=self.paths,
+                     settings=self.settings,
                      log_queue=log_queue,
                      lock=lock,
                      status_queue=status_queue)
