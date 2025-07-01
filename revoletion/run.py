@@ -52,9 +52,18 @@ class SimulationRun:
         # endregion
 
         # region read, copy and check scenario data
-        self.scenario_data = pd.read_csv(self.paths.scenarios,
-                                         index_col=[0, 1],
-                                         keep_default_na=False)
+        if not self.paths.scenarios.is_file():
+            raise FileNotFoundError(f'Scenario file {self.paths.scenarios} does not exist')
+        if not self.paths.scenarios.suffix == '.csv':
+            self.scenario_data = pd.read_csv(self.paths.scenarios,
+                                             index_col=[0, 1],
+                                             keep_default_na=False)
+        elif self.paths.scenarios.suffix == '.pkl':
+            self.scenario_data = pd.read_pickle(self.paths.scenarios)
+            if not isinstance(self.scenario_data, pd.DataFrame):
+                raise ValueError(f'Scenario file {self.paths.scenarios} must be a DataFrame')
+        else:
+            raise ValueError(f'Scenario file {self.paths.scenarios} must be a CSV or PKL file')
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
 

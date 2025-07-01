@@ -163,13 +163,11 @@ class Scenario:
         self.name = name
 
         if not run_execution:
-            if name is None:
-                self.name = self.paths.scenarios.stem
-                self.paths.basename = Path(self.paths.basename.stem + '_' + self.name)
+            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenarios.stem)
 
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
                                                      settings=self.settings,
-                                                     len_scn_max=len(self.name),
+                                                     len_scn_max=len('root'),
                                                      )
 
         elif log_queue is not None:
@@ -201,6 +199,9 @@ class Scenario:
 
             if len(self.parameters.columns) > 1:
                 raise ValueError('More than one scenario detected. Provide a single column CSV or PKL file.')
+
+            if self.name is None:
+                self.name = self.parameters.columns[0]
 
             self.parameters = self.parameters.iloc[:, 0]  # convert to Series
         else:
