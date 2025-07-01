@@ -37,15 +37,15 @@ def _get_logger(settings: 'SimulationSettings',
 
 
 def get_root_logger(paths: 'SimulationPaths',
-                    settings: 'SimulationSettings'):
+                    settings: 'SimulationSettings',
+                    len_scn_max: int):
 
     logger = _get_logger(settings=settings,
                          name='root')
 
     # define log formatter
     log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
-                                      # f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
-                                      f'%(name)-{10}s  '
+                                      f'%(name)-{len_scn_max}s  '
                                       f'%(message)s')
 
     # define root logger handler for console output

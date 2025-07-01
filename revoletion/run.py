@@ -61,14 +61,6 @@ class SimulationRun:
 
         del path_scenarios, path_input, path_output
 
-        # region define logger structure
-        self.logger = logger_fcs.get_root_logger(paths=self.paths,
-                                                 settings=self.settings)
-
-        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
-        sys.excepthook = self.handle_exception
-        # endregion
-
         # region get version information
         self.version_solph = solph.__version__
         self.version_revoletion = importlib.metadata.version('revoletion')
@@ -85,6 +77,17 @@ class SimulationRun:
                                          keep_default_na=False)
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
+
+        # region define logger structure
+        self.logger = logger_fcs.get_root_logger(paths=self.paths,
+                                                 settings=self.settings,
+                                                 len_scn_max=max([len(el)
+                                                                  for el
+                                                                  in list(self.scenario_names) + ["root"]]))
+
+        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
+        sys.excepthook = self.handle_exception
+        # endregion
 
         if self.settings.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
