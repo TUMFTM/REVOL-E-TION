@@ -149,6 +149,11 @@ class SimulationRun:
                  rerun_infeasible: bool = True,
                  key_solcast_api: str = None):
 
+        self.runtime_start = time.perf_counter()
+        self.runtime_end = self.runtime_len = None
+
+        self.name = path_scenarios.stem
+
         self.settings = SimulationSettings(solver=solver,
                                            n_processes=n_processes,
                                            largescalemode=largescalemode,
@@ -159,17 +164,11 @@ class SimulationRun:
                                            )
         del solver, n_processes, largescalemode, debugmode, rerun, rerun_infeasible, key_solcast_api
 
-        # region start runtime
-        self.runtime_start = time.perf_counter()
         if not self.settings.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         else:
             # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
             self.runtimestamp = '_'.join(Path(self.settings.rerun).name.split('_')[:2])
-        self.runtime_end = self.runtime_len = None
-        # endregion
-
-        self.name = path_scenarios.stem
 
         self.paths = SimulationPaths(scenarios=path_scenarios,
                                      input=path_input,
@@ -178,6 +177,14 @@ class SimulationRun:
                                      )
 
         del path_scenarios, path_input, path_output
+
+        # region define logger structure
+        self.logger = logger_fcs.get_root_logger(paths=self.paths,
+                                                 settings=self.settings)
+
+        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
+        sys.excepthook = self.handle_exception
+        # endregion
 
         # region get version information
         self.version_solph = solph.__version__
@@ -243,10 +250,6 @@ class SimulationRun:
         self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
-        # region define logger structure
-        self.logger = logger_fcs.get_root_logger(paths=self.paths,
-                                                 settings=self.settings)
-
         self.logger.info(f'Reading scenarios from:\t{self.paths.scenarios}')
         self.logger.info(f'Reading input data from:\t{self.paths.input}')
         self.logger.info(f'Writing results to:\t\t{self.paths.output}')
@@ -256,10 +259,6 @@ class SimulationRun:
         pe2 = 'es' if self.settings.n_processes > 1 else ''
         self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
                          f' with {self.settings.n_processes} process{pe2}')
-
-        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
-        sys.excepthook = self.handle_exception
-        # endregion
 
         self.execute()
 
