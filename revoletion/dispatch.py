@@ -88,7 +88,7 @@ class SiteDispatcher:
 
         for disp in self.dispatchers.values():
             disp.postprocess()
-            if not self.scenario.run.settings['largescalemode']:
+            if not self.scenario.run.settings.largescalemode:
                 disp.save_data()
 
 

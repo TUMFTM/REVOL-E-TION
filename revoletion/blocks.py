@@ -449,7 +449,7 @@ class ElectricBlock(BaseBlock):
         """
         write flows and states to scenario.result_timeseries
         """
-        if not self.scenario.run.settings['largescalemode']:
+        if not self.scenario.run.settings.largescalemode:
             # write flows and states to scenario.result_timeseries
             self.flows.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.flows.columns],
                                                            names=['block', 'key'])
@@ -900,7 +900,7 @@ class PVSource(RenewableSource):
         # region get data from Solcast API
         elif self.data_source == 'solcast api':  # solcast API example selected
             # set api key as bearer token
-            if self.scenario.run.settings['key_solcast_api'] is None:
+            if self.scenario.run.settings.key_solcast_api is None:
                 raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: '
                                  f'No Solcast API key specified in run arguments')
 
@@ -958,7 +958,7 @@ class PVSource(RenewableSource):
 
             # get data from Solcast API
             response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
-                                    headers={'Authorization': f'Bearer {self.scenario.run.settings["key_solcast_api"]}'},
+                                    headers={'Authorization': f'Bearer {self.scenario.run.settingskey_solcast_api}'},
                                     params=params)
 
             if response.status_code != 200:
@@ -968,7 +968,7 @@ class PVSource(RenewableSource):
 
             self.data = pd.json_normalize(response.json()['estimated_actuals'])
             # save solcast file
-            if not self.scenario.run.settings['largescalemode']:
+            if not self.scenario.run.settings.largescalemode:
                 self.data.to_csv(
                     self.scenario.run.paths['output'] /
                     f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_'
@@ -1081,7 +1081,7 @@ class PVSource(RenewableSource):
         self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'speed_wind', 'temp_air']]
         # endregion
 
-        if not self.scenario.run.settings['largescalemode']:
+        if not self.scenario.run.settings.largescalemode:
             self.data.to_csv(self.scenario.run.paths['output'] /
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
 
@@ -1124,7 +1124,7 @@ class WindSource(RenewableSource):
         else:
             raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
 
-        if not self.scenario.run.settings['largescalemode']:
+        if not self.scenario.run.settings.largescalemode:
             self.data.to_csv(self.scenario.run.paths['output'] /
                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_{self.scenario.name}_{self.name}_log.csv')
 
@@ -1228,7 +1228,7 @@ class FixedDemand(SinkBlock):
         else:
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
-        if not self.scenario.run.settings['largescalemode']:
+        if not self.scenario.run.settings.largescalemode:
             self.flows_apriori['demand'].to_csv(self.scenario.run.paths['output'] /
                                                 f'{self.scenario.run.runtimestamp}_{self.scenario.run.name}_'
                                                 f'{self.scenario.name}_{self.name}_flow.csv')
