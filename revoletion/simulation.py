@@ -82,15 +82,14 @@ class SimulationRun:
         }
         del cwd, to_abs_path, path_scenarios, path_input, path_output
 
-        self.settings = dict()  # ToDo: fill!
-
-        self.solver = solver
-        self.n_processes = n_processes
-        self.largescalemode = largescalemode
-        self.debugmode = debugmode
-        self.rerun = rerun
-        self.rerun_infeasible = rerun_infeasible
-        self.key_solcast_api = key_solcast_api  # todo find more elegant solution
+        self.settings = dict(solver=solver,
+                             n_processes=n_processes,
+                             largescalemode=largescalemode,
+                             debugmode=debugmode,
+                             rerun=rerun,
+                             rerun_infeasible=rerun_infeasible,
+                             key_solcast_api=key_solcast_api,  # todo find more elegant solution
+                             )
         del solver, n_processes, largescalemode, debugmode, rerun, rerun_infeasible, key_solcast_api
 
         # check whether scenario file exists and input directory is valid -> output directory is created if not existing
@@ -101,11 +100,11 @@ class SimulationRun:
 
         # region start runtime
         self.runtime_start = time.perf_counter()
-        if not self.rerun:
+        if not self.settings['rerun']:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
         else:
             # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
-            self.runtimestamp = '_'.join(Path(self.rerun).name.split('_')[:2])
+            self.runtimestamp = '_'.join(Path(self.settings['rerun']).name.split('_')[:2])
         self.runtime_end = self.runtime_len = None
         # endregion
 
@@ -150,21 +149,21 @@ class SimulationRun:
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
 
-        if self.rerun:
+        if self.settings['rerun']:
             # only run scenarios which have not been optimized successfully (or were infeasible)
             self.scenario_status = pd.read_csv(self.paths['status'],
                                                index_col=0,
                                                dtype=str,  # empty columns are interpreted as float -> avoid
                                                )
 
-            dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
+            dont_rerun = ['successful', 'infeasible'] if self.settings['rerun_infeasible'] else ['successful']
             scenarios_rerun = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
             self.scenario_names = [name for name in self.scenario_names if name in scenarios_rerun]
 
             if not self.scenario_names:
                 raise ValueError(
                     f'Parameter "--rerun" was set to {self.rerun}, but the status file contains no scenarios to rerun.\n'
-                    f'All scenarios were {"either infeasible or " if self.rerun_infeasible else ""}'
+                    f'All scenarios were {"either infeasible or " if self.settings["rerun_infeasible"] else ""}'
                     f'already completed successfully.\n'
                     f'Check {(Path(self.paths["status"].parent.name) / self.paths["status"].name)} '
                     f'for additional information.')
@@ -193,7 +192,7 @@ class SimulationRun:
         if self.scenario_num == 0:
             raise ValueError('No executable scenarios found in scenario file')
         
-        self.n_processes = min(self.n_processes, os.cpu_count(), self.scenario_num)
+        self.settings['n_processes'] = min(self.settings['n_processes'], os.cpu_count(), self.scenario_num)
         # endregion
 
         # region define logger structure
@@ -212,7 +211,7 @@ class SimulationRun:
         log_stream_handler.addFilter(OptimizationSuccessfulFilter())
         log_file_handler.addFilter(OptimizationSuccessfulFilter())
 
-        if self.debugmode:
+        if self.settings['debugmode']:
             log_stream_handler.setLevel(logging.DEBUG)
             self.logger.setLevel(logging.DEBUG)
         else:
@@ -228,9 +227,9 @@ class SimulationRun:
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
-        pe2 = 'es' if self.n_processes > 1 else ''
+        pe2 = 'es' if self.settings['n_processes'] > 1 else ''
         self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
-                         f' with {self.n_processes} process{pe2}')
+                         f' with {self.settings["n_processes"]} process{pe2}')
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
@@ -249,7 +248,7 @@ class SimulationRun:
             shutil.copyfile(self.paths['scenarios'], target)
 
     def execute(self):
-        if self.n_processes > 1:
+        if self.settings['n_processes'] > 1:
             with mp.Manager() as manager:
                 lock = manager.Lock()
 
@@ -261,7 +260,7 @@ class SimulationRun:
                 log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
                 log_thread.start()
 
-                with mp.Pool(processes=self.n_processes) as pool:
+                with mp.Pool(processes=self.settings['n_processes']) as pool:
                     pool.starmap(self.execute_scenario,
                                  zip(self.scenario_names,
                                      itertools.repeat(log_queue),
@@ -311,7 +310,7 @@ class SimulationRun:
             joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
             joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
 
-            if self.rerun and self.paths['summary_pkl'].is_file():  # only happens for infeasible scenarios
+            if self.settings['rerun'] and self.paths['summary_pkl'].is_file():  # only happens for infeasible scenarios
                 results_summary_prev = pd.read_pickle(self.paths['summary_pkl'])
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
 
@@ -722,7 +721,7 @@ class Scenario:
 
             self.save_result_summary()
 
-            if not self.run.largescalemode:
+            if not self.run.settings['largescalemode']:
                 self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
                 self.result_timeseries.to_csv(self.paths['timeseries'])
                 for msg in self.result_messages:
@@ -911,18 +910,18 @@ class PredictionHorizon:
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Building optimization problem from oemof model')
 
-        self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
+        self.model = solph.Model(self.es, debug=self.scenario.run.settings['debugmode'])
         self.constraints.apply_constraints(model=self.model)
 
-        if self.scenario.run.debugmode and self.index == 1:
+        if self.scenario.run.settings['debugmode'] and self.index == 1:
             self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
         # endregion
 
         # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
-        results = self.model.solve(solver=self.scenario.run.solver,
-                                   solve_kwargs={'tee': self.scenario.run.debugmode})
+        results = self.model.solve(solver=self.scenario.run.settings['solver'],
+                                   solve_kwargs={'tee': self.scenario.run.settings['debugmode']})
 
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
