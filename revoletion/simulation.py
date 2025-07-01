@@ -318,6 +318,7 @@ class SimulationRun:
                     pool.starmap(self.execute_scenario,
                                  zip(self.scenario_names,
                                      itertools.repeat(log_queue),
+                                     itertools.repeat(self.trigger_scenario_status_update),
                                      itertools.repeat(status_queue),
                                      itertools.repeat(lock)))
                 status_queue.put(None)
@@ -388,10 +389,13 @@ class SimulationRun:
     def execute_scenario(self,
                          name: str,
                          log_queue=None,
+                         status_update=None,
                          status_queue=None,
                          lock=None):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
+        if status_update is None:
+            status_update = self.trigger_scenario_status_update
         try:
             Scenario(name=name,
                      parameters=self.scenario_data[name],
@@ -400,6 +404,7 @@ class SimulationRun:
                      settings=self.settings,
                      log_queue=log_queue,
                      lock=lock,
+                     status_update=status_update,
                      status_queue=status_queue)
         except Exception as e:
             self.trigger_scenario_status_update(queue=status_queue,
@@ -434,6 +439,7 @@ class Scenario:
                  settings: SimulationSettings = None,
                  log_queue: mp.Queue = None,
                  lock: mp.Lock = None,
+                 status_update: SimulationRun.trigger_scenario_status_update = None,
                  status_queue: mp.Queue = None):
 
         self.name = name
@@ -457,6 +463,7 @@ class Scenario:
         self.settings = settings
         self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
         self.logger.propagate = False
+        self.status_update = status_update
         self.status_queue = status_queue
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
@@ -466,9 +473,7 @@ class Scenario:
 
         warnings.showwarning = custom_warning_handler
 
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'started'})
+        self.update_scenario_status(status_msg={'status': 'started'})
 
         # General Information --------------------------------
 
@@ -701,9 +706,7 @@ class Scenario:
 
         self.logger.debug(f'Scenario initialization completed')
 
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'fully initialized'})
+        self.update_scenario_status(status_msg={'status': 'fully initialized'})
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
@@ -733,23 +736,18 @@ class Scenario:
                 PredictionHorizon(index=horizon_index,
                                   scenario=self)
 
-                self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                        status_msg={'scenario': self.name,
-                                                                    'status': f'completed horizon '
-                                                                              f'{horizon_index + 1} out of '
-                                                                              f'{self.nhorizons}'})
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': 'successful'})
+                self.update_scenario_status(status_msg={'status': f'completed horizon '
+                                                                  f'{horizon_index + 1} out of '
+                                                                  f'{self.nhorizons}'})
+
+            self.update_scenario_status(status_msg={'status': 'successful'})
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
             status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': status,
-                                                                'exception': str(e),
-                                                                'traceback': traceback.format_exc()})
+            self.update_scenario_status(status_msg={'status': status,
+                                                    'exception': str(e),
+                                                    'traceback': traceback.format_exc()})
 
             self.logger.error(msg=f'{str(e)} - continue on next scenario',
                               exc_info=(not isinstance(e, OptimizationError)))
@@ -780,6 +778,14 @@ class Scenario:
 
         logging.shutdown()
         # endregion
+
+    def update_scenario_status(self,
+                               status_msg: dict):
+
+        if self.status_update is not None:
+            status_msg.update(scenario=self.name)
+            self.status_update(queue=self.status_queue,
+                               status_msg=status_msg)
 
     def calc_meta_results(self):
 
