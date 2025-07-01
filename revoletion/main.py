@@ -6,7 +6,7 @@ from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
 
-from revoletion import simulation as sim
+import revoletion.run
 
 
 def main():
@@ -80,16 +80,16 @@ def main():
         path_scenario = Path(args.scenario)
     # endregion
 
-    sim.SimulationRun(path_scenarios=path_scenario,
-                      path_input=None if not args.inputdir or scenarios_example else Path(args.inputdir),
-                      path_output=None if not args.outputdir or scenarios_example else Path(args.outputdir),
-                      solver=args.solver,
-                      n_processes=args.n_processes,
-                      largescalemode=args.largescalemode,
-                      debugmode=args.debugmode,
-                      rerun=args.rerun,
-                      rerun_infeasible=args.rerun_infeasible,
-                      key_solcast_api=args.key_solcast_api)
+    revoletion.run.SimulationRun(path_scenarios=path_scenario,
+                                 path_input=None if not args.inputdir or scenarios_example else Path(args.inputdir),
+                                 path_output=None if not args.outputdir or scenarios_example else Path(args.outputdir),
+                                 solver=args.solver,
+                                 n_processes=args.n_processes,
+                                 largescalemode=args.largescalemode,
+                                 debugmode=args.debugmode,
+                                 rerun=args.rerun,
+                                 rerun_infeasible=args.rerun_infeasible,
+                                 key_solcast_api=args.key_solcast_api)
 
 
 if __name__ == '__main__':
