@@ -262,7 +262,6 @@ class SimulationRun:
         # objects which cannot be pickled.
         try:
             Scenario(name=name,
-                     run=self,
                      parameters=self.scenario_data[name],
                      paths=self.paths,
                      settings=self.settings,

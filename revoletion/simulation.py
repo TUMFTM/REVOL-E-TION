@@ -129,7 +129,6 @@ class Scenario:
     def __init__(self,
                  name: str,
                  parameters: pd.Series | str,
-                 run: 'SimulationRun',
                  paths: SimulationPaths = None,
                  settings: SimulationSettings = None,
                  log_queue: mp.Queue = None,
@@ -138,7 +137,6 @@ class Scenario:
                  status_queue: mp.Queue = None):
 
         self.name = name
-        self.run = run
 
         if isinstance(parameters, pd.Series):
             self.parameters = parameters
