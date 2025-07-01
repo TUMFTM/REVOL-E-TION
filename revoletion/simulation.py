@@ -289,9 +289,6 @@ class SimulationRun:
         sys.excepthook = self.handle_exception
         # endregion
 
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
-
         self.execute()
 
     def copy_scenario_file(self):
@@ -476,6 +473,9 @@ class Scenario:
         self.update_scenario_status(status_msg={'status': 'started'})
 
         # General Information --------------------------------
+
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
@@ -711,7 +711,7 @@ class Scenario:
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
         # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
-        #                 (fleet.mode_scheduling in self.run.apriori_lvls)
+        #                 (fleet.mode_scheduling in self.apriori_lvls)
         #                 and fleet.mode_scheduling != 'uc'
         #                 and not fleet.power_lim_static]:
         #     if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
@@ -853,11 +853,11 @@ class Scenario:
 
         if self.strategy == 'go':
             self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.run.name} - '
+                                            f'{self.paths.basename} - '
                                             f'Scenario: {self.name}')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.run.name} - '
+                                            f'{self.paths.basename} - '
                                             f'Scenario: {self.name} - '
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')

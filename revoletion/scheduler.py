@@ -222,7 +222,7 @@ class AprioriFleet:
                                                       scheduler=self.scheduler)
                             for fu_name, fu_block in self.scenario.block_registry['ElectricFleetUnit'].items()
                             if (fu_block.parent.parent==self.block and
-                                fu_block.mode_scheduling in self.scenario.run.apriori_lvls)}
+                                fu_block.mode_scheduling in self.scenario.apriori_lvls)}
 
         self.fu_uc = {fu_name: fu_block
                       for fu_name, fu_block in self.fleet_units.items()
@@ -230,7 +230,7 @@ class AprioriFleet:
 
         self.fu_stat = {fu_name: fu_block
                         for fu_name, fu_block in self.fleet_units.items()
-                        if fu_block.block.mode_scheduling in self.scenario.run.apriori_lvls and
+                        if fu_block.block.mode_scheduling in self.scenario.apriori_lvls and
                         fu_block.block.mode_scheduling != 'uc' and
                         self.lm == 'stat'}
 
@@ -239,7 +239,7 @@ class AprioriFleet:
 
         self.fu_dyn = {fu_name: fu_block
                        for fu_name, fu_block in self.fleet_units.items()
-                       if fu_block.block.mode_scheduling in self.scenario.run.apriori_lvls and
+                       if fu_block.block.mode_scheduling in self.scenario.apriori_lvls and
                        fu_block.block.mode_scheduling != 'uc' and
                        self.lm == 'dyn'}
 

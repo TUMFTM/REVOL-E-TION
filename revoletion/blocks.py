@@ -2122,7 +2122,7 @@ class SubFleet(NonElectricBlock):
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
-        if params.get('mode_scheduling') in scenario.run.apriori_lvls:  # mode scheduling attr is in FleetUnit
+        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
 
         if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
@@ -2239,11 +2239,11 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
         FleetUnit.__init__(self=self)
 
-        self.apriori = True if self.mode_scheduling in self.scenario.run.apriori_lvls else False
+        self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
-        if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.run.apriori_lvls:
+        if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.apriori_lvls:
             raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
-                             f'implemented for a priori integration levels: {self.scenario.run.apriori_lvls}')
+                             f'implemented for a priori integration levels: {self.scenario.apriori_lvls}')
 
     def initialize_efficiencies(self):
         self.eff['chg_int'] = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
