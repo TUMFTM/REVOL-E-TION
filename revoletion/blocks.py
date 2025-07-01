@@ -2439,7 +2439,11 @@ class Heatpump(SinkBlock):
     @staticmethod
     def get_init_definitions():
         return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('crev', 'spec'): 'crev_spec',
+                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
+                                               ('capex', 'spec'): 'capex_spec',
+                                               ('mntex', 'spec'): 'mntex_spec',
+                                               ('opex', 'spec'): 'opex_spec',
+                                               ('crev', 'spec'): 'crev_spec',
                                                ('flow', 'name'): 'in'}}
                           },
                     state_names=[])
@@ -2453,12 +2457,15 @@ class Heatpump(SinkBlock):
                          params=None,
                          parent=scenario)
 
+        self.analyzer = hp.Heatpump_COPanalyzer()
+        self.cop_array = self.analyzer.run_full_analysis()
         self.get_flow_heatpump_apriori()
+
 
     def get_flow_heatpump_apriori(self):
         try:
-            outdoor_temp = self.scenario.temp_air['temp_air']
+            input_data = self.scenario.temp_air['temp_air']
         except (AttributeError, KeyError):
             raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
 
-
+        input_data['Heat load (kW)'] = (0.5*(15-input_data['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K

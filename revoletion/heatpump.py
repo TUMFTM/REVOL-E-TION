@@ -4,6 +4,8 @@ from tespy.networks import Network
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.interpolate import interp1d
+
 
 class Heatpump_COPanalyzer:
     def __init__(self, wf="R290", target_cop=4.9, T_W35=35, T_A7=7, T_spread=5):
@@ -81,11 +83,6 @@ class Heatpump_COPanalyzer:
         self.results = results
         return results
 
-    def get_cop_array(self):
-        if self.results is None:
-            raise ValueError("Run calculate_cop first.")
-        return self.results["COP"].values
-
     def analyze_cop(self, temperature_range=np.arange(-10, 21)):
         self.temperature_range = temperature_range
         results = pd.DataFrame(index=temperature_range, columns=["COP", "COP_carnot"])
@@ -103,7 +100,25 @@ class Heatpump_COPanalyzer:
     def get_cop_array(self):
         if self.results is None:
             raise ValueError("Run analyze_cop first.")
+
+        coarse_temps = self.results.index.values
+        coarse_cops = self.results["COP"].values
+
+        temp_start, temp_stop = coarse_temps.min(), coarse_temps.max()
+        fine_temps = np.round(np.arange(temp_start, temp_stop + 0.01, 0.01), 2)
+
+        interp_func = interp1d(coarse_temps, coarse_cops, kind="linear", fill_value="extrapolate")
+        fine_cops = np.round(interp_func(fine_temps), 2)
+
+        self.results = pd.DataFrame(data={"COP": fine_cops}, index=fine_temps)
+
         return self.results["COP"].values
+
+    def run_full_analysis(self, temperature_range=np.arange(-10, 21)):
+        self.build_heatpump()
+        self.cop_optimization()
+        self.analyze_cop(temperature_range)
+        return self.get_cop_array()
 
     def plot_results(self, T_for_eta=7, save_path=None):
         if self.results is None:
