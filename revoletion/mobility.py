@@ -40,8 +40,8 @@ class SubFleetDemand:
         read a usecase definition csv file and perform neccessary normalization for each timeframe.
         """
 
-        usecase_path = self.scenario.run.paths['input'] / utils.set_extension(filename=self.subfleet.filename,
-                                                                              default_extension='.csv')
+        usecase_path = self.scenario.paths.input / utils.set_extension(filename=self.subfleet.filename,
+                                                                       default_extension='.csv')
 
         self.usecases = pd.read_csv(usecase_path,
                                     header=[0,1],
@@ -68,13 +68,13 @@ class SubFleetDemand:
         if self.subfleet.filename_mapper is None:
             raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
                              f'Please check the subfleet definition in the scenario file.')
-        if not (self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py').is_file():
+        if not (self.scenario.paths.input / f'{self.subfleet.filename_mapper}.py').is_file():
             raise FileNotFoundError(f'Mapper file {self.subfleet.filename_mapper}.py not found in input path. '
                                     f'Please check the subfleet definition in the scenario file.')
 
         self.mapper_timeframe = utils.import_module_from_path(
             module_name=self.subfleet.filename_mapper,
-            file_path=self.scenario.run.paths['input'] / f'{self.subfleet.filename_mapper}.py')
+            file_path=self.scenario.paths.input / f'{self.subfleet.filename_mapper}.py')
 
         # region sample daily total demand from timeframe mapper and lognormal distribution
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim.date)))
@@ -182,13 +182,10 @@ class SubFleetDemand:
         # endregion
 
         # region save results
-        if not self.scenario.run.settings.largescalemode:
-            demand_path = (self.scenario.run.paths['output'] /
-                           f'{self.scenario.run.runtimestamp}_'
-                           f'{self.scenario.run.name}_'
-                           f'{self.scenario.name}_'
-                           f'{self.subfleet.name}_'
-                           f'demand.csv')
+        if not self.scenario.settings.largescalemode:
+            demand_path = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
+                                                                        f'{self.subfleet.name}_'
+                                                                        f'demand.csv')
             self.demand.to_csv(demand_path)
         # endregion
 
@@ -196,7 +193,7 @@ class SubFleetDemand:
         """
         read in a subfleet demand csv file directly
         """
-        self.demand = pd.read_csv((self.scenario.run.paths['input'] /
+        self.demand = pd.read_csv((self.scenario.paths.input /
                                    utils.set_extension(filename=self.subfleet.filename,
                                                        default_extension='.csv')),
                                   index_col=0)

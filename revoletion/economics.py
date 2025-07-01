@@ -114,7 +114,7 @@ def transform_scalar_var(value, scenario, block=None):
         filename = utils.set_extension(filename=value,
                                        default_extension='.csv')
 
-        df = utils.read_timeseries_csv(path_input_file=scenario.run.paths['input'] / filename,
+        df = utils.read_timeseries_csv(path_input_file=scenario.paths.input / filename,
                                        block=block,
                                        scenario=scenario,
                                        multiheader=False,
