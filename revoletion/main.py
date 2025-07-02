@@ -8,16 +8,13 @@ import tkinter.filedialog
 
 from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
-
+from .utils import infer_dtype
 
 def main():
 
     parser = argparse.ArgumentParser()
 
     settings_template = SimulationSettings()  # use this to only define default values once in SimulationSettings
-
-    def str2bool(value: str) -> bool:
-        return value.lower() in ['true', '1', 't', 'y', 'yes']
 
     parser.add_argument('-scn', '--scenario',
                         type=str,
@@ -32,7 +29,7 @@ def main():
                         default=None,
                         help='Path to the results directory')
     parser.add_argument('-msc', '--multiscenario',
-                        type=str2bool,
+                        type=infer_dtype,
                         default=True,
                         help='Combine multiple scenarios in a single run.')
     parser.add_argument('-slv', '--solver',
@@ -44,12 +41,12 @@ def main():
                         default=settings_template.n_processes,
                         help='Number of processes (i.e. cores) to use in parallel operation')
     parser.add_argument('-ls', '--largescalemode',
-                        type=str2bool,
+                        type=infer_dtype,
                         default=settings_template.largescalemode,
                         help='Omit detailed output data (generated input timeseries, system graphs, '
                              'result timeseries, and timeseries plots)')
     parser.add_argument('-db', '--debugmode',
-                        type=str2bool,
+                        type=infer_dtype,
                         default=settings_template.debugmode,
                         help='Generate debug output and dump .lp model file for external solving')
     parser.add_argument('-rer', '--rerun',
@@ -57,7 +54,7 @@ def main():
                         default=settings_template.rerun,
                         help='Directory name of run including failed scenarios which should be rerun')
     parser.add_argument('-rin', '--rerun_infeasible',
-                        type=str2bool,
+                        type=infer_dtype,
                         default=settings_template.rerun_infeasible,
                         help='Rerun infeasible or unbounded scenarios')
     parser.add_argument('-ksc', '--key_solcast_api',
