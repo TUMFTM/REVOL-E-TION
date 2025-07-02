@@ -2486,9 +2486,9 @@ class Heatpump(SinkBlock):
         x denotes the flow measurement point in results
 
         bus_connected
-        |
-        |-x->name_snk
-        |
+            |
+            |-x->name_snk
+            |
         """
 
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
