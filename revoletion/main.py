@@ -64,6 +64,14 @@ def main():
 
     args = parser.parse_args()
 
+    if not isinstance(args.multiscenario, bool):
+        raise ValueError(f'Argument --multiscenario must be a boolean value, got {args.multiscenario} of type {type(args.multiscenario)}')
+    if not isinstance(args.largescalemode, bool):
+        raise ValueError(f'Argument --largescalemode must be a boolean value, got {args.largescalemode} of type {type(args.largescalemode)}')
+    if not isinstance(args.debugmode, bool):
+        raise ValueError(f'Argument --debugmode must be a boolean value, got {args.debugmode} of type {type(args.debugmode)}')
+    if not isinstance(args.rerun_infeasible, bool):
+        raise ValueError(f'Argument --rerun_infeasible must be a boolean value, got {args.rerun_infeasible} of type {type(args.rerun_infeasible)}')
 
     # region interpret scenario file path
     scenarios_example = False
