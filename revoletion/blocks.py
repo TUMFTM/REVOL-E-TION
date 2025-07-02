@@ -3,7 +3,6 @@
 import ast
 import numpy as np
 import oemof.solph as solph
-import os
 import pandas as pd
 import plotly.graph_objects as go
 import pvlib
