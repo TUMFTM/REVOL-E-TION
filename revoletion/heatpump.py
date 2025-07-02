@@ -114,10 +114,10 @@ class Heatpump_COPanalyzer:
 
         return self.results["COP"].values
 
-    def run_full_analysis(self, temperature_range=np.arange(-10, 21)):
+    def run_full_analysis(self):
         self.build_heatpump()
         self.cop_optimization()
-        self.analyze_cop(temperature_range)
+        self.analyze_cop()
         return self.get_cop_array()
 
     def plot_results(self, T_for_eta=7, save_path=None):

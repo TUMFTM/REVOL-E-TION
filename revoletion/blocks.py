@@ -2459,13 +2459,52 @@ class Heatpump(SinkBlock):
 
         self.analyzer = hp.Heatpump_COPanalyzer()
         self.cop_array = self.analyzer.run_full_analysis()
-        self.get_flow_heatpump_apriori()
 
+        temps = np.round(np.arange(-10, 20.01, 0.01), 2)
+        cop_series = pd.Series(self.cop_array, index=temps)
+
+        self.get_flow_heatpump_apriori()
 
     def get_flow_heatpump_apriori(self):
         try:
-            input_data = self.scenario.temp_air['temp_air']
+            self.flow_heatpump = self.scenario.temp_air.copy()
         except (AttributeError, KeyError):
             raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
 
-        input_data['Heat load (kW)'] = (0.5*(15-input_data['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K
+        self.flow_heatpump['Heat load (kW)'] = (0.5*(15-self.flow_heatpump['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K
+
+        self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array) ###ggf. hier cop series verwenden
+
+        self.flow_heatpump['Power input (kW)'] = self.flow_heatpump['Heat load (kW)'] / self.flow_heatpump['COP']
+        self.flow_heatpump['demand_heatpump'] = self.flow_heatpump['demand_heatpump'].fillna(0)
+
+    def define_oemof_components(self,
+                                horizon: 'PredictionHorizon',
+                                params: dict = None):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+        bus_connected
+        |
+        |-x->name_snk
+        |
+        """
+
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+
+        self.components['snk'] = self.components.Sink(
+            inputs={self.bus_connected: solph.Flow(nominal_capacity=1,
+                                                  fix=self.flow_heatpump['demand_heatpump'][horizon.dti_ph])}
+        )
+
+    def get_horizon_results(self,
+                            horizon: 'PredictionHorizon'):
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+
+    def get_legend_entry(self):
+        return f'{self.name} power'
+
+
+
