@@ -170,7 +170,7 @@ To run the provided example project, execute the following command in the termin
 python -m revoletion.main -scn example
 ```
 
-### 2. Running REVOL-E-TION as module
+### 2. Running REVOL-E-TION in Python
 REVOL-E-TION can also be used as a module in your own code.
 ```python
 import revoletion
