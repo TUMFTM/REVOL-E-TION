@@ -13,10 +13,10 @@ import windpowerlib
 
 from abc import ABC, abstractmethod
 
-from revoletion import battery as bat
-from revoletion import economics as eco
-from revoletion import mobility
-from revoletion import utils
+from . import battery as bat
+from . import economics as eco
+from . import mobility
+from . import utils
 
 
 class BlockScenarioInterface(ABC):

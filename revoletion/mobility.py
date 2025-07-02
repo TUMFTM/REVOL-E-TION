@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import os
 import pandas as pd
 import scipy as sp
 
-import revoletion.utils as utils
+from . import utils
 
 
 def lognormal_params(mean: float,

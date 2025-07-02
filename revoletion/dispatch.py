@@ -7,8 +7,7 @@ import numpy as np
 import pandas as pd
 import simpy
 
-from revoletion import blocks
-from revoletion import utils
+from . import blocks
 
 
 class MultiStoreGet(simpy.resources.base.Get):
@@ -471,7 +470,7 @@ class SubFleetDispatcher:
 class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
-                 subfleet: 'blocks.VehicleFleet',
+                 subfleet: blocks.SubFleet,
                  parent: SiteDispatcher,
                  scenario: 'simulation.Scenario'):
 

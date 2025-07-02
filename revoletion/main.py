@@ -6,8 +6,8 @@ from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
 
-from revoletion.run import SimulationRun
-from revoletion.simulation import Scenario, SimulationPaths, SimulationSettings
+from .run import SimulationRun
+from .simulation import Scenario, SimulationPaths, SimulationSettings
 
 
 def main():

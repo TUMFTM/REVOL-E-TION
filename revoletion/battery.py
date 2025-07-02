@@ -7,9 +7,6 @@ import pandas as pd
 import rainflow
 import scipy.interpolate as spip
 
-from revoletion import blocks
-from revoletion import utils
-
 
 class BatteryPackModel:
 

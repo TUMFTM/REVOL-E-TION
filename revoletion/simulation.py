@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import webbrowser
 
 from dataclasses import dataclass, field
 import geopy
@@ -14,10 +13,10 @@ import plotly.subplots
 import pprint
 import pytz
 import time
-
 import timezonefinder
 import traceback
 import warnings
+import webbrowser
 
 import multiprocessing as mp
 import numpy_financial as npf
@@ -25,13 +24,13 @@ import oemof.solph as solph
 import pandas as pd
 import pyomo.environ as po
 
-from revoletion import blocks
-from revoletion import constraints
-from revoletion import dispatch
-from revoletion import economics as eco
-from revoletion import logger as logger_fcs
-from revoletion import scheduler
-from revoletion import utils
+from . import blocks
+from . import constraints
+from . import dispatch
+from . import economics as eco
+from . import logger as logger_fcs
+from . import scheduler
+from . import utils
 
 
 class OptimizationError(Exception):

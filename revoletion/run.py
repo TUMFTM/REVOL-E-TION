@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import importlib.metadata
 import itertools
 import multiprocessing as mp
@@ -13,20 +15,20 @@ from pathlib import Path
 import pandas as pd
 from oemof import solph as solph
 
-from revoletion import logger as logger_fcs
-from revoletion import utils
-from revoletion.simulation import SimulationSettings, SimulationPaths, Scenario
+from . import logger as logger_fcs
+from . import utils
+from . import simulation
 
 
 class SimulationRun:
 
     def __init__(self,
-                 paths: SimulationPaths,
-                 settings: SimulationSettings = None,
+                 paths: simulation.SimulationPaths,
+                 settings: simulation.SimulationSettings = None,
                  ):
 
         self.paths = paths
-        self.settings = settings if settings is not None else SimulationSettings()
+        self.settings = settings if settings is not None else simulation.SimulationSettings()
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = self.runtime_len = None
@@ -253,15 +255,15 @@ class SimulationRun:
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
         try:
-            Scenario(paths=self.paths,
-                     settings=self.settings,
-                     run_execution=True,
-                     name=name,
-                     parameters=self.scenario_data[name],
-                     log_queue=log_queue,
-                     lock=lock,
-                     status_update=self.trigger_scenario_status_update,
-                     status_queue=status_queue)
+            simulation.Scenario(paths=self.paths,
+                                settings=self.settings,
+                                run_execution=True,
+                                name=name,
+                                parameters=self.scenario_data[name],
+                                log_queue=log_queue,
+                                lock=lock,
+                                status_update=self.trigger_scenario_status_update,
+                                status_queue=status_queue)
         except Exception as e:
             self.trigger_scenario_status_update(queue=status_queue,
                                                 status_msg={'scenario': name,
