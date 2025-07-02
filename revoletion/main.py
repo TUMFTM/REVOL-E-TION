@@ -23,11 +23,11 @@ def main():
                         type=str,
                         default=None,
                         help='Path to the scenario CSV file')
-    parser.add_argument('-in', '--inputdir',
+    parser.add_argument('-in', '--input',
                         type=str,
                         default=None,
                         help='Path to the input data directory')
-    parser.add_argument('-out', '--outputdir',
+    parser.add_argument('-out', '--output',
                         type=str,
                         default=None,
                         help='Path to the results directory')
@@ -98,9 +98,9 @@ def main():
                                   rerun_infeasible=args.rerun_infeasible,
                                   key_solcast_api=args.key_solcast_api)
 
-    paths = SimulationPaths(scenarios=path_scenario,
-                            input=None if not args.inputdir or scenarios_example else Path(args.inputdir),
-                            output=None if not args.outputdir or scenarios_example else Path(args.outputdir),
+    paths = SimulationPaths(scenario=path_scenario,
+                            input=None if not args.input or scenarios_example else Path(args.input),
+                            output=None if not args.output or scenarios_example else Path(args.output),
                             )
 
     if args.multiscenario:

@@ -118,6 +118,7 @@ If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi an
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
+### 1. Running REVOL-E-TION as package
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
 1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
@@ -140,8 +141,8 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 | Argument                        | Short form | Long form          | Default value                                                                | Description                                                                                                                                                                                                                           | Valid input                                                                                                                                    |
 |---------------------------------|------------|--------------------|------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
 | Scenario file path (mandatory)  | -scn       | --scenario         |                                                                              | File path to scenario file. If 'example' is provided, the example project included in REVOL-E-TION is executed and ```--inputdir``` is neglected. If not provided, a graphical selection dialog opens automatically to select a file. | string with path (absolute or relative to current working directory) of scenario file or 'example'                                             |
-| Input directory path            | -in        | --inputdir         | Directory of the scenario file provided in ```--scenario```                  | Directory path to input data files.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
-| Output directory path           | -out       | --outputdir        | Directory "results" in the current working directory (created automatically) | Directory path to save output data.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
+| Input directory path            | -in        | --input            | Directory of the scenario file provided in ```--scenario```                  | Directory path to input data files.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
+| Output directory path           | -out       | --output           | Directory "results" in the current working directory (created automatically) | Directory path to save output data.                                                                                                                                                                                                   | string with directory path (absolute or relative to current working directory)                                                                 |
 | Multiple scenario run           | -msc       | --multiscenario    | True                                                                         | Combine multiple scenarios in a single run. If set to False, this requires the scenario file to only contain one scenario.                                                                                                            | True, False                                                                                                                                    |
 | Solver                          | -slv       | --solver           | 'gurobi'                                                                     | Solver to be used for optimization.                                                                                                                                                                                                   | string containing lowercase name of pyomo compatible solver to be used                                                                         |
 | Number of Processes             | -np        | --n_processes      | 1                                                                            | Number of parallel processed (i.e. cores) scenarios.                                                                                                                                                                                  | integer, is limited to maximum thread count of CPU automatically                                                                               |
@@ -167,6 +168,32 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 To run the provided example project, execute the following command in the terminal:
 ```bash
 python -m revoletion.main -scn example
+```
+
+### 2. Running REVOL-E-TION as module
+REVOL-E-TION can also be used as a module in your own code.
+```python
+import revoletion
+
+# specify the simulation's settings (optional); arguments are the same the long form of command line arguments:
+# solver, n_processes, largescale, debugmode, rerun, rerun_infeasible, key_solcast_api
+settings = revoletion.SimulationSettings()
+
+# specify the relevant paths
+paths = revoletion.SimulationPaths(scenario='path/to/your/scenario.csv',  # this is the only required parameter
+                                   input='path/to/your/input/dir',  # same logic as --input argument 
+                                   output='path/to/your/output/dir',  # same logic as --output argument
+                                   )
+
+# run a single scenario in standalone mode (equals --multiscenario False)
+revoletion.Scenario(paths=paths,
+                    settings=settings,  # optional, defaults to SimulationSettings()
+                    )
+
+# run a scenario file with multiple scenarios (equals --multiscenario True)
+revoletion.SimulationRun(paths=paths,
+                         settings=settings,  # optional, defaults to SimulationSettings()
+                         )
 ```
 
 

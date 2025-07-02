@@ -39,9 +39,9 @@ class OptimizationError(Exception):
 
 @dataclass
 class SimulationPaths:
-    scenarios: Path
-    input: Path = None
-    output: Path = None
+    scenario: Path | str
+    input: Path | str = None
+    output: Path | str = None
 
     _basename: Path = field(default_factory=lambda: Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S')),
                             init=True
@@ -55,22 +55,27 @@ class SimulationPaths:
                        )
 
     def __post_init__(self):
+        self.scenario = Path(self.scenario)
         if self.input is None:
-            self.input = self.scenarios.parent
+            self.input = self.scenario.parent
+        else:
+            self.input = Path(self.input)
         if self.output is None:
             self.output = self._cwd / 'results'
+        else:
+            self.output = Path(self.output)
         self.output = self.output / self.basename
 
         # ensure all paths are absolute
-        self.scenarios = self.scenarios.resolve()
+        self.scenario = self.scenario.resolve()
         self.input = self.input.resolve()
         self.output = self.output.resolve()
         self._revoletion = self._revoletion.resolve()
         self._cwd = self._cwd.resolve()
 
         # ensure that all paths exist
-        if not self.scenarios.is_file():
-            raise FileNotFoundError(f'Scenario file not found: {self.scenarios}')
+        if not self.scenario.is_file():
+            raise FileNotFoundError(f'Scenario file not found: {self.scenario}')
         if not self.input.is_dir():
             raise NotADirectoryError(f'Input directory path not interpretable: {self.input}')
         self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
@@ -162,7 +167,7 @@ class Scenario:
         self.name = name
 
         if not run_execution:
-            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenarios.stem)
+            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)
 
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
                                                      settings=self.settings,
@@ -185,14 +190,14 @@ class Scenario:
         if isinstance(parameters, pd.Series):
             self.parameters = parameters
         # check whether file exists
-        elif self.paths.scenarios.is_file():
-            if self.paths.scenarios.suffix == '.csv':
-                self.parameters = pd.read_csv(self.paths.scenarios,
+        elif self.paths.scenario.is_file():
+            if self.paths.scenario.suffix == '.csv':
+                self.parameters = pd.read_csv(self.paths.scenario,
                                               index_col=[0, 1],
                                               keep_default_na=False)
                 self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
-            elif self.paths.scenarios.suffix == '.pkl':
-                self.parameters = pd.read_pickle(self.paths.scenarios)
+            elif self.paths.scenario.suffix == '.pkl':
+                self.parameters = pd.read_pickle(self.paths.scenario)
             else:
                 raise ValueError('Scenario file specified in SimulationPaths object is neither CSV nor PKL file.')
 
@@ -204,7 +209,7 @@ class Scenario:
 
             self.parameters = self.parameters.iloc[:, 0]  # convert to Series
         else:
-            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenarios}')
+            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenario}')
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations

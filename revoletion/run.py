@@ -33,7 +33,7 @@ class SimulationRun:
         self.runtime_start = time.perf_counter()
         self.runtime_end = self.runtime_len = None
 
-        self.name = self.paths.scenarios.stem
+        self.name = self.paths.scenario.stem
 
         if not self.settings.rerun:
             self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
@@ -54,18 +54,18 @@ class SimulationRun:
         # endregion
 
         # region read, copy and check scenario data
-        if not self.paths.scenarios.is_file():
-            raise FileNotFoundError(f'Scenario file {self.paths.scenarios} does not exist')
-        if self.paths.scenarios.suffix == '.csv':
-            self.scenario_data = pd.read_csv(self.paths.scenarios,
+        if not self.paths.scenario.is_file():
+            raise FileNotFoundError(f'Scenario file {self.paths.scenario} does not exist')
+        if self.paths.scenario.suffix == '.csv':
+            self.scenario_data = pd.read_csv(self.paths.scenario,
                                              index_col=[0, 1],
                                              keep_default_na=False)
-        elif self.paths.scenarios.suffix == '.pkl':
-            self.scenario_data = pd.read_pickle(self.paths.scenarios)
+        elif self.paths.scenario.suffix == '.pkl':
+            self.scenario_data = pd.read_pickle(self.paths.scenario)
             if not isinstance(self.scenario_data, pd.DataFrame):
-                raise ValueError(f'Scenario file {self.paths.scenarios} must be a DataFrame')
+                raise ValueError(f'Scenario file {self.paths.scenario} must be a DataFrame')
         else:
-            raise ValueError(f'Scenario file {self.paths.scenarios} must be a CSV or PKL file')
+            raise ValueError(f'Scenario file {self.paths.scenario} must be a CSV or PKL file')
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
 
@@ -127,7 +127,7 @@ class SimulationRun:
         self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
-        self.logger.info(f'Reading scenarios from:\t{self.paths.scenarios}')
+        self.logger.info(f'Reading scenarios from:\t{self.paths.scenario}')
         self.logger.info(f'Reading input data from:\t{self.paths.input}')
         self.logger.info(f'Writing results to:\t\t{self.paths.output}')
 
@@ -142,9 +142,9 @@ class SimulationRun:
     def copy_scenario_file(self):
         target = self.paths.output / f'{self.name}.csv'
         try:  # with metadata
-            shutil.copy2(self.paths.scenarios, target)
+            shutil.copy2(self.paths.scenario, target)
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
-            shutil.copyfile(self.paths.scenarios, target)
+            shutil.copyfile(self.paths.scenario, target)
 
     def execute(self):
         if self.settings.n_processes > 1:
