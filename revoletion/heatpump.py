@@ -101,8 +101,8 @@ class Heatpump_COPanalyzer:
         if self.results is None:
             raise ValueError("Run analyze_cop first.")
 
-        coarse_temps = self.results.index.values
-        coarse_cops = self.results["COP"].values
+        coarse_temps = self.results.index
+        coarse_cops = self.results["COP"]
 
         temp_start, temp_stop = coarse_temps.min(), coarse_temps.max()
         fine_temps = np.round(np.arange(temp_start, temp_stop + 0.01, 0.01), 2)
@@ -112,7 +112,7 @@ class Heatpump_COPanalyzer:
 
         self.results = pd.DataFrame(data={"COP": fine_cops}, index=fine_temps)
 
-        return self.results["COP"].values
+        return self.results["COP"]
 
     def run_full_analysis(self):
         self.build_heatpump()
