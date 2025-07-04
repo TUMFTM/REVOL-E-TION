@@ -6,57 +6,72 @@ from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
 
-from revoletion import simulation as sim
-
+from .run import SimulationRun
+from .simulation import Scenario, SimulationPaths, SimulationSettings
+from .utils import infer_dtype
 
 def main():
 
     parser = argparse.ArgumentParser()
 
+    settings_template = SimulationSettings()  # use this to only define default values once in SimulationSettings
+
     parser.add_argument('-scn', '--scenario',
                         type=str,
                         default=None,
                         help='Path to the scenario CSV file')
-    parser.add_argument('-in', '--inputdir',
+    parser.add_argument('-in', '--input',
                         type=str,
                         default=None,
                         help='Path to the input data directory')
-    parser.add_argument('-out', '--outputdir',
+    parser.add_argument('-out', '--output',
                         type=str,
                         default=None,
                         help='Path to the results directory')
+    parser.add_argument('-msc', '--multiscenario',
+                        type=infer_dtype,
+                        default=True,
+                        help='Combine multiple scenarios in a single run.')
     parser.add_argument('-slv', '--solver',
                         type=str,
-                        default='gurobi',
+                        default=settings_template.solver,
                         help='Pyomo compatible solver to be used for the optimization problem.')
     parser.add_argument('-np', '--n_processes',
                         type=int,
-                        default=1,
+                        default=settings_template.n_processes,
                         help='Number of processes (i.e. cores) to use in parallel operation')
     parser.add_argument('-ls', '--largescalemode',
-                        type=bool,
-                        default=False,
+                        type=infer_dtype,
+                        default=settings_template.largescalemode,
                         help='Omit detailed output data (generated input timeseries, system graphs, '
                              'result timeseries, and timeseries plots)')
     parser.add_argument('-db', '--debugmode',
-                        type=bool,
-                        default=False,
+                        type=infer_dtype,
+                        default=settings_template.debugmode,
                         help='Generate debug output and dump .lp model file for external solving')
     parser.add_argument('-rer', '--rerun',
                         type=str,
-                        default=False,
+                        default=settings_template.rerun,
                         help='Directory name of run including failed scenarios which should be rerun')
     parser.add_argument('-rin', '--rerun_infeasible',
-                        type=str,
-                        default=True,
+                        type=infer_dtype,
+                        default=settings_template.rerun_infeasible,
                         help='Rerun infeasible or unbounded scenarios')
     parser.add_argument('-ksc', '--key_solcast_api',
                         type=str,
-                        default=None,
+                        default=settings_template.key_solcast_api,
                         help='API key for Solcast API')
 
     args = parser.parse_args()
 
+    if not isinstance(args.multiscenario, bool):
+        raise ValueError(f'Argument --multiscenario must be a boolean value, got {args.multiscenario} of type {type(args.multiscenario)}')
+    if not isinstance(args.largescalemode, bool):
+        raise ValueError(f'Argument --largescalemode must be a boolean value, got {args.largescalemode} of type {type(args.largescalemode)}')
+    if not isinstance(args.debugmode, bool):
+        raise ValueError(f'Argument --debugmode must be a boolean value, got {args.debugmode} of type {type(args.debugmode)}')
+    if not isinstance(args.rerun_infeasible, bool):
+        raise ValueError(f'Argument --rerun_infeasible must be a boolean value, got {args.rerun_infeasible} of type {type(args.rerun_infeasible)}')
 
     # region interpret scenario file path
     scenarios_example = False
@@ -80,16 +95,25 @@ def main():
         path_scenario = Path(args.scenario)
     # endregion
 
-    sim.SimulationRun(path_scenarios=path_scenario,
-                      path_input=None if not args.inputdir or scenarios_example else Path(args.inputdir),
-                      path_output=None if not args.outputdir or scenarios_example else Path(args.outputdir),
-                      solver=args.solver,
-                      n_processes=args.n_processes,
-                      largescalemode=args.largescalemode,
-                      debugmode=args.debugmode,
-                      rerun=args.rerun,
-                      rerun_infeasible=args.rerun_infeasible,
-                      key_solcast_api=args.key_solcast_api)
+    settings = SimulationSettings(solver=args.solver,
+                                  n_processes=args.n_processes,
+                                  largescalemode=args.largescalemode,
+                                  debugmode=args.debugmode,
+                                  rerun=args.rerun,
+                                  rerun_infeasible=args.rerun_infeasible,
+                                  key_solcast_api=args.key_solcast_api)
+
+    paths = SimulationPaths(scenario=path_scenario,
+                            input=None if not args.input or scenarios_example else Path(args.input),
+                            output=None if not args.output or scenarios_example else Path(args.output),
+                            )
+
+    if args.multiscenario:
+        SimulationRun(paths=paths,
+                      settings=settings)
+    else:
+        Scenario(paths=paths,
+                 settings=settings)
 
 
 if __name__ == '__main__':

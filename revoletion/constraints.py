@@ -2,8 +2,6 @@
 
 import pyomo.environ as po
 
-from revoletion import blocks
-
 
 class CustomConstraints:
     def __init__(self, scenario):
