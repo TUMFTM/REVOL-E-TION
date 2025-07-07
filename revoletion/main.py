@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from importlib.resources import files
+import importlib.resources
 from pathlib import Path
 import tkinter as tk
 import tkinter.filedialog
@@ -9,6 +9,8 @@ import tkinter.filedialog
 from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
 from .utils import infer_dtype
+import revoletion.example
+
 
 def main():
 
@@ -89,7 +91,8 @@ def main():
     # Option 2: Example file in example project in package directory (works from anywhere)
     elif args.scenario  == 'example':
         scenarios_example = True
-        path_scenario = files(__package__) / 'example' / 'scenarios_example.csv'
+        with importlib.resources.as_file(importlib.resources.files(revoletion.example)) as example_dir:
+            path_scenario = example_dir / 'scenarios_example.csv'
     # Option 3: Full absolute or relative (to working directory) file path
     else:
         path_scenario = Path(args.scenario)
