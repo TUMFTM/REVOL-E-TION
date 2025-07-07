@@ -52,6 +52,7 @@ class SimulationPaths:
     _revoletion: Path = field(default_factory=lambda: importlib.resources.files(__package__),
                               init=False,  # cannot be set manually
                               )
+
     _cwd: Path = field(default_factory=Path.cwd,
                        init=False,  # cannot be set manually
                        )
