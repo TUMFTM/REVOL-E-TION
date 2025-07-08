@@ -2500,6 +2500,7 @@ class Heatpump(SinkBlock):
           #                   f'define_oemof_components()')
 
         self.components['bus'] = solph.Bus()
+        self.components['sink_bus'] = solph.Bus()
 
         self.components['heatpump'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow()},
@@ -2510,14 +2511,14 @@ class Heatpump(SinkBlock):
         self.components['shs'] = solph.components.GenericStorage(
             inputs= {self.components['bus']: solph.Flow()
                      },
-            outputs={self.components['bus']:solph.Flow()
+            outputs={self.components['sink_bus']:solph.Flow()
                     },
             loss_rate= 0.02,
             nominal_storage_capacity=8700
         )
 
         self.components['snk'] = solph.components.Sink(
-            inputs={self.components['bus']: solph.Flow(nominal_capacity=1,
+            inputs={self.components['sink_bus']: solph.Flow(nominal_capacity=1,
                                                    fix=self.flow_heatpump['demand_heat'][horizon.dti_ph])}
         )
 
@@ -2528,8 +2529,8 @@ class Heatpump(SinkBlock):
         self.flows.loc[horizon.dti_ch, 'shs_in'] = horizon.results[(self.components['bus'],
                                                                     self.components['shs'])]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'shs_out'] = horizon.results[(self.components['shs'],
-                                                                    self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['bus'],
+                                                                   self.components['sink_bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['sink_bus'],
                                                                      self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
