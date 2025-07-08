@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 import geopy
 import holidays
-from importlib.resources import files
+import importlib.resources
 import logging
 import logging.handlers
 import math
@@ -32,6 +32,8 @@ from . import logger as logger_fcs
 from . import scheduler
 from . import utils
 
+import revoletion.data
+
 
 class OptimizationError(Exception):
     pass
@@ -47,9 +49,10 @@ class SimulationPaths:
                             init=True
                             )  # internal field for basename
 
-    _revoletion: Path = field(default_factory=lambda: files(__package__),
+    _revoletion: Path = field(default_factory=lambda: importlib.resources.files(__package__),
                               init=False,  # cannot be set manually
                               )
+
     _cwd: Path = field(default_factory=Path.cwd,
                        init=False,  # cannot be set manually
                        )
@@ -108,7 +111,8 @@ class SimulationPaths:
 
     @property
     def data_persist(self) -> Path:
-        return self.revoletion / 'data'
+        with importlib.resources.as_file(importlib.resources.files(revoletion.data)) as data_dir:
+            return data_dir
 
     @property
     def summary_csv(self) -> Path:

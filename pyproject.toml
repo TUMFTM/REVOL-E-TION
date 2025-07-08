@@ -30,13 +30,12 @@ dependencies = [
     "windpowerlib"
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["revoletion", "revoletion.*"]
+[tool.setuptools]
+packages = ["revoletion"]
 
 [tool.setuptools.package-data]
-"revoletion.data" = ["*"]
-"revoletion.example" = ["*"]
+"revoletion.data" = ["revoletion/data"]
+"revoletion.example" = ["revoletion/example"]
 
 [project.scripts]
 revoletion = "revoletion.main:main"
