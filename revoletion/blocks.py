@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
 import ast
+from dataclasses import dataclass, field
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
@@ -8,6 +10,7 @@ import plotly.graph_objects as go
 import pvlib
 import re
 import requests
+from typing import Any, Optional
 import windpowerlib
 
 from abc import ABC, abstractmethod
@@ -16,6 +19,126 @@ from . import battery as bat
 from . import economics as eco
 from . import mobility
 from . import utils
+
+
+@dataclass
+class Size:
+    name: str
+    block: BaseBlock
+    unit: str = 'kW'  # ToDo: pass upon initialization from block and remove workaround in __post_init__
+
+    # parameters that are set in __post_init__
+    _preexisting: float = field(init=False,
+                                repr=False,
+                                default=0.0)
+    _invest: bool = field(init=False,
+                          repr=False,
+                          default=False)
+
+    _total_max: Optional[float] = field(init=False,
+                                        repr=False,
+                                        default=None)  # "Optional" is equal to "float | None"
+
+    # parameters that are set after optimization
+    expansion: float = field(default=0.0,
+                              init=False)  # set after optimization, initialized with 0.0
+
+    def __post_init__(self):
+        self.unit = 'kWh' if isinstance(self.block, StorageBlock) else 'kW'  # ToDo: remove after correct initialization
+
+        self.preexisting = self._get_param(param='size_preexisting',
+                                           default=self.preexisting)
+
+        self.invest = self._get_param(param='invest',
+                                      default=self.invest)
+
+        self.total_max = self._get_param(param='size_max',
+                                         default=self.total_max)
+
+    def _get_param(self,
+                   param: str,
+                   default: Any) -> Any:
+        """
+        Get a parameter from the block's input data.
+        """
+        name_param = f'{param}_{self.name}'
+        value = getattr(self.block, name_param, default)
+        if hasattr(self.block, name_param):
+            delattr(self.block, name_param)
+        return value
+
+    @property
+    def preexisting(self) -> float:
+        return self._preexisting
+
+    @preexisting.setter
+    def preexisting(self, value: float):
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"preexisting must be numeric (int or float), got {type(value).__name__}")
+        self._preexisting = float(value)
+
+    @property
+    def invest(self) -> bool:
+        return self._invest
+
+    @invest.setter
+    def invest(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError(f"invest must be a boolean, got {type(value).__name__}")
+        self._invest = value
+
+    @property
+    def total_max(self) -> Optional[float]:
+        return self._total_max
+
+    @total_max.setter
+    def total_max(self, value: Optional[float]):
+        if value is not None and not isinstance(value, (int, float)):
+            raise TypeError(f"size_max must be numeric (int or float) or None, got {type(value).__name__}")
+        self._total_max = float(value) if value is not None else None
+
+    @property
+    def expansion_max(self) -> Optional[float]:
+        """
+        Get the maximum additional investment size.
+        0:      no investment           -> invest == False or size_max == size_preexisting
+        float:  limited investment      -> invest == True and size_max is not None
+        None:   unlimited investment    -> invest == True and size_max is None
+        """
+        if not self.invest:
+            return 0
+        else:
+            if self.total_max is not None:
+                return self.total_max - self.preexisting
+            else:
+                return None
+
+    @property
+    def total(self) -> float:
+        return self.preexisting + self.expansion
+
+    @property
+    def result_summary(self) -> pd.Series:
+        """
+        Create a pd.Series with the size's attributes for result_summary.
+        """
+        return pd.Series({f'size_{self.name}_preexisting': self.preexisting,
+                          f'size_{self.name}_invest': self.invest,
+                          f'size_{self.name}_total_max': self.total_max,
+                          f'size_{self.name}_expansion_max': self.expansion_max,
+                          f'size_{self.name}_expansion': self.expansion,
+                          f'size_{self.name}_total': self.total})
+
+    @property
+    def result_msg(self) -> str:
+        """
+        Create a message string for result_messages.
+        """
+        return (f'Optimized size of component "{self.name}" in block "{self.block.name}": '
+                f'{self.total / 1e3:.1f} {self.unit} '
+                f'(existing: {self.preexisting / 1e3:.1f} {self.unit} - '
+                f'expansion: {self.expansion / 1e3:.1f} {self.unit})'
+                if self.invest else '')
 
 
 class BlockScenarioInterface(ABC):
@@ -116,7 +239,7 @@ class BaseBlock(BlockScenarioInterface):
                                    data=np.nan,
                                    dtype='float64')
 
-        self.sizes = pd.DataFrame()
+        self.sizes = dict()
         self.expansion_equal = False
         self.initialize_sizes()
 
@@ -163,36 +286,17 @@ class BaseBlock(BlockScenarioInterface):
         if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
             raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
 
-        self.sizes = pd.DataFrame(index=sizes,
-                                  columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
-                                  data=np.nan,
-                                  dtype='float64')
-        self.sizes['invest'] = False
+        for size in sizes:
+            self.sizes[size] = Size(name=size,
+                                    block=self)
 
-        for size in self.sizes.index:
-            size_var_ext = self.pois[size]['params'][('size', 'name')]
-            size_var_ext = '' if size_var_ext == '' else f'_{size_var_ext}'
-            self.sizes.loc[size, 'preexisting'] = getattr(self, f'size_preexisting{size_var_ext}', 0)
-            self.sizes.loc[size, 'total_max'] = getattr(self, f'size_max{size_var_ext}', 0)
-            self.sizes.loc[size, 'invest'] = getattr(self, f'invest{size_var_ext}', False)
-            # delete attributes if available
-            for attr in ['size_preexisting', 'size_max', 'invest']:
-                attr_str = f'{attr}{size_var_ext}'
-                if hasattr(self, attr_str):
-                    delattr(self, attr_str)
+            if self.sizes[size].invest and self.scenario.strategy != 'go':
+                raise ValueError(f'Block "{self.name}" component size optimization '
+                                 f'not implemented for any other strategy than "GO"')
 
-        # expansion_max logic: 0=no investment, NaN=unlimited investment, float=limited investment
-        self.sizes['expansion_max'] = self.sizes['total_max'] - self.sizes['preexisting']
-        self.sizes.loc[~self.sizes['invest'], 'expansion_max'] = 0
-
-        if self.sizes['invest'].any() and self.scenario.strategy != 'go':
-            raise ValueError(f'Block "{self.name}" component size optimization '
-                             f'not implemented for any other strategy than "GO"')
-
-        for name, row in self.sizes.iterrows():
-            if row['preexisting'] == 0 and not row['invest']:
+            if self.sizes[size].preexisting == 0 and not self.sizes[size].invest:
                 self.scenario.logger.warning(f'Block "{self.name}" - '
-                                             f'component "{name}" was defined without preexisting size and does not '
+                                             f'component "{size}" was defined without preexisting size and does not '
                                              f'allow further investments. This may cause unintended system behavior.')
 
     def init_equalizable_variables(self, name_vars: list):
@@ -271,7 +375,8 @@ class BaseBlock(BlockScenarioInterface):
                                                if isinstance(value, (int, float, bool, str))})])
 
         # get energy results for scenario.result_summary
-        self.result_summary.append(utils.create_results_from_dataframe(df=self.sizes, name_prefix='size'))
+        for size in self.sizes.values():
+            self.result_summary.append(size.result_summary)
 
         # get economic results for scenario.result_summary
         self.result_summary.append(self.aggregator.write_result_summary())
@@ -281,13 +386,9 @@ class BaseBlock(BlockScenarioInterface):
         pass
 
     def create_result_messages(self, unit='kW'):
-
-        self.result_messages.extend(
-            [msg for msg in self.sizes.apply(lambda size: (
-                f'Optimized size of component "{size.name}" in block "{self.name}": {size["total"] / 1e3:.1f} {unit}'
-                f' (existing: {size["preexisting"] / 1e3:.1f} {unit}'
-                f' - additional: {size["expansion"] / 1e3:.1f} {unit})'
-                if size['invest'] else ''), axis=1).to_list() if msg != ''])
+        for size in self.sizes.values():
+            if (msg := size.result_msg) != '':
+                self.result_messages.append(msg)
 
     @abstractmethod
     def create_plot_traces(self):
@@ -295,7 +396,7 @@ class BaseBlock(BlockScenarioInterface):
 
     def write_results_to_scenario(self):
         # result_summary
-        # concat all result_series and apply MultiIndex with
+        # concat all result_summary and apply MultiIndex with
         self.result_summary = pd.concat(self.result_summary)
         self.result_summary.index = pd.MultiIndex.from_tuples(tuples=[(self.name, key)
                                                                       for key in self.result_summary.index],
@@ -318,7 +419,7 @@ class BaseBlock(BlockScenarioInterface):
         """
         Standard legend entry for simple blocks using power as their size
         """
-        return f'{self.name} power (max. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
+        return f'{self.name} power (max. {self.sizes["block"].total / 1e3:.1f} kW)'
 
 
 class NonElectricBlock(BaseBlock):
@@ -399,7 +500,6 @@ class ElectricBlock(BaseBlock):
         super().post_horizon(horizon=horizon)  # executes post_horizon for subblocks
 
         self.get_horizon_results(horizon=horizon)
-        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
 
     def post_scenario(self):
         # ToDo: check, whether this requires SubBlock's post_scenario() execution triggered in super().post_scenario()
@@ -571,8 +671,8 @@ class SystemCore(ElectricBlock):
         self.components['acdc'] = solph.components.Converter(
             inputs={self.components['ac']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['acdc'].capex['spec_opt'],
-                                               existing=self.sizes.loc['acdc', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['acdc', 'expansion_max'])),
+                                               existing=self.sizes['acdc'].preexisting,
+                                               maximum=self.sizes['acdc'].expansion_max),
                 variable_costs=self.evaluators['acdc'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['dc']: self.eff['acdc']})
@@ -580,8 +680,8 @@ class SystemCore(ElectricBlock):
         self.components['dcac'] = solph.components.Converter(
             inputs={self.components['dc']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['dcac'].capex['spec_opt'],
-                                               existing=self.sizes.loc['dcac', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['dcac', 'expansion_max'])),
+                                               existing=self.sizes['dcac'].preexisting,
+                                               maximum=self.sizes['dcac'].expansion_max),
                 variable_costs=self.evaluators['dcac'].opex['spec_ep'][horizon.dti_ph])},
             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['ac']: self.eff['dcac']})
@@ -606,10 +706,10 @@ class SystemCore(ElectricBlock):
         """
         post horizon method
         """
-        self.sizes.loc['acdc', 'expansion'] = horizon.results[(self.components['ac'],
-                                                               self.components['acdc'])]['scalars']['invest']
-        self.sizes.loc['dcac', 'expansion'] = horizon.results[(self.components['dc'],
-                                                               self.components['dcac'])]['scalars']['invest']
+        self.sizes['acdc'].expansion = horizon.results[(self.components['ac'],
+                                                         self.components['acdc'])]['scalars']['invest']
+        self.sizes['dcac'].expansion = horizon.results[(self.components['dc'],
+                                                         self.components['dcac'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'acdc'] = horizon.results[(self.components['ac'],
                                                                   self.components['acdc'])]['sequences']['flow'][horizon.dti_ch]
@@ -628,7 +728,7 @@ class SystemCore(ElectricBlock):
                                                       y=self.flows.loc[self.scenario.dti_eval, 'dcac'],
                                                       mode='lines',
                                                       name=f'{self.name} DC-AC power (max. '
-                                                           f'{self.sizes.loc["dcac", "total"]/1e3:.1f} kW)',
+                                                           f'{self.sizes["dcac"].total / 1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly',
                                                       ),
@@ -636,7 +736,7 @@ class SystemCore(ElectricBlock):
                                                       y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
                                                       mode='lines',
                                                       name=f'{self.name} AC-DC power (max. '
-                                                           f'{self.sizes.loc["acdc", "total"]/1e3:.1f} kW)',
+                                                           f'{self.sizes["acdc"].total / 1e3:.1f} kW)',
                                                       line=dict(width=2, dash=None, shape='hv'),
                                                       visible='legendonly',
                                                       )])
@@ -718,8 +818,8 @@ class RenewableSource(SourceBlock):
         self.components['src'] = solph.components.Source(
             outputs={self.components['bus']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
-                                               existing=self.sizes.loc['block', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
+                                               existing=self.sizes['block'].preexisting,
+                                               maximum=self.sizes['block'].expansion_max),
                 fix=self.data.loc[horizon.dti_ph, 'power_spec'],
                 variable_costs=self.evaluators['block'].opex['spec_ep'][horizon.dti_ph])}
         )
@@ -733,8 +833,8 @@ class RenewableSource(SourceBlock):
         """
         post horizon method
         """
-        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
-                                                                self.components['bus'])]['scalars']['invest']
+        self.sizes['block'].expansion = horizon.results[(self.components['src'],
+                                                          self.components['bus'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -773,7 +873,7 @@ class RenewableSource(SourceBlock):
                                                       )])
 
     def get_legend_entry(self):
-        return f'{self.name} power (nom. {self.sizes.loc["block", "total"] / 1e3:.1f} kW)'
+        return f'{self.name} power (nom. {self.sizes["block"].total / 1e3:.1f} kW)'
 
 
 class PVSource(RenewableSource):
@@ -1304,8 +1404,8 @@ class ControllableSource(SourceBlock):
         self.components['src'] = solph.components.Source(
             outputs={self.bus_connected: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].capex['spec_opt'],
-                                               existing=self.sizes.loc['block', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max'])),
+                                               existing=self.sizes['block'].preexisting,
+                                               maximum=self.sizes['block'].expansion_max),
                 variable_costs=self.evaluators['block'].opex['spec_ep'][horizon.dti_ph])}
         )
 
@@ -1318,8 +1418,8 @@ class ControllableSource(SourceBlock):
         """
         post horizon method
         """
-        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['src'],
-                                                                self.bus_connected)]['scalars']['invest']
+        self.sizes['block'].expansion = horizon.results[(self.components['src'],
+                                                          self.bus_connected)]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1490,8 +1590,8 @@ class GridConnection(ElectricBlock):
             # Size optimization
             outputs={self.components['bus']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['s2g'].capex['spec_opt'],
-                                               existing=self.sizes.loc['s2g', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['s2g', 'expansion_max'])),
+                                                  existing=self.sizes['s2g'].preexisting,
+                                                  maximum=self.sizes['s2g'].expansion_max),
                 variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['bus']: 1})}
 
@@ -1502,8 +1602,8 @@ class GridConnection(ElectricBlock):
             # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
             inputs={self.components['bus']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=(self.evaluators['g2s'].capex['spec_opt'] if period == self.peak_periods.index[0] else 0),
-                                               existing=self.sizes.loc['g2s', 'preexisting'],
-                                               maximum=utils.conv_nan2none(self.sizes.loc['g2s', 'expansion_max']))
+                                                  existing=self.sizes['g2s'].preexisting,
+                                                  maximum=self.sizes['g2s'].expansion_max)
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
@@ -1545,10 +1645,10 @@ class GridConnection(ElectricBlock):
         """
         post horizon method
         """
-        self.sizes.loc['g2s', 'expansion'] = horizon.results[(self.components['bus'],
-                                                              list(self.outflows.values())[0])]['scalars']['invest']
-        self.sizes.loc['s2g', 'expansion'] = horizon.results[(list(self.inflows.values())[0],
-                                                              self.components['bus'])]['scalars']['invest']
+        self.sizes['g2s'].expansion = horizon.results[(self.components['bus'],
+                                                        list(self.outflows.values())[0])]['scalars']['invest']
+        self.sizes['s2g'].expansion = horizon.results[(list(self.inflows.values())[0],
+                                                        self.components['bus'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
                                                     for inflow in self.inflows.values()])
@@ -1597,8 +1697,8 @@ class GridConnection(ElectricBlock):
         )
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["g2s", "total"] / 1e3:.1f} kW from / '
-                f'{self.sizes.loc["s2g", "total"] / 1e3:.1f} kW to grid)')
+        return (f'{self.name} power (max. {self.sizes["g2s"].total / 1e3:.1f} kW from / '
+                f'{self.sizes["s2g"].total / 1e3:.1f} kW to grid)')
 
 
 class GridMarket(ElectricBlock):
@@ -1607,11 +1707,9 @@ class GridMarket(ElectricBlock):
     def get_init_definitions():
         return dict(pois={'g2s': {'class_name': 'EconomicEvaluator',
                                   'params': {('opex', 'spec'): 'opex_spec_g2s',
-                                             ('size', 'name'): 'g2s',
                                              ('flow', 'name'): 'out'}},
                           's2g': {'class_name': 'EconomicEvaluator',
                                   'params': {('opex', 'spec'): 'opex_spec_s2g',
-                                             ('size', 'name'): 's2g',
                                              ('flow', 'name'): 'in'}},
                           },
                     state_names=[])
@@ -1628,28 +1726,6 @@ class GridMarket(ElectricBlock):
                          params=params,
                          parent=parent)
 
-    def initialize_sizes(self):
-        """
-        Initialize the sizes DataFrame for GridMarkets -> has sizes, but is not investable
-        """
-
-        sizes = [name for name in [poi['params'].get(('size', 'name')) for poi in self.pois.values()] if name is not None]
-
-        if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
-            raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
-
-        self.sizes = pd.DataFrame(index=sizes,
-                                  columns=['total', 'preexisting', 'expansion', 'total_max', 'expansion_max'],
-                                  dtype='float64')
-        self.sizes['invest'] = False
-        self.sizes[['total_max', 'expansion_max']] = np.nan
-        self.sizes['expansion'] = 0
-
-        for size_str in self.sizes.index:
-            attr_str = f'pwr_{size_str}'
-            self.sizes.loc[size_str, 'preexisting'] = getattr(self, attr_str, 0)
-            delattr(self, attr_str)
-
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
                                 params: dict = None):
@@ -1665,7 +1741,8 @@ class GridMarket(ElectricBlock):
 
         self.components['src'] = solph.components.Source(
             outputs={self.parent.components['bus']: solph.Flow(
-                nominal_capacity=utils.conv_nan2none(self.sizes.loc['g2s', 'preexisting']),
+                nominal_capacity=self.pwr_g2s,
+                max=1 if self.pwr_g2s else None,
                 variable_costs=self.evaluators['g2s'].opex['spec_ep'][horizon.dti_ph])
             }
         )
@@ -1673,7 +1750,8 @@ class GridMarket(ElectricBlock):
         self.components['snk'] = solph.components.Sink(
             inputs={
                 self.parent.components['bus']: solph.Flow(
-                    nominal_capacity=utils.conv_nan2none(self.sizes.loc['s2g', 'preexisting']),
+                    nominal_capacity=self.pwr_s2g,
+                    max=1 if self.pwr_s2g else None,
                     variable_costs=(self.evaluators['s2g'].opex['spec_ep'][horizon.dti_ph]),
                 )
             }
@@ -1692,10 +1770,10 @@ class GridMarket(ElectricBlock):
                                                                  self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        powers = {power: min(self.parent.sizes.loc[power, 'total'],
-                             (self.sizes.loc[power, 'total']
-                              if pd.notna(self.sizes.loc[power, 'total'])
-                              else self.parent.sizes.loc[power, 'total']))
+        powers = {power: min(self.parent.sizes[power].total,
+                             (getattr(self, f'pwr_{power}')
+                              if pd.notna(getattr(self, f'pwr_{power}'))
+                              else self.parent.sizes[power].total))
                   for power in ['g2s', 's2g']}
 
         return f'{self.name} power (max. {powers["g2s"] / 1e3:.1f} kW from / {powers["s2g"] / 1e3:.1f} kW to grid)'
@@ -1841,8 +1919,8 @@ class StorageBlock(ElectricBlock):
             outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
             nominal_capacity=solph.Investment(
                 ep_costs=self.evaluators['storage'].capex['spec_opt'],
-                existing=self.sizes.loc['storage', 'preexisting'],
-                maximum=utils.conv_nan2none(self.sizes.loc['storage', 'expansion_max'])),
+                existing=self.sizes['storage'].preexisting,
+                maximum=self.sizes['storage'].expansion_max),
             max_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_max'],
             min_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_min']
         )
@@ -1856,7 +1934,7 @@ class StorageBlock(ElectricBlock):
         """
         post horizon method
         """
-        self.sizes.loc['storage', 'expansion'] = horizon.results[(self.components['storage'], None)]['scalars']['invest']
+        self.sizes['storage'].expansion = horizon.results[(self.components['storage'], None)]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1868,13 +1946,11 @@ class StorageBlock(ElectricBlock):
         self.flows.loc[horizon.dti_ch, 'bat_in'] = horizon.results[(self.components['bus'],
                                                                     self.components['storage'])]['sequences']['flow'][horizon.dti_ch]
 
-        # preemptive size calculation to enable soc calculation
-        self.sizes['total'] = self.sizes['preexisting'] + self.sizes['expansion']
         self.states.loc[horizon.dti_ch_extd, 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
         self.states.loc[horizon.dti_ch_extd, 'soc'] = (
                 self.states.loc[horizon.dti_ch_extd, 'energy'] /
-                self.sizes.loc['storage', 'total']).fillna(0)
+                self.sizes['storage'].total).fillna(0)
 
         self.aging_model.age(horizon=horizon)
 
@@ -1958,8 +2034,8 @@ class StationaryBattery(StorageBlock):
         super().create_result_messages(unit='kWh')
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes.loc["storage", "total"] * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
-                f'{self.sizes.loc["storage", "total"] * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
+        return (f'{self.name} power (max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
+                f'{self.sizes["storage"].total * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
 class Fleet(SinkBlock):
@@ -2018,7 +2094,7 @@ class Fleet(SinkBlock):
         self.components['inflow'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow(
                 variable_costs=self.evaluators['s2f'].opex['spec_ep'][horizon.dti_ph],
-                nominal_capacity=utils.conv_nan2none(self.sizes.loc['s2f', 'preexisting']),
+                nominal_capacity=self.sizes['s2f'].preexisting,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
             outputs={self.components['bus']: solph.Flow()},
@@ -2028,7 +2104,7 @@ class Fleet(SinkBlock):
         self.components['outflow'] = solph.components.Converter(
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['f2s'].opex['spec_ep'][horizon.dti_ph],
-                nominal_capacity=utils.conv_nan2none(self.sizes.loc['f2s', 'preexisting']),
+                nominal_capacity=self.sizes['f2s'].preexisting,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
             outputs={self.bus_connected: solph.Flow(
@@ -2041,19 +2117,17 @@ class Fleet(SinkBlock):
         """
         post horizon method
         """
-        self.sizes['expansion'] = 0.0  # set value initialized as np.nan to 0 for both sizes to enable preexisting add
-
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        str_f2s = f'max. {self.sizes.loc["f2s", "total"] / 1e3:.1f} kW' \
-            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+        str_f2s = f'max. {self.sizes["f2s"].total / 1e3:.1f} kW' \
+            if pd.notna(self.sizes["f2s"].total / 1e3) \
             else 'unlimited power'
-        str_s2f = f'max. {self.sizes.loc["s2f", "total"] / 1e3:.1f} kW' \
-            if pd.notna(self.sizes.loc["f2s", "total"] / 1e3) \
+        str_s2f = f'max. {self.sizes["s2f"].total / 1e3:.1f} kW' \
+            if pd.notna(self.sizes["f2s"].total / 1e3) \
             else 'unlimited power'
 
         return f'{self.name} power ({str_f2s} from / {str_s2f} to fleet)'
@@ -2240,7 +2314,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
         self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
-        if self.sizes['invest'].any() and self.mode_scheduling in self.scenario.apriori_lvls:
+        if any([size.invest for size in self.sizes.values()]) and self.mode_scheduling in self.scenario.apriori_lvls:
             raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
                              f'implemented for a priori integration levels: {self.scenario.apriori_lvls}')
 

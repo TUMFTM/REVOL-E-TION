@@ -449,8 +449,8 @@ class EconomicEvaluator(EconomicPointOfInterest):
         get a value from the block's size df
         """
 
-        if size_name in self.block.sizes.index:
-            value = self.block.sizes.loc[size_name, scope_name]
+        if size_name in self.block.sizes.keys():
+            value = getattr(self.block.sizes[size_name], scope_name)
             if pd.isna(value):  # sizes in GridMarkets may be None (inherit limit of GridConnection)
                 value = default_value
             return value

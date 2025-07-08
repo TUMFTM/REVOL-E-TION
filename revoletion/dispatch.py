@@ -122,7 +122,7 @@ class SubFleetDispatcher:
         unit_repr = self.units[next(iter(self.units))]  # all units are equal and representative a priori
 
         if isinstance(unit_repr, blocks.ElectricFleetUnit):
-            self.energy_total = unit_repr.sizes.loc['storage', 'preexisting']
+            self.energy_total = unit_repr.sizes['storage'].preexisting
 
             soc_minmax = min([unit.states.at[self.scenario.starttime, 'soc_max'] for unit in self.units.values()])
             soc_maxmin = max([unit.states.at[self.scenario.starttime, 'soc_min'] for unit in self.units.values()])
