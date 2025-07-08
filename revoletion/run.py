@@ -127,9 +127,9 @@ class SimulationRun:
         self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
-        self.logger.info(f'Reading scenarios from:\t{self.paths.scenario}')
-        self.logger.info(f'Reading input data from:\t{self.paths.input}')
-        self.logger.info(f'Writing results to:\t\t{self.paths.output}')
+        self.logger.info(f'{"Reading scenarios from:":<25} {self.paths.scenario}')
+        self.logger.info(f'{"Reading input data from:":<25} {self.paths.input}')
+        self.logger.info(f'{"Writing results to:":<25} {self.paths.output}')
 
         # plural extensions
         pe1 = 's' if self.scenario_num > 1 else ''
