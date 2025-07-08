@@ -2438,8 +2438,15 @@ class Heatpump(SinkBlock):
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
-                                               ('crev', 'spec'): 'crev_spec',
-                                               ('flow', 'name'): 'in'}}
+                                               ('crev', 'spec'): 'crev_spec'}},
+                          'hp_in': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'hp_in'}},
+                          'shs_in': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'shs_in'}},
+                          'shs_out': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'shs_out'}},
+                          'heating': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'heating'}},
                           },
                     state_names=[])
 
@@ -2448,30 +2455,30 @@ class Heatpump(SinkBlock):
                  scenario):
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_apriori_names=['demand_heatpump'],
+                         flow_apriori_names=['demand_heat'],
                          params=None,
                          parent=scenario)
 
         self.analyzer = hp.Heatpump_COPanalyzer()
         self.cop_array = self.analyzer.run_full_analysis()
 
-        temps = np.round(np.arange(-10, 20.01, 0.01), 2)
-        cop_series = pd.Series(self.cop_array, index=temps)
+        self.get_cop_heatpump_apriori()
 
-        self.get_flow_heatpump_apriori()
-
-    def get_flow_heatpump_apriori(self):
+    def get_cop_heatpump_apriori(self):
         try:
             self.flow_heatpump = self.scenario.temp_air.copy()
         except (AttributeError, KeyError):
             raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
 
-        self.flow_heatpump['Heat load (kW)'] = (0.5*(15-self.flow_heatpump['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K
+        self.flow_heatpump['demand_heat'] = (500*(15-self.flow_heatpump['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K
+        self.flow_heatpump['demand_heat'] = self.flow_heatpump['demand_heat'].fillna(0)
 
-        self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array) ###ggf. hier cop series verwenden
+        self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array)
 
-        self.flow_heatpump['Power input (kW)'] = self.flow_heatpump['Heat load (kW)'] / self.flow_heatpump['COP']
-        self.flow_heatpump['demand_heatpump'] = self.flow_heatpump['demand_heatpump'].fillna(0)
+        self.conversion = pd.DataFrame(index=self.flow_heatpump.index)
+        self.conversion['factor'] = 1 / self.flow_heatpump['COP']
+        self.conversion['factor'] = self.conversion['factor'].fillna(0)
+
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
@@ -2480,26 +2487,55 @@ class Heatpump(SinkBlock):
         pre horizon method
         x denotes the flow measurement point in results
 
-        bus_connected
-            |
-            |-x->name_snk
-            |
+        bus_connected   bus_name
+            |           |<----x------->name_storage
+            |----x----->|
+            |           |-----x------->name_snk
         """
 
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
-        self.components['snk'] = self.components.Sink(
-            inputs={self.bus_connected: solph.Flow(nominal_capacity=1,
-                                                  fix=self.flow_heatpump['demand_heatpump'][horizon.dti_ph])}
+        #if params is None:
+         #   raise ValueError(f'Block "{self.name}": Parameter "params" is required for Heatpump method '
+          #                   f'define_oemof_components()')
+
+        self.components['bus'] = solph.Bus()
+
+        self.components['heatpump'] = solph.components.Converter(
+            inputs={self.bus_connected: solph.Flow()},
+            outputs={self.components['bus']: solph.Flow()},
+            conversion_factors={self.components['bus']: self.conversion['factor']}
+        )
+
+        self.components['shs'] = solph.components.GenericStorage(
+            inputs= {self.components['bus']: solph.Flow()
+                     },
+            outputs={self.components['bus']:solph.Flow()
+                    },
+            loss_rate= 0.02,
+            nominal_storage_capacity=8700
+        )
+
+        self.components['snk'] = solph.components.Sink(
+            inputs={self.components['bus']: solph.Flow(nominal_capacity=1,
+                                                   fix=self.flow_heatpump['demand_heat'][horizon.dti_ph])}
         )
 
     def get_horizon_results(self,
                             horizon: 'PredictionHorizon'):
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'hp_in'] = horizon.results[(self.bus_connected,
+                                                                self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'shs_in'] = horizon.results[(self.components['bus'],
+                                                                    self.components['shs'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'shs_out'] = horizon.results[(self.components['shs'],
+                                                                    self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['bus'],
+                                                                     self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
         return f'{self.name} power'
+
+
 
 
 

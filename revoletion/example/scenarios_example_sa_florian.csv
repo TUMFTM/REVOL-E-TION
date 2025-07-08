@@ -1,7 +1,7 @@
 block,key,icev
-scenario,starttime,1.1.2018
+scenario,starttime,1.7.2018
 scenario,timestep,15min
-scenario,sim_duration,50
+scenario,sim_duration,7
 scenario,sim_endtime,None
 scenario,prj_duration,25
 scenario,compensate_sim_prj,True
