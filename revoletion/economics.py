@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+from dataclasses import dataclass, field
+import numpy as np
 import pandas as pd
+from typing import TYPE_CHECKING, Optional
 
-from revoletion import utils
+from . import utils
 
+
+if TYPE_CHECKING:
+    from .blocks import Size
 
 def discount(future_value: float,
              periods: int,
@@ -143,6 +150,485 @@ def calc_frac_remaining_ls(ls: int,
     return frac_remaining_ls
 
 
+@dataclass
+class OptimizationConverter:
+    poi: EconomicEvaluator
+
+    @property
+    def spec_prj_ep_capex(self) -> float:
+        """
+        Calculate the specific present value of capex for the project duration.
+        """
+
+        spec_prj_ep = np.array([0.0] * len(self.poi.discount_factors.index),
+                               dtype=float)
+
+        # apply specific capex for replacement periods
+        spec_prj_ep[reinvest_periods(lifespan=self.poi.aux['ls'],
+                                     observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                     include_init=True)] = self.poi.capex.spec
+
+        # apply specific salvage value after project duration considering the remaining lifespan
+        # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
+        # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
+        # beginning of the last project year
+        spec_prj_ep[self.poi.scenario.prj_duration_yrs] = (
+                -1 * self.poi.capex.spec * calc_frac_remaining_ls(ls=self.poi.aux['ls'],
+                                                                  project_duration=self.poi.scenario.prj_duration_yrs)
+        )
+
+        # adjust specific capex by appropriate cost change ratio
+        spec_prj_ep *= self.poi.aux['ccr'] ** self.poi.discount_factors.index
+
+        # sum up all specific discounted capex for the project duration
+        spec_prj_ep = spec_prj_ep @ self.poi.discount_factors['beginning']
+
+        return spec_prj_ep
+
+    @property
+    def spec_prj_ep_mntex(self) -> float:
+        # calculate specific present value of mntex for the project duration
+        return acc_discount(nominal_value=self.poi.mntex.spec,
+                            observation_horizon=self.poi.scenario.prj_duration_yrs,
+                            discount_rate=self.poi.scenario.wacc,
+                            occurs_at='beginning')
+
+    @property
+    def spec_prj_ep_invest(self) -> float:
+        # join maintenance and capex specific present values for the project duration
+        return self.spec_prj_ep_capex + self.spec_prj_ep_mntex
+
+    @property
+    def factor_ep_invest(self) -> float:
+        # calculate annuity due factor to compensate for difference between simulation and project time
+        return annuity(present_value=1,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at='beginning') if self.poi.scenario.compensate_sim_prj else 1
+
+    @property
+    def spec_ep_invest(self) -> float:
+        # calculate specific capex/mntex value used for the optimization problem
+        return self.spec_prj_ep_invest * self.factor_ep_invest
+
+    @property
+    def factor_ep_operation(self) -> float:
+        # calculate annuity due factor to compensate for difference between simulation and project time
+        return (1 / self.poi.scenario.sim_yr_rat) if self.poi.scenario.compensate_sim_prj else 1
+
+    @property
+    def spec_ep_operation(self) -> float:
+        # calculate specific capex/mntex value used for the optimization problem
+        return self.spec_prj_ep_invest * self.factor_ep_operation
+
+
+@dataclass
+class Aggregator:
+    poi: EconomicPointOfInterest
+    target: Optional[Aggregator]
+
+    prj: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    dis: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    ann: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    cashflows: np.array = field(init=False,
+                                repr=False)
+
+    def __post_init__(self):
+        self.cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
+                                  dtype=float)
+
+    def aggregate(self):
+        if self.target:
+            self.target.prj += self.prj
+            self.target.dis += self.dis
+            self.target.ann += self.ann
+            self.target.cashflows += self.cashflows
+
+
+@dataclass
+class CapExAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: Optional[CapExAggregator]
+
+    # all attributes have to be initialized with 0 and calculated
+    preexisting: float = field(init=False,
+                               repr=False,
+                               default=0)
+
+    expansion: float = field(init=False,
+                             repr=False,
+                             default=0)
+
+    init: float = field(init=False,
+                        repr=False,
+                        default=0)
+
+    replacement: float = field(init=False,
+                               repr=False,
+                               default=0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def aggregate(self):
+        super().aggregate()
+        if self.target:
+            self.target.preexisting += self.preexisting
+            self.target.expansion += self.expansion
+            self.target.init += self.init
+            self.target.replacement += self.replacement
+
+
+@dataclass
+class CapExEvaluator(CapExAggregator):
+    poi: EconomicEvaluator
+    target: Optional[CapExAggregator]
+
+    consider_preexisting: bool = field(init=False,
+                                       repr=False,
+                                       default=True)
+
+    spec: float = field(init=False,
+                        repr=False,
+                        default=0.0)
+
+    fix: float = field(init=False,
+                       repr=False,
+                       default=0.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # ToDo: set consider_preexisting
+        # ToDo: set spec
+        # ToDo: set fix
+
+    @property
+    def size(self) -> Size:
+        return self.poi.block.sizes[self.poi.name]
+
+    @property
+    def preexisting(self) -> float:
+        # ToDo: add preexisting to constraint limit
+        return int(self.consider_preexisting) * self.size.preexisting * self.spec + self.fix
+
+    @property
+    def expansion(self) -> float:
+        return self.size.expansion * self.spec
+
+    @property
+    def init(self) -> float:
+        return self.preexisting + self.expansion
+
+    @property
+    def replacement(self) -> float:
+        return self.size.total * self.spec + self.fix
+
+    @property
+    def cashflows(self) -> np.array:
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
+                             dtype=float)
+
+        cashflows[0] -= self.init
+
+        for period in reinvest_periods(lifespan=self.poi.aux['ls'],
+                                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                       include_init=False):
+            cashflows[period] -= self.replacement * (self.poi.aux['ccr'] ** period)
+
+        # Add salvage value capex (positive cashflow)
+        cashflows[self.poi.scenario.prj_duration_yrs] += (
+                self.replacement * (self.poi.aux['ccr'] ** self.poi.scenario.prj_duration_yrs) *
+                calc_frac_remaining_ls(ls=self.poi.aux['ls'],
+                                       project_duration=self.poi.scenario.prj_duration_yrs)
+        )
+
+        return cashflows
+
+    @property
+    def prj(self) -> float:
+        return -1 * self.cashflows.sum()
+
+    @property
+    def dis(self) -> float:
+        return -1 * self.cashflows @ self.poi.discount_factors['beginning']
+
+    @property
+    def ann(self) -> float:
+        return annuity(present_value=self.dis,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at='beginning')
+
+
+@dataclass
+class MntExAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: MntExAggregator
+
+    sim: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    yrl: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def aggregate(self):
+        super().aggregate()
+
+        if self.target:
+            self.target.sim += self.sim
+            self.target.yrl += self.yrl
+
+
+@dataclass
+class MntExEvaluator(MntExAggregator):
+    poi: EconomicEvaluator
+    target: MntExAggregator
+
+    spec: float = field(init=False,
+                        repr=False,
+                        default=0.0)
+
+    fix: float = field(init=False,
+                       repr=False,
+                       default=0.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # ToDo: set spec
+        # ToDo: set fix
+
+    @property
+    def size(self) -> Size:
+        return self.poi.block.sizes[self.poi.name]
+
+    @property
+    def yrl(self) -> float:
+        return self.size.total * self.spec + self.fix
+
+    @property
+    def sim(self) -> float:
+        return self.yrl * self.poi.scenario.sim_yr_rat
+
+
+    @property
+    def cashflows(self) -> np.array:
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
+                             dtype=float)
+        cashflows [self.poi.scenario.periods_prj] = -1 * self.yrl  # ToDo: check if this is correct (indexing)
+        return cashflows
+
+    @property
+    def prj(self) -> float:
+        return -1 * self.cashflows.sum()
+
+    @property
+    def dis(self) -> float:
+        return -1 * self.cashflows @ self.poi.discount_factors['beginning']
+
+    @property
+    def ann(self) -> float:
+        return annuity(present_value=self.dis,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at='beginning')
+
+
+@dataclass
+class OpExAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: Optional[OpExAggregator]
+
+    sim: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    yrl: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def aggregate(self):
+        super().aggregate()
+
+        if self.target:
+            self.target.sim += self.sim
+            self.target.yrl += self.yrl
+
+
+@dataclass
+class OpExEvaluator(OpExAggregator):
+    poi: EconomicEvaluator
+    target: OpExAggregator
+
+    spec: pd.Series = field(init=False,
+                            repr=False,
+                            default=0.0)  # set default value of 0
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # ToDo: set spec -> use property setter to transform scalar variable to pandas Series
+
+    @property
+    def flow(self) -> np.array:
+        if self.poi.name in self.poi.block.flow.columns:
+            return self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.poi.name].values
+        else:
+            return np.array([0.0] * len(self.poi.scenario.dti_eval),
+                            dtype=float)
+
+    @property
+    def sim(self) -> float:
+        # ToDo: add calc_opex_sim_additional (e.g. for PeakEvaluator or FleetUnitEvaluator)
+        return self.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
+
+    @property
+    def yrl(self) -> float:
+        return self.sim / self.poi.scenario.sim_yr_rat
+
+    @property
+    def cashflows(self) -> np.array:
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
+                             dtype=float)
+        cashflows[self.poi.scenario.periods_prj] = -1 * self.yrl  # ToDo: check if this is correct (indexing)
+        return cashflows
+
+    @property
+    def prj(self) -> float:
+        return -1 * self.cashflows.sum()
+
+    @property
+    def dis(self) -> float:
+        return -1 * self.cashflows @ self.poi.discount_factors['end']
+
+    @property
+    def ann(self) -> float:
+        return annuity(present_value=self.dis,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at='end')
+
+
+@dataclass
+class CRevAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: Optional[CRevAggregator]
+
+    sim: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    yrl: float = field(init=False,
+                       repr=False,
+                       default=0)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def aggregate(self):
+        super().aggregate()
+
+        if self.target:
+            self.target.sim += self.sim
+            self.target.yrl += self.yrl
+
+
+@dataclass
+class CRevEvaluator(OpExAggregator):
+    poi: EconomicEvaluator
+    target: CRevAggregator
+
+    flow_name: Optional[str] = field(init=False,
+                                     repr=False,
+                                     default=None)  # ToDo: define flow
+
+    spec: pd.Series = field(init=False,
+                            repr=False,
+                            default=0.0)  # set default value of 0
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # ToDo: set spec -> use property setter to transform scalar variable to pandas Series
+
+    @property
+    def flow(self) -> np.array:
+        if self.poi.name in self.poi.block.flow.columns:
+            return self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.poi.name].values
+        else:
+            return np.array([0.0] * len(self.poi.scenario.dti_eval),
+                            dtype=float)
+
+    @property
+    def sim(self) -> float:
+        # ToDo: add calc_crev_sim_additional (e.g. for PeakEvaluator or FleetUnitEvaluator)
+        return (self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.flow_name]
+                @ self.spec[self.poi.scenario.dti_eval]
+                * self.poi.scenario.timestep_hours) if self.flow_name is not None else 0
+
+    @property
+    def yrl(self) -> float:
+        return self.sim / self.poi.scenario.sim_yr_rat
+
+    @property
+    def cashflows(self) -> np.array:
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
+                             dtype=float)
+        cashflows[self.poi.scenario.periods_prj] = self.yrl  # ToDo: check if this is correct (indexing)
+        return cashflows
+
+    @property
+    def prj(self) -> float:
+        return self.cashflows.sum()
+
+    @property
+    def dis(self) -> float:
+        return self.cashflows @ self.poi.discount_factors['end']
+
+    @property
+    def ann(self) -> float:
+        return annuity(present_value=self.dis,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at='end')
+
+
+@dataclass
+class TotExAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: Optional[TotExAggregator]
+
+    def __post_init__(self):
+        super().__post_init__()
+
+
+@dataclass
+class ValueAggregator(Aggregator):
+    poi: EconomicPointOfInterest
+    target: Optional[ValueAggregator]
+
+    def __post_init__(self):
+        super().__post_init__()
+
+
 class EconomicPointOfInterest:
     """
     abstractclass
@@ -167,35 +653,19 @@ class EconomicPointOfInterest:
                                       data=0.0,
                                       dtype='float64')
 
-        self.capex = {'preexisting': 0.0,
-                      'expansion': 0.0,
-                      'init': 0.0,
-                      'replacement': 0.0,
-                      'prj': 0.0,
-                      'dis': 0.0,
-                      'ann': 0.0}
-        self.mntex = {'yrl': 0.0,
-                      'sim': 0.0,
-                      'prj': 0.0,
-                      'dis': 0.0,
-                      'ann': 0.0}
-        self.opex = {'sim': 0.0,
-                     'yrl': 0.0,
-                     'prj': 0.0,
-                     'dis': 0.0,
-                     'ann': 0.0}
-        self.crev = {'sim': 0.0,
-                     'yrl': 0.0,
-                     'prj': 0.0,
-                     'dis': 0.0,
-                     'ann': 0.0}
+        self.capex = CapExAggregator
+        self.mntex = MntExAggregator
+        self.opex = OpExAggregator
+        self.crev = CRevAggregator
 
     def aggregate_pre_scenario(self,
                                target: 'EconomicAggregator'):
         """
         aggregate capex preexisting one level up
         """
-        target.capex['preexisting'] += self.capex['preexisting']
+        # ToDo: create aggregate_pre_scenario and aggregate_post_scenario methods for Aggregator classes
+        # ToDo: trigger aggregation of capex, mntex, opex, crev, totex, value
+        pass
 
     def aggregate_post_scenario(self,
                                 target: 'EconomicAggregator'):
@@ -203,14 +673,9 @@ class EconomicPointOfInterest:
         aggregate all economic values (except capex preexisting) one level up
         """
 
-        # ToDo: aggregate cashflow dataframes
-
-        for key in ['expansion', 'init', 'replacement', 'prj', 'dis', 'ann']:
-            target.capex[key] += self.capex[key]
-        for key in ['sim', 'yrl', 'prj', 'dis', 'ann']:
-            target.mntex[key] += self.mntex[key]
-            target.opex[key] += self.opex[key]
-            target.crev[key] += self.crev[key]
+        # ToDo: create aggregate_pre_scenario and aggregate_post_scenario methods for Aggregator classes
+        # ToDo: trigger aggregation of capex, mntex, opex, crev, totex, value
+        pass
 
 
 class EconomicAggregator(EconomicPointOfInterest):
@@ -269,16 +734,28 @@ class EconomicEvaluator(EconomicPointOfInterest):
                          block=block)
 
         # region set default values
-        self.capex.update({'spec': 0.0,
-                           'fix': 0.0,})
-        self.mntex.update({'spec': 0.0,
-                           'fix': 0.0})
+        self.capex = CapExEvaluator(poi=self,
+                                    target=self.block.aggregator.capex,
+                                    )
+        self.mntex = MntExEvaluator(poi=self,
+                                    target=self.block.aggregator.mntex,
+                                    )
+
+        self.opex = OpExEvaluator(poi=self,
+                                  target=self.block.aggregator.opex,
+                                  )
+
+        self.crev = CRevEvaluator(poi=self,
+                                  target=self.block.aggregator.opex,
+                                  )
+
         self.opex.update({'spec': transform_scalar_var(value=0.0,
                                                        scenario=self.scenario,
                                                        block=block)})
         self.crev.update({'spec': transform_scalar_var(value=0.0,
                                                        scenario=self.scenario,
                                                        block=block)})
+
         self.aux = {'ls': self.scenario.prj_duration_yrs,
                     'ccr': 1.0}
         self.size_name = None
@@ -296,148 +773,20 @@ class EconomicEvaluator(EconomicPointOfInterest):
                 getattr(self, dict_name)[dict_key] = transform_scalar_var(value=getattr(self.block, param_name, 0.0),
                                                                           scenario=self.scenario,
                                                                           block=self.block)
-            else:  # capex, mntex, aux
+            elif dict_name == 'capex':
+                setattr(getattr(self, dict_name),
+                        dict_key,
+                        getattr(self.block, param_name, 0.0))
+            else:  # mntex, aux
                 getattr(self, dict_name)[dict_key] = getattr(self.block, param_name, 0.0)
         # endregion
+
+        self.conv_opt = OptimizationConverter(poi=self)
 
         self.pre_scenario()
         self.aggregate_pre_scenario(target=self.block.aggregator)
 
-    def pre_scenario(self):
-
-        # region calculate equivalent present specific capex and opex for optimizer
-
-        # calculate specific present value of capex for the project duration
-        # initialize Series for all years of the project duration
-        self.capex['spec_prj_ep'] = pd.Series(index=self.discount_factors.index,
-                                              data=0.0)
-
-        # apply specific capex for replacement periods
-        self.capex['spec_prj_ep'].loc[reinvest_periods(lifespan=self.aux['ls'],
-                                                       observation_horizon=self.scenario.prj_duration_yrs,
-                                                       include_init=True)] = self.capex['spec']
-
-        # apply specific salvage value after project duration considering the remaining lifespan
-        # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
-        # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
-        # beginning of the last project year
-        self.capex['spec_prj_ep'].loc[self.scenario.prj_duration_yrs] = (
-                -1 * self.capex['spec'] * calc_frac_remaining_ls(ls=self.aux['ls'],
-                                                                 project_duration=self.scenario.prj_duration_yrs)
-        )
-
-        # adjust specific capex by appropriate cost change ratio
-        self.capex['spec_prj_ep'] *= pd.Series(index=self.discount_factors.index,
-                                               data=self.aux['ccr'] ** self.discount_factors.index)
-
-        # sum up all specific discounted capex for the project duration
-        self.capex['spec_prj_ep'] = self.capex['spec_prj_ep'] @ self.discount_factors['beginning']
-
-        # calculate specific present value of mntex for the project duration
-        self.mntex['spec_prj_ep'] = acc_discount(nominal_value=self.mntex['spec'],
-                                                 observation_horizon=self.scenario.prj_duration_yrs,
-                                                 discount_rate=self.scenario.wacc,
-                                                 occurs_at='beginning')
-
-        # join maintenance and capex specific present values for the project duration
-        self.capex['spec_prj_ep_joined'] = self.capex['spec_prj_ep'] + self.mntex['spec_prj_ep']
-
-        # calculate annuity due factor to compensate for difference between simulation and project time
-        self.capex['factor_ep'] = annuity(present_value=1,
-                                          observation_horizon=self.scenario.prj_duration_yrs,
-                                          discount_rate=self.scenario.wacc,
-                                          occurs_at='beginning')\
-            if self.scenario.compensate_sim_prj else 1
-
-        # calculate specific capex/mntex value used for the optimization problem
-        self.capex['spec_opt'] = self.capex['spec_prj_ep_joined'] * self.capex['factor_ep']
-
-        # runtime factor to compensate for difference between simulation and project timeframe
-        # annuity is equal to the already yearly recurring expense
-        self.opex['factor_ep'] = (1 / self.scenario.sim_yr_rat) if self.scenario.compensate_sim_prj else 1
-        self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
-        # endregion
-
-        # region calculate capital expenses for preexisting block size
-        self.capex['preexisting'] = (self.capex['preexisting'] *  # boolean so far - will be overwritten
-                                     (self.get_size(self.size_name, 'preexisting') * self.capex['spec'] +
-                                      self.capex['fix']))
-        # endregion
-
     def post_scenario(self):
-
-        # region capex
-        self.capex['expansion'] = self.capex['spec'] * self.get_size(self.size_name, 'expansion')
-        self.capex['init'] = self.capex['preexisting'] + self.capex['expansion']
-        self.cashflows.loc[0, 'capex'] -= self.capex['init']
-
-        # Add replacement capex
-        self.capex['replacement'] = (self.capex['spec'] * self.get_size(self.size_name, 'total') +
-                                     self.capex['fix'])
-        for period in reinvest_periods(lifespan=self.aux['ls'],
-                                       observation_horizon=self.scenario.prj_duration_yrs,
-                                       include_init=False):
-            self.cashflows.loc[period, 'capex'] -= self.capex['replacement'] * (self.aux['ccr'] ** period)
-
-        # Add salvage value capex (positive cashflow)
-        self.cashflows.loc[self.scenario.prj_duration_yrs, 'capex'] += (
-                self.capex['replacement'] * (self.aux['ccr'] ** self.scenario.prj_duration_yrs) *
-                calc_frac_remaining_ls(ls=self.aux['ls'],
-                                       project_duration=self.scenario.prj_duration_yrs)
-        )
-
-        self.capex['prj'] = -1 * self.cashflows['capex'].sum()
-        self.capex['dis'] = -1 * self.cashflows['capex'] @ self.discount_factors['beginning']
-        self.capex['ann'] = annuity(present_value=self.capex['dis'],
-                                    observation_horizon=self.scenario.prj_duration_yrs,
-                                    discount_rate=self.scenario.wacc,
-                                    occurs_at='beginning')
-        # endregion
-
-        # region mntex
-        self.mntex['yrl'] = self.get_size(self.size_name, 'total') * self.mntex['spec'] + self.mntex['fix']
-        self.cashflows.loc[self.scenario.periods_prj, 'mntex'] = -1 * self.mntex['yrl']
-        self.mntex['sim'] = self.mntex['yrl'] * self.scenario.sim_yr_rat
-
-        self.mntex['prj'] = -1 * self.cashflows['mntex'].sum()
-        self.mntex['dis'] = -1 * self.cashflows['mntex'] @ self.discount_factors['beginning']
-        self.mntex['ann'] = annuity(present_value=self.mntex['dis'],
-                                    observation_horizon=self.scenario.prj_duration_yrs,
-                                    discount_rate=self.scenario.wacc,
-                                    occurs_at='beginning')
-        # endregion
-
-        # region opex
-        self.opex['sim'] = (self.block.flows.loc[self.scenario.dti_eval, self.flow_name] @ self.opex['spec'][self.scenario.dti_eval] *
-                            self.scenario.timestep_hours) if self.flow_name is not None else 0
-        self.calc_opex_sim_additional()
-
-        self.opex['yrl'] = self.opex['sim'] / self.scenario.sim_yr_rat
-        self.cashflows.loc[self.scenario.periods_prj, 'opex'] = -1 * self.opex['yrl']
-
-        self.opex['prj'] = -1 * self.cashflows['opex'].sum()
-        self.opex['dis'] = -1 * self.cashflows['opex'] @ self.discount_factors['end']
-        self.opex['ann'] = annuity(present_value=self.opex['dis'],
-                                   observation_horizon=self.scenario.prj_duration_yrs,
-                                   discount_rate=self.scenario.wacc,
-                                   occurs_at='end')
-        # endregion
-
-        # region crev
-        self.crev['sim'] = (self.block.flows.loc[self.scenario.dti_eval, self.flow_name] @ self.crev['spec'][self.scenario.dti_eval] *
-                            self.scenario.timestep_hours) if self.flow_name is not None else 0
-        self.calc_crev_sim_additional()
-
-        self.crev['yrl'] = self.crev['sim'] / self.scenario.sim_yr_rat
-        self.cashflows.loc[self.scenario.periods_prj, 'crev'] = self.crev['yrl']
-
-        self.crev['prj'] = self.cashflows['crev'].sum()
-        self.crev['dis'] = self.cashflows['crev'] @ self.discount_factors['end']
-        self.crev['ann'] = annuity(present_value=self.crev['dis'],
-                                   observation_horizon=self.scenario.prj_duration_yrs,
-                                   discount_rate=self.scenario.wacc,
-                                   occurs_at='end')
-        # endregion
 
         super().aggregate_post_scenario(target=self.block.aggregator)
 
