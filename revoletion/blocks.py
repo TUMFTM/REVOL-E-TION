@@ -2476,7 +2476,6 @@ class Heatpump(SinkBlock):
         self.flow_heatpump['demand_heat'] = self.flow_heatpump['demand_heat'].fillna(0)
 
         #####try with bdew
-
         self.temperature_series = self.scenario.temp_air
 
         self.heat_profile = HeatBuilding(
@@ -2488,33 +2487,17 @@ class Heatpump(SinkBlock):
             wind_class=0,
         )
 
-        self.heat_demand = self.heat_profile.get_bdew_profile()
+        self.heat_demand = self.heat_profile.get_bdew_profile().rename('demand_heat').to_frame()
 
-        fig, ax1 = plt.subplots(figsize=(12, 4))
-
-        # Primärachse: Wärmelastprofil
-        ax1.plot(self.heat_demand.index, self.heat_demand, color='tab:red', label='Wärmelastprofil (BDEW)')
-        ax1.set_xlabel("Datum")
-        ax1.set_ylabel("Leistung [W]", color='tab:red')
-        ax1.tick_params(axis='y', labelcolor='tab:red')
-
-        # Sekundärachse: Außentemperatur
-        ax2 = ax1.twinx()
-        ax2.plot(self.temperature_series.index, self.temperature_series, color='tab:blue', label='Außentemperatur')
-        ax2.set_ylabel("Außentemperatur [°C]", color='tab:blue')
-        ax2.tick_params(axis='y', labelcolor='tab:blue')
-
-        # Titel und Layout
-        fig.suptitle("BDEW-Wärmelastprofil und Außentemperatur")
-        fig.tight_layout()
-        plt.grid(True)
-        plt.savefig("heat_profile_plot_year.png", dpi=300)
-
-
+        self.mask_time = (self.temperature_series.index.hour >= 6) & (self.temperature_series.index.hour <= 22)
+        self.heat_demand['reduction'] = (21 - self.temperature_series['temp_air']) * 3
+        self.heat_demand['reduction'] = self.heat_demand['reduction'].where(self.mask_time, 0)
+        self.heat_demand['adjusted'] = (self.heat_demand['demand_heat'] - self.heat_demand['reduction']).clip(lower=0)
 
         self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array)
-        self.flow_heatpump['BDEW'] = self.heat_demand
+        self.flow_heatpump['BDEW'] = self.heat_demand['adjusted']
         self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'BDEW'] = 0
+########
 
         self.conversion = pd.DataFrame(index=self.flow_heatpump.index)
         self.conversion['factor'] = 1 / self.flow_heatpump['COP']
@@ -2538,10 +2521,6 @@ class Heatpump(SinkBlock):
 
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
-        #if params is None:
-         #   raise ValueError(f'Block "{self.name}": Parameter "params" is required for Heatpump method '
-          #                   f'define_oemof_components()')
-
         self.components['bus'] = solph.Bus()
         self.components['sink_bus'] = solph.Bus()
 
@@ -2557,7 +2536,7 @@ class Heatpump(SinkBlock):
             outputs={self.components['sink_bus']:solph.Flow()
                     },
             loss_rate= 0.02,
-            nominal_storage_capacity=8700
+            nominal_storage_capacity=self.heat_demand['reduction'].max()
         )
 
         self.components['snk'] = solph.components.Sink(
