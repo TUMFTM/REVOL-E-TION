@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Any
 from abc import ABC, abstractmethod
 from . import utils
 
@@ -112,7 +112,9 @@ def calc_wacc(
     return wacc_nominal, wacc_real
 
 
-def transform_scalar_var(value, scenario, block=None):
+def transform_scalar_var(value: str |  float | pd.Series,
+                         scenario: simulation.Scenario,
+                         block=None):
     """
     Transform a value holding either the filename of a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
@@ -152,11 +154,132 @@ def calc_frac_remaining_ls(ls: int,
 
 
 @dataclass
-class OptimizationConverter:
-    poi: EcoEvaluator
+class Size:
+    name: str
+    block: blocks.BaseBlock
+    unit: str = 'kW'  # ToDo: pass upon initialization from block and remove workaround in __post_init__
+
+    # parameters that are set in __post_init__
+    _preexisting: float = field(init=False,
+                                repr=False,
+                                default=0.0)
+    _invest: bool = field(init=False,
+                          repr=False,
+                          default=False)
+
+    _total_max: Optional[float] = field(init=False,
+                                        repr=False,
+                                        default=None)  # "Optional" is equal to "float | None"
+
+    # parameters that are set after optimization
+    expansion: float = field(default=0.0,
+                             init=False,
+                             repr=False)  # set after optimization, initialized with 0.0
+
+    def __post_init__(self):
+        self.preexisting = self._get_param(param='size_preexisting',
+                                           default=self.preexisting)
+
+        self.invest = self._get_param(param='invest',
+                                      default=self.invest)
+
+        self.total_max = self._get_param(param='size_max',
+                                         default=self.total_max)
+
+    def _get_param(self,
+                   param: str,
+                   default: Any) -> Any:
+        """
+        Get a parameter from the block's input data.
+        """
+        name_param = f'{param}_{self.name}'
+        value = getattr(self.block, name_param, default)
+        # ToDo: remove deletion of attribute in block, if parameters are kept in pydantic model
+        if hasattr(self.block, name_param):
+            delattr(self.block, name_param)
+        return value
 
     @property
-    def spec_prj_ep_capex(self) -> float:
+    def preexisting(self) -> float:
+        return self._preexisting
+
+    @preexisting.setter
+    def preexisting(self, value: float):
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"preexisting must be numeric (int or float), got {type(value).__name__}")
+        self._preexisting = float(value)
+
+    @property
+    def invest(self) -> bool:
+        return self._invest
+
+    @invest.setter
+    def invest(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError(f"invest must be a boolean, got {type(value).__name__}")
+        self._invest = value
+
+    @property
+    def total_max(self) -> Optional[float]:
+        return self._total_max
+
+    @total_max.setter
+    def total_max(self, value: Optional[float]):
+        if value is not None and not isinstance(value, (int, float)):
+            raise TypeError(f"size_max must be numeric (int or float) or None, got {type(value).__name__}")
+        self._total_max = float(value) if value is not None else None
+
+    @property
+    def expansion_max(self) -> Optional[float]:
+        """
+        Get the maximum additional investment size.
+        0:      no investment           -> invest == False or size_max == size_preexisting
+        float:  limited investment      -> invest == True and size_max is not None
+        None:   unlimited investment    -> invest == True and size_max is None
+        """
+        if not self.invest:
+            return 0
+        else:
+            if self.total_max is not None:
+                return self.total_max - self.preexisting
+            else:
+                return None
+
+    @property
+    def total(self) -> float:
+        return self.preexisting + self.expansion
+
+    @property
+    def result_summary(self) -> pd.Series:
+        """
+        Create a pd.Series with the size's attributes for result_summary.
+        """
+        return pd.Series({f'size_{self.name}_preexisting': self.preexisting,
+                          f'size_{self.name}_invest': self.invest,
+                          f'size_{self.name}_total_max': self.total_max,
+                          f'size_{self.name}_expansion_max': self.expansion_max,
+                          f'size_{self.name}_expansion': self.expansion,
+                          f'size_{self.name}_total': self.total})
+
+    @property
+    def result_msg(self) -> str:
+        """
+        Create a message string for result_messages.
+        """
+        return (f'Optimized size of component "{self.name}" in block "{self.block.name}": '
+                f'{self.total / 1e3:.1f} {self.unit} '
+                f'(existing: {self.preexisting / 1e3:.1f} {self.unit} - '
+                f'expansion: {self.expansion / 1e3:.1f} {self.unit})'
+                if self.invest else '')
+
+
+@dataclass
+class OptimizationConverter:
+    poi: EcoEvaluator
+    
+    # ToDo: Optimize this structure to avoid repeated calculations
+    @property
+    def _spec_prj_ep_capex(self) -> float:
         """
         Calculate the specific present value of capex for the project duration.
         """
@@ -187,7 +310,7 @@ class OptimizationConverter:
         return spec_prj_ep
 
     @property
-    def spec_prj_ep_mntex(self) -> float:
+    def _spec_prj_ep_mntex(self) -> float:
         # calculate specific present value of mntex for the project duration
         return acc_discount(nominal_value=self.poi.mntex.spec,
                             observation_horizon=self.poi.scenario.prj_duration_yrs,
@@ -195,9 +318,9 @@ class OptimizationConverter:
                             occurs_at='beginning')
 
     @property
-    def spec_prj_ep_invest(self) -> float:
+    def _spec_prj_ep_invest(self) -> float:
         # join maintenance and capex specific present values for the project duration
-        return self.spec_prj_ep_capex + self.spec_prj_ep_mntex
+        return self._spec_prj_ep_capex + self._spec_prj_ep_mntex
 
     @property
     def factor_ep_invest(self) -> float:
@@ -210,7 +333,7 @@ class OptimizationConverter:
     @property
     def spec_ep_invest(self) -> float:
         # calculate specific capex/mntex value used for the optimization problem
-        return self.spec_prj_ep_invest * self.factor_ep_invest
+        return self._spec_prj_ep_invest * self.factor_ep_invest
 
     @property
     def factor_ep_operation(self) -> float:
@@ -220,7 +343,7 @@ class OptimizationConverter:
     @property
     def spec_ep_operation(self) -> float:
         # calculate specific capex/mntex value used for the optimization problem
-        return self.spec_prj_ep_invest * self.factor_ep_operation
+        return self.poi.opex.spec * self.factor_ep_operation
 
 
 @dataclass
@@ -239,9 +362,8 @@ class CostAggregator(ABC):
                        repr=False,
                        default=0)
 
-    # ToDo: find solution for cashflows
-    cashflows: np.array = field(init=False,
-                                repr=False)
+    _cashflows: np.ndarray = field(init=False,
+                                   repr=False)
 
     def __post_init__(self):
         self.cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
@@ -257,6 +379,18 @@ class CostAggregator(ABC):
     def aggregator(self) -> CostAggregator:
         # Get the aggregator based on the cost type
         return getattr(self.poi.aggregator, self.cost_type, None) if self.poi.aggregator else None
+
+    @property
+    def cashflows(self) -> np.ndarray:
+        return self._cashflows
+
+    @cashflows.setter
+    def cashflows(self, value: np.ndarray):
+        if not isinstance(value, np.ndarray):
+            raise TypeError(f"cashflows must be a numpy array, got {type(value).__name__}")
+        if value.dtype != float:
+            raise ValueError(f"cashflows must be of type float, got {value.dtype}")
+        self._cashflows = value
 
     def aggregate(self):
         if self.aggregator:
@@ -322,17 +456,35 @@ class CapexEvaluator(CapexAggregator):
     def __post_init__(self):
         super().__post_init__()
 
-        # ToDo: set consider_preexisting
-        # ToDo: set spec
-        # ToDo: set fix
+        if ('capex', 'preexisting') in self.poi.params:
+            self.consider_preexisting = getattr(self.poi.block,
+                                                self.poi.params[('capex', 'preexisting')],
+                                                )
+        else:
+            self.consider_preexisting = True
+
+        if ('capex', 'spec') in self.poi.params:
+            self.spec = getattr(self.poi.block,
+                                self.poi.params[('capex', 'spec')],
+                                )
+        else:
+            self.spec = 0.0
+
+        if ('capex', 'fix') in self.poi.params:
+            self.fix = getattr(self.poi.block,
+                               self.poi.params[('capex', 'fix')],
+                               )
+        else:
+            self.fix = 0.0
+
+        self.poi.scenario.capex_preexisting_considered += self.preexisting
 
     @property
-    def size(self) -> blocks.Size:
-        return self.poi.block.sizes[self.poi.name]
+    def size(self) -> Size:
+        return self.poi.size  # ToDo: remove and get from poi directly
 
     @property
     def preexisting(self) -> float:
-        # ToDo: add preexisting to constraint limit
         return int(self.consider_preexisting) * self.size.preexisting * self.spec + self.fix
 
     @property
@@ -347,8 +499,8 @@ class CapexEvaluator(CapexAggregator):
     def replacement(self) -> float:
         return self.size.total * self.spec + self.fix
 
-    @property
-    def cashflows(self) -> np.array:
+    @CapexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
+    def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
 
@@ -426,12 +578,23 @@ class MntexEvaluator(MntexAggregator):
     def __post_init__(self):
         super().__post_init__()
 
-        # ToDo: set spec
-        # ToDo: set fix
+        if ('mntex', 'spec') in self.poi.params:
+            self.spec = getattr(self.poi.block,
+                                self.poi.params[('mntex', 'spec')],
+                                )
+        else:
+            self.spec = 0.0
+
+        if ('mntex', 'fix') in self.poi.params:
+            self.fix = getattr(self.poi.block,
+                                self.poi.params[('mntex', 'fix')],
+                                )
+        else:
+            self.fix = 0.0
 
     @property
-    def size(self) -> blocks.Size:
-        return self.poi.block.sizes[self.poi.name]
+    def size(self) -> Size:
+        return self.poi.size  # ToDo: remove and get from poi directly
 
     @property
     def yrl(self) -> float:
@@ -441,9 +604,8 @@ class MntexEvaluator(MntexAggregator):
     def sim(self) -> float:
         return self.yrl * self.poi.scenario.sim_yr_rat
 
-
-    @property
-    def cashflows(self) -> np.array:
+    @MntexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
+    def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
         cashflows [self.poi.scenario.periods_prj] = -1 * self.yrl  # ToDo: check if this is correct (indexing)
@@ -496,22 +658,33 @@ class OpexAggregator(CostAggregator):
 class OpexEvaluator(OpexAggregator):
     poi: EcoEvaluator
 
-    spec: pd.Series = field(init=False,
-                            repr=False,
-                            default=0.0)  # set default value of 0
+    _spec: pd.Series = field(init=False,
+                             repr=False,
+                             default=0.0)  # set default value of 0
 
     def __post_init__(self):
         super().__post_init__()
 
-        # ToDo: set spec -> use property setter to transform scalar variable to pandas Series
+        if ('opex', 'spec') in self.poi.params:
+            self.spec = getattr(self.poi.block,
+                                self.poi.params[('opex', 'spec')],
+                                )
+        else:
+            self.spec = 0.0
 
     @property
-    def flow(self) -> np.array:
-        if self.poi.name in self.poi.block.flow.columns:
-            return self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.poi.name].values
-        else:
-            return np.array([0.0] * len(self.poi.scenario.dti_eval),
-                            dtype=float)
+    def spec(self) -> pd.Series:
+        return self._spec
+
+    @spec.setter
+    def spec(self, value: str | float | pd.Series):
+        self._spec = transform_scalar_var(value=value,
+                                          scenario=self.poi.scenario,
+                                          block=self.poi.block)
+
+    @property
+    def flow(self) -> np.ndarray:
+        return self.poi.flow  # ToDo: remove and get from poi directly
 
     @property
     def sim(self) -> float:
@@ -522,8 +695,8 @@ class OpexEvaluator(OpexAggregator):
     def yrl(self) -> float:
         return self.sim / self.poi.scenario.sim_yr_rat
 
-    @property
-    def cashflows(self) -> np.array:
+    @OpexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
+    def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
         cashflows[self.poi.scenario.periods_prj] = -1 * self.yrl  # ToDo: check if this is correct (indexing)
@@ -580,36 +753,46 @@ class CrevEvaluator(OpexAggregator):
                                      repr=False,
                                      default=None)  # ToDo: define flow
 
-    spec: pd.Series = field(init=False,
-                            repr=False,
-                            default=0.0)  # set default value of 0
+    _spec: pd.Series = field(init=False,
+                             repr=False,
+                             default=0.0)  # set default value of 0
 
     def __post_init__(self):
         super().__post_init__()
 
-        # ToDo: set spec -> use property setter to transform scalar variable to pandas Series
+        if ('crev', 'spec') in self.poi.params:
+            self.spec = getattr(self.poi.block,
+                                self.poi.params[('crev', 'spec')],
+                                )
+        else:
+            self.spec = 0.0
 
     @property
-    def flow(self) -> np.array:
-        if self.poi.name in self.poi.block.flow.columns:
-            return self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.poi.name].values
-        else:
-            return np.array([0.0] * len(self.poi.scenario.dti_eval),
-                            dtype=float)
+    def spec(self) -> pd.Series:
+        return self._spec
+
+    @spec.setter
+    def spec(self, value: str | float | pd.Series):
+        self._spec = transform_scalar_var(value=value,
+                                          scenario=self.poi.scenario,
+                                          block=self.poi.block)
+
+    @property
+    def flow(self) -> np.ndarray:
+        return self.poi.flow  # ToDo: remove and get from poi directly
 
     @property
     def sim(self) -> float:
         # ToDo: add calc_crev_sim_additional (e.g. for PeakEvaluator or FleetUnitEvaluator)
-        return (self.poi.block.flows.loc[self.poi.scenario.dti_eval, self.flow_name]
-                @ self.spec[self.poi.scenario.dti_eval]
-                * self.poi.scenario.timestep_hours) if self.flow_name is not None else 0
+        return (self.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
+                if self.flow_name is not None else 0)
 
     @property
     def yrl(self) -> float:
         return self.sim / self.poi.scenario.sim_yr_rat
 
-    @property
-    def cashflows(self) -> np.array:
+    @CrevAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
+    def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
         cashflows[self.poi.scenario.periods_prj] = self.yrl  # ToDo: check if this is correct (indexing)
@@ -642,12 +825,14 @@ class TotexAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'totex'
 
-    def calc(self):
+    def aggregate(self):
         self.cashflows = self.poi.capex.cashflows + self.poi.mntex.cashflows + self.poi.opex.cashflows
 
         self.prj = self.poi.capex.prj + self.poi.mntex.prj + self.poi.opex.prj
         self.dis = self.poi.capex.dis + self.poi.mntex.dis + self.poi.opex.dis
         self.ann = self.poi.capex.ann + self.poi.mntex.ann + self.poi.opex.ann
+
+        super().aggregate()
 
 
 @dataclass
@@ -661,18 +846,21 @@ class ValueAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'value'
 
-    def calc(self):
+    def aggregate(self):
         self.cashflows = self.poi.crev.cashflows - self.poi.totex.cashflows  # Check whether this is correct
 
         self.prj = self.poi.crev.prj - self.poi.totex.prj
         self.dis = self.poi.crev.dis - self.poi.totex.dis
         self.ann = self.poi.crev.ann - self.poi.totex.ann
 
+        super().aggregate()
+
 
 @dataclass
 class EcoPOI(ABC):
     name: str
-    block: simulation.Scenario | blocks.BaseBlock  # ToDo: rename attribute to 'parent' or 'context'?
+    scenario: simulation.Scenario
+    block: Optional[blocks.BaseBlock] = None
 
     # Initialize in __post_init__()
     capex: CapexAggregator | CapexEvaluator = field(init=False,)
@@ -684,15 +872,6 @@ class EcoPOI(ABC):
     def __post_init__(self):
         # Initialize capex, mntex, opex, crev (totex, value) with correct class (Aggregator or Evaluator) here
         ...
-
-    @property
-    def scenario(self) -> simulation.Scenario:
-        if isinstance(self.block, blocks.BaseBlock):
-            return self.block.scenario
-        elif isinstance(self.block, simulation.Scenario):
-            return self.block
-        else:
-            raise TypeError('block must be an instance of BaseBlock or Scenario')
 
     @property
     def discount_factors(self) -> pd.DataFrame:
@@ -727,41 +906,78 @@ class EcoAggregator(EcoPOI):
 
     @property
     def aggregator(self) -> EcoAggregator:
-        return self.block.parent.aggregator if self.block.parent else None
+        return self.block.parent.aggregator if hasattr(self.block, 'parent') else None
 
     def aggregate(self):
-        self.totex.calc()
-        self.value.calc()
-
         super().aggregate()
 
         self.totex.aggregate()
         self.value.aggregate()
 
+    def write_result_summary(self) -> pd.Series:
+        # ToDo: implement a method to write a summary of the economic results
+        return pd.Series()
+
 
 @dataclass
 class EcoEvaluator(EcoPOI):
     block: blocks.BaseBlock
+    params: dict = None
 
-    # ToDo: get input parameters
-    #  including aux(ls, ccr)
+    aux: dict = field(init=False,
+                      repr=False,
+                      )
+
+    opt: OptimizationConverter = field(init=False,
+                                       repr=False)
 
     def __post_init__(self):
+        self.aux = dict()
+
+        if ('aux', 'ls') in self.params:
+            self.aux['ls'] = getattr(self.block,
+                                     self.params[('aux', 'ls')])
+        else:
+            self.aux['ls'] = self.scenario.prj_duration_yrs
+
+        if ('aux', 'ccr') in self.params:
+            self.aux['ccr'] = getattr(self.block,
+                                     self.params[('aux', 'ccr')])
+        else:
+            self.aux['ccr'] = 1.0
+
+        self.block.sizes[self.name] = Size(name=self.name,
+                                           block=self.block,
+                                           unit=self.params.get(('size', 'unit'), 'kW')
+                                           )
+
+        if ('flow', 'name') in self.params:
+            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
+            self.block.flow_names.add(self.params[('flow', 'name')])
+
         self.capex = CapexEvaluator(poi=self)
         self.mntex = MntexEvaluator(poi=self)
         self.opex = OpexEvaluator(poi=self)
         self.crev = CrevEvaluator(poi=self)
 
-    @property
-    def scenario(self) -> simulation.Scenario:
-        if isinstance(self.block, blocks.BaseBlock):
-            return self.block.scenario
-        else:
-            raise TypeError('block must be an instance of BaseBlock')
+        self.opt = OptimizationConverter(poi=self)
+        pass
 
     @property
     def aggregator(self) -> EcoAggregator:
         return self.block.aggregator
+
+    @property
+    def size(self) -> Size:
+        return self.block.sizes[self.name]
+
+    @property
+    def flow(self) -> np.ndarray:
+        if hasattr(self.block, 'flows') and self.name in self.block.flows.columns:
+            return self.block.flows.loc[self.scenario.dti_eval, self.name].values
+        else:
+            return np.array([0.0] * len(self.scenario.dti_eval),
+                            dtype=float)
 
 
 class EconomicPointOfInterest:
@@ -872,10 +1088,9 @@ class EconomicEvaluator(EconomicPointOfInterest):
                          block=block)
 
         # ToDo: create corresponding Size object in block.sizes
-        self.block.sizes[name] = blocks.Size(name=name,
-                                             block=block,
-                                             unit=params['unit'])
-
+        self.block.sizes[name] = Size(name=name,
+                                      block=block,
+                                      unit=params['unit'])
 
         # region set default values
         self.capex = CapexEvaluator(poi=self,

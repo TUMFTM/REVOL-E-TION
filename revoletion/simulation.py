@@ -170,7 +170,6 @@ class Scenario:
 
         self.name = name
         self.parent = None
-        self.pois = dict()
 
         if not run_execution:
             self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)
@@ -400,7 +399,9 @@ class Scenario:
                                                    for occ in ['beginning', 'mid', 'end']},
                                              dtype='float64')
 
-        self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
+        self.aggregator = eco.EcoAggregator(name='scenario',
+                                            scenario=self)
+        self.capex_preexisting_considered = 0
 
         self.block_registry = dict()
 
@@ -419,8 +420,8 @@ class Scenario:
                 raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
                                  f'Check for typos or add class.')
 
-        if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
-            raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
+        if self.invest_max is not None and self.invest_max < self.capex_preexisting_considered:
+            raise ValueError(f'Initial investment costs of {self.capex_preexisting_considered:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         self.objective_opt = None  # unused for rh strategy
@@ -510,7 +511,7 @@ class Scenario:
 
             for block in self.block_registry.get('TopLevelBlock', {}).values():
                 block.post_scenario()
-            self.aggregator.post_scenario()
+            self.aggregator.aggregate()
 
             self.calc_meta_results()
 
@@ -559,14 +560,14 @@ class Scenario:
         if self.energies.loc[('sinks', 'del'), 'sim'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'dis']
-            self.lcoe_wocs = ((self.aggregator.totex['dis'] -
+            self.lcoe_total = self.aggregator.totex.dis / self.energies.loc[('sinks', 'del'), 'dis']
+            self.lcoe_wocs = ((self.aggregator.totex.dis -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                               sum([fleet.aggregator.totex['dis'] for fleet in self.block_registry.get('Fleet', {}).values()])) /
+                               sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get('Fleet', {}).values()])) /
                               self.energies.loc[('sinks', 'del'), 'dis'])
 
-        self.npc = self.aggregator.totex['dis']
-        self.npv = self.aggregator.value['dis']
+        self.npc = self.aggregator.totex.dis
+        self.npv = self.aggregator.value.dis
         # ToDo: implement self.cashflows
         self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
         self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)

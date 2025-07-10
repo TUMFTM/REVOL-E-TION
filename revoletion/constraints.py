@@ -289,7 +289,7 @@ class CustomConstraints:
                 expr += sum(m.GenericInvestmentStorageBlock.invest[invest_storage['so'], 0] *
                             invest_storage['capex_spec'] for invest_storage in self.invest_costs['storage'])
 
-                expr += self.scenario.aggregator.capex['preexisting']
+                expr += self.scenario.capex_preexisting_considered
 
                 return expr <= self.scenario.invest_max
 
