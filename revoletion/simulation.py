@@ -169,6 +169,8 @@ class Scenario:
                 raise ValueError('Parameters must be provided when run_execution is True')
 
         self.name = name
+        self.parent = None
+        self.pois = dict()
 
         if not run_execution:
             self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)

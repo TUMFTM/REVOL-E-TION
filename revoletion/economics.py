@@ -5,12 +5,13 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from typing import TYPE_CHECKING, Optional
-
+from abc import ABC, abstractmethod
 from . import utils
 
 
 if TYPE_CHECKING:
-    from .blocks import Size
+    from . import blocks
+    from . import simulation
 
 def discount(future_value: float,
              periods: int,
@@ -99,9 +100,9 @@ def calc_wacc(
         rate_tax: float = 0.25,  # corporate tax rate
         rate_inflation: float = 0.02,  # expected inflation rate
         volatility_relative: float = 1,  # volatility of stock price relative to market
-) -> float:
+) -> (float, float):
     """
-    This function calculates the nominal (inluding inflation) weighted average cost of capital (WACC) using the
+    This function calculates the nominal (including inflation) weighted average cost of capital (WACC) using the
     Capital Asset Pricing Model (CAPM) for equity cost.
     """
     share_debt = 1 - share_equity
@@ -152,7 +153,7 @@ def calc_frac_remaining_ls(ls: int,
 
 @dataclass
 class OptimizationConverter:
-    poi: EconomicEvaluator
+    poi: EcoEvaluator
 
     @property
     def spec_prj_ep_capex(self) -> float:
@@ -223,9 +224,8 @@ class OptimizationConverter:
 
 
 @dataclass
-class Aggregator:
-    poi: EconomicPointOfInterest
-    target: Optional[Aggregator]
+class CostAggregator(ABC):
+    poi: EcoPOI
 
     prj: float = field(init=False,
                        repr=False,
@@ -239,6 +239,7 @@ class Aggregator:
                        repr=False,
                        default=0)
 
+    # ToDo: find solution for cashflows
     cashflows: np.array = field(init=False,
                                 repr=False)
 
@@ -246,18 +247,28 @@ class Aggregator:
         self.cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                                   dtype=float)
 
+    @property
+    @abstractmethod
+    def cost_type(self) -> str:
+        # Return the type of cost (e.g. 'capex', 'mntex', 'opex', 'crev', 'totex', 'value')
+        ...
+
+    @property
+    def aggregator(self) -> CostAggregator:
+        # Get the aggregator based on the cost type
+        return getattr(self.poi.aggregator, self.cost_type, None) if self.poi.aggregator else None
+
     def aggregate(self):
-        if self.target:
-            self.target.prj += self.prj
-            self.target.dis += self.dis
-            self.target.ann += self.ann
-            self.target.cashflows += self.cashflows
+        if self.aggregator:
+            self.aggregator.prj += self.prj
+            self.aggregator.dis += self.dis
+            self.aggregator.ann += self.ann
+            self.aggregator.cashflows += self.cashflows
 
 
 @dataclass
-class CapExAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: Optional[CapExAggregator]
+class CapexAggregator(CostAggregator):
+    poi: EcoPOI
 
     # all attributes have to be initialized with 0 and calculated
     preexisting: float = field(init=False,
@@ -279,19 +290,22 @@ class CapExAggregator(Aggregator):
     def __post_init__(self):
         super().__post_init__()
 
+    @property
+    def cost_type(self) -> str:
+        return 'capex'
+
     def aggregate(self):
         super().aggregate()
-        if self.target:
-            self.target.preexisting += self.preexisting
-            self.target.expansion += self.expansion
-            self.target.init += self.init
-            self.target.replacement += self.replacement
+        if self.aggregator:
+            self.aggregator.preexisting += self.preexisting
+            self.aggregator.expansion += self.expansion
+            self.aggregator.init += self.init
+            self.aggregator.replacement += self.replacement
 
 
 @dataclass
-class CapExEvaluator(CapExAggregator):
-    poi: EconomicEvaluator
-    target: Optional[CapExAggregator]
+class CapexEvaluator(CapexAggregator):
+    poi: EcoEvaluator
 
     consider_preexisting: bool = field(init=False,
                                        repr=False,
@@ -313,7 +327,7 @@ class CapExEvaluator(CapExAggregator):
         # ToDo: set fix
 
     @property
-    def size(self) -> Size:
+    def size(self) -> blocks.Size:
         return self.poi.block.sizes[self.poi.name]
 
     @property
@@ -371,9 +385,8 @@ class CapExEvaluator(CapExAggregator):
 
 
 @dataclass
-class MntExAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: MntExAggregator
+class MntexAggregator(CostAggregator):
+    poi: EcoPOI
 
     sim: float = field(init=False,
                        repr=False,
@@ -386,18 +399,21 @@ class MntExAggregator(Aggregator):
     def __post_init__(self):
         super().__post_init__()
 
+    @property
+    def cost_type(self) -> str:
+        return 'mntex'
+
     def aggregate(self):
         super().aggregate()
 
-        if self.target:
-            self.target.sim += self.sim
-            self.target.yrl += self.yrl
+        if self.aggregator:
+            self.aggregator.sim += self.sim
+            self.aggregator.yrl += self.yrl
 
 
 @dataclass
-class MntExEvaluator(MntExAggregator):
-    poi: EconomicEvaluator
-    target: MntExAggregator
+class MntexEvaluator(MntexAggregator):
+    poi: EcoEvaluator
 
     spec: float = field(init=False,
                         repr=False,
@@ -414,7 +430,7 @@ class MntExEvaluator(MntExAggregator):
         # ToDo: set fix
 
     @property
-    def size(self) -> Size:
+    def size(self) -> blocks.Size:
         return self.poi.block.sizes[self.poi.name]
 
     @property
@@ -450,9 +466,8 @@ class MntExEvaluator(MntExAggregator):
 
 
 @dataclass
-class OpExAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: Optional[OpExAggregator]
+class OpexAggregator(CostAggregator):
+    poi: EcoPOI
 
     sim: float = field(init=False,
                        repr=False,
@@ -465,18 +480,21 @@ class OpExAggregator(Aggregator):
     def __post_init__(self):
         super().__post_init__()
 
+    @property
+    def cost_type(self) -> str:
+        return 'opex'
+
     def aggregate(self):
         super().aggregate()
 
-        if self.target:
-            self.target.sim += self.sim
-            self.target.yrl += self.yrl
+        if self.aggregator:
+            self.aggregator.sim += self.sim
+            self.aggregator.yrl += self.yrl
 
 
 @dataclass
-class OpExEvaluator(OpExAggregator):
-    poi: EconomicEvaluator
-    target: OpExAggregator
+class OpexEvaluator(OpexAggregator):
+    poi: EcoEvaluator
 
     spec: pd.Series = field(init=False,
                             repr=False,
@@ -528,9 +546,8 @@ class OpExEvaluator(OpExAggregator):
 
 
 @dataclass
-class CRevAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: Optional[CRevAggregator]
+class CrevAggregator(CostAggregator):
+    poi: EcoPOI
 
     sim: float = field(init=False,
                        repr=False,
@@ -543,18 +560,21 @@ class CRevAggregator(Aggregator):
     def __post_init__(self):
         super().__post_init__()
 
+    @property
+    def cost_type(self) -> str:
+        return 'crev'
+
     def aggregate(self):
         super().aggregate()
 
-        if self.target:
-            self.target.sim += self.sim
-            self.target.yrl += self.yrl
+        if self.aggregator:
+            self.aggregator.sim += self.sim
+            self.aggregator.yrl += self.yrl
 
 
 @dataclass
-class CRevEvaluator(OpExAggregator):
-    poi: EconomicEvaluator
-    target: CRevAggregator
+class CrevEvaluator(OpexAggregator):
+    poi: EcoEvaluator
 
     flow_name: Optional[str] = field(init=False,
                                      repr=False,
@@ -612,21 +632,136 @@ class CRevEvaluator(OpExAggregator):
 
 
 @dataclass
-class TotExAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: Optional[TotExAggregator]
+class TotexAggregator(CostAggregator):
+    poi: EcoAggregator
 
     def __post_init__(self):
         super().__post_init__()
+
+    @property
+    def cost_type(self) -> str:
+        return 'totex'
+
+    def calc(self):
+        self.cashflows = self.poi.capex.cashflows + self.poi.mntex.cashflows + self.poi.opex.cashflows
+
+        self.prj = self.poi.capex.prj + self.poi.mntex.prj + self.poi.opex.prj
+        self.dis = self.poi.capex.dis + self.poi.mntex.dis + self.poi.opex.dis
+        self.ann = self.poi.capex.ann + self.poi.mntex.ann + self.poi.opex.ann
 
 
 @dataclass
-class ValueAggregator(Aggregator):
-    poi: EconomicPointOfInterest
-    target: Optional[ValueAggregator]
+class ValueAggregator(CostAggregator):
+    poi: EcoAggregator
 
     def __post_init__(self):
         super().__post_init__()
+
+    @property
+    def cost_type(self) -> str:
+        return 'value'
+
+    def calc(self):
+        self.cashflows = self.poi.crev.cashflows - self.poi.totex.cashflows  # Check whether this is correct
+
+        self.prj = self.poi.crev.prj - self.poi.totex.prj
+        self.dis = self.poi.crev.dis - self.poi.totex.dis
+        self.ann = self.poi.crev.ann - self.poi.totex.ann
+
+
+@dataclass
+class EcoPOI(ABC):
+    name: str
+    block: simulation.Scenario | blocks.BaseBlock  # ToDo: rename attribute to 'parent' or 'context'?
+
+    # Initialize in __post_init__()
+    capex: CapexAggregator | CapexEvaluator = field(init=False,)
+    mntex: MntexAggregator | MntexEvaluator = field(init=False,)
+    opex: OpexAggregator | OpexEvaluator = field(init=False,)
+    crev: CrevAggregator | CrevEvaluator = field(init=False,)
+
+    @abstractmethod
+    def __post_init__(self):
+        # Initialize capex, mntex, opex, crev (totex, value) with correct class (Aggregator or Evaluator) here
+        ...
+
+    @property
+    def scenario(self) -> simulation.Scenario:
+        if isinstance(self.block, blocks.BaseBlock):
+            return self.block.scenario
+        elif isinstance(self.block, simulation.Scenario):
+            return self.block
+        else:
+            raise TypeError('block must be an instance of BaseBlock or Scenario')
+
+    @property
+    def discount_factors(self) -> pd.DataFrame:
+        return self.scenario.discount_factors
+
+    @property
+    @abstractmethod
+    def aggregator(self) -> EcoAggregator:
+        # Get aggregator based on the type of EcoPOI (EcoAggregator, EcoEvaluator)
+        ...
+
+    def aggregate(self):
+        self.capex.aggregate()
+        self.mntex.aggregate()
+        self.opex.aggregate()
+        self.crev.aggregate()
+
+
+@dataclass
+class EcoAggregator(EcoPOI):
+    totex: TotexAggregator = field(init=False,)
+    value: ValueAggregator = field(init=False,)
+
+    def __post_init__(self):
+        self.capex = CapexAggregator(poi=self)
+        self.mntex = MntexAggregator(poi=self)
+        self.opex = OpexAggregator(poi=self)
+        self.crev = CrevAggregator(poi=self)
+
+        self.totex = TotexAggregator(poi=self)
+        self.value = ValueAggregator(poi=self)
+
+    @property
+    def aggregator(self) -> EcoAggregator:
+        return self.block.parent.aggregator if self.block.parent else None
+
+    def aggregate(self):
+        self.totex.calc()
+        self.value.calc()
+
+        super().aggregate()
+
+        self.totex.aggregate()
+        self.value.aggregate()
+
+
+@dataclass
+class EcoEvaluator(EcoPOI):
+    block: blocks.BaseBlock
+
+    # ToDo: get input parameters
+    #  including aux(ls, ccr)
+
+    def __post_init__(self):
+        self.capex = CapexEvaluator(poi=self)
+        self.mntex = MntexEvaluator(poi=self)
+        self.opex = OpexEvaluator(poi=self)
+        self.crev = CrevEvaluator(poi=self)
+
+    @property
+    def scenario(self) -> simulation.Scenario:
+        if isinstance(self.block, blocks.BaseBlock):
+            return self.block.scenario
+        else:
+            raise TypeError('block must be an instance of BaseBlock')
+
+    @property
+    def aggregator(self) -> EcoAggregator:
+        return self.block.aggregator
 
 
 class EconomicPointOfInterest:
@@ -636,8 +771,8 @@ class EconomicPointOfInterest:
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.BaseBlock',
-                 scenario: 'simulation.Scenario' = None):
+                 block: blocks.BaseBlock,
+                 scenario: simulation.Scenario = None):
 
         self.name = name
         self.block = block
@@ -653,10 +788,12 @@ class EconomicPointOfInterest:
                                       data=0.0,
                                       dtype='float64')
 
-        self.capex = CapExAggregator
-        self.mntex = MntExAggregator
-        self.opex = OpExAggregator
-        self.crev = CRevAggregator
+        self.capex = CapexAggregator
+        self.mntex = MntexAggregator
+        self.opex = OpexAggregator
+        self.crev = CrevAggregator
+        self.totex = TotexAggregator
+        self.value = ValueAggregator
 
     def aggregate_pre_scenario(self,
                                target: 'EconomicAggregator'):
@@ -678,12 +815,13 @@ class EconomicPointOfInterest:
         pass
 
 
+
 class EconomicAggregator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.BaseBlock',
-                 scenario: 'simulation.Scenario' = None):
+                 block: blocks.BaseBlock,
+                 scenario: simulation.Scenario = None):
 
         super().__init__(name=name,
                          block=block,
@@ -727,25 +865,31 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.BaseBlock',
+                 block: blocks.BaseBlock,
                  params: dict):
 
         super().__init__(name=name,
                          block=block)
 
+        # ToDo: create corresponding Size object in block.sizes
+        self.block.sizes[name] = blocks.Size(name=name,
+                                             block=block,
+                                             unit=params['unit'])
+
+
         # region set default values
-        self.capex = CapExEvaluator(poi=self,
+        self.capex = CapexEvaluator(poi=self,
                                     target=self.block.aggregator.capex,
                                     )
-        self.mntex = MntExEvaluator(poi=self,
+        self.mntex = MntexEvaluator(poi=self,
                                     target=self.block.aggregator.mntex,
                                     )
 
-        self.opex = OpExEvaluator(poi=self,
+        self.opex = OpexEvaluator(poi=self,
                                   target=self.block.aggregator.opex,
                                   )
 
-        self.crev = CRevEvaluator(poi=self,
+        self.crev = CrevEvaluator(poi=self,
                                   target=self.block.aggregator.opex,
                                   )
 
