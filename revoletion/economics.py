@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 import numpy as np
 import pandas as pd
 from typing import TYPE_CHECKING, Optional, Any
@@ -456,41 +456,17 @@ class CapexAggregator(CostAggregator):
 class CapexEvaluator(CapexAggregator):
     poi: EcoEvaluator
 
-    consider_preexisting: bool = field(init=False,
-                                       repr=False,
-                                       default=True)
+    consider_preexisting: bool = field(init=True,
+                                       repr=False)
 
-    spec: float = field(init=False,
-                        repr=False,
-                        default=0.0)
+    spec: float = field(init=True,
+                        repr=False)
 
-    fix: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    fix: float = field(init=True,
+                       repr=False)
 
     def __post_init__(self):
         super().__post_init__()
-
-        if ('capex', 'preexisting') in self.poi.params:
-            self.consider_preexisting = getattr(self.poi.block,
-                                                self.poi.params[('capex', 'preexisting')],
-                                                )
-        else:
-            self.consider_preexisting = True
-
-        if ('capex', 'spec') in self.poi.params:
-            self.spec = getattr(self.poi.block,
-                                self.poi.params[('capex', 'spec')],
-                                )
-        else:
-            self.spec = 0.0
-
-        if ('capex', 'fix') in self.poi.params:
-            self.fix = getattr(self.poi.block,
-                               self.poi.params[('capex', 'fix')],
-                               )
-        else:
-            self.fix = 0.0
 
         self.poi.scenario.capex_preexisting_considered += self.preexisting
 
@@ -585,30 +561,14 @@ class MntexAggregator(CostAggregator):
 class MntexEvaluator(MntexAggregator):
     poi: EcoEvaluator
 
-    spec: float = field(init=False,
-                        repr=False,
-                        default=0.0)
+    spec: float = field(init=True,
+                        repr=False)
 
-    fix: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    fix: float = field(init=True,
+                       repr=False)
 
     def __post_init__(self):
         super().__post_init__()
-
-        if ('mntex', 'spec') in self.poi.params:
-            self.spec = getattr(self.poi.block,
-                                self.poi.params[('mntex', 'spec')],
-                                )
-        else:
-            self.spec = 0.0
-
-        if ('mntex', 'fix') in self.poi.params:
-            self.fix = getattr(self.poi.block,
-                                self.poi.params[('mntex', 'fix')],
-                                )
-        else:
-            self.fix = 0.0
 
     @property
     def yrl(self) -> float:
@@ -679,19 +639,14 @@ class OpexAggregator(CostAggregator):
 class OpexEvaluator(OpexAggregator):
     poi: EcoEvaluator
 
+    spec: InitVar[str | float | pd.Series] = 0.0  # constructor-only variable -> not stored
+
     _spec: pd.Series = field(init=False,
-                             repr=False,
-                             default=0.0)  # set default value of 0
+                             repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self, spec):
         super().__post_init__()
-
-        if ('opex', 'spec') in self.poi.params:
-            self.spec = getattr(self.poi.block,
-                                self.poi.params[('opex', 'spec')],
-                                )
-        else:
-            self.spec = 0.0
+        self.spec = spec
 
     @property
     def spec(self) -> pd.Series:
@@ -773,19 +728,14 @@ class CrevAggregator(CostAggregator):
 class CrevEvaluator(CrevAggregator):
     poi: EcoEvaluator
 
+    spec: InitVar[str | float | pd.Series] = 0.0  # constructor-only variable -> not stored
+
     _spec: pd.Series = field(init=False,
-                             repr=False,
-                             default=0.0)  # set default value of 0
+                             repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self, spec):
         super().__post_init__()
-
-        if ('crev', 'spec') in self.poi.params:
-            self.spec = getattr(self.poi.block,
-                                self.poi.params[('crev', 'spec')],
-                                )
-        else:
-            self.spec = 0.0
+        self.spec = spec
 
     @property
     def spec(self) -> pd.Series:
@@ -979,10 +929,38 @@ class EcoEvaluator(EcoPOI):
             self.block.flow_names.add(self.params[('flow', 'name')])
             self.flow_name = self.params[('flow', 'name')]
 
-        self.capex = CapexEvaluator(poi=self)
-        self.mntex = MntexEvaluator(poi=self)
-        self.opex = OpexEvaluator(poi=self)
-        self.crev = CrevEvaluator(poi=self)
+        def _get_param(key: tuple[str, str],
+                       default: Any) -> Any:
+            if key in self.params:
+                return getattr(self.block, self.params[key], default)
+            else:
+                return default
+
+        self.capex = CapexEvaluator(poi=self,
+                                    consider_preexisting=_get_param(key=('capex', 'consider_preexisting'),
+                                                                    default=True),
+                                    spec=_get_param(key=('capex', 'spec'),
+                                                    default=0.0),
+                                    fix=_get_param(key=('capex', 'fix'),
+                                                   default=0.0),
+                                    )
+
+        self.mntex = MntexEvaluator(poi=self,
+                                    spec=_get_param(key=('mntex', 'spec'),
+                                                    default=0.0),
+                                    fix=_get_param(key=('mntex', 'fix'),
+                                                   default=0.0),
+                                    )
+
+        self.opex = OpexEvaluator(poi=self,
+                                  spec=_get_param(key=('opex', 'spec'),
+                                                  default=0.0),
+                                  )
+
+        self.crev = CrevEvaluator(poi=self,
+                                  spec=_get_param(key=('crev', 'spec'),
+                                                  default=0.0),
+                                  )
 
         self.opt = OptimizationConverter(poi=self)
 
