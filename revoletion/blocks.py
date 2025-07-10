@@ -9,6 +9,8 @@ import pvlib
 import re
 import requests
 import windpowerlib
+from demandlib.bdew.heat_building import HeatBuilding
+import matplotlib.pyplot as plt
 
 from abc import ABC, abstractmethod
 
@@ -2439,8 +2441,8 @@ class Heatpump(SinkBlock):
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
                                                ('crev', 'spec'): 'crev_spec'}},
-                          'hp_in': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'hp_in'}},
+                          'in': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'in'}},
                           'shs_in': {'class_name': 'EconomicEvaluator',
                                     'params': {('flow', 'name'): 'shs_in'}},
                           'shs_out': {'class_name': 'EconomicEvaluator',
@@ -2448,7 +2450,7 @@ class Heatpump(SinkBlock):
                           'heating': {'class_name': 'EconomicEvaluator',
                                     'params': {('flow', 'name'): 'heating'}},
                           },
-                    state_names=[])
+                    state_names=['shs_in', 'shs_out'])
 
     def __init__(self,
                  name: str,
@@ -2473,7 +2475,46 @@ class Heatpump(SinkBlock):
         self.flow_heatpump['demand_heat'] = (500*(15-self.flow_heatpump['temp_air'])).clip(lower=0) ##assumption: 0,5 kW/K
         self.flow_heatpump['demand_heat'] = self.flow_heatpump['demand_heat'].fillna(0)
 
+        #####try with bdew
+
+        self.temperature_series = self.scenario.temp_air
+
+        self.heat_profile = HeatBuilding(
+            df_index=self.temperature_series.index,
+            temperature=self.temperature_series,
+            annual_heat_demand=20000000,  # in Wh
+            shlp_type="EFH",  # EFH = Einfamilienhaus
+            building_class=6,
+            wind_class=0,
+        )
+
+        self.heat_demand = self.heat_profile.get_bdew_profile()
+
+        fig, ax1 = plt.subplots(figsize=(12, 4))
+
+        # Primärachse: Wärmelastprofil
+        ax1.plot(self.heat_demand.index, self.heat_demand, color='tab:red', label='Wärmelastprofil (BDEW)')
+        ax1.set_xlabel("Datum")
+        ax1.set_ylabel("Leistung [W]", color='tab:red')
+        ax1.tick_params(axis='y', labelcolor='tab:red')
+
+        # Sekundärachse: Außentemperatur
+        ax2 = ax1.twinx()
+        ax2.plot(self.temperature_series.index, self.temperature_series, color='tab:blue', label='Außentemperatur')
+        ax2.set_ylabel("Außentemperatur [°C]", color='tab:blue')
+        ax2.tick_params(axis='y', labelcolor='tab:blue')
+
+        # Titel und Layout
+        fig.suptitle("BDEW-Wärmelastprofil und Außentemperatur")
+        fig.tight_layout()
+        plt.grid(True)
+        plt.savefig("heat_profile_plot_year.png", dpi=300)
+
+
+
         self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array)
+        self.flow_heatpump['BDEW'] = self.heat_demand
+        self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'BDEW'] = 0
 
         self.conversion = pd.DataFrame(index=self.flow_heatpump.index)
         self.conversion['factor'] = 1 / self.flow_heatpump['COP']
@@ -2488,10 +2529,12 @@ class Heatpump(SinkBlock):
         x denotes the flow measurement point in results
 
         bus_connected   bus_name
-            |           |<----x------->name_storage
+            |           |----x------->name_storage--x--->name_snk
             |----x----->|
-            |           |-----x------->name_snk
+            |           |-----x------->
         """
+
+        #scenario t_soll -+ 2 grad --> calc storage capacity
 
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
@@ -2524,7 +2567,7 @@ class Heatpump(SinkBlock):
 
     def get_horizon_results(self,
                             horizon: 'PredictionHorizon'):
-        self.flows.loc[horizon.dti_ch, 'hp_in'] = horizon.results[(self.bus_connected,
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'shs_in'] = horizon.results[(self.components['bus'],
                                                                     self.components['shs'])]['sequences']['flow'][horizon.dti_ch]
@@ -2533,8 +2576,36 @@ class Heatpump(SinkBlock):
         self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['sink_bus'],
                                                                      self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
+        self.states = self.flows.copy()
+    def create_plot_traces(self):
+
+        super().create_plot_traces()
+
+        data_storage_in = self.states.loc[self.scenario.dti_eval, 'shs_in'].dropna()
+        data_storage_out = self.states.loc[self.scenario.dti_eval, 'shs_out'].dropna()
+
+
+        self.plot_traces['states'].extend([go.Scatter(x=data_storage_in.index,
+                                                      y=data_storage_in,
+                                                      mode='lines',
+                                                      name=f'{self.name} SHS_IN',
+                                                      line=dict(width=2, dash=None),
+
+                                                      ),
+                                           go.Scatter(x=data_storage_out.index,
+                                                      y=data_storage_out,
+                                                      mode='lines',
+                                                      name=f'{self.name} SHS_OUT',
+                                                      line=dict(width=2, dash=None),
+
+                                                      ),
+                                           ])
+
     def get_legend_entry(self):
         return f'{self.name} power'
+
+
+
 
 
 
