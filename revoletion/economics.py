@@ -905,19 +905,6 @@ class EcoEvaluator(EcoPOI):
                                      default=None)
 
     def __post_init__(self):
-        self.aux = dict()
-
-        if ('aux', 'ls') in self.params:
-            self.aux['ls'] = getattr(self.block,
-                                     self.params[('aux', 'ls')])
-        else:
-            self.aux['ls'] = self.scenario.prj_duration_yrs
-
-        if ('aux', 'ccr') in self.params:
-            self.aux['ccr'] = getattr(self.block,
-                                     self.params[('aux', 'ccr')])
-        else:
-            self.aux['ccr'] = 1.0
 
         self.block.sizes[self.name] = Size(name=self.name,
                                            block=self.block,
@@ -935,6 +922,12 @@ class EcoEvaluator(EcoPOI):
                 return getattr(self.block, self.params[key], default)
             else:
                 return default
+
+        self.aux = dict(ls=_get_param(key=('aux', 'ls'),
+                                      default=self.scenario.prj_duration_yrs),
+                        ccr=_get_param(key=('aux', 'ccr'),
+                                       default=1.0),
+                        )
 
         self.capex = CapexEvaluator(poi=self,
                                     consider_preexisting=_get_param(key=('capex', 'consider_preexisting'),
