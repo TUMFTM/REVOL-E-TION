@@ -2531,7 +2531,10 @@ class Heatpump(SinkBlock):
         )
 
         self.components['shs'] = solph.components.GenericStorage(
-            inputs= {self.components['bus']: solph.Flow()
+            inputs= {self.components['bus']: solph.Flow(
+                nominal_value=self.heat_demand['demand_heat'].max()+self.heat_demand['reduction'].max(),
+                max=self.heat_demand['demand_heat']+self.heat_demand['reduction']
+            )
                      },
             outputs={self.components['sink_bus']:solph.Flow()
                     },
@@ -2564,7 +2567,7 @@ class Heatpump(SinkBlock):
         data_storage_out = self.states.loc[self.scenario.dti_eval, 'shs_out'].dropna()
 
 
-        self.plot_traces['states'].extend([go.Scatter(x=data_storage_in.index,
+        self.plot_traces['powers'].extend([go.Scatter(x=data_storage_in.index,
                                                       y=data_storage_in,
                                                       mode='lines',
                                                       name=f'{self.name} SHS_IN',
