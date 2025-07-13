@@ -2443,14 +2443,16 @@ class Heatpump(SinkBlock):
                                                ('crev', 'spec'): 'crev_spec'}},
                           'in': {'class_name': 'EconomicEvaluator',
                                     'params': {('flow', 'name'): 'in'}},
-                          'shs_in': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'shs_in'}},
-                          'shs_out': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'shs_out'}},
+                          'heatpump_out': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'heatpump_out'}},
+                          'buffer_out': {'class_name': 'EconomicEvaluator',
+                                    'params': {('flow', 'name'): 'buffer_out'}},
+                          'inertia_house_out': {'class_name': 'EconomicEvaluator',
+                                         'params': {('flow', 'name'): 'inertia_house_out'}},
                           'heating': {'class_name': 'EconomicEvaluator',
                                     'params': {('flow', 'name'): 'heating'}},
                           },
-                    state_names=['shs_in', 'shs_out'])
+                    state_names=['heatpump_out', 'buffer_out', 'inertia_house_out'])
 
     def __init__(self,
                  name: str,
@@ -2522,7 +2524,9 @@ class Heatpump(SinkBlock):
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
         self.components['bus'] = solph.Bus()
+        self.components['storage_bus'] = solph.Bus()
         self.components['sink_bus'] = solph.Bus()
+
 
         self.components['heatpump'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow()},
@@ -2530,15 +2534,22 @@ class Heatpump(SinkBlock):
             conversion_factors={self.components['bus']: self.conversion['factor']}
         )
 
-        self.components['shs'] = solph.components.GenericStorage(
-            inputs= {self.components['bus']: solph.Flow(
+        self.components['buffer'] = solph.components.GenericStorage(
+            inputs={self.components['bus']: solph.Flow()},
+            outputs={self.components['storage_bus']: solph.Flow()},
+            loss_rate=0.02,
+            nominal_storage_capacity= (16*4180*35)/3600
+        )
+
+        self.components['inertia_house'] = solph.components.GenericStorage(
+            inputs= {self.components['storage_bus']: solph.Flow(
                 nominal_value=self.heat_demand['demand_heat'].max()+self.heat_demand['reduction'].max(),
                 max=self.heat_demand['demand_heat']+self.heat_demand['reduction']
             )
                      },
             outputs={self.components['sink_bus']:solph.Flow()
                     },
-            loss_rate= 0.02,
+            loss_rate= 0.00,
             nominal_storage_capacity=self.heat_demand['reduction'].max()
         )
 
@@ -2551,10 +2562,12 @@ class Heatpump(SinkBlock):
                             horizon: 'PredictionHorizon'):
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'shs_in'] = horizon.results[(self.components['bus'],
-                                                                    self.components['shs'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'shs_out'] = horizon.results[(self.components['shs'],
-                                                                   self.components['sink_bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'heatpump_out'] = horizon.results[(self.components['bus'],
+                                                                    self.components['buffer'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'buffer_out'] = horizon.results[(self.components['buffer'],
+                                                                   self.components['storage_bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'inertia_house_out'] = horizon.results[(self.components['inertia_house'],
+                                                                    self.components['sink_bus'])]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['sink_bus'],
                                                                      self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
 
@@ -2563,21 +2576,20 @@ class Heatpump(SinkBlock):
 
         super().create_plot_traces()
 
-        data_storage_in = self.states.loc[self.scenario.dti_eval, 'shs_in'].dropna()
-        data_storage_out = self.states.loc[self.scenario.dti_eval, 'shs_out'].dropna()
+        data_storage_buffer_in = self.states.loc[self.scenario.dti_eval, 'heatpump_out'].dropna()
+        data_storage_inertia_house_out = self.states.loc[self.scenario.dti_eval, 'inertia_house_out'].dropna()
 
 
-        self.plot_traces['powers'].extend([go.Scatter(x=data_storage_in.index,
-                                                      y=data_storage_in,
+        self.plot_traces['powers'].extend([go.Scatter(x=data_storage_buffer_in.index,
+                                                      y=data_storage_buffer_in,
                                                       mode='lines',
-                                                      name=f'{self.name} SHS_IN',
+                                                      name=f'{self.name} HEATPUMP_OUT',
                                                       line=dict(width=2, dash=None),
-
                                                       ),
-                                           go.Scatter(x=data_storage_out.index,
-                                                      y=data_storage_out,
+                                           go.Scatter(x=data_storage_inertia_house_out.index,
+                                                      y=data_storage_inertia_house_out,
                                                       mode='lines',
-                                                      name=f'{self.name} SHS_OUT',
+                                                      name=f'{self.name} INERTIA_HOUSE_OUT',
                                                       line=dict(width=2, dash=None),
 
                                                       ),
