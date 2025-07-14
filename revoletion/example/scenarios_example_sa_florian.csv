@@ -253,3 +253,7 @@ hp,mntex_spec,0
 hp,opex_spec,0
 hp,crev_spec,0
 hp,system,ac
+hp,nominal_cop,4.9
+hp,nominal_power,9100
+hp,wf,"R290"
+hp,temperature_tolerance,3

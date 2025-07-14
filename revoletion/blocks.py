@@ -2456,14 +2456,16 @@ class Heatpump(SinkBlock):
 
     def __init__(self,
                  name: str,
-                 scenario):
+                 scenario,
+                 temperature_tolerance = 3):
         super().__init__(name=name,
                          scenario=scenario,
                          flow_apriori_names=['demand_heat'],
                          params=None,
                          parent=scenario)
+        self.temperature_tolerance = temperature_tolerance
 
-        self.analyzer = hp.Heatpump_COPanalyzer()
+        self.analyzer = hp.Heatpump_COPanalyzer(self.wf, self.nominal_cop, self.nominal_power)
         self.cop_array = self.analyzer.run_full_analysis()
 
         self.get_cop_heatpump_apriori()
@@ -2492,7 +2494,7 @@ class Heatpump(SinkBlock):
         self.heat_demand = self.heat_profile.get_bdew_profile().rename('demand_heat').to_frame()
 
         self.mask_time = (self.temperature_series.index.hour >= 6) & (self.temperature_series.index.hour <= 22)
-        self.heat_demand['reduction'] = (21 - self.temperature_series['temp_air']) * 3
+        self.heat_demand['reduction'] = (21 - self.temperature_series['temp_air']) * self.temperature_tolerance
         self.heat_demand['reduction'] = self.heat_demand['reduction'].where(self.mask_time, 0)
         self.heat_demand['adjusted'] = (self.heat_demand['demand_heat'] - self.heat_demand['reduction']).clip(lower=0)
 

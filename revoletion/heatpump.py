@@ -8,9 +8,21 @@ from scipy.interpolate import interp1d
 
 
 class Heatpump_COPanalyzer:
-    def __init__(self, wf="R290", target_cop=4.9, T_W35=35, T_A7=7, T_spread=5):
-        self.wf = wf
-        self.target_cop = target_cop
+    def __init__(self, wf="R290", nominal_cop=4.9, nominal_power = 9100, T_W35=35, T_A7=7, T_spread=5):
+
+        fluid_map = {
+            'r290': 'R290',
+            'r600a': 'R600a',
+            'r1234yf': 'R1234yf',
+            'r744': 'R744',
+        }
+
+        self.wf = fluid_map.get(wf.lower())
+        if not self.wf:
+            raise ValueError(f"Unbekanntes Arbeitsmedium: '{wf}'. Gültige Optionen: {list(fluid_map.keys())}")
+
+        self.nominal_cop = nominal_cop
+        self.nominal_power = nominal_power
         self.T_W35 = T_W35
         self.T_A7 = T_A7
         self.T_spread = T_spread
@@ -44,7 +56,7 @@ class Heatpump_COPanalyzer:
 
         # components
         self.cp.set_attr(eta_s=0.8)  # efficiency of compressor
-        self.cd.set_attr(Q=-9100, pr = 0.98)  # nominal heat delivered by the condenser and loss assumption
+        self.cd.set_attr(Q=(-1)*self.nominal_power, pr = 0.98)  # nominal heat delivered by the condenser and loss assumption
         self.ev.set_attr(pr=0.99)  # loss assumption
 
         # solve network
@@ -60,9 +72,9 @@ class Heatpump_COPanalyzer:
             self.nwk.solve("design")
             COP = abs(self.cd.Q.val)/self.cp.P.val
 
-            if round(COP-self.target_cop,3)>0:
+            if round(COP-self.nominal_cop,3)>0:
                 eta_s_max = eta_s
-            elif round(COP-self.target_cop,3) <0:
+            elif round(COP-self.nominal_cop,3) <0:
                 eta_s_min = eta_s
             else:
                 break
