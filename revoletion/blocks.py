@@ -508,27 +508,29 @@ class SystemCore(ElectricBlock):
         self.evaluators['acdc'] = eco.EcoEvaluator(name='acdc',
                                                    scenario=self.scenario,
                                                    block=self,
-                                                   params={('capex', 'preexisting'): 'capex_preexisting_acdc',
-                                                           ('capex', 'spec'): 'capex_spec',
-                                                           ('mntex', 'spec'): 'mntex_spec',
-                                                           ('opex', 'spec'): 'opex_spec',
-                                                           ('size', 'name'): 'acdc',
-                                                           ('flow', 'name'): 'acdc',
-                                                           ('aux', 'ls'): 'ls',
-                                                           ('aux', 'ccr'): 'ccr'}
+                                                   create_size=True,
+                                                   flow_name='acdc',
+                                                   ls=self.ls,
+                                                   ccr=self.ccr,
+                                                   capex_config=dict(consider_preexisting=self.capex_preexisting_acdc,
+                                                                     spec=self.capex_spec,
+                                                                     ),
+                                                   mntex_config=dict(spec=self.mntex_spec),
+                                                   opex_config=dict(spec=self.opex_spec),
                                                    )
 
         self.evaluators['dcac'] = eco.EcoEvaluator(name='dcac',
                                                    scenario=self.scenario,
                                                    block=self,
-                                                   params={('capex', 'preexisting'): 'capex_preexisting_dcac',
-                                                           ('capex', 'spec'): 'capex_spec',
-                                                           ('mntex', 'spec'): 'mntex_spec',
-                                                           ('opex', 'spec'): 'opex_spec',
-                                                           ('size', 'name'): 'dcac',
-                                                           ('flow', 'name'): 'dcac',
-                                                           ('aux', 'ls'): 'ls',
-                                                           ('aux', 'ccr'): 'ccr'}
+                                                   create_size=True,
+                                                   flow_name='dcac',
+                                                   ls=self.ls,
+                                                   ccr=self.ccr,
+                                                   capex_config=dict(consider_preexisting=self.capex_preexisting_dcac,
+                                                                     spec=self.capex_spec,
+                                                                     ),
+                                                   mntex_config=dict(spec=self.mntex_spec),
+                                                   opex_config=dict(spec=self.opex_spec),
                                                    )
 
     def __init__(self,
@@ -649,26 +651,26 @@ class RenewableSource(SourceBlock):
         self.evaluators['block'] = eco.EcoEvaluator(name='block',
                                                     scenario=self.scenario,
                                                     block=self,
-                                                    params={('capex', 'preexisting'): 'capex_preexisting_block',
-                                                            ('capex', 'spec'): 'capex_spec',
-                                                            ('mntex', 'spec'): 'mntex_spec',
-                                                            ('opex', 'spec'): 'opex_spec',
-                                                            ('size', 'name'): 'block',
-                                                            ('flow', 'name'): 'out',
-                                                            ('aux', 'ls'): 'ls',
-                                                            ('aux', 'ccr'): 'ccr'}
+                                                    create_size=True,
+                                                    flow_name='out',
+                                                    ls=self.ls,
+                                                    ccr=self.ccr,
+                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
+                                                                      spec=self.capex_spec),
+                                                    mntex_config=dict(spec=self.mntex_spec),
+                                                    opex_config=dict(spec=self.opex_spec),
                                                     )
 
         self.evaluators['curt'] = eco.EcoEvaluator(name='curt',
                                                    scenario=self.scenario,
                                                    block=self,
-                                                   params={('flow', 'name'): 'curt'}
+                                                   flow_name='curt',
                                                    )
 
         self.evaluators['pot'] = eco.EcoEvaluator(name='pot',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('flow', 'name'): 'pot'}
+                                                  flow_name='pot',
                                                   )
 
     @staticmethod
@@ -1155,8 +1157,8 @@ class FixedDemand(SinkBlock):
         self.evaluators['block'] = eco.EcoEvaluator(name='block',
                                                     scenario=self.scenario,
                                                     block=self,
-                                                    params={('crev', 'spec'): 'crev_spec',
-                                                            ('flow', 'name'): 'in'}
+                                                    flow_name='in',
+                                                    crev_config=dict(spec=self.crev_spec),
                                                     )
 
     @staticmethod
@@ -1300,14 +1302,14 @@ class ControllableSource(SourceBlock):
         self.evaluators['block'] = eco.EcoEvaluator(name='block',
                                                     scenario=self.scenario,
                                                     block=self,
-                                                    params={('capex', 'preexisting'): 'capex_preexisting_block',
-                                                            ('capex', 'spec'): 'capex_spec',
-                                                            ('mntex', 'spec'): 'mntex_spec',
-                                                            ('opex', 'spec'): 'opex_spec',
-                                                            ('size', 'name'): 'block',
-                                                            ('flow', 'name'): 'out',
-                                                            ('aux', 'ls'): 'ls',
-                                                            ('aux', 'ccr'): 'ccr'}
+                                                    create_size=True,
+                                                    flow_name='out',
+                                                    ls=self.ls,
+                                                    ccr=self.ccr,
+                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
+                                                                      spec=self.capex_spec),
+                                                    mntex_config=dict(spec=self.mntex_spec),
+                                                    opex_config=dict(spec=self.opex_spec),
                                                     )
 
     @staticmethod
@@ -1380,25 +1382,25 @@ class GridConnection(ElectricBlock):
         self.evaluators['g2s'] = eco.EcoEvaluator(name='g2s',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('capex', 'preexisting'): 'capex_preexisting_g2s',
-                                                          ('capex', 'spec'): 'capex_spec',
-                                                          ('mntex', 'spec'): 'mntex_spec',
-                                                          ('size', 'name'): 'g2s',
-                                                          ('flow', 'name'): 'out',
-                                                          ('aux', 'ls'): 'ls',
-                                                          ('aux', 'ccr'): 'ccr'}
+                                                  create_size=True,
+                                                  flow_name='out',
+                                                  ls=self.ls,
+                                                  ccr=self.ccr,
+                                                  capex_config=dict(consider_preexisting=self.capex_preexisting_g2s,
+                                                                    spec=self.capex_spec),
+                                                  mntex_config=dict(spec=self.mntex_spec),
                                                   )
 
         self.evaluators['s2g'] = eco.EcoEvaluator(name='s2g',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('capex', 'preexisting'): 'capex_preexisting_s2g',
-                                                          ('capex', 'spec'): 'capex_spec',
-                                                          ('mntex', 'spec'): 'mntex_spec',
-                                                          ('size', 'name'): 's2g',
-                                                          ('flow', 'name'): 'in',
-                                                          ('aux', 'ls'): 'ls',
-                                                          ('aux', 'ccr'): 'ccr'}
+                                                  create_size=True,
+                                                  flow_name='in',
+                                                  ls=self.ls,
+                                                  ccr=self.ccr,
+                                                  capex_config=dict(consider_preexisting=self.capex_preexisting_s2g,
+                                                                    spec=self.capex_spec),
+                                                  mntex_config=dict(spec=self.mntex_spec),
                                                   )
 
     @staticmethod
@@ -1680,15 +1682,15 @@ class GridMarket(ElectricBlock):
         self.evaluators['g2s'] = eco.EcoEvaluator(name='g2s',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('opex', 'spec'): 'opex_spec_g2s',
-                                                          ('flow', 'name'): 'out'}
+                                                  flow_name='out',
+                                                  opex_config=dict(spec=self.opex_spec_g2s),
                                                   )
 
         self.evaluators['s2g'] = eco.EcoEvaluator(name='s2g',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('opex', 'spec'): 'opex_spec_s2g',
-                                                          ('flow', 'name'): 'in'}
+                                                  flow_name='in',
+                                                  opex_config=dict(spec=self.opex_spec_s2g),
                                                   )
 
     @staticmethod
@@ -1777,37 +1779,37 @@ class StorageBlock(ElectricBlock):
         self.evaluators['storage'] = eco.EcoEvaluator(name='storage',
                                                       scenario=self.scenario,
                                                       block=self,
-                                                      params={('capex', 'preexisting'): 'capex_preexisting_storage',
-                                                              ('capex', 'spec'): 'capex_spec',
-                                                              ('mntex', 'spec'): 'mntex_spec',
-                                                              ('size', 'name'): 'storage',
-                                                              ('aux', 'ls'): 'ls',
-                                                              ('aux', 'ccr'): 'ccr'}
+                                                        create_size=True,
+                                                      ls=self.ls,
+                                                      ccr=self.ccr,
+                                                      capex_config=dict(consider_preexisting=self.capex_preexisting_storage,
+                                                                        spec=self.capex_spec),
+                                                      mntex_config=dict(spec=self.mntex_spec),
                                                       )
 
         self.evaluators['in'] = eco.EcoEvaluator(name='in',
                                                  scenario=self.scenario,
                                                  block=self,
-                                                 params={('opex', 'spec'): 'opex_spec',
-                                                         ('flow', 'name'): 'in'}
+                                                 flow_name='in',
+                                                 opex_config=dict(spec=self.opex_spec),
                                                  )
 
         self.evaluators['out'] = eco.EcoEvaluator(name='out',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('flow', 'name'): 'out'}
+                                                  flow_name='out',
                                                   )
 
         self.evaluators['bat_in'] = eco.EcoEvaluator(name='bat_in',
                                                      scenario=self.scenario,
                                                      block=self,
-                                                     params={('flow', 'name'): 'bat_in'}
+                                                     flow_name='bat_in',
                                                      )
 
         self.evaluators['bat_out'] = eco.EcoEvaluator(name='bat_out',
                                                       scenario=self.scenario,
                                                       block=self,
-                                                      params={('flow', 'name'): 'bat_out'}
+                                                      flow_name='bat_out',
                                                       )
 
 
@@ -2072,17 +2074,17 @@ class Fleet(SinkBlock):
         self.evaluators['f2s'] = eco.EcoEvaluator(name='f2s',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('opex', 'spec'): 'opex_spec_f2s',
-                                                          ('flow', 'name'): 'out',
-                                                          ('size', 'name'): 'f2s'}
+                                                  create_size=True,
+                                                  flow_name='out',
+                                                  opex_config=dict(spec=self.opex_spec_f2s),
                                                   )
 
         self.evaluators['s2f'] = eco.EcoEvaluator(name='s2f',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  params={('opex', 'spec'): 'opex_spec_s2f',
-                                                          ('flow', 'name'): 'in',
-                                                          ('size', 'name'): 's2f'}
+                                                  create_size=True,
+                                                  flow_name='in',
+                                                  opex_config=dict(spec=self.opex_spec_s2f),
                                                   )
 
     @staticmethod
@@ -2337,24 +2339,24 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.evaluators['charger'] = eco.EcoEvaluator(name='charger',
                                                       scenario=self.scenario,
                                                       block=self,
-                                                      params={('capex', 'preexisting'): 'capex_preexisting_charger',
-                                                              ('capex', 'fix'): 'capex_fix_charger',
-                                                              ('aux', 'ls'): 'ls',
-                                                              ('aux', 'ccr'): 'ccr'}
+                                                      ls=self.ls,
+                                                      ccr=self.ccr,
+                                                      capex_config=dict(consider_preexisting=self.capex_preexisting_charger,
+                                                                        fix=self.capex_fix_charger),
                                                       )
 
         self.evaluators['ext_ac'] = eco.EcoEvaluator(name='ext_ac',
                                                      scenario=self.scenario,
                                                      block=self,
-                                                     params={('opex', 'spec'): 'opex_spec_ext_ac',
-                                                             ('flow', 'name'): 'ext_ac'}
+                                                     flow_name='ext_ac',
+                                                     opex_config=dict(spec=self.opex_spec_ext_ac),
                                                      )
 
         self.evaluators['ext_dc'] = eco.EcoEvaluator(name='ext_dc',
                                                      scenario=self.scenario,
                                                      block=self,
-                                                     params={('opex', 'spec'): 'opex_spec_ext_dc',
-                                                             ('flow', 'name'): 'ext_dc'}
+                                                     flow_name='ext_dc',
+                                                     opex_config=dict(spec=self.opex_spec_ext_dc),
                                                      )
 
     @staticmethod

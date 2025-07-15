@@ -288,7 +288,7 @@ class OptimizationConverter:
                                dtype=float)
 
         # apply specific capex for replacement periods
-        spec_prj_ep[reinvest_periods(lifespan=self.poi.aux['ls'],
+        spec_prj_ep[reinvest_periods(lifespan=self.poi.ls,
                                      observation_horizon=self.poi.scenario.prj_duration_yrs,
                                      include_init=True)] = self.poi.capex.spec
 
@@ -297,12 +297,12 @@ class OptimizationConverter:
         # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
         # beginning of the last project year
         spec_prj_ep[self.poi.scenario.prj_duration_yrs] = (
-                -1 * self.poi.capex.spec * calc_frac_remaining_ls(ls=self.poi.aux['ls'],
+                -1 * self.poi.capex.spec * calc_frac_remaining_ls(ls=self.poi.ls,
                                                                   project_duration=self.poi.scenario.prj_duration_yrs)
         )
 
         # adjust specific capex by appropriate cost change ratio
-        spec_prj_ep *= self.poi.aux['ccr'] ** self.poi.discount_factors.index
+        spec_prj_ep *= self.poi.ccr ** self.poi.discount_factors.index
 
         # sum up all specific discounted capex for the project duration
         spec_prj_ep = spec_prj_ep @ self.poi.discount_factors['beginning']
@@ -413,19 +413,19 @@ class CapexAggregator(CostAggregator):
     # all attributes have to be initialized with 0 and calculated
     preexisting: float = field(init=False,
                                repr=False,
-                               default=0)
+                               default=0.0)
 
     expansion: float = field(init=False,
                              repr=False,
-                             default=0)
+                             default=0.0)
 
     init: float = field(init=False,
                         repr=False,
-                        default=0)
+                        default=0.0)
 
     replacement: float = field(init=False,
                                repr=False,
-                               default=0)
+                               default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -457,13 +457,16 @@ class CapexEvaluator(CapexAggregator):
     poi: EcoEvaluator
 
     consider_preexisting: bool = field(init=True,
-                                       repr=False)
+                                       repr=False,
+                                       default=True)
 
     spec: float = field(init=True,
-                        repr=False)
+                        repr=False,
+                        default=0.0)
 
     fix: float = field(init=True,
-                       repr=False)
+                       repr=False,
+                       default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -493,15 +496,15 @@ class CapexEvaluator(CapexAggregator):
 
         cashflows[0] -= self.init
 
-        for period in reinvest_periods(lifespan=self.poi.aux['ls'],
+        for period in reinvest_periods(lifespan=self.poi.ls,
                                        observation_horizon=self.poi.scenario.prj_duration_yrs,
                                        include_init=False):
-            cashflows[period] -= self.replacement * (self.poi.aux['ccr'] ** period)
+            cashflows[period] -= self.replacement * (self.poi.ccr ** period)
 
         # Add salvage value capex (positive cashflow)
         cashflows[self.poi.scenario.prj_duration_yrs] += (
-                self.replacement * (self.poi.aux['ccr'] ** self.poi.scenario.prj_duration_yrs) *
-                calc_frac_remaining_ls(ls=self.poi.aux['ls'],
+                self.replacement * (self.poi.ccr ** self.poi.scenario.prj_duration_yrs) *
+                calc_frac_remaining_ls(ls=self.poi.ls,
                                        project_duration=self.poi.scenario.prj_duration_yrs)
         )
 
@@ -529,11 +532,11 @@ class MntexAggregator(CostAggregator):
 
     sim: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     yrl: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -562,10 +565,12 @@ class MntexEvaluator(MntexAggregator):
     poi: EcoEvaluator
 
     spec: float = field(init=True,
-                        repr=False)
+                        repr=False,
+                        default=0.0)
 
     fix: float = field(init=True,
-                       repr=False)
+                       repr=False,
+                       default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -607,11 +612,11 @@ class OpexAggregator(CostAggregator):
 
     sim: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     yrl: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -696,11 +701,11 @@ class CrevAggregator(CostAggregator):
 
     sim: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     yrl: float = field(init=False,
                        repr=False,
-                       default=0)
+                       default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -891,71 +896,49 @@ class EcoAggregator(EcoPOI):
 @dataclass
 class EcoEvaluator(EcoPOI):
     block: blocks.BaseBlock
-    params: dict = None
 
-    aux: dict = field(init=False,
-                      repr=False,
-                      )
+    create_size: bool = field(init=True, repr=False, default=False)
+    unit_size: str = field(init=True, repr=False, default='kW')
+    flow_name: Optional[str] = field(init=True, repr=False, default=None)
+    ls: Optional[int] = field(init=True, repr=False, default=None)
+    ccr: Optional[float] = field(init=True, repr=False, default=1.0)
+
+    capex_config: InitVar[dict] = None
+    mntex_config: InitVar[dict] = None
+    opex_config: InitVar[dict] = None
+    crev_config: InitVar[dict] = None
 
     opt: OptimizationConverter = field(init=False,
                                        repr=False)
 
-    flow_name: Optional[str] = field(init=False,
-                                     repr=False,
-                                     default=None)
-
-    def __post_init__(self):
+    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
+        if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
+            self.ls = self.scenario.prj_duration_yrs
 
         self.block.sizes[self.name] = Size(name=self.name,
                                            block=self.block,
-                                           unit=self.params.get(('size', 'unit'), 'kW')
+                                           unit=self.unit_size
                                            )
 
-        if ('flow', 'name') in self.params:
+        if self.flow_name:
             # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
-            self.block.flow_names.add(self.params[('flow', 'name')])
-            self.flow_name = self.params[('flow', 'name')]
+            self.block.flow_names.add(self.flow_name)
 
-        def _get_param(key: tuple[str, str],
-                       default: Any) -> Any:
-            if key in self.params:
-                return getattr(self.block, self.params[key], default)
-            else:
-                return default
+        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
+        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
+        self.opex = OpexEvaluator(poi=self, **(opex_config if opex_config else {}))
+        self.crev = CrevEvaluator(poi=self, **(crev_config if crev_config else {}))
 
-        self.aux = dict(ls=_get_param(key=('aux', 'ls'),
-                                      default=self.scenario.prj_duration_yrs),
-                        ccr=_get_param(key=('aux', 'ccr'),
-                                       default=1.0),
-                        )
-
-        self.capex = CapexEvaluator(poi=self,
-                                    consider_preexisting=_get_param(key=('capex', 'consider_preexisting'),
-                                                                    default=True),
-                                    spec=_get_param(key=('capex', 'spec'),
-                                                    default=0.0),
-                                    fix=_get_param(key=('capex', 'fix'),
-                                                   default=0.0),
-                                    )
-
-        self.mntex = MntexEvaluator(poi=self,
-                                    spec=_get_param(key=('mntex', 'spec'),
-                                                    default=0.0),
-                                    fix=_get_param(key=('mntex', 'fix'),
-                                                   default=0.0),
-                                    )
-
-        self.opex = OpexEvaluator(poi=self,
-                                  spec=_get_param(key=('opex', 'spec'),
-                                                  default=0.0),
-                                  )
-
-        self.crev = CrevEvaluator(poi=self,
-                                  spec=_get_param(key=('crev', 'spec'),
-                                                  default=0.0),
-                                  )
+        self._add_evaluators()
 
         self.opt = OptimizationConverter(poi=self)
+
+    def __repr__(self):
+        return (f"{self.__class__.__name__}(name={self.name}, "
+                f"block={self.block!r})")
+
+    def _add_evaluators(self):
+        pass
 
     @property
     def aggregator(self) -> EcoAggregator:
@@ -974,7 +957,12 @@ class EcoEvaluator(EcoPOI):
                             dtype=float)
 
 
-class FleetUnitEvaluator:
+@dataclass
+class FleetUnitEvaluator(EcoEvaluator):
+    ...
+
+
+class FleetUnitEvaluator_old:
 
     def calc_opex_sim_additional(self):
 
