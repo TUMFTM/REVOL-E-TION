@@ -4,7 +4,6 @@ import ast
 import importlib.metadata
 import importlib.util
 import logging
-import os
 from pathlib import Path
 import re
 import shutil

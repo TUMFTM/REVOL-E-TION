@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 Dockerfile
-=======
-revoletion/example/
->>>>>>> origin/main
 results/
 images/
 
@@ -31,3 +27,5 @@ dist/
 build/
 *.egg-info/
 
+# The dependencies will be locked during building.
+uv.lock

@@ -32,7 +32,12 @@ ENV UV_LINK_MODE=copy
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=cache,target=/app/revoletion/.cache/uv \
-    uv sync --no-install-project
+    uv sync --no-install-project --no-editable
+
+COPY . .
+RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
+    --mount=type=cache,target=/app/revoletion/.cache/uv \
+    uv sync --locked --no-editable
 
 FROM python:${PYTHON_VERSION} AS runtime
 
@@ -53,7 +58,7 @@ ENV PATH="/opt/cbc/bin:${PATH}" \
 # Normally, revoletion would be executed as root in the container, and
 # the result files it creates would therefore be owned by root.
 # For non-root host users, this complicates hanlding the result files.
-# To circumvent this, an extra user to execute revoletion is created.
+# To circumvent this an extra user to execute revoletion is created.
 ARG UID=1000
 ARG GID=1000
 RUN groupadd -g ${GID} -r revoletion && \
@@ -67,18 +72,11 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
 COPY --from=builder --chown=revoletion:revoletion /app/revoletion/.venv /app/revoletion/.venv
-COPY --from=builder --chown=revoletion:revoletion /app/revoletion/uv.lock /app/revoletion/uv.lock
+RUN chown -R revoletion:revoletion /app/revoletion
+
 ENV VIRTUAL_ENV="/app/revoletion/.venv"
-
-# Install the project source into the container.
-COPY --chown=revoletion:revoletion . .
-RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
-    --mount=type=cache,target=/app/revoletion/.cache/uv \
-    uv sync --no-dev --locked --no-editable --active
-
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-RUN chown -R revoletion:revoletion /app
 USER revoletion
 
 ENTRYPOINT ["revoletion"]

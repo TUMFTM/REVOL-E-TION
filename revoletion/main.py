@@ -3,7 +3,6 @@
 import importlib.resources
 from pathlib import Path
 import argparse
-import os
 import warnings
 
 try:
@@ -22,10 +21,6 @@ from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
 from .utils import infer_dtype
 import revoletion.example
-
-
-class DefaultFileLocationWarning(UserWarning):
-    pass
 
 
 def main():
@@ -109,12 +104,6 @@ def main():
         )
         if not path_scenario:
             raise FileNotFoundError("No scenario file selected")
-        path_scenario = tk.filedialog.askopenfilename(initialdir=Path.cwd(),
-                                                      title=f'Select scenario file',
-                                                      filetypes=(('CSV files', '*.csv'),
-                                                                 ('All files', '*.*')))
-        if not path_scenario:
-            raise FileNotFoundError(f'No scenario file selected')
     # Option 2: Example file in example project in package directory (works from anywhere)
     elif args.scenario  == 'example':
         scenarios_example = True
