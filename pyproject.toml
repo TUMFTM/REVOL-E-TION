@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoletion"
-version = "1.3"
+version = "1.3.2"
 description = "Resilient Electric Vehicle Optimization model for Local Energy TransitION"
 authors = [
     { name = "Philipp Rosner", email = "philipp.rosner@tum.de" },
@@ -14,14 +14,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "geopy",
-    "graphviz",
     "holidays",
     "numpy",
     "numpy_financial",
     "oemof.solph==0.6.0a3",
-    "pandas",
+    "pandas>=2.1",
     "plotly",
-    "pvlib",
+    "psutil",
+    "pvlib>=0.13.0",
     "pytz",
     "rainflow",
     "scipy",
@@ -33,6 +33,10 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["revoletion"]
+
+[tool.setuptools.package-data]
+"revoletion.data" = ["revoletion/data"]
+"revoletion.example" = ["revoletion/example"]
 
 [project.scripts]
 revoletion = "revoletion.main:main"

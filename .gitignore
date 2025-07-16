@@ -7,13 +7,9 @@
 .revoletion.egg-info/
 .revoletion.egg-info/*
 
-analysis/*
-!analysis/.gitkeep
-
 results/*
-!results/.gitkeep
 
-utils/*
+images/auxil/*
 
 
 # VS Code

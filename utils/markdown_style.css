@@ -1,0 +1,53 @@
+/* Set general body styles: white background, black text, sans-serif font */
+body {
+    background-color: #ffffff !important;    /* White background */
+    color: #000000 !important;               /* Force black text */
+    font-family: sans-serif;                 /* Clean, modern font */
+}
+
+/*
+   Ensure all common text-related elements render in black,
+   overriding any inherited or default theme styles:
+
+   p    – paragraph text
+   h1–h6 – headings (from largest h1 to smallest h6)
+   li   – list items (within <ul> or <ol>)
+   td   – table cells (table data)
+   th   – table headers
+   div  – generic block containers
+   span – inline text containers
+
+   The !important flag ensures these rules override other conflicting styles.
+*/
+p, h1, h2, h3, h4, h5, h6, li, td, th, div, span {
+    color: #000000 !important;               /* Force black for text elements */
+}
+
+/* Style for code blocks and inline code */
+code, pre {
+    background-color: #f4f4f4;               /* Light gray background for code */
+    color: #000000 !important;               /* Black code text */
+}
+
+/* Link styling */
+
+/* Unvisited links: standard blue */
+a:link {
+  color: #0000EE;
+}
+
+/* Visited links: classic purple */
+a:visited {
+  color: #551A8B;
+}
+
+/* Hovered links: underline and blue */
+a:hover {
+  color: #0000EE;
+  text-decoration: underline;
+}
+
+/* Active links (when clicked): red */
+a:active {
+  color: #FF0000;
+}

@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
-import webbrowser
 
+from dataclasses import dataclass, field
 import geopy
 import holidays
-import importlib.metadata
-import itertools
+import importlib.resources
 import logging
 import math
-import os
-import pathlib
+from pathlib import Path
 import numpy as np
 import plotly.subplots
 import pprint
 import pytz
-import shutil
-import subprocess
-import sys
-import threading
 import time
 
 import timezonefinder
 import traceback
 import warnings
+import webbrowser
 
 import multiprocessing as mp
 import numpy_financial as npf
@@ -29,309 +24,196 @@ import oemof.solph as solph
 import pandas as pd
 import pyomo.environ as po
 
-from revoletion import blocks
-from revoletion import checker
-from revoletion import constraints
-from revoletion import dispatch
-from revoletion import economics as eco
-from revoletion import logger as logger_fcs
-from revoletion import scheduler
-from revoletion import utils
+from . import blocks
+from . import constraints
+from . import dispatch
+from . import economics as eco
+from . import logger as logger_fcs
+from . import scheduler
+from . import utils
+
+import revoletion.data
 
 
 class OptimizationError(Exception):
     pass
 
 
-class OptimizationSuccessfulFilter(logging.Filter):
-    def filter(self, record):
-        # Filter out log messages from the root logger
-        return not (record.name == 'root' and record.msg == 'Optimization successful...')
+@dataclass
+class SimulationPaths:
+    scenario: Path | str
+    input: Path | str = None
+    output: Path | str = None
 
+    _basename: Path = field(default_factory=lambda: Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S')),
+                            init=True
+                            )  # internal field for basename
 
-class SimulationRun:
+    _revoletion: Path = field(default_factory=lambda: importlib.resources.files(__package__),
+                              init=False,  # cannot be set manually
+                              )
 
-    def __init__(self,
-                 path_scenarios: str,
-                 path_input: str,
-                 path_output: str,
-                 solver: str = 'gurobi',
-                 n_processes: int = 1,
-                 largescalemode: bool = False,
-                 debugmode: bool = False,
-                 rerun: bool = False,
-                 rerun_infeasible: bool = True,
-                 key_solcast_api: str = None):
+    _cwd: Path = field(default_factory=Path.cwd,
+                       init=False,  # cannot be set manually
+                       )
 
-        self.paths = {'revoletion': os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      'scenarios': path_scenarios,
-                      'input': path_input,
-                      'output': path_output}
-        self.solver = solver
-        self.largescalemode = largescalemode
-        self.debugmode = debugmode
-        self.rerun = rerun
-        self.rerun_infeasible = rerun_infeasible
-        self.key_solcast_api = key_solcast_api  # todo find more elegant solution
-
-        # region start runtime
-        self.runtime_start = time.perf_counter()
-        if not self.rerun:
-            self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
+    def __post_init__(self):
+        self.scenario = Path(self.scenario)
+        if self.input is None:
+            self.input = self.scenario.parent
         else:
-            # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
-            self.runtimestamp = '_'.join(os.path.basename(os.path.normpath(self.rerun)).split('_')[0:2])
-        self.runtime_end = self.runtime_len = None
-        # endregion
-
-        # region define paths
-        self.name = pathlib.Path(self.paths['scenarios']).stem
-        self.paths['basename'] = f'{self.runtimestamp}_{self.name}'
-
-        self.paths['output'] = os.path.join(self.paths['output'], self.paths['basename'])
-        if not os.path.isdir(self.paths['output']):
-            os.mkdir(self.paths['output'])
-
-        if not os.path.isdir(self.paths['input']):
-            raise NotADirectoryError(f'Input directory {self.paths["input"]} does not exist')
-
-        self.paths['data_persist'] = os.path.join(self.paths['revoletion'], 'data')
-        self.paths['summary_csv'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_summary.csv")
-        self.paths['summary_pkl'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_summary.pkl")
-        self.paths['status'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_status.csv")
-        self.paths['dump'] = os.path.join(self.paths['output'], f"{self.paths['basename']}_model.lp")
-        self.paths['log'] = os.path.join(self.paths['output'], f"{self.paths['basename']}.log")
-        # endregion
-
-        # region get version information
-        self.version_solph = solph.__version__
-        self.version_revoletion = utils.get_revoletion_python_package_version()
-        self.commit_hash = utils.get_current_project_git_commit_hash()
-        # endregion
-
-        # TODO: InputChecker requires the README to be present, which might not be the case if REVOL-E-TION is packaged.
-        # input_checker = checker.InputChecker(self)
-        # input_checker.check_scenarios()
-
-        # region read, copy and check scenario data
-        self.scenario_data = pd.read_csv(self.paths['scenarios'],
-                                         index_col=[0, 1],
-                                         keep_default_na=False)
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
-        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
-
-        if self.rerun:
-            # only run scenarios which have not been optimized successfully (or were infeasible)
-            self.scenario_status = pd.read_csv(self.paths['status'],
-                                               index_col=0)
-
-            dont_rerun = ['successful', 'infeasible'] if self.rerun_infeasible else ['successful']
-            scenarios_rerun = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
-            self.scenario_names = [name for name in self.scenario_names if name in scenarios_rerun]
-
-            # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
-            for scenario in self.scenario_names:
-                for file in [f'{scenario}_summary_temp.csv',
-                             f'{scenario}_results.csv']:
-                    if os.path.isfile(os.path.join(self.paths['output'], file)):
-                        os.remove(os.path.join(self.paths['output'], file))
-
-            # reset status of scenarios to be run to 'queued'
-            self.scenario_status.loc[self.scenario_names, ['status', 'exception', 'traceback']] = (
-                    [['queued', pd.NA, pd.NA]] * len(self.scenario_names))
-            self.scenario_status.to_csv(self.path_result_status_file, index=True)
-
+            self.input = Path(self.input)
+        if self.output is None:
+            self.output = self._cwd / 'results'
         else:
-            self.scenario_status = pd.DataFrame(index=self.scenario_names,
-                                                data={'status': 'queued',
-                                                      'exception': None,
-                                                      'traceback': None}).rename_axis('scenario')
-            self.copy_scenario_file()
-        self.scenario_num = len(self.scenario_names)
+            self.output = Path(self.output)
+        self.output = self.output / self.basename
 
-        if self.scenario_num == 0:
-            raise ValueError('No executable scenarios found in scenario file')
-        
-        self.n_processes = min(n_processes, os.cpu_count(), self.scenario_num)
-        # endregion
+        # ensure all paths are absolute
+        self.scenario = self.scenario.resolve()
+        self.input = self.input.resolve()
+        self.output = self.output.resolve()
+        self._revoletion = self._revoletion.resolve()
+        self._cwd = self._cwd.resolve()
 
-        # region define logger structure
-        self.logger = logging.getLogger()
-        log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
-                                          f'%(name)-{max([len(el) for el in list(self.scenario_names) + ["root"]])}s  '
-                                          f'%(message)s')
-        log_stream_handler = logging.StreamHandler(sys.stdout)
-        log_stream_handler.setFormatter(log_formatter)
-        log_file_handler = logging.FileHandler(os.environ.get('LOGFILE', self.paths['log']))
-        log_file_handler.setFormatter(log_formatter)
-        self.logger.addHandler(log_stream_handler)
-        self.logger.addHandler(log_file_handler)
+        # ensure that all paths exist
+        if not self.scenario.is_file():
+            raise FileNotFoundError(f'Scenario file not found: {self.scenario}')
+        if not self.input.is_dir():
+            raise NotADirectoryError(f'Input directory path not interpretable: {self.input}')
+        self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
 
-        # Adding the custom filter to prevent root logger messages
-        log_stream_handler.addFilter(OptimizationSuccessfulFilter())
-        log_file_handler.addFilter(OptimizationSuccessfulFilter())
+    def create_result_path(self,
+                           suffix: str) -> Path:
+        return self.output / f'{self.basename}_{suffix}'
 
-        if self.debugmode:
-            log_stream_handler.setLevel(logging.DEBUG)
-            self.logger.setLevel(logging.DEBUG)
-        else:
-            log_stream_handler.setLevel(logging.INFO)
-            self.logger.setLevel(logging.INFO)
+    @property
+    def basename(self) -> Path:
+        return self._basename
 
-        # plural extensions
-        pe1 = 's' if self.scenario_num > 1 else ''
-        pe2 = 'es' if self.n_processes > 1 else ''
+    @basename.setter
+    def basename(self, value: Path):
+        self._basename = value
+        # store old output path for renaming
+        old_output = self.output
+        # recalculate the output path whenever basename is changed
+        self.output = self.output.parent / self._basename
+        # rename the output directory
+        old_output.rename(self.output)
 
-        self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
-                         f' with {self.n_processes} process{pe2}')
+    @property
+    def cwd(self) -> Path:
+        return self._cwd
 
-        # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
-        sys.excepthook = self.handle_exception
-        # endregion
+    @property
+    def revoletion(self) -> Path:
+        return self._revoletion
 
-        # integration levels at which power consumption is determined a priori
-        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
+    @property
+    def data_persist(self) -> Path:
+        with importlib.resources.as_file(importlib.resources.files(revoletion.data)) as data_dir:
+            return data_dir
 
-        self.execute()
+    @property
+    def summary_csv(self) -> Path:
+        return self.create_result_path(suffix='summary.csv')
 
-    def copy_scenario_file(self):
-        target = os.path.join(self.paths['output'], f'{self.name}.csv')
-        try:  # with metadata
-            shutil.copy2(self.paths['scenarios'], target)
-        except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
-            shutil.copyfile(self.paths['scenarios'], target)
+    @property
+    def summary_pkl(self) -> Path:
+        return self.create_result_path(suffix='summary.pkl')
 
-    def execute(self):
-        if self.n_processes > 1:
-            with mp.Manager() as manager:
-                lock = manager.Lock()
+    @property
+    def status(self) -> Path:
+        return self.create_result_path(suffix='status.csv')
 
-                status_queue = manager.Queue()
-                status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
-                status_thread.start()
+    @property
+    def dump(self) -> Path:
+        return self.create_result_path(suffix='model.lp')
 
-                log_queue = manager.Queue()
-                log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
-                log_thread.start()
+    @property
+    def log(self) -> Path:
+        return self.create_result_path(suffix='log.log')
 
-                with mp.Pool(processes=self.n_processes) as pool:
-                    pool.starmap(self.execute_scenario,
-                                 zip(self.scenario_names,
-                                     itertools.repeat(log_queue),
-                                     itertools.repeat(status_queue),
-                                     itertools.repeat(lock)))
-                status_queue.put(None)
-                status_thread.join()
-                log_queue.put(None)
-                log_thread.join()
-        else:
-            for scenario_name in self.scenario_names:
-                self.execute_scenario(scenario_name)
 
-        # region end runtime
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = self.runtime_end - self.runtime_start
-        self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
-        # endregion
-
-        self.join_results()
-
-    def handle_exception(self, exc_type, exc_value, exc_traceback):
-        if issubclass(exc_type, KeyboardInterrupt):
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-
-        self.logger.error(f'Exception type: {exc_type.__name__}')
-        self.logger.error(f'Exception message: {str(exc_value)}')
-        self.logger.error('Traceback:')
-        self.logger.error(''.join(traceback.format_tb(exc_traceback)))
-
-        self.logger.error(msg='Uncaught exception',
-                          exc_info=(exc_type, exc_value, exc_traceback))
-
-    def join_results(self):
-
-        files = [filename for filename in os.listdir(self.paths['output']) if filename.endswith('_summary_temp.pkl')]
-
-        scenario_frames = []
-
-        for file in files:
-            # only add results of successful scenarios to summary
-            if self.scenario_status.loc[file.removesuffix('_summary_temp.pkl'), 'status'] != 'successful':
-                continue
-            file_path = os.path.join(self.paths['output'], file)
-            file_results = pd.read_pickle(file_path)
-            scenario_frames.append(file_results)
-
-        if len(scenario_frames) > 0:  # empty scenario_frames, if all scenarios fail during initialization
-            joined_results = pd.concat(scenario_frames, axis=1)
-            joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
-            joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
-            if self.rerun and os.path.isfile(os.path.join(self.path_result_summary_file_pkl)):
-                results_summary_prev = pd.read_pickle(os.path.join(self.path_result_summary_file_pkl))
-                joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
-            # apply same order of scenarios as in scenario input file
-            joined_results = joined_results[[col for col in self.scenario_data.columns if col in joined_results.columns]]
-            joined_results.to_csv(self.paths['summary_csv'], index=True)
-            joined_results.to_pickle(self.paths['summary_pkl'])
-            self.logger.info('Result summary file created')
-
-        # deletion loop at the end to avoid premature execution of results in case of error
-        for file in files:
-            file_path = os.path.join(self.paths['output'], file)
-            os.remove(file_path)
-
-    def read_status_queue(self, queue):
-        while True:
-            status_msg = queue.get()
-            if status_msg is None:  # Exit signal
-                break
-            self.update_scenario_status(status_msg)
-
-    def execute_scenario(self,
-                         name: str,
-                         log_queue=None,
-                         status_queue=None,
-                         lock=None):
-        # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
-        # objects which cannot be pickled.
-        try:
-            Scenario(name=name,
-                     run=self,
-                     log_queue=log_queue,
-                     lock=lock,
-                     status_queue=status_queue)
-        except Exception as e:
-            self.trigger_scenario_status_update(queue=status_queue,
-                                                status_msg={'scenario': name,
-                                                            'status': 'failed',
-                                                            'exception': str(e),
-                                                            'traceback': traceback.format_exc()})
-
-            self.logger.error(msg=f'{str(e)} - continue on next scenario', # todo is not written to log or stream
-                              exc_info=True)
-
-    def trigger_scenario_status_update(self, queue, status_msg):
-        if queue is not None:
-            queue.put(status_msg)
-        else:
-            self.update_scenario_status(status_msg)
-
-    def update_scenario_status(self, status_msg):
-        for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
-            self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
-        self.scenario_status.to_csv(self.paths['status'],
-                                    index=True)
+@dataclass
+class SimulationSettings:
+    solver: str = 'gurobi'
+    n_processes: int = 1
+    largescalemode: bool = False
+    debugmode: bool = False
+    rerun: bool | Path = False
+    rerun_infeasible: bool = True
+    key_solcast_api: str = None
 
 
 class Scenario:
 
-    def __init__(self, name, run, log_queue, lock, status_queue=None):
+    def __init__(self,
+                 paths: SimulationPaths,
+                 settings: SimulationSettings,
+                 run_execution: bool = False,
+                 name: str = None,  # will be set to the stem of the scenario filename for single scenario execution
+                 parameters: pd.Series = None,
+                 log_queue: mp.Queue = None,
+                 lock: mp.Lock = None,
+                 status_update: 'SimulationRun.trigger_scenario_status_update' = None,
+                 status_queue: mp.Queue = None):
+
+        self.paths = paths
+        self.settings = settings
+
+        if run_execution:
+            if name is None:
+                raise ValueError('Scenario name must be provided when run_execution is True')
+            if parameters is None:
+                raise ValueError('Parameters must be provided when run_execution is True')
+
         self.name = name
-        self.run = run
-        self.logger = logger_fcs.setup_logger(name, log_queue, self.run)
-        self.logger.propagate = False
+
+        if not run_execution:
+            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)
+
+            self.logger = logger_fcs.get_root_logger(paths=self.paths,
+                                                     settings=self.settings,
+                                                     len_scn_max=len('root'),
+                                                     )
+
+        elif log_queue is not None:
+            self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
+                                                                 settings=self.settings,
+                                                                 log_queue=log_queue,
+                                                                 )
+        else:
+            self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
+                                                                   settings=self.settings,
+                                                                   )
+
+        self.status_update = status_update
         self.status_queue = status_queue
+
+        if isinstance(parameters, pd.Series):
+            self.parameters = parameters
+        # check whether file exists
+        elif self.paths.scenario.is_file():
+            if self.paths.scenario.suffix == '.csv':
+                self.parameters = pd.read_csv(self.paths.scenario,
+                                              index_col=[0, 1],
+                                              keep_default_na=False)
+                self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
+            elif self.paths.scenario.suffix == '.pkl':
+                self.parameters = pd.read_pickle(self.paths.scenario)
+            else:
+                raise ValueError('Scenario file specified in SimulationPaths object is neither CSV nor PKL file.')
+
+            if len(self.parameters.columns) > 1:
+                raise ValueError('More than one scenario detected. Provide a single column CSV or PKL file.')
+
+            if self.name is None:
+                self.name = self.parameters.columns[0]
+
+            self.parameters = self.parameters.iloc[:, 0]  # convert to Series
+        else:
+            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenario}')
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
@@ -340,11 +222,12 @@ class Scenario:
 
         warnings.showwarning = custom_warning_handler
 
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'started'})
+        self.update_scenario_status(status_msg={'status': 'started'})
 
         # General Information --------------------------------
+
+        # integration levels at which power consumption is determined a priori
+        self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
         self.runtime_start = time.perf_counter()
         self.runtime_end = None  # placeholder
@@ -356,7 +239,6 @@ class Scenario:
                         if hasattr(self.worker, '_parent_name') else '')
         self.logger.info(f'Scenario initialized{msg_parallel}')
 
-        self.parameters = self.run.scenario_data[self.name]
         for key, value in self.parameters.loc['scenario', :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
 
@@ -364,6 +246,9 @@ class Scenario:
             raise ValueError(f'Scenario parameter "blocks" has to be defined in a dictionary format '
                              '("{\'name1\':\'classname1\',\'name2\':\'classname2\'}") - '
                              f'check for missing or additional single or double quotes')
+
+        if not self.blocks:
+            raise ValueError(f'Scenario parameter "blocks" is empty - Definition of at least one block is required')
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
@@ -394,10 +279,27 @@ class Scenario:
         self.starttime = self.starttime if len(self.starttime) > 10 else self.starttime + ' 00:00'
         self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y %H:%M').floor(self.timestep).tz_localize(self.timezone)
 
-        self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
-                             else pd.Timedelta(self.sim_duration)).floor(self.timestep)
+        # sim_duration and sim_endtime are defined
+        if self.sim_duration is not None and self.sim_endtime is not None:
+            raise ValueError('Both parameters "sim_duration" and "sim_endtime" are defined. '
+                             'Please define only one of these parameters.')
+        # sim_duration is defined, sim_endtime is not
+        elif self.sim_duration is not None:
+            self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
+                                 else pd.Timedelta(self.sim_duration)).floor(self.timestep)
+            self.sim_endtime = self.starttime + self.sim_duration
+        # sim_endtime is defined, sim_duration is not
+        elif self.sim_endtime is not None:
+            # ToDo: check for format not only len of string
+            # ToDo: use function for starttime and endtime conversion
+            self.sim_endtime = self.sim_endtime if len(self.sim_endtime) > 10 else self.sim_endtime + ' 00:00'
+            self.sim_endtime = (pd.to_datetime(self.sim_endtime, format='%d.%m.%Y %H:%M')
+                            .floor(self.timestep)
+                            .tz_localize(self.timezone)
+                            )
+            self.sim_duration = self.sim_endtime - self.starttime
+
         self.sim_extd_duration = self.sim_duration
-        self.sim_endtime = self.starttime + self.sim_duration
         self.sim_extd_endtime = self.sim_endtime
         self.prj_duration_yrs = self.prj_duration
         self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
@@ -462,14 +364,19 @@ class Scenario:
             temp_air['temp_air'] = self.temp_air
             self.temp_air = temp_air
 
-        elif isinstance(self.temp_air, str) and self.temp_air in self.blocks.keys() and self.blocks[self.temp_air] == 'PVSource':
+        elif (isinstance(self.temp_air, str)
+              and self.blocks.get(self.temp_air, '') == 'PVSource'):
             # PVSource checks for temp_scn in parameters and writes temperature to this variable
             self.parameters.loc[(self.temp_air, 'temp_scn')] = True
             self.temp_air = temp_air
 
-        elif isinstance(self.temp_air, str) and os.path.isfile(os.path.join(self.run.paths['input'], utils.set_extension(self.temp_air))):
-            self.temp_air = utils.read_timeseries_csv(path_input_file=os.path.join(self.run.paths['input'],
-                                                                                   utils.set_extension(self.temp_air)),
+        elif (isinstance(self.temp_air, str)
+              and (self.paths.input / utils.set_extension(filename=self.temp_air,
+                                                          default_extension='.csv')).is_file()
+        ):
+            self.temp_air = utils.read_timeseries_csv(path_input_file=(self.paths.input /
+                                                                       utils.set_extension(filename=self.temp_air,
+                                                                                           default_extension='.csv')),
                                                       block=self,  # only uses block.name -> scenario works, too
                                                       scenario=self)
         else:
@@ -493,27 +400,26 @@ class Scenario:
 
         self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
 
-        self.storage_blocks = dict()
-        self.fleets = dict()
-        self.renewable_sources = dict()
-        self.subfleets = dict()
-        self.subfleets_dispatch = dict()
-        self.subfleets_scheduling = dict()
+        self.block_registry = dict()
 
-        self.blocks = {**{'core': 'SystemCore'}, **self.blocks}
-        self.blocks = self.create_block_objects()
+        # Define priorities of blocks to ensure correct initialization order
+        priority_default = 2
+        priority_blocks = {'SystemCore': 0,  # always first -> ac and dc bus required for all other ElectricBlocks
+                           'PVSource': 1,  # holds temperature and wind data -> required by StorageBlock and WindSource
+                           }
+
+        for name, class_name in sorted({'core': 'SystemCore', **self.blocks}.items(),
+                                       key=lambda item: priority_blocks.get(item[1], priority_default),):
+            class_obj = getattr(blocks, class_name, None)
+            if class_obj is not None and isinstance(class_obj, type):
+                class_obj(name, self)
+            else:
+                raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
+                                 f'Check for typos or add class.')
 
         if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
             raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
-
-        self.paths = dict()
-        self.paths['summary_temp'] = os.path.join(self.run.paths['output'],
-                                                  f'{self.name}_summary_temp.pkl')
-        self.paths['timeseries'] = os.path.join(self.run.paths['output'],
-                                                f'{self.run.runtimestamp}_{self.run.name}_{self.name}_results_ts.csv')
-        self.paths['figure'] = os.path.join(self.run.paths['output'],
-                                            f'{self.run.runtimestamp}_{self.run.name}_{self.name}.html')
 
         self.objective_opt = None  # unused for rh strategy
         self.cashflows = pd.DataFrame()
@@ -542,24 +448,22 @@ class Scenario:
         # region preexecution
         self.dispatcher = dispatch.SiteDispatcher(scenario=self)
 
-        for block in self.blocks.values():
+        for block in self.block_registry.get('TopLevelBlock', {}).values():
             block.pre_scenario()
 
         self.scheduler = None
-        if self.subfleets_scheduling:
+        if self.block_registry.get('SubFleetScheduling', {}):
             self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
         # endregion
 
         self.logger.debug(f'Scenario initialization completed')
 
-        self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                status_msg={'scenario': self.name,
-                                                            'status': 'fully initialized'})
+        self.update_scenario_status(status_msg={'status': 'fully initialized'})
 
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
-        # if fleet_unlim := [fleet for fleet in self.fleets.values() if
-        #                 (fleet.mode_scheduling in self.run.apriori_lvls)
+        # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
+        #                 (fleet.mode_scheduling in self.apriori_lvls)
         #                 and fleet.mode_scheduling != 'uc'
         #                 and not fleet.power_lim_static]:
         #     if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
@@ -584,53 +488,57 @@ class Scenario:
                 PredictionHorizon(index=horizon_index,
                                   scenario=self)
 
-                self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                        status_msg={'scenario': self.name,
-                                                                    'status': f'completed horizon '
-                                                                              f'{horizon_index + 1} out of '
-                                                                              f'{self.nhorizons}'})
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': 'successful'})
+                self.update_scenario_status(status_msg={'status': f'completed horizon '
+                                                                  f'{horizon_index + 1} out of '
+                                                                  f'{self.nhorizons}'})
+
+            self.update_scenario_status(status_msg={'status': 'successful'})
 
         except Exception as e:
             # Scenario has failed -> store scenario name to dataframe containing failed scenarios
             status = 'infeasible' if isinstance(e, OptimizationError) else 'failed'
-            self.run.trigger_scenario_status_update(queue=self.status_queue,
-                                                    status_msg={'scenario': self.name,
-                                                                'status': status,
-                                                                'exception': str(e),
-                                                                'traceback': traceback.format_exc()})
+            self.update_scenario_status(status_msg={'status': status,
+                                                    'exception': str(e),
+                                                    'traceback': traceback.format_exc()})
 
             self.logger.error(msg=f'{str(e)} - continue on next scenario',
                               exc_info=(not isinstance(e, OptimizationError)))
 
-            self.end_timing()  # ToDo: does timing end here? Should that better be called at the end of result writing?
-
         finally:  # save results up to exception - valuable in RH strategy
 
-            for block in self.blocks.values():
+            for block in self.block_registry.get('TopLevelBlock', {}).values():
                 block.post_scenario()
             self.aggregator.post_scenario()
 
             self.calc_meta_results()
 
-            self.save_result_summary()
-
-            if not self.run.largescalemode:
+            if not self.settings.largescalemode:
                 self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
-                self.result_timeseries.to_csv(self.paths['timeseries'])
+                self.result_timeseries.to_csv(self.paths.create_result_path(suffix=f'{self.name}_results_ts.csv'))
                 for msg in self.result_messages:
                     self.logger.info(msg)
                 self.generate_plots()
-                self.figure.write_html(self.paths['figure'])
+                self.figure.write_html(self.paths.create_result_path(suffix=f'{self.name}.html'))
                 try:
                     self.figure.show(renderer='browser')
                 except webbrowser.Error:  # webbrowser is not available on most remote machines
                     pass
 
+            self.runtime_end = time.perf_counter()
+            self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
+            self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
+
+            self.save_result_summary()
+
         logging.shutdown()
         # endregion
+
+    def update_scenario_status(self,
+                               status_msg: dict):
+        if self.status_update is not None:
+            status_msg.update(scenario=self.name)
+            self.status_update(queue=self.status_queue,
+                               status_msg=status_msg)
 
     def calc_meta_results(self):
 
@@ -649,11 +557,11 @@ class Scenario:
         if self.energies.loc[('sinks', 'del'), 'sim'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'sim']
+            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'dis']
             self.lcoe_wocs = ((self.aggregator.totex['dis'] -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                               sum([fleet.aggregator.totex['dis'] for fleet in self.fleets.values()])) /
-                              self.energies.loc[('sinks', 'del'), 'sim'])
+                               sum([fleet.aggregator.totex['dis'] for fleet in self.block_registry.get('Fleet', {}).values()])) /
+                              self.energies.loc[('sinks', 'del'), 'dis'])
 
         self.npc = self.aggregator.totex['dis']
         self.npv = self.aggregator.value['dis']
@@ -666,23 +574,6 @@ class Scenario:
                          f'NPV {f"{self.npv:,.2f}" if pd.notna(self.npv) else "-"} {self.currency} | '
                          f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
                          f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
-
-    def create_block_objects(self):
-        class_dict = self.blocks
-        objects = {}
-        for name, class_name in class_dict.items():
-            class_obj = getattr(blocks, class_name, None)
-            if class_obj is not None and isinstance(class_obj, type):
-                objects[name] = class_obj(name, self)
-            else:
-                raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
-                                 f'Check for typos or add class.')
-        return objects
-
-    def end_timing(self):
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-        self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
 
     def generate_plots(self):
 
@@ -710,11 +601,11 @@ class Scenario:
 
         if self.strategy == 'go':
             self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.run.name} - '
+                                            f'{self.paths.basename} - '
                                             f'Scenario: {self.name}')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.run.name} - '
+                                            f'{self.paths.basename} - '
                                             f'Scenario: {self.name} - '
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
@@ -726,20 +617,15 @@ class Scenario:
         :return: none
         """
 
-        # get results of run
-        results_run = pd.Series({key: value for key, value in self.run.__dict__.items()
-                                 if isinstance(value, (int, float, bool, str))})
-        # apply MultiIndex
-        results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
-                                                      names=['block', 'key'])
-
         # get results of scenario
         results_scenario = pd.concat([
             # get attributes of type int, float, bool and str for scenario.result_summary
             pd.Series({key: value for key, value in self.__dict__.items()
                        if isinstance(value, (int, float, bool, str))}),
             # get dict of blocks with class names
-            pd.Series(index=['blocks'], data=str({key: value.classname for key, value in self.blocks.items()})),
+            pd.Series(index=['blocks'],
+                      data=str({key: value.classname
+                                for key, value in self.block_registry.get('TopLevelBlock', {}).items()})),
             # get energies dataframes results for scenario.result_summary
             utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'),
             # get economic results for scenario.result_summary
@@ -750,15 +636,13 @@ class Scenario:
                                                            names=['block', 'key'])
 
         # write results from run and scenario to result_summary
-        self.result_summary = pd.concat([results_run, results_scenario, *self.result_summary])
+        self.result_summary = pd.concat([results_scenario,
+                                         *self.result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
-        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(self.paths['summary_temp'])
-
-    def get_all_blocks(self) -> dict:
-        return self.blocks | {block_name: block_obj
-                              for block in self.blocks.values()
-                              for block_name, block_obj in block.get_subblocks().items()}
+        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(
+            self.paths.output / f'{self.name}_summary_temp.pkl'
+        )
 
 
 class PredictionHorizon:
@@ -769,7 +653,6 @@ class PredictionHorizon:
         self.scenario = scenario
 
         self.results = None
-        self.meta_results = None
 
         # region time and data generation and slicing
         self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
@@ -813,7 +696,7 @@ class PredictionHorizon:
         self.es = solph.EnergySystem(timeindex=self.dti_ph,
                                      infer_last_interval=True)  # initialize energy system model instance
 
-        for block in self.scenario.blocks.values():
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             block.pre_horizon(self)
 
         self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
@@ -824,17 +707,18 @@ class PredictionHorizon:
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Building optimization problem from oemof model')
 
-        self.model = solph.Model(self.es, debug=self.scenario.run.debugmode)
+        self.model = solph.Model(self.es, debug=self.scenario.settings.debugmode)
         self.constraints.apply_constraints(model=self.model)
 
-        if self.scenario.run.debugmode and self.index == 1:
-            self.model.write(self.scenario.run.path_dump_file, io_options={'symbolic_solver_labels': True})
+        if self.scenario.settings.debugmode and self.index == 1:
+            self.model.write(self.scenario.path.dump, io_options={'symbolic_solver_labels': True})
         # endregion
 
         # region solve optimization problem
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
                                   f'Model built, starting optimization')
-        results = self.model.solve(solver=self.scenario.run.solver, solve_kwargs={'tee': self.scenario.run.debugmode})
+        results = self.model.solve(solver=self.scenario.settings.solver,
+                                   solve_kwargs={'tee': self.scenario.settings.debugmode})
 
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
@@ -862,13 +746,11 @@ class PredictionHorizon:
         # Get (possibly optimized) component sizes from results to handle outputs more easily
         self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
 
-        if self.scenario.run.debugmode:
-            self.meta_results = solph.processing.meta_results(self.model)
-            pprint.pprint(self.meta_results)
+        self.scenario.logger.debug(pprint.pformat(solph.processing.meta_results(self.model)))
 
         # free up RAM
         del self.model
 
-        for block in self.scenario.blocks.values():
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             block.post_horizon(self)
         # endregion

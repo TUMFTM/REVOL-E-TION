@@ -7,9 +7,6 @@ import pandas as pd
 import rainflow
 import scipy.interpolate as spip
 
-from revoletion import blocks
-from revoletion import utils
-
 
 class BatteryPackModel:
 
@@ -64,7 +61,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.59  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.39  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(self.scenario.run.paths['data_persist'], 'sanyo_ur18650e.pkl')
+            self.data_path = self.scenario.paths.data_persist / 'sanyo_ur18650e.pkl'
 
         elif self.chemistry == 'lfp':
             # Cell from Naumann et al. - Sony US26650
@@ -80,7 +77,7 @@ class BatteryPackModel:
             self.e_spec_grav_c2p = 0.71  # Transformation factor of gravimetric energy density from cell to pack level
             self.e_spec_vol_c2p = 0.55  # Transformation factor of volumetric energy density from cell to pack level
 
-            self.data_path = os.path.join(self.scenario.run.paths['data_persist'], 'sony_us26650.pkl')
+            self.data_path = self.scenario.paths.data_persist / 'sony_us26650.pkl'
 
         with open(self.data_path, 'rb') as file:
             self.ocv, self.r_i_ch, self.r_i_dch = pickle.load(file)
@@ -138,7 +135,7 @@ class BatteryPackModel:
         # Get temperature timeseries
         if isinstance(self.block.temp_battery, str):
             try:
-                temp_hor_c = self.scenario.blocks[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
+                temp_hor_c = self.scenario.block_registry.get('TopLevelBlock', {})[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
             except KeyError or NameError:
                 self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found - '
                                              f'Using scenario default temperature')
@@ -240,10 +237,10 @@ class BatteryPackModel:
         k_crate_q_cyc = 0.0971 + 0.063 * crate_hor
         k_crate_r_cyc = 0.0023 - 0.0018 * crate_hor
 
-        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
+        if (sum_depth := np.sum(cycles_hor['depth'])) > 0:  # actual cycling happened
             # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
-            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor['depth']) / sum_depth
+            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor['depth']) / sum_depth
 
             # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
             k_crate_q_cyc = k_crate_q_cyc.mean()
@@ -306,11 +303,11 @@ class BatteryPackModel:
         beta_res = 2.153E-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521E-5 + 2.798E-4 * cycles_hor['depth']
         beta_res = np.maximum(1.5E-5, beta_res)  # limitation as per text following Eq. (21) in paper
 
-        if np.sum(cycles_hor['depth']) > 0:  # actual cycling happened
+        if (sum_depth := np.sum(cycles_hor['depth'])) > 0:  # actual cycling happened
 
             # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
-            beta_cap = np.sum(beta_cap * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
-            beta_res = np.sum(beta_res * cycles_hor['depth']) / np.sum(cycles_hor['depth'])
+            beta_cap = np.sum(beta_cap * cycles_hor['depth']) / sum_depth
+            beta_res = np.sum(beta_res * cycles_hor['depth']) / sum_depth
 
             # Define previous aging state as equivalent FECs at current conditions
             q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2

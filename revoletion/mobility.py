@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import os
 import pandas as pd
 import scipy as sp
 
-import revoletion.utils as utils
+from . import utils
 
 
 def lognormal_params(mean: float,
@@ -29,23 +28,20 @@ class SubFleetDemand:
         self.scenario = scenario
         self.subfleet = subfleet
 
+        self.mapper_timeframe = None  # remains unfilled if demand is read from file
         self.usecases = None  # remains unfilled if demand is read from file
         self.demand = pd.DataFrame()  # main DataFrame for demand
-
-        self.mapper_timeframe = utils.import_module_from_path(
-            module_name=self.subfleet.filename_mapper,
-            file_path=os.path.join(self.scenario.run.paths['input'],
-                                   f'{self.subfleet.filename_mapper}.py'))
 
         self.rng = np.random.default_rng()  # random number generator
 
     def read_usecase_file(self):
         """
-        read a usecase definition csv file and perform necessary normalization for each timeframe.
+        read a usecase definition csv file and perform neccessary normalization for each timeframe.
         """
 
-        usecase_path = os.path.join(self.scenario.run.paths['input'],
-                                    utils.set_extension(self.subfleet.filename))
+        usecase_path = self.scenario.paths.input / utils.set_extension(filename=self.subfleet.filename,
+                                                                       default_extension='.csv')
+
         self.usecases = pd.read_csv(usecase_path,
                                     header=[0,1],
                                     index_col=0)
@@ -67,6 +63,17 @@ class SubFleetDemand:
         """
         generate demand dataframe from usecases & timeframes including all pre-dispatch information
         """
+
+        if self.subfleet.filename_mapper is None:
+            raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
+                             f'Please check the subfleet definition in the scenario file.')
+        if not (self.scenario.paths.input / f'{self.subfleet.filename_mapper}.py').is_file():
+            raise FileNotFoundError(f'Mapper file {self.subfleet.filename_mapper}.py not found in input path. '
+                                    f'Please check the subfleet definition in the scenario file.')
+
+        self.mapper_timeframe = utils.import_module_from_path(
+            module_name=self.subfleet.filename_mapper,
+            file_path=self.scenario.paths.input / f'{self.subfleet.filename_mapper}.py')
 
         # region sample daily total demand from timeframe mapper and lognormal distribution
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.scenario.dti_sim.date)))
@@ -125,7 +132,9 @@ class SubFleetDemand:
             return pd.DataFrame(data=time_samples, index=group.index)
 
         self.demand['hour'] = (self.demand.groupby(['usecase', 'timeframe'])
-                               .apply(sample_time_usecase).reset_index(level=[0, 1], drop=True).sort_index())
+                               .apply(sample_time_usecase, include_groups=False)
+                               .reset_index(level=[0, 1], drop=True)
+                               .sort_index())
         self.demand['time_req'] = pd.to_datetime(self.demand[['year', 'month', 'day', 'hour']])
         self.demand.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
         self.demand['time_req'] = self.demand['time_req'].dt.tz_localize(self.scenario.timezone,
@@ -166,20 +175,16 @@ class SubFleetDemand:
 
         self.demand['dtime_patience'] = (self.demand
                                          .groupby(['usecase','timeframe'])
-                                         .apply(get_patience_usecase)
+                                         .apply(get_patience_usecase, include_groups=False)
                                          .reset_index(level=[0, 1], drop=True)
                                          .sort_index())
         # endregion
 
         # region save results
-        if not self.scenario.run.largescalemode:
-            demand_path = os.path.join(
-                self.scenario.run.paths['output'],
-                f'{self.scenario.run.runtimestamp}_'
-                f'{self.scenario.run.name}_'
-                f'{self.scenario.name}_'
-                f'{self.subfleet.name}_'
-                f'demand.csv')
+        if not self.scenario.settings.largescalemode:
+            demand_path = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
+                                                                        f'{self.subfleet.name}_'
+                                                                        f'demand.csv')
             self.demand.to_csv(demand_path)
         # endregion
 
@@ -187,10 +192,10 @@ class SubFleetDemand:
         """
         read in a subfleet demand csv file directly
         """
-        path_demand_file = os.path.join(self.scenario.run.paths['input'],
-                                        utils.set_extension(self.subfleet.filename))
-        self.demand = pd.read_csv(path_demand_file,
-                         index_col=0)
+        self.demand = pd.read_csv((self.scenario.paths.input /
+                                   utils.set_extension(filename=self.subfleet.filename,
+                                                       default_extension='.csv')),
+                                  index_col=0)
 
         self.demand['time_req'] = pd.to_datetime(self.demand['time_req'], utc=True).dt.tz_convert(self.scenario.timezone)
         self.demand['dtime_active'] = pd.to_timedelta(self.demand['dtime_active'])
@@ -238,7 +243,7 @@ class BatteryDemand(SubFleetDemand):
 
         self.demand['dtime_active'] = (self.demand
                                        .groupby(['usecase', 'timeframe'])
-                                       .apply(calc_time_active_usecase)
+                                       .apply(calc_time_active_usecase, include_groups=False)
                                        .reset_index(level=[0, 1], drop=True)
                                        .sort_index())
 
@@ -281,7 +286,7 @@ class VehicleDemand(SubFleetDemand):
                                 index=group.index)
 
         self.demand[['consumption', 'speed_avg']] = (self.demand.groupby(['usecase', 'timeframe'])
-                                                     .apply(get_consumption_speed_usecase)
+                                                     .apply(get_consumption_speed_usecase, include_groups=False)
                                                      .reset_index(level=[0, 1], drop=True)
                                                      .sort_index())
 

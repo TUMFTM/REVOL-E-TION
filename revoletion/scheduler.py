@@ -1,11 +1,13 @@
+#!/usr/bin/env python3
+
 import numpy as np
 import pandas as pd
 
-from revoletion import blocks
+from . import blocks
 
 
 def get_mode_scheduling(fleet_units: dict,
-                        block: blocks.Block) -> str | None:
+                        block: blocks.BaseBlock) -> str | None:
     mode_scheduling = list({fu.block.mode_scheduling for fu in fleet_units.values()})
     if len(mode_scheduling) > 1:
         raise ValueError(f'Fleet units in fleet "{block.name}" have different scheduling modes: '
@@ -20,7 +22,7 @@ class AprioriPowerScheduler:
     def __init__(self, scenario):
         self.scenario = scenario
 
-        self.core = AprioriCore(block=self.scenario.blocks['core'],
+        self.core = AprioriCore(block=self.scenario.block_registry.get('TopLevelBlock', {})['core'],
                                 scheduler=self)
 
         pass
@@ -56,7 +58,7 @@ class AprioriCore:
 
         self.fleets = {fleet.name: AprioriFleet(block=fleet,
                                                 scheduler=self.scheduler)
-                       for fleet in self.scenario.fleets.values()}
+                       for fleet in self.scenario.block_registry.get('Fleet', {}).values()}
 
         self.fu_uc = {k: v for fleet in self.fleets.values() for k, v in fleet.fu_uc.items()}
         self.fu_stat = {k: v for fleet in self.fleets.values() for k, v in fleet.fu_stat.items()}
@@ -83,9 +85,7 @@ class AprioriCore:
         self.p_sys_fix[:] = 0
 
         # get power production and consumption for each non-fleet top level block
-        for block in self.scenario.blocks.values():
-            if not block.top_level_block:
-                continue
+        for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             if isinstance(block, blocks.GridConnection):
                 self.p_sys_avail.loc[:, block.system] += block.sizes.loc['g2s', 'preexisting'] * block.eff['block']
             elif isinstance(block, blocks.RenewableSource):
@@ -211,7 +211,7 @@ class AprioriCore:
 
 class AprioriFleet:
     def __init__(self,
-                 block: blocks.Block,
+                 block: blocks.BaseBlock,
                  scheduler: AprioriPowerScheduler):
         self.block=block
         self.scheduler=scheduler
@@ -222,10 +222,9 @@ class AprioriFleet:
         self.fleet_units = {fu_name: AprioriFleetUnit(block=fu_block,
                                                       fleet=self,
                                                       scheduler=self.scheduler)
-                            for subfleet in self.block.subblocks.values()
-                            for fu_name, fu_block in subfleet.subblocks.items()
-                            if (isinstance(fu_block, blocks.ElectricFleetUnit) and
-                                fu_block.mode_scheduling in self.scenario.run.apriori_lvls)}
+                            for fu_name, fu_block in self.scenario.block_registry['ElectricFleetUnit'].items()
+                            if (fu_block.parent.parent==self.block and
+                                fu_block.mode_scheduling in self.scenario.apriori_lvls)}
 
         self.fu_uc = {fu_name: fu_block
                       for fu_name, fu_block in self.fleet_units.items()
@@ -233,7 +232,7 @@ class AprioriFleet:
 
         self.fu_stat = {fu_name: fu_block
                         for fu_name, fu_block in self.fleet_units.items()
-                        if fu_block.block.mode_scheduling in self.scenario.run.apriori_lvls and
+                        if fu_block.block.mode_scheduling in self.scenario.apriori_lvls and
                         fu_block.block.mode_scheduling != 'uc' and
                         self.lm == 'stat'}
 
@@ -242,7 +241,7 @@ class AprioriFleet:
 
         self.fu_dyn = {fu_name: fu_block
                        for fu_name, fu_block in self.fleet_units.items()
-                       if fu_block.block.mode_scheduling in self.scenario.run.apriori_lvls and
+                       if fu_block.block.mode_scheduling in self.scenario.apriori_lvls and
                        fu_block.block.mode_scheduling != 'uc' and
                        self.lm == 'dyn'}
 

@@ -7,8 +7,7 @@ import numpy as np
 import pandas as pd
 import simpy
 
-from revoletion import blocks
-from revoletion import utils
+from . import blocks
 
 
 class MultiStoreGet(simpy.resources.base.Get):
@@ -50,7 +49,7 @@ class SiteDispatcher:
 
         self.scenario = scenario
 
-        self.subfleets = self.scenario.subfleets_dispatch
+        self.subfleets = self.scenario.block_registry.get('SubFleetDispatch', {})
         if not self.subfleets:
             return
 
@@ -88,7 +87,7 @@ class SiteDispatcher:
 
         for disp in self.dispatchers.values():
             disp.postprocess()
-            if not self.scenario.run.largescalemode:
+            if not self.scenario.settings.largescalemode:
                 disp.save_data()
 
 
@@ -457,35 +456,27 @@ class SubFleetDispatcher:
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        processes_path = os.path.join(
-            self.scenario.run.paths['output'],
-            f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.name}_'
-            f'{self.scenario.name}_'
-            f'{self.subfleet.name}_'
-            f'processes.csv')
+        processes_path = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
+                                                                       f'{self.subfleet.name}_'
+                                                                       f'processes.csv')
         self.processes.to_csv(processes_path)
 
-        log_path = os.path.join(
-            self.scenario.run.paths['output'],
-            f'{self.scenario.run.runtimestamp}_'
-            f'{self.scenario.run.name}_'
-            f'{self.scenario.name}_'
-            f'{self.subfleet.name}_'
-            f'log.csv')
+        log_path = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
+                                                                 f'{self.subfleet.name}_'
+                                                                 f'log.csv')
         self.log.to_csv(log_path)
 
 
 class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
-                 subfleet: 'blocks.VehicleFleet',
+                 subfleet: blocks.SubFleet,
                  parent: SiteDispatcher,
                  scenario: 'simulation.Scenario'):
 
         if subfleet.rex is not None:
             self.rex = True
-            self.rex_subfleet = scenario.subfleets.get(subfleet.rex, None)
+            self.rex_subfleet = scenario.block_registry.get('SubFleet', {}).get(subfleet.rex, None)
 
             base_msg = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
                        f'Subfleet "{subfleet.name}": selected range extender fleet "{subfleet.rex}"'
@@ -494,7 +485,7 @@ class VehicleDispatcher(SubFleetDispatcher):
                 raise ValueError(f'{base_msg} does not exist')
             elif not self.rex_subfleet.type_unit.lower() == 'mb':
                 raise ValueError(f'{base_msg} is not a Battery SubFleet')
-            elif self.rex_subfleet not in scenario.subfleets_dispatch.values():
+            elif self.rex_subfleet not in scenario.block_registry.get('SubFleetDispatch', {}).values():
                 raise ValueError(f'{base_msg} is not dispatched and cannot be used as range extender')
 
             self.rex_dispatcher = self.rex_subfleet.dispatcher
@@ -545,7 +536,3 @@ class BatteryDispatcher(SubFleetDispatcher):
         super().__init__(subfleet=subfleet,
                          parent=parent,
                          scenario=scenario)
-
-
-
-

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import pandas as pd
 
 from revoletion import utils
@@ -111,8 +110,10 @@ def transform_scalar_var(value, scenario, block=None):
     to a pandas Series with the same DatetimeIndex as the simulation.
     """
     if isinstance(value, str):  # value contains filename
-        filename = utils.set_extension(filename=value, default_extension='.csv')
-        df = utils.read_timeseries_csv(path_input_file=os.path.join(scenario.run.paths['input'], filename),
+        filename = utils.set_extension(filename=value,
+                                       default_extension='.csv')
+
+        df = utils.read_timeseries_csv(path_input_file=scenario.paths.input / filename,
                                        block=block,
                                        scenario=scenario,
                                        multiheader=False,
@@ -149,7 +150,7 @@ class EconomicPointOfInterest:
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  scenario: 'simulation.Scenario' = None):
 
         self.name = name
@@ -216,19 +217,19 @@ class EconomicAggregator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  scenario: 'simulation.Scenario' = None):
 
         super().__init__(name=name,
                          block=block,
                          scenario=scenario)
 
-        self.totex = {'prj': 0,
-                      'dis': 0,
-                      'ann': 0}
-        self.value = {'prj': 0,
-                      'dis': 0,
-                      'ann': 0}
+        self.totex = {'prj': 0.0,
+                      'dis': 0.0,
+                      'ann': 0.0}
+        self.value = {'prj': 0.0,
+                      'dis': 0.0,
+                      'ann': 0.0}
 
     def pre_scenario(self):
         if self.block is not None:
@@ -261,25 +262,25 @@ class EconomicEvaluator(EconomicPointOfInterest):
 
     def __init__(self,
                  name: str,
-                 block: 'blocks.Block',
+                 block: 'blocks.BaseBlock',
                  params: dict):
 
         super().__init__(name=name,
                          block=block)
 
         # region set default values
-        self.capex.update({'spec': 0,
-                           'fix': 0,})
-        self.mntex.update({'spec': 0,
-                           'fix': 0})
-        self.opex.update({'spec': transform_scalar_var(value=0,
+        self.capex.update({'spec': 0.0,
+                           'fix': 0.0,})
+        self.mntex.update({'spec': 0.0,
+                           'fix': 0.0})
+        self.opex.update({'spec': transform_scalar_var(value=0.0,
                                                        scenario=self.scenario,
                                                        block=block)})
-        self.crev.update({'spec': transform_scalar_var(value=0,
+        self.crev.update({'spec': transform_scalar_var(value=0.0,
                                                        scenario=self.scenario,
                                                        block=block)})
         self.aux = {'ls': self.scenario.prj_duration_yrs,
-                    'ccr': 1}
+                    'ccr': 1.0}
         self.size_name = None
         self.flow_name = None
         # endregion
@@ -292,11 +293,11 @@ class EconomicEvaluator(EconomicPointOfInterest):
             elif param_tuple == ('flow', 'name'):
                 self.flow_name = param_name
             elif dict_name in ['opex', 'crev']:
-                getattr(self, dict_name)[dict_key] = transform_scalar_var(value=getattr(self.block, param_name, 0),
+                getattr(self, dict_name)[dict_key] = transform_scalar_var(value=getattr(self.block, param_name, 0.0),
                                                                           scenario=self.scenario,
                                                                           block=self.block)
             else:  # capex, mntex, aux
-                getattr(self, dict_name)[dict_key] = getattr(self.block, param_name, 0)
+                getattr(self, dict_name)[dict_key] = getattr(self.block, param_name, 0.0)
         # endregion
 
         self.pre_scenario()

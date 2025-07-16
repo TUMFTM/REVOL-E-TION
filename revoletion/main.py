@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import importlib.resources
+from pathlib import Path
 import argparse
 import os
 import warnings
@@ -16,7 +18,10 @@ except ImportError:
     )
 
 
-from revoletion import simulation as sim
+from .run import SimulationRun
+from .simulation import Scenario, SimulationPaths, SimulationSettings
+from .utils import infer_dtype
+import revoletion.example
 
 
 class DefaultFileLocationWarning(UserWarning):
@@ -26,86 +31,67 @@ class DefaultFileLocationWarning(UserWarning):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "-scn",
-        "--scenario",
-        type=str,
-        default=None,
-        help="Path to the scenario CSV file",
-    )
-    parser.add_argument(
-        "-in",
-        "--inputdir",
-        type=str,
-        default=None,
-        help="Path to the input data directory",
-    )
-    parser.add_argument(
-        "-out",
-        "--outputdir",
-        type=str,
-        default=None,
-        help="Path to the results directory",
-    )
-    parser.add_argument(
-        "-slv",
-        "--solver",
-        type=str,
-        default="gurobi",
-        help="Pyomo compatible solver to be used for the optimization problem.",
-    )
-    parser.add_argument(
-        "-np",
-        "--n_processes",
-        type=int,
-        default=1,
-        help="Number of processes (i.e. cores) to use in parallel operation",
-    )
-    parser.add_argument(
-        "-ls",
-        "--largescalemode",
-        type=bool,
-        default=False,
-        help="Omit detailed output data (generated input timeseries, system graphs, "
-        "result timeseries, and timeseries plots)",
-    )
-    parser.add_argument(
-        "-db",
-        "--debugmode",
-        type=bool,
-        default=False,
-        help="Generate debug output and dump .lp model file for external solving",
-    )
-    parser.add_argument(
-        "-rer",
-        "--rerun",
-        type=str,
-        default=False,
-        help="Directory name of run including failed scenarios which should be rerun",
-    )
-    parser.add_argument(
-        "-rin",
-        "--rerun_infeasible",
-        type=str,
-        default=True,
-        help="Rerun infeasible or unbounded scenarios",
-    )
-    parser.add_argument(
-        "-ksc",
-        "--key_solcast_api",
-        type=str,
-        default=None,
-        help="API key for Solcast API",
-    )
+    settings_template = SimulationSettings()  # use this to only define default values once in SimulationSettings
+
+    parser.add_argument('-scn', '--scenario',
+                        type=str,
+                        default=None,
+                        help='Path to the scenario CSV file')
+    parser.add_argument('-in', '--input',
+                        type=str,
+                        default=None,
+                        help='Path to the input data directory')
+    parser.add_argument('-out', '--output',
+                        type=str,
+                        default=None,
+                        help='Path to the results directory')
+    parser.add_argument('-msc', '--multiscenario',
+                        type=infer_dtype,
+                        default=True,
+                        help='Combine multiple scenarios in a single run.')
+    parser.add_argument('-slv', '--solver',
+                        type=str,
+                        default=settings_template.solver,
+                        help='Pyomo compatible solver to be used for the optimization problem.')
+    parser.add_argument('-np', '--n_processes',
+                        type=int,
+                        default=settings_template.n_processes,
+                        help='Number of processes (i.e. cores) to use in parallel operation')
+    parser.add_argument('-ls', '--largescalemode',
+                        type=infer_dtype,
+                        default=settings_template.largescalemode,
+                        help='Omit detailed output data (generated input timeseries, system graphs, '
+                             'result timeseries, and timeseries plots)')
+    parser.add_argument('-db', '--debugmode',
+                        type=infer_dtype,
+                        default=settings_template.debugmode,
+                        help='Generate debug output and dump .lp model file for external solving')
+    parser.add_argument('-rer', '--rerun',
+                        type=str,
+                        default=settings_template.rerun,
+                        help='Directory name of run including failed scenarios which should be rerun')
+    parser.add_argument('-rin', '--rerun_infeasible',
+                        type=infer_dtype,
+                        default=settings_template.rerun_infeasible,
+                        help='Rerun infeasible or unbounded scenarios')
+    parser.add_argument('-ksc', '--key_solcast_api',
+                        type=str,
+                        default=settings_template.key_solcast_api,
+                        help='API key for Solcast API')
 
     args = parser.parse_args()
 
-    path_pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path_cwd = os.getcwd()
-
-    scenarios_example = False
+    if not isinstance(args.multiscenario, bool):
+        raise ValueError(f'Argument --multiscenario must be a boolean value, got {args.multiscenario} of type {type(args.multiscenario)}')
+    if not isinstance(args.largescalemode, bool):
+        raise ValueError(f'Argument --largescalemode must be a boolean value, got {args.largescalemode} of type {type(args.largescalemode)}')
+    if not isinstance(args.debugmode, bool):
+        raise ValueError(f'Argument --debugmode must be a boolean value, got {args.debugmode} of type {type(args.debugmode)}')
+    if not isinstance(args.rerun_infeasible, bool):
+        raise ValueError(f'Argument --rerun_infeasible must be a boolean value, got {args.rerun_infeasible} of type {type(args.rerun_infeasible)}')
 
     # region interpret scenario file path
+    scenarios_example = False
     # Option 1: No scenario file argument passed -> select via GUI
     if args.scenario is None:
         if not TKINTER_AVAILABLE:
@@ -117,99 +103,47 @@ def main():
         root.withdraw()  # hide small tk-window
         root.lift()  # make sure all tk windows appear in front of other windows
         path_scenario = tk.filedialog.askopenfilename(
-            initialdir=path_cwd,
+            initialdir=Path.cwd(),
             title="Select scenario file",
             filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
         )
         if not path_scenario:
             raise FileNotFoundError("No scenario file selected")
-    # Option 2: Full absolute or relative file path (works from anywhere)
-    elif os.path.isfile(args.scenario):
-        path_scenario = args.scenario
-    # Option 3: File name in the working directory (works from within project directory only)
-    elif os.path.isfile(os.path.join(path_cwd, args.scenario)):
-        path_scenario = os.path.join(path_cwd, args.scenario)
-    # Option 4: Example file in example project in package directory (works from anywhere)
-    elif args.scenario in ["example", "ex"]:
+        path_scenario = tk.filedialog.askopenfilename(initialdir=Path.cwd(),
+                                                      title=f'Select scenario file',
+                                                      filetypes=(('CSV files', '*.csv'),
+                                                                 ('All files', '*.*')))
+        if not path_scenario:
+            raise FileNotFoundError(f'No scenario file selected')
+    # Option 2: Example file in example project in package directory (works from anywhere)
+    elif args.scenario  == 'example':
         scenarios_example = True
-        path_scenario = os.path.join(path_pkg, "example", "scenarios_example.csv")
-        warnings.warn(
-            f'Using example scenario file "{args.scenario}", data, and output directory from '
-            f"REVOL-E-TION - disregard if this is intended",
-            DefaultFileLocationWarning,
-        )
+        with importlib.resources.as_file(importlib.resources.files(revoletion.example)) as example_dir:
+            path_scenario = example_dir / 'scenarios_example.csv'
+    # Option 3: Full absolute or relative (to working directory) file path
     else:
-        raise FileNotFoundError(
-            f"Scenario file or path not interpretable: {args.scenario}"
-        )
+        path_scenario = Path(args.scenario)
     # endregion
 
-    # region interpret input directory path
-    # Option 1: Example file in example project in package directory (works from anywhere)
-    if scenarios_example and args.inputdir is not None:
-        path_input = os.path.dirname(path_scenario)
-    # Option 2: No input directory argument passed -> select via GUI
-    elif args.inputdir is None:
-        if not TKINTER_AVAILABLE:
-            raise FileNotFoundError(
-                "No input directory provided and tkinter is unavailable."
-            )
-        path_input = tk.filedialog.askdirectory(
-            initialdir=path_cwd, title="Select input data directory"
-        )
-        if not path_input:
-            raise NotADirectoryError("No input data directory selected")
-    # Option 3: Full absolute or relative file path (works from anywhere)
-    elif os.path.isdir(args.inputdir):
-        path_input = args.inputdir
-    # Option 4: Subdirectory of working directory (works from within project directory only)
-    elif os.path.isdir(os.path.join(path_cwd, args.inputdir)):
-        path_input = os.path.join(path_cwd, args.inputdir)
-    else:
-        raise NotADirectoryError(
-            f"Input directory path not interpretable: {args.inputdir}"
-        )
-    # endregion
+    settings = SimulationSettings(solver=args.solver,
+                                  n_processes=args.n_processes,
+                                  largescalemode=args.largescalemode,
+                                  debugmode=args.debugmode,
+                                  rerun=args.rerun,
+                                  rerun_infeasible=args.rerun_infeasible,
+                                  key_solcast_api=args.key_solcast_api)
 
-    # region interpret output directory path
-    # Option 1: Example file in example project in package directory (works from anywhere)
-    if scenarios_example and args.outputdir is None:
-        path_output = os.path.join(path_pkg, "results")
-    # Option 2: No output directory argument passed -> select via GUI
-    elif args.outputdir is None:
-        if not TKINTER_AVAILABLE:
-            raise FileNotFoundError(
-                "No output directory provided and tkinter is unavailable."
-            )
-        path_output = tk.filedialog.askdirectory(
-            initialdir=path_cwd, title="Select output data directory"
-        )
-        if not path_output:
-            raise NotADirectoryError("No output data directory selected")
-    # Option 3: Full absolute or relative file path (works from anywhere)
-    elif os.path.isdir(args.outputdir):
-        path_output = args.outputdir
-    # Option 4: Subdirectory of working directory (works from within project directory only)
-    elif os.path.isdir(os.path.join(path_cwd, args.outputdir)):
-        path_output = os.path.join(path_cwd, args.outputdir)
-    else:
-        raise NotADirectoryError(
-            f"Output directory path not interpretable: {args.outputdir}"
-        )
-    # endregion
+    paths = SimulationPaths(scenario=path_scenario,
+                            input=None if not args.input or scenarios_example else Path(args.input),
+                            output=None if not args.output or scenarios_example else Path(args.output),
+                            )
 
-    sim.SimulationRun(
-        path_scenarios=path_scenario,
-        path_input=path_input,
-        path_output=path_output,
-        solver=args.solver,
-        n_processes=args.n_processes,
-        largescalemode=args.largescalemode,
-        debugmode=args.debugmode,
-        rerun=args.rerun,
-        rerun_infeasible=args.rerun_infeasible,
-        key_solcast_api=args.key_solcast_api,
-    )
+    if args.multiscenario:
+        SimulationRun(paths=paths,
+                      settings=settings)
+    else:
+        Scenario(paths=paths,
+                 settings=settings)
 
 
 if __name__ == "__main__":
