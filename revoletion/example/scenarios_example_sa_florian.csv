@@ -1,7 +1,7 @@
 block,key,icev
 scenario,starttime,1.1.2018
 scenario,timestep,15min
-scenario,sim_duration,7
+scenario,sim_duration,30
 scenario,sim_endtime,None
 scenario,prj_duration,25
 scenario,compensate_sim_prj,True
@@ -257,3 +257,4 @@ hp,nominal_cop,4.9
 hp,nominal_power,9100
 hp,wf,"R290"
 hp,temperature_tolerance,3
+hp,region,4
