@@ -5,7 +5,6 @@ import geopy
 import holidays
 import importlib.resources
 import logging
-import logging.handlers
 import math
 from pathlib import Path
 import numpy as np
@@ -13,6 +12,7 @@ import plotly.subplots
 import pprint
 import pytz
 import time
+
 import timezonefinder
 import traceback
 import warnings

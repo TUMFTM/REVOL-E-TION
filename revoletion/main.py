@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 
-import argparse
 import importlib.resources
 from pathlib import Path
-import tkinter as tk
-import tkinter.filedialog
+import argparse
+import warnings
+
+try:
+    import tkinter as tk
+    import tkinter.filedialog
+
+    TKINTER_AVAILABLE = True
+except ImportError:
+    TKINTER_AVAILABLE = False
+    warnings.warn(
+        "tkinter is not available in this environment. GUI file selection will be disabled."
+    )
+
 
 from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
@@ -13,7 +24,6 @@ import revoletion.example
 
 
 def main():
-
     parser = argparse.ArgumentParser()
 
     settings_template = SimulationSettings()  # use this to only define default values once in SimulationSettings
@@ -79,15 +89,21 @@ def main():
     scenarios_example = False
     # Option 1: No scenario file argument passed -> select via GUI
     if args.scenario is None:
+        if not TKINTER_AVAILABLE:
+            raise FileNotFoundError(
+                "No scenario file provided and tkinter is unavailable."
+            )
+
         root = tk.Tk()
         root.withdraw()  # hide small tk-window
         root.lift()  # make sure all tk windows appear in front of other windows
-        path_scenario = tk.filedialog.askopenfilename(initialdir=Path.cwd(),
-                                                      title=f'Select scenario file',
-                                                      filetypes=(('CSV files', '*.csv'),
-                                                                 ('All files', '*.*')))
+        path_scenario = tk.filedialog.askopenfilename(
+            initialdir=Path.cwd(),
+            title="Select scenario file",
+            filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+        )
         if not path_scenario:
-            raise FileNotFoundError(f'No scenario file selected')
+            raise FileNotFoundError("No scenario file selected")
     # Option 2: Example file in example project in package directory (works from anywhere)
     elif args.scenario  == 'example':
         scenarios_example = True
@@ -119,5 +135,5 @@ def main():
                  settings=settings)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
