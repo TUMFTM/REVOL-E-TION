@@ -44,6 +44,10 @@ def main():
                         type=infer_dtype,
                         default=True,
                         help='Combine multiple scenarios in a single run.')
+    parser.add_argument('-rer', '--rerun',
+                        type=infer_dtype,
+                        default=None,
+                        help='Directory name of run including failed scenarios which should be rerun')
     parser.add_argument('-slv', '--solver',
                         type=str,
                         default=settings_template.solver,
@@ -61,10 +65,6 @@ def main():
                         type=infer_dtype,
                         default=settings_template.debugmode,
                         help='Generate debug output and dump .lp model file for external solving')
-    parser.add_argument('-rer', '--rerun',
-                        type=str,
-                        default=settings_template.rerun,
-                        help='Directory name of run including failed scenarios which should be rerun')
     parser.add_argument('-rin', '--rerun_infeasible',
                         type=infer_dtype,
                         default=settings_template.rerun_infeasible,
@@ -118,13 +118,13 @@ def main():
                                   n_processes=args.n_processes,
                                   largescalemode=args.largescalemode,
                                   debugmode=args.debugmode,
-                                  rerun=args.rerun,
                                   rerun_infeasible=args.rerun_infeasible,
                                   key_solcast_api=args.key_solcast_api)
 
     paths = SimulationPaths(scenario=path_scenario,
                             input=None if not args.input or scenarios_example else Path(args.input),
                             output=None if not args.output or scenarios_example else Path(args.output),
+                            rerun=None if not args.rerun else args.rerun,
                             )
 
     if args.multiscenario:
