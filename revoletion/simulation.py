@@ -5,7 +5,6 @@ import geopy
 import holidays
 import importlib.resources
 import logging
-import logging.handlers
 import math
 from pathlib import Path
 import numpy as np
@@ -13,6 +12,7 @@ import plotly.subplots
 import pprint
 import pytz
 import time
+
 import timezonefinder
 import traceback
 import warnings
@@ -41,21 +41,25 @@ class OptimizationError(Exception):
 
 @dataclass
 class SimulationPaths:
+    """
+    Contains all paths relevant for the simulation run.
+    scenario: Path to the scenario file
+    input: Path to the input data directory (default: same directory as scenario file)
+    output: Path to the output directory (default: current working directory/results)
+    rerun: Path to the rerun directory (can also contain the string "latest")
+
+    data_persist: Path to the persistent data directory within the revoletion package
+    summary_csv: Path to the summary CSV file
+    summary_pkl: Path to the summary pickle file
+    status: Path to the status csv file
+    dump: Path to the pyomo model
+    log: Path to the log file
+    """
+
     scenario: Path | str
     input: Path | str = None
     output: Path | str = None
-
-    _basename: Path = field(default_factory=lambda: Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S')),
-                            init=True
-                            )  # internal field for basename
-
-    _revoletion: Path = field(default_factory=lambda: importlib.resources.files(__package__),
-                              init=False,  # cannot be set manually
-                              )
-
-    _cwd: Path = field(default_factory=Path.cwd,
-                       init=False,  # cannot be set manually
-                       )
+    rerun: Path | str = None
 
     def __post_init__(self):
         self.scenario = Path(self.scenario)
@@ -64,50 +68,46 @@ class SimulationPaths:
         else:
             self.input = Path(self.input)
         if self.output is None:
-            self.output = self._cwd / 'results'
+            self.output = Path.cwd() / 'results'
         else:
             self.output = Path(self.output)
-        self.output = self.output / self.basename
+        if self.rerun is None:
+            self.output = self.output / Path(f'{pd.Timestamp.now().strftime("%y%m%d_%H%M%S")}_{self.scenario.stem}')
+        elif self.rerun == 'latest':
+            # get all directories in the output directory already sorted alphabetically
+            directories = [d for d in sorted(self.output.iterdir()) if d.is_dir()]
+
+            # return the last directory (if any)
+            if directories:
+                self.output = directories[-1]
+            else:
+                raise NotADirectoryError(f'No previous runs available in specified output directory {self.output}')
+        else:
+            self.rerun = Path(self.rerun)
+            if self.rerun.is_absolute():
+                self.output = self.rerun
+            else:
+                self.output = self.output / self.rerun.name
 
         # ensure all paths are absolute
         self.scenario = self.scenario.resolve()
         self.input = self.input.resolve()
         self.output = self.output.resolve()
-        self._revoletion = self._revoletion.resolve()
-        self._cwd = self._cwd.resolve()
 
         # ensure that all paths exist
         if not self.scenario.is_file():
             raise FileNotFoundError(f'Scenario file not found: {self.scenario}')
         if not self.input.is_dir():
             raise NotADirectoryError(f'Input directory path not interpretable: {self.input}')
-        self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        if not self.rerun:
+            self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        else:
+            if not self.output.is_dir():
+                raise NotADirectoryError(f'Specified rerun directory {self.output} does not exist.')
 
     def create_result_path(self,
                            suffix: str) -> Path:
-        return self.output / f'{self.basename}_{suffix}'
-
-    @property
-    def basename(self) -> Path:
-        return self._basename
-
-    @basename.setter
-    def basename(self, value: Path):
-        self._basename = value
-        # store old output path for renaming
-        old_output = self.output
-        # recalculate the output path whenever basename is changed
-        self.output = self.output.parent / self._basename
-        # rename the output directory
-        old_output.rename(self.output)
-
-    @property
-    def cwd(self) -> Path:
-        return self._cwd
-
-    @property
-    def revoletion(self) -> Path:
-        return self._revoletion
+        return self.output / f'{self.output.name}_{suffix}'
 
     @property
     def data_persist(self) -> Path:
@@ -141,7 +141,6 @@ class SimulationSettings:
     n_processes: int = 1
     largescalemode: bool = False
     debugmode: bool = False
-    rerun: bool | Path = False
     rerun_infeasible: bool = True
     key_solcast_api: str = None
 
@@ -172,30 +171,12 @@ class Scenario:
         self.parent = None
 
         if not run_execution:
-            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)
-
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
                                                      settings=self.settings,
                                                      len_scn_max=len('root'),
                                                      )
 
-        elif log_queue is not None:
-            self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
-                                                                 settings=self.settings,
-                                                                 log_queue=log_queue,
-                                                                 )
-        else:
-            self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
-                                                                   settings=self.settings,
-                                                                   )
-
-        self.status_update = status_update
-        self.status_queue = status_queue
-
-        if isinstance(parameters, pd.Series):
-            self.parameters = parameters
-        # check whether file exists
-        elif self.paths.scenario.is_file():
+            # read scenario file
             if self.paths.scenario.suffix == '.csv':
                 self.parameters = pd.read_csv(self.paths.scenario,
                                               index_col=[0, 1],
@@ -206,15 +187,35 @@ class Scenario:
             else:
                 raise ValueError('Scenario file specified in SimulationPaths object is neither CSV nor PKL file.')
 
+            # check if scenario file contains more than one scenario (then it has to be run via a SimulationRun)
             if len(self.parameters.columns) > 1:
                 raise ValueError('More than one scenario detected. Provide a single column CSV or PKL file.')
 
             if self.name is None:
                 self.name = self.parameters.columns[0]
 
-            self.parameters = self.parameters.iloc[:, 0]  # convert to Series
+            # convert DataFrame to Series
+            self.parameters = self.parameters.iloc[:, 0]
+
         else:
-            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenario}')
+            # Define logger
+            if log_queue is not None:
+                self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
+                                                                     settings=self.settings,
+                                                                     log_queue=log_queue,
+                                                                     )
+            else:
+                self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
+                                                                       settings=self.settings,
+                                                                       )
+
+            # Set given parameters as attribute
+            if not isinstance(parameters, pd.Series):
+                raise ValueError('Parameters of type pd.Series must be provided to scenario when run_execution is True')
+            self.parameters = parameters
+
+        self.status_update = status_update
+        self.status_queue = status_queue
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
@@ -604,11 +605,11 @@ class Scenario:
 
         if self.strategy == 'go':
             self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.paths.basename} - '
+                                            f'{self.paths.output.name} - '
                                             f'Scenario: {self.name}')
         if self.strategy == 'rh':
             self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.paths.basename} - '
+                                            f'{self.paths.output.name} - '
                                             f'Scenario: {self.name} - '
                                             f'PH: {self.len_ph}h - '
                                             f'CH: {self.len_ch}h')
