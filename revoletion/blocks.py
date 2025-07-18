@@ -1893,8 +1893,10 @@ class StorageBlock(ElectricBlock):
 
         super().create_plot_traces()
 
-        data_soc = self.states.loc[self.scenario.dti_eval, 'soc'].dropna()
-        data_soh = self.states.loc[self.scenario.dti_eval, 'soh'].dropna()
+        data_soc = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                    freq=self.scenario.timestep_td), 'soc'].dropna()
+        data_soh = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                    freq=self.scenario.timestep_td), 'soh'].dropna()
         self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
                                                       y=data_soc,
                                                       mode='lines',
