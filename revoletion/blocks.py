@@ -457,7 +457,8 @@ class ElectricBlock(BaseBlock):
                                                             names=['block', 'key'])
 
             self.result_timeseries.extend([self.flows.loc[self.scenario.dti_eval, :],
-                                           self.states.loc[self.scenario.dti_eval, :]])
+                                           self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                                            freq=self.scenario.timestep_td), :]])
 
     def create_plot_traces(self):
         self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_eval,
