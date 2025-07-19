@@ -248,7 +248,7 @@ mb,eff_dis_ac,0.95
 mb,eff_dis_dc,0.95
 mb,sdr,0.02
 hp,capex_preexisting_block,True
-hp,capex_spec,0
+hp,capex_spec,1
 hp,mntex_spec,0
 hp,opex_spec,0
 hp,crev_spec,0
@@ -257,4 +257,6 @@ hp,nominal_cop,4.9
 hp,nominal_power,9100
 hp,wf,"R290"
 hp,temperature_tolerance,3
-hp,region,4
+hp,size_preexisting_block,0
+hp,size_max_block,None
+hp,invest_block,True

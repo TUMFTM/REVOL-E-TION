@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import ast
+
+import demandlib.vdi
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
@@ -9,9 +11,7 @@ import pvlib
 import re
 import requests
 import windpowerlib
-from demandlib.bdew.heat_building import HeatBuilding
 from demandlib import vdi
-import matplotlib.pyplot as plt
 
 from abc import ABC, abstractmethod
 
@@ -2441,7 +2441,8 @@ class Heatpump(SinkBlock):
                                                ('capex', 'spec'): 'capex_spec',
                                                ('mntex', 'spec'): 'mntex_spec',
                                                ('opex', 'spec'): 'opex_spec',
-                                               ('crev', 'spec'): 'crev_spec'}},
+                                               ('crev', 'spec'): 'crev_spec',
+                                               ('size', 'name'): 'block'}},
                           'in': {'class_name': 'EconomicEvaluator',
                                     'params': {('flow', 'name'): 'in'}},
                           'heatpump_out': {'class_name': 'EconomicEvaluator',
@@ -2498,7 +2499,7 @@ class Heatpump(SinkBlock):
 
         for year in self.years:
 
-            try_region=4
+            try_region=demandlib.vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
 
             region = vdi.Region(
                 year=year,
@@ -2550,8 +2551,15 @@ class Heatpump(SinkBlock):
 
 
         self.components['heatpump'] = solph.components.Converter(
-            inputs={self.bus_connected: solph.Flow()},
-            outputs={self.components['bus']: solph.Flow()},
+            inputs={self.bus_connected: solph.Flow(
+
+            )},
+            outputs={self.components['bus']: solph.Flow(nominal_capacity=solph.Investment(
+                    ep_costs=self.evaluators['block'].capex['spec_opt'],
+                    existing=self.sizes.loc['block', 'preexisting'],
+                    maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max']
+                                                )
+                ))},
             conversion_factors={self.components['bus']: self.flow_heatpump['COP']}
         )
 
@@ -2593,6 +2601,9 @@ class Heatpump(SinkBlock):
 
     def get_horizon_results(self,
                             horizon: 'PredictionHorizon'):
+        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['heatpump'],
+                                                                self.components['bus'])]['scalars']['invest']
+
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'heatpump_out'] = horizon.results[(self.components['bus'],
@@ -2607,6 +2618,7 @@ class Heatpump(SinkBlock):
                                                                              self.components['dhw_bus'])]['sequences']['flow'][horizon.dti_ch]
         self.flows.loc[horizon.dti_ch, 'dhw_demand'] = horizon.results[(self.components['dhw_bus'],
                                                                         self.components['dhw'])]['sequences']['flow'][horizon.dti_ch]
+
 
         self.states = self.flows.copy()
     def create_plot_traces(self):
