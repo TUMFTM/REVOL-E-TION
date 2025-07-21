@@ -644,24 +644,15 @@ class OpexAggregator(CostAggregator):
 class OpexEvaluator(OpexAggregator):
     poi: EcoEvaluator
 
-    spec: InitVar[str | float | pd.Series] = 0.0  # constructor-only variable -> not stored
+    spec: str | float | pd.Series = field(init=True,
+                                          repr=False,
+                                          default=0.0)
 
-    _spec: pd.Series = field(init=False,
-                             repr=False)
-
-    def __post_init__(self, spec):
+    def __post_init__(self):
         super().__post_init__()
-        self.spec = spec
-
-    @property
-    def spec(self) -> pd.Series:
-        return self._spec
-
-    @spec.setter
-    def spec(self, value: str | float | pd.Series):
-        self._spec = transform_scalar_var(value=value,
-                                          scenario=self.poi.scenario,
-                                          block=self.poi.block)
+        self.spec = transform_scalar_var(value=self.spec,
+                                         scenario=self.poi.scenario,
+                                         block=self.poi.block)
 
     @property
     def sim(self) -> float:
@@ -733,24 +724,15 @@ class CrevAggregator(CostAggregator):
 class CrevEvaluator(CrevAggregator):
     poi: EcoEvaluator
 
-    spec: InitVar[str | float | pd.Series] = 0.0  # constructor-only variable -> not stored
+    spec: str | float | pd.Series = field(init=True,
+                                          repr=False,
+                                          default=0.0)
 
-    _spec: pd.Series = field(init=False,
-                             repr=False)
-
-    def __post_init__(self, spec):
+    def __post_init__(self):
         super().__post_init__()
-        self.spec = spec
-
-    @property
-    def spec(self) -> pd.Series:
-        return self._spec
-
-    @spec.setter
-    def spec(self, value: str | float | pd.Series):
-        self._spec = transform_scalar_var(value=value,
-                                          scenario=self.poi.scenario,
-                                          block=self.poi.block)
+        self.spec = transform_scalar_var(value=self.spec,
+                                         scenario=self.poi.scenario,
+                                         block=self.poi.block)
 
     @property
     def sim(self) -> float:
