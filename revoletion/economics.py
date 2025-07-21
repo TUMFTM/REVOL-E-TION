@@ -685,6 +685,25 @@ class OpexEvaluator(OpexAggregator):
                        discount_rate=self.poi.scenario.wacc,
                        occurs_at='end')
 
+@dataclass
+class FleetUnitOpexEvaluator(OpexEvaluator):
+    dist: str | float | pd.Series = field(init=True,
+                                          repr=False,
+                                          default=0.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.dist = transform_scalar_var(value=self.dist,
+                                         scenario=self.poi.scenario,
+                                         block=self.poi.block)
+
+    @property
+    def sim(self) -> float:
+        sim = super().sim
+        sim += (self.poi.block.log.loc[self.poi.scenario.dti_eval, 'dist'] @
+                self.dist[self.poi.scenario.dti_eval])
+        return sim
+
 
 @dataclass
 class CrevAggregator(CostAggregator):
@@ -764,6 +783,37 @@ class CrevEvaluator(CrevAggregator):
                        observation_horizon=self.poi.scenario.prj_duration_yrs,
                        discount_rate=self.poi.scenario.wacc,
                        occurs_at='end')
+
+@dataclass
+class FleetUnitCrevEvaluator(CrevEvaluator):
+    dist: str | float | pd.Series = field(init=True,
+                                          repr=False,
+                                          default=0.0)
+
+    time: str | float | pd.Series = field(init=True,
+                                          repr=False,
+                                          default=0.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.dist = transform_scalar_var(value=self.dist,
+                                         scenario=self.poi.scenario,
+                                         block=self.poi.block)
+
+        self.time = transform_scalar_var(value=self.time,
+                                         scenario=self.poi.scenario,
+                                         block=self.poi.block)
+
+    @property
+    def sim(self) -> float:
+        sim = super().sim
+        sim += (self.poi.block.log.loc[self.poi.scenario.dti_eval, 'dist'] @
+                self.dist[self.poi.scenario.dti_eval])
+
+        sim += ((~self.poi.block.log.loc[self.poi.scenario.dti_eval, 'atbase'] @
+                 self.time[self.poi.scenario.dti_eval]) * self.poi.scenario.timestep_hours)
+
+        return sim
 
 
 @dataclass
@@ -911,16 +961,11 @@ class EcoEvaluator(EcoPOI):
         self.opex = OpexEvaluator(poi=self, **(opex_config if opex_config else {}))
         self.crev = CrevEvaluator(poi=self, **(crev_config if crev_config else {}))
 
-        self._add_evaluators()
-
         self.opt = OptimizationConverter(poi=self)
 
     def __repr__(self):
         return (f"{self.__class__.__name__}(name={self.name}, "
                 f"block={self.block!r})")
-
-    def _add_evaluators(self):
-        pass
 
     @property
     def aggregator(self) -> EcoAggregator:
@@ -941,7 +986,25 @@ class EcoEvaluator(EcoPOI):
 
 @dataclass
 class FleetUnitEvaluator(EcoEvaluator):
-    ...
+    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
+        if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
+            self.ls = self.scenario.prj_duration_yrs
+
+        self.block.sizes[self.name] = Size(name=self.name,
+                                           block=self.block,
+                                           unit=self.unit_size
+                                           )
+
+        if self.flow_name:
+            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
+            self.block.flow_names.add(self.flow_name)
+
+        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
+        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
+        self.opex = FleetUnitOpexEvaluator(poi=self, **(opex_config if opex_config else {}))
+        self.crev = FleetUnitCrevEvaluator(poi=self, **(crev_config if crev_config else {}))
+
+        self.opt = OptimizationConverter(poi=self)
 
 
 class FleetUnitEvaluator_old:

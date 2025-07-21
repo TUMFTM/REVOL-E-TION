@@ -1780,7 +1780,7 @@ class StorageBlock(ElectricBlock):
         self.evaluators['storage'] = eco.EcoEvaluator(name='storage',
                                                       scenario=self.scenario,
                                                       block=self,
-                                                        create_size=True,
+                                                      create_size=True,
                                                       ls=self.ls,
                                                       ccr=self.ccr,
                                                       capex_config=dict(consider_preexisting=self.capex_preexisting_storage,
@@ -2303,8 +2303,24 @@ class SubFleet(NonElectricBlock):
 class FleetUnit:
 
     def init_evaluators(self):
-        # ToDo: implement EcoEvaluatorFleetUnit and initialize here
-        self.evaluators['fleet_unit'] = None
+        self.evaluators['glider'] = eco.FleetUnitEvaluator(name='glider',
+                                                           scenario=self.scenario,
+                                                           block=self,
+                                                           ls=self.ls,
+                                                           ccr=self.ccr,
+                                                           capex_config=dict(
+                                                               consider_preexisting=self.capex_preexisting_glider,
+                                                               fix=self.capex_fix_glider),
+                                                           mntex_config=dict(
+                                                               fix=self.mntex_fix_glider),
+                                                           opex_config=dict(
+                                                               spec=0.0,
+                                                               dist=self.opex_spec_dist),
+                                                           crev_config=dict(
+                                                               spec=0.0,
+                                                               dist=self.crev_spec_dist,
+                                                               time=self.crev_spec_time),
+                                                           )
 
     @staticmethod
     def get_init_definitions():
@@ -2583,8 +2599,15 @@ class ElectricVehicle(ElectricFleetUnit):
 
 
 class MobileBattery(ElectricFleetUnit):
-    """
-    dummy class to enable tracking
-    """
+    def __init__(self,
+                 name: str,
+                 scenario: 'Scenario',
+                 parent: SubFleet,
+                 params: dict):
+        self.opex_spec_dist = 0.0  # no distance for mobile battery
+        self.opex_spec_time = 0.0  # no distance for mobile battery
+        super().__init__(name=name,
+                         scenario=scenario,
+                         parent=parent,
+                         params=params)
 
-    pass
