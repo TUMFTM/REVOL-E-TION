@@ -2485,10 +2485,10 @@ class Heatpump(SinkBlock):
             {
                 "name": "EFH_1",
                 "house_type": "EFH",
-                "N_Pers": 3,
+                "N_Pers": self.size_household,
                 "N_WE": 1,
-                "Q_Heiz_a": 157*100000,
-                "Q_TWW_a": 1500000,
+                "Q_Heiz_a": self.size_house*self.demand_spec,
+                "Q_TWW_a": self.demand_dhw,
                 "W_a": 0,
                 "summer_temperature_limit": 15,
                 "winter_temperature_limit": 5,

@@ -1,7 +1,7 @@
 block,key,icev
 scenario,starttime,1.1.2018
 scenario,timestep,15min
-scenario,sim_duration,30
+scenario,sim_duration,7
 scenario,sim_endtime,None
 scenario,prj_duration,25
 scenario,compensate_sim_prj,True
@@ -260,3 +260,7 @@ hp,temperature_tolerance,3
 hp,size_preexisting_block,0
 hp,size_max_block,None
 hp,invest_block,True
+hp,size_household,4
+hp,size_house,157
+hp,demand_spec,100000
+hp,demand_dhw,1500000
