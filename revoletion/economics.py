@@ -376,6 +376,17 @@ class CostAggregator(ABC):
         ...
 
     @property
+    @abstractmethod
+    def attr_list_expansion(self) -> list[str]:
+        # Return a list of attributes expanding the default list for aggregation and result_series generation
+        ...
+
+    @property
+    def attr_list(self) -> list[str]:
+        # List of attributes to be aggregated and returned in result_series
+        return ['prj', 'dis', 'ann', 'cashflows'] + self.attr_list_expansion
+
+    @property
     def aggregator(self) -> CostAggregator:
         # Get the aggregator based on the cost type
         return getattr(self.poi.aggregator, self.cost_type, None) if self.poi.aggregator else None
@@ -394,17 +405,53 @@ class CostAggregator(ABC):
 
     def aggregate(self):
         if self.aggregator:
-            self.aggregator.prj += self.prj
-            self.aggregator.dis += self.dis
-            self.aggregator.ann += self.ann
-            self.aggregator.cashflows += self.cashflows
+            for attr in self.attr_list:
+                setattr(self.aggregator,
+                        attr,
+                        getattr(self.aggregator, attr) + getattr(self, attr),
+                        )
 
     @property
     def result_series(self) -> pd.Series:
-        return pd.Series({f'{self.cost_type}_prj': self.prj,
-                          f'{self.cost_type}_dis': self.dis,
-                          f'{self.cost_type}_ann': self.ann,
-                          })
+        return pd.Series({f'{self.cost_type}_{attr}': getattr(self, attr)
+                          for attr
+                          in self.attr_list
+                          if isinstance(getattr(self, attr), (str, int, float, bool))}
+                         )
+
+@dataclass
+class CostEvaluator(CostAggregator):
+    @property
+    @abstractmethod
+    def occurs_at(self) -> str:
+        """
+        Return the occurrence of the cost (e.g. 'beginning', 'end', 'middle', etc.)
+        This is used to determine how the cashflows are discounted.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def factor_cashflow(self) -> float:
+        """
+        Return the factor to be applied to the cashflows for the specific cost type.
+        """
+        ...
+
+    @property
+    def prj(self) -> float:
+        return self.factor_cashflow * self.cashflows.sum()
+
+    @property
+    def dis(self) -> float:
+        return self.factor_cashflow * self.cashflows @ self.poi.discount_factors[self.occurs_at]
+
+    @property
+    def ann(self) -> float:
+        return annuity(present_value=self.dis,
+                       observation_horizon=self.poi.scenario.prj_duration_yrs,
+                       discount_rate=self.poi.scenario.wacc,
+                       occurs_at=self.occurs_at)
 
 @dataclass
 class CapexAggregator(CostAggregator):
@@ -434,26 +481,14 @@ class CapexAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'capex'
 
-    def aggregate(self):
-        super().aggregate()
-        if self.aggregator:
-            self.aggregator.preexisting += self.preexisting
-            self.aggregator.expansion += self.expansion
-            self.aggregator.init += self.init
-            self.aggregator.replacement += self.replacement
-
     @property
-    def result_series(self) -> pd.Series:
-        return pd.concat([pd.Series({f'{self.cost_type}_preexisting': self.preexisting,
-                                     f'{self.cost_type}_expansion': self.expansion,
-                                     f'{self.cost_type}_init': self.init,
-                                     f'{self.cost_type}_replacement': self.replacement,
-                                     }),
-                          super().result_series])
+    def attr_list_expansion(self) -> list[str]:
+        return ['preexisting', 'expansion', 'init', 'replacement']
+
 
 
 @dataclass
-class CapexEvaluator(CapexAggregator):
+class CapexEvaluator(CapexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
     consider_preexisting: bool = field(init=True,
@@ -472,6 +507,14 @@ class CapexEvaluator(CapexAggregator):
         super().__post_init__()
 
         self.poi.scenario.capex_preexisting_considered += self.preexisting
+
+    @property
+    def occurs_at(self) -> str:
+        return 'beginning'
+
+    @property
+    def factor_cashflow(self) -> float:
+        return -1.0
 
     @property
     def preexisting(self) -> float:
@@ -510,21 +553,6 @@ class CapexEvaluator(CapexAggregator):
 
         return cashflows
 
-    @property
-    def prj(self) -> float:
-        return -1 * self.cashflows.sum()
-
-    @property
-    def dis(self) -> float:
-        return -1 * self.cashflows @ self.poi.discount_factors['beginning']
-
-    @property
-    def ann(self) -> float:
-        return annuity(present_value=self.dis,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at='beginning')
-
 
 @dataclass
 class MntexAggregator(CostAggregator):
@@ -545,23 +573,13 @@ class MntexAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'mntex'
 
-    def aggregate(self):
-        super().aggregate()
-
-        if self.aggregator:
-            self.aggregator.sim += self.sim
-            self.aggregator.yrl += self.yrl
-
     @property
-    def result_series(self) -> pd.Series:
-        return pd.concat([pd.Series({f'{self.cost_type}_sim': self.sim,
-                                     f'{self.cost_type}_yrl': self.yrl,
-                                     }),
-                          super().result_series])
+    def attr_list_expansion(self) -> list[str]:
+        return ['sim', 'yrl']
 
 
 @dataclass
-class MntexEvaluator(MntexAggregator):
+class MntexEvaluator(MntexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
     spec: float = field(init=True,
@@ -576,6 +594,14 @@ class MntexEvaluator(MntexAggregator):
         super().__post_init__()
 
     @property
+    def occurs_at(self) -> str:
+        return 'beginning'
+
+    @property
+    def factor_cashflow(self) -> float:
+        return -1.0
+
+    @property
     def yrl(self) -> float:
         return self.poi.size.total * self.spec + self.fix
 
@@ -587,23 +613,8 @@ class MntexEvaluator(MntexAggregator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows [self.poi.scenario.periods_prj] = -1 * self.yrl
+        cashflows [self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
         return cashflows
-
-    @property
-    def prj(self) -> float:
-        return -1 * self.cashflows.sum()
-
-    @property
-    def dis(self) -> float:
-        return -1 * self.cashflows @ self.poi.discount_factors['beginning']
-
-    @property
-    def ann(self) -> float:
-        return annuity(present_value=self.dis,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at='beginning')
 
 
 @dataclass
@@ -625,23 +636,13 @@ class OpexAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'opex'
 
-    def aggregate(self):
-        super().aggregate()
-
-        if self.aggregator:
-            self.aggregator.sim += self.sim
-            self.aggregator.yrl += self.yrl
-
     @property
-    def result_series(self) -> pd.Series:
-        return pd.concat([pd.Series({f'{self.cost_type}_sim': self.sim,
-                                     f'{self.cost_type}_yrl': self.yrl,
-                                     }),
-                          super().result_series])
+    def attr_list_expansion(self) -> list[str]:
+        return ['sim', 'yrl']
 
 
 @dataclass
-class OpexEvaluator(OpexAggregator):
+class OpexEvaluator(OpexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
     spec: str | float | pd.Series = field(init=True,
@@ -653,6 +654,14 @@ class OpexEvaluator(OpexAggregator):
         self.spec = transform_scalar_var(value=self.spec,
                                          scenario=self.poi.scenario,
                                          block=self.poi.block)
+
+    @property
+    def occurs_at(self) -> str:
+        return 'end'
+
+    @property
+    def factor_cashflow(self) -> float:
+        return -1.0
 
     @property
     def sim(self) -> float:
@@ -667,23 +676,9 @@ class OpexEvaluator(OpexAggregator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows[self.poi.scenario.periods_prj] = -1 * self.yrl
+        cashflows[self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
         return cashflows
 
-    @property
-    def prj(self) -> float:
-        return -1 * self.cashflows.sum()
-
-    @property
-    def dis(self) -> float:
-        return -1 * self.cashflows @ self.poi.discount_factors['end']
-
-    @property
-    def ann(self) -> float:
-        return annuity(present_value=self.dis,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at='end')
 
 @dataclass
 class FleetUnitOpexEvaluator(OpexEvaluator):
@@ -724,23 +719,13 @@ class CrevAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'crev'
 
-    def aggregate(self):
-        super().aggregate()
-
-        if self.aggregator:
-            self.aggregator.sim += self.sim
-            self.aggregator.yrl += self.yrl
-
     @property
-    def result_series(self) -> pd.Series:
-        return pd.concat([pd.Series({f'{self.cost_type}_sim': self.sim,
-                                     f'{self.cost_type}_yrl': self.yrl,
-                                     }),
-                          super().result_series])
+    def attr_list_expansion(self) -> list[str]:
+        return ['sim', 'yrl']
 
 
 @dataclass
-class CrevEvaluator(CrevAggregator):
+class CrevEvaluator(CrevAggregator, CostEvaluator):
     poi: EcoEvaluator
 
     spec: str | float | pd.Series = field(init=True,
@@ -752,6 +737,14 @@ class CrevEvaluator(CrevAggregator):
         self.spec = transform_scalar_var(value=self.spec,
                                          scenario=self.poi.scenario,
                                          block=self.poi.block)
+
+    @property
+    def occurs_at(self) -> str:
+        return 'end'
+
+    @property
+    def factor_cashflow(self) -> float:
+        return 1.0
 
     @property
     def sim(self) -> float:
@@ -766,23 +759,9 @@ class CrevEvaluator(CrevAggregator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows[self.poi.scenario.periods_prj] = self.yrl
+        cashflows[self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
         return cashflows
 
-    @property
-    def prj(self) -> float:
-        return self.cashflows.sum()
-
-    @property
-    def dis(self) -> float:
-        return self.cashflows @ self.poi.discount_factors['end']
-
-    @property
-    def ann(self) -> float:
-        return annuity(present_value=self.dis,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at='end')
 
 @dataclass
 class FleetUnitCrevEvaluator(CrevEvaluator):
@@ -827,6 +806,10 @@ class TotexAggregator(CostAggregator):
     def cost_type(self) -> str:
         return 'totex'
 
+    @property
+    def attr_list_expansion(self) -> list[str]:
+        return []
+
     def aggregate(self):
         self.cashflows = self.poi.capex.cashflows + self.poi.mntex.cashflows + self.poi.opex.cashflows
 
@@ -847,6 +830,10 @@ class ValueAggregator(CostAggregator):
     @property
     def cost_type(self) -> str:
         return 'value'
+
+    @property
+    def attr_list_expansion(self) -> list[str]:
+        return []
 
     def aggregate(self):
         self.cashflows = self.poi.crev.cashflows - self.poi.totex.cashflows  # Check whether this is correct
