@@ -284,6 +284,9 @@ class OptimizationConverter:
         Calculate the specific present value of capex for the project duration.
         """
 
+        if not self.poi.capex:
+            return 0.0
+
         spec_prj_ep = np.array([0.0] * len(self.poi.discount_factors.index),
                                dtype=float)
 
@@ -311,6 +314,9 @@ class OptimizationConverter:
 
     @property
     def _spec_prj_ep_mntex(self) -> float:
+        if not self.poi.mntex:
+            return 0.0
+
         # calculate specific present value of mntex for the project duration
         return acc_discount(nominal_value=self.poi.mntex.spec,
                             observation_horizon=self.poi.scenario.prj_duration_yrs,
@@ -342,13 +348,14 @@ class OptimizationConverter:
 
     @property
     def spec_ep_operation(self) -> float:
+        if not self.poi.opex:
+            return 0.0
         # calculate specific value used for the optimization problem
         return self.poi.opex.spec * self.factor_ep_operation
 
 
 @dataclass
 class PeakOptimizationConverter(OptimizationConverter):
-    poi: PeakEvaluator
 
     @property
     def factor_ep_peak(self) -> float:
@@ -359,7 +366,7 @@ class PeakOptimizationConverter(OptimizationConverter):
     @property
     def spec_ep_peak(self) -> float:
         # calculate specific value used for the optimization problem
-        return self.poi.opex.spec_peak * self.factor_ep_peak
+        return self.poi.opex_peak.spec_peak * self.factor_ep_peak
 
 
 @dataclass
@@ -681,7 +688,6 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
 
     @property
     def sim(self) -> float:
-        # ToDo: add calc_opex_sim_additional (e.g. for PeakEvaluator or FleetUnitEvaluator)
         return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
 
     @property
@@ -777,7 +783,6 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
 
     @property
     def sim(self) -> float:
-        # ToDo: add calc_crev_sim_additional (e.g. for PeakEvaluator or FleetUnitEvaluator)
         return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
 
     @property
@@ -840,11 +845,15 @@ class TotexAggregator(CostAggregator):
         return []
 
     def aggregate(self):
-        self.cashflows = self.poi.capex.cashflows + self.poi.mntex.cashflows + self.poi.opex.cashflows
-
-        self.prj = self.poi.capex.prj + self.poi.mntex.prj + self.poi.opex.prj
-        self.dis = self.poi.capex.dis + self.poi.mntex.dis + self.poi.opex.dis
-        self.ann = self.poi.capex.ann + self.poi.mntex.ann + self.poi.opex.ann
+        for attr_name in ['cashflows', 'prj', 'dis', 'ann']:
+            setattr(self,
+                    attr_name,
+                    # totex = capex + mntex + opex (if available)
+                    sum([getattr(getattr(self.poi, attr), attr_name)
+                         for attr
+                         in ['capex', 'mntex', 'opex']
+                         if getattr(self.poi, attr)])  # Start with the current value (self.<attr_name>)
+                    )
 
         super().aggregate()
 
@@ -865,11 +874,15 @@ class ValueAggregator(CostAggregator):
         return []
 
     def aggregate(self):
-        self.cashflows = self.poi.crev.cashflows - self.poi.totex.cashflows  # Check whether this is correct
-
-        self.prj = self.poi.crev.prj - self.poi.totex.prj
-        self.dis = self.poi.crev.dis - self.poi.totex.dis
-        self.ann = self.poi.crev.ann - self.poi.totex.ann
+        for attr_name in ['cashflows', 'prj', 'dis', 'ann']:
+            setattr(self,
+                    attr_name,
+                    # value = crev - totex (if crev is available)
+                    (getattr(self.poi.crev, attr_name) - getattr(self.poi.totex, attr_name)
+                     if self.poi.crev
+                     else -1 * getattr(self.poi.totex, attr_name)
+                     )  #  0 as default value is not possible due to cashflows being a numpy array
+                    )
 
         super().aggregate()
 
@@ -881,10 +894,10 @@ class EcoPOI(ABC):
     block: Optional[blocks.BaseBlock] = None
 
     # Initialize in __post_init__()
-    capex: CapexAggregator | CapexEvaluator = field(init=False,)
-    mntex: MntexAggregator | MntexEvaluator = field(init=False,)
-    opex: OpexAggregator | OpexEvaluator = field(init=False,)
-    crev: CrevAggregator | CrevEvaluator = field(init=False,)
+    capex: Optional[CapexAggregator | CapexEvaluator] = field(init=False,)
+    mntex: Optional[MntexAggregator | MntexEvaluator] = field(init=False,)
+    opex: Optional[OpexAggregator | OpexEvaluator] = field(init=False,)
+    crev: Optional[CrevAggregator | CrevEvaluator] = field(init=False,)
 
     @abstractmethod
     def __post_init__(self):
@@ -897,15 +910,25 @@ class EcoPOI(ABC):
 
     @property
     @abstractmethod
+    def attr2agg_additional(self) -> list[str]:
+        # get a list of names of additional attributes which are to be aggregated or written in result_series
+        ...
+
+    @property
+    def attr2agg(self) -> list[str]:
+        # get a list of names of all attributes which are to be aggregated or written in result_series
+        return ['capex', 'mntex', 'opex', 'crev'] + self.attr2agg_additional
+
+    @property
+    @abstractmethod
     def aggregator(self) -> EcoAggregator:
         # Get aggregator based on the type of EcoPOI (EcoAggregator, EcoEvaluator)
         ...
 
     def aggregate(self):
-        self.capex.aggregate()
-        self.mntex.aggregate()
-        self.opex.aggregate()
-        self.crev.aggregate()
+        for attr in self.attr2agg:
+            if getattr(self, attr):  # Only aggregate if the attribute is set (not None)
+                getattr(self, attr).aggregate()
 
 
 @dataclass
@@ -923,22 +946,15 @@ class EcoAggregator(EcoPOI):
         self.value = ValueAggregator(poi=self)
 
     @property
+    def attr2agg_additional(self) -> list[str]:
+        return ['totex', 'value']
+
+    @property
     def aggregator(self) -> EcoAggregator:
         return self.block.parent.aggregator if hasattr(self.block, 'parent') else None
 
-    def aggregate(self):
-        super().aggregate()
-
-        self.totex.aggregate()
-        self.value.aggregate()
-
     def write_result_summary(self) -> pd.Series:
-        return pd.concat([self.capex.result_series,
-                          self.mntex.result_series,
-                          self.opex.result_series,
-                          self.crev.result_series,
-                          self.totex.result_series,
-                          self.value.result_series,])
+        return pd.concat([getattr(self, attr).result_series for attr in self.attr2agg])
 
 
 @dataclass
@@ -956,10 +972,15 @@ class EcoEvaluator(EcoPOI):
     opex_config: InitVar[dict] = None
     crev_config: InitVar[dict] = None
 
+    opex_config_fleetunit: InitVar[dict] = None
+    crev_config_fleetunit: InitVar[dict] = None
+    opex_config_peak: InitVar[dict] = None
+
     opt: OptimizationConverter = field(init=False,
                                        repr=False)
 
-    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
+    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config,
+                      opex_config_fleetunit, crev_config_fleetunit, opex_config_peak):
         if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
             self.ls = self.scenario.prj_duration_yrs
 
@@ -972,16 +993,29 @@ class EcoEvaluator(EcoPOI):
             # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
             self.block.flow_names.add(self.flow_name)
 
-        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
-        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
-        self.opex = OpexEvaluator(poi=self, **(opex_config if opex_config else {}))
-        self.crev = CrevEvaluator(poi=self, **(crev_config if crev_config else {}))
+        # Define Evaluators if the corresponding config is provided
+        self.capex = CapexEvaluator(poi=self, **capex_config) if capex_config else None
+        self.mntex = MntexEvaluator(poi=self, **mntex_config) if mntex_config else None
+        self.opex = OpexEvaluator(poi=self, **opex_config) if opex_config else None
+        self.crev = CrevEvaluator(poi=self, **crev_config) if crev_config else None
 
-        self.opt = OptimizationConverter(poi=self)
+        # Define additional Evaluators for FleetUnit if required
+        self.opex_fleetunit = (FleetUnitOpexEvaluator(poi=self, **opex_config_fleetunit)
+                               if opex_config_fleetunit else None)
+        self.crev_fleetunit = (FleetUnitCrevEvaluator(poi=self, **crev_config_fleetunit)
+                               if crev_config_fleetunit else None)
+
+        # Define additional Evaluators for PeakPower if required
+        self.opex_peak = PeakOpexEvaluator(poi=self, **opex_config_peak) if opex_config_peak else None
+
+        self.opt = OptimizationConverter(poi=self) if not opex_config_peak else PeakOptimizationConverter(poi=self)
 
     def __repr__(self):
-        return (f"{self.__class__.__name__}(name={self.name}, "
-                f"block={self.block!r})")
+        return f"{self.__class__.__name__}(name={self.name}, block={self.block!r})"
+
+    @property
+    def attr2agg_additional(self) -> list[str]:
+        return ['opex_fleetunit', 'crev_fleetunit', 'opex_peak']
 
     @property
     def aggregator(self) -> EcoAggregator:
@@ -998,50 +1032,3 @@ class EcoEvaluator(EcoPOI):
         else:
             return np.array([0.0] * len(self.scenario.dti_eval),
                             dtype=float)
-
-
-@dataclass
-class FleetUnitEvaluator(EcoEvaluator):
-    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
-        if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
-            self.ls = self.scenario.prj_duration_yrs
-
-        self.block.sizes[self.name] = Size(name=self.name,
-                                           block=self.block,
-                                           unit=self.unit_size
-                                           )
-
-        if self.flow_name:
-            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
-            self.block.flow_names.add(self.flow_name)
-
-        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
-        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
-        self.opex = FleetUnitOpexEvaluator(poi=self, **(opex_config if opex_config else {}))
-        self.crev = FleetUnitCrevEvaluator(poi=self, **(crev_config if crev_config else {}))
-
-        self.opt = OptimizationConverter(poi=self)
-
-
-class PeakEvaluator(EcoEvaluator):
-    block: blocks.GridConnection
-
-    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
-        if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
-            self.ls = self.scenario.prj_duration_yrs
-
-        self.block.sizes[self.name] = Size(name=self.name,
-                                           block=self.block,
-                                           unit=self.unit_size
-                                           )
-
-        if self.flow_name:
-            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
-            self.block.flow_names.add(self.flow_name)
-
-        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
-        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
-        self.opex = PeakOpexEvaluator(poi=self, **(opex_config if opex_config else {}))
-        self.crev = CrevEvaluator(poi=self, **(crev_config if crev_config else {}))
-
-        self.opt = PeakOptimizationConverter(poi=self)

@@ -1527,11 +1527,11 @@ class GridConnection(ElectricBlock):
                                                 inclusive='left')
                                   .to_series().apply(periods_func[str(self.peak_period)])).unique().size
 
-        self.evaluators.update({period: eco.PeakEvaluator(name=period,
-                                                          block=self,
-                                                          scenario=self.scenario,
-                                                          opex_config=dict(spec_peak=self.opex_spec_peak),
-                                                          )
+        self.evaluators.update({period: eco.EcoEvaluator(name=period,
+                                                         block=self,
+                                                         scenario=self.scenario,
+                                                         opex_config_peak=dict(spec_peak=self.opex_spec_peak),
+                                                         )
                                 for period in self.peak_periods.index})
 
     def define_oemof_components(self,
@@ -1657,7 +1657,7 @@ class GridConnection(ElectricBlock):
                 peak_power_results.update({
                     f'{period}_peak_power': row['power'],
                     f'{period}_peak_period_fraction': row['period_fraction'],
-                    f'{period}_peak_opex_sim': self.evaluators[period].opex.sim
+                    f'{period}_peak_opex_sim': self.evaluators[period].opex_peak.sim
                 })
         self.result_summary.append(pd.Series(peak_power_results))
 
@@ -1668,7 +1668,7 @@ class GridConnection(ElectricBlock):
         self.result_messages.extend(
             [f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
              f'"{period}": {row["power"] / 1e3:.1f} kW '
-             f'- OPEX in simulation period: {self.evaluators[period].opex.sim:.2f} {self.scenario.currency}'
+             f'- OPEX in simulation period: {self.evaluators[period].opex_peak.sim:.2f} {self.scenario.currency}'
              for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.sim_endtime]
         )
 
@@ -1934,7 +1934,7 @@ class StorageBlock(ElectricBlock):
 
         self.components['storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['storage'].opt.spec_ep_operation[horizon.dti_ph]
+                variable_costs=self.evaluators['in'].opt.spec_ep_operation[horizon.dti_ph]
             )},
             outputs={
                 self.components['bus']: solph.Flow(
@@ -2304,24 +2304,22 @@ class SubFleet(NonElectricBlock):
 class FleetUnit:
 
     def init_evaluators(self):
-        self.evaluators['glider'] = eco.FleetUnitEvaluator(name='glider',
-                                                           scenario=self.scenario,
-                                                           block=self,
-                                                           ls=self.ls,
-                                                           ccr=self.ccr,
-                                                           capex_config=dict(
-                                                               consider_preexisting=self.capex_preexisting_glider,
-                                                               fix=self.capex_fix_glider),
-                                                           mntex_config=dict(
-                                                               fix=self.mntex_fix_glider),
-                                                           opex_config=dict(
-                                                               spec=0.0,
-                                                               dist=self.opex_spec_dist),
-                                                           crev_config=dict(
-                                                               spec=0.0,
-                                                               dist=self.crev_spec_dist,
-                                                               time=self.crev_spec_time),
-                                                           )
+        self.evaluators['glider'] = eco.EcoEvaluator(name='glider',
+                                                     scenario=self.scenario,
+                                                     block=self,
+                                                     ls=self.ls,
+                                                     ccr=self.ccr,
+                                                     capex_config=dict(
+                                                         consider_preexisting=self.capex_preexisting_glider,
+                                                         fix=self.capex_fix_glider),
+                                                     mntex_config=dict(
+                                                         fix=self.mntex_fix_glider),
+                                                     opex_config_fleetunit=dict(
+                                                         dist=self.opex_spec_dist),
+                                                     crev_config_fleetunit=dict(
+                                                         dist=self.crev_spec_dist,
+                                                         time=self.crev_spec_time),
+                                                     )
 
     @staticmethod
     def get_init_definitions():

@@ -155,7 +155,9 @@ bev,capex_fix_charger,1500,1500,1500,1500
 bev,capex_preexisting_charger,True,True,True,True
 bev,ccr,1,1,1,1
 bev,ls,10,10,10,10
+bev,mntex_spec,0,0,0,0
 bev,mntex_fix_glider,500,500,500,500
+bev,opex_spec,0,0,0,0
 bev,opex_spec_dist,0.3,0.3,0.3,0.3
 bev,crev_spec_time,0.1,0.1,0.1,0.1
 bev,crev_spec_dist,0.2,0.2,0.2,0.2
@@ -214,7 +216,9 @@ mb,capex_fix_charger,200,200,200,200
 mb,capex_preexisting_charger,True,True,True,True
 mb,ccr,1,1,1,1
 mb,ls,10,10,10,10
+mb,mntex_spec,0,0,0,0
 mb,mntex_fix_glider,30,30,30,30
+mb,opex_spec,0,0,0,0
 mb,opex_spec_dist,0,0,0,0
 mb,crev_spec_time,0.1,0.1,0.1,0.1
 mb,crev_spec_dist,0,0,0,0
