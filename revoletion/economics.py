@@ -994,25 +994,6 @@ class FleetUnitEvaluator(EcoEvaluator):
         self.opt = OptimizationConverter(poi=self)
 
 
-class FleetUnitEvaluator_old:
-
-    def calc_opex_sim_additional(self):
-
-        if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
-            self.opex['sim'] += (self.block.log.loc[self.scenario.dti_eval, 'dist'] @
-                                 self.opex['dist'][self.scenario.dti_eval])
-
-    def calc_crev_sim_additional(self):
-
-        if self.block.classname in ['ElectricVehicle', 'CombustionVehicle']:
-            self.crev['sim'] += (self.block.log.loc[self.scenario.dti_eval, 'dist'] @
-                                 self.crev['dist'][self.scenario.dti_eval])
-
-        self.crev['sim'] += ((~self.block.log.loc[self.scenario.dti_eval, 'atbase'] @
-                             self.crev['time'][self.scenario.dti_eval]) *
-                             self.scenario.timestep_hours)
-
-
 class PeakEvaluator:
 
     def pre_scenario(self):
