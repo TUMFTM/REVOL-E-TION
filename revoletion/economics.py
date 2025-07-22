@@ -342,8 +342,24 @@ class OptimizationConverter:
 
     @property
     def spec_ep_operation(self) -> float:
-        # calculate specific capex/mntex value used for the optimization problem
+        # calculate specific value used for the optimization problem
         return self.poi.opex.spec * self.factor_ep_operation
+
+
+@dataclass
+class PeakOptimizationConverter(OptimizationConverter):
+    poi: PeakEvaluator
+
+    @property
+    def factor_ep_peak(self) -> float:
+        # calculate annuity due factor to compensate for difference between simulation and project time
+        return (self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
+                if self.poi.scenario.compensate_sim_prj else 1)
+
+    @property
+    def spec_ep_peak(self) -> float:
+        # calculate specific value used for the optimization problem
+        return self.poi.opex.spec_peak * self.factor_ep_peak
 
 
 @dataclass
@@ -701,6 +717,19 @@ class FleetUnitOpexEvaluator(OpexEvaluator):
 
 
 @dataclass
+class PeakOpexEvaluator(OpexEvaluator):
+    spec_peak: float = field(init=True,
+                             default=0.0)
+
+    @property
+    def sim(self) -> float:
+        sim = super().sim
+        sim += (self.poi.block.peak_periods.loc[self.poi.name, 'power'] * self.spec_peak *
+                            self.poi.block.peak_periods.loc[self.poi.name, 'period_fraction'])
+        return sim
+
+
+@dataclass
 class CrevAggregator(CostAggregator):
     poi: EcoPOI
 
@@ -994,18 +1023,25 @@ class FleetUnitEvaluator(EcoEvaluator):
         self.opt = OptimizationConverter(poi=self)
 
 
-class PeakEvaluator:
+class PeakEvaluator(EcoEvaluator):
+    block: blocks.GridConnection
 
-    def pre_scenario(self):
+    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config):
+        if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
+            self.ls = self.scenario.prj_duration_yrs
 
-        # get and set the opex_spec at the first timestep of the peakshaving period
-        self.opex['spec'] = self.opex['spec'][self.block.peak_periods.loc[self.name, 'start']]
+        self.block.sizes[self.name] = Size(name=self.name,
+                                           block=self.block,
+                                           unit=self.unit_size
+                                           )
 
-        self.opex['factor_ep'] = (self.block.n_peak_periods_yr / self.block.peak_periods.shape[0]
-                                  if self.scenario.compensate_sim_prj else 1)
+        if self.flow_name:
+            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
+            self.block.flow_names.add(self.flow_name)
 
-        self.opex['spec_ep'] = self.opex['spec'] * self.opex['factor_ep']
+        self.capex = CapexEvaluator(poi=self, **(capex_config if capex_config else {}))
+        self.mntex = MntexEvaluator(poi=self, **(mntex_config if mntex_config else {}))
+        self.opex = PeakOpexEvaluator(poi=self, **(opex_config if opex_config else {}))
+        self.crev = CrevEvaluator(poi=self, **(crev_config if crev_config else {}))
 
-    def calc_opex_sim_additional(self):
-        self.opex['sim'] += self.block.peak_periods.loc[self.name, 'power'] * self.opex['spec'] * \
-                            self.block.peak_periods.loc[self.name, 'period_fraction']
+        self.opt = PeakOptimizationConverter(poi=self)

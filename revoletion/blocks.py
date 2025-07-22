@@ -1522,16 +1522,17 @@ class GridConnection(ElectricBlock):
         self.peak_periods[['period_fraction', 'start', 'end']] = self.peak_periods.index.to_series().apply(process_period)
 
         self.n_peak_periods_yr = (pd.date_range(start=self.scenario.starttime,
-                                                       end=self.scenario.starttime + pd.DateOffset(years=1),
-                                                       freq=self.scenario.timestep,
-                                                       inclusive='left')
-                                         .to_series().apply(periods_func[str(self.peak_period)])).unique().size
+                                                end=self.scenario.starttime + pd.DateOffset(years=1),
+                                                freq=self.scenario.timestep,
+                                                inclusive='left')
+                                  .to_series().apply(periods_func[str(self.peak_period)])).unique().size
 
-        self.evaluators.update({period: eco.PeakEvaluator(
-            name=period,
-            block=self,
-            params={('opex', 'spec'): 'opex_spec_peak'})
-            for period in self.peak_periods.index})
+        self.evaluators.update({period: eco.PeakEvaluator(name=period,
+                                                          block=self,
+                                                          scenario=self.scenario,
+                                                          opex_config=dict(spec_peak=self.opex_spec_peak),
+                                                          )
+                                for period in self.peak_periods.index})
 
     def define_oemof_components(self,
                                 horizon: 'PredictionHorizon',
@@ -1582,9 +1583,9 @@ class GridConnection(ElectricBlock):
             )},
             # Peakshaving
             outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=(solph.Investment(ep_costs=(self.evaluators[period].opt.spec_ep_operation
-                                                          if self.peakshaving else 0),
-                                                existing=self.peak_periods.loc[period, 'power'])
+                nominal_capacity=(solph.Investment(ep_costs=(self.evaluators[period].opt.spec_ep_peak
+                                                             if self.peakshaving else 0),
+                                                   existing=self.peak_periods.loc[period, 'power'])
                                ),
                 max=(self.bus_activation.loc[horizon.dti_ph, period]))},
             conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
@@ -1656,7 +1657,7 @@ class GridConnection(ElectricBlock):
                 peak_power_results.update({
                     f'{period}_peak_power': row['power'],
                     f'{period}_peak_period_fraction': row['period_fraction'],
-                    f'{period}_peak_opex_sim': self.evaluators[period].opex['sim']
+                    f'{period}_peak_opex_sim': self.evaluators[period].opex.sim
                 })
         self.result_summary.append(pd.Series(peak_power_results))
 
@@ -1667,7 +1668,7 @@ class GridConnection(ElectricBlock):
         self.result_messages.extend(
             [f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
              f'"{period}": {row["power"] / 1e3:.1f} kW '
-             f'- OPEX in simulation period: {self.evaluators[period].opex["sim"]:.2f} {self.scenario.currency}'
+             f'- OPEX in simulation period: {self.evaluators[period].opex.sim:.2f} {self.scenario.currency}'
              for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.sim_endtime]
         )
 
