@@ -11,6 +11,7 @@ import subprocess
 
 import pandas as pd
 
+
 _LOGGER = logging.getLogger(__name__)
 
 def infer_dtype(value):
@@ -91,9 +92,9 @@ def import_module_from_path(module_name, file_path):
     return module
 
 
-def read_timeseries_csv(path_input_file: str,
-                        block: 'Block',
-                        scenario: 'Scenario',
+def read_timeseries_csv(path_input_file: str | Path,
+                        block: 'blocks.BaseBlock',
+                        scenario: 'simulation.Scenario',
                         multiheader: bool = False,
                         resampling: bool = True):
     """
