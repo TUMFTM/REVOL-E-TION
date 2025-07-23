@@ -276,14 +276,33 @@ class Size:
 @dataclass
 class OptimizationConverter:
     poi: EcoEvaluator
-    
-    # ToDo: Optimize this structure to avoid repeated calculations
-    @property
-    def _spec_prj_ep_capex(self) -> float:
+
+    def __post_init__(self):
+        # calculate annuity due factor to compensate investment costs for difference between simulation and project time
+        self.factor_ep_invest: float = annuity(present_value=1,
+                                               observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                               discount_rate=self.poi.scenario.wacc,
+                                               occurs_at='beginning') if self.poi.scenario.compensate_sim_prj else 1
+
+        # calculate specific present value of investment (addition of capex and mntex) cost
+        # join maintenance and capex specific present values for the project duration
+        self.spec_ep_invest: float = ((self._get_spec_prj_ep_capex() + self._get_spec_prj_ep_mntex()) *
+                                      self.factor_ep_invest)
+
+        # calculate annuity due factor to compensate operation costs for difference between simulation and project time
+        self.factor_ep_operation: float = ((1 / self.poi.scenario.sim_yr_rat)
+                                           if self.poi.scenario.compensate_sim_prj else 1)
+
+        # calculate specific present value of operation cost
+        self.spec_ep_operation: float = (self.poi.opex.spec * self.factor_ep_operation
+                                         if self.poi.opex else 0.0)  # default value if opex is not defined
+
+    def _get_spec_prj_ep_capex(self) -> float:
         """
         Calculate the specific present value of capex for the project duration.
         """
 
+        # default value if capex is not defined
         if not self.poi.capex:
             return 0.0
 
@@ -312,61 +331,26 @@ class OptimizationConverter:
 
         return spec_prj_ep
 
-    @property
-    def _spec_prj_ep_mntex(self) -> float:
-        if not self.poi.mntex:
-            return 0.0
-
+    def _get_spec_prj_ep_mntex(self) -> float:
         # calculate specific present value of mntex for the project duration
         return acc_discount(nominal_value=self.poi.mntex.spec,
                             observation_horizon=self.poi.scenario.prj_duration_yrs,
                             discount_rate=self.poi.scenario.wacc,
-                            occurs_at='beginning')
-
-    @property
-    def _spec_prj_ep_invest(self) -> float:
-        # join maintenance and capex specific present values for the project duration
-        return self._spec_prj_ep_capex + self._spec_prj_ep_mntex
-
-    @property
-    def factor_ep_invest(self) -> float:
-        # calculate annuity due factor to compensate for difference between simulation and project time
-        return annuity(present_value=1,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at='beginning') if self.poi.scenario.compensate_sim_prj else 1
-
-    @property
-    def spec_ep_invest(self) -> float:
-        # calculate specific capex/mntex value used for the optimization problem
-        return self._spec_prj_ep_invest * self.factor_ep_invest
-
-    @property
-    def factor_ep_operation(self) -> float:
-        # calculate annuity due factor to compensate for difference between simulation and project time
-        return (1 / self.poi.scenario.sim_yr_rat) if self.poi.scenario.compensate_sim_prj else 1
-
-    @property
-    def spec_ep_operation(self) -> float:
-        if not self.poi.opex:
-            return 0.0
-        # calculate specific value used for the optimization problem
-        return self.poi.opex.spec * self.factor_ep_operation
+                            occurs_at='beginning') if self.poi.mntex else 0.0  # default value if mntex is not defined
 
 
 @dataclass
 class PeakOptimizationConverter(OptimizationConverter):
 
-    @property
-    def factor_ep_peak(self) -> float:
-        # calculate annuity due factor to compensate for difference between simulation and project time
-        return (self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
-                if self.poi.scenario.compensate_sim_prj else 1)
+    def __post_init__(self):
+        super().__post_init__()
 
-    @property
-    def spec_ep_peak(self) -> float:
-        # calculate specific value used for the optimization problem
-        return self.poi.opex_peak.spec_peak * self.factor_ep_peak
+        # calculate annuity due factor to compensate peak opex for difference between simulation and project time
+        self.factor_ep_peak = (self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
+                               if self.poi.scenario.compensate_sim_prj else 1)
+
+        # calculate specific present value of peak power operation cost
+        self.spec_ep_peak = self.poi.opex_peak.spec_peak * self.factor_ep_peak
 
 
 @dataclass
