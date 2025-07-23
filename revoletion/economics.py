@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, InitVar
 import numpy as np
 import pandas as pd
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING, Optional, Any, List
 from abc import ABC, abstractmethod
 from . import utils
 
@@ -12,6 +12,7 @@ from . import utils
 if TYPE_CHECKING:
     from . import blocks
     from . import simulation
+
 
 def discount(future_value: float,
              periods: int,
@@ -114,7 +115,7 @@ def calc_wacc(
 
 def transform_scalar_var(value: str |  float | pd.Series,
                          scenario: simulation.Scenario,
-                         block=None):
+                         block: Optional[blocks.BaseBlock] = None):
     """
     Transform a value holding either the filename of a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
@@ -393,6 +394,7 @@ class CostAggregator(ABC):
     @abstractmethod
     def cost_type(self) -> str:
         # Return the type of cost (e.g. 'capex', 'mntex', 'opex', 'crev', 'totex', 'value')
+        # This is used to identify the cost type for aggregation and result_series generation
         ...
 
     @property
@@ -409,7 +411,7 @@ class CostAggregator(ABC):
     @property
     def aggregator(self) -> CostAggregator:
         # Get the aggregator based on the cost type
-        return getattr(self.poi.aggregator, self.cost_type, None) if self.poi.aggregator else None
+        return getattr(self.poi.aggregator, self.cost_type) if self.poi.aggregator else None
 
     @property
     def cashflows(self) -> np.ndarray:
@@ -830,15 +832,13 @@ class FleetUnitCrevEvaluator(CrevEvaluator):
 class TotexAggregator(CostAggregator):
     poi: EcoAggregator
 
-    def __post_init__(self):
-        super().__post_init__()
-
     @property
     def cost_type(self) -> str:
         return 'totex'
 
     @property
     def attr_list_expansion(self) -> list[str]:
+        # no additional attributes to aggregate
         return []
 
     def aggregate(self):
@@ -859,15 +859,13 @@ class TotexAggregator(CostAggregator):
 class ValueAggregator(CostAggregator):
     poi: EcoAggregator
 
-    def __post_init__(self):
-        super().__post_init__()
-
     @property
     def cost_type(self) -> str:
         return 'value'
 
     @property
     def attr_list_expansion(self) -> list[str]:
+        # no additional attributes to aggregate
         return []
 
     def aggregate(self):
@@ -919,39 +917,48 @@ class EcoPOI(ABC):
     @property
     @abstractmethod
     def aggregator(self) -> EcoAggregator:
-        # Get aggregator based on the type of EcoPOI (EcoAggregator, EcoEvaluator)
+        # get aggregator based on the type of EcoPOI (EcoAggregator, EcoEvaluator)
         ...
 
     def aggregate(self):
+        # aggregate all specified attributes if they are set (not None), which may not be the case for EcoEvaluators
         for attr in self.attr2agg:
-            if getattr(self, attr):  # Only aggregate if the attribute is set (not None)
+            if getattr(self, attr):
                 getattr(self, attr).aggregate()
 
 
 @dataclass
 class EcoAggregator(EcoPOI):
+    # add totex and value as additional attributes for EcoAggregator
     totex: TotexAggregator = field(init=False,)
     value: ValueAggregator = field(init=False,)
 
     def __post_init__(self):
+        # specify EcoPOI attributes
         self.capex = CapexAggregator(poi=self)
         self.mntex = MntexAggregator(poi=self)
         self.opex = OpexAggregator(poi=self)
         self.crev = CrevAggregator(poi=self)
 
+        # specify additional attributes for EcoAggregator
         self.totex = TotexAggregator(poi=self)
         self.value = ValueAggregator(poi=self)
 
     @property
-    def attr2agg_additional(self) -> list[str]:
+    def attr2agg_additional(self) -> List[str]:
+        # additional attributes to be aggregated and written in result_series
         return ['totex', 'value']
 
     @property
     def aggregator(self) -> EcoAggregator:
+        # EcoAggregators aggregate their results in the aggregator of the block's parent
+        # The class Scenario does not have an attribute parent -> no aggregator is returned
         return self.block.parent.aggregator if hasattr(self.block, 'parent') else None
 
     def write_result_summary(self) -> pd.Series:
-        return pd.concat([getattr(self, attr).result_series for attr in self.attr2agg])
+        # concat the result_series of all relevant attributes (type hint required for IDE to recognize the type)
+        series_list: List[pd.Series] = [getattr(self, attr).result_series for attr in self.attr2agg]
+        return pd.concat(series_list)
 
 
 @dataclass
@@ -1020,10 +1027,12 @@ class EcoEvaluator(EcoPOI):
 
     @property
     def attr2agg_additional(self) -> list[str]:
+        # additional attributes to be aggregated
         return ['opex_fleetunit', 'crev_fleetunit', 'opex_peak']
 
     @property
     def aggregator(self) -> EcoAggregator:
+        # EcoEvaluators aggregate their results in the block's aggregator
         return self.block.aggregator
 
     @property
