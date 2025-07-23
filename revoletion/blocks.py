@@ -2348,6 +2348,16 @@ class FleetUnit:
         """
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
+        # ensure that all columns are present in the log file
+        for col_name, col_value in [('atac', False),
+                                    ('atdc', False),
+                                    ('atbase', True),
+                                    ('consumption', 0.0),
+                                    ('dist', 0.0),
+                                    ('dsoc', 0.0)]:
+            if col_name not in self.log.columns:
+                self.log[col_name] = col_value
+
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
