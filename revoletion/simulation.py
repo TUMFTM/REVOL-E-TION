@@ -393,10 +393,10 @@ class Scenario:
         self.periods_prj_extd = np.arange(0, self.prj_duration_yrs + 1)  # add. year for salvage values
         self.discount_factors = pd.DataFrame(index=self.periods_prj_extd,
                                              columns=['beginning', 'mid', 'end'],
-                                             data={occ: eco.discount(future_value=1,
-                                                                     periods=self.periods_prj_extd + 1,
-                                                                     discount_rate=self.wacc,
-                                                                     occurs_at=occ)
+                                             data={occ: eco.EcoTools.discount(future_value=1,
+                                                                              periods=self.periods_prj_extd + 1,
+                                                                              discount_rate=self.wacc,
+                                                                              occurs_at=occ)
                                                    for occ in ['beginning', 'mid', 'end']},
                                              dtype='float64')
 

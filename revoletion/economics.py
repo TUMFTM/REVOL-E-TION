@@ -14,144 +14,146 @@ if TYPE_CHECKING:
     from . import simulation
 
 
-def discount(future_value: float,
-             periods: int,
-             discount_rate: float,
-             occurs_at: str) -> float:
-    """
-    calculate the present value of a future value in some periods at a discount rate per period
-    """
-    q = 1 + discount_rate
-    exp = {'beginning': 1,
-           'start': 1,
-           'bop': 1,
-           'middle': 0.5,
-           'mid': 0.5,
-           'mop': 0.5,
-           'end': 0,
-           'eop': 0}.get(occurs_at, 0)
-    present_value = future_value / (q ** (periods - exp))
-    return present_value
-
-
-def acc_discount(nominal_value: float | pd.Series,
-                 observation_horizon: int | pd.Series,
+class EcoTools:
+    @staticmethod
+    def discount(future_value: float,
+                 periods: int,
                  discount_rate: float,
                  occurs_at: str) -> float:
-    """
-    calculate the accumulated present value of a periodical, nominally repeating cashflow in the future
-    (from present to the observation horizon) at a discount rate per period
-    """
-    q = 1 + discount_rate
-    exp = {'beginning': 1,
-           'start': 1,
-           'bop': 1,
-           'middle': 0.5,
-           'mid': 0.5,
-           'mop': 0.5,
-           'end': 0,
-           'eop': 0}.get(occurs_at, 0)
-    discount_factor = (q ** exp) * (1 - (q ** -observation_horizon)) / discount_rate
-    return nominal_value * discount_factor
+        """
+        calculate the present value of a future value in some periods at a discount rate per period
+        """
+        q = 1 + discount_rate
+        exp = {'beginning': 1,
+               'start': 1,
+               'bop': 1,
+               'middle': 0.5,
+               'mid': 0.5,
+               'mop': 0.5,
+               'end': 0,
+               'eop': 0}.get(occurs_at, 0)
+        present_value = future_value / (q ** (periods - exp))
+        return present_value
 
+    @staticmethod
+    def acc_discount(nominal_value: float | pd.Series,
+                     observation_horizon: int | pd.Series,
+                     discount_rate: float,
+                     occurs_at: str) -> float:
+        """
+        calculate the accumulated present value of a periodical, nominally repeating cashflow in the future
+        (from present to the observation horizon) at a discount rate per period
+        """
+        q = 1 + discount_rate
+        exp = {'beginning': 1,
+               'start': 1,
+               'bop': 1,
+               'middle': 0.5,
+               'mid': 0.5,
+               'mop': 0.5,
+               'end': 0,
+               'eop': 0}.get(occurs_at, 0)
+        discount_factor = (q ** exp) * (1 - (q ** -observation_horizon)) / discount_rate
+        return nominal_value * discount_factor
 
-def annuity(present_value: float,
-            observation_horizon: int,
-            discount_rate: float,
-            occurs_at: str) -> float:
-    """
-    calculate the annuity (the equivalent periodical, nominally recurring value to generate the same
-    NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
-    the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
-    """
-    q = 1 + discount_rate
-    exp = {'beginning': 1,
-           'start': 1,
-           'bop': 1,
-           'middle': 0.5,
-           'mid': 0.5,
-           'mop': 0.5,
-           'end': 0,
-           'eop': 0}.get(occurs_at, 0)
-    try:
-        annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * (q ** exp))
-    except ZeroDivisionError:  # observation_horizon = 0
-        annuity = present_value / observation_horizon
-    return annuity
+    @staticmethod
+    def annuity(present_value: float,
+                observation_horizon: int,
+                discount_rate: float,
+                occurs_at: str) -> float:
+        """
+        calculate the annuity (the equivalent periodical, nominally recurring value to generate the same
+        NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
+        the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
+        """
+        q = 1 + discount_rate
+        exp = {'beginning': 1,
+               'start': 1,
+               'bop': 1,
+               'middle': 0.5,
+               'mid': 0.5,
+               'mop': 0.5,
+               'end': 0,
+               'eop': 0}.get(occurs_at, 0)
+        try:
+            annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * (q ** exp))
+        except ZeroDivisionError:  # observation_horizon = 0
+            annuity = present_value / observation_horizon
+        return annuity
 
+    @staticmethod
+    def reinvest_periods(lifespan: int,
+                         observation_horizon: int,
+                         include_init: bool = False) -> list:
+        """
+        return a list of period numbers to reinvest into a component (i.e. replace it),
+        given its lifespan and the observation horizon. Initial investment is removed by default.
+        """
+        reinvest_periods = [period for period in range(observation_horizon) if period % lifespan == 0]
+        if not include_init:
+            reinvest_periods.remove(0)
+        return reinvest_periods
 
-def reinvest_periods(lifespan: int,
-                     observation_horizon: int,
-                     include_init: bool = False) -> list:
-    """
-    return a list of period numbers to reinvest into a component (i.e. replace it),
-    given its lifespan and the observation horizon. Initial investment is removed by default.
-    """
-    reinvest_periods = [period for period in range(observation_horizon) if period % lifespan == 0]
-    if not include_init:
-        reinvest_periods.remove(0)
-    return reinvest_periods
+    @staticmethod
+    def calc_wacc(
+            share_equity: float,  # share of equity in capital structure
+            rate_debt: float,  # interest rate on debt
+            rate_market: float = 0.07,  # expected return on market
+            rate_riskfree: float = 0.03,  # risk-free return rate
+            rate_tax: float = 0.25,  # corporate tax rate
+            rate_inflation: float = 0.02,  # expected inflation rate
+            volatility_relative: float = 1,  # volatility of stock price relative to market
+    ) -> (float, float):
+        """
+        This function calculates the nominal (including inflation) weighted average cost of capital (WACC) using the
+        Capital Asset Pricing Model (CAPM) for equity cost.
+        """
+        share_debt = 1 - share_equity
+        cost_equity = rate_riskfree + volatility_relative * (rate_market - rate_riskfree)  # CAPM
+        wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
+        wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
+        return wacc_nominal, wacc_real
 
+    @staticmethod
+    def transform_scalar_var(value: str |  float | pd.Series,
+                             scenario: simulation.Scenario,
+                             block: Optional[blocks.BaseBlock] = None):
+        """
+        Transform a value holding either the filename of a csv file containing a timeseries or a scalar
+        to a pandas Series with the same DatetimeIndex as the simulation.
+        """
+        if isinstance(value, str):  # value contains filename
+            filename = utils.set_extension(filename=value,
+                                           default_extension='.csv')
 
-def calc_wacc(
-        share_equity: float,  # share of equity in capital structure
-        rate_debt: float,  # interest rate on debt
-        rate_market: float = 0.07,  # expected return on market
-        rate_riskfree: float = 0.03,  # risk-free return rate
-        rate_tax: float = 0.25,  # corporate tax rate
-        rate_inflation: float = 0.02,  # expected inflation rate
-        volatility_relative: float = 1,  # volatility of stock price relative to market
-) -> (float, float):
-    """
-    This function calculates the nominal (including inflation) weighted average cost of capital (WACC) using the
-    Capital Asset Pricing Model (CAPM) for equity cost.
-    """
-    share_debt = 1 - share_equity
-    cost_equity = rate_riskfree + volatility_relative * (rate_market - rate_riskfree)  # CAPM
-    wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
-    wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
-    return wacc_nominal, wacc_real
+            df = utils.read_timeseries_csv(path_input_file=scenario.paths.input / filename,
+                                           block=block,
+                                           scenario=scenario,
+                                           multiheader=False,
+                                           resampling=True)
+            if df.shape[1] != 1:
+                scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
+                                        f'only first column is used.')
 
+            return df.iloc[:, 0]  # return only first column
 
-def transform_scalar_var(value: str |  float | pd.Series,
-                         scenario: simulation.Scenario,
-                         block: Optional[blocks.BaseBlock] = None):
-    """
-    Transform a value holding either the filename of a csv file containing a timeseries or a scalar
-    to a pandas Series with the same DatetimeIndex as the simulation.
-    """
-    if isinstance(value, str):  # value contains filename
-        filename = utils.set_extension(filename=value,
-                                       default_extension='.csv')
+        else:  # value is given as scalar
+            return pd.Series(data=value,
+                             index=scenario.dti_sim)
 
-        df = utils.read_timeseries_csv(path_input_file=scenario.paths.input / filename,
-                                       block=block,
-                                       scenario=scenario,
-                                       multiheader=False,
-                                       resampling=True)
-        if df.shape[1] != 1:
-            scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
-                                    f'only first column is used.')
+    @staticmethod
+    def calc_frac_remaining_ls(ls: int,
+                               project_duration: int) -> float:
+        """
+        Calculate the fraction of the remaining lifespan of a component after the project duration.
+        A remaining lifespan fraction of 1 is considered as 0 as the component is not replaced anymore.
+        """
 
-        return df.iloc[:, 0]  # return only first column
+        frac_remaining_ls = 1 - (project_duration % ls) / ls
+        if frac_remaining_ls == 1:
+            frac_remaining_ls = 0
 
-    else:  # value is given as scalar
-        return pd.Series(data=value,
-                         index=scenario.dti_sim)
-
-
-def calc_frac_remaining_ls(ls: int,
-                           project_duration: int) -> float:
-    """
-    Calculate the fraction of the remaining lifespan of a component after the project duration.
-    A remaining lifespan fraction of 1 is considered as 0 as the component is not replaced anymore.
-    """
-
-    frac_remaining_ls = 1 - (project_duration % ls) / ls
-    if frac_remaining_ls == 1:
-        frac_remaining_ls = 0
-
-    return frac_remaining_ls
+        return frac_remaining_ls
 
 
 @dataclass
@@ -293,10 +295,11 @@ class OptimizationConverter:
 
     def __post_init__(self):
         # calculate annuity due factor to compensate investment costs for difference between simulation and project time
-        self.factor_ep_invest: float = annuity(present_value=1,
-                                               observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                               discount_rate=self.poi.scenario.wacc,
-                                               occurs_at='beginning') if self.poi.scenario.compensate_sim_prj else 1
+        self.factor_ep_invest: float = (EcoTools.annuity(present_value=1,
+                                                         observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                                         discount_rate=self.poi.scenario.wacc,
+                                                         occurs_at='beginning')
+                                        if self.poi.scenario.compensate_sim_prj else 1)
 
         # calculate specific present value of investment (addition of capex and mntex) cost
         # join maintenance and capex specific present values for the project duration
@@ -324,17 +327,19 @@ class OptimizationConverter:
                                dtype=float)
 
         # apply specific capex for replacement periods
-        spec_prj_ep[reinvest_periods(lifespan=self.poi.ls,
-                                     observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                     include_init=True)] = self.poi.capex.spec
+        spec_prj_ep[EcoTools.reinvest_periods(lifespan=self.poi.ls,
+                                              observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                              include_init=True)] = self.poi.capex.spec
 
         # apply specific salvage value after project duration considering the remaining lifespan
         # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
         # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
         # beginning of the last project year
         spec_prj_ep[self.poi.scenario.prj_duration_yrs] = (
-                -1 * self.poi.capex.spec * calc_frac_remaining_ls(ls=self.poi.ls,
-                                                                  project_duration=self.poi.scenario.prj_duration_yrs)
+                -1 * self.poi.capex.spec * EcoTools.calc_frac_remaining_ls(
+            ls=self.poi.ls,
+            project_duration=self.poi.scenario.prj_duration_yrs
+            )
         )
 
         # adjust specific capex by appropriate cost change ratio
@@ -347,10 +352,11 @@ class OptimizationConverter:
 
     def _get_spec_prj_ep_mntex(self) -> float:
         # calculate specific present value of mntex for the project duration
-        return acc_discount(nominal_value=self.poi.mntex.spec,
-                            observation_horizon=self.poi.scenario.prj_duration_yrs,
-                            discount_rate=self.poi.scenario.wacc,
-                            occurs_at='beginning') if self.poi.mntex else 0.0  # default value if mntex is not defined
+        return (EcoTools.acc_discount(nominal_value=self.poi.mntex.spec,
+                                      observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                      discount_rate=self.poi.scenario.wacc,
+                                      occurs_at='beginning')
+                if self.poi.mntex else 0.0)  # default value if mntex is not defined
 
 
 @dataclass
@@ -470,10 +476,10 @@ class CostEvaluator(CostAggregator):
 
     @property
     def ann(self) -> float:
-        return annuity(present_value=self.dis,
-                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                       discount_rate=self.poi.scenario.wacc,
-                       occurs_at=self.occurs_at)
+        return EcoTools.annuity(present_value=self.dis,
+                                observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                discount_rate=self.poi.scenario.wacc,
+                                occurs_at=self.occurs_at)
 
 @dataclass
 class CapexAggregator(CostAggregator):
@@ -561,16 +567,16 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
 
         cashflows[0] -= self.init
 
-        for period in reinvest_periods(lifespan=self.poi.ls,
-                                       observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                       include_init=False):
+        for period in EcoTools.reinvest_periods(lifespan=self.poi.ls,
+                                                observation_horizon=self.poi.scenario.prj_duration_yrs,
+                                                include_init=False):
             cashflows[period] -= self.replacement * (self.poi.ccr ** period)
 
         # Add salvage value capex (positive cashflow)
         cashflows[self.poi.scenario.prj_duration_yrs] += (
                 self.replacement * (self.poi.ccr ** self.poi.scenario.prj_duration_yrs) *
-                calc_frac_remaining_ls(ls=self.poi.ls,
-                                       project_duration=self.poi.scenario.prj_duration_yrs)
+                EcoTools.calc_frac_remaining_ls(ls=self.poi.ls,
+                                                project_duration=self.poi.scenario.prj_duration_yrs)
         )
 
         return cashflows
@@ -673,9 +679,9 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
 
     def __post_init__(self):
         super().__post_init__()
-        self.spec = transform_scalar_var(value=self.spec,
-                                         scenario=self.poi.scenario,
-                                         block=self.poi.block)
+        self.spec = EcoTools.transform_scalar_var(value=self.spec,
+                                                  scenario=self.poi.scenario,
+                                                  block=self.poi.block)
 
     @property
     def occurs_at(self) -> str:
@@ -709,9 +715,9 @@ class FleetUnitOpexEvaluator(OpexEvaluator):
 
     def __post_init__(self):
         super().__post_init__()
-        self.dist = transform_scalar_var(value=self.dist,
-                                         scenario=self.poi.scenario,
-                                         block=self.poi.block)
+        self.dist = EcoTools.transform_scalar_var(value=self.dist,
+                                                  scenario=self.poi.scenario,
+                                                  block=self.poi.block)
 
     @property
     def sim(self) -> float:
@@ -768,9 +774,9 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
 
     def __post_init__(self):
         super().__post_init__()
-        self.spec = transform_scalar_var(value=self.spec,
-                                         scenario=self.poi.scenario,
-                                         block=self.poi.block)
+        self.spec = EcoTools.transform_scalar_var(value=self.spec,
+                                                  scenario=self.poi.scenario,
+                                                  block=self.poi.block)
 
     @property
     def occurs_at(self) -> str:
@@ -808,13 +814,13 @@ class FleetUnitCrevEvaluator(CrevEvaluator):
 
     def __post_init__(self):
         super().__post_init__()
-        self.dist = transform_scalar_var(value=self.dist,
-                                         scenario=self.poi.scenario,
-                                         block=self.poi.block)
+        self.dist = EcoTools.transform_scalar_var(value=self.dist,
+                                                  scenario=self.poi.scenario,
+                                                  block=self.poi.block)
 
-        self.time = transform_scalar_var(value=self.time,
-                                         scenario=self.poi.scenario,
-                                         block=self.poi.block)
+        self.time = EcoTools.transform_scalar_var(value=self.time,
+                                                  scenario=self.poi.scenario,
+                                                  block=self.poi.block)
 
     @property
     def sim(self) -> float:
