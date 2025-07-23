@@ -2078,7 +2078,6 @@ class Fleet(SinkBlock):
         self.evaluators['f2s'] = eco.EcoEvaluator(name='f2s',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  create_size=True,
                                                   flow_name='out',
                                                   opex_config=dict(spec=self.opex_spec_f2s),
                                                   )
@@ -2086,7 +2085,6 @@ class Fleet(SinkBlock):
         self.evaluators['s2f'] = eco.EcoEvaluator(name='s2f',
                                                   scenario=self.scenario,
                                                   block=self,
-                                                  create_size=True,
                                                   flow_name='in',
                                                   opex_config=dict(spec=self.opex_spec_s2f),
                                                   )
@@ -2145,7 +2143,7 @@ class Fleet(SinkBlock):
         self.components['inflow'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow(
                 variable_costs=self.evaluators['s2f'].opt.spec_ep_operation[horizon.dti_ph],
-                nominal_capacity=self.sizes['s2f'].preexisting,
+                nominal_capacity=self.pwr_lim_s2f,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
             outputs={self.components['bus']: solph.Flow()},
@@ -2155,7 +2153,7 @@ class Fleet(SinkBlock):
         self.components['outflow'] = solph.components.Converter(
             inputs={self.components['bus']: solph.Flow(
                 variable_costs=self.evaluators['f2s'].opt.spec_ep_operation[horizon.dti_ph],
-                nominal_capacity=self.sizes['f2s'].preexisting,
+                nominal_capacity=self.pwr_lim_f2s,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
             outputs={self.bus_connected: solph.Flow(
@@ -2174,14 +2172,13 @@ class Fleet(SinkBlock):
                                                                 self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
 
     def get_legend_entry(self):
-        str_f2s = f'max. {self.sizes["f2s"].total / 1e3:.1f} kW' \
-            if pd.notna(self.sizes["f2s"].total / 1e3) \
-            else 'unlimited power'
-        str_s2f = f'max. {self.sizes["s2f"].total / 1e3:.1f} kW' \
-            if pd.notna(self.sizes["f2s"].total / 1e3) \
-            else 'unlimited power'
+        def lim2str(lim) -> str:
+            if lim is None:
+                return 'unlimited power'
+            else:
+                return f'max. {lim / 1e3:.1f} kW'
 
-        return f'{self.name} power ({str_f2s} from / {str_s2f} to fleet)'
+        return f'{self.name} power ({lim2str(self.pwr_lim_f2s)} from / {lim2str(self.pwr_lim_f2s)} to fleet)'
 
 
 class SubFleet(NonElectricBlock):
