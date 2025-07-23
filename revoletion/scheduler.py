@@ -217,7 +217,7 @@ class AprioriFleet:
         self.scheduler=scheduler
         self.scenario=self.scheduler.scenario
 
-        self.lm = 'stat' if pd.notna(self.block.sizes['s2f'].preexisting) else 'dyn'
+        self.lm = 'stat' if pd.notna(self.block.pwr_lim_s2f) else 'dyn'
 
         self.fleet_units = {fu_name: AprioriFleetUnit(block=fu_block,
                                                       fleet=self,
@@ -253,7 +253,7 @@ class AprioriFleet:
 
         # initialize power availability and fixed power consumption
         self.p_avail = self.p_avail.reindex(horizon.dti_ph)
-        self.p_avail[:] = np.inf if self.lm == 'dyn' else self.block.sizes['s2f'].preexisting
+        self.p_avail[:] = np.inf if self.lm == 'dyn' else self.block.pwr_lim_s2f
 
         self.p_fix = self.p_fix.reindex(horizon.dti_ph)
         self.p_fix[:] = 0
