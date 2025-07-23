@@ -426,7 +426,6 @@ class Scenario:
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         self.objective_opt = None  # unused for rh strategy
-        self.cashflows = pd.DataFrame()
         self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),
                                                                              ('sources', 'pro'),
                                                                              ('sinks', 'del')],
@@ -569,9 +568,8 @@ class Scenario:
 
         self.npc = self.aggregator.totex.dis
         self.npv = self.aggregator.value.dis
-        # ToDo: implement self.cashflows
-        self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
-        self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
+        self.irr = npf.irr(self.aggregator.value.cashflows)
+        self.mirr = npf.mirr(self.aggregator.value.cashflows, self.wacc, self.wacc)
 
         # print basic results
         self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} | '

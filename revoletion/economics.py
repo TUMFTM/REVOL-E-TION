@@ -459,20 +459,12 @@ class CostEvaluator(CostAggregator):
         ...
 
     @property
-    @abstractmethod
-    def factor_cashflow(self) -> float:
-        """
-        Return the factor to be applied to the cashflows for the specific cost type.
-        """
-        ...
-
-    @property
     def prj(self) -> float:
-        return self.factor_cashflow * self.cashflows.sum()
+        return self.cashflows.sum()
 
     @property
     def dis(self) -> float:
-        return self.factor_cashflow * self.cashflows @ self.poi.discount_factors[self.occurs_at]
+        return self.cashflows @ self.poi.discount_factors[self.occurs_at]
 
     @property
     def ann(self) -> float:
@@ -541,10 +533,6 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
         return 'beginning'
 
     @property
-    def factor_cashflow(self) -> float:
-        return -1.0
-
-    @property
     def preexisting(self) -> float:
         return int(self.consider_preexisting) * self.poi.size.preexisting * self.spec + self.fix
 
@@ -565,15 +553,15 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
 
-        cashflows[0] -= self.init
+        cashflows[0] += self.init
 
         for period in EcoTools.reinvest_periods(lifespan=self.poi.ls,
                                                 observation_horizon=self.poi.scenario.prj_duration_yrs,
                                                 include_init=False):
-            cashflows[period] -= self.replacement * (self.poi.ccr ** period)
+            cashflows[period] += self.replacement * (self.poi.ccr ** period)
 
-        # Add salvage value capex (positive cashflow)
-        cashflows[self.poi.scenario.prj_duration_yrs] += (
+        # Subtract salvage value capex (negative capex)
+        cashflows[self.poi.scenario.prj_duration_yrs] -= (
                 self.replacement * (self.poi.ccr ** self.poi.scenario.prj_duration_yrs) *
                 EcoTools.calc_frac_remaining_ls(ls=self.poi.ls,
                                                 project_duration=self.poi.scenario.prj_duration_yrs)
@@ -626,10 +614,6 @@ class MntexEvaluator(MntexAggregator, CostEvaluator):
         return 'beginning'
 
     @property
-    def factor_cashflow(self) -> float:
-        return -1.0
-
-    @property
     def yrl(self) -> float:
         return self.poi.size.total * self.spec + self.fix
 
@@ -641,7 +625,7 @@ class MntexEvaluator(MntexAggregator, CostEvaluator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows [self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
+        cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
 
@@ -688,10 +672,6 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
         return 'end'
 
     @property
-    def factor_cashflow(self) -> float:
-        return -1.0
-
-    @property
     def sim(self) -> float:
         return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
 
@@ -703,7 +683,7 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows[self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
+        cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
 
@@ -783,10 +763,6 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
         return 'end'
 
     @property
-    def factor_cashflow(self) -> float:
-        return 1.0
-
-    @property
     def sim(self) -> float:
         return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
 
@@ -798,7 +774,7 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
     def cashflows(self) -> np.ndarray:
         cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
                              dtype=float)
-        cashflows[self.poi.scenario.periods_prj] = self.factor_cashflow * self.yrl
+        cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
 
