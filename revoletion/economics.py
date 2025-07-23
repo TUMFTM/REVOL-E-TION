@@ -155,9 +155,9 @@ def calc_frac_remaining_ls(ls: int,
 
 @dataclass
 class Size:
-    name: str
-    block: blocks.BaseBlock
-    unit: str = 'kW'  # ToDo: pass upon initialization from block and remove workaround in __post_init__
+    name: Optional[str] = None
+    block: Optional[blocks.BaseBlock] = None
+    unit: str = ''
 
     # parameters that are set in __post_init__
     _preexisting: float = field(init=False,
@@ -172,19 +172,20 @@ class Size:
                                         default=None)  # "Optional" is equal to "float | None"
 
     # parameters that are set after optimization
-    expansion: float = field(default=0.0,
-                             init=False,
-                             repr=False)  # set after optimization, initialized with 0.0
+    _expansion: float = field(default=0.0,
+                              init=False,
+                              repr=False)  # set after optimization, initialized with 0.0
 
     def __post_init__(self):
-        self.preexisting = self._get_param(param='size_preexisting',
-                                           default=self.preexisting)
+        if self.name and self.block:  # name and block are None for default size object
+            self.preexisting = self._get_param(param='size_preexisting',
+                                               default=self.preexisting)
 
-        self.invest = self._get_param(param='invest',
-                                      default=self.invest)
+            self.invest = self._get_param(param='invest',
+                                          default=self.invest)
 
-        self.total_max = self._get_param(param='size_max',
-                                         default=self.total_max)
+            self.total_max = self._get_param(param='size_max',
+                                             default=self.total_max)
 
     def _get_param(self,
                    param: str,
@@ -207,6 +208,8 @@ class Size:
     def preexisting(self, value: float):
         if not isinstance(value, (int, float)):
             raise TypeError(f"preexisting must be numeric (int or float), got {type(value).__name__}")
+        if value < 0:
+            raise ValueError("preexisting cannot be negative")
         self._preexisting = float(value)
 
     @property
@@ -227,23 +230,30 @@ class Size:
     def total_max(self, value: Optional[float]):
         if value is not None and not isinstance(value, (int, float)):
             raise TypeError(f"size_max must be numeric (int or float) or None, got {type(value).__name__}")
+        if isinstance(value, (int, float)) and (value < self.preexisting):
+            raise ValueError("total_max cannot be smaller than preexisting size")
         self._total_max = float(value) if value is not None else None
 
     @property
     def expansion_max(self) -> Optional[float]:
-        """
-        Get the maximum additional investment size.
-        0:      no investment           -> invest == False or size_max == size_preexisting
-        float:  limited investment      -> invest == True and size_max is not None
-        None:   unlimited investment    -> invest == True and size_max is None
-        """
-        if not self.invest:
+        if not self.invest:  # no investment allowed -> expansion_max is 0
             return 0
-        else:
-            if self.total_max is not None:
-                return self.total_max - self.preexisting
-            else:
-                return None
+        elif self.total_max is not None:  # invest == True and limit for total size is set -> calculate expansion_max
+            return self.total_max - self.preexisting
+        else:  # invest == True and no limit for total size is set -> expansion_max is None (=unlimited)
+            return None
+
+    @property
+    def expansion(self) -> float:
+        return self._expansion
+
+    @expansion.setter
+    def expansion(self, value: float):
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"expansion must be numeric (int or float), got {type(value).__name__}")
+        if value < 0:
+            raise ValueError("expansion cannot be negative")
+        self._expansion = float(value)
 
     @property
     def total(self) -> float:
@@ -254,12 +264,15 @@ class Size:
         """
         Create a pd.Series with the size's attributes for result_summary.
         """
-        return pd.Series({f'size_{self.name}_preexisting': self.preexisting,
-                          f'size_{self.name}_invest': self.invest,
-                          f'size_{self.name}_total_max': self.total_max,
-                          f'size_{self.name}_expansion_max': self.expansion_max,
-                          f'size_{self.name}_expansion': self.expansion,
-                          f'size_{self.name}_total': self.total})
+        if self.name and self.block:  # name and block are None for default size object
+            return pd.Series({f'size_{self.name}_preexisting': self.preexisting,
+                              f'size_{self.name}_invest': self.invest,
+                              f'size_{self.name}_total_max': self.total_max,
+                              f'size_{self.name}_expansion_max': self.expansion_max,
+                              f'size_{self.name}_expansion': self.expansion,
+                              f'size_{self.name}_total': self.total})
+        else:
+            return pd.Series()
 
     @property
     def result_msg(self) -> str:
@@ -945,8 +958,8 @@ class EcoAggregator(EcoPOI):
 class EcoEvaluator(EcoPOI):
     block: blocks.BaseBlock
 
-    create_size: bool = field(init=True, repr=False, default=False)
-    unit_size: str = field(init=True, repr=False, default='kW')
+    size_name: Optional[str] = field(init=True, repr=False, default=None)
+    size_unit: str = field(init=True, repr=False, default='kW')
     flow_name: Optional[str] = field(init=True, repr=False, default=None)
     ls: Optional[int] = field(init=True, repr=False, default=None)
     ccr: Optional[float] = field(init=True, repr=False, default=1.0)
@@ -968,14 +981,22 @@ class EcoEvaluator(EcoPOI):
         if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
             self.ls = self.scenario.prj_duration_yrs
 
-        self.block.sizes[self.name] = Size(name=self.name,
-                                           block=self.block,
-                                           unit=self.unit_size
-                                           )
+        if self.size_name is not None:
+            if self.size_name in self.block.sizes:
+                raise ValueError(f"Size with name '{self.size_name}' already exists in block '{self.block.name}'.")
 
+            self.block.sizes[self.name] = Size(name=self.name,
+                                               block=self.block,
+                                               unit=self.size_unit
+                                               )
+
+        # Only add flow_name to block's flow_names if block.flow_names exist -> only ElectricBlock instances
         if self.flow_name:
-            # ToDo: flow_names not available for BaseBlock, but ElectricBlock only
-            self.block.flow_names.add(self.flow_name)
+            if hasattr(self.block, 'flow_names'):
+                self.block.flow_names.add(self.flow_name)
+            else:
+                raise AttributeError(f"Attribute 'flow_name' was specified for EcoPOI '{self.name}' in block "
+                                     f"'{self.block.name}'. This block does not have an attribute 'flow_names'.")
 
         # Define Evaluators if the corresponding config is provided
         self.capex = CapexEvaluator(poi=self, **capex_config) if capex_config else None
@@ -1007,12 +1028,19 @@ class EcoEvaluator(EcoPOI):
 
     @property
     def size(self) -> Size:
-        return self.block.sizes[self.name]
+        if self.size_name is None:  # no size_name given -> create a default size
+            return Size()
+        elif self.size_name in self.block.sizes:  # size_name given and exists in block -> return size object
+            return self.block.sizes[self.size_name]
+        else:  # size_name given but does not exist in block -> raise error
+            raise ValueError(f"Size with name '{self.size_name}' does not exist in block '{self.block.name}'.")
 
     @property
     def flow(self) -> np.ndarray:
+        # if flow with name self.flow_name exists in block return this flow as numpy array
         if hasattr(self.block, 'flows') and self.flow_name in self.block.flows.columns:
             return self.block.flows.loc[self.scenario.dti_eval, self.flow_name].values
+        # else return default flow array with zeros
         else:
             return np.array([0.0] * len(self.scenario.dti_eval),
                             dtype=float)
