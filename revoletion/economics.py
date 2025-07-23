@@ -198,9 +198,9 @@ class Size:
         """
         name_param = f'{param}_{self.name}'
         value = getattr(self.block, name_param, default)
-        # ToDo: remove deletion of attribute in block, if parameters are kept in pydantic model
-        if hasattr(self.block, name_param):
-            delattr(self.block, name_param)
+        # ToDo: implement removal of parameters from block (also ls and ccr)
+        # if hasattr(self.block, name_param):
+        #     delattr(self.block, name_param)
         return value
 
     @property

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 import ast
-from dataclasses import dataclass, field
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
@@ -10,7 +9,7 @@ import plotly.graph_objects as go
 import pvlib
 import re
 import requests
-from typing import Any, Optional
+from typing import TYPE_CHECKING
 import windpowerlib
 
 from abc import ABC, abstractmethod
@@ -20,6 +19,9 @@ from . import economics as eco
 from . import mobility
 from . import utils
 
+if TYPE_CHECKING:
+    from . import simulation
+
 
 class BlockScenarioInterface(ABC):
     @abstractmethod
@@ -27,30 +29,30 @@ class BlockScenarioInterface(ABC):
         """
         Trigger actions to be executed after all inits.
         """
-        pass
+        ...
 
     @abstractmethod
     def pre_horizon(self,
-                    horizon: 'PredictionHorizon') -> None:
+                    horizon: simulation.PredictionHorizon) -> None:
         """
         Trigger actions to be executed before each horizon.
         """
-        pass
+        ...
 
     @abstractmethod
     def post_horizon(self,
-                     horizon: 'PredictionHorizon') -> None:
+                     horizon: simulation.PredictionHorizon) -> None:
         """
         Trigger actions to be executed after each horizon.
         """
-        pass
+        ...
 
     @abstractmethod
     def post_scenario(self) -> None:
         """
         Trigger actions to be executed after the scenario has been run.
         """
-        pass
+        ...
 
 
 class BaseBlock(BlockScenarioInterface):
@@ -69,9 +71,9 @@ class BaseBlock(BlockScenarioInterface):
 
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  params: dict = None,
-                 parent: 'Block | Scenario' = None,
+                 parent: BaseBlock | simulation.Scenario = None,
                  ):
         """
         Initialize (Sub)Block object with attributes and data structures
@@ -102,45 +104,15 @@ class BaseBlock(BlockScenarioInterface):
 
         self.states = pd.DataFrame(index=self.scenario.dti_sim_extd,
                                    dtype='float64')
+        self.init_states()
 
         self.sizes = dict()  # entries are created by EcoEvaluator
 
         self.evaluators = dict()
         self.init_evaluators()
 
-        # # region get poi and state name definitions
-        # # ToDo: find a more elegant way to combine POIs and state names from class hierarchy
-        # # combine all previously defined POIs and state names from class hierarchy
-        # definitions = [cls.get_init_definitions()
-        #                for cls in self.__class__.mro()
-        #                if ('get_init_definitions' in vars(cls) and  # distinguish implemented and inherited methods
-        #                    cls.get_init_definitions() is not None)  # avoid None return value of @abstractmethod
-        #                ]
-        #
-        # # if not definitions:
-        # #     raise ValueError(f'Block "{self.name}" has no POIs or state names defined in its class hierarchy.')
-        #
-        # self.pois = {poi_key: poi_value
-        #              for definition in definitions
-        #              for poi_key, poi_value in
-        #              definition['pois'].items()}
-        # state_names = [state_name for definition in definitions for state_name in definition['state_names']]
-        # if len(state_names) != len(set(state_names)):
-        #     raise ValueError(f'Block "{self.name}" has duplicate state names in its class hierarchy definitions.')
-        # # endregion
-
         # region initialize data structures
         self.subblocks = dict()
-
-        # self.initialize_sizes()
-
-        # self.evaluators = self.create_evaluator_objects()
-        # self.aggregator.pre_scenario()  # aggregate capex preexisting
-
-        # ToDo: Delete ccr and ls as they are now contained in evaluators
-        # for attribute in set(value for poi in self.pois.values() for value in poi['params'].values()):
-        #     if hasattr(self, attribute):
-        #         delattr(self, attribute)
 
         # initialize result data structures
         self.result_summary = []  # -> list of pd.Series
@@ -169,30 +141,6 @@ class BaseBlock(BlockScenarioInterface):
 
     def params_preprocessing(self):
         pass
-
-    def initialize_sizes(self,
-                         pois: dict = None):
-        """
-        Initialize the sizes DataFrame for the block
-        """
-
-        sizes = [k for k, v in self.pois.items() if ('size', 'name') in v['params'].keys()]
-
-        if len(sizes) > len(set(sizes)):  # avoid duplicate size names in POIs
-            raise ValueError(f'Block "{self.name}" has duplicate size names in its POIs')
-
-        for size in sizes:
-            self.sizes[size] = eco.Size(name=size,
-                                        block=self)
-
-            if self.sizes[size].invest and self.scenario.strategy != 'go':
-                raise ValueError(f'Block "{self.name}" component size optimization '
-                                 f'not implemented for any other strategy than "GO"')
-
-            if self.sizes[size].preexisting == 0 and not self.sizes[size].invest:
-                self.scenario.logger.warning(f'Block "{self.name}" - '
-                                             f'component "{size}" was defined without preexisting size and does not '
-                                             f'allow further investments. This may cause unintended system behavior.')
 
     def init_equalizable_variables(self, name_vars: list):
         name_var1, name_var2 = name_vars
@@ -230,13 +178,13 @@ class BaseBlock(BlockScenarioInterface):
             subblock.pre_scenario()
 
     def pre_horizon(self,
-                    horizon: 'PredictionHorizon'):
+                    horizon: simulation.PredictionHorizon):
 
         for subblock in self.subblocks.values():
             subblock.pre_horizon(horizon=horizon)
 
     def post_horizon(self,
-                     horizon: 'PredictionHorizon'):
+                     horizon: simulation.PredictionHorizon):
 
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
@@ -278,16 +226,16 @@ class BaseBlock(BlockScenarioInterface):
 
     @abstractmethod
     def create_result_timeseries(self):
-        pass
+        ...
 
-    def create_result_messages(self, unit='kW'):
+    def create_result_messages(self):
         for size in self.sizes.values():
             if (msg := size.result_msg) != '':
                 self.result_messages.append(msg)
 
     @abstractmethod
     def create_plot_traces(self):
-        pass
+        ...
 
     def write_results_to_scenario(self):
         # result_summary
@@ -335,10 +283,10 @@ class NonElectricBlock(BaseBlock):
 class ElectricBlock(BaseBlock):
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  flow_apriori_names: list = None,
                  params: dict = None,
-                 parent: 'Block | Scenario' = None,
+                 parent: BaseBlock | simulation.Scenario = None,
                  ):
 
         self.flow_names = set()
@@ -381,7 +329,7 @@ class ElectricBlock(BaseBlock):
                 delattr(self, key)
 
     def pre_horizon(self,
-                    horizon: 'PredictionHorizon'):
+                    horizon: simulation.PredictionHorizon):
 
         self.define_oemof_components(horizon=horizon)
         horizon.es.add(*self.components.values())
@@ -389,14 +337,13 @@ class ElectricBlock(BaseBlock):
         super().pre_horizon(horizon=horizon)  # executes pre_horizon for subblocks
 
     def post_horizon(self,
-                     horizon: 'PredictionHorizon'):
+                     horizon: simulation.PredictionHorizon):
 
         super().post_horizon(horizon=horizon)  # executes post_horizon for subblocks
 
         self.get_horizon_results(horizon=horizon)
 
     def post_scenario(self):
-        # ToDo: check, whether this requires SubBlock's post_scenario() execution triggered in super().post_scenario()
         self.calc_results_flows()
         self.calc_results_energies()
 
@@ -404,14 +351,14 @@ class ElectricBlock(BaseBlock):
 
     @abstractmethod
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
-        pass
+        ...
 
     @abstractmethod
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
-        pass
+                            horizon: simulation.PredictionHorizon):
+        ...
 
     def calc_results_flows(self):
         # total flow calculation is duplicated in StorageBlock
@@ -469,14 +416,14 @@ class SourceBlock(ElectricBlock):
 
     @abstractmethod
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
-        pass
+        ...
 
     @abstractmethod
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
-        pass
+                            horizon: simulation.PredictionHorizon):
+        ...
 
 
     def calc_results_energies(self):
@@ -488,14 +435,14 @@ class SinkBlock(ElectricBlock):
 
     @abstractmethod
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
-        pass
+        ...
 
     @abstractmethod
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
-        pass
+                            horizon: simulation.PredictionHorizon):
+        ...
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -555,7 +502,7 @@ class SystemCore(ElectricBlock):
         self.init_equalizable_variables(name_vars=['size_max_acdc', 'size_max_dcac'])
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -604,7 +551,7 @@ class SystemCore(ElectricBlock):
                                                    {'in': self.components['ac'], 'out': self.components['acdc']}])
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -677,24 +624,6 @@ class RenewableSource(SourceBlock):
                                                   flow_name='pot',
                                                   )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
-                                               ('capex', 'spec'): 'capex_spec',
-                                               ('mntex', 'spec'): 'mntex_spec',
-                                               ('opex', 'spec'): 'opex_spec',
-                                               ('size', 'name'): 'block',
-                                               ('flow', 'name'): 'out',
-                                               ('aux', 'ls'): 'ls',
-                                               ('aux', 'ccr'): 'ccr'}},
-                          'curt': {'class_name': 'EconomicEvaluator',
-                                   'params': {('flow', 'name'): 'curt'}},
-                          'pot': {'class_name': 'EconomicEvaluator',
-                                  'params': {('flow', 'name'): 'pot'}}
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
                  scenario):
@@ -712,10 +641,10 @@ class RenewableSource(SourceBlock):
 
     @abstractmethod
     def get_ts_data(self):
-        pass
+        ...
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -759,7 +688,7 @@ class RenewableSource(SourceBlock):
                                              invest_type='flow')
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -1165,14 +1094,6 @@ class FixedDemand(SinkBlock):
                                                     crev_config=dict(spec=self.crev_spec),
                                                     )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('crev', 'spec'): 'crev_spec',
-                                               ('flow', 'name'): 'in'}}
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
                  scenario):
@@ -1268,7 +1189,7 @@ class FixedDemand(SinkBlock):
             )
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -1288,7 +1209,7 @@ class FixedDemand(SinkBlock):
         )
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -1317,23 +1238,9 @@ class ControllableSource(SourceBlock):
                                                     opex_config=dict(spec=self.opex_spec),
                                                     )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
-                                               ('capex', 'spec'): 'capex_spec',
-                                               ('mntex', 'spec'): 'mntex_spec',
-                                               ('opex', 'spec'): 'opex_spec',
-                                               ('size', 'name'): 'block',
-                                               ('flow', 'name'): 'out',
-                                               ('aux', 'ls'): 'ls',
-                                               ('aux', 'ccr'): 'ccr'}},
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario):
+                 scenario: simulation.Scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
@@ -1342,7 +1249,7 @@ class ControllableSource(SourceBlock):
                          parent=scenario)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -1369,7 +1276,7 @@ class ControllableSource(SourceBlock):
                                              invest_type='flow')
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -1410,30 +1317,9 @@ class GridConnection(ElectricBlock):
                                                   mntex_config=dict(spec=self.mntex_spec),
                                                   )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'g2s': {'class_name': 'EconomicEvaluator',
-                                  'params': {('capex', 'preexisting'): 'capex_preexisting_g2s',
-                                             ('capex', 'spec'): 'capex_spec',
-                                             ('mntex', 'spec'): 'mntex_spec',
-                                             ('size', 'name'): 'g2s',
-                                             ('flow', 'name'): 'out',
-                                             ('aux', 'ls'): 'ls',
-                                             ('aux', 'ccr'): 'ccr'}},
-                          's2g': {'class_name': 'EconomicEvaluator',
-                                  'params': {('capex', 'preexisting'): 'capex_preexisting_s2g',
-                                             ('capex', 'spec'): 'capex_spec',
-                                             ('mntex', 'spec'): 'mntex_spec',
-                                             ('size', 'name'): 's2g',
-                                             ('flow', 'name'): 'in',
-                                             ('aux', 'ls'): 'ls',
-                                             ('aux', 'ccr'): 'ccr'}},
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario):
+                 scenario: simulation.Scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
@@ -1541,7 +1427,7 @@ class GridConnection(ElectricBlock):
                                 for period in self.peak_periods.index})
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -1623,7 +1509,7 @@ class GridConnection(ElectricBlock):
             horizon.constraints.add_equal_invests(equal_investments)
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -1668,7 +1554,7 @@ class GridConnection(ElectricBlock):
         self.result_summary.append(pd.Series(peak_power_results))
 
     def create_result_messages(self, *_):
-        super().create_result_messages(unit='kW')
+        super().create_result_messages()
 
         # add peak power results
         self.result_messages.extend(
@@ -1701,20 +1587,9 @@ class GridMarket(ElectricBlock):
                                                   opex_config=dict(spec=self.opex_spec_s2g),
                                                   )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'g2s': {'class_name': 'EconomicEvaluator',
-                                  'params': {('opex', 'spec'): 'opex_spec_g2s',
-                                             ('flow', 'name'): 'out'}},
-                          's2g': {'class_name': 'EconomicEvaluator',
-                                  'params': {('opex', 'spec'): 'opex_spec_s2g',
-                                             ('flow', 'name'): 'in'}},
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario,
+                 scenario: simulation.PredictionHorizon,
                  params,
                  parent):
 
@@ -1725,7 +1600,7 @@ class GridMarket(ElectricBlock):
                          parent=parent)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -1756,7 +1631,7 @@ class GridMarket(ElectricBlock):
         )
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -1821,34 +1696,17 @@ class StorageBlock(ElectricBlock):
                                                       flow_name='bat_out',
                                                       )
 
-
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'storage': {'class_name': 'EconomicEvaluator',
-                                      'params': {('capex', 'preexisting'): 'capex_preexisting_storage',
-                                                 ('capex', 'spec'): 'capex_spec',
-                                                 ('mntex', 'spec'): 'mntex_spec',
-                                                 ('size', 'name'): 'storage',
-                                                 ('aux', 'ls'): 'ls',
-                                                 ('aux', 'ccr'): 'ccr'}},
-                          'in': {'class_name': 'EconomicEvaluator',
-                                 'params': {('opex', 'spec'): 'opex_spec',
-                                            ('flow', 'name'): 'in'}},
-                          'out': {'class_name': 'EconomicEvaluator',
-                                  'params': {('flow', 'name'): 'out'}},
-                          'bat_in': {'class_name': 'EconomicEvaluator',
-                                     'params': {('flow', 'name'): 'bat_in'}},
-                          'bat_out': {'class_name': 'EconomicEvaluator',
-                                      'params': {('flow', 'name'): 'bat_out'}},
-                          },
-                    state_names=['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max'])
+    def init_states(self):
+        super().init_states()
+        for state in ['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max']:
+            self.states[state] = np.nan
 
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  flow_apriori_names: list = None,
                  params: dict = None,
-                 parent: 'Block | Scenario' = None,
+                 parent: BaseBlock | simulation.Scenario = None,
                  ):
 
         super().__init__(name=name,
@@ -1863,7 +1721,7 @@ class StorageBlock(ElectricBlock):
             oemof specifies one hour as the target time step for the loss rate.
             """
             ratio_timestep = period / pd.Timedelta('30 days')  # assumption: 30 days per month
-            return (1 - (1 - self.sdr) ** ratio_timestep)
+            return 1 - (1 - self.sdr) ** ratio_timestep
 
         self.loss_rate_per_hour = calc_loss_rate_per_period(period=pd.Timedelta(hours=1))
         self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep_td)
@@ -1895,7 +1753,7 @@ class StorageBlock(ElectricBlock):
         self.aging_model = bat.BatteryPackModel(self)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None,
                                 ):
         """
@@ -1968,7 +1826,7 @@ class StorageBlock(ElectricBlock):
                                              invest_type='storage')
 
     def get_horizon_results(self,
-                            horizon):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -2031,7 +1889,7 @@ class StationaryBattery(StorageBlock):
 
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  ):
 
         super().__init__(name=name,
@@ -2055,7 +1913,7 @@ class StationaryBattery(StorageBlock):
         super().initialize_efficiencies()
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
         params = {'inflow_nominal_capacity': None,
@@ -2071,7 +1929,7 @@ class StationaryBattery(StorageBlock):
         super().define_oemof_components(horizon, params)
 
     def create_result_messages(self, *_):
-        super().create_result_messages(unit='kWh')
+        super().create_result_messages()
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
@@ -2096,22 +1954,9 @@ class Fleet(SinkBlock):
                                                   opex_config=dict(spec=self.opex_spec_s2f),
                                                   )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'f2s': {'class_name': 'EconomicEvaluator',
-                                  'params': {('opex', 'spec'): 'opex_spec_f2s',
-                                             ('flow', 'name'): 'out',
-                                             ('size', 'name'): 'f2s',}},
-                          's2f': {'class_name': 'EconomicEvaluator',
-                                  'params': {('opex', 'spec'): 'opex_spec_s2f',
-                                             ('flow', 'name'): 'in',
-                                             ('size', 'name'): 's2f',}}
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario'):
+                 scenario: simulation.Scenario):
 
         super().__init__(name=name,
                          scenario=scenario,
@@ -2128,7 +1973,7 @@ class Fleet(SinkBlock):
         del self.subfleets
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -2169,7 +2014,7 @@ class Fleet(SinkBlock):
         )
 
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -2190,15 +2035,9 @@ class Fleet(SinkBlock):
 
 class SubFleet(NonElectricBlock):
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
-
-
     def __init__(self,
                  name: str,
-                 scenario,
+                 scenario: simulation.Scenario,
                  parent):
 
         # subfleet parameters contain FleetUnit parameters
@@ -2325,20 +2164,6 @@ class FleetUnit:
                                                          time=self.crev_spec_time),
                                                      )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'glider': {'class_name': 'FleetUnitEvaluator',
-                                     'params': {('capex', 'preexisting'): 'capex_preexisting_glider',
-                                                ('capex', 'fix'): 'capex_fix_glider',
-                                                ('mntex', 'fix'): 'mntex_fix_glider',
-                                                ('opex', 'dist'): 'opex_spec_dist',
-                                                ('crev', 'time'): 'crev_spec_time',
-                                                ('crev', 'dist'): 'crev_spec_dist',
-                                                ('aux', 'ls'): 'ls',
-                                                ('aux', 'ccr'): 'ccr'}},
-                          },
-                    state_names=[])
-
     def __init__(self):
         self.log = None
 
@@ -2391,25 +2216,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                                                      opex_config=dict(spec=self.opex_spec_ext_dc),
                                                      )
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'charger': {'class_name': 'EconomicEvaluator',
-                                      'params': {('capex', 'preexisting'): 'capex_preexisting_charger',
-                                                 ('capex', 'fix'): 'capex_fix_charger',
-                                                 ('aux', 'ls'): 'ls',
-                                                 ('aux', 'ccr'): 'ccr'}},
-                          'ext_ac': {'class_name': 'EconomicEvaluator',
-                                     'params': {('opex', 'spec'): 'opex_spec_ext_ac',
-                                                ('flow', 'name'): 'ext_ac'}},
-                          'ext_dc': {'class_name': 'EconomicEvaluator',
-                                     'params': {('opex', 'spec'): 'opex_spec_ext_dc',
-                                                ('flow', 'name'): 'ext_dc'}},
-                          },
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  parent: SubFleet,
                  params: dict):
 
@@ -2439,7 +2248,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         FleetUnit.pre_scenario(self=self)
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
 
         """
@@ -2526,7 +2335,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         )
 
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
+                            horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
@@ -2570,14 +2379,9 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
         NonElectricBlock.init_evaluators(self=self)
         FleetUnit.init_evaluators(self=self)
 
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={},
-                    state_names=[])
-
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  parent: SubFleet,
                  params: dict):
 
@@ -2614,11 +2418,11 @@ class ElectricVehicle(ElectricFleetUnit):
 class MobileBattery(ElectricFleetUnit):
     def __init__(self,
                  name: str,
-                 scenario: 'Scenario',
+                 scenario: simulation.Scenario,
                  parent: SubFleet,
                  params: dict):
-        self.opex_spec_dist = 0.0  # no distance for mobile battery
-        self.opex_spec_time = 0.0  # no distance for mobile battery
+        self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
+        self.opex_spec_time = 0.0  # no distance based opex for mobile battery
         super().__init__(name=name,
                          scenario=scenario,
                          parent=parent,
