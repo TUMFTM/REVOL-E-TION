@@ -168,7 +168,7 @@ class Scenario:
                 raise ValueError('Parameters must be provided when run_execution is True')
 
         self.name = name
-        self.parent = None
+        self.parent = None  # attribute needs to exist for economic aggregation
 
         if not run_execution:
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
@@ -254,8 +254,8 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        self.tzfinder = timezonefinder.TimezoneFinder()
-        self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+        tzfinder = timezonefinder.TimezoneFinder()
+        self.timezone = pytz.timezone(tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
 
         geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
         self.country = 'DE'  # set default country
@@ -434,7 +434,6 @@ class Scenario:
                                      data=0,
                                      dtype=float)
 
-        self.figure = None
         self.plot_traces = {'powers': [],
                             'states': []}
 
@@ -520,12 +519,7 @@ class Scenario:
                 self.result_timeseries.to_csv(self.paths.create_result_path(suffix=f'{self.name}_results_ts.csv'))
                 for msg in self.result_messages:
                     self.logger.info(msg)
-                self.generate_plots()
-                self.figure.write_html(self.paths.create_result_path(suffix=f'{self.name}.html'))
-                try:
-                    self.figure.show(renderer='browser')
-                except webbrowser.Error:  # webbrowser is not available on most remote machines
-                    pass
+                self.generate_and_save_plot()
 
             self.runtime_end = time.perf_counter()
             self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
@@ -577,40 +571,53 @@ class Scenario:
                          f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
                          f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
 
-    def generate_plots(self):
+    def generate_and_save_plot(self):
 
-        self.figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
+        figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
-        self.figure.add_traces(self.plot_traces['powers'],
-                               secondary_ys=[False] * len(self.plot_traces['powers']))
+        figure.add_traces(self.plot_traces['powers'],
+                          secondary_ys=[False] * len(self.plot_traces['powers']))
 
-        self.figure.add_traces(self.plot_traces['states'],
-                               secondary_ys=[True] * len(self.plot_traces['states']))
-
-        self.figure.update_layout(plot_bgcolor='white')
-        self.figure.update_xaxes(title='Local Time',
-                                 showgrid=True,
-                                 linecolor='gray',
-                                 gridcolor='gray')
-        self.figure.update_yaxes(title='Power in W',
-                                 showgrid=True,
-                                 linecolor='gray',
-                                 gridcolor='gray',
-                                 secondary_y=False, )
-        self.figure.update_yaxes(title='State of Charge',
-                                 showgrid=False,
-                                 secondary_y=True)
+        figure.add_traces(self.plot_traces['states'],
+                          secondary_ys=[True] * len(self.plot_traces['states']))
 
         if self.strategy == 'go':
-            self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.paths.output.name} - '
-                                            f'Scenario: {self.name}')
-        if self.strategy == 'rh':
-            self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.paths.output.name} - '
-                                            f'Scenario: {self.name} - '
-                                            f'PH: {self.len_ph}h - '
-                                            f'CH: {self.len_ch}h')
+            title = f'Global Optimum Results - {self.paths.output.name} - Scenario: {self.name}'
+        elif self.strategy == 'rh':
+            title = (f'Rolling Horizon Results - {self.paths.output.name} - Scenario: {self.name} - '
+                     f'PH: {self.len_ph}h - CH: {self.len_ch}h')
+        else:
+            title = f'Results - {self.paths.output.name} - Scenario: {self.name}'
+
+        figure.update_layout(
+            title=title,
+            plot_bgcolor='white',
+            xaxis=dict(
+                title='Local Time',
+                showgrid=True,
+                linecolor='gray',
+                gridcolor='gray'
+            ),
+            yaxis=dict(
+                title='Power in W',
+                showgrid=True,
+                linecolor='gray',
+                gridcolor='gray'
+            ),
+            yaxis2=dict(
+                title='State of Charge',
+                showgrid=False,
+                overlaying='y',
+                side='right',
+                range=[0, 1]  # Limit from 0 to 1
+            )
+        )
+
+        figure.write_html(self.paths.create_result_path(suffix=f'{self.name}.html'))
+        try:
+            figure.show(renderer='browser')
+        except webbrowser.Error:  # webbrowser is not available on most remote machines
+            pass
 
     def save_result_summary(self):
         """
