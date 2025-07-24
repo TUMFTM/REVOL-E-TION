@@ -96,12 +96,14 @@ def main():
 
         root = tk.Tk()
         root.withdraw()  # hide small tk-window
-        root.lift()  # make sure all tk windows appear in front of other windows
+        root.attributes('-topmost', True)  # make sure all tk windows appear in front of other windows
         path_scenario = tk.filedialog.askopenfilename(
             initialdir=Path.cwd(),
             title="Select scenario file",
             filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
         )
+        root.destroy()  # clean up the root window
+
         if not path_scenario:
             raise FileNotFoundError("No scenario file selected")
     # Option 2: Example file in example project in package directory (works from anywhere)
