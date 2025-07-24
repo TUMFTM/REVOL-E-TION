@@ -444,7 +444,7 @@ class Scenario:
         self.e_eta = None
         self.renewable_share = None
         self.lcoe_total = self.lcoe_wocs = None
-        self.npv = self.irr = self.mirr = None
+        self.npc = self.npv = self.irr = self.mirr = None
         # endregion
 
         # region preexecution
@@ -589,27 +589,30 @@ class Scenario:
         else:
             title = f'Results - {self.paths.output.name} - Scenario: {self.name}'
 
+        linecolor = 'gray'
+        gridcolor = 'gray'
+
         figure.update_layout(
             title=title,
             plot_bgcolor='white',
             xaxis=dict(
                 title='Local Time',
                 showgrid=True,
-                linecolor='gray',
-                gridcolor='gray'
+                linecolor=linecolor,
+                gridcolor=gridcolor,
             ),
             yaxis=dict(
                 title='Power in W',
                 showgrid=True,
-                linecolor='gray',
-                gridcolor='gray'
+                linecolor=linecolor,
+                gridcolor=gridcolor,
             ),
             yaxis2=dict(
                 title='State of Charge',
                 showgrid=False,
                 overlaying='y',
                 side='right',
-                range=[0, 1]  # Limit from 0 to 1
+                range=[0, 1],
             )
         )
 
