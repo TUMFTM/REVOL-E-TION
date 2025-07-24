@@ -2074,18 +2074,45 @@ class SubFleet(NonElectricBlock):
             cls_demand = {'ev': mobility.VehicleDemand,
                           'icev': mobility.VehicleDemand,
                           'mb': mobility.BatteryDemand}.get(self.type_unit)
-            self.demand = cls_demand(scenario=self.scenario,
-                                     subfleet=self)
+            self.demand = cls_demand(name_subfleet=self.name,
+                                     dti=self.scenario.dti_sim)
 
         if self.data_source == 'usecases':
-            self.demand.read_usecase_file()
-            self.demand.sample()
+
+            self.demand.read_usecase_file(
+                path_usecase_file=self.scenario.paths.input / utils.set_extension(
+                    filename=self.filename,
+                    default_extension='.csv')
+            )
+
+            if self.filename_mapper is None:
+                raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
+                                 f'Please check the subfleet definition in the scenario file.')
+
+            if not self.scenario.settings.largescalemode:
+                path_demand = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
+                                                                            f'{self.name}_'
+                                                                            f'demand.csv')
+
+            self.demand.sample(
+                path_timeframe_mapper=self.scenario.paths.input / f'{self.filename_mapper}.py',
+                path_demand=path_demand,
+            )
+
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
+
         elif self.data_source == 'demand':
-            self.demand.read_demand_file()
+            self.demand.read_demand_file(
+                path_demand=(self.scenario.paths.input / utils.set_extension(
+                    filename=self.subfleet.filename,
+                    default_extension='.csv')),
+                dti_eval=self.scenario.dti_eval,
+            )
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
+
         elif self.data_source in ['log', 'logfile']:
             self.log = self.read_input_log()
+
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
 
