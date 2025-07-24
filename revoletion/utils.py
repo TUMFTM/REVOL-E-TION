@@ -14,6 +14,7 @@ import pandas as pd
 
 _LOGGER = logging.getLogger(__name__)
 
+
 def infer_dtype(value):
     """
     infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.

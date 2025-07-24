@@ -118,9 +118,6 @@ class BaseBlock(BlockScenarioInterface):
         self.result_summary = []  # -> list of pd.Series
         self.result_timeseries = []  # -> list of pd.DataFrames
         self.result_messages = []
-        self.plot_traces = dict(powers=[],
-                                states=[],
-                                )
         # endregion
 
     def __repr__(self):
@@ -190,6 +187,8 @@ class BaseBlock(BlockScenarioInterface):
             subblock.post_horizon(horizon=horizon)
 
     def post_scenario(self):
+        # has to be done before subblocks.post_scenario() to ensure correct plotting order
+        self.create_plot_traces()
 
         for subblock in self.subblocks.values():
             subblock.post_scenario()
@@ -199,7 +198,6 @@ class BaseBlock(BlockScenarioInterface):
 
         # create result outputs
         self.create_result_messages()
-        self.create_plot_traces()
         self.create_result_summary()
         self.create_result_timeseries()
 
@@ -253,10 +251,6 @@ class BaseBlock(BlockScenarioInterface):
 
         # result_messages
         self.scenario.result_messages.extend(self.result_messages)
-
-        # plot traces
-        for axis in ['powers', 'states']:
-            self.scenario.plot_traces[axis].extend(self.plot_traces[axis])
 
     def get_legend_entry(self):
         """
@@ -402,14 +396,15 @@ class ElectricBlock(BaseBlock):
                                                                             freq=self.scenario.timestep_td), :]])
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].append(go.Scatter(x=self.scenario.dti_eval,
-                                                     y=self.flows.loc[self.scenario.dti_eval, 'total'],
-                                                     mode='lines',
-                                                     name=self.get_legend_entry(),
-                                                     line=dict(width=2, dash=None, shape='hv'),
-                                                     visible=True if self.top_level_block else 'legendonly',
-                                                     )
-                                          )
+        self.scenario.plot_traces.append(plot_line=go.Scatter(x=self.scenario.dti_eval,
+                                                              y=self.flows.loc[self.scenario.dti_eval, 'total'],
+                                                              mode='lines',
+                                                              name=self.get_legend_entry(),
+                                                              line=dict(width=2, dash=None, shape='hv'),
+                                                              visible=True if self.top_level_block else 'legendonly',
+                                                              ),
+                                         secondary_y=False,
+                                         )
 
 
 class SourceBlock(ElectricBlock):
@@ -573,22 +568,24 @@ class SystemCore(ElectricBlock):
         self.flows['circular'] = self.flows[['dcac', 'acdc']].min(axis=1)
 
     def create_plot_traces(self):
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
-                                                      y=self.flows.loc[self.scenario.dti_eval, 'dcac'],
-                                                      mode='lines',
-                                                      name=f'{self.name} DC-AC power (max. '
-                                                           f'{self.sizes["dcac"].total / 1e3:.1f} kW)',
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      ),
-                                           go.Scatter(x=self.scenario.dti_eval,
-                                                      y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
-                                                      mode='lines',
-                                                      name=f'{self.name} AC-DC power (max. '
-                                                           f'{self.sizes["acdc"].total / 1e3:.1f} kW)',
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      )])
+        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.dti_eval,
+                                                                y=self.flows.loc[self.scenario.dti_eval, 'dcac'],
+                                                                mode='lines',
+                                                                name=f'{self.name} DC-AC power (max. '
+                                                                     f'{self.sizes["dcac"].total / 1e3:.1f} kW)',
+                                                                line=dict(width=2, dash=None, shape='hv'),
+                                                                visible='legendonly',
+                                                                ),
+                                                     go.Scatter(x=self.scenario.dti_eval,
+                                                                y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
+                                                                mode='lines',
+                                                                name=f'{self.name} AC-DC power (max. '
+                                                                     f'{self.sizes["acdc"].total / 1e3:.1f} kW)',
+                                                                line=dict(width=2, dash=None, shape='hv'),
+                                                                visible='legendonly',
+                                                                ),
+                                                     ],
+                                         secondary_ys=[False, False])
 
 
 class RenewableSource(SourceBlock):
@@ -716,20 +713,22 @@ class RenewableSource(SourceBlock):
 
     def create_plot_traces(self):
         super().create_plot_traces()
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
-                                                      y=-1 * self.flows.loc[self.scenario.dti_eval, 'curt'],
-                                                      mode='lines',
-                                                      name=f'{self.name} curtailed power',
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      ),
-                                           go.Scatter(x=self.scenario.dti_eval,
-                                                      y=self.flows.loc[self.scenario.dti_eval, 'pot'],
-                                                      mode='lines',
-                                                      name=f'{self.name} potential power',
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      )])
+        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.dti_eval,
+                                                                y=-1 * self.flows.loc[self.scenario.dti_eval, 'curt'],
+                                                                mode='lines',
+                                                                name=f'{self.name} curtailed power',
+                                                                line=dict(width=2, dash=None, shape='hv'),
+                                                                visible='legendonly',
+                                                                ),
+                                                     go.Scatter(x=self.scenario.dti_eval,
+                                                                y=self.flows.loc[self.scenario.dti_eval, 'pot'],
+                                                                mode='lines',
+                                                                name=f'{self.name} potential power',
+                                                                line=dict(width=2, dash=None, shape='hv'),
+                                                                visible='legendonly',
+                                                                ),
+                                                     ],
+                                         secondary_ys=[False, False])
 
     def get_legend_entry(self):
         return f'{self.name} power (nom. {self.sizes["block"].total / 1e3:.1f} kW)'
@@ -1868,21 +1867,22 @@ class StorageBlock(ElectricBlock):
                                                     freq=self.scenario.timestep_td), 'soc'].dropna()
         data_soh = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
                                                     freq=self.scenario.timestep_td), 'soh'].dropna()
-        self.plot_traces['states'].extend([go.Scatter(x=data_soc.index,
-                                                      y=data_soc,
-                                                      mode='lines',
-                                                      name=f'{self.name} SOC',
-                                                      line=dict(width=2, dash=None),
-                                                      visible='legendonly',
-                                                      ),
-                                           go.Scatter(x=data_soh.index,
-                                                      y=data_soh,
-                                                      mode='lines',
-                                                      name=f'{self.name} SOH',
-                                                      line=dict(width=2, dash=None),
-                                                      visible='legendonly',
-                                                      ),
-                                           ])
+        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=data_soc.index,
+                                                                y=data_soc,
+                                                                mode='lines',
+                                                                name=f'{self.name} SOC',
+                                                                line=dict(width=2, dash=None),
+                                                                visible='legendonly',
+                                                                ),
+                                                     go.Scatter(x=data_soh.index,
+                                                                y=data_soh,
+                                                                mode='lines',
+                                                                name=f'{self.name} SOH',
+                                                                line=dict(width=2, dash=None),
+                                                                visible='legendonly',
+                                                                ),
+                                                     ],
+                                         secondary_ys=[True, True])
 
 
 class StationaryBattery(StorageBlock):
@@ -2350,23 +2350,21 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def create_plot_traces(self):
         super().create_plot_traces()
 
-        legend_ext_ac = f'{self.name} external AC charging power (max. {self.pwr_ext_ac_max / 1e3:.1f} kW)'
-        legend_ext_dc =f'{self.name} external DC charging power (max. {self.pwr_ext_dc_max / 1e3:.1f} kW)'
-        self.plot_traces['powers'].extend([go.Scatter(x=self.scenario.dti_eval,
-                                                      y=self.flows.loc[self.scenario.dti_eval, 'ext_ac'],
-                                                      mode='lines',
-                                                      name=legend_ext_ac,
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      ),
-                                           go.Scatter(x=self.scenario.dti_eval,
-                                                      y=self.flows.loc[self.scenario.dti_eval, 'ext_dc'],
-                                                      mode='lines',
-                                                      name=legend_ext_dc,
-                                                      line=dict(width=2, dash=None, shape='hv'),
-                                                      visible='legendonly',
-                                                      ),
-                                           ])
+        for mode in ['ac', 'dc']:
+            pwr = getattr(self, f'pwr_ext_{mode}_max', 0)
+            if pwr == 0:
+                continue
+
+            legend = f'{self.name} external {mode.upper()} charging power (max. {pwr / 1e3:.1f} kW)'
+            self.scenario.plot_traces.append(
+                plot_line=go.Scatter(x=self.scenario.dti_eval,
+                                     y=self.flows.loc[self.scenario.dti_eval, f'ext_{mode}'],
+                                     mode='lines',
+                                     name=legend,
+                                     line=dict(width=2, dash=None, shape='hv'),
+                                     visible='legendonly',
+                                     ),
+                secondary_y=False)
 
     def get_legend_entry(self):
         return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '

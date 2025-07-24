@@ -12,6 +12,7 @@ import plotly.subplots
 import pprint
 import pytz
 import time
+from typing import List
 
 import timezonefinder
 import traceback
@@ -22,6 +23,7 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
+import plotly.graph_objects as go
 import pyomo.environ as po
 
 from . import blocks
@@ -143,6 +145,38 @@ class SimulationSettings:
     debugmode: bool = False
     rerun_infeasible: bool = True
     key_solcast_api: str = None
+
+
+@dataclass
+class PlotTraces:
+    _plot_traces: List[go.Scatter] = field(default_factory=list,
+                                           repr=False)
+    _secondary_y: List[bool] = field(default_factory=list,
+                                     repr=False)
+
+    def append(self,
+               plot_line: go.Scatter,
+               secondary_y: bool = False) -> None:
+        self._plot_traces.append(plot_line)
+        self._secondary_y.append(secondary_y)
+
+    def extend(self,
+                plot_lines: List[go.Scatter],
+                secondary_ys: List[bool] = None) -> None:
+
+        if not secondary_ys:
+            secondary_ys = [False] * len(plot_lines)
+
+        self._plot_traces.extend(plot_lines)
+        self._secondary_y.extend(secondary_ys)
+
+    @property
+    def plot_lines(self) -> List[go.Scatter]:
+        return self._plot_traces
+
+    @property
+    def secondary_ys(self) -> List[bool]:
+        return self._secondary_y
 
 
 class Scenario:
@@ -434,8 +468,8 @@ class Scenario:
                                      data=0,
                                      dtype=float)
 
-        self.plot_traces = {'powers': [],
-                            'states': []}
+        # Define object to store all traces for plotting
+        self.plot_traces = PlotTraces()
 
         self.result_messages = []
         self.result_summary = []
@@ -575,11 +609,8 @@ class Scenario:
 
         figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
-        figure.add_traces(self.plot_traces['powers'],
-                          secondary_ys=[False] * len(self.plot_traces['powers']))
-
-        figure.add_traces(self.plot_traces['states'],
-                          secondary_ys=[True] * len(self.plot_traces['states']))
+        figure.add_traces(self.plot_traces.plot_lines,
+                          secondary_ys=self.plot_traces.secondary_ys)
 
         if self.strategy == 'go':
             title = f'Global Optimum Results - {self.paths.output.name} - Scenario: {self.name}'
