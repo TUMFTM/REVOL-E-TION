@@ -119,12 +119,8 @@ class SimulationRun:
         self.logger.info(f'{"Reading scenarios from:":<25} {self.paths.scenario}')
         self.logger.info(f'{"Reading input data from:":<25} {self.paths.input}')
         self.logger.info(f'{"Writing results to:":<25} {self.paths.output}')
-
-        # plural extensions
-        pe1 = 's' if self.scenario_num > 1 else ''
-        pe2 = 'es' if self.settings.n_processes > 1 else ''
-        self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
-                         f' with {self.settings.n_processes} process{pe2}')
+        self.logger.info(f'Running {self.scenario_num} scenario{("s" if self.scenario_num > 1 else "")} '
+                         f'with {self.settings.n_processes} process{("es" if self.settings.n_processes > 1 else "")}')
 
         self.execute()
 
