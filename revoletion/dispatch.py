@@ -103,7 +103,7 @@ class SiteDispatcher:
         for disp in self.dispatchers.values():
             disp.postprocess(dti_output=self.scenario.dti_sim_extd)
             if not self.scenario.settings.largescalemode:
-                path_processes = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_demand.csv')
+                path_processes = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_processes.csv')
                 path_log = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_log.csv')
                 disp.save_data(path_processes=path_processes,
                                path_log=path_log)
@@ -303,7 +303,7 @@ class SubFleetDispatcher:
                                 capacity=len(self.params.units))
 
         for name_unit in self.params.units:
-            self.store.put(name_unit)
+            self.store.put([name_unit])
 
         for idx, row in self.processes.iterrows():
             self.env.process(self.define_process(id=idx))

@@ -2062,8 +2062,8 @@ class SubFleet(NonElectricBlock):
                                        params=params,
                                        parent=self) for name in self.unit_names}
 
-        # Create requests object
-        if self.data_source in ['usecases', 'requests']:
+        # Create demand object
+        if self.data_source in ['usecases', 'demand']:
             cls_demand = {'ev': mobility.VehicleDemand,
                           'icev': mobility.VehicleDemand,
                           'mb': mobility.BatteryDemand}.get(self.type_unit)
@@ -2090,7 +2090,7 @@ class SubFleet(NonElectricBlock):
 
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
 
-        elif self.data_source == 'requests':
+        elif self.data_source == 'demand':
 
             self.demand.from_file(
                 path_demand=(self.scenario.paths.input / utils.set_extension(
@@ -2110,7 +2110,7 @@ class SubFleet(NonElectricBlock):
         if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
 
-        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'requests']:
+        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
     def read_input_log(self) -> pd.DataFrame:
