@@ -174,7 +174,8 @@ class SubFleetDispatcher:
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
-                 logger: logging.Logger = None
+                 logger: logging.Logger,
+                 factor_derate: float,  # conservativeness factor on assumed charge power vs actually available power
                  ):
 
         self.dti = dti
@@ -182,6 +183,7 @@ class SubFleetDispatcher:
         self.env = env
         self.params = params
         self.logger = logger
+        self.factor_derate = factor_derate
 
         if self.logger is None:
             self.logger = logging.getLogger('null')
@@ -190,8 +192,6 @@ class SubFleetDispatcher:
         self.time_ref = self.dti.min() - pd.Timedelta(days=1)  # ensures positive step counts
         self.timestep = pd.to_timedelta(self.dti.freq)
         self.timestep_hours = self.timestep.total_seconds() / 3600
-
-        FACTOR_DERATE = 0.9  # conservativeness factor on assumed charge power vs actually available power
 
         log_columns = pd.MultiIndex.from_tuples(
             [(unit, lbl) for unit in self.params.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
@@ -221,7 +221,7 @@ class SubFleetDispatcher:
                      np.sqrt(self.params.eff_roundtrip) -  # storage charging efficiency
                      (self.params.loss_rate_per_hour * self.energy_total)  # maximum self discharge power
                      )
-                    * FACTOR_DERATE)
+                    * self.factor_derate)
 
         else:  # non electric
             self.energy_total = np.inf
@@ -549,7 +549,8 @@ class VehicleDispatcher(SubFleetDispatcher):
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
-                 logger: logging.Logger = None):
+                 logger: logging.Logger = None,
+                 factor_derate: float = 0.9):
 
         if params.rex is not None:
             params.rex_subfleet = scenario.block_registry.get('SubFleet', {}).get(self.params.rex, None)
@@ -575,7 +576,8 @@ class VehicleDispatcher(SubFleetDispatcher):
                          demand=demand,
                          env=env,
                          params=params,
-                         logger=logger)
+                         logger=logger,
+                         factor_derate=factor_derate)
 
     def transfer_rex_processes(self):
         """
@@ -610,7 +612,8 @@ class BatteryDispatcher(SubFleetDispatcher):
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
-                 logger: logging.Logger = None):
+                 logger: logging.Logger = None,
+                 factor_derate: float = 0.9):
 
         params.rex = False
         params.rex_subfleet = None
@@ -620,4 +623,5 @@ class BatteryDispatcher(SubFleetDispatcher):
                          demand=demand,
                          env=env,
                          params=params,
-                         logger=logger)
+                         logger=logger,
+                         factor_derate=factor_derate)
