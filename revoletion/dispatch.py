@@ -50,6 +50,52 @@ class MultiStore(simpy.resources.base.BaseResource):
             event.succeed(elements)
 
 
+class DispatchTimer:
+
+    def __init__(self,
+                 dti_base: pd.DatetimeIndex,
+                 buffer_pre: pd.Timedelta = pd.Timedelta(days=1),
+                 buffer_post: pd.Timedelta = pd.Timedelta(days=28),):
+
+        self.dti_base = dti_base
+        self.step = pd.Timedelta(self.dti_base.freq)
+        self.step_hours = self.step.total_seconds() / 3600
+        self.time_start = self.dti_base.min() - buffer_pre  # ensures positive step counts even with preblocks
+        self.time_end = self.dti_base.max() + self.step + buffer_post
+
+        self.dti = pd.date_range(start=self.time_start,
+                                 end=self.time_end,
+                                 freq=self.dti_base.freq)
+
+    def dt2steps(self,
+                 values: pd.Series):
+        """
+        utility method
+        convert pandas datetime or timedelta values to DES steps
+        """
+
+        if pd.api.types.is_datetime64_any_dtype(values):
+            # ensure that the result is at least 1, as 0 would leave no time for any action in real life
+            return np.maximum(1, np.ceil((values - self.time_start) / self.step).astype(int))
+        elif pd.api.types.is_timedelta64_dtype(values):
+            return np.maximum(1, np.ceil(values / self.step).astype(int))
+        else:
+            raise ValueError(f'Unsupported type {values.dtype} for conversion to steps')
+
+    def steps2dt(self,
+                 steps: pd.Series,
+                 absolute: bool = False):
+        """
+        utility method
+        convert DES steps to pandas datetime or timedelta values
+        """
+        td = pd.to_timedelta(steps * self.step_hours, unit='hour')
+        if not absolute:
+            return td
+        else:
+            return td + self.time_start
+
+
 class SiteDispatcher:
 
     def __init__(self,
@@ -61,14 +107,7 @@ class SiteDispatcher:
         if not self.subfleets:
             return
 
-        # region extend datetimeindex
-        time_start_overhang = scenario.dti_sim[-1] + scenario.dti_sim.freq  # ToDo: use max() and scenario.timestep_td
-        time_end_overhang = time_start_overhang + pd.Timedelta(days=28)
-        self.dti = scenario.dti_sim.union(pd.date_range(start=time_start_overhang,
-                                                        end=time_end_overhang,
-                                                        freq=scenario.dti_sim.freq))
-        # endregion
-
+        self.time = DispatchTimer(dti_base=self.scenario.dti_sim)
         self.env = simpy.Environment()
 
         # region create subfleet dispatchers
@@ -76,7 +115,7 @@ class SiteDispatcher:
         for subfleet_name, subfleet in self.subfleets.items():
             # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
             if subfleet.type_unit in ['mb']:
-                self.dispatchers[subfleet_name] = BatteryDispatcher(dti=self.dti,
+                self.dispatchers[subfleet_name] = BatteryDispatcher(timer=self.time,
                                                                     demand=subfleet.demand,
                                                                     env=self.env,
                                                                     params=SubFleetParams.from_subfleet(subfleet=subfleet),
@@ -85,7 +124,7 @@ class SiteDispatcher:
 
         for subfleet_name, subfleet in self.subfleets.items():
             if subfleet.type_unit in ['ev', 'icev']:
-                self.dispatchers[subfleet_name] = VehicleDispatcher(dti=self.dti,
+                self.dispatchers[subfleet_name] = VehicleDispatcher(timer=self.time,
                                                                     demand=subfleet.demand,
                                                                     env=self.env,
                                                                     params=SubFleetParams.from_subfleet(subfleet=subfleet),
@@ -125,7 +164,7 @@ class SubFleetParams:
     eff_chg: Optional[float] = 1.0
     eff_roundtrip: Optional[float] = 1.0
     loss_rate_per_hour: Optional[float] = 0.0
-    rex: Optional[bool] = False
+    rex: Optional[str] = None
 
     @classmethod
     def from_subfleet(cls, subfleet: 'blocks.SubFleet') -> 'SubFleetParams':
@@ -170,7 +209,7 @@ class SubFleetParams:
 class SubFleetDispatcher:
 
     def __init__(self,
-                 dti: pd.DatetimeIndex,
+                 timer: DispatchTimer,
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
@@ -178,7 +217,7 @@ class SubFleetDispatcher:
                  factor_derate: float,  # conservativeness factor on assumed charge power vs actually available power
                  ):
 
-        self.dti = dti
+        self.time = timer
         self.demand = demand
         self.env = env
         self.params = params
@@ -189,15 +228,11 @@ class SubFleetDispatcher:
             self.logger = logging.getLogger('null')
             self.logger.addHandler(logging.NullHandler())
 
-        self.time_ref = self.dti.min() - pd.Timedelta(days=1)  # ensures positive step counts
-        self.timestep = pd.to_timedelta(self.dti.freq)
-        self.timestep_hours = self.timestep.total_seconds() / 3600
-
         log_columns = pd.MultiIndex.from_tuples(
             [(unit, lbl) for unit in self.params.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
             names=['unit', 'time']
         )
-        self.log = pd.DataFrame(index=self.dti, columns=log_columns)
+        self.log = pd.DataFrame(index=self.time.dti, columns=log_columns)
 
         self.kpis = dict()
 
@@ -232,12 +267,12 @@ class SubFleetDispatcher:
 
         # region calculate a priori process data
         self.processes = self.demand.requests.copy()
-        self.processes['step_req'] = self.dt2steps(values=self.processes['time_req'])
+        self.processes['step_req'] = self.time.dt2steps(values=self.processes['time_req'])
 
-        self.processes['steps_patience'] = self.dt2steps(values=self.processes['dtime_patience'])
+        self.processes['steps_patience'] = self.time.dt2steps(values=self.processes['dtime_patience'])
 
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
-        self.processes['steps_rental'] = self.dt2steps(values=self.processes['dtime_rental'])
+        self.processes['steps_rental'] = self.time.dt2steps(values=self.processes['dtime_rental'])
 
         self.processes['num_prim'] = 1 if self.params.is_vehicle else (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))
 
@@ -273,8 +308,8 @@ class SubFleetDispatcher:
                                                           getattr(self.params.rex_dispatcher, 'pwr_chg_usable', np.inf),
                                                           unit='hour')
 
-        self.processes['steps_chg_prim'] = self.dt2steps(values=self.processes['dtime_chg_prim'])
-        self.processes['steps_chg_rex'] = self.dt2steps(values=self.processes['dtime_chg_rex'])
+        self.processes['steps_chg_prim'] = self.time.dt2steps(values=self.processes['dtime_chg_prim'])
+        self.processes['steps_chg_rex'] = self.time.dt2steps(values=self.processes['dtime_chg_rex'])
 
         self.processes['steps_usage_prim'] = self.processes['steps_chg_prim'] + self.processes['steps_rental']
         self.processes['steps_usage_rex'] = self.processes['steps_chg_rex'] + self.processes['steps_rental']
@@ -307,34 +342,6 @@ class SubFleetDispatcher:
 
         for idx, row in self.processes.iterrows():
             self.env.process(self.define_process(id=idx))
-
-    def dt2steps(self,
-                 values: pd.Series):
-        """
-        utility method
-        convert pandas datetime or timedelta values to DES steps
-        """
-
-        if pd.api.types.is_datetime64_any_dtype(values):
-            # ensure that the result is at least 1, as 0 would leave no time for any action in real life
-            return np.maximum(1, np.ceil((values - self.time_ref) / self.timestep).astype(int))
-        elif pd.api.types.is_timedelta64_dtype(values):
-            return np.maximum(1, np.ceil(values / self.timestep).astype(int))
-        else:
-            raise ValueError(f'Unsupported type {values.dtype} for conversion to steps')
-
-    def steps2dt(self,
-                 steps: pd.Series,
-                 absolute: bool = False):
-        """
-        utility method
-        convert DES steps to pandas datetime or timedelta values
-        """
-        td = pd.to_timedelta(steps * self.timestep_hours, unit='hour')
-        if not absolute:
-            return td
-        else:
-            return td + self.time_ref
 
     def define_process(self,
                        id: int):
@@ -472,6 +479,11 @@ class SubFleetDispatcher:
 
         self.logger.debug(f'{self.params.name} process {id} finished at {self.env.now}')
 
+    def run_standalone(self,
+                       dti_output: pd.DatetimeIndex = None):
+        self.env.run()
+        self.postprocess(dti_output=dti_output)
+
     def postprocess(self,
                     dti_output: pd.DatetimeIndex = None):
         """
@@ -479,7 +491,7 @@ class SubFleetDispatcher:
         convert processes to time based log and calculate KPIs
         """
         if dti_output is None:
-            dti_output = self.dti
+            dti_output = self.time.dti_base
 
         # calculate actual time points from steps
         for point in ['preblock_prim',
@@ -488,8 +500,8 @@ class SubFleetDispatcher:
                       'return',
                       'reavail_prim',
                       'reavail_rex']:
-            self.processes[f'time_{point}'] = self.steps2dt(steps=self.processes[f'step_{point}'],
-                                                            absolute=True)
+            self.processes[f'time_{point}'] = self.time.steps2dt(steps=self.processes[f'step_{point}'],
+                                                                 absolute=True)
 
         # region convert processes to time based log
         self.log.loc[:, (slice(None), 'atbase')] = True
@@ -503,8 +515,8 @@ class SubFleetDispatcher:
 
         for process in [row for id, row in processes_exploded.iterrows() if row['status'] == 'success']:
             unit = process['units_prim']
-            time_end = process['time_return'] - self.timestep
-            power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.timestep_hours)
+            time_end = process['time_return'] - self.time.step
+            power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.time.step_hours)
             dist_avg = process['distance'] / process['steps_rental'] if 'distance' in process else 0
 
             self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
@@ -545,7 +557,7 @@ class SubFleetDispatcher:
 class VehicleDispatcher(SubFleetDispatcher):
 
     def __init__(self,
-                 dti: pd.DatetimeIndex,
+                 timer: DispatchTimer,
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
@@ -572,7 +584,7 @@ class VehicleDispatcher(SubFleetDispatcher):
             params.rex_subfleet = None
             params.rex_dispatcher = None
 
-        super().__init__(dti=dti,
+        super().__init__(timer=timer,
                          demand=demand,
                          env=env,
                          params=params,
@@ -608,7 +620,7 @@ class VehicleDispatcher(SubFleetDispatcher):
 class BatteryDispatcher(SubFleetDispatcher):
 
     def __init__(self,
-                 dti: pd.DatetimeIndex,
+                 timer: DispatchTimer,
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: SubFleetParams,
@@ -619,7 +631,7 @@ class BatteryDispatcher(SubFleetDispatcher):
         params.rex_subfleet = None
         params.rex_dispatcher = None
 
-        super().__init__(dti=dti,
+        super().__init__(timer=timer,
                          demand=demand,
                          env=env,
                          params=params,
