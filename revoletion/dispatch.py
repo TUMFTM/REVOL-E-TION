@@ -484,6 +484,9 @@ class SubFleetDispatcher:
         self.env.run()
         self.postprocess(dti_output=dti_output)
 
+        print(f'Mean FleetUnit usage rate: {self.kpis["rate_usage_mean"]:.2f}')
+        print(f'Mean dispatch failure rate: {self.kpis["rate_failure"]:.2f}')
+
     def postprocess(self,
                     dti_output: pd.DatetimeIndex = None):
         """
