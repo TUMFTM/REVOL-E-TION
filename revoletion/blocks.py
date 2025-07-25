@@ -68,7 +68,6 @@ class BaseBlock(BlockScenarioInterface):
         # add a new column to block.states
         pass
 
-
     def __init__(self,
                  name: str,
                  scenario: simulation.Scenario,
@@ -420,7 +419,6 @@ class SourceBlock(ElectricBlock):
                             horizon: simulation.PredictionHorizon):
         ...
 
-
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
@@ -479,9 +477,8 @@ class SystemCore(ElectricBlock):
                                                    )
 
     def __init__(self,
-                 name : str,
+                 name: str,
                  scenario):
-
         super().__init__(name=name,
                          scenario=scenario,
                          flow_apriori_names=None,
@@ -489,8 +486,7 @@ class SystemCore(ElectricBlock):
                          parent=scenario)
 
     def params_preprocessing(self):
-
-        self.expansion_equal = True if self.invest_acdc =='equal' or self.invest_dcac == 'equal' else False
+        self.expansion_equal = True if self.invest_acdc == 'equal' or self.invest_dcac == 'equal' else False
 
         self.init_equalizable_variables(name_vars=['invest_acdc', 'invest_dcac'])
         self.init_equalizable_variables(name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
@@ -515,8 +511,8 @@ class SystemCore(ElectricBlock):
         self.components['acdc'] = solph.components.Converter(
             inputs={self.components['ac']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['acdc'].opt.spec_ep_invest,
-                                               existing=self.sizes['acdc'].preexisting,
-                                               maximum=self.sizes['acdc'].expansion_max),
+                                                  existing=self.sizes['acdc'].preexisting,
+                                                  maximum=self.sizes['acdc'].expansion_max),
                 variable_costs=self.evaluators['acdc'].opt.spec_ep_operation[horizon.dti_ph])},
             outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['dc']: self.eff['acdc']})
@@ -524,8 +520,8 @@ class SystemCore(ElectricBlock):
         self.components['dcac'] = solph.components.Converter(
             inputs={self.components['dc']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['dcac'].opt.spec_ep_invest,
-                                               existing=self.sizes['dcac'].preexisting,
-                                               maximum=self.sizes['dcac'].expansion_max),
+                                                  existing=self.sizes['dcac'].preexisting,
+                                                  maximum=self.sizes['dcac'].expansion_max),
                 variable_costs=self.evaluators['dcac'].opt.spec_ep_operation[horizon.dti_ph])},
             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['ac']: self.eff['dcac']})
@@ -551,9 +547,9 @@ class SystemCore(ElectricBlock):
         post horizon method
         """
         self.sizes['acdc'].expansion = horizon.results[(self.components['ac'],
-                                                         self.components['acdc'])]['scalars']['invest']
+                                                        self.components['acdc'])]['scalars']['invest']
         self.sizes['dcac'].expansion = horizon.results[(self.components['dc'],
-                                                         self.components['dcac'])]['scalars']['invest']
+                                                        self.components['dcac'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'acdc'] = horizon.results[(self.components['ac'],
                                                                   self.components['acdc'])]['sequences']['flow'][horizon.dti_ch]
@@ -674,8 +670,8 @@ class RenewableSource(SourceBlock):
         self.components['src'] = solph.components.Source(
             outputs={self.components['bus']: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
-                                               existing=self.sizes['block'].preexisting,
-                                               maximum=self.sizes['block'].expansion_max),
+                                                  existing=self.sizes['block'].preexisting,
+                                                  maximum=self.sizes['block'].expansion_max),
                 fix=self.data.loc[horizon.dti_ph, 'power_spec'],
                 variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.dti_ph])}
         )
@@ -690,7 +686,7 @@ class RenewableSource(SourceBlock):
         post horizon method
         """
         self.sizes['block'].expansion = horizon.results[(self.components['src'],
-                                                          self.components['bus'])]['scalars']['invest']
+                                                         self.components['bus'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -928,8 +924,8 @@ class PVSource(RenewableSource):
             if not self.scenario.settings.largescalemode:
                 self.data.to_csv(self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
                                                                                f'{self.name}_log_solcast_raw.csv'),
-                    index=False,
-                )
+                                 index=False,
+                                 )
 
             # calculate period_start as only period_end is given, set as index and remove unnecessary columns
             self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
@@ -946,7 +942,7 @@ class PVSource(RenewableSource):
         elif 'file' in self.data_source:
             # region get data from file
             path_input_file = self.scenario.paths.input / utils.set_extension(filename=self.filename,
-                                                                                  default_extension='.csv')
+                                                                              default_extension='.csv')
 
             # region read input data from timeseries csv with specific power
             if self.data_source == 'file':
@@ -1240,7 +1236,6 @@ class ControllableSource(SourceBlock):
     def __init__(self,
                  name: str,
                  scenario: simulation.Scenario):
-
         super().__init__(name=name,
                          scenario=scenario,
                          params=None,
@@ -1265,8 +1260,8 @@ class ControllableSource(SourceBlock):
         self.components['src'] = solph.components.Source(
             outputs={self.bus_connected: solph.Flow(
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
-                                               existing=self.sizes['block'].preexisting,
-                                               maximum=self.sizes['block'].expansion_max),
+                                                  existing=self.sizes['block'].preexisting,
+                                                  maximum=self.sizes['block'].expansion_max),
                 variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.dti_ph])}
         )
 
@@ -1280,7 +1275,7 @@ class ControllableSource(SourceBlock):
         post horizon method
         """
         self.sizes['block'].expansion = horizon.results[(self.components['src'],
-                                                          self.bus_connected)]['scalars']['invest']
+                                                         self.bus_connected)]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
                                                                  self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
@@ -1372,9 +1367,9 @@ class GridConnection(ElectricBlock):
 
         # Create a series to store peak power values
         self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
-                                                columns=['power'],
-                                                data=self.peak_power_init,  # cumulative variable
-                                                dtype='float64')
+                                         columns=['power'],
+                                         data=self.peak_power_init,  # cumulative variable
+                                         dtype='float64')
 
         def process_period(period):
             dti_period = self.bus_activation[self.bus_activation[period] == 1].index
@@ -1477,7 +1472,7 @@ class GridConnection(ElectricBlock):
                 nominal_capacity=(solph.Investment(ep_costs=(self.evaluators[period].opt.spec_ep_peak
                                                              if self.peakshaving else 0),
                                                    existing=self.peak_periods.loc[period, 'power'])
-                               ),
+                                  ),
                 max=(self.bus_activation.loc[horizon.dti_ph, period]))},
             conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
 
@@ -1513,9 +1508,9 @@ class GridConnection(ElectricBlock):
         post horizon method
         """
         self.sizes['g2s'].expansion = horizon.results[(self.components['bus'],
-                                                        list(self.outflows.values())[0])]['scalars']['invest']
+                                                       list(self.outflows.values())[0])]['scalars']['invest']
         self.sizes['s2g'].expansion = horizon.results[(list(self.inflows.values())[0],
-                                                        self.components['bus'])]['scalars']['invest']
+                                                       self.components['bus'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
                                                     for inflow in self.inflows.values()])
@@ -1591,7 +1586,6 @@ class GridMarket(ElectricBlock):
                  scenario: simulation.PredictionHorizon,
                  params,
                  parent):
-
         super().__init__(name=name,
                          scenario=scenario,
                          flow_apriori_names=None,
@@ -1792,7 +1786,7 @@ class StorageBlock(ElectricBlock):
                 max=params['outflow_max'],
                 fix=params['outflow_fix'],
                 variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be positive)
-                )
+            )
             },
             conversion_factors={self.bus_connected: self.eff['dis_int']})
 
@@ -1803,7 +1797,7 @@ class StorageBlock(ElectricBlock):
             outputs={
                 self.components['bus']: solph.Flow(
                     variable_costs=self.scenario.cost_eps
-                    )},
+                )},
             loss_rate=self.loss_rate_per_hour,
             balanced=params['storage_balanced'],
             initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
@@ -1891,7 +1885,6 @@ class StationaryBattery(StorageBlock):
                  name: str,
                  scenario: simulation.Scenario,
                  ):
-
         super().__init__(name=name,
                          scenario=scenario,
                          flow_apriori_names=None,
@@ -2069,45 +2062,43 @@ class SubFleet(NonElectricBlock):
                                        params=params,
                                        parent=self) for name in self.unit_names}
 
-        # Create demand object
-        if self.data_source in ['usecases', 'demand']:
+        # Create requests object
+        if self.data_source in ['usecases', 'requests']:
             cls_demand = {'ev': mobility.VehicleDemand,
                           'icev': mobility.VehicleDemand,
                           'mb': mobility.BatteryDemand}.get(self.type_unit)
-            self.demand = cls_demand(name_subfleet=self.name,
-                                     dti=self.scenario.dti_sim)
+            self.demand = cls_demand(dti=self.scenario.dti_sim)
 
         if self.data_source == 'usecases':
-
-            self.demand.read_usecase_file(
-                path_usecase_file=self.scenario.paths.input / utils.set_extension(
-                    filename=self.filename,
-                    default_extension='.csv')
-            )
 
             if self.filename_mapper is None:
                 raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
                                  f'Please check the subfleet definition in the scenario file.')
 
-            if not self.scenario.settings.largescalemode:
-                path_demand = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
-                                                                            f'{self.name}_'
-                                                                            f'demand.csv')
+            path_demand = self.scenario.paths.create_result_path(
+                suffix=f'{self.scenario.name}_{self.name}_demand.csv') \
+                if not self.scenario.settings.largescalemode else None
 
-            self.demand.sample(
+            self.demand.from_usecases(
+                path_usecases=self.scenario.paths.input / utils.set_extension(
+                    filename=self.filename,
+                    default_extension='.csv'),
                 path_timeframe_mapper=self.scenario.paths.input / f'{self.filename_mapper}.py',
                 path_demand=path_demand,
+                key_timeframe_mapper=self.name
             )
 
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
 
-        elif self.data_source == 'demand':
-            self.demand.read_demand_file(
+        elif self.data_source == 'requests':
+
+            self.demand.from_file(
                 path_demand=(self.scenario.paths.input / utils.set_extension(
                     filename=self.subfleet.filename,
                     default_extension='.csv')),
                 dti_eval=self.scenario.dti_eval,
             )
+
             self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
 
         elif self.data_source in ['log', 'logfile']:
@@ -2119,7 +2110,7 @@ class SubFleet(NonElectricBlock):
         if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
 
-        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
+        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'requests']:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
     def read_input_log(self) -> pd.DataFrame:
@@ -2134,7 +2125,7 @@ class SubFleet(NonElectricBlock):
                                        scenario=self.scenario,
                                        multiheader=True,
                                        resampling=False)  # Normal resampling cannot be used as consumption must be
-                                                          # meaned, while booleans, distances and dsocs must not.
+        # meaned, while booleans, distances and dsocs must not.
 
         # Timedelta of frequency of log file
         freq_log = pd.infer_freq(df.index).lower()
@@ -2424,8 +2415,8 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
                       'soc_init', 'soc_target', 'soc_return', 'dsoc_buffer',
                       'pwr_chg_max', 'pwr_dis_max', 'pwr_ext_ac_max', 'pwr_ext_dc_max',
                       'eff_storage_roundtrip', 'eff_chg_ac', 'eff_chg_dc', 'eff_dis_ac', 'eff_dis_dc', 'sdr']:
-                if hasattr(self, param):
-                    delattr(self, param)
+            if hasattr(self, param):
+                delattr(self, param)
 
     def pre_scenario(self):
         NonElectricBlock.pre_scenario(self=self)
@@ -2452,4 +2443,3 @@ class MobileBattery(ElectricFleetUnit):
                          scenario=scenario,
                          parent=parent,
                          params=params)
-

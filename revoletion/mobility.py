@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 
+from pathlib import Path
+
 from . import utils
 
 
@@ -22,25 +24,53 @@ class SubFleetDemand:
     abstract class
     """
     def __init__(self,
-                 name_subfleet: str,
                  dti: pd.DatetimeIndex):
 
-        self.name_subfleet = name_subfleet
         self.dti = dti
 
-        self.mapper_timeframe = None  # remains unfilled if demand is read from file
-        self.usecases = None  # remains unfilled if demand is read from file
-        self.demand = pd.DataFrame()  # main DataFrame for demand
+        self.mapper_timeframe = None  # remains unfilled if requests is read from file
+        self.usecases = None  # remains unfilled if requests is read from file
+        self.requests = pd.DataFrame()  # main DataFrame for requests
 
         self.rng = np.random.default_rng()  # random number generator
 
+    def from_usecases(self,
+                      path_usecases: str,
+                      path_timeframe_mapper: str,
+                      key_timeframe_mapper: str,
+                      path_demand: str = None):
+
+        self.read_usecase_file(path_usecases=Path(path_usecases).resolve())
+        self.sample(path_timeframe_mapper=Path(path_timeframe_mapper).resolve(),
+                    key_timeframe_mapper=key_timeframe_mapper)
+
+        if path_demand is not None:
+            self.requests.to_csv(Path(path_demand).resolve())
+
+    def from_file(self,
+                  path_demand=str,
+                  dti_eval=None):
+        """
+        read in a subfleet requests csv file directly
+        """
+        self.requests = pd.read_csv(Path(path_demand).resolve(),
+                                    index_col=0)
+
+        self.requests['time_req'] = pd.to_datetime(self.requests['time_req'], utc=True).dt.tz_convert(self.dti.tz)
+        self.requests['dtime_active'] = pd.to_timedelta(self.requests['dtime_active'])
+        self.requests['dtime_idle'] = pd.to_timedelta(self.requests['dtime_idle'])
+        self.requests['dtime_patience'] = pd.to_timedelta(self.requests['dtime_patience'])
+
+        dti_filter = dti_eval if dti_eval is not None else self.dti
+        self.requests = self.requests.loc[self.requests['time_req'].isin(dti_filter), :]
+
     def read_usecase_file(self,
-                          path_usecase_file: str) -> pd.DataFrame:
+                          path_usecases: str) -> pd.DataFrame:
         """
         read a usecase definition csv file and perform necessary normalization for each timeframe.
         """
 
-        self.usecases = pd.read_csv(path_usecase_file,
+        self.usecases = pd.read_csv(path_usecases,
                                     header=[0,1],
                                     index_col=0)
         for timeframe in self.usecases.columns.levels[0]:
@@ -59,32 +89,32 @@ class SubFleetDemand:
 
     def sample(self,
                path_timeframe_mapper: str,
-               path_demand=None) -> pd.DataFrame:
+               key_timeframe_mapper: str) -> pd.DataFrame:
         """
-        generate demand dataframe from usecases & timeframes including all pre-dispatch information
+        generate requests dataframe from usecases & timeframes including all pre-dispatch information
         """
 
         self.mapper_timeframe = utils.import_module_from_path(
             module_name=path_timeframe_mapper.stem,
             file_path=path_timeframe_mapper)
 
-        # region sample daily total demand from timeframe mapper and lognormal distribution
+        # region sample daily total requests from timeframe mapper and lognormal distribution
         daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.dti.date)))
         daily_total['timeframe'], daily_total['demand_mean'], daily_total['demand_std'] = \
-            self.mapper_timeframe.map_timeframes(daily_total, self.name_subfleet)
+            self.mapper_timeframe.map_timeframes(daily_total, key_timeframe_mapper)
         daily_total['mu'], daily_total['sigma'] = lognormal_params(daily_total['demand_mean'],
                                                                    daily_total['demand_std'])
-        daily_total['demand'] = daily_total.apply(
+        daily_total['requests'] = daily_total.apply(
             lambda row: np.round(self.rng.lognormal(row['mu'], row['sigma'])).astype(int),
             axis=1)
         # endregion
 
         # region get request dates
-        self.demand['date'] = pd.to_datetime(np.repeat(daily_total.index, daily_total['demand']))
-        self.demand['year'] = self.demand['date'].dt.year
-        self.demand['month'] = self.demand['date'].dt.month
-        self.demand['day'] = self.demand['date'].dt.day
-        self.demand['timeframe'] = daily_total.loc[self.demand['date'], 'timeframe'].values
+        self.requests['date'] = pd.to_datetime(np.repeat(daily_total.index, daily_total['requests']))
+        self.requests['year'] = self.requests['date'].dt.year
+        self.requests['month'] = self.requests['date'].dt.month
+        self.requests['day'] = self.requests['date'].dt.day
+        self.requests['timeframe'] = daily_total.loc[self.requests['date'], 'timeframe'].values
 
         def sample_usecases(group):
             return pd.Series(np.random.choice(self.usecases.index.values,
@@ -93,8 +123,8 @@ class SubFleetDemand:
                                               p=self.usecases.loc[:, (group.name, 'rel_prob_norm')]),
                              index=group.index)
 
-        self.demand['usecase'] = None
-        self.demand['usecase'] = self.demand.groupby('timeframe')['usecase'].transform(sample_usecases)
+        self.requests['usecase'] = None
+        self.requests['usecase'] = self.requests.groupby('timeframe')['usecase'].transform(sample_usecases)
         # endregion
 
         # region sample request times of day from usecase distribution
@@ -125,16 +155,16 @@ class SubFleetDemand:
             time_samples = np.round(time_samples / timestep_hours) * timestep_hours
             return pd.DataFrame(data=time_samples, index=group.index)
 
-        self.demand['hour'] = (self.demand.groupby(['usecase', 'timeframe'])
-                               .apply(sample_time_usecase, include_groups=False)
-                               .reset_index(level=[0, 1], drop=True)
-                               .sort_index())
-        self.demand['time_req'] = pd.to_datetime(self.demand[['year', 'month', 'day', 'hour']])
-        self.demand.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
-        self.demand['time_req'] = self.demand['time_req'].dt.tz_localize(self.dti.tz,
-                                                                         ambiguous='NaT',  # fall
-                                                                         nonexistent='shift_forward')  # spring
-        self.demand.dropna(axis='index', subset=['time_req'], inplace=True)
+        self.requests['hour'] = (self.requests.groupby(['usecase', 'timeframe'])
+                                 .apply(sample_time_usecase, include_groups=False)
+                                 .reset_index(level=[0, 1], drop=True)
+                                 .sort_index())
+        self.requests['time_req'] = pd.to_datetime(self.requests[['year', 'month', 'day', 'hour']])
+        self.requests.drop(['date', 'year', 'month', 'day', 'hour'], inplace=True, axis=1)
+        self.requests['time_req'] = self.requests['time_req'].dt.tz_localize(self.dti.tz,
+                                                                             ambiguous='NaT',  # fall
+                                                                             nonexistent='shift_forward')  # spring
+        self.requests.dropna(axis='index', subset=['time_req'], inplace=True)
         # endregion
 
         self.sample_energy_demand()  # specific to type of subfleet units (battery or vehicle)
@@ -149,10 +179,10 @@ class SubFleetDemand:
             idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit='hour')
             return pd.Series(idle, index=group.index)
 
-        self.demand['dtime_idle'] = None
-        self.demand['dtime_idle'] = (self.demand
-                                     .groupby(['usecase', 'timeframe'])['dtime_idle']
-                                     .transform(sample_idle_usecase))
+        self.requests['dtime_idle'] = None
+        self.requests['dtime_idle'] = (self.requests
+                                       .groupby(['usecase', 'timeframe'])['dtime_idle']
+                                       .transform(sample_idle_usecase))
         # endregion
 
         # region get patience
@@ -167,32 +197,12 @@ class SubFleetDemand:
                                        unit='hour')
             return pd.DataFrame({'patience_primary': [patience] * len(group)}, index=group.index)
 
-        self.demand['dtime_patience'] = (self.demand
-                                         .groupby(['usecase','timeframe'])
-                                         .apply(get_patience_usecase, include_groups=False)
-                                         .reset_index(level=[0, 1], drop=True)
-                                         .sort_index())
+        self.requests['dtime_patience'] = (self.requests
+                                           .groupby(['usecase','timeframe'])
+                                           .apply(get_patience_usecase, include_groups=False)
+                                           .reset_index(level=[0, 1], drop=True)
+                                           .sort_index())
         # endregion
-
-        if path_demand is not None:
-            self.demand.to_csv(path_demand)
-
-    def read_demand_file(self,
-                         path_demand=str,
-                         dti_eval=None):
-        """
-        read in a subfleet demand csv file directly
-        """
-        self.demand = pd.read_csv(path_demand,
-                                  index_col=0)
-
-        self.demand['time_req'] = pd.to_datetime(self.demand['time_req'], utc=True).dt.tz_convert(self.dti.tz)
-        self.demand['dtime_active'] = pd.to_timedelta(self.demand['dtime_active'])
-        self.demand['dtime_idle'] = pd.to_timedelta(self.demand['dtime_idle'])
-        self.demand['dtime_patience'] = pd.to_timedelta(self.demand['dtime_patience'])
-
-        dti_filter = dti_eval if dti_eval is not None else self.dti
-        self.demand = self.demand.loc[self.demand['time_req'].isin(dti_filter), :]
 
 
 class BatteryDemand(SubFleetDemand):
@@ -215,10 +225,10 @@ class BatteryDemand(SubFleetDemand):
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
 
-        self.demand['energy_req'] = None
-        self.demand['energy_req'] = (self.demand
-                                     .groupby(['usecase', 'timeframe'])['energy_req']
-                                     .transform(sample_energy_usecase))
+        self.requests['energy_req'] = None
+        self.requests['energy_req'] = (self.requests
+                                       .groupby(['usecase', 'timeframe'])['energy_req']
+                                       .transform(sample_energy_usecase))
 
         def calc_time_active_usecase(group):
             """
@@ -231,11 +241,11 @@ class BatteryDemand(SubFleetDemand):
             dtime_active = pd.to_timedelta(group['energy_req'] / power, unit='hour')
             return pd.Series(dtime_active, index=group.index)
 
-        self.demand['dtime_active'] = (self.demand
-                                       .groupby(['usecase', 'timeframe'])
-                                       .apply(calc_time_active_usecase, include_groups=False)
-                                       .reset_index(level=[0, 1], drop=True)
-                                       .sort_index())
+        self.requests['dtime_active'] = (self.requests
+                                         .groupby(['usecase', 'timeframe'])
+                                         .apply(calc_time_active_usecase, include_groups=False)
+                                         .reset_index(level=[0, 1], drop=True)
+                                         .sort_index())
 
 
 class VehicleDemand(SubFleetDemand):
@@ -258,8 +268,8 @@ class VehicleDemand(SubFleetDemand):
             dist = self.rng.lognormal(p1, p2, len(group))
             return pd.Series(dist, index=group.index)
 
-        self.demand['distance'] = np.nan
-        self.demand['distance'] = (self.demand.groupby(
+        self.requests['distance'] = np.nan
+        self.requests['distance'] = (self.requests.groupby(
             ['usecase', 'timeframe'])['distance'].transform(sample_distance_usecase))
 
         def get_consumption_speed_usecase(group):
@@ -275,12 +285,12 @@ class VehicleDemand(SubFleetDemand):
                                       'speed_avg': [speed_avg] * len(group)},
                                 index=group.index)
 
-        self.demand[['consumption', 'speed_avg']] = (self.demand.groupby(['usecase', 'timeframe'])
-                                                     .apply(get_consumption_speed_usecase, include_groups=False)
-                                                     .reset_index(level=[0, 1], drop=True)
-                                                     .sort_index())
+        self.requests[['consumption', 'speed_avg']] = (self.requests.groupby(['usecase', 'timeframe'])
+                                                       .apply(get_consumption_speed_usecase, include_groups=False)
+                                                       .reset_index(level=[0, 1], drop=True)
+                                                       .sort_index())
 
-        self.demand['dtime_active'] = pd.to_timedelta(self.demand['distance'] / self.demand['speed_avg'],
-                                                      unit='hour')
+        self.requests['dtime_active'] = pd.to_timedelta(self.requests['distance'] / self.requests['speed_avg'],
+                                                        unit='hour')
 
-        self.demand['energy_req'] = self.demand['distance'] * self.demand['consumption']
+        self.requests['energy_req'] = self.requests['distance'] * self.requests['consumption']
