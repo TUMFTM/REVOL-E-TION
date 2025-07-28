@@ -3,6 +3,7 @@
 import logging
 import os
 import statistics
+import time
 
 import numpy as np
 import pandas as pd
@@ -10,44 +11,54 @@ import simpy
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, List, Tuple, Any, Optional
 
 from . import blocks
 from . import utils
 
 
-class MultiStoreGet(simpy.resources.base.Get):
-    def __init__(self, store, num=1):
-        self.amount = num
-        super(MultiStoreGet, self).__init__(store)
-
-
-class MultiStorePut(simpy.resources.base.Put):
+class MultiFilterStorePut(simpy.resources.base.Put):
     def __init__(self, store, items):
-        self.items = items
-        super(MultiStorePut, self).__init__(store)
+        # Add timestamps on put to track when items entered
+        now = store._env.now
+        self.items = [(item, now) for item in items]
+        super().__init__(store)
 
 
-class MultiStore(simpy.resources.base.BaseResource):
+class MultiFilterStoreGet(simpy.resources.base.Get):
+    def __init__(self, store, num=1, filter: Callable[[Tuple[Any, float]], bool] = lambda x: True):
+        self.amount = num
+        self.filter = filter
+        super().__init__(store)
+
+
+class MultiFilterStore(simpy.resources.base.BaseResource):
     def __init__(self,
                  env: simpy.Environment,
-                 capacity: int):
-        super(MultiStore, self).__init__(env, capacity)
-        self.items = []
+                 capacity: int,
+                 initial=None):
+        super().__init__(env, capacity)
+        self.items = [(item, env.now) for item in (initial or [])]
 
-    put = simpy.core.BoundClass(MultiStorePut)
-    get = simpy.core.BoundClass(MultiStoreGet)
+    put = simpy.core.BoundClass(MultiFilterStorePut)
+    get = simpy.core.BoundClass(MultiFilterStoreGet)
 
     def _do_put(self, event):
         if len(self.items) + len(event.items) <= self._capacity:
-            self.items.extend(event.items)
+            self.items.extend(event.items)  # FIFO behavior
             event.succeed()
 
     def _do_get(self, event):
-        if self.items and event.amount <= len(self.items):
-            elements = self.items[:event.amount]
-            self.items = self.items[event.amount:]
-            event.succeed(elements)
+        filtered = list(filter(event.filter, self.items))
+        if len(filtered) >= event.amount:
+            selected = filtered[:event.amount]
+
+            # Remove these from self.items (match by identity)
+            for item in selected:
+                self.items.remove(item)
+
+            # Return only the items, not their timestamps
+            event.succeed([item for item, timestamp in selected])
 
 
 class DispatchTimer:
@@ -94,6 +105,8 @@ class DispatchTimer:
             return td
         else:
             return td + self.time_start
+
+
 
 
 class DispatchEnvironment:
@@ -262,40 +275,40 @@ class GroupDispatcher:
 
         self.kpis = dict()
 
-        self.store = MultiStore(env=self.env,
-                                capacity=len(unit_names))
-        for name in unit_names:
-            self.store.put([name])
+        self.stores = {sfparams.name: MultiFilterStore(env=self.env,
+                                                       capacity=len(sfparams.units),
+                                                       initial=list(sfparams.units),)
+                       for sfparams in self.params.subfleet_params.values()}
 
         self.preprocess_dispatch()
 
     def preprocess_dispatch(self):
 
         # region estimate usable energy and power
-        for sfname, sfparams in self.params.subfleet_params.items():
+        for sfp in self.params.subfleet_params.values():
 
-            if sfparams.is_electric:
-                sfparams.energy_total = sfparams.size_unit
-                sfparams.dsoc_usable = sfparams.soc_upper - sfparams.soc_lower
-                if sfparams.dsoc_usable <= 0:
-                    raise ValueError(f'Usable dSOC for subfleet {sfparams.name} is zero or negative. '
+            if sfp.is_electric:
+                sfp.energy_total = sfp.size_unit
+                sfp.dsoc_usable = sfp.soc_upper - sfp.soc_lower
+                if sfp.dsoc_usable <= 0:
+                    raise ValueError(f'Usable dSOC for subfleet {sfp.name} is zero or negative. '
                                      f'Check SOC targets and aging.')
-                sfparams.energy_usable = (sfparams.dsoc_usable *
-                                          sfparams.energy_total *
-                                          np.sqrt(sfparams.params.eff_roundtrip))
-                sfparams.pwr_chg_usable = (
-                        (sfparams.params.pwr_chg *
-                         sfparams.params.eff_chg *  # charger efficiency
-                         np.sqrt(sfparams.params.eff_roundtrip) -  # storage charging efficiency
-                         (sfparams.params.loss_rate_per_hour * sfparams.energy_total)  # maximum self discharge power
+                sfp.energy_usable = (sfp.dsoc_usable *
+                                          sfp.energy_total *
+                                          np.sqrt(sfp.params.eff_roundtrip))
+                sfp.pwr_chg_usable = (
+                        (sfp.params.pwr_chg *
+                         sfp.params.eff_chg *  # charger efficiency
+                         np.sqrt(sfp.params.eff_roundtrip) -  # storage charging efficiency
+                         (sfp.params.loss_rate_per_hour * sfp.energy_total)  # maximum self discharge power
                          )
-                        * sfparams.factor_derate)
+                        * sfp.factor_derate)
 
             else:  # non electric
-                sfparams.energy_total = np.inf
-                sfparams.energy_usable = np.inf
-                sfparams.dsoc_usable = 1
-                sfparams.pwr_chg_usable = np.inf
+                sfp.energy_total = np.inf
+                sfp.energy_usable = np.inf
+                sfp.dsoc_usable = 1
+                sfp.pwr_chg_usable = np.inf
         # endregion
 
         # region calculate a priori and subfleet agnostic process data
@@ -314,76 +327,103 @@ class GroupDispatcher:
         self.processes['steps_patience'] = self.time.dt2steps(values=self.processes['dtime_patience'])
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
         self.processes['steps_rental'] = self.time.dt2steps(values=self.processes['dtime_rental'])
-        self.processes['num_prim'] = (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))\
-            if not self.params.is_vehicle_group else 1
 
-        # preblock time is required a priori, but rex status is not known -> initially assume no rex
-        self.processes['energy_usable_est'] = (
-                self.energy_usable
-        self.processes['dsoc_prim_']
+        if self.params.is_vehicle_group:
+            self.processes['num_prim'] = 1
+        else:  # Battery DispatchGroup
+            self.processes['num_prim'] = (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))
 
-
-
-        if self.params.rex:
-            energy_missing = (self.processes['energy_req'] - self.energy_usable).clip(lower=0)
-            self.processes['num_rex'] = np.ceil(energy_missing / self.params.rex_dispatcher.energy_usable).astype(int)
-            self.processes['request_rex'] = self.processes['num_rex'] > 0
-        else:
-            self.processes['num_rex'] = 0
-            self.processes['request_rex'] = False
-            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable)
-
-        self.processes['energy_usable'] = (
-                self.energy_usable + (self.processes['num_rex'] * getattr(self.params.rex_dispatcher, 'energy_usable', 0)))
-        self.processes['energy_total'] = (
-                self.energy_total + (self.processes['num_rex'] * getattr(self.params.rex_dispatcher, 'energy_total', 0)))
-
-        utilization = self.processes['energy_req'] / self.processes['energy_usable']
-        self.processes['dsoc_prim'] = self.dsoc_usable * utilization
-        self.processes['dsoc_rex'] = getattr(self.params.rex_dispatcher, 'dsoc_usable', 0) * utilization
-
-        if self.params.is_electric:
-            self.processes['energy_req_prim'] = self.processes['dsoc_prim'] * self.energy_total
-            self.processes['energy_req_rex'] = self.processes['dsoc_rex'] * getattr(self.params.rex_dispatcher, 'energy_total', 0)
-        else:
-            self.processes['energy_req_prim'] = self.processes['energy_req']
-            self.processes['energy_req_rex'] = 0
-
-        self.processes['dtime_chg_prim'] = pd.to_timedelta(self.processes['energy_req_prim'] /
-                                                           self.pwr_chg_usable,
-                                                           unit='hour')
-        self.processes['dtime_chg_rex'] = pd.to_timedelta(self.processes['energy_req_rex'] /
-                                                          getattr(self.params.rex_dispatcher, 'pwr_chg_usable', np.inf),
-                                                          unit='hour')
-
-        self.processes['steps_chg_prim'] = self.time.dt2steps(values=self.processes['dtime_chg_prim'])
-        self.processes['steps_chg_rex'] = self.time.dt2steps(values=self.processes['dtime_chg_rex'])
-
-        self.processes['steps_usage_prim'] = self.processes['steps_chg_prim'] + self.processes['steps_rental']
-        self.processes['steps_usage_rex'] = self.processes['steps_chg_rex'] + self.processes['steps_rental']
-
-        self.processes['steps_preblock_prim'] = (self.processes['steps_chg_prim']
-                                                 if (self.params.is_electric and self.params.is_vehicle)
-                                                 else 0)
-        self.processes['steps_postblock_prim'] = (self.processes['steps_chg_prim']
-                                                  if (self.params.is_electric and not self.params.is_vehicle)
-                                                  else 0)
-
-        self.processes['steps_preblock_rex'] = 0
-        self.processes['steps_postblock_rex'] = self.processes['steps_chg_rex']
-
-        self.processes['step_preblock_prim'] = self.processes['step_req'] - self.processes['steps_preblock_prim']
-        self.processes['step_postblock_prim'] = self.processes['step_req'] + self.processes['steps_postblock_prim']
-        self.processes['step_preblock_rex'] = self.processes['step_req'] - self.processes['steps_preblock_rex']
-        self.processes['step_postblock_rex'] = self.processes['step_req'] + self.processes['steps_postblock_rex']
-
-        self.processes.sort_values(by='step_preblock_prim',
+        self.processes.sort_values(by='step_req',
                                    inplace=True,
                                    ignore_index=True)
+
+        for id, row in self.processes.iterrows():
+            self.env.process(self.process_dispatch(id=id))
         # endregion
 
-        for idx, row in self.processes.iterrows():
-            self.env.process(self.define_process(id=idx))
+    def request_cascade(self,
+                        id: int):
+
+        result_prim = [False]
+        result_rex = [False]
+        request_prim = False
+        request_rex = False
+
+        for store_name, store in self.stores.items():
+
+            sfp = self.params.subfleet_params[store_name]
+            process = self.processes[id].to_dict()
+
+            if sfp.rex is not None:
+                sfp_rex = sfp.rex_dispatcher.params.subfleet_params[sfp.rex]
+                store_rex = sfp.rex_dispatcher.stores[sfp.rex]
+                energy_req = process['energy_req']
+                energy_missing = (energy_req - sfp.energy_usable).clip(lower=0)
+                num_rex = np.ceil(energy_missing / sfp_rex.energy_usable).astype(int)
+            else:
+                sfp_rex = None
+                num_rex = 0
+                energy_req = process['energy_req'].clip(upper=sfp.energy_usable)
+
+            energy_usable = (process['num_prim'] * sfp.energy_usable) + \
+                            (num_rex * getattr(sfp_rex, 'energy_usable', 0))
+
+            energy_total = (process['num_prim'] * sfp.energy_total) + \
+                           (num_rex * getattr(sfp_rex, 'energy_total', 0))
+
+            utilization = energy_req / energy_usable
+            dsoc_prim = sfp.dsoc_usable * utilization
+            dsoc_rex = getattr(sfp_rex, 'dsoc_usable', 0) * utilization
+
+            if sfp.is_electric:
+                energy_req_prim = dsoc_prim * sfp.energy_total
+                energy_req_rex = dsoc_rex * getattr(sfp_rex, 'energy_total', 0)
+            else:
+                energy_req_prim = process['energy_req']
+                energy_req_rex = 0
+
+            dtime_chg_prim = pd.to_timedelta(energy_req_prim /
+                                             sfp.pwr_chg_usable,
+                                             unit='hour')
+            dtime_chg_rex = pd.to_timedelta(energy_req_rex /
+                                            getattr(sfp_rex, 'pwr_chg_usable', np.inf),
+                                            unit='hour')
+
+            steps_chg_prim = self.time.dt2steps(values=dtime_chg_prim)
+            steps_chg_rex = self.time.dt2steps(values=dtime_chg_rex)
+
+            steps_usage_prim = steps_chg_prim + process['steps_rental']
+            steps_usage_rex = steps_chg_rex + process['steps_rental']
+
+            def min_steps_since_put(steps: int):
+                def _filter(item):
+                    _, ts_put = item
+                    return (self.env.now - ts_put) >= steps
+                return _filter
+
+            request_prim = store.get(
+                amount=process['num_prim'],
+                filter=min_steps_since_put(steps=steps_chg_prim)
+            )
+
+            yield self.env.timeout(0) # resolve immediate triggers
+
+            if request_prim.triggered:
+                result_prim = request_prim.value
+                store_selected = store_name
+                break  # got resources
+            else:
+                request_prim.cancel()
+                continue  # try next store
+
+            if num_rex > 0:
+                request_rex = store_rex.get(amount=process['num_rex'],
+                                            filter=min_steps_since_put(steps=steps_chg_rex))
+                result_rex = yield request_rex
+
+            if (request_prim in result_prim) and (request_rex in result_rex):
+
+
 
     def process_dispatch(self,
                          id: int):
@@ -392,27 +432,14 @@ class GroupDispatcher:
         actual definition of the runtime process steps for DES
         """
 
-        result_prim = [False]
-        result_rex = [False]
-        request_prim = False
-        request_rex = False
 
 
-        # region request primary resource(s) at preblock time
-        yield self.env.timeout(self.processes.at[id, 'step_preblock_prim'])
+        yield env.timeout(self.processes.at[id, 'step_req'])
 
-        self.logger.debug(f'{self.params.name} process {id} preblocked at {self.env.now}')
-
-        with self.store.get(self.processes.at[id, 'num_prim']) as request_prim:
-            result_prim = (yield request_prim | self.env.timeout(self.processes.at[id, 'steps_patience']))
-
+        store_prim, items_prim = yield from self.request_cascade(id_process=id)
         self.logger.debug(f'{self.params.name} process {id} requested {self.processes.at[id, "num_prim"]}'
                           f' primary resource(s) at {self.env.now}')
-        # endregion
 
-        yield self.env.timeout(self.processes.at[id, 'steps_preblock_prim'])
-
-        # region request rex resource(s) at actual request time
         if self.processes.at[id, 'request_rex']:
             with self.params.rex_dispatcher.store.get(self.processes.at[id, 'num_rex']) as request_rex:
                 result_rex = yield request_rex | self.env.timeout(self.processes.at[id, 'steps_patience'])
