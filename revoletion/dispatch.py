@@ -227,7 +227,7 @@ class GroupDispatcher:
                  timer: DispatchTimer,
                  demand: pd.DataFrame,
                  env: simpy.Environment,
-                 params: SubFleetParams,
+                 params: DispatchGroupParams | SubFleetParams,
                  logger: logging.Logger,
                  factor_derate: float,  # conservativeness factor on assumed charge power vs actually available power
                  ):
@@ -242,6 +242,12 @@ class GroupDispatcher:
         if self.logger is None:
             self.logger = logging.getLogger('null')
             self.logger.addHandler(logging.NullHandler())
+
+        # single subfleet given
+        if isinstance(self.params, SubFleetParams):
+            self.params = DispatchGroupParams(name=f'{self.params.name}_group',
+                                              subfleet_params=self.params,
+                                              is_vehicle_group=(self.params.type_unit in ['ev', 'mb']))
 
         log_columns = pd.MultiIndex.from_tuples(
             [(unit, lbl) for unit in self.params.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
