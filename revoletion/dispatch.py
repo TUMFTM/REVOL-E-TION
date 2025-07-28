@@ -45,8 +45,8 @@ class MultiStore(simpy.resources.base.BaseResource):
 
     def _do_get(self, event):
         if self.items and event.amount <= len(self.items):
-            elements = self.items[(len(self.items) - event.amount - 0):]
-            self.items = self.items[:(len(self.items) - event.amount - 0)]
+            elements = self.items[:event.amount]
+            self.items = self.items[event.amount:]
             event.succeed(elements)
 
 
@@ -172,7 +172,6 @@ class SubFleetParams:
     units: list  # either list of names of dict {name:object}
     size_unit: float
     pwr_chg: float
-    is_vehicle: bool = None
     is_electric: bool = None
     soc_upper: Optional[float] = 1.0
     soc_lower: Optional[float] = 0.0
@@ -244,16 +243,17 @@ class GroupDispatcher:
             self.logger = logging.getLogger('null')
             self.logger.addHandler(logging.NullHandler())
 
-        # single subfleet given
+        # SubFleetParams object given -> convert to single subfleet DispatchGroupParams
         if isinstance(self.params, SubFleetParams):
             self.params = DispatchGroupParams(name=f'{self.params.name}_group',
                                               subfleet_params={self.params.name: self.params},
                                               is_vehicle_group=(self.params.type_unit in ['ev', 'mb']))
 
+        unit_names = [unit for sfparams in self.params.subfleet_params for unit in sfparams.units]
         log_cols = pd.MultiIndex.from_tuples(
             [
                 (name, col)
-                for name in [unit for sfparams in self.params.subfleet_params for unit in sfparams.units]
+                for name in unit_names
                 for col in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']
             ],
             names=['unit', 'time']
@@ -261,6 +261,15 @@ class GroupDispatcher:
         self.log = pd.DataFrame(index=self.time.dti, columns=log_cols)
 
         self.kpis = dict()
+
+        self.store = MultiStore(env=self.env,
+                                capacity=len(unit_names))
+        for name in unit_names:
+            self.store.put([name])
+
+        self.preprocess_dispatch()
+
+    def preprocess_dispatch(self):
 
         # region estimate usable energy and power
         for sfname, sfparams in self.params.subfleet_params.items():
@@ -289,16 +298,31 @@ class GroupDispatcher:
                 sfparams.pwr_chg_usable = np.inf
         # endregion
 
-        # region calculate a priori process data
+        # region calculate a priori and subfleet agnostic process data
         self.processes = self.demand.requests.copy()
+
+        #initialize process as unsuccessful
+        self.processes['status'] = 'unprocessed'
+        self.processes['units_prim'] = None
+        self.processes['units_rex'] = None
+        result_prim = [False]
+        result_rex = [False]
+        request_prim = False
+        request_rex = False
+
         self.processes['step_req'] = self.time.dt2steps(values=self.processes['time_req'])
-
         self.processes['steps_patience'] = self.time.dt2steps(values=self.processes['dtime_patience'])
-
         self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
         self.processes['steps_rental'] = self.time.dt2steps(values=self.processes['dtime_rental'])
+        self.processes['num_prim'] = (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))\
+            if not self.params.is_vehicle_group else 1
 
-        self.processes['num_prim'] = 1 if self.params.is_vehicle else (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))
+        # preblock time is required a priori, but rex status is not known -> initially assume no rex
+        self.processes['energy_usable_est'] = (
+                self.energy_usable
+        self.processes['dsoc_prim_']
+
+
 
         if self.params.rex:
             energy_missing = (self.processes['energy_req'] - self.energy_usable).clip(lower=0)
@@ -358,31 +382,21 @@ class GroupDispatcher:
                                    ignore_index=True)
         # endregion
 
-        self.store = MultiStore(env=self.env,
-                                capacity=len(self.params.units))
-
-        for name_unit in self.params.units:
-            self.store.put([name_unit])
-
         for idx, row in self.processes.iterrows():
             self.env.process(self.define_process(id=idx))
 
-    def define_process(self,
-                       id: int):
+    def process_dispatch(self,
+                         id: int):
         """
         runtime DES method
         actual definition of the runtime process steps for DES
         """
-        # region initialize process as unsuccessful
-        self.processes['status'] = 'unprocessed'
-        self.processes['units_prim'] = None
-        self.processes['units_rex'] = None
 
         result_prim = [False]
         result_rex = [False]
         request_prim = False
         request_rex = False
-        # endregion
+
 
         # region request primary resource(s) at preblock time
         yield self.env.timeout(self.processes.at[id, 'step_preblock_prim'])
