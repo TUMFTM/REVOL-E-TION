@@ -239,6 +239,7 @@ class GroupDispatcher:
         self.logger = logger
         self.factor_derate = factor_derate
 
+        # create logger for standalone operation
         if self.logger is None:
             self.logger = logging.getLogger('null')
             self.logger.addHandler(logging.NullHandler())
@@ -246,44 +247,46 @@ class GroupDispatcher:
         # single subfleet given
         if isinstance(self.params, SubFleetParams):
             self.params = DispatchGroupParams(name=f'{self.params.name}_group',
-                                              subfleet_params=self.params,
+                                              subfleet_params={self.params.name: self.params},
                                               is_vehicle_group=(self.params.type_unit in ['ev', 'mb']))
 
-        log_columns = pd.MultiIndex.from_tuples(
-            [(unit, lbl) for unit in self.params.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
+        log_cols = pd.MultiIndex.from_tuples(
+            [
+                (name, col)
+                for name in [unit for sfparams in self.params.subfleet_params for unit in sfparams.units]
+                for col in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']
+            ],
             names=['unit', 'time']
         )
-        self.log = pd.DataFrame(index=self.time.dti, columns=log_columns)
+        self.log = pd.DataFrame(index=self.time.dti, columns=log_cols)
 
         self.kpis = dict()
 
         # region estimate usable energy and power
-        if self.params.is_electric:
+        for sfname, sfparams in self.params.subfleet_params.items():
 
-            self.energy_total = self.params.size_unit
-            self.dsoc_usable = self.params.soc_upper - self.params.soc_lower
+            if sfparams.is_electric:
+                sfparams.energy_total = sfparams.size_unit
+                sfparams.dsoc_usable = sfparams.soc_upper - sfparams.soc_lower
+                if sfparams.dsoc_usable <= 0:
+                    raise ValueError(f'Usable dSOC for subfleet {sfparams.name} is zero or negative. '
+                                     f'Check SOC targets and aging.')
+                sfparams.energy_usable = (sfparams.dsoc_usable *
+                                          sfparams.energy_total *
+                                          np.sqrt(sfparams.params.eff_roundtrip))
+                sfparams.pwr_chg_usable = (
+                        (sfparams.params.pwr_chg *
+                         sfparams.params.eff_chg *  # charger efficiency
+                         np.sqrt(sfparams.params.eff_roundtrip) -  # storage charging efficiency
+                         (sfparams.params.loss_rate_per_hour * sfparams.energy_total)  # maximum self discharge power
+                         )
+                        * sfparams.factor_derate)
 
-            if self.dsoc_usable <= 0:
-                raise ValueError(f'Usable dSOC for subfleet {self.params.name} is zero or negative. '
-                                 f'Check SOC targets and aging.')
-
-            self.energy_usable = (self.dsoc_usable *
-                                  self.energy_total *
-                                  np.sqrt(self.params.eff_roundtrip))
-
-            self.pwr_chg_usable = (
-                    (self.params.pwr_chg *
-                     self.params.eff_chg *  # charger efficiency
-                     np.sqrt(self.params.eff_roundtrip) -  # storage charging efficiency
-                     (self.params.loss_rate_per_hour * self.energy_total)  # maximum self discharge power
-                     )
-                    * self.factor_derate)
-
-        else:  # non electric
-            self.energy_total = np.inf
-            self.energy_usable = np.inf
-            self.dsoc_usable = 1
-            self.pwr_chg_usable = np.inf
+            else:  # non electric
+                sfparams.energy_total = np.inf
+                sfparams.energy_usable = np.inf
+                sfparams.dsoc_usable = 1
+                sfparams.pwr_chg_usable = np.inf
         # endregion
 
         # region calculate a priori process data
@@ -578,7 +581,7 @@ class GroupDispatcher:
             self.log.to_csv(Path(path_log).resolve())
 
 
-class VehicleDispatcher(SubFleetDispatcher):
+class VehicleDispatcher(GroupDispatcher):
 
     def __init__(self,
                  timer: DispatchTimer,
@@ -641,7 +644,7 @@ class VehicleDispatcher(SubFleetDispatcher):
             ignore_index=True)
 
 
-class BatteryDispatcher(SubFleetDispatcher):
+class BatteryDispatcher(GroupDispatcher):
 
     def __init__(self,
                  timer: DispatchTimer,
