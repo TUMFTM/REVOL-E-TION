@@ -96,41 +96,35 @@ class DispatchTimer:
             return td + self.time_start
 
 
-class SiteDispatcher:
+class DispatchEnvironment:
 
     def __init__(self,
                  scenario: 'simulation.Scenario'):
 
         self.scenario = scenario
 
-        self.subfleets = self.scenario.block_registry.get('SubFleetDispatch', {})
-        if not self.subfleets:
-            return
-
+        self.groups = self.scenario.block_registry.get('DispatchGroupActive', {})
         self.time = DispatchTimer(dti_base=self.scenario.dti_sim)
         self.env = simpy.Environment()
-
-        # region create subfleet dispatchers
         self.dispatchers = dict()
-        for subfleet_name, subfleet in self.subfleets.items():
-            # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
-            if subfleet.type_unit in ['mb']:
-                self.dispatchers[subfleet_name] = BatteryDispatcher(timer=self.time,
-                                                                    demand=subfleet.demand,
-                                                                    env=self.env,
-                                                                    params=SubFleetParams.from_subfleet(subfleet=subfleet),
-                                                                    logger=self.scenario.logger)
-                subfleet.dispatcher = self.dispatchers[subfleet_name]
 
-        for subfleet_name, subfleet in self.subfleets.items():
-            if subfleet.type_unit in ['ev', 'icev']:
-                self.dispatchers[subfleet_name] = VehicleDispatcher(timer=self.time,
-                                                                    demand=subfleet.demand,
-                                                                    env=self.env,
-                                                                    params=SubFleetParams.from_subfleet(subfleet=subfleet),
-                                                                    logger=self.scenario.logger)
-                subfleet.dispatcher = self.dispatchers[subfleet_name]
+        # region create individual dispatchers
+        # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
+        for name, group in [(n, g) for n, g in self.groups.items() if not g.is_vehicle_group]:
+            self.dispatchers[name] = BatteryDispatcher(timer=self.time,
+                                                       demand=group.demand,
+                                                       env=self.env,
+                                                       params=DispatchGroupParams.from_obj(group=group),
+                                                       logger=self.scenario.logger)
+            group.dispatcher = self.dispatchers[name]
 
+        for name, group in [(n, g) for n, g in self.groups.items() if g.is_vehicle_group]:
+            self.dispatchers[name] = VehicleDispatcher(timer=self.time,
+                                                       demand=subfleet.demand,
+                                                       env=self.env,
+                                                       params=DispatchGroupParams.from_obj(group=group),
+                                                       logger=self.scenario.logger)
+            group.dispatcher = self.dispatchers[name]
         # endregion
 
         self.env.run()
@@ -147,8 +141,29 @@ class SiteDispatcher:
                 disp.save_data(path_processes=path_processes,
                                path_log=path_log)
 
-        for subfleet in self.subfleets.values():
-            subfleet.log = subfleet.dispatcher.log
+        for group in self.groups.values():
+            group.log = group.dispatcher.log
+
+
+@dataclass
+class DispatchGroupParams:
+    name: str
+    subfleet_params: list
+    is_vehicle_group: bool
+
+    @classmethod
+    def from_obj(cls,
+                 group: 'blocks.DispatchGroup') -> 'DispatchGroupParams':
+
+        subfleet_params = {name: SubFleetParams.from_obj(subfleet) for name, subfleet in group.subblocks}
+
+        params = dict(
+            name=group.name,
+            subfleet_params=subfleet_params,
+            is_vehicle_group=group.is_vehicle_group,
+        )
+
+        return cls(**params)
 
 
 @dataclass
@@ -167,16 +182,16 @@ class SubFleetParams:
     rex: Optional[str] = None
 
     @classmethod
-    def from_subfleet(cls, subfleet: 'blocks.SubFleet') -> 'SubFleetParams':
+    def from_obj(cls,
+                 subfleet: 'blocks.SubFleet') -> 'SubFleetParams':
+
         is_electric = subfleet.type_unit in ['ev', 'mb']
-        is_vehicle = subfleet.type_unit in ['ev', 'icev']
         unit = subfleet.subblocks[next(iter(subfleet.subblocks))]  # representative
 
         params = dict(
             name=subfleet.name,
             units=subfleet.subblocks,
             pwr_chg=None,
-            is_vehicle=is_vehicle,
             is_electric=is_electric,
             size_unit=None,
             soc_upper=None,
@@ -206,7 +221,7 @@ class SubFleetParams:
         return cls(**params)
 
 
-class SubFleetDispatcher:
+class GroupDispatcher:
 
     def __init__(self,
                  timer: DispatchTimer,

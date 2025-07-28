@@ -1,4 +1,4 @@
-block,key,icev,bev_grid,bev_mg,bev_mg_rh
+block,key,#icev,bev_grid,#bev_mg,#bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
@@ -134,17 +134,17 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-vehicles,subfleets,"['icev']","['icev', 'bev']","['icev', 'bev']","['icev', 'bev']"
+vehicles,groups_dispatch,{'ld': ['icev']},"{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}"
 vehicles,system,ac,ac,ac,ac
 vehicles,pwr_lim_f2s,43000,43000,43000,43000
 vehicles,pwr_lim_s2f,43000,43000,43000,43000
 vehicles,opex_spec_f2s,0,0,0,0
 vehicles,opex_spec_s2f,0,0,0,0
+ld,data_source,usecases,usecases,usecases,usecases
+ld,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
+ld,filename_mapper,mtf,mtf,mtf,mtf
 bev,num,5,5,5,5
 bev,type_unit,ev,ev,ev,ev
-bev,data_source,usecases,usecases,usecases,usecases
-bev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
-bev,filename_mapper,mtf,mtf,mtf,mtf
 bev,size_preexisting_storage,16500,16500,16500,16500
 bev,size_max_storage,None,None,None,None
 bev,invest_storage,False,False,False,False
@@ -188,8 +188,6 @@ bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,sdr,0.02,0.02,0.02,0.02
 icev,num,5,5,5,5
 icev,type_unit,icev,icev,icev,icev
-icev,data_source,usecases,usecases,usecases,usecases
-icev,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 icev,filename_mapper,mtf,mtf,mtf,mtf
 icev,capex_fix_glider,25000,25000,25000,25000
 icev,capex_preexisting_glider,True,True,True,True
@@ -199,17 +197,17 @@ icev,mntex_fix_glider,500,500,500,500
 icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
-brs,subfleets,"['mb']","['mb']","['mb']","['mb']"
+brs,groups_dispatch,{'pue': ['mb']},{'pue': ['mb']},{'pue': ['mb']},{'pue': ['mb']}
 brs,system,ac,ac,ac,ac
 brs,pwr_lim_f2s,7200,7200,7200,7200
 brs,pwr_lim_s2f,7200,7200,7200,7200
 brs,opex_spec_f2s,0,0,0,0
 brs,opex_spec_s2f,0,0,0,0
+pue,data_source,usecases,usecases,usecases,usecases
+pue,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
+pue,filename_mapper,mtf,mtf,mtf,mtf
 mb,num,5,5,5,5
 mb,type_unit,mb,mb,mb,mb
-mb,data_source,usecases,usecases,usecases,usecases
-mb,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
-mb,filename_mapper,mtf,mtf,mtf,mtf
 mb,capex_fix_glider,500,500,500,500
 mb,capex_preexisting_glider,True,True,True,True
 mb,capex_fix_charger,200,200,200,200
@@ -251,3 +249,4 @@ mb,eff_chg_dc,0.95,0.95,0.95,0.95
 mb,eff_dis_ac,0.95,0.95,0.95,0.95
 mb,eff_dis_dc,0.95,0.95,0.95,0.95
 mb,sdr,0.02,0.02,0.02,0.02
+,,,,,

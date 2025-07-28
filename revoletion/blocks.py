@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import ast
+import collections
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
@@ -133,7 +134,11 @@ class BaseBlock(BlockScenarioInterface):
         if self.top_level_block:
             self.scenario.block_registry.setdefault('TopLevelBlock', {})[self.name] = self
         else:  # is subblock
-            self.parent.subblocks[self.name] = self
+            try:
+                self.parent.subblocks[self.name] = self
+            except:
+                pass
+
 
     def params_preprocessing(self):
         pass
@@ -1957,13 +1962,20 @@ class Fleet(SinkBlock):
                          params=None,
                          parent=scenario)
 
-        if not self.subfleets:
-            raise ValueError(f'Block "{self.name}": No subfleets defined! At least one subfleet has to be defined.')
+        if not self.groups_dispatch:
+            raise ValueError(f'Block "{self.name}": At least one dispatch group has to be defined.')
 
-        self.subblocks = {name: SubFleet(name=name,
-                                         scenario=self.scenario,
-                                         parent=self) for name in self.subfleets}
-        del self.subfleets
+        # region check for duplicate subfleets
+        subfleets = [subfleet for subfleet_list in self.groups_dispatch.values() for subfleet in subfleet_list]
+        subfleets_dupl = [item for item, count in collections.Counter(subfleets).items() if count > 1]
+        if subfleets_dupl:
+            raise ValueError(f'Block "{self.name}": Subfleet(s) {subfleets_dupl} is/are duplicated.')
+        # endregion
+
+        [DispatchGroup(name=key,
+                       scenario=self.scenario,
+                       parent=self,
+                       subfleets=value) for key, value in self.groups_dispatch.items()]
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2026,59 +2038,41 @@ class Fleet(SinkBlock):
         return f'{self.name} power ({lim2str(self.pwr_lim_f2s)} from / {lim2str(self.pwr_lim_f2s)} to fleet)'
 
 
-class SubFleet(NonElectricBlock):
+class DispatchGroup(NonElectricBlock):
 
     def __init__(self,
                  name: str,
                  scenario: simulation.Scenario,
-                 parent):
-
-        # subfleet parameters contain FleetUnit parameters
-        params = scenario.parameters.loc[name]
-        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num',
-                                                                                       'type_unit',
-                                                                                       'data_source',
-                                                                                       'filename',
-                                                                                       'filename_mapper',
-                                                                                       'rex']}
+                 subfleets: list,
+                 parent: Fleet):
 
         super().__init__(name=name,
                          scenario=scenario,
-                         params=params_subfleet,
                          parent=parent)
 
-        self.demand = self.log = None
+        self.demand = None
+        self.log = None
 
-        if self.type_unit not in ['ev', 'icev', 'mb']:
-            raise ValueError(f'Fleet "{self.parent.name}": Subfleet "{self.name}" - invalid type_unit "{self.type_unit}"')
+        self.types_units = {self.scenario.parameters[(subfleet, 'type_unit')] for subfleet in subfleets}
 
-        cls_fu = {'ev': ElectricVehicle,
-                  'icev': CombustionVehicle,
-                  'mb': MobileBattery}.get(self.type_unit)
+        if self.types_units <= {'ev', 'icev'}:
+            self.is_vehicle_group = True
+        elif self.types_units <= {'mb'}:
+            self.is_vehicle_group = False
+        else:
+            raise ValueError(f'Dispatch Group {self.name} has (a) both vehicle and battery subfleets or (b) invalid unit types assigned.')
 
-        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
-        self.subblocks = {name: cls_fu(name=name,
-                                       scenario=self.scenario,
-                                       params=params,
-                                       parent=self) for name in self.unit_names}
-
-        # Create demand object
+        # region create and fill demand object
         if self.data_source in ['usecases', 'demand']:
-            cls_demand = {'ev': mobility.VehicleDemand,
-                          'icev': mobility.VehicleDemand,
-                          'mb': mobility.BatteryDemand}.get(self.type_unit)
+            cls_demand = {True: mobility.VehicleDemand,
+                          False: mobility.BatteryDemand}.get(self.is_vehicle_group)
             self.demand = cls_demand(dti=self.scenario.dti_sim)
+            self.scenario.block_registry.setdefault('DispatchGroupActive', {})[self.name] = self
 
         if self.data_source == 'usecases':
-
-            if self.filename_mapper is None:
-                raise ValueError(f'Subfleet {self.subfleet.name} has no filename_mapper defined. '
-                                 f'Please check the subfleet definition in the scenario file.')
-
             path_demand = self.scenario.paths.create_result_path(
                 suffix=f'{self.scenario.name}_{self.name}_demand.csv') \
                 if not self.scenario.settings.largescalemode else None
-
             self.demand.from_usecases(
                 path_usecases=self.scenario.paths.input / utils.set_extension(
                     filename=self.filename,
@@ -2088,10 +2082,7 @@ class SubFleet(NonElectricBlock):
                 key_timeframe_mapper=self.name
             )
 
-            self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
-
         elif self.data_source == 'demand':
-
             self.demand.from_file(
                 path_demand=(self.scenario.paths.input / utils.set_extension(
                     filename=self.subfleet.filename,
@@ -2099,23 +2090,21 @@ class SubFleet(NonElectricBlock):
                 dti_eval=self.scenario.dti_eval,
             )
 
-            self.scenario.block_registry.setdefault('SubFleetDispatch', {})[self.name] = self
-
         elif self.data_source in ['log', 'logfile']:
             self.log = self.read_input_log()
 
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
+        # endregion
 
-        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
-            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
-
-        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
-            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
+        # create subfleets
+        [SubFleet(name=item,
+                  scenario=self.scenario,
+                  parent=self) for item in subfleets]
 
     def read_input_log(self) -> pd.DataFrame:
         """
-        Read in a predetermined log file for the SubFleet behavior.
+        Read in a predetermined log file for group behavior.
         """
 
         df = utils.read_timeseries_csv(path_input_file=(self.scenario.paths.input /
@@ -2160,6 +2149,44 @@ class SubFleet(NonElectricBlock):
         df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
 
         return df
+
+
+class SubFleet(NonElectricBlock):
+
+    def __init__(self,
+                 name: str,
+                 scenario: simulation.Scenario,
+                 parent):
+
+        # subfleet parameters contain FleetUnit parameters
+        params = scenario.parameters.loc[name]
+        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num', 'type_unit', 'rex']}
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         params=params_subfleet,
+                         parent=parent)
+
+        self.demand = self.log = None
+
+        cls_fu = {'ev': ElectricVehicle,
+                  'icev': CombustionVehicle,
+                  'mb': MobileBattery}.get(self.type_unit)
+        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
+        [cls_fu(name=name,
+                scenario=self.scenario,
+                params=params,
+                parent=self) for name in self.unit_names]
+
+        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
+            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
+
+        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
+            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
+
+    def pre_scenario(self):
+        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        super().pre_scenario()
 
 
 class FleetUnit:
@@ -2257,8 +2284,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                              f'implemented for a priori integration levels: {self.scenario.apriori_lvls}')
 
     def initialize_efficiencies(self):
-        self.eff['chg_int'] = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.system]
-        self.eff['dis_int'] = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.system]
+        self.eff['chg_int'] = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.parent.system]
+        self.eff['dis_int'] = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.parent.system]
         super().initialize_efficiencies()
 
     def pre_scenario(self):
