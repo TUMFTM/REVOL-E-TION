@@ -2185,7 +2185,7 @@ class SubFleet(NonElectricBlock):
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
     def pre_scenario(self):
-        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
         super().pre_scenario()
 
 
@@ -2325,7 +2325,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.states.update({'soc_min': soc_min_hor.astype('float64')})
         # endregion
 
-        self.bus_connected = self.parent.parent.components['bus']
+        self.bus_connected = self.parent.parent.parent.components['bus']
 
         params = {'inflow_nominal_capacity': self.pwr_chg_max,
                   'outflow_nominal_capacity': self.pwr_dis_max * self.eff['dis_int'],
