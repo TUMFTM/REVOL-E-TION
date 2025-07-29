@@ -245,7 +245,7 @@ class GroupDispatcher:
                  demand: pd.DataFrame,
                  env: simpy.Environment,
                  params: DispatchGroupParams | SubFleetParams,
-                 logger: logging.Logger,
+                 logger: logging.Logger = None,
                  factor_derate: float = 0.9,):  # conservativeness factor on assumed charge power vs actually available power
 
         self.time = timer
@@ -264,7 +264,7 @@ class GroupDispatcher:
         if isinstance(self.params, SubFleetParams):
             self.params = DispatchGroupParams(name=f'{self.params.name}_group',
                                               subfleet_params={self.params.name: self.params},
-                                              is_vehicle_group=(self.params.type_unit in ['ev', 'mb']))
+                                              is_vehicle_group=True)
 
         unit_names = [unit for sfparams in self.params.subfleet_params.values() for unit in sfparams.units]
         log_cols = pd.MultiIndex.from_tuples(
@@ -339,10 +339,7 @@ class GroupDispatcher:
     def run_standalone(self,
                        dti_output: pd.DatetimeIndex = None):
         self.env.run()
-        self.postprocess(dti_output=dti_output)
-
-        print(f'Mean FleetUnit usage rate: {self.kpis["rate_usage_mean"]:.2f}')
-        print(f'Mean dispatch failure rate: {self.kpis["rate_failure"]:.2f}')
+        self.generate_log(dti_output=dti_output)
 
     def transfer_rex_processes(self):
         """
