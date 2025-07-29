@@ -2554,18 +2554,20 @@ class Heatpump(SinkBlock):
 
             demand_accumulated = pd.concat([demand_accumulated, demand_year])
 
-        demand_accumulated.index = demand_accumulated.index.tz_localize('Europe/Berlin', nonexistent='shift_forward', ambiguous=False)
+        demand_accumulated.index = demand_accumulated.index.tz_localize('Europe/Berlin',
+                                                                        nonexistent='shift_forward',
+                                                                        ambiguous=False)
         demand_accumulated = demand_accumulated.loc[self.scenario.temp_air.index]
 
         self.flow_heatpump['demand_heat'] = demand_accumulated['demand_heat']
         self.flow_heatpump['demand_dhw'] = demand_accumulated['demand_dhw']
 
-        self.mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22)
+        mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22)
         self.flow_heatpump['delta'] = (self.flow_heatpump['demand_heat'] *
                                        (1 - ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
                                              (21-self.scenario.temp_air['temp_air'])))
                                        )
-        self.flow_heatpump['delta'] = self.flow_heatpump['delta'].where(self.mask_time, 0).clip(lower = 0)
+        self.flow_heatpump['delta'] = self.flow_heatpump['delta'].where(mask_time, 0).clip(lower=0)
         self.flow_heatpump['demand_heat'] = (self.flow_heatpump['demand_heat'] *
                                              ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
                                               (21 - self.scenario.temp_air['temp_air']))
@@ -2604,8 +2606,7 @@ class Heatpump(SinkBlock):
             outputs={self.components['bus']: solph.Flow(nominal_capacity=solph.Investment(
                     ep_costs=self.evaluators['block'].opt.spec_ep_invest,
                     existing=self.sizes['block'].preexisting,
-                    maximum=utils.conv_nan2none(self.sizes['block'].expansion_max
-                                                )
+                    maximum=self.sizes['block'].expansion_max
                 ))},
             conversion_factors={self.components['bus']: self.flow_heatpump['COP']}
         )
@@ -2748,10 +2749,3 @@ class Heatpump(SinkBlock):
 
     def get_legend_entry(self):
         return f'{self.name} electric power (max. {self.sizes["block"].total / 1e3:.1f} kW thermal)'
-
-
-
-
-
-
-
