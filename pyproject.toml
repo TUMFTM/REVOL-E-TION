@@ -12,6 +12,8 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "demandlib",
+    "geopandas",
     "geopy",
     "holidays",
     "numpy",
@@ -25,6 +27,7 @@ dependencies = [
     "rainflow",
     "scipy",
     "simpy",
+    "tespy",
     "timezonefinder",
     "tk",
     "windpowerlib"
