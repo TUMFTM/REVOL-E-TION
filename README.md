@@ -27,6 +27,7 @@ Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023
 Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023  
 Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024  
 Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024  
+Florian Honeder, B.Sc. - Semester Thesis ongoing  
 
 ## Table of Contents
 - [Licensing](#licensing)
