@@ -104,7 +104,8 @@ class BaseBlock(BlockScenarioInterface):
                                             scenario=self.scenario,
                                             block=self)
 
-        self.states = pd.DataFrame(index=self.scenario.dti_sim_extd,
+        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim_extd,
+                                                          self.scenario.timestep_td),
                                    dtype='float64')
         self.init_states()
 
@@ -2448,38 +2449,67 @@ class MobileBattery(ElectricFleetUnit):
                          params=params)
 
 class Heatpump(SinkBlock):
-    @staticmethod
-    def get_init_definitions():
-        return dict(pois={'block': {'class_name': 'EconomicEvaluator',
-                                    'params': {('capex', 'preexisting'): 'capex_preexisting_block',
-                                               ('capex', 'spec'): 'capex_spec',
-                                               ('mntex', 'spec'): 'mntex_spec',
-                                               ('opex', 'spec'): 'opex_spec',
-                                               ('crev', 'spec'): 'crev_spec',
-                                               ('size', 'name'): 'block'}},
-                          'in': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'in'}},
-                          'heatpump_out': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'heatpump_out'}},
-                          'buffer_out': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'buffer_out'}},
-                          'inertia_house_out': {'class_name': 'EconomicEvaluator',
-                                         'params': {('flow', 'name'): 'inertia_house_out'}},
-                          'heating': {'class_name': 'EconomicEvaluator',
-                                    'params': {('flow', 'name'): 'heating'}},
-                          },
-                    state_names=['heatpump_out', 'buffer_out', 'inertia_house_out', 'dhw_storage_out'])
+
+    def init_evaluators(self):
+        super().init_evaluators()
+        self.evaluators['block'] = eco.EcoEvaluator(name='block',
+                                                    scenario=self.scenario,
+                                                    block=self,
+                                                    size_name='block',
+                                                    size_unit='kW',
+                                                    ls=self.ls,
+                                                    ccr=self.ccr,
+                                                    flow_name='in',
+                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
+                                                                      spec=self.capex_spec),
+                                                    mntex_config=dict(spec=self.mntex_spec),
+                                                    opex_config=dict(spec=self.opex_spec),
+                                                    crev_config=dict(spec=self.crev_spec),
+                                                    )
+
+        self.evaluators['heatpump_out'] = eco.EcoEvaluator(name='heatpump_out',
+                                                           scenario=self.scenario,
+                                                           block=self,
+                                                           flow_name='heatpump_out',
+                                                           )
+
+        self.evaluators['buffer_out'] = eco.EcoEvaluator(name='buffer_out',
+                                                         scenario=self.scenario,
+                                                         block=self,
+                                                         flow_name='buffer_out',
+                                                         )
+
+        self.evaluators['inertia_house_out'] = eco.EcoEvaluator(name='inertia_house_out',
+                                                                scenario=self.scenario,
+                                                                block=self,
+                                                                flow_name='inertia_house_out',
+                                                                )
+
+        self.evaluators['heating'] = eco.EcoEvaluator(name='heating',
+                                                      scenario=self.scenario,
+                                                      block=self,
+                                                      flow_name='heating',
+                                                      )
+
+    def init_states(self):
+        super().init_states()
+
+        for state in ['energy_buffer', 'soc_buffer',
+                      'energy_inertia_house', 'soc_inertia_house',
+                      'energy_dhw_storage', 'soc_dhw_storage']:
+            self.states[state] = np.nan
 
     def __init__(self,
                  name: str,
-                 scenario,
-                 temperature_tolerance = 3):
+                 scenario):
         super().__init__(name=name,
                          scenario=scenario,
                          flow_apriori_names=['demand_heat'],
                          params=None,
                          parent=scenario)
-        self.temperature_tolerance = temperature_tolerance
+
+        self.size_buffer = 16  # size in liters
+        self.size_dhw_storage = 190  # size in liters
 
         self.analyzer = hp.Heatpump_COPanalyzer(self.wf, self.nominal_cop, self.nominal_power)
         self.cop_array = self.analyzer.run_full_analysis()
@@ -2501,7 +2531,7 @@ class Heatpump(SinkBlock):
                 "house_type": "EFH",
                 "N_Pers": self.size_household,
                 "N_WE": 1,
-                "Q_Heiz_a": self.size_house*self.demand_spec,
+                "Q_Heiz_a": self.size_house * self.demand_spec,
                 "Q_TWW_a": self.demand_dhw,
                 "W_a": 0,
                 "summer_temperature_limit": 15,
@@ -2543,7 +2573,7 @@ class Heatpump(SinkBlock):
         self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'COP'] = max_cop
 
     def define_oemof_components(self,
-                                horizon: 'PredictionHorizon',
+                                horizon: simulation.PredictionHorizon,
                                 params: dict = None):
         """
         pre horizon method
@@ -2569,9 +2599,9 @@ class Heatpump(SinkBlock):
 
             )},
             outputs={self.components['bus']: solph.Flow(nominal_capacity=solph.Investment(
-                    ep_costs=self.evaluators['block'].capex['spec_opt'],
-                    existing=self.sizes.loc['block', 'preexisting'],
-                    maximum=utils.conv_nan2none(self.sizes.loc['block', 'expansion_max']
+                    ep_costs=self.evaluators['block'].opt.spec_ep_invest,
+                    existing=self.sizes['block'].preexisting,
+                    maximum=utils.conv_nan2none(self.sizes['block'].expansion_max
                                                 )
                 ))},
             conversion_factors={self.components['bus']: self.flow_heatpump['COP']}
@@ -2581,14 +2611,14 @@ class Heatpump(SinkBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['heating_bus']: solph.Flow()},
             loss_rate=0.02,
-            nominal_storage_capacity= (16*4180*35)/3600
+            nominal_storage_capacity= (self.size_buffer * 4180 * 35) / 3600  # 16
         )
 
         self.components['dhw_storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['dhw_bus']: solph.Flow()},
             loss_rate=0.02,
-            nominal_storage_capacity=(190 * 4180 * (55-10)) / 3600
+            nominal_storage_capacity=(self.size_dhw_storage * 4180 * (55-10)) / 3600  # 190
         )
 
         self.components['inertia_house'] = solph.components.GenericStorage(
@@ -2596,79 +2626,125 @@ class Heatpump(SinkBlock):
                 nominal_value=self.flow_heatpump['demand_heat'].max()+self.flow_heatpump['delta'].max(),
                 max=self.flow_heatpump['demand_heat']+self.flow_heatpump['delta']
             )
-                     },
+            },
             outputs={self.components['sink_bus']:solph.Flow()
-                    },
-            loss_rate= 0.00,
+                     },
+            loss_rate= 0.0,
             nominal_storage_capacity=self.flow_heatpump['delta'].max()
         )
 
         self.components['snk'] = solph.components.Sink(
             inputs={self.components['sink_bus']: solph.Flow(nominal_capacity=1,
-                                                   fix=self.flow_heatpump['demand_heat'][horizon.dti_ph])}
+                                                            fix=self.flow_heatpump['demand_heat'][horizon.dti_ph])}
         )
 
         self.components['dhw'] = solph.components.Sink(
             inputs={self.components['dhw_bus']: solph.Flow(nominal_capacity=1,
-                                                            fix=self.flow_heatpump['demand_dhw'][horizon.dti_ph])}
+                                                           fix=self.flow_heatpump['demand_dhw'][horizon.dti_ph])}
         )
 
     def get_horizon_results(self,
-                            horizon: 'PredictionHorizon'):
-        self.sizes.loc['block', 'expansion'] = horizon.results[(self.components['heatpump'],
+                            horizon: simulation.PredictionHorizon):
+        self.sizes['block'].expansion = horizon.results[(self.components['heatpump'],
                                                                 self.components['bus'])]['scalars']['invest']
 
         self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
                                                                 self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'heatpump_out'] = horizon.results[(self.components['bus'],
                                                                     self.components['buffer'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'buffer_out'] = horizon.results[(self.components['buffer'],
                                                                    self.components['heating_bus'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'inertia_house_out'] = horizon.results[(self.components['inertia_house'],
                                                                     self.components['sink_bus'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'heating'] = horizon.results[(self.components['sink_bus'],
                                                                      self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'dhw_storage_out'] = horizon.results[(self.components['dhw_storage'],
                                                                              self.components['dhw_bus'])]['sequences']['flow'][horizon.dti_ch]
+
         self.flows.loc[horizon.dti_ch, 'dhw_demand'] = horizon.results[(self.components['dhw_bus'],
                                                                         self.components['dhw'])]['sequences']['flow'][horizon.dti_ch]
 
+        self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] = horizon.results[(self.components['buffer'],
+                                                                          None)]['sequences']['storage_content'][horizon.dti_ch_extd]
 
-        self.states = self.flows.copy()
+        self.states.loc[horizon.dti_ch_extd, 'energy_dhw_storage'] = horizon.results[(self.components['dhw_storage'],
+                                                                               None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+
+        self.states.loc[horizon.dti_ch_extd, 'energy_inertia_house'] = horizon.results[(self.components['inertia_house'],
+                                                                                 None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+
+        # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] = (self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] /
+                                                              self.size_buffer).fillna(0)
+
+        self.states.loc[horizon.dti_ch_extd, 'soc_dhw_storage'] = (self.states.loc[horizon.dti_ch_extd, 'energy_dhw_storage'] /
+                                                                   self.size_dhw_storage).fillna(0)
+
+        self.states.loc[horizon.dti_ch_extd, 'soc_inertia_house'] = (self.states.loc[horizon.dti_ch_extd, 'energy_inertia_house'] /
+                                                                     self.flow_heatpump['delta'].max()).fillna(0)
+
     def create_plot_traces(self):
 
         super().create_plot_traces()
 
-        data_storage_buffer_in = self.states.loc[self.scenario.dti_eval, 'heatpump_out'].dropna()
-        data_storage_inertia_house_out = self.states.loc[self.scenario.dti_eval, 'inertia_house_out'].dropna()
-        data_dhw_storage_out = self.states.loc[self.scenario.dti_eval, 'dhw_storage_out'].dropna()
+        soc_buffer = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                      freq=self.scenario.timestep_td), 'soc_buffer'].dropna()
+        soc_dhw_storage = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                           freq=self.scenario.timestep_td), 'soc_dhw_storage'].dropna()
+        soc_inertia_house = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
+                                                             freq=self.scenario.timestep_td), 'soc_inertia_house'].dropna()
 
 
-        self.plot_traces['powers'].extend([go.Scatter(x=data_storage_buffer_in.index,
-                                                      y=data_storage_buffer_in,
-                                                      mode='lines',
-                                                      name=f'{self.name} HEATPUMP_OUT',
-                                                      line=dict(width=2, dash=None),
-                                                      ),
-                                           go.Scatter(x=data_storage_inertia_house_out.index,
-                                                      y=data_storage_inertia_house_out,
-                                                      mode='lines',
-                                                      name=f'{self.name} INERTIA_HOUSE_OUT',
-                                                      line=dict(width=2, dash='dot'),
-
-                                                      ),
-                                           go.Scatter(
-                                               x=data_dhw_storage_out.index,
-                                               y=data_dhw_storage_out,
-                                               mode='lines',
-                                               name=f'{self.name} DHW_STORAGE_OUT',
-                                               line=dict(width=2, dash='dot', color='orange')
-                                           ),
-                                           ])
+        self.scenario.plot_traces.extend(
+            plot_lines=[go.Scatter(x=self.scenario.dti_eval,
+                                   y=self.flows.loc[self.scenario.dti_eval, 'heatpump_out'],
+                                   mode='lines',
+                                   name=f'{self.name} HEATPUMP_OUT',
+                                   line=dict(width=2, dash=None),
+                                   ),
+                        go.Scatter(x=self.scenario.dti_eval,
+                                   y=self.flows.loc[self.scenario.dti_eval, 'inertia_house_out'],
+                                   mode='lines',
+                                   name=f'{self.name} INERTIA_HOUSE_OUT',
+                                   line=dict(width=2, dash='dot'),
+                                   ),
+                        go.Scatter(
+                            x=self.scenario.dti_eval,
+                            y=self.flows.loc[self.scenario.dti_eval, 'dhw_storage_out'],
+                            mode='lines',
+                            name=f'{self.name} DHW_STORAGE_OUT',
+                            line=dict(width=2, dash='dot', color='orange')
+                        ),
+                        go.Scatter(x=soc_buffer.index,
+                                   y=soc_buffer,
+                                   mode='lines',
+                                   name=f'{self.name} buffer',
+                                   line=dict(width=2, dash=None),
+                                   ),
+                        go.Scatter(x=soc_dhw_storage.index,
+                                   y=soc_dhw_storage,
+                                   mode='lines',
+                                   name=f'{self.name} DHW storage',
+                                   line=dict(width=2, dash='dot'),
+                                   ),
+                        go.Scatter(
+                            x=soc_inertia_house.index,
+                            y=soc_inertia_house,
+                            mode='lines',
+                            name=f'{self.name} Inertia House',
+                            line=dict(width=2, dash='dot', color='orange')
+                        ),
+                        ],
+            secondary_ys=[False, False, False, True, True, True]
+        )
 
     def get_legend_entry(self):
-        return f'{self.name} power'
-
+        return f'{self.name} electric power (max. {self.sizes["block"].total / 1e3:.1f} kW thermal)'
 
 
 
