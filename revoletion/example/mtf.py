@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-def map_timeframes(df, name, scenario):
+def map_timeframes(df, name):
     cs_map = {'bev': map_timeframes_vehicles, 'icev': map_timeframes_vehicles, 'mb': map_timeframes_batteries}
     return cs_map[name](df)
 

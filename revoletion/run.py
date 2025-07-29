@@ -33,24 +33,13 @@ class SimulationRun:
         self.runtime_start = time.perf_counter()
         self.runtime_end = self.runtime_len = None
 
-        self.name = self.paths.scenario.stem
-
-        if not self.settings.rerun:
-            self.runtimestamp = pd.Timestamp.now().strftime('%y%m%d_%H%M%S')
-        else:
-            # get timestamp from rerun directory name (for both absolute and relative (to settings output dir) paths)
-            self.runtimestamp = '_'.join(Path(self.settings.rerun).name.split('_')[:2])
-
-        self.paths.basename = Path(f'{self.runtimestamp}_{self.name}')
+        self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
         # region get version information
         self.version_solph = solph.__version__
-        self.version_revoletion = importlib.metadata.version('revoletion')
+        self.version_revoletion = utils.get_revoletion_python_package_version()
 
-        try:  # todo additionally get commit hash of revoletion if possible
-            self.commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()[0:6]
-        except subprocess.CalledProcessError:
-            self.commit_hash = 'unknown'
+        self.commit_hash = utils.get_current_project_git_commit_hash()
         # endregion
 
         # region read, copy and check scenario data
@@ -80,7 +69,7 @@ class SimulationRun:
         sys.excepthook = self.handle_exception
         # endregion
 
-        if self.settings.rerun:
+        if self.paths.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
             self.scenario_status = pd.read_csv(self.paths.status,
                                                index_col=0,
@@ -93,7 +82,7 @@ class SimulationRun:
 
             if not self.scenario_names:
                 raise ValueError(
-                    f'Parameter "--rerun" was set to {self.settings.rerun}, but the status file contains no scenarios '
+                    f'Parameter "--rerun" was set to {self.paths.rerun}, but the status file contains no scenarios '
                     f'to rerun.\n'
                     f'All scenarios were {"either infeasible or " if self.settings.rerun_infeasible else ""}'
                     f'already completed successfully.\n'
@@ -127,15 +116,11 @@ class SimulationRun:
         self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
-        self.logger.info(f'Reading scenarios from:\t{self.paths.scenario}')
-        self.logger.info(f'Reading input data from:\t{self.paths.input}')
-        self.logger.info(f'Writing results to:\t\t{self.paths.output}')
-
-        # plural extensions
-        pe1 = 's' if self.scenario_num > 1 else ''
-        pe2 = 'es' if self.settings.n_processes > 1 else ''
-        self.logger.info(f'Running {self.scenario_num} scenario{pe1}'
-                         f' with {self.settings.n_processes} process{pe2}')
+        self.logger.info(f'{"Reading scenarios from:":<25} {self.paths.scenario}')
+        self.logger.info(f'{"Reading input data from:":<25} {self.paths.input}')
+        self.logger.info(f'{"Writing results to:":<25} {self.paths.output}')
+        self.logger.info(f'Running {self.scenario_num} scenario{("s" if self.scenario_num > 1 else "")} '
+                         f'with {self.settings.n_processes} process{("es" if self.settings.n_processes > 1 else "")}')
 
         self.execute()
 
@@ -209,7 +194,7 @@ class SimulationRun:
             joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
             joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
 
-            if self.settings.rerun and self.paths.summary_pkl.is_file():  # only happens for infeasible scenarios
+            if self.paths.rerun and self.paths.summary_pkl.is_file():  # only happens for infeasible scenarios
                 results_summary_prev = pd.read_pickle(self.paths.summary_pkl)
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
 

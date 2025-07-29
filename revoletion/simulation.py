@@ -5,7 +5,6 @@ import geopy
 import holidays
 import importlib.resources
 import logging
-import logging.handlers
 import math
 from pathlib import Path
 import numpy as np
@@ -13,6 +12,8 @@ import plotly.subplots
 import pprint
 import pytz
 import time
+from typing import List
+
 import timezonefinder
 import traceback
 import warnings
@@ -22,6 +23,7 @@ import multiprocessing as mp
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
+import plotly.graph_objects as go
 import pyomo.environ as po
 
 from . import blocks
@@ -41,21 +43,25 @@ class OptimizationError(Exception):
 
 @dataclass
 class SimulationPaths:
+    """
+    Contains all paths relevant for the simulation run.
+    scenario: Path to the scenario file
+    input: Path to the input data directory (default: same directory as scenario file)
+    output: Path to the output directory (default: current working directory/results)
+    rerun: Path to the rerun directory (can also contain the string "latest")
+
+    data_persist: Path to the persistent data directory within the revoletion package
+    summary_csv: Path to the summary CSV file
+    summary_pkl: Path to the summary pickle file
+    status: Path to the status csv file
+    dump: Path to the pyomo model
+    log: Path to the log file
+    """
+
     scenario: Path | str
     input: Path | str = None
     output: Path | str = None
-
-    _basename: Path = field(default_factory=lambda: Path(pd.Timestamp.now().strftime('%y%m%d_%H%M%S')),
-                            init=True
-                            )  # internal field for basename
-
-    _revoletion: Path = field(default_factory=lambda: importlib.resources.files(__package__),
-                              init=False,  # cannot be set manually
-                              )
-
-    _cwd: Path = field(default_factory=Path.cwd,
-                       init=False,  # cannot be set manually
-                       )
+    rerun: Path | str = None
 
     def __post_init__(self):
         self.scenario = Path(self.scenario)
@@ -64,50 +70,46 @@ class SimulationPaths:
         else:
             self.input = Path(self.input)
         if self.output is None:
-            self.output = self._cwd / 'results'
+            self.output = Path.cwd() / 'results'
         else:
             self.output = Path(self.output)
-        self.output = self.output / self.basename
+        if self.rerun is None:
+            self.output = self.output / Path(f'{pd.Timestamp.now().strftime("%y%m%d_%H%M%S")}_{self.scenario.stem}')
+        elif self.rerun == 'latest':
+            # get all directories in the output directory already sorted alphabetically
+            directories = [d for d in sorted(self.output.iterdir()) if d.is_dir()]
+
+            # return the last directory (if any)
+            if directories:
+                self.output = directories[-1]
+            else:
+                raise NotADirectoryError(f'No previous runs available in specified output directory {self.output}')
+        else:
+            self.rerun = Path(self.rerun)
+            if self.rerun.is_absolute():
+                self.output = self.rerun
+            else:
+                self.output = self.output / self.rerun.name
 
         # ensure all paths are absolute
         self.scenario = self.scenario.resolve()
         self.input = self.input.resolve()
         self.output = self.output.resolve()
-        self._revoletion = self._revoletion.resolve()
-        self._cwd = self._cwd.resolve()
 
         # ensure that all paths exist
         if not self.scenario.is_file():
             raise FileNotFoundError(f'Scenario file not found: {self.scenario}')
         if not self.input.is_dir():
             raise NotADirectoryError(f'Input directory path not interpretable: {self.input}')
-        self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        if not self.rerun:
+            self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        else:
+            if not self.output.is_dir():
+                raise NotADirectoryError(f'Specified rerun directory {self.output} does not exist.')
 
     def create_result_path(self,
                            suffix: str) -> Path:
-        return self.output / f'{self.basename}_{suffix}'
-
-    @property
-    def basename(self) -> Path:
-        return self._basename
-
-    @basename.setter
-    def basename(self, value: Path):
-        self._basename = value
-        # store old output path for renaming
-        old_output = self.output
-        # recalculate the output path whenever basename is changed
-        self.output = self.output.parent / self._basename
-        # rename the output directory
-        old_output.rename(self.output)
-
-    @property
-    def cwd(self) -> Path:
-        return self._cwd
-
-    @property
-    def revoletion(self) -> Path:
-        return self._revoletion
+        return self.output / f'{self.output.name}_{suffix}'
 
     @property
     def data_persist(self) -> Path:
@@ -141,9 +143,40 @@ class SimulationSettings:
     n_processes: int = 1
     largescalemode: bool = False
     debugmode: bool = False
-    rerun: bool | Path = False
     rerun_infeasible: bool = True
     key_solcast_api: str = None
+
+
+@dataclass
+class PlotTraces:
+    _plot_traces: List[go.Scatter] = field(default_factory=list,
+                                           repr=False)
+    _secondary_y: List[bool] = field(default_factory=list,
+                                     repr=False)
+
+    def append(self,
+               plot_line: go.Scatter,
+               secondary_y: bool = False) -> None:
+        self._plot_traces.append(plot_line)
+        self._secondary_y.append(secondary_y)
+
+    def extend(self,
+                plot_lines: List[go.Scatter],
+                secondary_ys: List[bool] = None) -> None:
+
+        if not secondary_ys:
+            secondary_ys = [False] * len(plot_lines)
+
+        self._plot_traces.extend(plot_lines)
+        self._secondary_y.extend(secondary_ys)
+
+    @property
+    def plot_lines(self) -> List[go.Scatter]:
+        return self._plot_traces
+
+    @property
+    def secondary_ys(self) -> List[bool]:
+        return self._secondary_y
 
 
 class Scenario:
@@ -169,32 +202,15 @@ class Scenario:
                 raise ValueError('Parameters must be provided when run_execution is True')
 
         self.name = name
+        self.parent = None  # attribute needs to exist for economic aggregation
 
         if not run_execution:
-            self.paths.basename = Path(self.paths.basename.stem + '_' + self.paths.scenario.stem)
-
             self.logger = logger_fcs.get_root_logger(paths=self.paths,
                                                      settings=self.settings,
                                                      len_scn_max=len('root'),
                                                      )
 
-        elif log_queue is not None:
-            self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
-                                                                 settings=self.settings,
-                                                                 log_queue=log_queue,
-                                                                 )
-        else:
-            self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
-                                                                   settings=self.settings,
-                                                                   )
-
-        self.status_update = status_update
-        self.status_queue = status_queue
-
-        if isinstance(parameters, pd.Series):
-            self.parameters = parameters
-        # check whether file exists
-        elif self.paths.scenario.is_file():
+            # read scenario file
             if self.paths.scenario.suffix == '.csv':
                 self.parameters = pd.read_csv(self.paths.scenario,
                                               index_col=[0, 1],
@@ -205,15 +221,35 @@ class Scenario:
             else:
                 raise ValueError('Scenario file specified in SimulationPaths object is neither CSV nor PKL file.')
 
+            # check if scenario file contains more than one scenario (then it has to be run via a SimulationRun)
             if len(self.parameters.columns) > 1:
                 raise ValueError('More than one scenario detected. Provide a single column CSV or PKL file.')
 
             if self.name is None:
                 self.name = self.parameters.columns[0]
 
-            self.parameters = self.parameters.iloc[:, 0]  # convert to Series
+            # convert DataFrame to Series
+            self.parameters = self.parameters.iloc[:, 0]
+
         else:
-            raise FileNotFoundError(f'Scenario file not found: {self.paths.scenario}')
+            # Define logger
+            if log_queue is not None:
+                self.logger = logger_fcs.get_process_logger_parallel(name=self.name,
+                                                                     settings=self.settings,
+                                                                     log_queue=log_queue,
+                                                                     )
+            else:
+                self.logger = logger_fcs.get_process_logger_sequential(name=self.name,
+                                                                       settings=self.settings,
+                                                                       )
+
+            # Set given parameters as attribute
+            if not isinstance(parameters, pd.Series):
+                raise ValueError('Parameters of type pd.Series must be provided to scenario when run_execution is True')
+            self.parameters = parameters
+
+        self.status_update = status_update
+        self.status_queue = status_queue
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
@@ -252,8 +288,8 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        self.tzfinder = timezonefinder.TimezoneFinder()
-        self.timezone = pytz.timezone(self.tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+        tzfinder = timezonefinder.TimezoneFinder()
+        self.timezone = pytz.timezone(tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
 
         geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
         self.country = 'DE'  # set default country
@@ -391,14 +427,16 @@ class Scenario:
         self.periods_prj_extd = np.arange(0, self.prj_duration_yrs + 1)  # add. year for salvage values
         self.discount_factors = pd.DataFrame(index=self.periods_prj_extd,
                                              columns=['beginning', 'mid', 'end'],
-                                             data={occ: eco.discount(future_value=1,
-                                                                     periods=self.periods_prj_extd + 1,
-                                                                     discount_rate=self.wacc,
-                                                                     occurs_at=occ)
+                                             data={occ: eco.EcoTools.discount(future_value=1,
+                                                                              periods=self.periods_prj_extd + 1,
+                                                                              discount_rate=self.wacc,
+                                                                              occurs_at=occ)
                                                    for occ in ['beginning', 'mid', 'end']},
                                              dtype='float64')
 
-        self.aggregator = eco.EconomicAggregator(name='scenario', block=None, scenario=self)
+        self.aggregator = eco.EcoAggregator(name='scenario',
+                                            scenario=self)
+        self.capex_preexisting_considered = 0
 
         self.block_registry = dict()
 
@@ -417,12 +455,11 @@ class Scenario:
                 raise ValueError(f'Class "{class_name}" not found in blocks.py file - '
                                  f'Check for typos or add class.')
 
-        if self.invest_max is not None and self.invest_max < self.aggregator.capex['preexisting']:
-            raise ValueError(f'Initial investment costs of {self.aggregator.capex["preexisting"]:.2f} {self.currency} '
+        if self.invest_max is not None and self.invest_max < self.capex_preexisting_considered:
+            raise ValueError(f'Initial investment costs of {self.capex_preexisting_considered:.2f} {self.currency} '
                              f'exceed maximum investment limit of {self.invest_max} {self.currency}')
 
         self.objective_opt = None  # unused for rh strategy
-        self.cashflows = pd.DataFrame()
         self.energies = pd.DataFrame(index=pd.MultiIndex.from_tuples(tuples=[('renewable', 'act'),
                                                                              ('sources', 'pro'),
                                                                              ('sinks', 'del')],
@@ -431,9 +468,8 @@ class Scenario:
                                      data=0,
                                      dtype=float)
 
-        self.figure = None
-        self.plot_traces = {'powers': [],
-                            'states': []}
+        # Define object to store all traces for plotting
+        self.plot_traces = PlotTraces()
 
         self.result_messages = []
         self.result_summary = []
@@ -442,7 +478,7 @@ class Scenario:
         self.e_eta = None
         self.renewable_share = None
         self.lcoe_total = self.lcoe_wocs = None
-        self.npv = self.irr = self.mirr = None
+        self.npc = self.npv = self.irr = self.mirr = None
         # endregion
 
         # region preexecution
@@ -508,7 +544,7 @@ class Scenario:
 
             for block in self.block_registry.get('TopLevelBlock', {}).values():
                 block.post_scenario()
-            self.aggregator.post_scenario()
+            self.aggregator.aggregate()
 
             self.calc_meta_results()
 
@@ -517,12 +553,7 @@ class Scenario:
                 self.result_timeseries.to_csv(self.paths.create_result_path(suffix=f'{self.name}_results_ts.csv'))
                 for msg in self.result_messages:
                     self.logger.info(msg)
-                self.generate_plots()
-                self.figure.write_html(self.paths.create_result_path(suffix=f'{self.name}.html'))
-                try:
-                    self.figure.show(renderer='browser')
-                except webbrowser.Error:  # webbrowser is not available on most remote machines
-                    pass
+                self.generate_and_save_plot()
 
             self.runtime_end = time.perf_counter()
             self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
@@ -557,17 +588,16 @@ class Scenario:
         if self.energies.loc[('sinks', 'del'), 'sim'] == 0:
             self.logger.warning(f'LCOE calculation: division by zero')
         else:
-            self.lcoe_total = self.aggregator.totex['dis'] / self.energies.loc[('sinks', 'del'), 'dis']
-            self.lcoe_wocs = ((self.aggregator.totex['dis'] -
+            self.lcoe_total = self.aggregator.totex.dis / self.energies.loc[('sinks', 'del'), 'dis']
+            self.lcoe_wocs = ((self.aggregator.totex.dis -
                                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                               sum([fleet.aggregator.totex['dis'] for fleet in self.block_registry.get('Fleet', {}).values()])) /
+                               sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get('Fleet', {}).values()])) /
                               self.energies.loc[('sinks', 'del'), 'dis'])
 
-        self.npc = self.aggregator.totex['dis']
-        self.npv = self.aggregator.value['dis']
-        # ToDo: implement self.cashflows
-        self.irr = npf.irr(self.cashflows.sum(axis=1).to_numpy())
-        self.mirr = npf.mirr(self.cashflows.sum(axis=1).to_numpy(), self.wacc, self.wacc)
+        self.npc = self.aggregator.totex.dis
+        self.npv = self.aggregator.value.dis
+        self.irr = npf.irr(self.aggregator.value.cashflows)
+        self.mirr = npf.mirr(self.aggregator.value.cashflows, self.wacc, self.wacc)
 
         # print basic results
         self.logger.info(f'NPC {f"{self.npc:,.2f}" if pd.notna(self.npc) else "-"} {self.currency} | '
@@ -575,40 +605,53 @@ class Scenario:
                          f'LCOE {f"{self.lcoe_wocs * 1e5:,.2f}" if pd.notna(self.lcoe_wocs) else "-"} {self.currency}-ct/kWh | '
                          f'mIRR {f"{self.mirr * 100:,.2f}" if pd.notna(self.mirr) else "-"} %')
 
-    def generate_plots(self):
+    def generate_and_save_plot(self):
 
-        self.figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
+        figure = plotly.subplots.make_subplots(specs=[[{'secondary_y': True}]])
 
-        self.figure.add_traces(self.plot_traces['powers'],
-                               secondary_ys=[False] * len(self.plot_traces['powers']))
-
-        self.figure.add_traces(self.plot_traces['states'],
-                               secondary_ys=[True] * len(self.plot_traces['states']))
-
-        self.figure.update_layout(plot_bgcolor='white')
-        self.figure.update_xaxes(title='Local Time',
-                                 showgrid=True,
-                                 linecolor='gray',
-                                 gridcolor='gray')
-        self.figure.update_yaxes(title='Power in W',
-                                 showgrid=True,
-                                 linecolor='gray',
-                                 gridcolor='gray',
-                                 secondary_y=False, )
-        self.figure.update_yaxes(title='State of Charge',
-                                 showgrid=False,
-                                 secondary_y=True)
+        figure.add_traces(self.plot_traces.plot_lines,
+                          secondary_ys=self.plot_traces.secondary_ys)
 
         if self.strategy == 'go':
-            self.figure.update_layout(title=f'Global Optimum Results - '
-                                            f'{self.paths.basename} - '
-                                            f'Scenario: {self.name}')
-        if self.strategy == 'rh':
-            self.figure.update_layout(title=f'Rolling Horizon Results - '
-                                            f'{self.paths.basename} - '
-                                            f'Scenario: {self.name} - '
-                                            f'PH: {self.len_ph}h - '
-                                            f'CH: {self.len_ch}h')
+            title = f'Global Optimum Results - {self.paths.output.name} - Scenario: {self.name}'
+        elif self.strategy == 'rh':
+            title = (f'Rolling Horizon Results - {self.paths.output.name} - Scenario: {self.name} - '
+                     f'PH: {self.len_ph}h - CH: {self.len_ch}h')
+        else:
+            title = f'Results - {self.paths.output.name} - Scenario: {self.name}'
+
+        linecolor = 'gray'
+        gridcolor = 'gray'
+
+        figure.update_layout(
+            title=title,
+            plot_bgcolor='white',
+            xaxis=dict(
+                title='Local Time',
+                showgrid=True,
+                linecolor=linecolor,
+                gridcolor=gridcolor,
+            ),
+            yaxis=dict(
+                title='Power in W',
+                showgrid=True,
+                linecolor=linecolor,
+                gridcolor=gridcolor,
+            ),
+            yaxis2=dict(
+                title='State of Charge',
+                showgrid=False,
+                overlaying='y',
+                side='right',
+                range=[0, 1],
+            )
+        )
+
+        figure.write_html(self.paths.create_result_path(suffix=f'{self.name}.html'))
+        try:
+            figure.show(renderer='browser')
+        except webbrowser.Error:  # webbrowser is not available on most remote machines
+            pass
 
     def save_result_summary(self):
         """
