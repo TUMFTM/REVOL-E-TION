@@ -2561,13 +2561,18 @@ class Heatpump(SinkBlock):
         self.flow_heatpump['demand_dhw'] = demand_accumulated['demand_dhw']
 
         self.mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22)
-        self.flow_heatpump['delta'] = self.flow_heatpump['demand_heat']*(1-((21-self.temperature_tolerance-self.scenario.temp_air['temp_air'])/(21-self.scenario.temp_air['temp_air'])))
+        self.flow_heatpump['delta'] = (self.flow_heatpump['demand_heat'] *
+                                       (1 - ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
+                                             (21-self.scenario.temp_air['temp_air'])))
+                                       )
         self.flow_heatpump['delta'] = self.flow_heatpump['delta'].where(self.mask_time, 0).clip(lower = 0)
-        self.flow_heatpump['demand_heat'] = (self.flow_heatpump['demand_heat'] * ((21-self.scenario.temp_air['temp_air']-self.temperature_tolerance)/(21-self.scenario.temp_air['temp_air']))).clip(lower=0)
+        self.flow_heatpump['demand_heat'] = (self.flow_heatpump['demand_heat'] *
+                                             ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
+                                              (21 - self.scenario.temp_air['temp_air']))
+                                             ).clip(lower=0)
 
         self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array)
-        max_cop = self.cop_array.max()
-        self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'COP'] = max_cop
+        self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'COP'] = self.cop_array.max()
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2578,10 +2583,11 @@ class Heatpump(SinkBlock):
 
     bus_connected  bus                  dhw_bus
             |      |--x-->dhw_storage--x-->|---x--->dhw
-            |--x-->|              heating_bus               sink_bus
+            |      |
+            |--x-->|
+            |      |              heating_bus               sink_bus
             |      |--x-->buffer--x-->|--x-->inertia_house--x-->|--x-->snk
         """
-
 
         self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
 
