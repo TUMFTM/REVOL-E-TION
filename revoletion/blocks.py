@@ -2522,10 +2522,7 @@ class Heatpump(SinkBlock):
         except (AttributeError, KeyError):
             raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
 
-
-        self.years = self.scenario.temp_air.index.year.unique()
-
-        self.houses = [
+        houses = [
             {
                 "name": "EFH_1",
                 "house_type": "EFH",
@@ -2541,15 +2538,15 @@ class Heatpump(SinkBlock):
 
         demand_accumulated = pd.DataFrame()
 
-        for year in self.years:
+        for year in self.scenario.temp_air.index.year.unique():
 
             try_region=demandlib.vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
 
             region = vdi.Region(
                 year=year,
                 climate=vdi.Climate().from_try_data(try_region),
-                houses=self.houses,
-                resample_rule="15min"
+                houses=houses,
+                resample_rule=self.scenario.timestep_td
             )
 
             demand_year = region.get_load_curve_houses().iloc[:, :2]
