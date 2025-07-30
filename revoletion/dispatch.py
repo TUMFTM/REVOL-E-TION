@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-# base packages
+# builtin packages
+import copy
 import logging
 import os
 import statistics
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 import simpy
 # from packages
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Callable, List, Tuple, Any, Optional
 #from local packages
@@ -358,15 +359,14 @@ class GroupDispatcher:
         create additional processes in the battery GroupDispatcher processes dict representing the rex processes
         """
         def switch_prim_rex(process, pid):
-            result = copy(process)
-            for f in fields(process):
+            rex_process = copy.copy(process)
+            for f in fields(rex_process):
                 if f.name.endswith("_prim"):
                     rex_name = f.name[:-5] + "_rex"
-                    if hasattr(process, rex_name):
-                        setattr(result, f.name, getattr(process, rex_name))
-                        setattr(result, rex_name, None)
-            result.pid = pid
-            return result
+                    setattr(rex_process, f.name, getattr(process, rex_name))
+                    setattr(rex_process, rex_name, None)
+            rex_process.pid = pid
+            return rex_process
 
         for process in self.processes.values():
 
@@ -489,8 +489,9 @@ class DispatchProcess:
                     self.num_prim = (np.ceil(self.energy_req / sfp_prim.energy_usable).astype(int))
 
                 if sfp_prim.rex_available:  # rex is available for this subfleet/store
-                    sfp_rex = sfp_prim.rex_dispatcher.params.subfleet_params[sfp_prim.rex_subfleet.name]
-                    store_rex = sfp_prim.rex_dispatcher.stores[sfp_prim.rex_subfleet.name]
+                    self.dispatcher_rex = sfp_prim.rex_dispatcher
+                    sfp_rex = self.dispatcher_rex.params.subfleet_params[sfp_prim.rex_subfleet.name]
+                    store_rex = self.dispatcher_rex.stores[sfp_prim.rex_subfleet.name]
                     self.energy_missing = max((self.energy_req - sfp_prim.energy_usable), 0)
                     self.num_rex = np.ceil(self.energy_missing / sfp_rex.energy_usable).astype(int)
                     energy_req_eff = self.energy_req
