@@ -101,7 +101,8 @@ class BaseBlock(BlockScenarioInterface):
                                             scenario=self.scenario,
                                             block=self)
 
-        self.states = pd.DataFrame(index=self.scenario.dti_sim_extd,
+        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim_extd,
+                                                          self.scenario.timestep_td),
                                    dtype='float64')
         self.init_states()
 
