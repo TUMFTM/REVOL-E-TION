@@ -911,7 +911,7 @@ class PVSource(RenewableSource):
 
             # get data from Solcast API
             response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
-                                    headers={'Authorization': f'Bearer {self.scenario.settingskey_solcast_api}'},
+                                    headers={'Authorization': f'Bearer {self.scenario.settings.key_solcast_api}'},
                                     params=params)
 
             if response.status_code != 200:
