@@ -571,9 +571,20 @@ class DispatchProcess:
                     return
                 else:
                     self.status = 'waiting'
+
                     self.request_prim.cancel()
                     if self.request_rex:
                         self.request_rex.cancel()
+
+                    # ensure resources are put back after concurrent patience and request firing
+                    # https://stackoverflow.com/q/75371166
+                    if self.request_prim.triggered:
+                        resource_prim = yield self.request_prim
+                        store_prim.put(resource_prim)
+                    if getattr(self.request_rex, 'triggered', False):
+                        resource_rex = yield self.request_rex
+                        store_rex.put(resource_rex)
+
                     continue  # try next store
 
             yield env.timeout(1)
