@@ -592,4 +592,3 @@ class DispatchProcess:
 
         self.status = 'timeout'
         self.processed = True
-
