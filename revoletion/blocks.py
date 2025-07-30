@@ -2703,7 +2703,6 @@ class Heatpump(SinkBlock):
         soc_inertia_house = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
                                                              freq=self.scenario.timestep_td), 'soc_inertia_house'].dropna()
 
-
         self.scenario.plot_traces.extend(
             plot_lines=[go.Scatter(x=self.scenario.dti_eval,
                                    y=self.flows.loc[self.scenario.dti_eval, 'heatpump_out'],

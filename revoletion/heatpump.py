@@ -8,7 +8,14 @@ from scipy.interpolate import interp1d
 
 
 class Heatpump_COPanalyzer:
-    def __init__(self, wf="R290", nominal_cop=4.9, nominal_power = 9100, T_W35=35, T_A7=7, T_spread=5):
+    def __init__(self,
+                 wf: str = "R290",
+                 nominal_cop: float = 4.9,
+                 nominal_power: float = 9100,
+                 T_W35: float = 35,
+                 T_A7: float = 7,
+                 T_spread: float = 5,
+                 ):
 
         fluid_map = {
             'r290': 'R290',
@@ -17,9 +24,9 @@ class Heatpump_COPanalyzer:
             'r744': 'R744',
         }
 
-        self.wf = fluid_map.get(wf.lower())
+        self.wf = fluid_map.get(wf.lower(), None)
         if not self.wf:
-            raise ValueError(f"Unbekanntes Arbeitsmedium: '{wf}'. Gültige Optionen: {list(fluid_map.keys())}")
+            raise ValueError(f"Unknown working fluid: '{wf}'. Valid options are: {', '.join(fluid_map.keys())}")
 
         self.nominal_cop = nominal_cop
         self.nominal_power = nominal_power
@@ -27,7 +34,7 @@ class Heatpump_COPanalyzer:
         self.T_A7 = T_A7
         self.T_spread = T_spread
         self.build_heatpump()
-        self.results=None
+        self.results = None
 
     def build_heatpump(self):
         self.nwk = Network(p_unit="bar", T_unit="C", iterinfo=False)
@@ -56,29 +63,29 @@ class Heatpump_COPanalyzer:
 
         # components
         self.cp.set_attr(eta_s=0.8)  # efficiency of compressor
-        self.cd.set_attr(Q=(-1)*self.nominal_power, pr = 0.98)  # nominal heat delivered by the condenser and loss assumption
+        self.cd.set_attr(Q=(-1) * self.nominal_power, pr = 0.98)  # nominal heat delivered by the condenser and loss assumption
         self.ev.set_attr(pr=0.99)  # loss assumption
 
         # solve network
         self.nwk.solve("design")
+
     def cop_optimization(self, max_iter = 10):
         eta_s_max = 0.8
         eta_s_min = 0.4
-        i = 0
 
-        while i < max_iter:
-            eta_s = (eta_s_max+eta_s_min)/2
+        for _ in range(max_iter):
+            eta_s = (eta_s_max+eta_s_min) / 2
             self.cp.set_attr(eta_s=eta_s)
             self.nwk.solve("design")
             COP = abs(self.cd.Q.val)/self.cp.P.val
 
-            if round(COP-self.nominal_cop,3)>0:
+            if round(COP - self.nominal_cop, 3) > 0:
                 eta_s_max = eta_s
-            elif round(COP-self.nominal_cop,3) <0:
+            elif round(COP - self.nominal_cop, 3) < 0:
                 eta_s_min = eta_s
             else:
                 break
-            i+=1
+
         self.efficiency = round(self.cp.eta_s.val,3)
 
     def calculate_cop(self, temperature_range=np.arange(-10, 21)):
