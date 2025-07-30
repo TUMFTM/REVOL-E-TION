@@ -25,12 +25,6 @@ class AprioriPowerScheduler:
         self.core = AprioriCore(block=self.scenario.block_registry.get('TopLevelBlock', {})['core'],
                                 scheduler=self)
 
-        pass
-
-
-
-
-
     def calc_ph_schedule(self,
                          horizon: 'PredictionHorizon') -> None:
 
@@ -223,7 +217,7 @@ class AprioriFleet:
                                                       fleet=self,
                                                       scheduler=self.scheduler)
                             for fu_name, fu_block in self.scenario.block_registry['ElectricFleetUnit'].items()
-                            if (fu_block.parent.parent==self.block and
+                            if (fu_block.parent.parent.parent==self.block and
                                 fu_block.mode_scheduling in self.scenario.apriori_lvls)}
 
         self.fu_uc = {fu_name: fu_block

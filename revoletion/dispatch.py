@@ -16,6 +16,7 @@ from typing import Callable, List, Tuple, Any, Optional
 #from local packages
 from . import blocks
 from . import utils
+from .blocks import SubFleet
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):
@@ -227,8 +228,19 @@ class SubFleetParams:
 
             if subfleet.type_unit == 'ev':
                 rex_available = subfleet.rex is not None
-                rex_subfleet = subfleet.scenario.block_registry.get('SubFleet', {}).get(subfleet.rex, None)
-                rex_dispatcher = rex_subfleet.parent.dispatcher if rex_available else None
+                if rex_available:
+                    rex_subfleet = subfleet.scenario.block_registry.get('SubFleet', {}).get(subfleet.rex, None)
+                    if rex_subfleet is None:
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" does not exist')
+                    if not rex_subfleet.type_unit == 'mb':
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" is not a battery Subfleet')
+                    if not hasattr(rex_subfleet.parent, 'dispatcher') or not rex_subfleet.parent.dispatcher:
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" is not actively dispatched')
+                    rex_dispatcher = rex_subfleet.parent.dispatcher
+                else:
+                    rex_subfleet = None
+                    rex_dispatcher = None
+
                 params.update(
                     rex_available=rex_available,
                     rex_subfleet=rex_subfleet,

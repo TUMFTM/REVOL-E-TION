@@ -1,4 +1,4 @@
-block,key,#icev,bev_grid,#bev_mg,#bev_mg_rh
+block,key,icev,bev_grid,bev_mg,bev_mg_rh
 scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
 scenario,sim_duration,50,50,50,50
@@ -134,7 +134,7 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-vehicles,groups_dispatch,{'ld': ['icev']},"{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}"
+vehicles,groups_dispatch,{'ld': ['icev']},"{'ld': ['bev', 'icev']}","{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}"
 vehicles,system,ac,ac,ac,ac
 vehicles,pwr_lim_f2s,43000,43000,43000,43000
 vehicles,pwr_lim_s2f,43000,43000,43000,43000
@@ -249,4 +249,3 @@ mb,eff_chg_dc,0.95,0.95,0.95,0.95
 mb,eff_dis_ac,0.95,0.95,0.95,0.95
 mb,eff_dis_dc,0.95,0.95,0.95,0.95
 mb,sdr,0.02,0.02,0.02,0.02
-,,,,,
