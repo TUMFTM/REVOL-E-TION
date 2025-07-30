@@ -134,10 +134,7 @@ class BaseBlock(BlockScenarioInterface):
         if self.top_level_block:
             self.scenario.block_registry.setdefault('TopLevelBlock', {})[self.name] = self
         else:  # is subblock
-            try:
-                self.parent.subblocks[self.name] = self
-            except:
-                pass
+            self.parent.subblocks[self.name] = self
 
 
     def params_preprocessing(self):
