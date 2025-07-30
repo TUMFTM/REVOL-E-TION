@@ -436,9 +436,10 @@ class DispatchProcess:
     steps_rental: int
     dtime_patience: pd.Timedelta
     steps_patience: int
-    dispatched: Optional[bool] = False
+    processed: Optional[bool] = False
     distance_req: Optional[float] = None
     num_prim: Optional[int] = None
+    steps_wait: Optional[int] = None
     time_dep: Optional[pd.Timestamp] = None
     step_dep: Optional[int] = None
     time_return: Optional[pd.Timestamp] = None
@@ -463,106 +464,120 @@ class DispatchProcess:
     result_rex: Optional[simpy.Resource] = None
 
     def __post_init__(self):
-        if not self.dispatched:
+        if not self.processed:
             self.dispatcher_prim.env.process(self.process())
 
     def process(self):
+        """
+        SimPy process that attempts to allocate resources from primary and optional REX fleets.
+        Retries across stores until successful or patience is exhausted.
+        """
 
         env = self.dispatcher_prim.env
-
         yield env.timeout(self.step_req)
+        self.steps_wait = 0
 
-        for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
+        while self.steps_wait <= self.steps_patience:
 
-            sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
+            for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
 
-            if self.dispatcher_prim.params.is_vehicle_group:
-                self.num_prim = 1
-            else:  # Battery DispatchGroup
-                self.num_prim = (np.ceil(self.energy_req / sfp_prim.energy_usable).astype(int))
+                sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
 
-            if sfp_prim.rex_available:  # rex is available for this subfleet/store
-                sfp_rex = sfp_prim.rex_dispatcher.params.subfleet_params[sfp_prim.rex_subfleet.name]
-                store_rex = sfp_prim.rex_dispatcher.stores[sfp_prim.rex_subfleet.name]
-                self.energy_missing = min((self.energy_req - sfp_prim.energy_usable), 0)
-                self.num_rex = np.ceil(self.energy_missing / sfp_rex.energy_usable).astype(int)
-            else:
-                sfp_rex = None
-                store_rex = None
-                self.energy_missing = 0
-                self.num_rex = 0
-                self.energy_req = min(self.energy_req, sfp_prim.energy_usable)
+                if self.dispatcher_prim.params.is_vehicle_group:
+                    self.num_prim = 1
+                else:  # Battery DispatchGroup
+                    self.num_prim = (np.ceil(self.energy_req / sfp_prim.energy_usable).astype(int))
 
-            self.energy_usable = (self.num_prim * sfp_prim.energy_usable) + \
-                                 (self.num_rex * getattr(sfp_rex, 'energy_usable', 0))
+                if sfp_prim.rex_available:  # rex is available for this subfleet/store
+                    sfp_rex = sfp_prim.rex_dispatcher.params.subfleet_params[sfp_prim.rex_subfleet.name]
+                    store_rex = sfp_prim.rex_dispatcher.stores[sfp_prim.rex_subfleet.name]
+                    self.energy_missing = max((self.energy_req - sfp_prim.energy_usable), 0)
+                    self.num_rex = np.ceil(self.energy_missing / sfp_rex.energy_usable).astype(int)
+                    energy_req_eff = self.energy_req
+                else:
+                    sfp_rex = None
+                    store_rex = None
+                    self.energy_missing = 0
+                    self.num_rex = 0
+                    energy_req_eff = min(self.energy_req, sfp_prim.energy_usable)
 
-            self.energy_total = (self.num_prim * sfp_prim.energy_total) + \
-                                (self.num_rex * getattr(sfp_rex, 'energy_total', 0))
+                self.energy_usable = (self.num_prim * sfp_prim.energy_usable) + \
+                                     (self.num_rex * getattr(sfp_rex, 'energy_usable', 0))
 
-            self.utilization = self.energy_req / self.energy_usable
-            self.dsoc_prim = sfp_prim.dsoc_usable * self.utilization
-            self.dsoc_rex = getattr(sfp_rex, 'dsoc_usable', 0) * self.utilization
+                self.energy_total = (self.num_prim * sfp_prim.energy_total) + \
+                                    (self.num_rex * getattr(sfp_rex, 'energy_total', 0))
 
-            if sfp_prim.is_electric:
-                self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total
-                self.energy_req_rex = self.dsoc_rex * getattr(sfp_rex, 'energy_total', 0)
-            else:
-                self.energy_req_prim = self.energy_req
-                self.energy_req_rex = 0
+                self.utilization = energy_req_eff / self.energy_usable
+                self.dsoc_prim = sfp_prim.dsoc_usable * self.utilization
+                self.dsoc_rex = getattr(sfp_rex, 'dsoc_usable', 0) * self.utilization
 
-            self.dtime_chg_prim = pd.to_timedelta(self.energy_req_prim /
-                                                  sfp_prim.pwr_chg_usable,
-                                                  unit='hour')
-            self.dtime_chg_rex = pd.to_timedelta(self.energy_req_rex /
-                                                 getattr(sfp_rex, 'pwr_chg_usable', np.inf),
-                                                 unit='hour')
+                if sfp_prim.is_electric:
+                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total
+                    self.energy_req_rex = self.dsoc_rex * getattr(sfp_rex, 'energy_total', 0)
+                else:
+                    self.energy_req_prim = self.energy_req
+                    self.energy_req_rex = 0
 
-            self.steps_chg_prim = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_prim)
-            self.steps_chg_rex = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_rex)
+                self.dtime_chg_prim = pd.to_timedelta(self.energy_req_prim /
+                                                      sfp_prim.pwr_chg_usable,
+                                                      unit='hour')
+                self.dtime_chg_rex = pd.to_timedelta(self.energy_req_rex /
+                                                     getattr(sfp_rex, 'pwr_chg_usable', np.inf),
+                                                     unit='hour')
 
-            self.steps_usage_prim = self.steps_chg_prim + self.steps_rental
-            self.steps_usage_rex = self.steps_chg_rex + self.steps_rental
+                self.steps_chg_prim = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_prim)
+                self.steps_chg_rex = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_rex)
 
-            def min_steps_since_put(steps: int):
-                def _filter(item):
-                    _, ts_put = item
-                    return (env.now - ts_put) >= steps
+                self.steps_usage_prim = self.steps_chg_prim + self.steps_rental
+                self.steps_usage_rex = self.steps_chg_rex + self.steps_rental
 
-                return _filter
+                def min_steps_since_put(steps: int):
+                    def _filter(item):
+                        _, ts_put = item
+                        return (env.now - ts_put) >= steps
 
-            self.request_prim = store_prim.get(
-                amount=self.num_prim,
-                filter=min_steps_since_put(steps=self.steps_chg_prim))
+                    return _filter
 
-            if self.num_rex > 0:
-                self.request_rex = store_rex.get(
-                    amount=self.num_rex,
-                    filter=min_steps_since_put(steps=self.steps_chg_rex))
+                self.request_prim = store_prim.get(
+                    amount=self.num_prim,
+                    filter=min_steps_since_put(steps=self.steps_chg_prim))
 
-            yield env.timeout(0)  # resolve immediate triggers
+                if self.num_rex > 0:
+                    self.request_rex = store_rex.get(
+                        amount=self.num_rex,
+                        filter=min_steps_since_put(steps=self.steps_chg_rex))
+                else:
+                    self.request_rex = None
 
-            success_prim = self.request_prim.triggered
-            success_rex = True if self.request_rex is None else self.request_rex.triggered
+                yield env.timeout(0)  # resolve immediate triggers
 
-            if success_prim and success_rex:
-                self.step_dep = env.now
-                self.time_dep = self.dispatcher_prim.time.steps2dt(self.step_dep, absolute=True)
-                self.status = 'success'
-                self.result_prim = self.request_prim.value
-                self.result_rex = None if self.request_rex is None else self.request_rex.value
-                yield env.timeout(self.steps_rental)
-                self.step_return = env.now
-                self.time_return = self.dispatcher_prim.time.steps2dt(self.step_return, absolute=True)
-                store_prim.put(self.result_prim)
-                if self.request_rex is not None:
-                    store_rex.put(self.result_rex)
-                break
-            else:
-                self.status = 'failure'
-                self.request_prim.cancel()
-                if self.request_rex:
-                    self.request_rex.cancel()
-                continue  # try next store
+                success_prim = self.request_prim.triggered
+                success_rex = True if self.request_rex is None else self.request_rex.triggered
 
-        self.dispatched = True
+                if success_prim and success_rex:
+                    self.processed = True
+                    self.status = 'success'
+                    self.step_dep = env.now
+                    self.time_dep = self.dispatcher_prim.time.steps2dt(self.step_dep, absolute=True)
+                    self.result_prim = self.request_prim.value
+                    self.result_rex = None if self.request_rex is None else self.request_rex.value
+                    yield env.timeout(self.steps_rental)
+                    self.step_return = env.now
+                    self.time_return = self.dispatcher_prim.time.steps2dt(self.step_return, absolute=True)
+                    store_prim.put(self.result_prim)
+                    if self.request_rex is not None:
+                        store_rex.put(self.result_rex)
+                    return
+                else:
+                    self.status = 'waiting'
+                    self.request_prim.cancel()
+                    if self.request_rex:
+                        self.request_rex.cancel()
+                    continue  # try next store
+
+            yield env.timeout(1)
+            self.steps_wait += 1
+
+        self.status = 'timeout'
+        self.processed = True
 
