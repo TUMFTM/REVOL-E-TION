@@ -77,3 +77,4 @@ hp,ls,20
 hp,ccr,1
 hp,size_buffer,16
 hp,size_dhw_storage,190
+hp,specific_heat_capacity_h2o,4180

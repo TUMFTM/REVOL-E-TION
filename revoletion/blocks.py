@@ -2504,7 +2504,7 @@ class Heatpump(SinkBlock):
                  scenario):
         super().__init__(name=name,
                          scenario=scenario,
-                         flow_apriori_names=['demand_heat'],
+                         flow_apriori_names=['demand_heat', 'demand_dhw','delta'],
                          params=None,
                          parent=scenario)
 
@@ -2517,7 +2517,7 @@ class Heatpump(SinkBlock):
 
     def get_heating_energy_apriori(self):
 
-        self.flow_heatpump = self.scenario.temp_air.copy()
+        temp_air = self.scenario.temp_air
 
         houses = [
             {
@@ -2534,10 +2534,10 @@ class Heatpump(SinkBlock):
         ]
 
         demand_accumulated = pd.DataFrame()
+        try_region = vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
+        demand_list = []
 
         for year in self.scenario.temp_air.index.year.unique():
-
-            try_region=vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
 
             region = vdi.Region(
                 year=year,
@@ -2548,30 +2548,31 @@ class Heatpump(SinkBlock):
 
             demand_year = region.get_load_curve_houses().iloc[:, :2]
             demand_year.columns = ['demand_heat', 'demand_dhw']
+            demand_list.append(demand_year)
 
-            demand_accumulated = pd.concat([demand_accumulated, demand_year])
+        demand_accumulated = pd.concat(demand_list, axis = 1)
 
         demand_accumulated.index = demand_accumulated.index.tz_localize('Europe/Berlin',
                                                                         nonexistent='shift_forward',
                                                                         ambiguous=False)
         demand_accumulated = demand_accumulated.loc[self.scenario.temp_air.index]
 
-        self.flow_heatpump['demand_heat'] = demand_accumulated['demand_heat']
-        self.flow_heatpump['demand_dhw'] = demand_accumulated['demand_dhw']
+        self.flows_apriori['demand_heat'] = demand_accumulated['demand_heat']
+        self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
 
-        mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22)
-        self.flow_heatpump['delta'] = (self.flow_heatpump['demand_heat'] *
-                                       (1 - ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
-                                             (21-self.scenario.temp_air['temp_air'])))
-                                       )
-        self.flow_heatpump['delta'] = self.flow_heatpump['delta'].where(mask_time, 0).clip(lower=0)
-        self.flow_heatpump['demand_heat'] = (self.flow_heatpump['demand_heat'] *
-                                             ((21 - self.temperature_tolerance - self.scenario.temp_air['temp_air']) /
-                                              (21 - self.scenario.temp_air['temp_air']))
-                                             ).clip(lower=0)
+        mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22) #night time shutdown
 
-        self.flow_heatpump['COP'] = self.flow_heatpump['temp_air'].round(2).map(self.cop_array)
-        self.flow_heatpump.loc[self.flow_heatpump['temp_air'] > 20, 'COP'] = self.cop_array.max()
+        delta = (
+                demand_accumulated['demand_heat']
+                * (1 - ((21 - self.temperature_tolerance - temp_air['temp_air'])
+                        / (21 - temp_air['temp_air'])))
+        ) #linear interpolation for thermal inertia of house. 21+- temperatur_tolerance
+        delta = delta.where(mask_time, 0).clip(lower=0)
+        self.flows_apriori['delta'] = delta
+
+        cop_series = temp_air['temp_air'].round(2).map(self.cop_array)
+        cop_series.loc[temp_air['temp_air'] > 20] = self.cop_array.max()
+        self.states['COP'] = cop_series
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2605,43 +2606,43 @@ class Heatpump(SinkBlock):
                     existing=self.sizes['block'].preexisting,
                     maximum=self.sizes['block'].expansion_max
                 ))},
-            conversion_factors={self.components['bus']: self.flow_heatpump['COP']}
+            conversion_factors={self.components['bus']: self.states['COP']}
         )
 
         self.components['buffer'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['heating_bus']: solph.Flow()},
             loss_rate=0.02,
-            nominal_storage_capacity= (self.size_buffer * 4180 * 35) / 3600  # 16
+            nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * 35) / 3600  # 16
         )
 
         self.components['dhw_storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['dhw_bus']: solph.Flow()},
             loss_rate=0.02,
-            nominal_storage_capacity=(self.size_dhw_storage * 4180 * (55-10)) / 3600  # 190
+            nominal_storage_capacity=(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)) / 3600  # 190
         )
 
         self.components['inertia_house'] = solph.components.GenericStorage(
             inputs= {self.components['heating_bus']: solph.Flow(
-                nominal_value=self.flow_heatpump['demand_heat'].max() + self.flow_heatpump['delta'].max(),
-                max=self.flow_heatpump['demand_heat'] + self.flow_heatpump['delta']
+                nominal_value=self.flows_apriori['demand_heat'].max() + self.flows_apriori['delta'].max(),
+                max=self.flows_apriori['demand_heat'] + self.flows_apriori['delta']
             )
             },
             outputs={self.components['sink_bus']:solph.Flow()
                      },
             loss_rate= 0.0,
-            nominal_storage_capacity=self.flow_heatpump['delta'].max()
+            nominal_storage_capacity=self.flows_apriori['delta'].max()
         )
 
         self.components['snk'] = solph.components.Sink(
             inputs={self.components['sink_bus']: solph.Flow(nominal_capacity=1,
-                                                            fix=self.flow_heatpump['demand_heat'][horizon.dti_ph])}
+                                                            fix=self.flows_apriori['demand_heat'][horizon.dti_ph])}
         )
 
         self.components['dhw'] = solph.components.Sink(
             inputs={self.components['dhw_bus']: solph.Flow(nominal_capacity=1,
-                                                           fix=self.flow_heatpump['demand_dhw'][horizon.dti_ph])}
+                                                           fix=self.flows_apriori['demand_dhw'][horizon.dti_ph])}
         )
 
     def get_horizon_results(self,
@@ -2687,7 +2688,7 @@ class Heatpump(SinkBlock):
                                                                    self.size_dhw_storage).fillna(0)
 
         self.states.loc[horizon.dti_ch_extd, 'soc_inertia_house'] = (self.states.loc[horizon.dti_ch_extd, 'energy_inertia_house'] /
-                                                                     self.flow_heatpump['delta'].max()).fillna(0)
+                                                                     self.flows_apriori['delta'].max()).fillna(0)
 
     def create_plot_traces(self):
 
