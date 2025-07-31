@@ -2508,10 +2508,10 @@ class Heatpump(SinkBlock):
                          params=None,
                          parent=scenario)
 
-        self.analyzer = hp.Heatpump_COPanalyzer(working_fluid=self.wf,
-                                                nominal_cop= self.nominal_cop,
-                                                nominal_power= self.nominal_power)
-        self.cop_array = self.analyzer.run_full_analysis()
+        analyzer = hp.Heatpump_COPanalyzer(working_fluid=self.wf,
+                                            nominal_cop= self.nominal_cop,
+                                            nominal_power= self.nominal_power)
+        self.cop_array = analyzer.run_full_analysis()
 
         self.get_heating_energy_apriori()
 
