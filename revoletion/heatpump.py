@@ -86,7 +86,7 @@ class Heatpump_COPanalyzer:
             else:
                 break
 
-        self.efficiency = round(self.cp.eta_s.val,3)
+        self.efficiency = round(self.cp.eta_s.val, 3)
 
     def calculate_cop(self, temperature_range=np.arange(-10, 21)):
         self.temperature_range = temperature_range
