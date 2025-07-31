@@ -2628,7 +2628,7 @@ class Heatpump(SinkBlock):
         self.components['inertia_house'] = solph.components.GenericStorage(
             inputs= {self.components['heating_bus']: solph.Flow(
                 nominal_value=self.flow_heatpump['demand_heat'].max() + self.flow_heatpump['delta'].max(),
-                max=self.flow_heatpump['demand_heat']+self.flow_heatpump['delta']
+                max=self.flow_heatpump['demand_heat'] + self.flow_heatpump['delta']
             )
             },
             outputs={self.components['sink_bus']:solph.Flow()
