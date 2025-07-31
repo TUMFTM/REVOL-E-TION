@@ -75,3 +75,5 @@ hp,demand_spec,100000
 hp,demand_dhw,1500000
 hp,ls,20
 hp,ccr,1
+hp,size_buffer,16
+hp,size_dhw_storage,190

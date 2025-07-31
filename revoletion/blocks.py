@@ -2508,9 +2508,6 @@ class Heatpump(SinkBlock):
                          params=None,
                          parent=scenario)
 
-        self.size_buffer = 16  # size in liters
-        self.size_dhw_storage = 190  # size in liters
-
         self.analyzer = hp.Heatpump_COPanalyzer(working_fluid=self.wf,
                                                 nominal_cop= self.nominal_cop,
                                                 nominal_power= self.nominal_power)
@@ -2519,10 +2516,8 @@ class Heatpump(SinkBlock):
         self.get_heating_energy_apriori()
 
     def get_heating_energy_apriori(self):
-        try:
-            self.flow_heatpump = self.scenario.temp_air.copy()
-        except (AttributeError, KeyError):
-            raise ValueError(f'Heatpump {self.name} - No temperature data found in scenario.temp_air.')
+
+        self.flow_heatpump = self.scenario.temp_air.copy()
 
         houses = [
             {
