@@ -2551,10 +2551,10 @@ class Heatpump(SinkBlock):
             demand_list.append(demand_year)
 
         demand_accumulated = pd.concat(demand_list, axis = 1)
+        demand_accumulated.index = demand_accumulated.index + pd.DateOffset(hours=-1)
+        demand_accumulated.index = demand_accumulated.index.tz_localize("UTC")
+        demand_accumulated.index = demand_accumulated.index.tz_convert('Europe/Berlin')
 
-        demand_accumulated.index = demand_accumulated.index.tz_localize('Europe/Berlin',
-                                                                        nonexistent='shift_forward',
-                                                                        ambiguous=False)
         demand_accumulated = demand_accumulated.loc[self.scenario.temp_air.index]
 
         self.flows_apriori['demand_heat'] = demand_accumulated['demand_heat']
