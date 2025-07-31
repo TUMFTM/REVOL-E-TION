@@ -6,15 +6,16 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 
+T_W35 = 35
+T_A7= 7
+T_SPREAD = 5
+
 
 class Heatpump_COPanalyzer:
     def __init__(self,
-                 wf: str = "R290",
+                 working_fluid: str = "R290",
                  nominal_cop: float = 4.9,
-                 nominal_power: float = 9100,
-                 T_W35: float = 35,
-                 T_A7: float = 7,
-                 T_spread: float = 5,
+                 nominal_power: float = 9100
                  ):
 
         fluid_map = {
@@ -24,15 +25,15 @@ class Heatpump_COPanalyzer:
             'r744': 'R744',
         }
 
-        self.wf = fluid_map.get(wf.lower(), None)
-        if not self.wf:
-            raise ValueError(f"Unknown working fluid: '{wf}'. Valid options are: {', '.join(fluid_map.keys())}")
+        self.working_fluid = fluid_map.get(working_fluid.lower(), None)
+        if not self.working_fluid:
+            raise ValueError(f"Unknown working fluid: '{working_fluid}'. Valid options are: {', '.join(fluid_map.keys())}")
 
         self.nominal_cop = nominal_cop
         self.nominal_power = nominal_power
         self.T_W35 = T_W35
         self.T_A7 = T_A7
-        self.T_spread = T_spread
+        self.T_spread = T_SPREAD
         self.build_heatpump()
         self.results = None
 
@@ -58,7 +59,7 @@ class Heatpump_COPanalyzer:
         self.nwk.add_conns(self.c0, self.c1, self.c2, self.c3, self.c4)
 
         # connections
-        self.c2.set_attr(T=self.T_A7-self.T_spread, fluid={self.wf: 1}, x=1.0)  # evaporator to compressor
+        self.c2.set_attr(T=self.T_A7-self.T_spread, fluid={self.working_fluid: 1}, x=1.0)  # evaporator to compressor
         self.c4.set_attr(T=self.T_W35+self.T_spread, x=0.0)  # condenser to valve
 
         # components

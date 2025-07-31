@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import ast
-import demandlib.vdi
+
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
@@ -2511,7 +2511,9 @@ class Heatpump(SinkBlock):
         self.size_buffer = 16  # size in liters
         self.size_dhw_storage = 190  # size in liters
 
-        self.analyzer = hp.Heatpump_COPanalyzer(self.wf, self.nominal_cop, self.nominal_power)
+        self.analyzer = hp.Heatpump_COPanalyzer(working_fluid=self.wf,
+                                                nominal_cop= self.nominal_cop,
+                                                nominal_power= self.nominal_power)
         self.cop_array = self.analyzer.run_full_analysis()
 
         self.get_heating_energy_apriori()
@@ -2540,7 +2542,7 @@ class Heatpump(SinkBlock):
 
         for year in self.scenario.temp_air.index.year.unique():
 
-            try_region=demandlib.vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
+            try_region=vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
 
             region = vdi.Region(
                 year=year,
