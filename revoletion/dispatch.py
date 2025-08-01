@@ -3,9 +3,7 @@
 # builtin packages
 import copy
 import logging
-import os
 import statistics
-import time
 # packages
 import numpy as np
 import pandas as pd
@@ -16,7 +14,6 @@ from pathlib import Path
 from typing import Callable, List, Tuple, Any, Optional
 # from local packages
 from . import blocks
-from . import utils
 from .blocks import SubFleet
 
 
@@ -184,7 +181,7 @@ class DispatchGroupParams:
 @dataclass
 class SubFleetParams:
     name: str
-    units: list  # either list of names of dict {name:object}
+    units: list | dict[str, 'blocks.FleetUnit']
     is_electric: bool
     size_unit: Optional[float] = None
     pwr_chg: Optional[float] = None
