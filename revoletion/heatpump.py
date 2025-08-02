@@ -15,7 +15,8 @@ class Heatpump_COPanalyzer:
     def __init__(self,
                  working_fluid: str = "R290",
                  nominal_cop: float = 4.9,
-                 nominal_power: float = 9100
+                 nominal_power: float = 9100,
+                 temperature_range=np.arange(-10, 21)
                  ):
 
         fluid_map = {
@@ -34,10 +35,8 @@ class Heatpump_COPanalyzer:
         self.T_W35 = T_W35
         self.T_A7 = T_A7
         self.T_spread = T_SPREAD
-        self.build_heatpump()
-        self.results = None
+        self.temperature_range = temperature_range
 
-    def build_heatpump(self):
         self.nwk = Network(p_unit="bar", T_unit="C", iterinfo=False)
 
         # build HP network model
@@ -59,16 +58,19 @@ class Heatpump_COPanalyzer:
         self.nwk.add_conns(self.c0, self.c1, self.c2, self.c3, self.c4)
 
         # connections
-        self.c2.set_attr(T=self.T_A7-self.T_spread, fluid={self.working_fluid: 1}, x=1.0)  # evaporator to compressor
-        self.c4.set_attr(T=self.T_W35+self.T_spread, x=0.0)  # condenser to valve
+        self.c2.set_attr(T=self.T_A7 - self.T_spread, fluid={self.working_fluid: 1}, x=1.0)  # evaporator to compressor
+        self.c4.set_attr(T=self.T_W35 + self.T_spread, x=0.0)  # condenser to valve
 
         # components
         self.cp.set_attr(eta_s=0.8)  # efficiency of compressor
-        self.cd.set_attr(Q=(-1) * self.nominal_power, pr = 0.98)  # nominal heat delivered by the condenser and loss assumption
+        self.cd.set_attr(Q=(-1) * self.nominal_power,
+                         pr=0.98)  # nominal heat delivered by the condenser and loss assumption
         self.ev.set_attr(pr=0.99)  # loss assumption
 
         # solve network
         self.nwk.solve("design")
+
+        self.results = None
 
     def cop_optimization(self, max_iter = 10):
         eta_s_max = 0.8
@@ -80,9 +82,9 @@ class Heatpump_COPanalyzer:
             self.nwk.solve("design")
             COP = abs(self.cd.Q.val)/self.cp.P.val
 
-            if round(COP - self.nominal_cop, 3) > 0:
+            if COP - self.nominal_cop > 0:
                 eta_s_max = eta_s
-            elif round(COP - self.nominal_cop, 3) < 0:
+            elif COP - self.nominal_cop < 0:
                 eta_s_min = eta_s
             else:
                 break
@@ -101,13 +103,11 @@ class Heatpump_COPanalyzer:
 
         results["efficiency"] = results["COP"] / results["COP_carnot"]
         self.results = results
-        return results
 
-    def analyze_cop(self, temperature_range=np.arange(-10, 21)):
-        self.temperature_range = temperature_range
-        results = pd.DataFrame(index=temperature_range, columns=["COP", "COP_carnot"])
+    def analyze_cop(self):
+        results = pd.DataFrame(index=self.temperature_range, columns=["COP", "COP_carnot"])
 
-        for T in temperature_range:
+        for T in self.temperature_range:
             self.c2.set_attr(T=T - self.T_spread)
             self.nwk.solve("design")
             results.loc[T, "COP"] = abs(self.cd.Q.val) / self.cp.P.val
@@ -135,7 +135,6 @@ class Heatpump_COPanalyzer:
         return self.results["COP"]
 
     def run_full_analysis(self):
-        self.build_heatpump()
         self.cop_optimization()
         self.analyze_cop()
         return self.get_cop_array()

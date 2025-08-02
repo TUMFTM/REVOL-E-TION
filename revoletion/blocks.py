@@ -2564,9 +2564,9 @@ class Heatpump(SinkBlock):
 
         delta = (
                 demand_accumulated['demand_heat']
-                * (1 - ((21 - self.temperature_tolerance - temp_air['temp_air'])
-                        / (21 - temp_air['temp_air'])))
-        ) #linear interpolation for thermal inertia of house. 21+- temperatur_tolerance
+                * (1 - ((20 - self.temperature_tolerance - temp_air['temp_air'])
+                        / (20 - temp_air['temp_air'])))
+        ) #linear interpolation for thermal inertia of house. 20+- temperatur_tolerance
         delta = delta.where(mask_time, 0).clip(lower=0)
         self.flows_apriori['delta'] = delta
 
