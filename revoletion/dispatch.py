@@ -1,53 +1,63 @@
 #!/usr/bin/env python3
 
+# builtin packages
+import copy
 import logging
-import os
 import statistics
-
+# packages
 import numpy as np
 import pandas as pd
 import simpy
-
-from dataclasses import dataclass
+# from packages
+from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Optional
-
+from typing import Callable, List, Tuple, Any, Optional
+# from local packages
 from . import blocks
-from . import utils
+from .blocks import SubFleet
 
 
-class MultiStoreGet(simpy.resources.base.Get):
-    def __init__(self, store, num=1):
-        self.amount = num
-        super(MultiStoreGet, self).__init__(store)
+class MultiFilterStorePut(simpy.resources.base.Put):
+    def __init__(self, resource, items, **kwargs):
+        now = resource._env.now
+        self.items = [(item, now) for item in items]
+        super().__init__(resource, **kwargs)
 
 
-class MultiStorePut(simpy.resources.base.Put):
-    def __init__(self, store, items):
-        self.items = items
-        super(MultiStorePut, self).__init__(store)
+class MultiFilterStoreGet(simpy.resources.base.Get):
+    def __init__(self, resource, amount=1, filter: Callable[[Tuple[Any, float]], bool] = lambda x: True, **kwargs):
+        self.amount = amount
+        self.filter = filter
+        super().__init__(resource, **kwargs)
 
 
-class MultiStore(simpy.resources.base.BaseResource):
+class MultiFilterStore(simpy.resources.base.BaseResource):
     def __init__(self,
                  env: simpy.Environment,
-                 capacity: int):
-        super(MultiStore, self).__init__(env, capacity)
-        self.items = []
+                 capacity: int,
+                 initial=None):
+        super().__init__(env, capacity)
+        self.items = [(item, env.now) for item in (initial or [])]
 
-    put = simpy.core.BoundClass(MultiStorePut)
-    get = simpy.core.BoundClass(MultiStoreGet)
+    put = simpy.core.BoundClass(MultiFilterStorePut)
+    get = simpy.core.BoundClass(MultiFilterStoreGet)
 
     def _do_put(self, event):
         if len(self.items) + len(event.items) <= self._capacity:
-            self.items.extend(event.items)
+            self.items.extend(event.items)  # FIFO behavior
             event.succeed()
 
     def _do_get(self, event):
-        if self.items and event.amount <= len(self.items):
-            elements = self.items[(len(self.items) - event.amount - 0):]
-            self.items = self.items[:(len(self.items) - event.amount - 0)]
-            event.succeed(elements)
+        filtered = list(filter(event.filter, self.items))
+        if len(filtered) >= event.amount:
+            selected = filtered[:event.amount]
+
+            # Remove these from self.items (match by identity)
+            for item in selected:
+                self.items.remove(item)
+
+            # Return only the items, not their timestamps
+            event.succeed([item for item, timestamp in selected])
 
 
 class DispatchTimer:
@@ -68,19 +78,19 @@ class DispatchTimer:
                                  freq=self.dti_base.freq)
 
     def dt2steps(self,
-                 values: pd.Series):
+                 values: pd.Series | pd.Timedelta | pd.Timestamp):
         """
         utility method
         convert pandas datetime or timedelta values to DES steps
         """
 
-        if pd.api.types.is_datetime64_any_dtype(values):
+        if pd.api.types.is_datetime64_any_dtype(values) or isinstance(values, pd.Timestamp):
             # ensure that the result is at least 1, as 0 would leave no time for any action in real life
             return np.maximum(1, np.ceil((values - self.time_start) / self.step).astype(int))
-        elif pd.api.types.is_timedelta64_dtype(values):
+        elif pd.api.types.is_timedelta64_dtype(values) or isinstance(values, pd.Timedelta):
             return np.maximum(1, np.ceil(values / self.step).astype(int))
         else:
-            raise ValueError(f'Unsupported type {values.dtype} for conversion to steps')
+            raise ValueError(f'Unsupported type {type(values)} for conversion to steps')
 
     def steps2dt(self,
                  steps: pd.Series,
@@ -96,98 +106,111 @@ class DispatchTimer:
             return td + self.time_start
 
 
-class SiteDispatcher:
+class DispatchEnvironment:
+    """
+    Intermediary between REVOl-E-TION scenario and the GroupDispatchers - not required for standalone operation
+    """
 
     def __init__(self,
                  scenario: 'simulation.Scenario'):
 
         self.scenario = scenario
 
-        self.subfleets = self.scenario.block_registry.get('SubFleetDispatch', {})
-        if not self.subfleets:
-            return
-
+        self.groups = self.scenario.block_registry.get('DispatchGroupActive', {})
         self.time = DispatchTimer(dti_base=self.scenario.dti_sim)
         self.env = simpy.Environment()
-
-        # region create subfleet dispatchers
         self.dispatchers = dict()
-        for subfleet_name, subfleet in self.subfleets.items():
-            # BatteryDispatchers need to be initialized first to allow for range extension of ElectricVehicleDispatchers
-            if subfleet.type_unit in ['mb']:
-                self.dispatchers[subfleet_name] = BatteryDispatcher(timer=self.time,
-                                                                    demand=subfleet.demand,
-                                                                    env=self.env,
-                                                                    params=SubFleetParams.from_subfleet(subfleet=subfleet),
-                                                                    logger=self.scenario.logger)
-                subfleet.dispatcher = self.dispatchers[subfleet_name]
 
-        for subfleet_name, subfleet in self.subfleets.items():
-            if subfleet.type_unit in ['ev', 'icev']:
-                self.dispatchers[subfleet_name] = VehicleDispatcher(timer=self.time,
-                                                                    demand=subfleet.demand,
-                                                                    env=self.env,
-                                                                    params=SubFleetParams.from_subfleet(subfleet=subfleet),
-                                                                    logger=self.scenario.logger)
-                subfleet.dispatcher = self.dispatchers[subfleet_name]
+        # region create individual dispatchers
+        # Battery Dispatchers need to be initialized first to allow for range extension of Vehicle Dispatchers
+        for name, group in [(n, g) for n, g in self.groups.items() if not g.is_vehicle_group]:
+            self.dispatchers[name] = GroupDispatcher(timer=self.time,
+                                                     demand=group.demand,
+                                                     env=self.env,
+                                                     params=DispatchGroupParams.from_obj(group=group),
+                                                     logger=self.scenario.logger)
+            group.dispatcher = self.dispatchers[name]
 
+        for name, group in [(n, g) for n, g in self.groups.items() if g.is_vehicle_group]:
+            self.dispatchers[name] = GroupDispatcher(timer=self.time,
+                                                     demand=group.demand,
+                                                     env=self.env,
+                                                     params=DispatchGroupParams.from_obj(group=group),
+                                                     logger=self.scenario.logger)
+            group.dispatcher = self.dispatchers[name]
         # endregion
 
         self.env.run()
 
-        # rex process transfer is required before all processes can be evaluated
-        for vehicle_dispatcher in [disp for disp in self.dispatchers.values() if isinstance(disp, VehicleDispatcher)]:
-            vehicle_dispatcher.transfer_rex_processes()
+        for dispatcher in self.dispatchers.values():
+            if dispatcher.params.is_vehicle_group:
+                dispatcher.transfer_rex_processes()
 
         for disp in self.dispatchers.values():
-            disp.postprocess(dti_output=self.scenario.dti_sim_extd)
+            disp.generate_log(dti_output=self.scenario.dti_sim_extd)
             if not self.scenario.settings.largescalemode:
-                path_processes = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_processes.csv')
                 path_log = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_log.csv')
-                disp.save_data(path_processes=path_processes,
-                               path_log=path_log)
+                disp.save_data(path_log=path_log)
 
-        for subfleet in self.subfleets.values():
-            subfleet.log = subfleet.dispatcher.log
+        for group in self.groups.values():
+            group.log = group.dispatcher.log
+
+
+
+@dataclass
+class DispatchGroupParams:
+    name: str
+    subfleet_params: list
+    is_vehicle_group: bool
+
+    @classmethod
+    def from_obj(cls,
+                 group: 'blocks.DispatchGroup') -> 'DispatchGroupParams':
+
+        subfleet_params = {name: SubFleetParams.from_obj(subfleet) for name, subfleet in group.subblocks.items()}
+
+        params = dict(
+            name=group.name,
+            subfleet_params=subfleet_params,
+            is_vehicle_group=group.is_vehicle_group,
+        )
+
+        return cls(**params)
 
 
 @dataclass
 class SubFleetParams:
     name: str
-    units: list  # either list of names of dict {name:object}
-    size_unit: float
-    pwr_chg: float
-    is_vehicle: bool = None
-    is_electric: bool = None
-    soc_upper: Optional[float] = 1.0
-    soc_lower: Optional[float] = 0.0
-    eff_chg: Optional[float] = 1.0
-    eff_roundtrip: Optional[float] = 1.0
-    loss_rate_per_hour: Optional[float] = 0.0
-    rex: Optional[str] = None
+    units: list | dict[str, 'blocks.FleetUnit']
+    is_electric: bool
+    size_unit: Optional[float] = None
+    pwr_chg: Optional[float] = None
+    soc_upper: Optional[float] = None
+    soc_lower: Optional[float] = None
+    eff_chg: Optional[float] = None
+    eff_roundtrip: Optional[float] = None
+    loss_rate_per_hour: Optional[float] = None
+    energy_total: Optional[float] = None
+    energy_usable: Optional[float] = None
+    dsoc_usable: Optional[float] = None
+    pwr_chg_usable: Optional[float] = None
+    rex_available: Optional[bool] = False
+    rex_subfleet: Optional['blocks.SubFleet'] = None
+    rex_dispatcher: Optional['GroupDispatcher'] = None
 
     @classmethod
-    def from_subfleet(cls, subfleet: 'blocks.SubFleet') -> 'SubFleetParams':
-        is_electric = subfleet.type_unit in ['ev', 'mb']
-        is_vehicle = subfleet.type_unit in ['ev', 'icev']
-        unit = subfleet.subblocks[next(iter(subfleet.subblocks))]  # representative
+    def from_obj(cls,
+                 subfleet: 'blocks.SubFleet') -> 'SubFleetParams':
 
+        is_electric = subfleet.type_unit in ['ev', 'mb']
         params = dict(
             name=subfleet.name,
             units=subfleet.subblocks,
-            pwr_chg=None,
-            is_vehicle=is_vehicle,
             is_electric=is_electric,
-            size_unit=None,
-            soc_upper=None,
-            soc_lower=None,
-            eff_chg=None,
-            eff_roundtrip=None,
-            loss_rate_per_hour=None,
-            rex=None,
         )
 
         if is_electric:
+            unit = subfleet.subblocks[next(iter(subfleet.subblocks))]  # representative
 
             soc_minmax = min([unit.states.at[subfleet.scenario.starttime, 'soc_max'] for unit in subfleet.subblocks.values()])
             soc_maxmin = max([unit.states.at[subfleet.scenario.starttime, 'soc_min'] for unit in subfleet.subblocks.values()])
@@ -199,23 +222,41 @@ class SubFleetParams:
                 soc_lower=statistics.median([soc_minmax, unit.soc_return, soc_maxmin]),
                 eff_chg=unit.eff['chg_int'],
                 eff_roundtrip=unit.eff['storage_roundtrip'],
-                loss_rate_per_hour=unit.loss_rate_per_hour,
-                rex=getattr(unit, 'rex', None)
-            )
+                loss_rate_per_hour=unit.loss_rate_per_hour)
+
+            if subfleet.type_unit == 'ev':
+                rex_available = subfleet.rex is not None
+                if rex_available:
+                    rex_subfleet = subfleet.scenario.block_registry.get('SubFleet', {}).get(subfleet.rex, None)
+                    if rex_subfleet is None:
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" does not exist')
+                    if not rex_subfleet.type_unit == 'mb':
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" is not a battery Subfleet')
+                    if not hasattr(rex_subfleet.parent, 'dispatcher') or not rex_subfleet.parent.dispatcher:
+                        raise ValueError(f'Block "{subfleet.name}": rex subfleet "{subfleet.rex}" is not actively dispatched')
+                    rex_dispatcher = rex_subfleet.parent.dispatcher
+                else:
+                    rex_subfleet = None
+                    rex_dispatcher = None
+
+                params.update(
+                    rex_available=rex_available,
+                    rex_subfleet=rex_subfleet,
+                    rex_dispatcher=rex_dispatcher,
+                )
 
         return cls(**params)
 
 
-class SubFleetDispatcher:
+class GroupDispatcher:
 
     def __init__(self,
                  timer: DispatchTimer,
                  demand: pd.DataFrame,
                  env: simpy.Environment,
-                 params: SubFleetParams,
-                 logger: logging.Logger,
-                 factor_derate: float,  # conservativeness factor on assumed charge power vs actually available power
-                 ):
+                 params: DispatchGroupParams | SubFleetParams,
+                 logger: logging.Logger = None,
+                 factor_derate: float = 0.9,):  # conservativeness factor on assumed charge power vs actually available power
 
         self.time = timer
         self.demand = demand
@@ -224,287 +265,122 @@ class SubFleetDispatcher:
         self.logger = logger
         self.factor_derate = factor_derate
 
+        # create logger for standalone operation
         if self.logger is None:
             self.logger = logging.getLogger('null')
             self.logger.addHandler(logging.NullHandler())
 
-        log_columns = pd.MultiIndex.from_tuples(
-            [(unit, lbl) for unit in self.params.units for lbl in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']],
+        # SubFleetParams object given -> convert to single subfleet DispatchGroupParams
+        if isinstance(self.params, SubFleetParams):
+            self.params = DispatchGroupParams(name=f'{self.params.name}_group',
+                                              subfleet_params={self.params.name: self.params},
+                                              is_vehicle_group=True)
+
+        unit_names = [unit for sfparams in self.params.subfleet_params.values() for unit in sfparams.units]
+        log_cols = pd.MultiIndex.from_tuples(
+            [
+                (name, col)
+                for name in unit_names
+                for col in ['atbase', 'atac', 'atdc', 'dsoc', 'consumption', 'dist']
+            ],
             names=['unit', 'time']
         )
-        self.log = pd.DataFrame(index=self.time.dti, columns=log_columns)
+        self.log = pd.DataFrame(index=self.time.dti, columns=log_cols)
 
         self.kpis = dict()
+        self.stores = dict()
 
         # region estimate usable energy and power
-        if self.params.is_electric:
+        for sfp in self.params.subfleet_params.values():
 
-            self.energy_total = self.params.size_unit
-            self.dsoc_usable = self.params.soc_upper - self.params.soc_lower
+            self.stores[sfp.name] = MultiFilterStore(env=self.env,
+                                                     capacity=len(sfp.units),
+                                                     initial=list(sfp.units))
 
-            if self.dsoc_usable <= 0:
-                raise ValueError(f'Usable dSOC for subfleet {self.params.name} is zero or negative. '
-                                 f'Check SOC targets and aging.')
+            if sfp.is_electric:
+                sfp.energy_total = sfp.size_unit
+                sfp.dsoc_usable = sfp.soc_upper - sfp.soc_lower
+                if sfp.dsoc_usable <= 0:
+                    raise ValueError(f'Usable dSOC for subfleet {sfp.name} is zero or negative. '
+                                     f'Check SOC targets and aging.')
+                sfp.energy_usable = (sfp.dsoc_usable *
+                                     sfp.energy_total *
+                                     np.sqrt(sfp.eff_roundtrip))
+                sfp.pwr_chg_usable = (
+                        (sfp.pwr_chg *
+                         sfp.eff_chg *  # charger efficiency
+                         np.sqrt(sfp.eff_roundtrip) -  # storage charging efficiency
+                         (sfp.loss_rate_per_hour * sfp.energy_total)  # maximum self discharge power
+                         )
+                        * self.factor_derate)
 
-            self.energy_usable = (self.dsoc_usable *
-                                  self.energy_total *
-                                  np.sqrt(self.params.eff_roundtrip))
-
-            self.pwr_chg_usable = (
-                    (self.params.pwr_chg *
-                     self.params.eff_chg *  # charger efficiency
-                     np.sqrt(self.params.eff_roundtrip) -  # storage charging efficiency
-                     (self.params.loss_rate_per_hour * self.energy_total)  # maximum self discharge power
-                     )
-                    * self.factor_derate)
-
-        else:  # non electric
-            self.energy_total = np.inf
-            self.energy_usable = np.inf
-            self.dsoc_usable = 1
-            self.pwr_chg_usable = np.inf
+            else:  # non electric
+                sfp.energy_total = np.inf
+                sfp.energy_usable = np.inf
+                sfp.dsoc_usable = 1
+                sfp.pwr_chg_usable = np.inf
         # endregion
 
-        # region calculate a priori process data
-        self.processes = self.demand.requests.copy()
-        self.processes['step_req'] = self.time.dt2steps(values=self.processes['time_req'])
+        # region calculate a priori and subfleet agnostic process data in vectorized form
+        self.demand.requests['step_req'] = self.time.dt2steps(values=self.demand.requests['time_req'])
+        self.demand.requests['dtime_rental'] = self.demand.requests['dtime_active'] + self.demand.requests['dtime_idle']
+        self.demand.requests['steps_rental'] = self.time.dt2steps(values=self.demand.requests['dtime_rental'])
+        self.demand.requests['steps_patience'] = self.time.dt2steps(values=self.demand.requests['dtime_patience'])
 
-        self.processes['steps_patience'] = self.time.dt2steps(values=self.processes['dtime_patience'])
-
-        self.processes['dtime_rental'] = self.processes['dtime_active'] + self.processes['dtime_idle']
-        self.processes['steps_rental'] = self.time.dt2steps(values=self.processes['dtime_rental'])
-
-        self.processes['num_prim'] = 1 if self.params.is_vehicle else (np.ceil(self.processes['energy_req'] / self.energy_usable).astype(int))
-
-        if self.params.rex:
-            energy_missing = (self.processes['energy_req'] - self.energy_usable).clip(lower=0)
-            self.processes['num_rex'] = np.ceil(energy_missing / self.params.rex_dispatcher.energy_usable).astype(int)
-            self.processes['request_rex'] = self.processes['num_rex'] > 0
-        else:
-            self.processes['num_rex'] = 0
-            self.processes['request_rex'] = False
-            self.processes['energy_req'] = self.processes['energy_req'].clip(upper=self.energy_usable)
-
-        self.processes['energy_usable'] = (
-                self.energy_usable + (self.processes['num_rex'] * getattr(self.params.rex_dispatcher, 'energy_usable', 0)))
-        self.processes['energy_total'] = (
-                self.energy_total + (self.processes['num_rex'] * getattr(self.params.rex_dispatcher, 'energy_total', 0)))
-
-        utilization = self.processes['energy_req'] / self.processes['energy_usable']
-        self.processes['dsoc_prim'] = self.dsoc_usable * utilization
-        self.processes['dsoc_rex'] = getattr(self.params.rex_dispatcher, 'dsoc_usable', 0) * utilization
-
-        if self.params.is_electric:
-            self.processes['energy_req_prim'] = self.processes['dsoc_prim'] * self.energy_total
-            self.processes['energy_req_rex'] = self.processes['dsoc_rex'] * getattr(self.params.rex_dispatcher, 'energy_total', 0)
-        else:
-            self.processes['energy_req_prim'] = self.processes['energy_req']
-            self.processes['energy_req_rex'] = 0
-
-        self.processes['dtime_chg_prim'] = pd.to_timedelta(self.processes['energy_req_prim'] /
-                                                           self.pwr_chg_usable,
-                                                           unit='hour')
-        self.processes['dtime_chg_rex'] = pd.to_timedelta(self.processes['energy_req_rex'] /
-                                                          getattr(self.params.rex_dispatcher, 'pwr_chg_usable', np.inf),
-                                                          unit='hour')
-
-        self.processes['steps_chg_prim'] = self.time.dt2steps(values=self.processes['dtime_chg_prim'])
-        self.processes['steps_chg_rex'] = self.time.dt2steps(values=self.processes['dtime_chg_rex'])
-
-        self.processes['steps_usage_prim'] = self.processes['steps_chg_prim'] + self.processes['steps_rental']
-        self.processes['steps_usage_rex'] = self.processes['steps_chg_rex'] + self.processes['steps_rental']
-
-        self.processes['steps_preblock_prim'] = (self.processes['steps_chg_prim']
-                                                 if (self.params.is_electric and self.params.is_vehicle)
-                                                 else 0)
-        self.processes['steps_postblock_prim'] = (self.processes['steps_chg_prim']
-                                                  if (self.params.is_electric and not self.params.is_vehicle)
-                                                  else 0)
-
-        self.processes['steps_preblock_rex'] = 0
-        self.processes['steps_postblock_rex'] = self.processes['steps_chg_rex']
-
-        self.processes['step_preblock_prim'] = self.processes['step_req'] - self.processes['steps_preblock_prim']
-        self.processes['step_postblock_prim'] = self.processes['step_req'] + self.processes['steps_postblock_prim']
-        self.processes['step_preblock_rex'] = self.processes['step_req'] - self.processes['steps_preblock_rex']
-        self.processes['step_postblock_rex'] = self.processes['step_req'] + self.processes['steps_postblock_rex']
-
-        self.processes.sort_values(by='step_preblock_prim',
-                                   inplace=True,
-                                   ignore_index=True)
+        self.demand.requests.sort_values(by='step_req',
+                                         inplace=True,
+                                         ignore_index=True)
         # endregion
 
-        self.store = MultiStore(env=self.env,
-                                capacity=len(self.params.units))
-
-        for name_unit in self.params.units:
-            self.store.put([name_unit])
-
-        for idx, row in self.processes.iterrows():
-            self.env.process(self.define_process(id=idx))
-
-    def define_process(self,
-                       id: int):
-        """
-        runtime DES method
-        actual definition of the runtime process steps for DES
-        """
-        # region initialize process as unsuccessful
-        self.processes['status'] = 'unprocessed'
-        self.processes['units_prim'] = None
-        self.processes['units_rex'] = None
-
-        result_prim = [False]
-        result_rex = [False]
-        request_prim = False
-        request_rex = False
-        # endregion
-
-        # region request primary resource(s) at preblock time
-        yield self.env.timeout(self.processes.at[id, 'step_preblock_prim'])
-
-        self.logger.debug(f'{self.params.name} process {id} preblocked at {self.env.now}')
-
-        with self.store.get(self.processes.at[id, 'num_prim']) as request_prim:
-            result_prim = (yield request_prim | self.env.timeout(self.processes.at[id, 'steps_patience']))
-
-        self.logger.debug(f'{self.params.name} process {id} requested {self.processes.at[id, "num_prim"]}'
-                          f' primary resource(s) at {self.env.now}')
-        # endregion
-
-        yield self.env.timeout(self.processes.at[id, 'steps_preblock_prim'])
-
-        # region request rex resource(s) at actual request time
-        if self.processes.at[id, 'request_rex']:
-            with self.params.rex_dispatcher.store.get(self.processes.at[id, 'num_rex']) as request_rex:
-                result_rex = yield request_rex | self.env.timeout(self.processes.at[id, 'steps_patience'])
-
-            self.logger.debug(f'{self.params.name} process {id} requested '
-                              f'{self.processes.at[id, "num_rex"]} secondary resource(s) '
-                              f'at {self.env.now}')
-        # endregion
-
-        if (request_prim in result_prim) and (request_rex in result_rex):
-            # region postprocessing if all requests are successful
-            self.processes.loc[id, 'status'] = 'success'
-            self.processes.loc[id, 'step_dep'] = self.env.now
-
-            self.processes.at[id, 'units_prim'] = request_prim.value
-            self.logger.debug(f'{self.params.name} process {id} received primary resource '
-                              f'{self.processes.loc[id, "units_prim"]} at {self.env.now}')
-
-            if self.processes.at[id, 'request_rex']:
-                self.processes.at[id, 'units_rex'] = request_rex.value
-                self.logger.debug(f'{self.params.name} process {id} received secondary resource'
-                                  f' {self.processes.loc[id, "units_rex"]} at {self.env.now}')
-
-            # cover the usage & idle time
-            yield self.env.timeout(self.processes.at[id, 'steps_rental'])
-            self.processes.loc[id, 'step_return'] = self.env.now
-
-            # cover the postblock time
-            yield self.env.timeout(self.processes.at[id, 'steps_postblock_prim'])
-            self.processes.loc[id, 'step_reavail_prim'] = self.env.now
-            yield self.env.timeout(max(0, self.processes.at[id, 'steps_postblock_rex'] -
-                                       self.processes.at[id, 'steps_postblock_prim']))
-            self.processes.loc[id, 'step_reavail_rex'] = self.env.now
-
-            # put back resources
-            self.store.put(result_prim[request_prim])
-            self.logger.debug(
-                f'{self.params.name} process {id} returned resource(s) {self.processes.at[id, "units_prim"]}'
-                f' at {self.env.now}. Primary store content after return: {self.store.items}')
-
-            if self.processes.at[id, 'request_rex']:
-                self.params.rex_dispatcher.store.put(result_rex[request_rex])
-                self.logger.debug(f'{self.params.name} process {id} returned secondary resource(s)'
-                                  f'{request_rex.value} at {self.env.now}. '
-                                  f'Secondary store content after return: '
-                                  f'{self.params.rex_dispatcher.store.items}')
-            # endregion
-
-        else:
-            # region postprocessing if at least one request is unsuccessful
-
-            # record type of failure
-            if (request_prim not in result_prim) and (request_rex not in result_rex):
-                self.processes.loc[id, 'status'] = 'failure_both'
-                self.logger.debug(f'{self.params.name} process {id} failed '
-                                  f'(did not receive either resource) at {self.env.now}. '
-                                  f'Primary store content after failure: {self.store.items}. '
-                                  f'Secondary store content after failure: '
-                                  f'{self.params.rex_dispatcher.store.items}')
-
-            elif request_prim not in result_prim:
-                self.processes.loc[id, 'status'] = 'failure_primary'
-                if self.processes.at[id, 'request_rex']:
-                    self.logger.debug(f'{self.params.name} process {id} failed '
-                                      f'(didn´t receive primary resource(s)) at {self.env.now}. '
-                                      f'Primary store content after fail: {self.store.items}. '
-                                      f'Secondary store content after failure: '
-                                      f'{self.params.rex_dispatcher.store.items}')
-                else:
-                    self.logger.debug(f'{self.params.name} process {id} failed '
-                                      f'(didn´t receive primary resource(s)) at {self.env.now}. '
-                                      f'Primary store content after fail: {self.store.items}')
-
-            elif request_rex not in result_rex:
-                self.processes.loc[id, 'status'] = 'failure_secondary'
-                self.logger.debug(f'{self.params.name} process {id} failed '
-                                  f'(didn´t receive secondary resource(s)) at {self.env.now}. '
-                                  f'Primary store content after fail: {self.store.items}. '
-                                  f'Secondary store content after failure: '
-                                  f'{self.params.rex_dispatcher.store.items}')
-            # endregion
-
-            # region ensure resources are put back
-            # https://stackoverflow.com/q/75371166
-            if request_prim.triggered:
-                resource_prim = yield request_prim
-                self.store.put(resource_prim)
-                self.logger.debug(f'{self.params.name} process {id} returned '
-                                  f'primary resource {resource_prim} at {self.env.now}. '
-                                  f'Primary store content after return: {self.store.items}.')
-
-            if hasattr(request_rex, 'triggered'):
-                if request_rex.triggered:
-                    resource_rex = yield request_rex
-                    self.params.rex_dispatcher.store.put(resource_rex)
-                    self.logger.debug(f'{self.params.name} process {id} returned '
-                                      f'secondary resource {resource_rex} at {self.env.now}. '
-                                      f'Primary store content after return: {self.store.items}. '
-                                      f'Secondary store content after return: '
-                                      f'{self.params.rex_dispatcher.store.items}')
-            # endregion
-
-        self.logger.debug(f'{self.params.name} process {id} finished at {self.env.now}')
+        # create dataclass instances
+        self.processes = {pid: DispatchProcess(pid=pid,
+                                               dispatcher_prim=self,
+                                               status='unprocessed',
+                                               time_req=row['time_req'],
+                                               step_req=row['step_req'],
+                                               dtime_patience=row['dtime_patience'],
+                                               steps_patience=row['steps_patience'],
+                                               dtime_rental=row['dtime_rental'],
+                                               steps_rental=row['steps_rental'],
+                                               energy_req=row['energy_req'],
+                                               distance_req=row.get('distance_req', None),)
+                          for pid, row in self.demand.requests.iterrows()}
 
     def run_standalone(self,
                        dti_output: pd.DatetimeIndex = None):
         self.env.run()
-        self.postprocess(dti_output=dti_output)
+        self.generate_log(dti_output=dti_output)
 
-        print(f'Mean FleetUnit usage rate: {self.kpis["rate_usage_mean"]:.2f}')
-        print(f'Mean dispatch failure rate: {self.kpis["rate_failure"]:.2f}')
+    def transfer_rex_processes(self):
+        """
+        create additional processes in the battery GroupDispatcher processes dict representing the rex processes
+        """
+        def switch_prim_rex(process, pid):
+            rex_process = copy.copy(process)
+            for f in fields(rex_process):
+                if f.name.endswith("_prim"):
+                    rex_name = f.name[:-5] + "_rex"
+                    setattr(rex_process, f.name, getattr(process, rex_name))
+                    setattr(rex_process, rex_name, None)
+            rex_process.pid = pid
+            return rex_process
 
-    def postprocess(self,
-                    dti_output: pd.DatetimeIndex = None):
+        for process in self.processes.values():
+
+            if process.result_rex is None or process.status != 'success':
+                continue  # no rex received, skip to next process
+
+            pid = f'{self.params.name}_{process.pid}'
+            process.dispatcher_rex.processes.update({pid: switch_prim_rex(process, pid)})
+
+    def generate_log(self,
+                     dti_output: pd.DatetimeIndex = None):
         """
         post DES method
         convert processes to time based log and calculate KPIs
         """
         if dti_output is None:
             dti_output = self.time.dti_base
-
-        # calculate actual time points from steps
-        for point in ['preblock_prim',
-                      'preblock_rex',
-                      'dep',
-                      'return',
-                      'reavail_prim',
-                      'reavail_rex']:
-            self.processes[f'time_{point}'] = self.time.steps2dt(steps=self.processes[f'step_{point}'],
-                                                                 absolute=True)
 
         # region convert processes to time based log
         self.log.loc[:, (slice(None), 'atbase')] = True
@@ -514,129 +390,202 @@ class SubFleetDispatcher:
         self.log.loc[:, (slice(None), 'dist')] = 0.0
         self.log.loc[:, (slice(None), 'consumption')] = 0.0
 
-        processes_exploded = self.processes.explode('units_prim')
+        for process in self.processes.values():
 
-        for process in [row for id, row in processes_exploded.iterrows() if row['status'] == 'success']:
-            unit = process['units_prim']
-            time_end = process['time_return'] - self.time.step
-            power_avg = process['energy_req_prim'] / (process['steps_rental'] * self.time.step_hours)
-            dist_avg = process['distance'] / process['steps_rental'] if 'distance' in process else 0
+            if process.status != 'success':
+                continue  # skip, go to next process
 
-            self.log.loc[process['time_dep']:time_end, (unit, 'atbase')] = False
-            self.log.loc[process['time_dep']:time_end, (unit, 'atac')] = False  # todo destination charging?
-            self.log.loc[process['time_dep']:time_end, (unit, 'atdc')] = True
-            self.log.loc[process['time_dep']:time_end, (unit, 'consumption')] = power_avg
-            self.log.loc[process['time_dep']:time_end, (unit, 'dist')] = dist_avg
-            self.log.loc[process['time_dep'], (unit, 'dsoc')] = process['dsoc_prim']
+            time_end = process.time_return - self.time.step
+            power_avg = process.energy_req_prim / (process.steps_rental * self.time.step_hours)
+            dist_avg = process.distance_req / process.steps_rental if process.distance_req is not None else 0.0
+
+            for unit in process.result_prim:
+                self.log.loc[process.time_dep:time_end, (unit, 'atbase')] = False
+                self.log.loc[process.time_dep:time_end, (unit, 'atac')] = False  # todo destination charging?
+                self.log.loc[process.time_dep:time_end, (unit, 'atdc')] = True
+                self.log.loc[process.time_dep:time_end, (unit, 'consumption')] = power_avg
+                self.log.loc[process.time_dep:time_end, (unit, 'dist')] = dist_avg
+                self.log.loc[process.time_dep, (unit, 'dsoc')] = process.dsoc_prim
 
         self.log = self.log.loc[dti_output, :]
         # endregion
 
-        # region calculate KPIs
-        steps_total = len(dti_output)
-        self.kpis['rate_usage_units'] = dict()
-        for unit in self.params.units:
-            steps_usage = processes_exploded.loc[processes_exploded['units_prim'] == unit, 'steps_usage_prim'].sum()
-            self.kpis['rate_usage_units'][unit] = steps_usage / steps_total
-        self.kpis['rate_usage_mean'] = np.mean(list(self.kpis['rate_usage_units'].values()))
-
-        self.kpis['rate_failure'] = 1 - (self.processes['status'] == 'success').mean()
-        # endregion
-
     def save_data(self,
-                  path_processes: str = None,
                   path_log: str = None):
         """
         This function saves the converted log dataframe as a suitable example csv file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
-        if path_processes is not None:
-            self.processes.to_csv(Path(path_processes).resolve())
         if path_log is not None:
             self.log.to_csv(Path(path_log).resolve())
 
 
-class VehicleDispatcher(SubFleetDispatcher):
+@dataclass
+class DispatchProcess:
+    pid: str
+    status: str
+    dispatcher_prim: GroupDispatcher
+    time_req: pd.Timestamp
+    step_req: int
+    energy_req: float
+    dtime_rental: pd.Timedelta
+    steps_rental: int
+    dtime_patience: pd.Timedelta
+    steps_patience: int
+    processed: Optional[bool] = False
+    distance_req: Optional[float] = None
+    num_prim: Optional[int] = None
+    steps_wait: Optional[int] = None
+    time_dep: Optional[pd.Timestamp] = None
+    step_dep: Optional[int] = None
+    time_return: Optional[pd.Timestamp] = None
+    step_return: Optional[int] = None
+    energy_usable: Optional[float] = None
+    energy_total: Optional[float] = None
+    utilization: Optional[float] = None
+    dsoc_prim: Optional[float] = None
+    energy_req_prim: Optional[float] = None
+    dtime_chg_prim: Optional[pd.Timedelta] = None
+    steps_chg_prim: Optional[int] = None
+    request_prim: Optional[simpy.Process] = None
+    result_prim: Optional[simpy.Resource] = None
+    dispatcher_rex: Optional[GroupDispatcher] = None
+    needs_rex: Optional[bool] = None
+    num_rex: Optional[int] = None
+    dsoc_rex: Optional[float] = None
+    energy_req_rex: Optional[float] = None
+    dtime_chg_rex: Optional[pd.Timedelta] = None
+    steps_chg_rex: Optional[int] = None
+    request_rex: Optional[simpy.Process] = None
+    result_rex: Optional[simpy.Resource] = None
 
-    def __init__(self,
-                 timer: DispatchTimer,
-                 demand: pd.DataFrame,
-                 env: simpy.Environment,
-                 params: SubFleetParams,
-                 logger: logging.Logger = None,
-                 factor_derate: float = 0.9):
+    def __post_init__(self):
+        if not self.processed:
+            self.dispatcher_prim.env.process(self.process())
 
-        if params.rex is not None:
-            params.rex_subfleet = scenario.block_registry.get('SubFleet', {}).get(self.params.rex, None)
-            params.rex = True
-
-            BASE_MSG = f'Scenario "{scenario.name}" - Block "{subfleet.parent.name}" -' \
-                       f'Subfleet "{subfleet.name}": selected range extender fleet "{subfleet.rex}"'
-
-            if self.rex_subfleet is None:
-                raise ValueError(f'{BASE_MSG} does not exist')
-            elif not self.rex_subfleet.type_unit.lower() == 'mb':
-                raise ValueError(f'{BASE_MSG} is not a Battery SubFleet')
-            elif self.rex_subfleet not in scenario.block_registry.get('SubFleetDispatch', {}).values():
-                raise ValueError(f'{BASE_MSG} is not dispatched and cannot be used as range extender')
-
-            params.rex_dispatcher = params.rex_subfleet.dispatcher
-        else:
-            params.rex = False
-            params.rex_subfleet = None
-            params.rex_dispatcher = None
-
-        super().__init__(timer=timer,
-                         demand=demand,
-                         env=env,
-                         params=params,
-                         logger=logger,
-                         factor_derate=factor_derate)
-
-    def transfer_rex_processes(self):
+    def process(self):
         """
-        copy data for rex unit usage from VehicleDispatcher process frame to rex (BatteryDispatcher) process frame
+        SimPy process that attempts to allocate resources from primary and optional REX fleets.
+        Retries across stores until successful or patience is exhausted.
         """
 
-        if not self.params.rex:
-            return
+        env = self.dispatcher_prim.env
+        yield env.timeout(self.step_req)
+        self.steps_wait = 0
 
-        rex_processes = self.processes.loc[(self.processes['status'] == 'success') &
-                                           (self.processes['request_rex']), :].copy()
+        while self.steps_wait <= self.steps_patience:
 
-        rex_processes['usecase'] = f'rex_{self.params.name}'
+            for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
 
-        rex_processes = rex_processes.rename(columns=lambda col: col.replace('_rex', '_temp')
-                                             .replace('_prim', '_rex')
-                                             .replace('_temp', '_prim'))
+                sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
 
-        self.params.rex_dispatcher.processes = pd.concat(
-            objs=[getattr(self.rex_dispatcher, 'processes', None), rex_processes],
-            join='inner')
-        self.params.rex_dispatcher.processes.sort_values(
-            by='step_preblock_prim',
-            inplace=True,
-            ignore_index=True)
+                if self.dispatcher_prim.params.is_vehicle_group:
+                    self.num_prim = 1
+                else:  # Battery DispatchGroup
+                    self.num_prim = (np.ceil(self.energy_req / sfp_prim.energy_usable).astype(int))
 
+                if sfp_prim.rex_available:  # rex is available for this subfleet/store
+                    self.dispatcher_rex = sfp_prim.rex_dispatcher
+                    sfp_rex = self.dispatcher_rex.params.subfleet_params[sfp_prim.rex_subfleet.name]
+                    store_rex = self.dispatcher_rex.stores[sfp_prim.rex_subfleet.name]
+                    self.energy_missing = max((self.energy_req - sfp_prim.energy_usable), 0)
+                    self.num_rex = np.ceil(self.energy_missing / sfp_rex.energy_usable).astype(int)
+                    energy_req_eff = self.energy_req
+                else:
+                    sfp_rex = None
+                    store_rex = None
+                    self.energy_missing = 0
+                    self.num_rex = 0
+                    energy_req_eff = min(self.energy_req, sfp_prim.energy_usable)
 
-class BatteryDispatcher(SubFleetDispatcher):
+                self.energy_usable = (self.num_prim * sfp_prim.energy_usable) + \
+                                     (self.num_rex * getattr(sfp_rex, 'energy_usable', 0))
 
-    def __init__(self,
-                 timer: DispatchTimer,
-                 demand: pd.DataFrame,
-                 env: simpy.Environment,
-                 params: SubFleetParams,
-                 logger: logging.Logger = None,
-                 factor_derate: float = 0.9):
+                self.energy_total = (self.num_prim * sfp_prim.energy_total) + \
+                                    (self.num_rex * getattr(sfp_rex, 'energy_total', 0))
 
-        params.rex = False
-        params.rex_subfleet = None
-        params.rex_dispatcher = None
+                self.utilization = energy_req_eff / self.energy_usable
+                self.dsoc_prim = sfp_prim.dsoc_usable * self.utilization
+                self.dsoc_rex = getattr(sfp_rex, 'dsoc_usable', 0) * self.utilization
 
-        super().__init__(timer=timer,
-                         demand=demand,
-                         env=env,
-                         params=params,
-                         logger=logger,
-                         factor_derate=factor_derate)
+                if sfp_prim.is_electric:
+                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total
+                    self.energy_req_rex = self.dsoc_rex * getattr(sfp_rex, 'energy_total', 0)
+                else:
+                    self.energy_req_prim = self.energy_req
+                    self.energy_req_rex = 0
+
+                self.dtime_chg_prim = pd.to_timedelta(self.energy_req_prim /
+                                                      sfp_prim.pwr_chg_usable,
+                                                      unit='hour')
+                self.dtime_chg_rex = pd.to_timedelta(self.energy_req_rex /
+                                                     getattr(sfp_rex, 'pwr_chg_usable', np.inf),
+                                                     unit='hour')
+
+                self.steps_chg_prim = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_prim)
+                self.steps_chg_rex = self.dispatcher_prim.time.dt2steps(values=self.dtime_chg_rex)
+
+                self.steps_usage_prim = self.steps_chg_prim + self.steps_rental
+                self.steps_usage_rex = self.steps_chg_rex + self.steps_rental
+
+                def min_steps_since_put(steps: int):
+                    def _filter(item):
+                        _, ts_put = item
+                        return (env.now - ts_put) >= steps
+
+                    return _filter
+
+                self.request_prim = store_prim.get(
+                    amount=self.num_prim,
+                    filter=min_steps_since_put(steps=self.steps_chg_prim))
+
+                if self.num_rex > 0:
+                    self.request_rex = store_rex.get(
+                        amount=self.num_rex,
+                        filter=min_steps_since_put(steps=self.steps_chg_rex))
+                else:
+                    self.request_rex = None
+
+                yield env.timeout(0)  # resolve immediate triggers
+
+                success_prim = self.request_prim.triggered
+                success_rex = True if self.request_rex is None else self.request_rex.triggered
+
+                if success_prim and success_rex:
+                    self.processed = True
+                    self.status = 'success'
+                    self.step_dep = env.now
+                    self.time_dep = self.dispatcher_prim.time.steps2dt(self.step_dep, absolute=True)
+                    self.result_prim = self.request_prim.value
+                    self.result_rex = None if self.request_rex is None else self.request_rex.value
+                    yield env.timeout(self.steps_rental)
+                    self.step_return = env.now
+                    self.time_return = self.dispatcher_prim.time.steps2dt(self.step_return, absolute=True)
+                    store_prim.put(self.result_prim)
+                    if self.request_rex is not None:
+                        store_rex.put(self.result_rex)
+                    return
+                else:
+                    self.status = 'waiting'
+
+                    self.request_prim.cancel()
+                    if self.request_rex:
+                        self.request_rex.cancel()
+
+                    # ensure resources are put back after concurrent patience and request firing
+                    # https://stackoverflow.com/q/75371166
+                    if self.request_prim.triggered:
+                        resource_prim = yield self.request_prim
+                        store_prim.put(resource_prim)
+                    if getattr(self.request_rex, 'triggered', False):
+                        resource_rex = yield self.request_rex
+                        store_rex.put(resource_rex)
+
+                    continue  # try next store
+
+            yield env.timeout(1)
+            self.steps_wait += 1
+
+        self.status = 'timeout'
+        self.processed = True

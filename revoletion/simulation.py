@@ -482,7 +482,7 @@ class Scenario:
         # endregion
 
         # region preexecution
-        self.dispatcher = dispatch.SiteDispatcher(scenario=self)
+        self.dispatch_environment = dispatch.DispatchEnvironment(scenario=self)
 
         for block in self.block_registry.get('TopLevelBlock', {}).values():
             block.pre_scenario()
