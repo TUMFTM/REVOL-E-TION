@@ -91,19 +91,6 @@ class Heatpump_COPanalyzer:
 
         self.efficiency = round(self.cp.eta_s.val, 3)
 
-    def calculate_cop(self, temperature_range=np.arange(-10, 21)):
-        self.temperature_range = temperature_range
-        results = pd.DataFrame(index=temperature_range, columns=["COP", "COP Carnot"])
-
-        for T in temperature_range:
-            self.c2.set_attr(T=T - self.T_spread)
-            self.nwk.solve("design")
-            results.loc[T, "COP"] = abs(self.cd.Q.val) / self.cp.P.val
-            results.loc[T, "COP_carnot"] = self.c4.T.val_SI / (self.c4.T.val - self.c2.T.val)
-
-        results["efficiency"] = results["COP"] / results["COP_carnot"]
-        self.results = results
-
     def analyze_cop(self):
         results = pd.DataFrame(index=self.temperature_range, columns=["COP", "COP_carnot"])
 
