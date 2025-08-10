@@ -20,7 +20,7 @@ from . import battery as bat
 from . import economics as eco
 from . import mobility
 from . import utils
-from . import heatpump as hp
+from . import thermal as hp
 
 if TYPE_CHECKING:
     from . import simulation
@@ -2535,66 +2535,16 @@ class Heatpump(SinkBlock):
                                             nominal_power= self.nominal_power)
         self.cop_array = analyzer.run_full_analysis()
 
-        self.get_heating_energy_apriori()
-
-    def get_heating_energy_apriori(self):
-
-        temp_air = self.scenario.temp_air
-
-        houses = [
-            {
-                "name": "EFH_1",
-                "house_type": "EFH",
-                "N_Pers": self.size_household,
-                "N_WE": 1,
-                "Q_Heiz_a": self.size_house * self.demand_spec,
-                "Q_TWW_a": self.demand_dhw,
-                "W_a": 0,
-                "summer_temperature_limit": 15,
-                "winter_temperature_limit": 5,
-            }
-        ]
-
-        demand_accumulated = pd.DataFrame()
-        try_region = vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
-        demand_list = []
-
-        for year in self.scenario.temp_air.index.year.unique():
-
-            region = vdi.Region(
-                year=year,
-                climate=vdi.Climate().from_try_data(try_region),
-                houses=houses,
-                resample_rule=self.scenario.timestep_td
+        analyzer.get_heating_energy_apriori(scenario=self.scenario,
+            size_household=self.size_household,
+            size_house=self.size_house,
+            demand_spec=self.demand_spec,
+            demand_dhw=self.demand_dhw,
+            temperature_tolerance=self.temperature_tolerance,
+            flows_apriori=self.flows_apriori,
+            states=self.states,
+            cop_array=self.cop_array
             )
-
-            demand_year = region.get_load_curve_houses().iloc[:, :2]
-            demand_year.columns = ['demand_heat', 'demand_dhw']
-            demand_list.append(demand_year)
-
-        demand_accumulated = pd.concat(demand_list, axis = 1)
-        demand_accumulated.index = demand_accumulated.index + pd.DateOffset(hours=-1)
-        demand_accumulated.index = demand_accumulated.index.tz_localize("UTC")
-        demand_accumulated.index = demand_accumulated.index.tz_convert('Europe/Berlin')
-
-        demand_accumulated = demand_accumulated.loc[self.scenario.temp_air.index]
-
-        self.flows_apriori['demand_heat'] = demand_accumulated['demand_heat']
-        self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
-
-        mask_time = (self.scenario.temp_air.index.hour >= 6) & (self.scenario.temp_air.index.hour <= 22) #night time shutdown
-
-        delta = (
-                demand_accumulated['demand_heat']
-                * (1 - ((20 - self.temperature_tolerance - temp_air['temp_air'])
-                        / (20 - temp_air['temp_air'])))
-        ) #linear interpolation for thermal inertia of house. 20+- temperatur_tolerance
-        delta = delta.where(mask_time, 0).clip(lower=0)
-        self.flows_apriori['delta'] = delta
-
-        cop_series = temp_air['temp_air'].round(2).map(self.cop_array)
-        cop_series.loc[temp_air['temp_air'] > 20] = self.cop_array.max()
-        self.states['COP'] = cop_series
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,

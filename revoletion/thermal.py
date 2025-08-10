@@ -3,6 +3,7 @@ from tespy.connections import Connection
 from tespy.networks import Network
 import pandas as pd
 import numpy as np
+from demandlib import vdi
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -125,6 +126,68 @@ class Heatpump_COPanalyzer:
         self.cop_optimization()
         self.analyze_cop()
         return self.get_cop_array()
+
+    def get_heating_energy_apriori(self, scenario, size_household, size_house,
+                                   demand_spec, demand_dhw, temperature_tolerance,
+                                   flows_apriori, states, cop_array):
+
+        temp_air = scenario.temp_air
+
+        houses = [
+            {
+                "name": "EFH_1",
+                "house_type": "EFH",
+                "N_Pers": size_household,
+                "N_WE": 1,
+                "Q_Heiz_a": size_house * demand_spec,
+                "Q_TWW_a": demand_dhw,
+                "W_a": 0,
+                "summer_temperature_limit": 15,
+                "winter_temperature_limit": 5,
+            }
+        ]
+
+        try_region = vdi.find_try_region(scenario.longitude, scenario.latitude)
+        demand_list = []
+
+        for year in scenario.temp_air.index.year.unique():
+            region = vdi.Region(
+                year=year,
+                climate=vdi.Climate().from_try_data(try_region),
+                houses=houses,
+                resample_rule=scenario.timestep_td
+            )
+
+            demand_year = region.get_load_curve_houses().iloc[:, :2]
+            demand_year.columns = ['demand_heat', 'demand_dhw']
+            demand_list.append(demand_year)
+
+        demand_accumulated = pd.concat(demand_list, axis=1)
+        demand_accumulated.index = demand_accumulated.index + pd.DateOffset(hours=-1)
+        demand_accumulated.index = demand_accumulated.index.tz_localize("UTC")
+        demand_accumulated.index = demand_accumulated.index.tz_convert('Europe/Berlin')
+        demand_accumulated = demand_accumulated.loc[scenario.temp_air.index]
+
+        # Direkte Zuweisung in flows_apriori
+        flows_apriori['demand_heat'] = demand_accumulated['demand_heat']
+        flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
+
+        # Nachtabschaltung
+        mask_time = (scenario.temp_air.index.hour >= 6) & (scenario.temp_air.index.hour <= 22)
+
+        # Thermische Trägheit
+        delta = (
+                demand_accumulated['demand_heat']
+                * (1 - ((20 - temperature_tolerance - temp_air['temp_air'])
+                        / (20 - temp_air['temp_air'])))
+        )
+        delta = delta.where(mask_time, 0).clip(lower=0)
+        flows_apriori['delta'] = delta
+
+        # COP-Werte
+        cop_series = temp_air['temp_air'].round(2).map(cop_array)
+        cop_series.loc[temp_air['temp_air'] > 20] = cop_array.max()
+        states['COP'] = cop_series
 
     def plot_results(self, T_for_eta=7, save_path=None):
         if self.results is None:
