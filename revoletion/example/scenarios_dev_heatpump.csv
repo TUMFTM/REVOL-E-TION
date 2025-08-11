@@ -69,7 +69,7 @@ hp,temperature_tolerance,3
 hp,size_preexisting_block,0
 hp,size_max_block,None
 hp,invest_block,True
-hp,type_household,EFH
+hp,type_house,EFH
 hp,size_household,4
 hp,size_house,157
 hp,demand_spec,100000

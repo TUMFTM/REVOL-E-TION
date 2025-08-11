@@ -2538,7 +2538,7 @@ class Heatpump(SinkBlock):
         analyzer.get_heating_energy_apriori(scenario=self.scenario,
             size_household=self.size_household,
             size_house=self.size_house,
-            type_household=self.type_household,
+            type_house=self.type_house,
             demand_spec=self.demand_spec,
             temperature_tolerance=self.temperature_tolerance,
             flows_apriori=self.flows_apriori,
