@@ -2584,6 +2584,7 @@ class Heatpump(SinkBlock):
         self.components['buffer'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['heating_bus']: solph.Flow()},
+            initial_storage_level= 0.5,
             loss_rate=0,
             nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * 35) / 3600
         )
@@ -2591,6 +2592,7 @@ class Heatpump(SinkBlock):
         self.components['dhw_storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['dhw_bus']: solph.Flow()},
+            initial_storage_level=0.5,
             loss_rate=(self.lr_24h*3600/(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
             nominal_storage_capacity=(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)) / 3600
         )
@@ -2603,6 +2605,7 @@ class Heatpump(SinkBlock):
             },
             outputs={self.components['sink_bus']:solph.Flow()
                      },
+            initial_storage_level= 0.5,
             loss_rate= 0.0,
             nominal_storage_capacity=self.flows_apriori['delta'].max()
         )
