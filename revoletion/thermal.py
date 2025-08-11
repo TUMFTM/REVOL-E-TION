@@ -127,20 +127,28 @@ class Heatpump_COPanalyzer:
         self.analyze_cop()
         return self.get_cop_array()
 
-    def get_heating_energy_apriori(self, scenario, size_household, size_house,
-                                   demand_spec, demand_dhw, temperature_tolerance,
+    def get_heating_energy_apriori(self, scenario, size_household, type_household, size_house,
+                                   demand_spec, temperature_tolerance,
                                    flows_apriori, states, cop_array):
+        type_household_map = {
+            "efh": "EFH",
+            "mfh": "MFH"
+        }
+
+        type_household_upper = type_household_map.get(type_household.lower(), type_household)
 
         temp_air = scenario.temp_air
 
         houses = [
             {
-                "name": "EFH_1",
-                "house_type": "EFH",
+                "name": f"{type_household_upper}_1",
+                "house_type": type_household_upper,
                 "N_Pers": size_household,
                 "N_WE": 1,
                 "Q_Heiz_a": size_house * demand_spec,
-                "Q_TWW_a": demand_dhw,
+                "Q_TWW_a": size_household * 500000 if type_household_upper == "EFH" else
+                   size_household * 1000000 if type_household_upper == "MFH" else
+                   0,
                 "W_a": 0,
                 "summer_temperature_limit": 15,
                 "winter_temperature_limit": 5,
