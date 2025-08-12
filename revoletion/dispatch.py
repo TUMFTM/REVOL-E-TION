@@ -343,7 +343,7 @@ class GroupDispatcher:
                                                dtime_rental=row['dtime_rental'],
                                                steps_rental=row['steps_rental'],
                                                energy_req=row['energy_req'],
-                                               distance_req=row.get('distance_req', None),)
+                                               distance_req=row.get('distance', None),)
                           for pid, row in self.demand.requests.iterrows()}
 
     def run_standalone(self,
