@@ -2721,3 +2721,200 @@ class Heatpump(SinkBlock):
 
     def get_legend_entry(self):
         return f'{self.name} electric power (max. {self.sizes["block"].total / 1e3:.1f} kW thermal)'
+
+
+class ThermalBlock(ElectricBlock):
+    pass
+
+
+class ThermalDemand(ThermalBlock):
+
+    def init_evaluators(self):
+        super().init_evaluators()
+
+        self.evaluators['storage_heating_out'] = eco.EcoEvaluator(name='storage_heating_out',
+                                                                  scenario=self.scenario,
+                                                                  block=self,
+                                                                  flow_name='storage_heating_out',
+                                                                  )
+
+        self.evaluators['snk_heating'] = eco.EcoEvaluator(name='snk_heating',
+                                                          scenario=self.scenario,
+                                                          block=self,
+                                                          flow_name='snk_heating',
+                                                          )
+
+        self.evaluators['storage_dhw_out'] = eco.EcoEvaluator(name='storage_dhw_out',
+                                                              scenario=self.scenario,
+                                                              block=self,
+                                                              flow_name='storage_dhw_out',
+                                                              )
+
+        self.evaluators['snk_dhw'] = eco.EcoEvaluator(name='snk_dhw',
+                                                      scenario=self.scenario,
+                                                      block=self,
+                                                      flow_name='snk_dhw',
+                                                      )
+
+    def init_states(self):
+        super().init_states()
+
+        for state in ['energy_storage_heating', 'soc_storage_heating',
+                      'energy_storage_dhw', 'soc_storage_dhw']:
+            self.states[state] = np.nan
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=['demand_heating', 'demand_dhw', 'delta'],
+                         params=None,
+                         parent=scenario)
+
+        temp_air = self.scenario.temp_air
+
+        houses = [
+            {
+                "name": f"{self.type_house.upper()}_1",
+                "house_type": self.type_house.upper(),
+                "N_Pers": self.size_household,
+                "N_WE": 1,
+                "Q_Heiz_a": self.size_house * self.demand_spec,
+                "Q_TWW_a": (self.size_household * 500000 if self.type_house == "efh" else
+                            self.size_household * 1000000 if self.type_house == "mfh" else
+                            0),
+                "W_a": 0,
+                "summer_temperature_limit": 15,
+                "winter_temperature_limit": 5,
+            }
+        ]
+
+        try_region = vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
+        demand_list = []
+
+        for year in scenario.temp_air.index.year.unique():
+            region = vdi.Region(
+                year=year,
+                climate=vdi.Climate().from_try_data(try_region),
+                houses=houses,
+                resample_rule=scenario.timestep_td
+            )
+
+            demand_year = region.get_load_curve_houses().iloc[:, :2]
+            demand_year.columns = ['demand_heat', 'demand_dhw']
+            demand_list.append(demand_year)
+
+        demand_accumulated = pd.concat(demand_list, axis=1)
+        demand_accumulated.index = ((demand_accumulated.index + pd.DateOffset(hours=-1))
+                                    .tz_localize("UTC")
+                                    .tz_convert('Europe/Berlin'))
+        demand_accumulated = demand_accumulated.loc[self.scenario.dti_sim_extd, :]
+
+        # Direkte Zuweisung in flows_apriori
+        self.flows_apriori['demand_heating'] = demand_accumulated['demand_heat']
+        self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
+
+        # Nachtabschaltung
+        mask_time = (self.scenario.dti_sim_extd.hour >= 6) & (self.scenario.dti_sim_extd.hour <= 22)
+
+        # Thermische Trägheit
+        delta = (
+                demand_accumulated['demand_heat']
+                * (1 - ((20 - self.temperature_tolerance - temp_air['temp_air'])
+                        / (20 - temp_air['temp_air'])))
+        )
+        delta = delta.where(mask_time, 0).clip(lower=0)
+        self.flows_apriori['delta'] = delta
+        pass
+
+    def define_oemof_components(self,
+                                horizon: simulation.PredictionHorizon,
+                                params: dict = None):
+
+        # heating
+        self.components['bus_external_heating'] = solph.Bus()
+        self.components['bus_internal_heating'] = solph.Bus()
+
+        self.components['storage_heating'] = solph.components.GenericStorage(
+            inputs={self.components['bus_external_heating']: solph.Flow(
+                # ToDo: check this
+                nominal_value=self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max(),
+                max=self.flows_apriori['demand_heating'] + self.flows_apriori['delta']
+            )
+            },
+            outputs={self.components['bus_internal_heating']: solph.Flow()
+                     },
+            initial_storage_level=0.5,
+            loss_rate=0.0,
+            nominal_storage_capacity=self.flows_apriori['delta'].max()
+        )
+
+        self.components['snk_heating'] = solph.components.Sink(
+            inputs={self.components['bus_internal_heating']: solph.Flow(nominal_capacity=1,
+                                                                        # ToDo: check this
+                                                                        fix=self.flows_apriori['demand_heating'][horizon.dti_ph])}
+        )
+
+        # dhw
+        self.components['bus_external_dhw'] = solph.Bus()
+        self.components['bus_internal_dhw'] = solph.Bus()
+
+        self.components['storage_dhw'] = solph.components.GenericStorage(
+            inputs={self.components['bus_external_dhw']: solph.Flow()},
+            outputs={self.components['bus_internal_dhw']: solph.Flow()},
+            initial_storage_level=0.5,
+            # ToDo: check this
+            loss_rate=(self.lr_24h*3600/(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
+            nominal_storage_capacity=(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)) / 3600
+        )
+
+        self.components['snk_dhw'] = solph.components.Sink(
+            inputs={self.components['bus_internal_dhw']: solph.Flow(nominal_capacity=1,
+                                                                    fix=self.flows_apriori['demand_dhw'][horizon.dti_ph])}
+        )
+
+        self.components['src_heating'] = solph.components.Source(
+            outputs={self.components['bus_external_heating']: solph.Flow()}
+        )
+
+        self.components['src_dhw'] = solph.components.Source(
+            outputs={self.components['bus_external_dhw']: solph.Flow()}
+        )
+
+    def get_horizon_results(self,
+                            horizon: simulation.PredictionHorizon):
+
+        self.flows.loc[horizon.dti_ch, 'storage_heating_out'] = horizon.results[(self.components['storage_heating'],
+                                                                                 self.components['bus_internal_heating'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'snk_heating'] = horizon.results[(self.components['bus_internal_heating'],
+                                                                         self.components['snk_heating'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'storage_dhw_out'] = horizon.results[(self.components['storage_dhw'],
+                                                                             self.components['bus_internal_dhw'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.flows.loc[horizon.dti_ch, 'snk_dhw'] = horizon.results[(self.components['bus_internal_dhw'],
+                                                                     self.components['snk_dhw'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] = horizon.results[(self.components['storage_heating'],
+                                                                                          None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+
+        self.states.loc[horizon.dti_ch_extd, 'energy_storage_dhw'] = horizon.results[(self.components['storage_dhw'],
+                                                                                      None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+
+        # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'soc_storage_heating'] = (self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] /
+                                                                       self.size_storage_heating).fillna(0)
+
+        # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] = (self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] /
+                                                                   self.size_storage_dhw).fillna(0)
+
+    def create_plot_traces(self):
+        pass
+
+
+
+
+

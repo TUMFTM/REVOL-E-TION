@@ -16,7 +16,7 @@ scenario,latitude,48.2652
 scenario,longitude,11.6686
 scenario,temp_air,temperature_air.csv
 scenario,cost_eps,1.00E-8
-scenario,blocks,"{'grid': 'GridConnection', 'hp': 'Heatpump'}"
+scenario,blocks,"{'grid': 'GridConnection', 'hp': 'Heatpump', 'tdem': 'ThermalDemand',}"
 core,size_preexisting_acdc,0
 core,capex_preexisting_acdc,True
 core,size_max_acdc,None
@@ -79,3 +79,12 @@ hp,size_buffer,16
 hp,size_dhw_storage,190
 hp,specific_heat_capacity_h2o,4180
 hp,lr_24h,1500
+tdem,temperature_tolerance,3
+tdem,type_house,EFH
+tdem,size_household,4
+tdem,size_house,157
+tdem,demand_spec,100000
+tdem,size_buffer,16
+tdem,size_dhw_storage,190
+tdem,specific_heat_capacity_h2o,4180
+tdem,lr_24h,1500
