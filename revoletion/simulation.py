@@ -392,7 +392,7 @@ class Scenario:
                                     f'No public holidays are considered in this scenario.')
 
         # region set air temperature
-        temp_air = pd.DataFrame(index=self.dti_sim,
+        temp_air = pd.DataFrame(index=self.dti_sim_extd,
                                 columns=['temp_air'],
                                 dtype=float)
 

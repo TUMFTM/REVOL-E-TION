@@ -1033,7 +1033,7 @@ class PVSource(RenewableSource):
         self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'speed_wind', 'temp_air']]
+        self.data = self.data.loc[self.scenario.dti_sim_extd, ['power_spec', 'speed_wind', 'temp_air']]
         # endregion
 
         if not self.scenario.settings.largescalemode:
@@ -2574,10 +2574,10 @@ class Heatpump(SinkBlock):
 
             )},
             outputs={self.components['bus']: solph.Flow(nominal_capacity=solph.Investment(
-                    ep_costs=self.evaluators['block'].opt.spec_ep_invest,
-                    existing=self.sizes['block'].preexisting,
-                    maximum=self.sizes['block'].expansion_max
-                ))},
+                ep_costs=self.evaluators['block'].opt.spec_ep_invest,
+                existing=self.sizes['block'].preexisting,
+                maximum=self.sizes['block'].expansion_max
+            ))},
             conversion_factors={self.components['bus']: self.states['COP']}
         )
 
