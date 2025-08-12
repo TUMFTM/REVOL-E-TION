@@ -2585,7 +2585,7 @@ class Heatpump(SinkBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['heating_bus']: solph.Flow()},
             initial_storage_level= 0.5,
-            loss_rate=0,
+            loss_rate=(self.lr_24h*3600/(self.size_buffer*self.specific_heat_capacity_h2o*35))/24,
             nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * 35) / 3600
         )
 
