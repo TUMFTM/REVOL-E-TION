@@ -137,7 +137,6 @@ class BaseBlock(BlockScenarioInterface):
         else:  # is subblock
             self.parent.subblocks[self.name] = self
 
-
     def params_preprocessing(self):
         pass
 
@@ -1032,7 +1031,7 @@ class PVSource(RenewableSource):
         self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.dti_sim, ['power_spec', 'speed_wind', 'temp_air']]
+        self.data = self.data.loc[self.scenario.dti_sim_extd, ['power_spec', 'speed_wind', 'temp_air']]
         # endregion
 
         if not self.scenario.settings.largescalemode:
