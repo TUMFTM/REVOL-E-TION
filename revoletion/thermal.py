@@ -181,16 +181,20 @@ class Heatpump_COPanalyzer:
         flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
 
         # Nachtabschaltung
-        mask_time = (scenario.temp_air.index.hour >= 6) & (scenario.temp_air.index.hour <= 22)
+        mask_night =  (scenario.temp_air.index.hour >= 22) | (scenario.temp_air.index.hour <= 6)
 
         # Thermische Trägheit
-        delta = (
-                demand_accumulated['demand_heat']
-                * (1 - ((20 - temperature_tolerance - temp_air['temp_air'])
-                        / (20 - temp_air['temp_air'])))
+
+        flows_apriori['delta'] = flows_apriori['demand_heat'] * (
+                1 - np.where(
+                (20 - temp_air['temp_air']) != 0,
+                (20 - temperature_tolerance - temp_air['temp_air'])/ (20 - temp_air['temp_air']),
+                0)
         )
-        delta = delta.where(mask_time, 0).clip(lower=0)
-        flows_apriori['delta'] = delta
+
+        flows_apriori['min'] = flows_apriori['demand_heat']-flows_apriori['delta']
+        flows_apriori['max'] = flows_apriori['demand_heat'] + flows_apriori['delta']
+        flows_apriori['dif'] = flows_apriori['max']-flows_apriori['min']
 
         # COP-Werte
         cop_series = temp_air['temp_air'].round(2).map(cop_array)
