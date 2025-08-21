@@ -2583,11 +2583,10 @@ class Heatpump(SinkBlock):
 
         self.components['buffer'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow()},
-            outputs={self.components['heating_bus']: solph.Flow(
-            )},
+            outputs={self.components['heating_bus']: solph.Flow()},
             initial_storage_level= 0.5,
-            loss_rate=(self.lr_24h*3600/(self.size_buffer*self.specific_heat_capacity_h2o*(35-7)))/24,
-            nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * (35-7)) / 3600
+            loss_rate=(self.lr_24h*3600/(self.size_buffer*self.specific_heat_capacity_h2o*(10)))/24,
+            nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * (10)) / 3600
         )
 
         self.components['dhw_storage'] = solph.components.GenericStorage(
@@ -2603,14 +2602,14 @@ class Heatpump(SinkBlock):
             )
             },
             outputs={self.components['sink_bus']:solph.Flow(
-                nominal_value=self.flows_apriori['demand_heat'].max() + self.flows_apriori['delta'].max(),
-                max = (self.flows_apriori['demand_heat'] + self.flows_apriori['delta'])/(self.flows_apriori['demand_heat'].max() + self.flows_apriori['delta'].max()),
+                nominal_capacity=self.flows_apriori['demand_heat'].max()+self.flows_apriori['delta'].max(),
+                max = (self.flows_apriori['demand_heat']+self.flows_apriori['delta'])/(self.flows_apriori['demand_heat'].max()+self.flows_apriori['delta'].max()),
                 min=(self.flows_apriori['demand_heat'] - self.flows_apriori['delta']) / (self.flows_apriori['demand_heat'].max() + self.flows_apriori['delta'].max())
-            )
+                )
                      },
             initial_storage_level= 0.5,
             loss_rate= 0.0,
-            nominal_storage_capacity=self.flows_apriori['demand_heat'].max() + self.flows_apriori['delta'].max(),
+            nominal_storage_capacity=self.flows_apriori['delta'].max()*2,
         )
 
         self.components['snk'] = solph.components.Sink(
