@@ -392,12 +392,11 @@ class Scenario:
                                     f'No public holidays are considered in this scenario.')
 
         # region set air temperature
-        temp_air = pd.DataFrame(index=self.dti_sim,
-                                columns=['temp_air'],
-                                dtype=float)
+        temp_air = pd.Series(index=self.dti_sim,
+                             dtype=float)
 
         if isinstance(self.temp_air, (float, int)):
-            temp_air['temp_air'] = self.temp_air
+            temp_air[:] = self.temp_air
             self.temp_air = temp_air
 
         elif (isinstance(self.temp_air, str)
@@ -414,11 +413,11 @@ class Scenario:
                                                                        utils.set_extension(filename=self.temp_air,
                                                                                            default_extension='.csv')),
                                                       block=self,  # only uses block.name -> scenario works, too
-                                                      scenario=self)
+                                                      scenario=self).iloc[:, 0]
         else:
             self.logger.warning(f'Specified argument for scenario parameter temp_air ({self.temp_air}) not found - '
                                 f'Using default of 25 °C')
-            temp_air['temp_air'] = 25
+            temp_air[:] = 25
             self.temp_air = temp_air
         # endregion
 

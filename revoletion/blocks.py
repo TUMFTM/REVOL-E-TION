@@ -1039,7 +1039,7 @@ class PVSource(RenewableSource):
             self.data.to_csv(self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{self.name}_log.csv'))
 
         if getattr(self, 'temp_scn', False):  # parameter only exists for instances specified in scenario.temp_air
-            self.scenario.temp_air['temp_air'] = self.data['temp_air']
+            self.scenario.temp_air = self.data['temp_air']
 
 
 class WindSource(RenewableSource):
