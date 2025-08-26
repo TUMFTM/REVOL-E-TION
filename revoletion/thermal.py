@@ -3,7 +3,6 @@ from tespy.connections import Connection
 from tespy.networks import Network
 import pandas as pd
 import numpy as np
-from demandlib import vdi
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -12,7 +11,7 @@ T_A7= 7
 T_SPREAD = 5
 
 
-class Heatpump_COPanalyzer:
+class HeatpumpCopAnalyzer:
     def __init__(self,
                  working_fluid: str = "R290",
                  nominal_cop: float = 4.9,
@@ -126,74 +125,6 @@ class Heatpump_COPanalyzer:
         self.cop_optimization()
         self.analyze_cop()
         return self.get_cop_array()
-
-    def get_heating_energy_apriori(self, scenario, size_household, type_house, size_house,
-                                   demand_spec, temperature_tolerance,
-                                   flows_apriori):
-        type_house_map = {
-            "efh": "EFH",
-            "mfh": "MFH"
-        }
-
-        type_house_upper = type_house_map.get(type_house.lower(), type_house)
-
-        temp_air = scenario.temp_air
-
-        houses = [
-            {
-                "name": f"{type_house_upper}_1",
-                "house_type": type_house_upper,
-                "N_Pers": size_household,
-                "N_WE": 1,
-                "Q_Heiz_a": size_house * demand_spec,
-                "Q_TWW_a": size_household * 500000 if type_house_upper == "EFH" else
-                   size_household * 1000000 if type_house_upper == "MFH" else
-                   0,
-                "W_a": 0,
-                "summer_temperature_limit": 15,
-                "winter_temperature_limit": 5,
-            }
-        ]
-
-        try_region = vdi.find_try_region(scenario.longitude, scenario.latitude)
-        demand_list = []
-
-        for year in scenario.temp_air.index.year.unique():
-            region = vdi.Region(
-                year=year,
-                climate=vdi.Climate().from_try_data(try_region),
-                houses=houses,
-                resample_rule=scenario.timestep_td
-            )
-
-            demand_year = region.get_load_curve_houses().iloc[:, :2]
-            demand_year.columns = ['demand_heat', 'demand_dhw']
-            demand_list.append(demand_year)
-
-        demand_accumulated = pd.concat(demand_list, axis=1)
-        demand_accumulated.index = demand_accumulated.index + pd.DateOffset(hours=-1)
-        demand_accumulated.index = demand_accumulated.index.tz_localize("UTC")
-        demand_accumulated.index = demand_accumulated.index.tz_convert('Europe/Berlin')
-        demand_accumulated = demand_accumulated.loc[scenario.temp_air.index]
-
-        # Direkte Zuweisung in flows_apriori
-        flows_apriori['demand_heat'] = demand_accumulated['demand_heat']
-        flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
-
-        # Nachtabschaltung
-        mask_night =  (scenario.temp_air.index.hour >= 22) | (scenario.temp_air.index.hour <= 6)
-
-        # Thermische Trägheit
-        flows_apriori['delta'] = flows_apriori['demand_heat'] * (
-                1 - np.where(
-                (20 - temp_air['temp_air']) != 0,
-                (20 - temperature_tolerance - temp_air)/ (20 - temp_air),
-                0)
-        )
-
-        flows_apriori['min'] = flows_apriori['demand_heat']-flows_apriori['delta']
-        flows_apriori['max'] = flows_apriori['demand_heat'] + flows_apriori['delta']
-        flows_apriori['dif'] = flows_apriori['max']-flows_apriori['min']
 
     def plot_results(self, T_for_eta=7, save_path=None):
         if self.results is None:
