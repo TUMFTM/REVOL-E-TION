@@ -16,7 +16,7 @@ scenario,latitude,48.2652
 scenario,longitude,11.6686
 scenario,temp_air,temperature_air.csv
 scenario,cost_eps,1.00E-8
-scenario,blocks,"{'grid': 'GridConnection', 'fh': 'FossilHeating', 'thdem': 'ThermalDemand',}"
+scenario,blocks,"{'grid': 'GridConnection', 'hp': 'Heatpump', 'thdem': 'ThermalDemand',}"
 core,size_preexisting_acdc,0
 core,capex_preexisting_acdc,True
 core,size_max_acdc,None
@@ -64,7 +64,7 @@ thdem,demand_spec,100000
 thdem,size_buffer,16
 thdem,size_storage_dhw,190
 thdem,specific_heat_capacity_h2o,4180
-thdem,lr_24h,1500
+thdem,lr_dhw,38.93
 hp,capex_preexisting_block,True
 hp,capex_spec,1
 hp,mntex_spec,0
@@ -86,9 +86,9 @@ hp,specific_heat_capacity_h2o,4180
 fh,capex_preexisting_block,True
 fh,capex_spec,1
 fh,mntex_spec,0
-fh,opex_spec,0
+fh,opex_spec,0.46
 fh,crev_spec,0
-fh,size_preexisting_block,0
+fh,size_preexisting_block,2000
 fh,size_max_block,None
 fh,invest_block,True
 fh,ls,20

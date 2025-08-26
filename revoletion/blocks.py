@@ -2840,24 +2840,23 @@ class ThermalDemand(ThermalBlock):
                                     .tz_convert('Europe/Berlin'))
         demand_accumulated = demand_accumulated.loc[self.scenario.dti_sim_extd, :]
 
-        # Direkte Zuweisung in flows_apriori
         self.flows_apriori['demand_heating'] = demand_accumulated['demand_heat']
         self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
 
-        # Nachtabschaltung
-        mask_time = (self.scenario.dti_sim_extd.hour >= 6) & (self.scenario.dti_sim_extd.hour <= 22)
-
         # Thermische Trägheit
-        delta = (
-                demand_accumulated['demand_heat']
-                * (1 - ((20 - self.temperature_tolerance - self.scenario.temp_air)
-                        / (20 - self.scenario.temp_air)))
+        self.flows_apriori['delta'] = self.flows_apriori['demand_heating'] * (
+                1 - np.where(
+            (20 - self.scenario.temp_air) != 0,
+            (20 - self.temperature_tolerance - self.scenario.temp_air) / (20 - self.scenario.temp_air),
+            0)
         )
-        delta = delta.where(mask_time, 0).clip(lower=0)
-        self.flows_apriori['delta'] = delta
+
+        self.flows_apriori['min'] = self.flows_apriori['demand_heating'] - self.flows_apriori['delta']
+        self.flows_apriori['max'] = self.flows_apriori['demand_heating'] + self.flows_apriori['delta']
+        self.flows_apriori['dif'] = self.flows_apriori['max'] - self.flows_apriori['min']
 
         # define the storage sizes in energy instead of liters
-        self.capacity_storage_heating = self.flows_apriori['delta'].max()
+        self.capacity_storage_heating = self.flows_apriori['delta'].max() * 2
 
         t_delta_storage_dhw = 55 - 10  # hot water temperature: 55 °C, cold water temperature: 10 °C
         self.capacity_storage_dhw = self.size_storage_dhw * self.specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
@@ -2873,14 +2872,13 @@ class ThermalDemand(ThermalBlock):
         self.components['bus_internal_heating'] = solph.Bus()
 
         self.components['storage_heating'] = solph.components.GenericStorage(
-            inputs={self.bus_external_heating: solph.Flow(
+            inputs={self.bus_external_heating: solph.Flow()},
+            outputs={self.components['bus_internal_heating']: solph.Flow(
                 # ToDo: check this
-                nominal_value=self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max(),
-                max=self.flows_apriori['demand_heating'] + self.flows_apriori['delta']
-            )
-            },
-            outputs={self.components['bus_internal_heating']: solph.Flow()
-                     },
+                nominal_capacity=self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max(),
+                max=(self.flows_apriori['demand_heating'] + self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max()),
+                min=(self.flows_apriori['demand_heating'] - self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max())
+            )},
             initial_storage_level=0.5,
             loss_rate=0.0,
             nominal_storage_capacity=self.capacity_storage_heating
@@ -2900,7 +2898,7 @@ class ThermalDemand(ThermalBlock):
             outputs={self.components['bus_internal_dhw']: solph.Flow()},
             initial_storage_level=0.5,
             # ToDo: check this, kWh/24 seems to be wrong assumption
-            loss_rate=(self.lr_24h*3600/(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
+            loss_rate=(self.lr_dhw*3600/(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
             nominal_storage_capacity=self.capacity_storage_dhw
         )
 
@@ -3047,7 +3045,7 @@ class Heatpump(SinkBlock):
                     )
 
         # ToDo: check this
-        self.capacity_buffer = self.size_buffer * self.specific_heat_capacity_h2o * 35 / 3600
+        self.capacity_buffer = self.size_buffer * self.specific_heat_capacity_h2o * 10 / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -3084,7 +3082,7 @@ class Heatpump(SinkBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={bus_connected_heating: solph.Flow()},
             initial_storage_level= 0.5,
-            loss_rate=(self.lr_24h * 3600/(self.size_buffer * self.specific_heat_capacity_h2o * 35)) / 24,
+            loss_rate=0.0,
             nominal_storage_capacity=self.capacity_buffer,
         )
 
