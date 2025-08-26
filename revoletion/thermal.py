@@ -129,7 +129,7 @@ class Heatpump_COPanalyzer:
 
     def get_heating_energy_apriori(self, scenario, size_household, type_house, size_house,
                                    demand_spec, temperature_tolerance,
-                                   flows_apriori, states, cop_array):
+                                   flows_apriori):
         type_house_map = {
             "efh": "EFH",
             "mfh": "MFH"
@@ -191,11 +191,6 @@ class Heatpump_COPanalyzer:
         )
         delta = delta.where(mask_time, 0).clip(lower=0)
         flows_apriori['delta'] = delta
-
-        # COP-Werte
-        cop_series = temp_air['temp_air'].round(2).map(cop_array)
-        cop_series.loc[temp_air['temp_air'] > 20] = cop_array.max()
-        states['COP'] = cop_series
 
     def plot_results(self, T_for_eta=7, save_path=None):
         if self.results is None:

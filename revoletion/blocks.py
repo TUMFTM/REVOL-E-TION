@@ -2470,7 +2470,7 @@ class MobileBattery(ElectricFleetUnit):
                          parent=parent,
                          params=params)
 
-class Heatpump(SinkBlock):
+class Heatpumpold(SinkBlock):
 
     def init_evaluators(self):
         super().init_evaluators()
@@ -2542,8 +2542,6 @@ class Heatpump(SinkBlock):
             demand_spec=self.demand_spec,
             temperature_tolerance=self.temperature_tolerance,
             flows_apriori=self.flows_apriori,
-            states=self.states,
-            cop_array=self.cop_array
             )
 
     def define_oemof_components(self,
@@ -2593,8 +2591,8 @@ class Heatpump(SinkBlock):
             inputs={self.components['bus']: solph.Flow()},
             outputs={self.components['dhw_bus']: solph.Flow()},
             initial_storage_level=0.5,
-            loss_rate=(self.lr_24h*3600/(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
-            nominal_storage_capacity=(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)) / 3600
+            loss_rate=(self.lr_24h*3600/(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
+            nominal_storage_capacity=(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)) / 3600
         )
 
         self.components['inertia_house'] = solph.components.GenericStorage(
@@ -2660,7 +2658,7 @@ class Heatpump(SinkBlock):
                                                               self.size_buffer).fillna(0)
 
         self.states.loc[horizon.dti_ch_extd, 'soc_dhw_storage'] = (self.states.loc[horizon.dti_ch_extd, 'energy_dhw_storage'] /
-                                                                   self.size_dhw_storage).fillna(0)
+                                                                   self.size_storage_dhw).fillna(0)
 
         self.states.loc[horizon.dti_ch_extd, 'soc_inertia_house'] = (self.states.loc[horizon.dti_ch_extd, 'energy_inertia_house'] /
                                                                      self.flows_apriori['delta'].max()).fillna(0)
@@ -2732,11 +2730,11 @@ class ThermalDemand(ThermalBlock):
     def init_evaluators(self):
         super().init_evaluators()
 
-        self.evaluators['storage_heating_out'] = eco.EcoEvaluator(name='storage_heating_out',
-                                                                  scenario=self.scenario,
-                                                                  block=self,
-                                                                  flow_name='storage_heating_out',
-                                                                  )
+        self.evaluators['in_heating'] = eco.EcoEvaluator(name='in_heating',
+                                                         scenario=self.scenario,
+                                                         block=self,
+                                                         flow_name='in_heating',
+                                                         )
 
         self.evaluators['snk_heating'] = eco.EcoEvaluator(name='snk_heating',
                                                           scenario=self.scenario,
@@ -2744,11 +2742,11 @@ class ThermalDemand(ThermalBlock):
                                                           flow_name='snk_heating',
                                                           )
 
-        self.evaluators['storage_dhw_out'] = eco.EcoEvaluator(name='storage_dhw_out',
-                                                              scenario=self.scenario,
-                                                              block=self,
-                                                              flow_name='storage_dhw_out',
-                                                              )
+        self.evaluators['in_dhw'] = eco.EcoEvaluator(name='in_dhw',
+                                                     scenario=self.scenario,
+                                                     block=self,
+                                                     flow_name='in_dhw',
+                                                     )
 
         self.evaluators['snk_dhw'] = eco.EcoEvaluator(name='snk_dhw',
                                                       scenario=self.scenario,
@@ -2828,6 +2826,12 @@ class ThermalDemand(ThermalBlock):
         self.flows_apriori['delta'] = delta
         pass
 
+        # define the storage sizes in energy instead of liters
+        self.storage_size_heating_energy = self.flows_apriori['delta'].max()
+
+        t_delta_storage_dhw = 55 - 10  # hot water temperature: 55 °C, cold water temperature: 10 °C
+        self.storage_size_dhw_energy = self.size_storage_dhw * self.specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
+
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
                                 params: dict = None):
@@ -2847,7 +2851,7 @@ class ThermalDemand(ThermalBlock):
                      },
             initial_storage_level=0.5,
             loss_rate=0.0,
-            nominal_storage_capacity=self.flows_apriori['delta'].max()
+            nominal_storage_capacity=self.storage_size_heating_energy
         )
 
         self.components['snk_heating'] = solph.components.Sink(
@@ -2864,9 +2868,9 @@ class ThermalDemand(ThermalBlock):
             inputs={self.components['bus_external_dhw']: solph.Flow()},
             outputs={self.components['bus_internal_dhw']: solph.Flow()},
             initial_storage_level=0.5,
-            # ToDo: check this
-            loss_rate=(self.lr_24h*3600/(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
-            nominal_storage_capacity=(self.size_dhw_storage * self.specific_heat_capacity_h2o * (55-10)) / 3600
+            # ToDo: check this, kWh/24 seems to be wrong assumption
+            loss_rate=(self.lr_24h*3600/(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
+            nominal_storage_capacity=self.storage_size_dhw_energy
         )
 
         self.components['snk_dhw'] = solph.components.Sink(
@@ -2885,34 +2889,161 @@ class ThermalDemand(ThermalBlock):
     def get_horizon_results(self,
                             horizon: simulation.PredictionHorizon):
 
-        self.flows.loc[horizon.dti_ch, 'storage_heating_out'] = horizon.results[(self.components['storage_heating'],
-                                                                                 self.components['bus_internal_heating'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'in_heating'] = horizon.results[
+            (self.components['bus_external_heating'], self.components['storage_heating'])
+        ]['sequences']['flow'][horizon.dti_ch]
 
-        self.flows.loc[horizon.dti_ch, 'snk_heating'] = horizon.results[(self.components['bus_internal_heating'],
-                                                                         self.components['snk_heating'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'snk_heating'] =  horizon.results[
+            (self.components['bus_internal_heating'], self.components['snk_heating'])
+        ]['sequences']['flow'][horizon.dti_ch]
 
-        self.flows.loc[horizon.dti_ch, 'storage_dhw_out'] = horizon.results[(self.components['storage_dhw'],
-                                                                             self.components['bus_internal_dhw'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'in_dhw'] = horizon.results[
+            (self.components['bus_external_dhw'], self.components['storage_dhw'])
+        ]['sequences']['flow'][horizon.dti_ch]
 
-        self.flows.loc[horizon.dti_ch, 'snk_dhw'] = horizon.results[(self.components['bus_internal_dhw'],
-                                                                     self.components['snk_dhw'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.dti_ch, 'snk_dhw'] = horizon.results[
+            (self.components['bus_internal_dhw'], self.components['snk_dhw'])
+        ]['sequences']['flow'][horizon.dti_ch]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] = horizon.results[(self.components['storage_heating'],
-                                                                                          None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] = horizon.results[
+            (self.components['storage_heating'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy_storage_dhw'] = horizon.results[(self.components['storage_dhw'],
-                                                                                      None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.dti_ch_extd, 'energy_storage_dhw'] = horizon.results[
+            (self.components['storage_dhw'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
 
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'soc_storage_heating'] = (self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] /
-                                                                       self.size_storage_heating).fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'soc_storage_heating'] = (
+                self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] /
+                self.storage_size_heating_energy).fillna(0)
 
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] = (self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] /
-                                                                   self.size_storage_dhw).fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] = (
+                self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] /
+                self.storage_size_dhw_energy).fillna(0)
 
     def create_plot_traces(self):
         pass
+
+
+class Heatpump(SinkBlock):
+
+    def init_evaluators(self):
+        super().init_evaluators()
+        self.evaluators['block'] = eco.EcoEvaluator(name='block',
+                                                    scenario=self.scenario,
+                                                    block=self,
+                                                    size_name='block',
+                                                    size_unit='kW',
+                                                    ls=self.ls,
+                                                    ccr=self.ccr,
+                                                    flow_name='in',
+                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
+                                                                      spec=self.capex_spec),
+                                                    mntex_config=dict(spec=self.mntex_spec),
+                                                    opex_config=dict(spec=self.opex_spec),
+                                                    crev_config=dict(spec=self.crev_spec),
+                                                    )
+
+    def init_states(self):
+        super().init_states()
+
+        for state in ['energy_buffer', 'soc_buffer']:
+            self.states[state] = np.nan
+
+    def __init__(self,
+                 name: str,
+                 scenario):
+        super().__init__(name=name,
+                         scenario=scenario,
+                         flow_apriori_names=['demand_heat', 'demand_dhw','delta'],
+                         params=None,
+                         parent=scenario)
+
+        analyzer = hp.Heatpump_COPanalyzer(working_fluid=self.wf,
+                                            nominal_cop= self.nominal_cop,
+                                            nominal_power= self.nominal_power)
+
+        cop_temp_map = analyzer.run_full_analysis()
+        self.cop = self.scenario.temp_air.round(2).map(lambda x: (cop_temp_map[x]
+                                                                  if x <= 20
+                                                                  else cop_temp_map.max())
+                                                       )
+
+        pass
+
+
+    def define_oemof_components(self,
+                                horizon: simulation.PredictionHorizon,
+                                params: dict = None):
+        """
+        pre horizon method
+        x denotes the flow measurement point in results
+
+    bus_connected  bus             bus_external_heating
+            |      |--------x-------->|
+            |      |
+            |--x-->|
+            |      |               bus_external_dhw
+            |      |--x-->buffer--x-->|
+        """
+
+        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+
+        # ToDo: specify buses for thermal power in a thermal core block
+        bus_external_heating = None
+        bus_external_dhw = None
+
+        self.components['bus'] = solph.Bus()
+
+        self.components['heatpump'] = solph.components.Converter(
+            inputs={self.bus_connected: solph.Flow()},
+            outputs={self.components['bus']: solph.Flow(nominal_capacity=solph.Investment(
+                ep_costs=self.evaluators['block'].opt.spec_ep_invest,
+                existing=self.sizes['block'].preexisting,
+                maximum=self.sizes['block'].expansion_max
+            ))},
+            conversion_factors={self.components['bus']: self.states['COP']}
+        )
+
+        self.components['buffer'] = solph.components.GenericStorage(
+            inputs={self.components['bus']: solph.Flow()},
+            outputs={bus_external_heating: solph.Flow()},
+            initial_storage_level= 0.5,
+            loss_rate=(self.lr_24h * 3600/(self.size_buffer * self.specific_heat_capacity_h2o * 35)) / 24,
+            nominal_storage_capacity= (self.size_buffer * self.specific_heat_capacity_h2o * 35) / 3600
+        )
+
+        self.components['connection_dhw'] = solph.components.Converter(
+            inputs={self.components['bus']: solph.Flow()},
+            outputs={bus_external_dhw: solph.Flow()},
+            conversion_factors={bus_external_dhw: 1},
+        )
+
+    def get_horizon_results(self,
+                            horizon: simulation.PredictionHorizon):
+
+        self.sizes['block'].expansion = horizon.results[(self.components['heatpump'],
+                                                                self.components['bus'])]['scalars']['invest']
+
+        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
+
+        self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] = horizon.results[(self.components['buffer'],
+                                                                          None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+
+        self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] = (self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] /
+                                                              self.size_buffer).fillna(0)
+
+    def create_plot_traces(self):
+        pass
+
+    def get_legend_entry(self):
+        return ''
+
+
+class FossilHeating(ThermalBlock):
+    ...
+
 
 
 
