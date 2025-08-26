@@ -2506,6 +2506,11 @@ class ThermalCore(ThermalBlock):
         pass
 
 
+t_target = 20
+t_hot_dhw = 55
+t_cold_dhw = 10
+specific_heat_capacity_h2o = 4180
+t_delta_buffer = 20
 class ThermalDemand(ThermalBlock):
 
     def init_evaluators(self):
@@ -2594,14 +2599,11 @@ class ThermalDemand(ThermalBlock):
         self.flows_apriori['demand_heating'] = demand_accumulated['demand_heat']
         self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
 
-        # ToDo: is this still relevant? -> mask_night is not used afterwards
-        mask_night = (scenario.temp_air.index.hour >= 22) | (scenario.temp_air.index.hour <= 6)
-
         # thermal inertia
         self.flows_apriori['delta'] = self.flows_apriori['demand_heating'] * (
                 1 - np.where(
-            (20 - self.scenario.temp_air) != 0,
-            (20 - self.temperature_tolerance - self.scenario.temp_air) / (20 - self.scenario.temp_air),
+            (t_target - self.scenario.temp_air) != 0,
+            (t_target - self.temperature_tolerance - self.scenario.temp_air) / (t_target - self.scenario.temp_air),
             0)
         )
 
@@ -2612,8 +2614,8 @@ class ThermalDemand(ThermalBlock):
         # define the storage sizes in energy instead of liters
         self.capacity_storage_heating = self.flows_apriori['delta'].max() * 2
 
-        t_delta_storage_dhw = 55 - 10  # hot water temperature: 55 °C, cold water temperature: 10 °C
-        self.capacity_storage_dhw = self.size_storage_dhw * self.specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
+        t_delta_storage_dhw = t_hot_dhw - t_cold_dhw  # hot water temperature: 55 °C, cold water temperature: 10 °C
+        self.capacity_storage_dhw = self.size_storage_dhw * specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2628,7 +2630,6 @@ class ThermalDemand(ThermalBlock):
         self.components['storage_heating'] = solph.components.GenericStorage(
             inputs={self.bus_external_heating: solph.Flow()},
             outputs={self.components['bus_internal_heating']: solph.Flow(
-                # ToDo: check this
                 nominal_capacity=self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max(),
                 max=(self.flows_apriori['demand_heating'] + self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max()),
                 min=(self.flows_apriori['demand_heating'] - self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max())
@@ -2640,7 +2641,6 @@ class ThermalDemand(ThermalBlock):
 
         self.components['snk_heating'] = solph.components.Sink(
             inputs={self.components['bus_internal_heating']: solph.Flow(nominal_capacity=1,
-                                                                        # ToDo: check this
                                                                         fix=self.flows_apriori['demand_heating'][horizon.dti_ph])}
         )
 
@@ -2651,8 +2651,7 @@ class ThermalDemand(ThermalBlock):
             inputs={self.bus_external_dhw: solph.Flow()},
             outputs={self.components['bus_internal_dhw']: solph.Flow()},
             initial_storage_level=0.5,
-            # ToDo: check this, kWh/24 seems to be wrong assumption
-            loss_rate=(self.lr_dhw*3600/(self.size_storage_dhw * self.specific_heat_capacity_h2o * (55-10)))/24, #transfers loss rate from energyclass (normally ...kWh/24h) into relative loss rate per timestep (...%/h)
+            loss_rate=self.lr_dhw/self.capacity_storage_dhw,
             nominal_storage_capacity=self.capacity_storage_dhw
         )
 
@@ -2798,8 +2797,7 @@ class Heatpump(SinkBlock):
                     .map(lambda x: cop_temp_map[x])
                     )
 
-        # ToDo: check this
-        self.capacity_buffer = self.size_buffer * self.specific_heat_capacity_h2o * 10 / 3600
+        self.capacity_buffer = self.size_buffer * specific_heat_capacity_h2o * t_delta_buffer / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,

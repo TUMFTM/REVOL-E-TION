@@ -63,7 +63,6 @@ thdem,size_house,157
 thdem,demand_spec,100000
 thdem,size_buffer,16
 thdem,size_storage_dhw,190
-thdem,specific_heat_capacity_h2o,4180
 thdem,lr_dhw,38.93
 hp,capex_preexisting_block,True
 hp,capex_spec,1
@@ -81,7 +80,6 @@ hp,invest_block,True
 hp,ls,20
 hp,ccr,1
 hp,size_buffer,16
-hp,lr_24h,1500
 hp,specific_heat_capacity_h2o,4180
 fh,capex_preexisting_block,True
 fh,capex_spec,1
@@ -93,4 +91,3 @@ fh,size_max_block,None
 fh,invest_block,True
 fh,ls,20
 fh,ccr,1
-fh,specific_heat_capacity_h2o,4180
