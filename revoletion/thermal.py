@@ -186,8 +186,8 @@ class Heatpump_COPanalyzer:
         # Thermische Trägheit
         delta = (
                 demand_accumulated['demand_heat']
-                * (1 - ((20 - temperature_tolerance - temp_air['temp_air'])
-                        / (20 - temp_air['temp_air'])))
+                * (1 - ((20 - temperature_tolerance - temp_air)
+                        / (20 - temp_air)))
         )
         delta = delta.where(mask_time, 0).clip(lower=0)
         flows_apriori['delta'] = delta
