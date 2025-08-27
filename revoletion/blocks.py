@@ -2506,11 +2506,13 @@ class ThermalCore(ThermalBlock):
         pass
 
 
-t_target = 20
-t_hot_dhw = 55
-t_cold_dhw = 10
-specific_heat_capacity_h2o = 4180
-t_delta_buffer = 20
+T_TARGET_HEATING = 20
+T_DHW_HOT = 55
+T_DHW_COLD = 10
+CAPACITY_HEAT_SPEC_H2O = 4180
+T_DELTA_BUFFER = 20
+
+
 class ThermalDemand(ThermalBlock):
 
     def init_evaluators(self):
@@ -2602,8 +2604,8 @@ class ThermalDemand(ThermalBlock):
         # thermal inertia
         self.flows_apriori['delta'] = self.flows_apriori['demand_heating'] * (
                 1 - np.where(
-            (t_target - self.scenario.temp_air) != 0,
-            (t_target - self.temperature_tolerance - self.scenario.temp_air) / (t_target - self.scenario.temp_air),
+            (T_TARGET_HEATING - self.scenario.temp_air) != 0,
+            (T_TARGET_HEATING - self.temperature_tolerance - self.scenario.temp_air) / (T_TARGET_HEATING - self.scenario.temp_air),
             0)
         )
 
@@ -2614,8 +2616,8 @@ class ThermalDemand(ThermalBlock):
         # define the storage sizes in energy instead of liters
         self.capacity_storage_heating = self.flows_apriori['delta'].max() * 2
 
-        t_delta_storage_dhw = t_hot_dhw - t_cold_dhw  # hot water temperature: 55 °C, cold water temperature: 10 °C
-        self.capacity_storage_dhw = self.size_storage_dhw * specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
+        t_delta_storage_dhw = T_DHW_HOT - T_DHW_COLD  # hot water temperature: 55 °C, cold water temperature: 10 °C
+        self.capacity_storage_dhw = self.size_storage_dhw * CAPACITY_HEAT_SPEC_H2O * t_delta_storage_dhw / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2797,7 +2799,7 @@ class Heatpump(SinkBlock):
                     .map(lambda x: cop_temp_map[x])
                     )
 
-        self.capacity_buffer = self.size_buffer * specific_heat_capacity_h2o * t_delta_buffer / 3600
+        self.capacity_buffer = self.size_buffer * CAPACITY_HEAT_SPEC_H2O * T_DELTA_BUFFER / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
