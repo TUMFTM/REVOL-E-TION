@@ -144,8 +144,9 @@ ld,data_source,usecases,usecases,usecases,usecases
 ld,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 ld,filename_mapper,mtf,mtf,mtf,mtf
 bev,num,5,5,5,5
+bev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 bev,type_unit,ev,ev,ev,ev
-bev,size_preexisting_storage,16500,16500,16500,16500
+bev,size_preexisting_storage,30000,30000,30000,30000
 bev,size_max_storage,None,None,None,None
 bev,invest_storage,False,False,False,False
 bev,capex_preexisting_storage,True,True,True,True
@@ -187,6 +188,7 @@ bev,eff_dis_ac,0.95,0.95,0.95,0.95
 bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,sdr,0.02,0.02,0.02,0.02
 icev,num,5,5,5,5
+icev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 icev,type_unit,icev,icev,icev,icev
 icev,filename_mapper,mtf,mtf,mtf,mtf
 icev,capex_fix_glider,25000,25000,25000,25000
@@ -207,6 +209,7 @@ pue,data_source,usecases,usecases,usecases,usecases
 pue,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
 pue,filename_mapper,mtf,mtf,mtf,mtf
 mb,num,5,5,5,5
+mb,filename,brs_log,brs_log,brs_log,brs_log
 mb,type_unit,mb,mb,mb,mb
 mb,capex_fix_glider,500,500,500,500
 mb,capex_preexisting_glider,True,True,True,True

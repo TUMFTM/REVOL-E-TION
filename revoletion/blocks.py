@@ -2088,7 +2088,7 @@ class DispatchGroup(NonElectricBlock):
             )
 
         elif self.data_source in ['log', 'logfile']:
-            self.log = self.read_input_log()
+            self.scenario.logger.info(f'DispatchGroup "{self.name}": Logfile specified as data source - read logfile per SubFleet')
 
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
@@ -2098,6 +2098,47 @@ class DispatchGroup(NonElectricBlock):
         [SubFleet(name=item,
                   scenario=self.scenario,
                   parent=self) for item in subfleets]
+
+
+class SubFleet(NonElectricBlock):
+
+    def __init__(self,
+                 name: str,
+                 scenario: simulation.Scenario,
+                 parent):
+
+        # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
+        params = scenario.parameters.loc[name]
+        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num', 'type_unit', 'rex', 'filename']}
+
+        super().__init__(name=name,
+                         scenario=scenario,
+                         params=params_subfleet,
+                         parent=parent)
+
+        self.demand = self.log = None
+
+        cls_fu = {'ev': ElectricVehicle,
+                  'icev': CombustionVehicle,
+                  'mb': MobileBattery}.get(self.type_unit)
+        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
+        [cls_fu(name=name,
+                scenario=self.scenario,
+                params=params,
+                parent=self) for name in self.unit_names]
+
+        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
+            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
+
+        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
+            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
+
+    def pre_scenario(self):
+        if self.parent.data_source in ['log', 'logfile']:
+            self.log = self.read_input_log()
+        else:
+            self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
+        super().pre_scenario()
 
     def read_input_log(self) -> pd.DataFrame:
         """
@@ -2146,44 +2187,6 @@ class DispatchGroup(NonElectricBlock):
         df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
 
         return df
-
-
-class SubFleet(NonElectricBlock):
-
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 parent):
-
-        # subfleet parameters contain FleetUnit parameters
-        params = scenario.parameters.loc[name]
-        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num', 'type_unit', 'rex']}
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         params=params_subfleet,
-                         parent=parent)
-
-        self.demand = self.log = None
-
-        cls_fu = {'ev': ElectricVehicle,
-                  'icev': CombustionVehicle,
-                  'mb': MobileBattery}.get(self.type_unit)
-        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
-        [cls_fu(name=name,
-                scenario=self.scenario,
-                params=params,
-                parent=self) for name in self.unit_names]
-
-        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
-            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
-
-        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
-            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
-
-    def pre_scenario(self):
-        self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
-        super().pre_scenario()
 
 
 class FleetUnit:
