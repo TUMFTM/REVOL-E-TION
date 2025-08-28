@@ -151,23 +151,6 @@ class BaseBlock(BlockScenarioInterface):
         elif getattr(self, name_var2) == 'equal':
             setattr(self, name_var2, getattr(self, name_var1))
 
-    def create_evaluator_objects(self):
-        """
-        Create EconomicEvaluator objects for each POI depending on the class name defined
-        """
-
-        evaluators = dict()
-        for name, poi_definition in self.pois.items():
-            class_obj = getattr(eco, poi_definition['class_name'], None)
-            if class_obj is not None and isinstance(class_obj, type):
-                evaluators[name] = class_obj(name=name,
-                                             block=self,
-                                             params=poi_definition['params'])
-            else:
-                raise ValueError(f'Class "{poi_definition["class_name"]}" not found in economics.py file - '
-                                 f'Check for typos or add class.')
-        return evaluators
-
     def pre_scenario(self):
         """
         trigger actions to be executed after all inits
