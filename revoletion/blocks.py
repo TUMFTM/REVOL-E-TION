@@ -2506,12 +2506,13 @@ class ThermalCore(ThermalBlock):
         pass
 
 
-t_target = 20
-t_hot_dhw = 55
-t_cold_dhw = 10
-specific_heat_capacity_h2o = 4180
-t_delta_buffer = 20
-t_flow_temperature = 35
+T_TARGET_HEATING = 20
+T_DHW_HOT = 55
+T_DHW_COLD = 10
+CAPACITY_HEAT_SPEC_H2O = 4180
+T_DELTA_BUFFER = 20
+
+
 class ThermalDemand(ThermalBlock):
 
     def init_evaluators(self):
@@ -2603,8 +2604,8 @@ class ThermalDemand(ThermalBlock):
         # thermal inertia
         self.flows_apriori['delta'] = self.flows_apriori['demand_heating'] * (
                 1 - np.where(
-            (t_target - self.scenario.temp_air) != 0,
-            (t_target - self.temperature_tolerance - self.scenario.temp_air) / (t_target - self.scenario.temp_air),
+            (T_TARGET_HEATING - self.scenario.temp_air) != 0,
+            (T_TARGET_HEATING - self.temperature_tolerance - self.scenario.temp_air) / (T_TARGET_HEATING - self.scenario.temp_air),
             0)
         )
 
@@ -2615,8 +2616,8 @@ class ThermalDemand(ThermalBlock):
         # define the storage sizes in energy instead of liters
         self.capacity_storage_heating = self.flows_apriori['delta'].max() * 2
 
-        t_delta_storage_dhw = t_hot_dhw - t_cold_dhw  # hot water temperature: 55 °C, cold water temperature: 10 °C
-        self.capacity_storage_dhw = self.size_storage_dhw * specific_heat_capacity_h2o * t_delta_storage_dhw / 3600
+        t_delta_storage_dhw = T_DHW_HOT - T_DHW_COLD  # hot water temperature: 55 °C, cold water temperature: 10 °C
+        self.capacity_storage_dhw = self.size_storage_dhw * CAPACITY_HEAT_SPEC_H2O * t_delta_storage_dhw / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2775,7 +2776,7 @@ class Heatpump(SinkBlock):
     def init_states(self):
         super().init_states()
 
-        for state in ['energy_buffer', 'soc_buffer', 'temp_buffer']:
+        for state in ['energy_buffer', 'soc_buffer']:
             self.states[state] = np.nan
 
     def __init__(self,
@@ -2798,7 +2799,7 @@ class Heatpump(SinkBlock):
                     .map(lambda x: cop_temp_map[x])
                     )
 
-        self.capacity_buffer = self.size_buffer * specific_heat_capacity_h2o * t_delta_buffer / 3600
+        self.capacity_buffer = self.size_buffer * CAPACITY_HEAT_SPEC_H2O * T_DELTA_BUFFER / 3600
 
     def define_oemof_components(self,
                                 horizon: simulation.PredictionHorizon,
@@ -2863,16 +2864,12 @@ class Heatpump(SinkBlock):
 
         self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] = (self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] /
                                                               self.capacity_buffer).fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'temp_buffer'] = (
-                t_flow_temperature + self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] * t_delta_buffer
-        )
 
     def create_plot_traces(self):
         super().create_plot_traces()
 
         soc_buffer = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
                                                       freq=self.scenario.timestep_td), 'soc_buffer'].dropna()
-        temp_buffer = self.states.loc[soc_buffer.index, 'temp_buffer']
 
         self.scenario.plot_traces.extend(
             plot_lines=[go.Scatter(x=self.scenario.dti_eval,
@@ -2886,11 +2883,7 @@ class Heatpump(SinkBlock):
                                    mode='lines',
                                    name=f'{self.name} buffer',
                                    line=dict(width=2, dash=None),
-                                   hovertemplate=(
-                                           'Temp: %{customdata:.1f}°C<extra></extra>'
-                                   ),
-                                   customdata=temp_buffer.values
-                                   ),
+                                   ),  # ToDo: add temperature of buffer for mouseover using argument "hovertemplate"
                         ],
             secondary_ys=[False, True]
         )
