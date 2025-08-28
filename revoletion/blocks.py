@@ -2890,7 +2890,7 @@ class Heatpump(SinkBlock):
                                    hovertemplate=
                                    'Temp: %{customdata:.1f}°C<extra></extra>',
                                    customdata=temp_buffer.values
-                                   ),  # ToDo: add temperature of buffer for mouseover using argument "hovertemplate"
+                                   ),
                         ],
             secondary_ys=[False, True]
         )
