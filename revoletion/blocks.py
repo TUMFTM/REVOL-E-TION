@@ -2511,6 +2511,7 @@ T_DHW_HOT = 55
 T_DHW_COLD = 10
 CAPACITY_HEAT_SPEC_H2O = 4180
 T_DELTA_BUFFER = 20
+T_FLOW_TEMPERATUR = 35
 
 
 class ThermalDemand(ThermalBlock):
@@ -2776,7 +2777,7 @@ class Heatpump(SinkBlock):
     def init_states(self):
         super().init_states()
 
-        for state in ['energy_buffer', 'soc_buffer']:
+        for state in ['energy_buffer', 'soc_buffer', 'temp_buffer']:
             self.states[state] = np.nan
 
     def __init__(self,
@@ -2864,12 +2865,15 @@ class Heatpump(SinkBlock):
 
         self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] = (self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] /
                                                               self.capacity_buffer).fillna(0)
+        self.states.loc[horizon.dti_ch_extd, 'temp_buffer'] = (T_FLOW_TEMPERATUR + self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] *
+                                                               T_DELTA_BUFFER)
 
     def create_plot_traces(self):
         super().create_plot_traces()
 
         soc_buffer = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
                                                       freq=self.scenario.timestep_td), 'soc_buffer'].dropna()
+        temp_buffer = self.states.loc[soc_buffer.index, 'temp_buffer']
 
         self.scenario.plot_traces.extend(
             plot_lines=[go.Scatter(x=self.scenario.dti_eval,
@@ -2883,6 +2887,9 @@ class Heatpump(SinkBlock):
                                    mode='lines',
                                    name=f'{self.name} buffer',
                                    line=dict(width=2, dash=None),
+                                   hovertemplate=
+                                   'Temp: %{customdata:.1f}°C<extra></extra>',
+                                   customdata=temp_buffer.values
                                    ),  # ToDo: add temperature of buffer for mouseover using argument "hovertemplate"
                         ],
             secondary_ys=[False, True]
