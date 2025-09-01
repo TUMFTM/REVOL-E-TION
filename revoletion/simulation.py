@@ -805,10 +805,9 @@ class PredictionHorizon:
         if self.ph.duration < self.scenario.len_ph:
             self.scenario.logger.info(log_msg(msg='Prediction Horizon truncated to simulation end time'))
 
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
-                                  f'Start: {self.ph.start} - ' +
-                                  f'CH end: {self.ch.end} - ' +
-                                  f'PH end: {self.ph.end}')
+        self.scenario.logger.info(log_msg(msg=f'Start: {self.ph.start} - ' +
+                                              f'CH end: {self.ch.end} - ' +
+                                              f'PH end: {self.ph.end}'))
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
