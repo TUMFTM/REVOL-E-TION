@@ -139,7 +139,7 @@ class EcoTools:
 
         else:  # value is given as scalar
             return pd.Series(data=value,
-                             index=scenario.dti_sim)
+                             index=scenario.times.sim.dti)
 
     @staticmethod
     def calc_frac_remaining_ls(ls: int,
@@ -673,7 +673,7 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
 
     @property
     def sim(self) -> float:
-        return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
+        return self.poi.flow @ self.spec[self.poi.scenario.times.eval.dti] * self.poi.scenario.timestep.hours
 
     @property
     def yrl(self) -> float:
@@ -702,8 +702,8 @@ class FleetUnitOpexEvaluator(OpexEvaluator):
     @property
     def sim(self) -> float:
         sim = super().sim
-        sim += (self.poi.block.log.loc[self.poi.scenario.dti_eval, 'dist'] @
-                self.dist[self.poi.scenario.dti_eval])
+        sim += (self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'dist'] @
+                self.dist[self.poi.scenario.times.eval.dti])
         return sim
 
 
@@ -764,7 +764,7 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
 
     @property
     def sim(self) -> float:
-        return self.poi.flow @ self.spec[self.poi.scenario.dti_eval] * self.poi.scenario.timestep_hours
+        return self.poi.flow @ self.spec[self.poi.scenario.times.eval.dti] * self.poi.scenario.timestep.hours
 
     @property
     def yrl(self) -> float:
@@ -801,11 +801,11 @@ class FleetUnitCrevEvaluator(CrevEvaluator):
     @property
     def sim(self) -> float:
         sim = super().sim
-        sim += (self.poi.block.log.loc[self.poi.scenario.dti_eval, 'dist'] @
-                self.dist[self.poi.scenario.dti_eval])
+        sim += (self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'dist'] @
+                self.dist[self.poi.scenario.times.eval.dti])
 
-        sim += ((~self.poi.block.log.loc[self.poi.scenario.dti_eval, 'atbase'] @
-                 self.time[self.poi.scenario.dti_eval]) * self.poi.scenario.timestep_hours)
+        sim += ((~self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'atbase'] @
+                 self.time[self.poi.scenario.times.eval.dti]) * self.poi.scenario.timestep.hours)
 
         return sim
 
@@ -1030,8 +1030,8 @@ class EcoEvaluator(EcoPOI):
     def flow(self) -> np.ndarray:
         # if flow with name self.flow_name exists in block return this flow as numpy array
         if hasattr(self.block, 'flows') and self.flow_name in self.block.flows.columns:
-            return self.block.flows.loc[self.scenario.dti_eval, self.flow_name].values
+            return self.block.flows.loc[self.scenario.times.eval.dti, self.flow_name].values
         # else return default flow array with zeros
         else:
-            return np.array([0.0] * len(self.scenario.dti_eval),
+            return np.array([0.0] * len(self.scenario.times.eval.dti),
                             dtype=float)

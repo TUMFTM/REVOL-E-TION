@@ -102,8 +102,7 @@ class BaseBlock(BlockScenarioInterface):
                                             scenario=self.scenario,
                                             block=self)
 
-        self.states = pd.DataFrame(index=utils.extend_dti(self.scenario.dti_sim_extd,
-                                                          self.scenario.timestep_td),
+        self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd,
                                    dtype='float64')
         self.init_states()
 
@@ -282,12 +281,12 @@ class ElectricBlock(BaseBlock):
 
         # ToDo: (1) remove flow_apriori_names and use flow names instead
         #       (2) remove flows_apriori and use flows instead to save memory
-        self.flows_apriori = pd.DataFrame(index=self.scenario.dti_sim,
+        self.flows_apriori = pd.DataFrame(index=self.scenario.times.sim.dti,
                                           columns=flow_apriori_names,
                                           dtype='float64'
                                           )
 
-        self.flows = pd.DataFrame(index=self.scenario.dti_sim,
+        self.flows = pd.DataFrame(index=self.scenario.times.sim.dti,
                                   columns=(['total'] + list(self.flow_names)),
                                   data=0.0,
                                   dtype='float64')
@@ -348,7 +347,7 @@ class ElectricBlock(BaseBlock):
         process flows and calculate energies from flows
         """
         for flow_name, flow in self.flows.items():
-            energy = flow[self.scenario.dti_eval].sum() * self.scenario.timestep_hours
+            energy = flow[self.scenario.times.eval.dti].sum() * self.scenario.timestep.hours
             self.energies.loc[flow_name, 'sim'] = energy
             if ('circular' in flow_name) and (energy != 0):
                 self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected - check energy results')
@@ -375,13 +374,12 @@ class ElectricBlock(BaseBlock):
             self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
                                                             names=['block', 'key'])
 
-            self.result_timeseries.extend([self.flows.loc[self.scenario.dti_eval, :],
-                                           self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                                            freq=self.scenario.timestep_td), :]])
+            self.result_timeseries.extend([self.flows.loc[self.scenario.times.eval.dti, :],
+                                           self.states.loc[self.scenario.times.eval.dti_extd, :]])
 
     def create_plot_traces(self):
-        self.scenario.plot_traces.append(plot_line=go.Scatter(x=self.scenario.dti_eval,
-                                                              y=self.flows.loc[self.scenario.dti_eval, 'total'],
+        self.scenario.plot_traces.append(plot_line=go.Scatter(x=self.scenario.times.eval.dti,
+                                                              y=self.flows.loc[self.scenario.times.eval.dti, 'total'],
                                                               mode='lines',
                                                               name=self.get_legend_entry(),
                                                               line=dict(width=2, dash=None, shape='hv'),
@@ -498,7 +496,7 @@ class SystemCore(ElectricBlock):
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['acdc'].opt.spec_ep_invest,
                                                   existing=self.sizes['acdc'].preexisting,
                                                   maximum=self.sizes['acdc'].expansion_max),
-                variable_costs=self.evaluators['acdc'].opt.spec_ep_operation[horizon.dti_ph])},
+                variable_costs=self.evaluators['acdc'].opt.spec_ep_operation[horizon.ph.dti])},
             outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['dc']: self.eff['acdc']})
 
@@ -507,7 +505,7 @@ class SystemCore(ElectricBlock):
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['dcac'].opt.spec_ep_invest,
                                                   existing=self.sizes['dcac'].preexisting,
                                                   maximum=self.sizes['dcac'].expansion_max),
-                variable_costs=self.evaluators['dcac'].opt.spec_ep_operation[horizon.dti_ph])},
+                variable_costs=self.evaluators['dcac'].opt.spec_ep_operation[horizon.ph.dti])},
             outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
             conversion_factors={self.components['ac']: self.eff['dcac']})
 
@@ -536,10 +534,10 @@ class SystemCore(ElectricBlock):
         self.sizes['dcac'].expansion = horizon.results[(self.components['dc'],
                                                         self.components['dcac'])]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'acdc'] = horizon.results[(self.components['ac'],
-                                                                  self.components['acdc'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'dcac'] = horizon.results[(self.components['dc'],
-                                                                  self.components['dcac'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'acdc'] = horizon.results[(self.components['ac'],
+                                                                  self.components['acdc'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'dcac'] = horizon.results[(self.components['dc'],
+                                                                  self.components['dcac'])]['sequences']['flow'][horizon.ch.dti]
 
     def calc_results_flows(self):
         """
@@ -549,16 +547,16 @@ class SystemCore(ElectricBlock):
         self.flows['circular'] = self.flows[['dcac', 'acdc']].min(axis=1)
 
     def create_plot_traces(self):
-        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.dti_eval,
-                                                                y=self.flows.loc[self.scenario.dti_eval, 'dcac'],
+        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
+                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'dcac'],
                                                                 mode='lines',
                                                                 name=f'{self.name} DC-AC power (max. '
                                                                      f'{self.sizes["dcac"].total / 1e3:.1f} kW)',
                                                                 line=dict(width=2, dash=None, shape='hv'),
                                                                 visible='legendonly',
                                                                 ),
-                                                     go.Scatter(x=self.scenario.dti_eval,
-                                                                y=self.flows.loc[self.scenario.dti_eval, 'acdc'],
+                                                     go.Scatter(x=self.scenario.times.eval.dti,
+                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'acdc'],
                                                                 mode='lines',
                                                                 name=f'{self.name} AC-DC power (max. '
                                                                      f'{self.sizes["acdc"].total / 1e3:.1f} kW)',
@@ -657,8 +655,8 @@ class RenewableSource(SourceBlock):
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
                                                   existing=self.sizes['block'].preexisting,
                                                   maximum=self.sizes['block'].expansion_max),
-                fix=self.data.loc[horizon.dti_ph, 'power_spec'],
-                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.dti_ph])}
+                fix=self.data.loc[horizon.ph.dti, 'power_spec'],
+                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.ph.dti])}
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['src'], self.components['bus']),
@@ -673,12 +671,12 @@ class RenewableSource(SourceBlock):
         self.sizes['block'].expansion = horizon.results[(self.components['src'],
                                                          self.components['bus'])]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'pot'] = horizon.results[(self.components['src'],
-                                                                 self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'curt'] = horizon.results[(self.components['bus'],
-                                                                  self.components['exc'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'pot'] = horizon.results[(self.components['src'],
+                                                                 self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'curt'] = horizon.results[(self.components['bus'],
+                                                                  self.components['exc'])]['sequences']['flow'][horizon.ch.dti]
 
     def calc_results_energies(self):
 
@@ -694,15 +692,15 @@ class RenewableSource(SourceBlock):
 
     def create_plot_traces(self):
         super().create_plot_traces()
-        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.dti_eval,
-                                                                y=-1 * self.flows.loc[self.scenario.dti_eval, 'curt'],
+        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
+                                                                y=-1 * self.flows.loc[self.scenario.times.eval.dti, 'curt'],
                                                                 mode='lines',
                                                                 name=f'{self.name} curtailed power',
                                                                 line=dict(width=2, dash=None, shape='hv'),
                                                                 visible='legendonly',
                                                                 ),
-                                                     go.Scatter(x=self.scenario.dti_eval,
-                                                                y=self.flows.loc[self.scenario.dti_eval, 'pot'],
+                                                     go.Scatter(x=self.scenario.times.eval.dti,
+                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'pot'],
                                                                 mode='lines',
                                                                 name=f'{self.name} potential power',
                                                                 line=dict(width=2, dash=None, shape='hv'),
@@ -764,8 +762,8 @@ class PVSource(RenewableSource):
 
         # region get data from PVGIS API
         if self.data_source == 'pvgis api':  # PVGIS API example selected
-            api_startyear = self.scenario.starttime.tz_convert('utc').year
-            api_endyear = self.scenario.sim_extd_endtime.tz_convert('utc').year
+            api_startyear = self.scenario.times.sim.start.tz_convert('utc').year
+            api_endyear = self.scenario.times.sim.end.tz_convert('utc').year
             api_length = api_endyear - api_startyear
             api_shift = pd.to_timedelta('0 days')
 
@@ -799,8 +797,8 @@ class PVSource(RenewableSource):
                 raise ValueError('Optimal azimuth requires optimal tilt as well')
 
             self.data, *_ = pvlib.iotools.get_pvgis_hourly(
-                latitude=self.scenario.latitude,
-                longitude=self.scenario.longitude,
+                latitude=self.scenario.location.latitude,
+                longitude=self.scenario.location.longitude,
                 start=api_startyear,
                 end=api_endyear,
                 # PVGIS API is case sensitive and all inputs are lowered -> revert
@@ -842,8 +840,8 @@ class PVSource(RenewableSource):
                 raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: '
                                  f'No Solcast API key specified in run arguments')
 
-            latitude = self.scenario.latitude  # unmetered location for testing 41.89021
-            longitude = self.scenario.longitude  # unmetered location for testing 12.492231
+            latitude = self.scenario.location.latitude  # unmetered location for testing 41.89021
+            longitude = self.scenario.location.longitude  # unmetered location for testing 12.492231
 
             # Avoid unintended use of metered coordinates
             if latitude != 41.89021 or longitude != 12.492231:
@@ -851,7 +849,7 @@ class PVSource(RenewableSource):
 
             params = dict(latitude=latitude,
                           longitude=longitude,
-                          start=self.scenario.starttime,
+                          start=self.scenario.times.sim.start,
                           end=self.scenario.sim_extd_endtime,
                           period='PT5M',
                           output_parameters=['air_temp',
@@ -915,7 +913,7 @@ class PVSource(RenewableSource):
             # calculate period_start as only period_end is given, set as index and remove unnecessary columns
             self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
             self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-            self.data = self.data.tz_convert(self.scenario.timezone)
+            self.data = self.data.tz_convert(self.scenario.location.timezone)
             self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
             # rename columns according to further processing steps
             self.data.rename(columns={'air_temp': 'temp_air',
@@ -941,8 +939,8 @@ class PVSource(RenewableSource):
                 # region get data from PVGIS file
                 if self.data_source == 'pvgis file':
                     self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                    self.scenario.latitude = meta['inputs']['latitude']
-                    self.scenario.longitude = meta['inputs']['longitude']
+                    self.scenario.location.latitude = meta['inputs']['latitude']
+                    self.scenario.location.longitude = meta['inputs']['longitude']
                     # rename column wind_speed to speed_wind
                     self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
                     self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
@@ -957,23 +955,23 @@ class PVSource(RenewableSource):
                     self.data['period_start'] = (pd.to_datetime(self.data['period_end'], utc=True) -
                                                  pd.to_timedelta(self.data['period']))
                     self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
-                    self.data = self.data.tz_convert(self.scenario.timezone)
+                    self.data = self.data.tz_convert(self.scenario.location.timezone)
 
                     # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
                     if self.azimuth is not None or self.tilt is not None:
                         if self.azimuth is None or self.azimuth == 'optimal':
-                            azimuth = 0 if self.scenario.latitude < 0 else 180  # Solcast "optimum"
+                            azimuth = 0 if self.scenario.location.latitude < 0 else 180  # Solcast "optimum"
                         else:
                             azimuth = self.azimuth
 
                         if self.tilt is None or self.tilt == 'optimal':
-                            abs(self.scenario.latitude)  # Something close to Solcast "optimum"
+                            abs(self.scenario.location.latitude)  # Something close to Solcast "optimum"
                         else:
                             tilt = self.tilt
 
                         # calculate solar position for location (gets altitude from lookup table)
-                        solar_position = (pvlib.location.Location(latitude=self.scenario.latitude,
-                                                                  longitude=self.scenario.longitude)
+                        solar_position = (pvlib.location.Location(latitude=self.scenario.location.latitude,
+                                                                  longitude=self.scenario.location.longitude)
                                           .get_solarposition(times=self.data.index,
                                                              method='nrel_numpy')
                                           )
@@ -1009,12 +1007,12 @@ class PVSource(RenewableSource):
         if 'power_spec' not in self.data.columns:
             self.data['power_spec'] = self.data['P'] / 1e3
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
-        self.data = self.data.resample(self.scenario.timestep).mean().ffill().bfill()
+        self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
         # convert to local time
-        self.data.index = self.data.index.tz_convert(tz=self.scenario.timezone)
+        self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.dti_sim_extd, ['power_spec', 'speed_wind', 'temp_air']]
+        self.data = self.data.loc[self.scenario.times.sim.dti_extd, ['power_spec', 'speed_wind', 'temp_air']]
         # endregion
 
         if not self.scenario.settings.largescalemode:
@@ -1087,7 +1085,7 @@ class FixedDemand(SinkBlock):
         self.get_flows_apriori()
 
     def get_flows_apriori(self):
-        self.flows_apriori.index = self.scenario.dti_sim  # ToDo: Why needs this to be set explicitly? Should be done in init()
+        self.flows_apriori.index = self.scenario.times.sim.dti  # ToDo: Why needs this to be set explicitly? Should be done in init()
         if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
             def get_timeframe(date):
                 month = date.month
@@ -1118,8 +1116,8 @@ class FixedDemand(SinkBlock):
 
             # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
             freq_slp = '15min'
-            dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.starttime.floor(freq_slp),
-                                                     end=self.scenario.dti_sim.max().ceil(freq_slp),
+            dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.times.sim.start.floor(freq_slp),
+                                                     end=self.scenario.times.sim.end.ceil(freq_slp),
                                                      freq=freq_slp))
 
             data = pd.Series(index=dti_slp, data=0, dtype='float64')
@@ -1142,7 +1140,7 @@ class FixedDemand(SinkBlock):
             data *= (self.consumption_yrl / 1e6)
 
             # resample to simulation time step
-            self.flows_apriori['demand'] = data.resample(self.scenario.timestep).mean().ffill().bfill()
+            self.flows_apriori['demand'] = data.resample(self.scenario.timestep.td).mean().ffill().bfill()
         elif self.load_profile in ['const', 'constant']:
             self.flows_apriori['demand'] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
@@ -1185,7 +1183,7 @@ class FixedDemand(SinkBlock):
 
         self.components['snk'] = solph.components.Sink(
             inputs={self.bus_connected: solph.Flow(nominal_capacity=1,
-                                                   fix=self.flows_apriori['demand'][horizon.dti_ph])}
+                                                   fix=self.flows_apriori['demand'][horizon.ph.dti])}
         )
 
     def get_horizon_results(self,
@@ -1193,8 +1191,8 @@ class FixedDemand(SinkBlock):
         """
         post horizon method
         """
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['snk'])]['sequences']['flow'][horizon.ch.dti]
 
     def get_legend_entry(self):
         return f'{self.name} power'
@@ -1247,7 +1245,7 @@ class ControllableSource(SourceBlock):
                 nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
                                                   existing=self.sizes['block'].preexisting,
                                                   maximum=self.sizes['block'].expansion_max),
-                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.dti_ph])}
+                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.ph.dti])}
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['src'], self.bus_connected),
@@ -1262,8 +1260,8 @@ class ControllableSource(SourceBlock):
         self.sizes['block'].expansion = horizon.results[(self.components['src'],
                                                          self.bus_connected)]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['src'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
 
 
 class GridConnection(ElectricBlock):
@@ -1348,7 +1346,7 @@ class GridConnection(ElectricBlock):
 
         # Get dummies directly from the 'periods' data
         self.bus_activation = pd.get_dummies(
-            self.scenario.dti_sim.to_series().map(periods_func[str(self.peak_period)])).astype(int)
+            self.scenario.times.sim.dti.to_series().map(periods_func[str(self.peak_period)])).astype(int)
 
         # Create a series to store peak power values
         self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
@@ -1358,7 +1356,7 @@ class GridConnection(ElectricBlock):
 
         def process_period(period):
             dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-            dti_period_sim = dti_period[dti_period.isin(self.scenario.dti_eval)]  # remove non-sim timestamps
+            dti_period_sim = dti_period[dti_period.isin(self.scenario.times.sim.dti)]  # remove non-sim timestamps
 
             # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
             if len(dti_period_sim) == 0:
@@ -1366,24 +1364,24 @@ class GridConnection(ElectricBlock):
             else:
                 if period == 'day':
                     start = dti_period_sim.min().normalize()
-                    end = start + pd.DateOffset(days=1) - self.scenario.timestep_td
+                    end = start + pd.DateOffset(days=1) - self.scenario.timestep.td
                 elif period == 'week':
                     start = dti_period_sim.min().normalize() - pd.Timedelta(days=dti_period_sim[0].weekday())
-                    end = start + pd.DateOffset(weeks=1) - self.scenario.timestep_td
+                    end = start + pd.DateOffset(weeks=1) - self.scenario.timestep.td
                 elif period == 'month':
                     start = dti_period_sim.min().normalize().replace(day=1)
-                    end = start + pd.DateOffset(months=1) - self.scenario.timestep_td
+                    end = start + pd.DateOffset(months=1) - self.scenario.timestep.td
                 elif period == 'quarter':
                     start = dti_period_sim.min().normalize().replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
-                    end = start + pd.DateOffset(months=3) - self.scenario.timestep_td
+                    end = start + pd.DateOffset(months=3) - self.scenario.timestep.td
                 elif period == 'year':
                     start = dti_period_sim.min().normalize().replace(day=1, month=1)
-                    end = start + pd.DateOffset(years=1) - self.scenario.timestep_td
+                    end = start + pd.DateOffset(years=1) - self.scenario.timestep.td
                 else:
                     start = dti_period_sim.min()
                     end = dti_period_sim.max()
 
-                period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep_td))
+                period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep.td))
 
             return pd.Series({'period_fraction': period_fraction,
                               'start': dti_period.min(),
@@ -1392,9 +1390,9 @@ class GridConnection(ElectricBlock):
         # Apply the function to each period in peak_periods
         self.peak_periods[['period_fraction', 'start', 'end']] = self.peak_periods.index.to_series().apply(process_period)
 
-        self.n_peak_periods_yr = (pd.date_range(start=self.scenario.starttime,
-                                                end=self.scenario.starttime + pd.DateOffset(years=1),
-                                                freq=self.scenario.timestep,
+        self.n_peak_periods_yr = (pd.date_range(start=self.scenario.times.sim.start,
+                                                end=self.scenario.times.sim.start + pd.DateOffset(years=1),
+                                                freq=self.scenario.timestep.td,
                                                 inclusive='left')
                                   .to_series().apply(periods_func[str(self.peak_period)])).unique().size
 
@@ -1458,7 +1456,7 @@ class GridConnection(ElectricBlock):
                                                              if self.peakshaving else 0),
                                                    existing=self.peak_periods.loc[period, 'power'])
                                   ),
-                max=(self.bus_activation.loc[horizon.dti_ph, period]))},
+                max=(self.bus_activation.loc[horizon.ph.dti, period]))},
             conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
 
         self.components.update(self.outflows)
@@ -1497,15 +1495,15 @@ class GridConnection(ElectricBlock):
         self.sizes['s2g'].expansion = horizon.results[(list(self.inflows.values())[0],
                                                        self.components['bus'])]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
                                                     for inflow in self.inflows.values()])
-        self.flows.loc[horizon.dti_ch, 'out'] = sum([horizon.results[(self.components['bus'], outflow)]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = sum([horizon.results[(self.components['bus'], outflow)]['sequences']['flow'][horizon.ch.dti]
                                                      for outflow in self.outflows.values()])
 
         def get_peak_power(row):
             peak_power = max(row['power'],
                              horizon.results[(self.outflows[f'{self.name}_outflow_{row.name}'],
-                                              self.bus_connected)]['sequences']['flow'][horizon.dti_ch].max())
+                                              self.bus_connected)]['sequences']['flow'][horizon.ch.dti].max())
             return peak_power
 
         self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
@@ -1524,7 +1522,7 @@ class GridConnection(ElectricBlock):
 
         peak_power_results = {}
         for period, row in self.peak_periods.iterrows():
-            if row['start'] < self.scenario.sim_endtime:
+            if row['start'] < self.scenario.times.eval.end:
                 peak_power_results.update({
                     f'{period}_peak_power': row['power'],
                     f'{period}_peak_period_fraction': row['period_fraction'],
@@ -1540,7 +1538,7 @@ class GridConnection(ElectricBlock):
             [f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
              f'"{period}": {row["power"] / 1e3:.1f} kW '
              f'- OPEX in simulation period: {self.evaluators[period].opex_peak.sim:.2f} {self.scenario.currency}'
-             for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.sim_endtime]
+             for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.times.eval.end]
         )
 
     def get_legend_entry(self):
@@ -1594,7 +1592,7 @@ class GridMarket(ElectricBlock):
             outputs={self.parent.components['bus']: solph.Flow(
                 nominal_capacity=self.pwr_g2s,
                 max=1 if self.pwr_g2s else None,
-                variable_costs=self.evaluators['g2s'].opt.spec_ep_operation[horizon.dti_ph])
+                variable_costs=self.evaluators['g2s'].opt.spec_ep_operation[horizon.ph.dti])
             }
         )
 
@@ -1603,7 +1601,7 @@ class GridMarket(ElectricBlock):
                 self.parent.components['bus']: solph.Flow(
                     nominal_capacity=self.pwr_s2g,
                     max=1 if self.pwr_s2g else None,
-                    variable_costs=(self.evaluators['s2g'].opt.spec_ep_operation[horizon.dti_ph]),
+                    variable_costs=(self.evaluators['s2g'].opt.spec_ep_operation[horizon.ph.dti]),
                 )
             }
         )
@@ -1614,11 +1612,11 @@ class GridMarket(ElectricBlock):
         post horizon method
         """
 
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.parent.components['bus'],
-                                                                self.components['snk'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.parent.components['bus'],
+                                                                self.components['snk'])]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['src'],
-                                                                 self.parent.components['bus'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['src'],
+                                                                 self.parent.components['bus'])]['sequences']['flow'][horizon.ch.dti]
 
     def get_legend_entry(self):
         powers = {power: min(self.parent.sizes[power].total,
@@ -1702,26 +1700,26 @@ class StorageBlock(ElectricBlock):
             return 1 - (1 - self.sdr) ** ratio_timestep
 
         self.loss_rate_per_hour = calc_loss_rate_per_period(period=pd.Timedelta(hours=1))
-        self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep_td)
+        self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep.td)
         delattr(self, 'sdr')
 
         # set initial SOC
-        self.states.loc[self.scenario.starttime, 'soc'] = self.soc_init
+        self.states.loc[self.scenario.times.eval.start, 'soc'] = self.soc_init
         delattr(self, 'soc_init')
 
         # set initial SOH
-        self.states.loc[self.scenario.starttime, 'soh'] = 1 - self.q_loss_cal_init - self.q_loss_cyc_init
+        self.states.loc[self.scenario.times.eval.start, 'soh'] = 1 - self.q_loss_cal_init - self.q_loss_cyc_init
 
         # set initial calendric loss
-        self.states.loc[self.scenario.starttime, 'q_loss_cal'] = self.q_loss_cal_init
+        self.states.loc[self.scenario.times.eval.start, 'q_loss_cal'] = self.q_loss_cal_init
         delattr(self, 'q_loss_cal_init')
 
         # set inital cyclic loss
-        self.states.loc[self.scenario.starttime, 'q_loss_cyc'] = self.q_loss_cyc_init
+        self.states.loc[self.scenario.times.eval.start, 'q_loss_cyc'] = self.q_loss_cyc_init
         delattr(self, 'q_loss_cyc_init')
 
-        self.states.loc[:, 'soc_min'] = (1 - self.states.loc[self.scenario.starttime, 'soh']) / 2
-        self.states.loc[:, 'soc_max'] = 1 - ((1 - self.states.loc[self.scenario.starttime, 'soh']) / 2)
+        self.states.loc[:, 'soc_min'] = (1 - self.states.loc[self.scenario.times.eval.start, 'soh']) / 2
+        self.states.loc[:, 'soc_max'] = 1 - ((1 - self.states.loc[self.scenario.times.eval.start, 'soh']) / 2)
 
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
@@ -1777,7 +1775,7 @@ class StorageBlock(ElectricBlock):
 
         self.components['storage'] = solph.components.GenericStorage(
             inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['in'].opt.spec_ep_operation[horizon.dti_ph]
+                variable_costs=self.evaluators['in'].opt.spec_ep_operation[horizon.ph.dti]
             )},
             outputs={
                 self.components['bus']: solph.Flow(
@@ -1785,7 +1783,7 @@ class StorageBlock(ElectricBlock):
                 )},
             loss_rate=self.loss_rate_per_hour,
             balanced=params['storage_balanced'],
-            initial_storage_level=self.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median(),
+            initial_storage_level=self.states.loc[horizon.ph.start, ['soc', 'soc_min', 'soc_max']].median(),
             # crate measured "outside" of conversion factor (efficiency)
             invest_relation_input_capacity=params['invest_relation_input_capacity'],
             invest_relation_output_capacity=params['invest_relation_output_capacity'],
@@ -1795,8 +1793,8 @@ class StorageBlock(ElectricBlock):
                 ep_costs=self.evaluators['storage'].opt.spec_ep_invest,
                 existing=self.sizes['storage'].preexisting,
                 maximum=self.sizes['storage'].expansion_max),
-            max_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_max'],
-            min_storage_level=self.states.loc[horizon.dti_ph_extd, 'soc_min']
+            max_storage_level=self.states.loc[horizon.ph.dti_extd, 'soc_max'],
+            min_storage_level=self.states.loc[horizon.ph.dti_extd, 'soc_min']
         )
 
         horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
@@ -1810,20 +1808,20 @@ class StorageBlock(ElectricBlock):
         """
         self.sizes['storage'].expansion = horizon.results[(self.components['storage'], None)]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['inflow'])]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'bat_out'] = horizon.results[(self.components['storage'],
-                                                                     self.components['bus'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'bat_in'] = horizon.results[(self.components['bus'],
-                                                                    self.components['storage'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'bat_out'] = horizon.results[(self.components['storage'],
+                                                                     self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'bat_in'] = horizon.results[(self.components['bus'],
+                                                                    self.components['storage'])]['sequences']['flow'][horizon.ch.dti]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.ch.dti_extd, 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][horizon.ch.dti_extd]
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'soc'] = (
-                self.states.loc[horizon.dti_ch_extd, 'energy'] /
+        self.states.loc[horizon.ch.dti_extd, 'soc'] = (
+                self.states.loc[horizon.ch.dti_extd, 'energy'] /
                 self.sizes['storage'].total).fillna(0)
 
         self.aging_model.age(horizon=horizon)
@@ -1842,10 +1840,8 @@ class StorageBlock(ElectricBlock):
 
         super().create_plot_traces()
 
-        data_soc = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                    freq=self.scenario.timestep_td), 'soc'].dropna()
-        data_soh = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                    freq=self.scenario.timestep_td), 'soh'].dropna()
+        data_soc = self.states.loc[self.scenario.times.eval.dti_extd, 'soc'].dropna()
+        data_soh = self.states.loc[self.scenario.times.eval.dti_extd, 'soh'].dropna()
         self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=data_soc.index,
                                                                 y=data_soc,
                                                                 mode='lines',
@@ -1979,7 +1975,7 @@ class Fleet(SinkBlock):
 
         self.components['inflow'] = solph.components.Converter(
             inputs={self.bus_connected: solph.Flow(
-                variable_costs=self.evaluators['s2f'].opt.spec_ep_operation[horizon.dti_ph],
+                variable_costs=self.evaluators['s2f'].opt.spec_ep_operation[horizon.ph.dti],
                 nominal_capacity=self.pwr_lim_s2f,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
@@ -1989,7 +1985,7 @@ class Fleet(SinkBlock):
 
         self.components['outflow'] = solph.components.Converter(
             inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['f2s'].opt.spec_ep_operation[horizon.dti_ph],
+                variable_costs=self.evaluators['f2s'].opt.spec_ep_operation[horizon.ph.dti],
                 nominal_capacity=self.pwr_lim_f2s,
                 # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
             )},
@@ -2003,10 +1999,10 @@ class Fleet(SinkBlock):
         """
         post horizon method
         """
-        self.flows.loc[horizon.dti_ch, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['inflow'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
+                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['inflow'])]['sequences']['flow'][horizon.ch.dti]
 
     def get_legend_entry(self):
         def lim2str(lim) -> str:
@@ -2046,7 +2042,7 @@ class DispatchGroup(NonElectricBlock):
         if self.data_source in ['usecases', 'demand']:
             cls_demand = {True: mobility.VehicleDemand,
                           False: mobility.BatteryDemand}.get(self.is_vehicle_group)
-            self.demand = cls_demand(dti=self.scenario.dti_sim)
+            self.demand = cls_demand(dti=self.scenario.times.sim.dti)
             self.scenario.block_registry.setdefault('DispatchGroupActive', {})[self.name] = self
 
         if self.data_source == 'usecases':
@@ -2143,7 +2139,7 @@ class SubFleet(NonElectricBlock):
         freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
 
         # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
-        if freq_log != self.scenario.timestep_td:
+        if freq_log != self.scenario.timestep.td:
             self.scenario.logger.warning(f'Block "{self.name}": '
                                          f'log file does not match specified timestep - Resampling')
 
@@ -2153,9 +2149,9 @@ class SubFleet(NonElectricBlock):
             cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
             # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
             df_new = pd.DataFrame()
-            df_new[cols_consumption] = df[cols_consumption].resample(self.scenario.timestep).mean().ffill().bfill()
-            df_new[cols_dist] = df[cols_dist].resample(self.scenario.timestep).sum().ffill().bfill()
-            df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep).ffill().bfill()
+            df_new[cols_consumption] = df[cols_consumption].resample(self.scenario.timestep.td).mean().ffill().bfill()
+            df_new[cols_dist] = df[cols_dist].resample(self.scenario.timestep.td).sum().ffill().bfill()
+            df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep.td).ffill().bfill()
             df = df_new[cols]  # ensure right sorting
 
         if not (self.scenario.dti_eval.isin(df.index).all()):
@@ -2294,17 +2290,17 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         """
 
         # region calc minimum soc targets before usage and max soc for myopic optimization
-        dsoc_ph = self.log.loc[horizon.dti_ph_extd, 'dsoc']
+        dsoc_ph = self.log.loc[horizon.ph.dti, 'dsoc']
         if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
-                lower=self.states.loc[horizon.dti_ph_extd, 'soc_min'],
-                upper=self.states.loc[horizon.dti_ph_extd, 'soc_max'])
+                lower=self.states.loc[horizon.ph.dti_extd, 'soc_min'],
+                upper=self.states.loc[horizon.ph.dti_extd, 'soc_max'])
         elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
-                lower=self.states.loc[horizon.dti_ph_extd, 'soc_min'],
-                upper=self.states.loc[horizon.dti_ph_extd, 'soc_max'])
+                lower=self.states.loc[horizon.ph.dti_extd, 'soc_min'],
+                upper=self.states.loc[horizon.ph.dti_extd, 'soc_max'])
         else:  # a priori or global optimization
-            soc_min_hor = self.states.loc[horizon.dti_ph_extd, 'soc_min']
+            soc_min_hor = self.states.loc[horizon.ph.dti_extd, 'soc_min']
         self.states.update({'soc_min': soc_min_hor.astype('float64')})
         # endregion
 
@@ -2312,10 +2308,10 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
         params = {'inflow_nominal_capacity': self.pwr_chg_max,
                   'outflow_nominal_capacity': self.pwr_dis_max * self.eff['dis_int'],
-                  'inflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
-                  'outflow_max': None if self.apriori else self.log.loc[horizon.dti_ph, 'atbase'].astype(int),
-                  'inflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_chg'] if self.apriori else None,
-                  'outflow_fix': self.flows_apriori.loc[horizon.dti_ph, 'p_int_dis'] if self.apriori else None,
+                  'inflow_max': None if self.apriori else self.log.loc[horizon.ph.dti, 'atbase'].astype(int),
+                  'outflow_max': None if self.apriori else self.log.loc[horizon.ph.dti, 'atbase'].astype(int),
+                  'inflow_fix': self.flows_apriori.loc[horizon.ph.dti, 'p_int_chg'] if self.apriori else None,
+                  'outflow_fix': self.flows_apriori.loc[horizon.ph.dti, 'p_int_dis'] if self.apriori else None,
                   'invest_relation_input_capacity': None,
                   'invest_relation_output_capacity': None,
                   'storage_balanced': False,
@@ -2327,7 +2323,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.components['snk'] = solph.components.Sink(
             inputs={self.components['bus']: solph.Flow(
                 nominal_capacity=1,
-                fix=self.log.loc[horizon.dti_ph, 'consumption']
+                fix=self.log.loc[horizon.ph.dti, 'consumption']
             )})
 
         self.components['bus_ext_ac'] = solph.Bus()
@@ -2335,9 +2331,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.components['src_ext_ac'] = solph.components.Source(
             outputs={self.components['bus_ext_ac']: solph.Flow(
                 nominal_capacity=self.pwr_ext_ac_max,
-                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atac'].astype(int),
-                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_ext_ac_chg'] if self.apriori else None,
-                variable_costs=self.evaluators['ext_ac'].opt.spec_ep_operation[horizon.dti_ph])}
+                max=None if self.apriori else self.log.loc[horizon.ph.dti, 'atac'].astype(int),
+                fix=self.flows_apriori.loc[horizon.ph.dti, 'p_ext_ac_chg'] if self.apriori else None,
+                variable_costs=self.evaluators['ext_ac'].opt.spec_ep_operation[horizon.ph.dti])}
         )
 
         self.components['conv_ext_ac'] = solph.components.Converter(
@@ -2351,9 +2347,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.components['src_ext_dc'] = solph.components.Source(
             outputs={self.components['bus_ext_dc']: solph.Flow(
                 nominal_capacity=self.pwr_ext_dc_max,
-                max=None if self.apriori else self.log.loc[horizon.dti_ph, 'atdc'].astype(int),
-                fix=self.flows_apriori.loc[horizon.dti_ph, 'p_ext_dc_chg'] if self.apriori else None,
-                variable_costs=self.evaluators['ext_dc'].opt.spec_ep_operation[horizon.dti_ph])}
+                max=None if self.apriori else self.log.loc[horizon.ph.dti, 'atdc'].astype(int),
+                fix=self.flows_apriori.loc[horizon.ph.dti, 'p_ext_dc_chg'] if self.apriori else None,
+                variable_costs=self.evaluators['ext_dc'].opt.spec_ep_operation[horizon.ph.dti])}
         )
 
         self.components['conv_ext_dc'] = solph.components.Converter(
@@ -2368,10 +2364,10 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         post horizon method
         """
 
-        self.flows.loc[horizon.dti_ch, 'ext_ac'] = horizon.results[
-            (self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.dti_ch]
-        self.flows.loc[horizon.dti_ch, 'ext_dc'] = horizon.results[
-            (self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'ext_ac'] = horizon.results[
+            (self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, 'ext_dc'] = horizon.results[
+            (self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.ch.dti]
 
         super().get_horizon_results(horizon=horizon)
 
@@ -2385,8 +2381,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
             legend = f'{self.name} external {mode.upper()} charging power (max. {pwr / 1e3:.1f} kW)'
             self.scenario.plot_traces.append(
-                plot_line=go.Scatter(x=self.scenario.dti_eval,
-                                     y=self.flows.loc[self.scenario.dti_eval, f'ext_{mode}'],
+                plot_line=go.Scatter(x=self.scenario.times.eval.dti,
+                                     y=self.flows.loc[self.scenario.times.eval.dti, f'ext_{mode}'],
                                      mode='lines',
                                      name=legend,
                                      line=dict(width=2, dash=None, shape='hv'),
