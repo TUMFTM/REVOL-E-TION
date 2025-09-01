@@ -123,28 +123,31 @@ class SimulationTimes:
     prj: TimeSettings = field(init=False)
 
     def __post_init__(self):
-        starttime = self._scenario.starttime  # ToDo: reformat starttime
-        starttime = starttime if len(starttime) > 10 else starttime + ' 00:00'
-        starttime = pd.to_datetime(starttime, format='%d.%m.%Y %H:%M').floor(self._scenario.timestep).tz_localize(
-            self._scenario.location.timezone)
+        def convert_time(value: str) -> pd.Timestamp | None:
+            if value is None:
+                return None
+            value = value  # ToDo: reformat time
+            value = value if len(value) > 10 else value + ' 00:00'
+            value = (pd.to_datetime(value, format='%d.%m.%Y %H:%M')
+                     .floor(self._scenario.timestep)
+                     .tz_localize(self._scenario.location.timezone)
+                     )
+            return value
+
+        starttime = convert_time(self._scenario.starttime)
+        sim_endtime = convert_time(self._scenario.sim_endtime)
 
         timestep = utils.convert2timedelta(self._scenario.timestep,
                                            unit='minute')
 
         self.sim = TimeSettings(start=starttime,
                                 _timestep=timestep,
-                                end=(pd.to_datetime(self._scenario.sim_endtime, format='%d.%m.%Y %H:%M')
-                                     .floor(timestep)
-                                     .tz_localize(self._scenario.location.timezone)
-                                     if self._scenario.sim_endtime is not None else None),
+                                end=sim_endtime,
                                 duration=utils.convert2timedelta(value=self._scenario.sim_duration,
-                                                                       unit='day'))
+                                                                 unit='day'))
         self.eval = TimeSettings(start=starttime,
                                  _timestep=timestep,
-                                 end=(pd.to_datetime(self._scenario.sim_endtime, format='%d.%m.%Y %H:%M')
-                                      .floor(timestep)
-                                      .tz_localize(self._scenario.location.timezone)
-                                      if self._scenario.sim_endtime is not None else None),
+                                 end=sim_endtime,
                                  duration=utils.convert2timedelta(value=self._scenario.sim_duration,
                                                                         unit='day'))
         self.prj = TimeSettings(start=starttime,

@@ -18,8 +18,10 @@ import pandas as pd
 _LOGGER = logging.getLogger(__name__)
 
 
-def convert2timedelta(value: pd.Timedelta | str | float | int,
-                      unit: str = None) -> pd.Timedelta:
+def convert2timedelta(value: pd.Timedelta | str | float | int | None,
+                      unit: str = None) -> pd.Timedelta | None:
+    if value is None:
+        return None
 
     if not isinstance(value, (pd.Timedelta, str, float, int)):
         raise TypeError('Value must be of type pd.Timedelta, str, float or int.')
