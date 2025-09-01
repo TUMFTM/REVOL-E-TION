@@ -2560,7 +2560,7 @@ class ThermalDemand(ThermalBlock):
             }
         ]
 
-        try_region = vdi.find_try_region(self.scenario.longitude, self.scenario.latitude)
+        try_region = vdi.find_try_region(self.scenario.location.longitude, self.scenario.location.latitude)
         demand_list = []
 
         for year in self.scenario.temp_air.index.year.unique():
@@ -2568,7 +2568,7 @@ class ThermalDemand(ThermalBlock):
                 year=year,
                 climate=vdi.Climate().from_try_data(try_region),
                 houses=houses,
-                resample_rule=self.scenario.timestep_td
+                resample_rule=self.scenario.timestep.td
             )
 
             demand_year = region.get_load_curve_houses().iloc[:, :2]
@@ -2579,7 +2579,7 @@ class ThermalDemand(ThermalBlock):
         demand_accumulated.index = ((demand_accumulated.index + pd.DateOffset(hours=-1))
                                     .tz_localize('UTC')
                                     .tz_convert('Europe/Berlin'))
-        demand_accumulated = demand_accumulated.loc[self.scenario.dti_sim_extd, :]
+        demand_accumulated = demand_accumulated.loc[self.scenario.times.sim.dti, :]
 
         self.flows_apriori['demand_heating'] = demand_accumulated['demand_heat']
         self.flows_apriori['demand_dhw'] = demand_accumulated['demand_dhw']
@@ -2626,7 +2626,7 @@ class ThermalDemand(ThermalBlock):
 
         self.components['snk_heating'] = solph.components.Sink(
             inputs={self.components['bus_internal_heating']: solph.Flow(nominal_capacity=1,
-                                                                        fix=self.flows_apriori['demand_heating'][horizon.dti_ph])}
+                                                                        fix=self.flows_apriori['demand_heating'][horizon.ph.dti])}
         )
 
         # dhw
@@ -2642,59 +2642,57 @@ class ThermalDemand(ThermalBlock):
 
         self.components['snk_dhw'] = solph.components.Sink(
             inputs={self.components['bus_internal_dhw']: solph.Flow(nominal_capacity=1,
-                                                                    fix=self.flows_apriori['demand_dhw'][horizon.dti_ph])}
+                                                                    fix=self.flows_apriori['demand_dhw'][horizon.ph.dti])}
         )
 
     def get_horizon_results(self,
                             horizon: simulation.PredictionHorizon):
 
-        self.flows.loc[horizon.dti_ch, 'in_heating'] = horizon.results[
+        self.flows.loc[horizon.ch.dti, 'in_heating'] = horizon.results[
             (self.bus_external_heating, self.components['storage_heating'])
-        ]['sequences']['flow'][horizon.dti_ch]
+        ]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'snk_heating'] =  horizon.results[
+        self.flows.loc[horizon.ch.dti, 'snk_heating'] =  horizon.results[
             (self.components['bus_internal_heating'], self.components['snk_heating'])
-        ]['sequences']['flow'][horizon.dti_ch]
+        ]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'in_dhw'] = horizon.results[
+        self.flows.loc[horizon.ch.dti, 'in_dhw'] = horizon.results[
             (self.bus_external_dhw, self.components['storage_dhw'])
-        ]['sequences']['flow'][horizon.dti_ch]
+        ]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'snk_dhw'] = horizon.results[
+        self.flows.loc[horizon.ch.dti, 'snk_dhw'] = horizon.results[
             (self.components['bus_internal_dhw'], self.components['snk_dhw'])
-        ]['sequences']['flow'][horizon.dti_ch]
+        ]['sequences']['flow'][horizon.ch.dti]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] = horizon.results[
-            (self.components['storage_heating'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.ch.dti_extd, 'energy_storage_heating'] = horizon.results[
+            (self.components['storage_heating'], None)]['sequences']['storage_content'][horizon.ch.dti_extd]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy_storage_dhw'] = horizon.results[
-            (self.components['storage_dhw'], None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.ch.dti_extd, 'energy_storage_dhw'] = horizon.results[
+            (self.components['storage_dhw'], None)]['sequences']['storage_content'][horizon.ch.dti_extd]
 
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'soc_storage_heating'] = (
-                self.states.loc[horizon.dti_ch_extd, 'energy_storage_heating'] /
+        self.states.loc[horizon.ch.dti_extd, 'soc_storage_heating'] = (
+                self.states.loc[horizon.ch.dti_extd, 'energy_storage_heating'] /
                 self.capacity_storage_heating).fillna(0)
 
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'soc_storage_dhw'] = (
-                self.states.loc[horizon.dti_ch_extd, 'energy_storage_dhw'] /
+        self.states.loc[horizon.ch.dti_extd, 'soc_storage_dhw'] = (
+                self.states.loc[horizon.ch.dti_extd, 'energy_storage_dhw'] /
                 self.capacity_storage_dhw).fillna(0)
 
     def create_plot_traces(self):
-        soc_storage_dhw = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                           freq=self.scenario.timestep_td), 'soc_storage_dhw'].dropna()
-        soc_storage_heating = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                             freq=self.scenario.timestep_td), 'soc_storage_heating'].dropna()
+        soc_storage_dhw = self.states.loc[self.scenario.times.eval.dti_extd, 'soc_storage_dhw'].dropna()
+        soc_storage_heating = self.states.loc[self.scenario.times.eval.dti_extd, 'soc_storage_heating'].dropna()
 
         self.scenario.plot_traces.extend(
-            plot_lines=[go.Scatter(x=self.scenario.dti_eval,
-                                   y=self.flows.loc[self.scenario.dti_eval, 'in_heating'],
+            plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
+                                   y=self.flows.loc[self.scenario.times.eval.dti, 'in_heating'],
                                    mode='lines',
                                    name=f'{self.name} Heating in',
                                    line=dict(width=2, dash=None, shape='hv'),
                                    ),
-                        go.Scatter(x=self.scenario.dti_eval,
-                                   y=self.flows.loc[self.scenario.dti_eval, 'snk_heating'],
+                        go.Scatter(x=self.scenario.times.eval.dti,
+                                   y=self.flows.loc[self.scenario.times.eval.dti, 'snk_heating'],
                                    mode='lines',
                                    name=f'{self.name} Heating sink',
                                    line=dict(width=2, dash=None, shape='hv'),
@@ -2707,15 +2705,15 @@ class ThermalDemand(ThermalBlock):
                             line=dict(width=2, dash=None)
                         ),
                         go.Scatter(
-                            x=self.scenario.dti_eval,
-                            y=self.flows.loc[self.scenario.dti_eval, 'in_dhw'],
+                            x=self.scenario.times.eval.dti,
+                            y=self.flows.loc[self.scenario.times.eval.dti, 'in_dhw'],
                             mode='lines',
                             name=f'{self.name} DHW in',
                             line=dict(width=2, dash=None, shape='hv')
                         ),
                         go.Scatter(
-                            x=self.scenario.dti_eval,
-                            y=self.flows.loc[self.scenario.dti_eval, 'snk_dhw'],
+                            x=self.scenario.times.eval.dti,
+                            y=self.flows.loc[self.scenario.times.eval.dti, 'snk_dhw'],
                             mode='lines',
                             name=f'{self.name} DHW sink',
                             line=dict(width=2, dash=None, shape='hv')
@@ -2835,31 +2833,30 @@ class Heatpump(SinkBlock):
         self.sizes['block'].expansion = horizon.results[(self.components['heatpump'],
                                                                 self.components['bus'])]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['heatpump'])]['sequences']['flow'][horizon.dti_ch]
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
+                                                                self.components['heatpump'])]['sequences']['flow'][horizon.ch.dti]
 
-        self.flows.loc[horizon.dti_ch, 'out_th'] = horizon.results[(self.components['heatpump'],
+        self.flows.loc[horizon.ch.dti, 'out_th'] = horizon.results[(self.components['heatpump'],
                                                                     self.components['bus'])]['sequences']['flow'][
-            horizon.dti_ch]
+            horizon.ch.dti]
 
-        self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] = horizon.results[(self.components['buffer'],
-                                                                          None)]['sequences']['storage_content'][horizon.dti_ch_extd]
+        self.states.loc[horizon.ch.dti_extd, 'energy_buffer'] = horizon.results[(self.components['buffer'],
+                                                                          None)]['sequences']['storage_content'][horizon.ch.dti_extd]
 
-        self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] = (self.states.loc[horizon.dti_ch_extd, 'energy_buffer'] /
+        self.states.loc[horizon.ch.dti_extd, 'soc_buffer'] = (self.states.loc[horizon.ch.dti_extd, 'energy_buffer'] /
                                                               self.capacity_buffer).fillna(0)
-        self.states.loc[horizon.dti_ch_extd, 'temp_buffer'] = (T_FLOW_TEMPERATUR + self.states.loc[horizon.dti_ch_extd, 'soc_buffer'] *
+        self.states.loc[horizon.ch.dti_extd, 'temp_buffer'] = (T_FLOW_TEMPERATUR + self.states.loc[horizon.ch.dti_extd, 'soc_buffer'] *
                                                                T_DELTA_BUFFER)
 
     def create_plot_traces(self):
         super().create_plot_traces()
 
-        soc_buffer = self.states.loc[utils.extend_dti(dti=self.scenario.dti_eval,
-                                                      freq=self.scenario.timestep_td), 'soc_buffer'].dropna()
+        soc_buffer = self.states.loc[self.scenario.times.eval.dti_extd, 'soc_buffer'].dropna()
         temp_buffer = self.states.loc[soc_buffer.index, 'temp_buffer']
 
         self.scenario.plot_traces.extend(
-            plot_lines=[go.Scatter(x=self.scenario.dti_eval,
-                                   y=self.flows.loc[self.scenario.dti_eval, 'out_th'],
+            plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
+                                   y=self.flows.loc[self.scenario.times.eval.dti, 'out_th'],
                                    mode='lines',
                                    name=f'{self.name} thermal outflow',
                                    line=dict(width=2, dash=None, shape='hv'),
@@ -2950,6 +2947,6 @@ class FossilHeating(ThermalBlock):
         self.sizes['block'].expansion = horizon.results[(self.components['src'],
                                                          self.components['bus'])]['scalars']['invest']
 
-        self.flows.loc[horizon.dti_ch, 'in'] = horizon.results[(self.components['src'],
+        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.components['src'],
                                                                 self.components['bus'])]['sequences']['flow'][
-            horizon.dti_ch]
+            horizon.ch.dti]
