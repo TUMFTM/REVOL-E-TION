@@ -30,7 +30,7 @@ class AprioriPowerScheduler:
 
         self.core.init_ph(horizon=horizon)
 
-        for ts in horizon.dti_ph:
+        for ts in horizon.ph.dti:
             self.core.simulate_ts(ts=ts,
                                   horizon=horizon)
 
@@ -68,14 +68,14 @@ class AprioriCore:
                 horizon: 'PredictionHorizon'):
 
         # initialize power availability (system and converter) and fixed power consumption
-        self.p_sys_avail = self.p_sys_avail.reindex(horizon.dti_ph)
+        self.p_sys_avail = self.p_sys_avail.reindex(horizon.ph.dti)
         self.p_sys_avail[:] = 0
 
-        self.p_conv_avail = self.p_conv_avail.reindex(horizon.dti_ph)
+        self.p_conv_avail = self.p_conv_avail.reindex(horizon.ph.dti)
         self.p_conv_avail['ac'] = self.block.sizes['acdc'].preexisting
         self.p_conv_avail['dc'] = self.block.sizes['dcac'].preexisting
 
-        self.p_sys_fix = self.p_sys_avail.reindex(horizon.dti_ph)
+        self.p_sys_fix = self.p_sys_avail.reindex(horizon.ph.dti)
         self.p_sys_fix[:] = 0
 
         # get power production and consumption for each non-fleet top level block
@@ -83,12 +83,12 @@ class AprioriCore:
             if isinstance(block, blocks.GridConnection):
                 self.p_sys_avail.loc[:, block.system] += block.sizes['g2s'].preexisting * block.eff['block']
             elif isinstance(block, blocks.RenewableSource):
-                self.p_sys_avail.loc[:, block.system] += block.data.loc[horizon.dti_ph, 'power_spec'] * \
+                self.p_sys_avail.loc[:, block.system] += block.data.loc[horizon.ph.dti, 'power_spec'] * \
                                                          block.sizes['block'].preexisting * block.eff['block']
             elif isinstance(block, blocks.ControllableSource):
                 self.p_sys_avail.loc[:, block.system] += block.sizes['block'].preexisting * block.eff['block']
             elif isinstance(block, blocks.FixedDemand):
-                self.p_sys_fix.loc[:, block.system] += block.flows_apriori.loc[horizon.dti_ph, 'demand']
+                self.p_sys_fix.loc[:, block.system] += block.flows_apriori.loc[horizon.ph.dti, 'demand']
 
         for fleet in self.fleets.values():
             fleet.init_ph(horizon=horizon)
@@ -246,10 +246,10 @@ class AprioriFleet:
                 horizon: 'PredictionHorizon'):
 
         # initialize power availability and fixed power consumption
-        self.p_avail = self.p_avail.reindex(horizon.dti_ph)
+        self.p_avail = self.p_avail.reindex(horizon.ph.dti)
         self.p_avail[:] = np.inf if self.lm == 'dyn' else self.block.pwr_lim_s2f
 
-        self.p_fix = self.p_fix.reindex(horizon.dti_ph)
+        self.p_fix = self.p_fix.reindex(horizon.ph.dti)
         self.p_fix[:] = 0
 
         for fu in self.fleet_units.values():
@@ -337,21 +337,21 @@ class AprioriFleetUnit:
                 horizon: 'PredictionHorizon'):
 
         # apply new index to data
-        self.data_battery = self.data_battery.reindex(horizon.dti_ph)
+        self.data_battery = self.data_battery.reindex(horizon.ph.dti)
         self.data_battery[:] = 0
 
         # add power consumption to data
-        self.data_battery.loc[:, 'p_consumption'] = (-1 * self.block.log.loc[horizon.dti_ph, 'consumption'] /
+        self.data_battery.loc[:, 'p_consumption'] = (-1 * self.block.log.loc[horizon.ph.dti, 'consumption'] /
                                                      self._get_eff('consumption')).astype('float64')
 
         # get current SOC
-        self.data_battery.loc[horizon.dti_ph.min(), 'soc'] = self.block.states.loc[horizon.starttime, ['soc', 'soc_min', 'soc_max']].median()
+        self.data_battery.loc[horizon.ph.dti.min(), 'soc'] = self.block.states.loc[horizon.ph.start, ['soc', 'soc_min', 'soc_max']].median()
 
-        self.data_charging = self.data_charging.reindex(horizon.dti_ph)
+        self.data_charging = self.data_charging.reindex(horizon.ph.dti)
         self.data_charging[:] = 0
 
         # get soh for current prediction horizon
-        self.soh = self.block.states.loc[horizon.starttime, 'soh']
+        self.soh = self.block.states.loc[horizon.ph.start, 'soh']
 
     def calc_soc_target(self,
                         ts: pd.Timestamp) -> float:
@@ -377,11 +377,11 @@ class AprioriFleetUnit:
         dep_nxt = departures.min()
         if arr_nxt <= dep_nxt:  # trip currently ongoing
             # Destination charging -> sum up remaining energy of ongoing trip until end of trip
-            e_con = (-1) * (self.data_battery.loc[ts:arr_nxt - self.scenario.timestep_td, 'p_consumption'].sum()
-                            * self.scenario.timestep_hours)
+            e_con = (-1) * (self.data_battery.loc[ts:arr_nxt - self.scenario.timestep.td, 'p_consumption'].sum()
+                            * self.scenario.timestep.hours)
         else:  # vehicle currently rechargeable at base
-            e_con = (-1) * (self.data_battery.loc[dep_nxt:arr_nxt - self.scenario.timestep_td, 'p_consumption'].sum()
-                            * self.scenario.timestep_hours)
+            e_con = (-1) * (self.data_battery.loc[dep_nxt:arr_nxt - self.scenario.timestep.td, 'p_consumption'].sum()
+                            * self.scenario.timestep.hours)
 
         #  Convert energy consumption to delta soc taking the current soh into account
         soc_delta = e_con / self.block.sizes['storage'].preexisting
@@ -405,13 +405,13 @@ class AprioriFleetUnit:
         e_bat = self.data_battery.loc[ts, 'soc'] * self.block.sizes['storage'].preexisting
 
         # calculate self discharge power in current timestep based on the current energy content
-        self.data_battery.loc[ts, 'p_sd'] = -1 * e_bat * self.block.loss_rate_per_ts / self.scenario.timestep_hours
+        self.data_battery.loc[ts, 'p_sd'] = -1 * e_bat * self.block.loss_rate_per_ts / self.scenario.timestep.hours
 
         # calculate target energy content of battery
         e_target = self.data_battery.loc[ts, 'soc_target'] * self.block.sizes['storage'].preexisting
 
         # calculate maximum charging power at battery (avoid p_max < 0 caused by changing soc_target)
-        self.data_battery.loc[ts, 'p_max'] = max(((e_target - e_bat) / self.scenario.timestep_hours +
+        self.data_battery.loc[ts, 'p_max'] = max(((e_target - e_bat) / self.scenario.timestep.hours +
                                                   (-1) * self.data_battery.loc[ts, 'p_sd'] +
                                                   (-1) * self.data_battery.loc[ts, 'p_consumption']), 0)
 
@@ -458,8 +458,8 @@ class AprioriFleetUnit:
                 # calculate all upcoming arrival times at the base
                 arrivals = self.arr_base_dti[self.arr_base_dti >= ts]
                 # use current time and next arrival index to calculate consumption and convert to SOC
-                arr_nxt = arrivals.min() if not arrivals.empty else horizon.dti_ph.max()
-                e_trip_remaining = (-1) * self.data_battery.loc[ts:arr_nxt, 'p_consumption'].sum() * self.scenario.timestep_hours
+                arr_nxt = arrivals.min() if not arrivals.empty else horizon.ph.dti.max()
+                e_trip_remaining = (-1) * self.data_battery.loc[ts:arr_nxt, 'p_consumption'].sum() * self.scenario.timestep.hours
 
                 # set charging to True, if charging is necessary
                 if e_trip_remaining > ((self.data_battery.loc[ts, 'soc'] - self.block.soc_return) *
@@ -483,28 +483,30 @@ class AprioriFleetUnit:
         elif self.block.log.loc[ts, 'atdc'] == 1:
             # activate charging, if SOC will fall below threshold, before next possibility to charge
             chg_nxt = self.chg_avail_dti[self.chg_avail_dti > ts].min()
-            soc_chg_nxt = (self.data_battery.loc[ts, 'soc'] -
-                          (-1) * self.data_battery.loc[ts:chg_nxt - self.scenario.timestep_td, 'p_consumption'].sum() *
-                           self.scenario.timestep_hours / self.block.sizes['storage'].preexisting)
-            # ToDo: add soh/aging: if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
-            if soc_chg_nxt < 0.05:
-                # calculate charging power at external DC charger (measurement point at connection to charger)
-                p_max_fleet_unit_battery = self.data_battery.loc[ts, 'p_max'] / self._get_eff('dc')
-                p_max_fleet_unit_connection = self.block.pwr_ext_dc_max
+            if not pd.isna(chg_nxt):
+                soc_chg_nxt = (self.data_battery.loc[ts, 'soc'] -
+                              (-1) * self.data_battery.loc[ts:chg_nxt - self.scenario.timestep.td, 'p_consumption'].sum() *
+                               self.scenario.timestep.hours / self.block.sizes['storage'].preexisting)
 
-                self.data_charging.loc[ts, 'p_ext_dc'] += min(p_max_fleet_unit_battery,
-                                                              p_max_fleet_unit_connection)
+                # ToDo: add soh/aging: if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
+                if soc_chg_nxt < 0.05:
+                    # calculate charging power at external DC charger (measurement point at connection to charger)
+                    p_max_fleet_unit_battery = self.data_battery.loc[ts, 'p_max'] / self._get_eff('dc')
+                    p_max_fleet_unit_connection = self.block.pwr_ext_dc_max
 
-                # calculate charging power observed at battery
-                self.data_battery.loc[ts, 'p_chg'] += self.data_charging.loc[ts, 'p_ext_dc'] * self._get_eff('dc')
+                    self.data_charging.loc[ts, 'p_ext_dc'] += min(p_max_fleet_unit_battery,
+                                                                  p_max_fleet_unit_connection)
+
+                    # calculate charging power observed at battery
+                    self.data_battery.loc[ts, 'p_chg'] += self.data_charging.loc[ts, 'p_ext_dc'] * self._get_eff('dc')
 
     def calc_soc(self,
                  ts: pd.Timestamp):
         # calculate state of charge based on calculated charging powers, consumption and self discharge
         soc_delta = (self.data_battery.loc[ts, ['p_consumption', 'p_sd', 'p_chg']].sum() *
-                     self.scenario.timestep_hours / self.block.sizes['storage'].preexisting)
+                     self.scenario.timestep.hours / self.block.sizes['storage'].preexisting)
 
-        self.data_battery.loc[(ts + self.scenario.timestep_td), 'soc'] = self.data_battery.loc[ts, 'soc'] + soc_delta
+        self.data_battery.loc[(ts + self.scenario.timestep.td), 'soc'] = self.data_battery.loc[ts, 'soc'] + soc_delta
 
     def write_power_to_flows_apriori(self,
                                      horizon: 'PredictionHorizon') -> None:
@@ -524,7 +526,7 @@ class AprioriFleetUnit:
                                          })
 
         # fix NaN values caused by max_power = 0 leading and therefore division by 0
-        self.block.flows_apriori.loc[horizon.dti_ph, :] = self.block.flows_apriori.loc[horizon.dti_ph, :].fillna(0.0)
+        self.block.flows_apriori.loc[horizon.ph.dti, :] = self.block.flows_apriori.loc[horizon.ph.dti, :].fillna(0.0)
 
     def _get_eff(self,
                  mode: str):

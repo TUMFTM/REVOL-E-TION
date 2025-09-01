@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass, field
+from functools import cached_property
 import geopy
 import holidays
 import importlib.resources
@@ -39,6 +40,135 @@ import revoletion.data
 
 class OptimizationError(Exception):
     pass
+
+
+@dataclass
+class Location:
+    latitude: float
+    longitude: float
+    _lock: mp.Lock = field(repr=False)
+    _logger: logging.Logger = field(repr=False)
+
+    timezone: pytz.BaseTzInfo = field(init=False,
+                                      default_factory=lambda: pytz.timezone('Europe/Berlin'))
+    country: str = field(init=False,
+                         default='DE')
+    state: str = field(init=False,
+                       default='BY')
+
+    def __post_init__(self):
+
+        tzfinder = timezonefinder.TimezoneFinder()
+        self.timezone = pytz.timezone(tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+
+        geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
+        try:
+            location = None
+            if self._lock is None:  # sequential
+                location = geolocator.reverse(query=(self.latitude, self.longitude),
+                                              language="en",
+                                              exactly_one=True)
+            else:  # parallel
+                with self._lock:
+                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
+                    location = geolocator.reverse(query=(self.latitude, self.longitude),
+                                                  language="en",
+                                                  exactly_one=True)
+            if location:
+                self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
+        except geopy.exc.GeocoderUnavailable:
+            self._logger.warning(f'Connection to Geocoder failed. '
+                                 f'Using default country ({self.country}) and state ({self.state}).')
+
+
+@dataclass
+class TimeSettings:
+    start: pd.Timestamp
+    _timestep: pd.Timedelta
+    end: pd.Timestamp = field(default=None)
+    duration: pd.Timedelta = field(default=None)
+
+    def __post_init__(self):
+        if (self.end is None and self.duration is None) or (self.end is not None and self.duration is not None):
+            raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
+
+        elif self.duration is None:
+            self.duration = (self.end - self.start).floor(self._timestep)
+        elif self.end is None:
+            self.duration = self.duration.floor(self._timestep)
+        # always recalculate end to ensure consistency
+        self.end = self.start + self.duration
+
+    @cached_property
+    def dti(self) -> pd.DatetimeIndex:
+        return pd.date_range(start=self.start,
+                             end=self.end,
+                             freq=self._timestep,
+                             inclusive='left')
+
+    @cached_property
+    def dti_extd(self) -> pd.DatetimeIndex:
+        return pd.date_range(start=self.start,
+                             end=self.end,
+                             freq=self._timestep,
+                             inclusive='both')
+
+
+@dataclass
+class SimulationTimes:
+    _scenario: 'Scenario'
+
+    sim: TimeSettings = field(init=False)
+    eval: TimeSettings = field(init=False)
+    prj: TimeSettings = field(init=False)
+
+    def __post_init__(self):
+        starttime = self._scenario.starttime  # ToDo: reformat starttime
+        starttime = starttime if len(starttime) > 10 else starttime + ' 00:00'
+        starttime = pd.to_datetime(starttime, format='%d.%m.%Y %H:%M').floor(self._scenario.timestep).tz_localize(
+            self._scenario.location.timezone)
+
+        timestep = utils.convert2timedelta(self._scenario.timestep,
+                                           unit='minute')
+
+        self.sim = TimeSettings(start=starttime,
+                                _timestep=timestep,
+                                end=(pd.to_datetime(self._scenario.sim_endtime, format='%d.%m.%Y %H:%M')
+                                     .floor(timestep)
+                                     .tz_localize(self._scenario.location.timezone)
+                                     if self._scenario.sim_endtime is not None else None),
+                                duration=utils.convert2timedelta(value=self._scenario.sim_duration,
+                                                                       unit='day'))
+        self.eval = TimeSettings(start=starttime,
+                                 _timestep=timestep,
+                                 end=(pd.to_datetime(self._scenario.sim_endtime, format='%d.%m.%Y %H:%M')
+                                      .floor(timestep)
+                                      .tz_localize(self._scenario.location.timezone)
+                                      if self._scenario.sim_endtime is not None else None),
+                                 duration=utils.convert2timedelta(value=self._scenario.sim_duration,
+                                                                        unit='day'))
+        self.prj = TimeSettings(start=starttime,
+                                _timestep=timestep,
+                                end=starttime + pd.DateOffset(years=self._scenario.prj_duration))
+
+        for attr in ['starttime', 'sim_endtime', 'sim_duration', 'prj_duration']:
+            if hasattr(self._scenario, attr):
+                delattr(self._scenario, attr)
+        delattr(self, '_scenario')
+
+
+@dataclass
+class Timestep:
+    str: str
+    hours: float = field(init=False,
+                         default=None)
+
+    td: pd.Timedelta = field(init=False,
+                             default=None)
+
+    def __post_init__(self):
+        self.td = pd.Timedelta(self.str)
+        self.hours = self.td.total_seconds() / 3600
 
 
 @dataclass
@@ -265,9 +395,7 @@ class Scenario:
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ['uc', 'fcfs', 'equal', 'soc']
 
-        self.runtime_start = time.perf_counter()
-        self.runtime_end = None  # placeholder
-        self.runtime_len = None  # placeholder
+        self.runtime = utils.RunTime()
 
         self.worker = mp.current_process()
 
@@ -288,111 +416,61 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        tzfinder = timezonefinder.TimezoneFinder()
-        self.timezone = pytz.timezone(tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+        self.location = Location(latitude=self.latitude,
+                                 longitude=self.longitude,
+                                 _lock=lock,
+                                 _logger=self.logger)
 
-        geolocator = geopy.geocoders.Nominatim(user_agent=f'location_finder')
-        self.country = 'DE'  # set default country
-        self.state = 'BY'  # set default state
-        try:
-            if lock is None:  # sequential
-                location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
-            else:  # parallel
-                with lock:
-                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
-                    location = geolocator.reverse((self.latitude, self.longitude), language="en", exactly_one=True)
-            if location:
-                self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
-        except geopy.exc.GeocoderUnavailable:
-            self.logger.warning(f'Connection to Geocoder failed. '
-                                f'Using default country ({self.country}) and state ({self.state}).')
+        for param in ['latitude', 'longitude']:
+            delattr(self, param)
 
-        # convert to datetime and calculate time(delta) values
-        # simulation and project timeframe start simultaneously
-        # simulation vs. extended simulation: for rh strategy and truncate_ph = False, the extended simulation timeframe
-        # is longer than the simulation timeframe defined by the example parameter duration. Otherwise, they are the same.
-        # ToDo: check for format not only len of string
-        self.starttime = self.starttime if len(self.starttime) > 10 else self.starttime + ' 00:00'
-        self.starttime = pd.to_datetime(self.starttime, format='%d.%m.%Y %H:%M').floor(self.timestep).tz_localize(self.timezone)
-
-        # sim_duration and sim_endtime are defined
-        if self.sim_duration is not None and self.sim_endtime is not None:
-            raise ValueError('Both parameters "sim_duration" and "sim_endtime" are defined. '
-                             'Please define only one of these parameters.')
-        # sim_duration is defined, sim_endtime is not
-        elif self.sim_duration is not None:
-            self.sim_duration = (pd.Timedelta(days=self.sim_duration) if isinstance(self.sim_duration, (float, int))
-                                 else pd.Timedelta(self.sim_duration)).floor(self.timestep)
-            self.sim_endtime = self.starttime + self.sim_duration
-        # sim_endtime is defined, sim_duration is not
-        elif self.sim_endtime is not None:
-            # ToDo: check for format not only len of string
-            # ToDo: use function for starttime and endtime conversion
-            self.sim_endtime = self.sim_endtime if len(self.sim_endtime) > 10 else self.sim_endtime + ' 00:00'
-            self.sim_endtime = (pd.to_datetime(self.sim_endtime, format='%d.%m.%Y %H:%M')
-                            .floor(self.timestep)
-                            .tz_localize(self.timezone)
-                            )
-            self.sim_duration = self.sim_endtime - self.starttime
-
-        self.sim_extd_duration = self.sim_duration
-        self.sim_extd_endtime = self.sim_endtime
         self.prj_duration_yrs = self.prj_duration
-        self.prj_endtime = self.starttime + pd.DateOffset(years=self.prj_duration)
-        self.prj_duration = self.prj_endtime - self.starttime  # takes leap years into account
+        self.times = SimulationTimes(_scenario=self)
+        self.timestep = Timestep(self.timestep)
 
         # generate variables for calculations
-        self.timestep_td = pd.Timedelta(self.timestep)
-        self.timestep_hours = self.timestep_td.total_seconds() / 3600
-        self.sim_yr_rat = self.sim_duration / pd.Timedelta(days=365)  # no leap years
-        self.sim_prj_rat = self.sim_duration / self.prj_duration
+        self.sim_yr_rat = self.times.sim.duration / pd.Timedelta(days=365)  # no leap years
+        self.sim_prj_rat = self.times.sim.duration / self.times.prj.duration
 
         if self.strategy == 'rh':
-            self.len_ph = pd.Timedelta(hours=self.len_ph).floor(self.timestep_td)
-            self.len_ch = pd.Timedelta(hours=self.len_ch).floor(self.timestep_td)
-            self.nhorizons = math.ceil(self.sim_duration / self.len_ch)  # number of timeslices to run
-            if not self.truncate_ph:
-                # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
-                self.sim_extd_duration = self.len_ch * (self.nhorizons - 1) + self.len_ph
-                self.sim_extd_endtime = self.starttime + self.sim_extd_duration
+            self.len_ph = utils.convert2timedelta(self.len_ph, unit='hour').floor(self.timestep.td)
+            self.len_ch = utils.convert2timedelta(self.len_ch, unit='hour').floor(self.timestep.td)
         elif self.strategy in ['go']:
-            self.len_ph = self.sim_duration
-            self.len_ch = self.sim_duration
-            self.nhorizons = 1
+            self.len_ph = self.times.sim.duration
+            self.len_ch = self.times.sim.duration
         else:
             raise ValueError(f'Optimization strategy "{self.strategy}" unknown')
 
-        if self.len_ph == self.timestep_td:
+        if self.len_ph == self.timestep.td:
             raise ValueError('Single timestep optimization not possible. Adjust simulation duration, timestep or '
                              'prediction horizon length / truncate_ph (for RH only)')
 
-        # generate a datetimeindex for the energy system model to run on
-        self.dti_eval = pd.date_range(start=self.starttime, end=self.sim_endtime, freq=self.timestep, inclusive='left')
-        self.dti_eval_extd = utils.extend_dti(dti=self.dti_eval, freq=self.timestep_td)
-        # extended index covers PHs that are not truncated after simulation end time
-        self.dti_sim = pd.date_range(start=self.starttime, end=self.sim_extd_endtime, freq=self.timestep,
-                                     inclusive='left')
-        self.dti_sim_extd = utils.extend_dti(dti=self.dti_sim, freq=self.timestep_td)
+        self.nhorizons = math.ceil(self.times.sim.duration / self.len_ch)  # number of timeslices to run
+        if not self.truncate_ph:
+            # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
+            self.times.sim = TimeSettings(start=self.times.sim.start,
+                                          _timestep=self.timestep.td,
+                                          duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph))
 
         # get holidays during simulation timeframe
-        years = range(min(self.dti_sim).year, max(self.dti_sim).year + 1)
+        years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
         try:
             self.holiday_dates = sorted(
-                getattr(holidays, self.country)(years=years,
-                                                state=self.state))
+                getattr(holidays, self.location.country)(years=years,
+                                                         state=self.location.state))
         except:  # not for all countries the states are available (e.g. France)
             try:
                 self.holiday_dates = sorted(
-                    getattr(holidays, self.country)(years=years))
-                self.logger.warning(f'Holidays for state {self.state} not available. '
-                                    f'Country-wide holidays for {self.country} are used instead.')
+                    getattr(holidays, self.location.country)(years=years))
+                self.logger.warning(f'Holidays for state {self.location.state} not available. '
+                                    f'Country-wide holidays for {self.location.country} are used instead.')
             except AttributeError:  # not all countries worldwide are available
                 self.holiday_dates = []
-                self.logger.warning(f'Holidays for country {self.country} not available. '
+                self.logger.warning(f'Holidays for country {self.location.country} not available. '
                                     f'No public holidays are considered in this scenario.')
 
         # region set air temperature
-        temp_air = pd.Series(index=self.dti_sim_extd,
+        temp_air = pd.Series(index=self.times.sim.dti,
                              dtype=float)
 
         if isinstance(self.temp_air, (float, int)):
@@ -557,9 +635,8 @@ class Scenario:
                     self.logger.info(msg)
                 self.generate_and_save_plot()
 
-            self.runtime_end = time.perf_counter()
-            self.runtime_len = round(self.runtime_end - self.runtime_start, 2)
-            self.logger.info(f'Scenario finished - runtime {self.runtime_len} s')
+            self.runtime.stop()
+            self.logger.info(f'Scenario finished - runtime {self.runtime.duration:.2f} s')
 
             self.save_result_summary()
 
@@ -674,7 +751,10 @@ class Scenario:
             # get energies dataframes results for scenario.result_summary
             utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'),
             # get economic results for scenario.result_summary
-            self.aggregator.write_result_summary()])
+            self.aggregator.write_result_summary(),
+            # get RunTime results
+            self.runtime.result_summary
+        ])
 
         # apply MultiIndex
         results_scenario.index = pd.MultiIndex.from_tuples(tuples=[('scenario', key) for key in results_scenario.index],
@@ -697,60 +777,59 @@ class PredictionHorizon:
         self.index = index
         self.scenario = scenario
 
+        del index, scenario
+
         self.results = None
 
         # region time and data generation and slicing
-        self.starttime = self.scenario.starttime + (index * self.scenario.len_ch)  # calc both start times
-        self.ch_endtime = self.starttime + self.scenario.len_ch
-        self.ph_endtime = self.starttime + self.scenario.len_ph
-        self.timestep = self.scenario.timestep
+        start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
+        self.ph = TimeSettings(start=start,
+                               _timestep=self.scenario.timestep.td,
+                               end=min(start + self.scenario.len_ph,
+                                             self.scenario.times.sim.end),
+                               )
+
+        self.ch = TimeSettings(start=start,
+                               _timestep=self.scenario.timestep.td,
+                               end=min(start + self.scenario.len_ch,
+                                             self.scenario.times.eval.end),
+                               )
+        del start
+
+        def log_msg(msg: str):
+            return f'Horizon {self.index + 1} of {self.scenario.nhorizons} - {msg}'
 
         self.constraints = constraints.CustomConstraints(scenario=self.scenario)
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
-        if self.ph_endtime > self.scenario.sim_endtime and self.scenario.truncate_ph:
-            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
-                                      f'Prediction Horizon truncated to simulation end time')
-
-        # Truncate PH and CH to simulation or eval end time
-        self.ph_endtime = min(self.ph_endtime, self.scenario.sim_extd_endtime)
-        self.ch_endtime = min(self.ch_endtime, self.scenario.sim_endtime)
+        if self.ph.duration < self.scenario.len_ph:
+            self.scenario.logger.info(log_msg(msg='Prediction Horizon truncated to simulation end time'))
 
         self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - ' +
-                                  f'Start: {self.starttime} - ' +
-                                  f'CH end: {self.ch_endtime} - ' +
-                                  f'PH end: {self.ph_endtime}')
-
-        # Create datetimeindex for ph and ch; neglect last timestep as this is the first timestep of the next ph / ch
-        self.dti_ph = pd.date_range(start=self.starttime, end=self.ph_endtime, freq=self.scenario.timestep, inclusive='left')
-        self.dti_ph_extd = utils.extend_dti(dti=self.dti_ph, freq=self.scenario.timestep_td)
-        self.dti_ch = pd.date_range(start=self.starttime, end=self.ch_endtime, freq=self.scenario.timestep, inclusive='left')
-        self.dti_ch_extd = utils.extend_dti(dti=self.dti_ch, freq=self.scenario.timestep_td)
+                                  f'Start: {self.ph.start} - ' +
+                                  f'CH end: {self.ch.end} - ' +
+                                  f'PH end: {self.ph.end}')
 
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
-            self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                       f'Calculating power schedules for commodities with rulebased charging strategies')
+            self.scenario.logger.debug(log_msg(msg='Calculating power schedules for commodities with rulebased charging strategies'))
             self.scenario.scheduler.calc_ph_schedule(self)
         # endregion
 
         # region build energy system model
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Building oemof model')
+        self.scenario.logger.info(log_msg(msg='Building oemof model'))
 
-        self.es = solph.EnergySystem(timeindex=self.dti_ph,
+        self.es = solph.EnergySystem(timeindex=self.ph.dti,
                                      infer_last_interval=True)  # initialize energy system model instance
 
         for block in self.scenario.block_registry.get('TopLevelBlock', {}).values():
             block.pre_horizon(self)
 
-        self.scenario.logger.debug(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                   f'Model build completed')
+        self.scenario.logger.debug(log_msg('Model build completed'))
         # endregion
 
         # region build optimization problem
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Building optimization problem from oemof model')
+        self.scenario.logger.info(log_msg(msg='Building optimization problem from oemof model'))
 
         self.model = solph.Model(self.es, debug=self.scenario.settings.debugmode)
         self.constraints.apply_constraints(model=self.model)
@@ -760,30 +839,25 @@ class PredictionHorizon:
         # endregion
 
         # region solve optimization problem
-        self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                  f'Model built, starting optimization')
+        self.scenario.logger.info(log_msg(msg='Model built, starting optimization'))
         results = self.model.solve(solver=self.scenario.settings.solver,
                                    solve_kwargs={'tee': self.scenario.settings.debugmode})
 
         if (results.solver.status == po.SolverStatus.ok) and \
                 (results.solver.termination_condition == po.TerminationCondition.optimal):
-            self.scenario.logger.info(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                                      f'Optimization completed, getting results')
+            self.scenario.logger.info(log_msg(msg='Optimization completed, getting results'))
             if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
                 self.scenario.objective_opt = self.model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
-            raise OptimizationError(
-                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Infeasible')
+            raise OptimizationError(log_msg(msg='Scenario failed: Infeasible'))
         elif results.solver.termination_condition == po.TerminationCondition.unbounded:
-            raise OptimizationError(
-                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Unbounded')
+            raise OptimizationError(log_msg(msg='Scenario failed: Unbounded'))
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
-            raise OptimizationError(
-                f'Horizon {self.index + 1} of {self.scenario.nhorizons} - Scenario failed: Infeasible or Unbounded '
-                f'(To solve this error try to set investment limits for blocks or for the scenario)')
+            raise OptimizationError(log_msg(msg='Scenario failed: Infeasible or Unbounded (To solve this error try to '
+                                                'set investment limits for blocks or for the scenario)'))
         else:
-            raise Exception(f'Horizon {self.index + 1} of {self.scenario.nhorizons} - '
-                            f'Optimization terminated with unknown status: {results.solver.termination_condition}')
+            raise Exception(log_msg(msg=f'Optimization terminated with unknown status: '
+                                        f'{results.solver.termination_condition}'))
         # endregion
 
         # region get results

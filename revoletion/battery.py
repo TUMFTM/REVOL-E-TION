@@ -41,8 +41,8 @@ class BatteryPackModel:
 
         # set initial aging state. Neglected for r_inc_cal and r_inc_cyc as REVOL-E-TION doesn't take them into account
         # Horizon 0 is previous history before simulation --> initial horizon is 1 --> hor_battery = hor_sim + 1
-        self.q_loss_cal[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cal']
-        self.q_loss_cyc[0] = self.block.states.loc[self.scenario.starttime, 'q_loss_cyc']
+        self.q_loss_cal[0] = self.block.states.loc[self.scenario.times.sim.start, 'q_loss_cal']
+        self.q_loss_cyc[0] = self.block.states.loc[self.scenario.times.sim.start, 'q_loss_cyc']
 
         # Placeholders for pack level variables to be filled after component sizing in first horizon
         self.size = self.n_cells = self.m_cells = self.m_housing = self.c_th_cells = self.c_th_housing = None
@@ -113,7 +113,7 @@ class BatteryPackModel:
 
         # If aging is disabled, keep initial SOH
         if not self.block.aging:
-            self.block.states.loc[horizon.ch_endtime, 'soh'] = self.block.states.loc[horizon.starttime, 'soh']
+            self.block.states.loc[horizon.ch.end, 'soh'] = self.block.states.loc[horizon.ph.start, 'soh']
             return
 
         if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
@@ -121,11 +121,11 @@ class BatteryPackModel:
 
         # Calculate power requirement and C-rate on cell level
         # Charge power is positive, discharging power is negative
-        p_cell_hor = (self.block.flows.loc[horizon.dti_ch, 'bat_in'] - self.block.flows.loc[horizon.dti_ch, 'bat_out']) / self.n_cells
+        p_cell_hor = (self.block.flows.loc[horizon.ch.dti, 'bat_in'] - self.block.flows.loc[horizon.ch.dti, 'bat_out']) / self.n_cells
         crate_hor = p_cell_hor / self.e_cell
 
         # Get SOC & OCV timeseries from horizon results
-        soc_hor = self.block.states.loc[horizon.dti_ch_extd, 'soc']
+        soc_hor = self.block.states.loc[horizon.ch.dti_extd, 'soc']
 
         ocv_hor = pd.DataFrame(data=self.ocv_interp(soc_hor), index=soc_hor.index).squeeze()
 
@@ -135,13 +135,13 @@ class BatteryPackModel:
         # Get temperature timeseries
         if isinstance(self.block.temp_battery, str):
             try:
-                temp_hor_c = self.scenario.block_registry.get('TopLevelBlock', {})[self.block.temp_battery].data.loc[horizon.dti_ch, 'temp_air']
+                temp_hor_c = self.scenario.block_registry.get('TopLevelBlock', {})[self.block.temp_battery].data.loc[horizon.ch.dti, 'temp_air']
             except KeyError or NameError:
                 self.scenario.logger.warning(f'Battery temp source for storage {self.block.name} not found - '
                                              f'Using scenario temperature')
-                temp_hor_c = self.block.scenario.temp_air[horizon.dti_ch]
+                temp_hor_c = self.block.scenario.temp_air[horizon.ch.dti]
         elif isinstance(self.block.temp_battery, (int, float)):
-            temp_hor_c = pd.Series(data=self.block.temp_battery, index=horizon.dti_ch)  # pack temperature in °C
+            temp_hor_c = pd.Series(data=self.block.temp_battery, index=horizon.ch.dti)  # pack temperature in °C
         elif self.block.temp_battery is None:
             temp_hor_c = self.block.scenario.temp_air
         else:
@@ -187,11 +187,11 @@ class BatteryPackModel:
                                     soc_hor=soc_hor)
 
         # Update block / block storage size
-        self.block.states.loc[horizon.ch_endtime, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
-        self.block.states.loc[horizon.ch_endtime, 'q_loss_cal'] = sum(self.q_loss_cal)
-        self.block.states.loc[horizon.ch_endtime, 'q_loss_cyc'] = sum(self.q_loss_cyc)
-        self.block.states.loc[horizon.ch_endtime:, 'soc_min'] = (1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2
-        self.block.states.loc[horizon.ch_endtime:, 'soc_max'] = 1 - ((1 - self.block.states.loc[horizon.ch_endtime, 'soh']) / 2)
+        self.block.states.loc[horizon.ch.end, 'soh'] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
+        self.block.states.loc[horizon.ch.end, 'q_loss_cal'] = sum(self.q_loss_cal)
+        self.block.states.loc[horizon.ch.end, 'q_loss_cyc'] = sum(self.q_loss_cyc)
+        self.block.states.loc[horizon.ch.end:, 'soc_min'] = (1 - self.block.states.loc[horizon.ch.end, 'soh']) / 2
+        self.block.states.loc[horizon.ch.end:, 'soc_max'] = 1 - ((1 - self.block.states.loc[horizon.ch.end, 'soh']) / 2)
 
     def calc_aging_naumann(self,
                            horizon,
