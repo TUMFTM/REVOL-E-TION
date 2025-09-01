@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import ast
+from dataclasses import dataclass, field
 import importlib.metadata
 import importlib.util
 import logging
@@ -8,11 +9,47 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 
+import numpy as np
 import pandas as pd
 
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def convert2timedelta(value: pd.Timedelta | str | float | int,
+                      unit: str = None) -> pd.Timedelta:
+
+    if not isinstance(value, (pd.Timedelta, str, float, int)):
+        raise TypeError('Value must be of type pd.Timedelta, str, float or int.')
+
+    if isinstance(value, str):
+        value = pd.Timedelta(value)
+    elif isinstance(value, (float, int)):
+        if unit is None:
+            raise ValueError('If value is a number, a unit must be provided.')
+        value = pd.Timedelta(value, unit=unit)
+
+    return value
+
+
+@dataclass
+class RunTime:
+    start: float = field(default_factory=time.perf_counter,
+                         repr=False)
+    end: float = field(default=np.nan,
+                       repr=False)
+    duration: float = field(default=np.nan)
+
+    def stop(self) -> None:
+        self.end = time.perf_counter()
+        self.duration = self.end - self.start
+
+    @property
+    def result_summary(self) -> pd.Series:
+        # only export runtime duration -> start and end are not interpretable
+        return pd.Series({'runtime_duration_s': round(self.duration, 2)})
 
 
 def infer_dtype(value):
@@ -118,24 +155,24 @@ def read_timeseries_csv(path_input_file: str | Path,
         df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
 
     # parser in to_csv does not create datetimeindex
-    df = df.tz_convert(scenario.timezone)
+    df = df.tz_convert(scenario.location.timezone)
     if not resampling:
         return df
     else:
-        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep_td)).ffill()
+        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep.td)).ffill()
 
         def resample_column(column):
             if df_extd[column].dtype == bool:
-                return df_extd[column].resample(scenario.timestep).ffill().bfill()
+                return df_extd[column].resample(scenario.timestep.td).ffill().bfill()
             else:
-                return df_extd[column].resample(scenario.timestep).mean().ffill().bfill()
+                return df_extd[column].resample(scenario.timestep.td).mean().ffill().bfill()
 
         df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
 
-        if not (scenario.dti_eval.isin(df.index).all()):
+        if not (scenario.times.sim.dti.isin(df.index).all()):
             raise IndexError(f'Block "{block.name}":'
                              f'Input timeseries data in {path_input_file} does not cover simulation timeframe')
-        return df.loc[scenario.dti_sim]
+        return df.loc[scenario.times.sim.dti]
 
 
 def set_extension(filename: Path | str,

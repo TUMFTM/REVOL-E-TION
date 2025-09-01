@@ -30,8 +30,7 @@ class SimulationRun:
         self.paths = paths
         self.settings = settings if settings is not None else simulation.SimulationSettings()
 
-        self.runtime_start = time.perf_counter()
-        self.runtime_end = self.runtime_len = None
+        self.runtime = utils.RunTime()
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
@@ -158,11 +157,8 @@ class SimulationRun:
             for scenario_name in self.scenario_names:
                 self.execute_scenario(name=scenario_name)
 
-        # region end runtime
-        self.runtime_end = time.perf_counter()
-        self.runtime_len = self.runtime_end - self.runtime_start
-        self.logger.info(f'Total runtime for all scenarios: {self.runtime_len:.1f} s')
-        # endregion
+        self.runtime.stop()
+        self.logger.info(f'Total runtime for all scenarios: {self.runtime.duration:.2f} s')
 
         self.join_results()
 
@@ -191,8 +187,6 @@ class SimulationRun:
 
         if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
             joined_results = pd.concat(scenario_frames, axis=1)
-            joined_results.loc[('run', 'runtime_end'), :] = self.runtime_end
-            joined_results.loc[('run', 'runtime_len'), :] = self.runtime_len
 
             if self.paths.rerun and self.paths.summary_pkl.is_file():  # only happens for infeasible scenarios
                 results_summary_prev = pd.read_pickle(self.paths.summary_pkl)
@@ -202,8 +196,10 @@ class SimulationRun:
             joined_results = joined_results[[c for c in self.scenario_data.columns if c in joined_results.columns]]
 
             # get results of run
-            results_run = pd.Series({key: value for key, value in self.__dict__.items()
-                                     if isinstance(value, (int, float, bool, str))})
+            results_run = pd.concat([pd.Series({key: value for key, value in self.__dict__.items()
+                                     if isinstance(value, (int, float, bool, str))}),
+                                     self.runtime.result_summary,
+                                     ])
             # apply MultiIndex
             results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
                                                           names=['block', 'key'])

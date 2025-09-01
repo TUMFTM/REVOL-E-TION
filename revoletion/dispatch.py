@@ -117,7 +117,7 @@ class DispatchEnvironment:
         self.scenario = scenario
 
         self.groups = self.scenario.block_registry.get('DispatchGroupActive', {})
-        self.time = DispatchTimer(dti_base=self.scenario.dti_sim)
+        self.time = DispatchTimer(dti_base=self.scenario.times.sim.dti)
         self.env = simpy.Environment()
         self.dispatchers = dict()
 
@@ -147,7 +147,7 @@ class DispatchEnvironment:
                 dispatcher.transfer_rex_processes()
 
         for disp in self.dispatchers.values():
-            disp.generate_log(dti_output=self.scenario.dti_sim_extd)
+            disp.generate_log(dti_output=self.scenario.times.sim.dti)
             if not self.scenario.settings.largescalemode:
                 path_log = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_log.csv')
                 disp.save_data(path_log=path_log)
@@ -212,8 +212,8 @@ class SubFleetParams:
         if is_electric:
             unit = subfleet.subblocks[next(iter(subfleet.subblocks))]  # representative
 
-            soc_minmax = min([unit.states.at[subfleet.scenario.starttime, 'soc_max'] for unit in subfleet.subblocks.values()])
-            soc_maxmin = max([unit.states.at[subfleet.scenario.starttime, 'soc_min'] for unit in subfleet.subblocks.values()])
+            soc_minmax = min([unit.states.at[subfleet.scenario.times.sim.start, 'soc_max'] for unit in subfleet.subblocks.values()])
+            soc_maxmin = max([unit.states.at[subfleet.scenario.times.sim.start, 'soc_min'] for unit in subfleet.subblocks.values()])
 
             params.update(
                 pwr_chg=unit.pwr_chg_max,
