@@ -66,6 +66,7 @@ thdem,size_storage_dhw,190
 thdem,lr_dhw,38.93
 hp,capex_preexisting_block,True
 hp,capex_spec,2.34
+hp,capex_fix_block,0
 hp,mntex_spec,0
 hp,opex_spec,0
 hp,crev_spec,0
@@ -81,6 +82,7 @@ hp,ccr,1
 hp,size_buffer,16
 fh,capex_preexisting_block,True
 fh,capex_spec,1
+fh,capex_fix_block,0
 fh,mntex_spec,0
 fh,opex_spec,0.46
 fh,crev_spec,0
