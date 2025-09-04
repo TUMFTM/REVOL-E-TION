@@ -49,7 +49,7 @@ class SubFleetDemand:
 
     def from_file(self,
                   path_demand=str,
-                  dti_eval=None):
+                  dti=None):
         """
         read in a subfleet requests csv file directly
         """
@@ -61,7 +61,7 @@ class SubFleetDemand:
         self.requests['dtime_idle'] = pd.to_timedelta(self.requests['dtime_idle'])
         self.requests['dtime_patience'] = pd.to_timedelta(self.requests['dtime_patience'])
 
-        dti_filter = dti_eval if dti_eval is not None else self.dti
+        dti_filter = dti if dti is not None else self.dti
         self.requests = self.requests.loc[self.requests['time_req'].isin(dti_filter), :]
 
     def read_usecase_file(self,

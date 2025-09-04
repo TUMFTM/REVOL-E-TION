@@ -2063,7 +2063,7 @@ class DispatchGroup(NonElectricBlock):
                 path_demand=(self.scenario.paths.input / utils.set_extension(
                     filename=self.subfleet.filename,
                     default_extension='.csv')),
-                dti_eval=self.scenario.dti_eval,
+                dti=self.scenario.times.sim.dti,
             )
 
         elif self.data_source in ['log', 'logfile']:
@@ -2154,11 +2154,11 @@ class SubFleet(NonElectricBlock):
             df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep.td).ffill().bfill()
             df = df_new[cols]  # ensure right sorting
 
-        if not (self.scenario.dti_eval.isin(df.index).all()):
+        if not (self.scenario.times.sim.dti.isin(df.index).all()):
             raise IndexError(f'Block "{self.name}": Input timeseries data does not cover simulation timeframe')
 
         # extract the relevant time series
-        df = df.loc[self.scenario.dti_sim_extd]  # need dsoc for last timestep
+        df = df.loc[self.scenario.times.sim.dti]  # need dsoc for last timestep
 
         # rename fleet units according to schema subfleet.name{idx}
         unit_names_log = sorted(df.columns.get_level_values(0).unique()[:self.num].tolist())
