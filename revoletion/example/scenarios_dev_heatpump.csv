@@ -87,10 +87,11 @@ vehicles,pwr_lim_f2s,0
 vehicles,pwr_lim_s2f,11000
 vehicles,opex_spec_f2s,0
 vehicles,opex_spec_s2f,0
-ld,data_source,usecases
-ld,filename,vehicle_usecases
+ld,data_source,log
+ld,filename,None
 ld,filename_mapper,mtf
 bev,num,1
+bev,filename,bev2023
 bev,type_unit,ev
 bev,size_preexisting_storage,58000
 bev,size_max_storage,None
