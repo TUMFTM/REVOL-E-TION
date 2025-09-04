@@ -2007,11 +2007,12 @@ class Fleet(SinkBlock):
     def get_legend_entry(self):
         def lim2str(lim) -> str:
             if lim is None:
-                return 'unlimited power'
+                return 'unlimited'
             else:
-                return f'max. {lim / 1e3:.1f} kW'
+                return f'{lim / 1e3:.1f}'
 
-        return f'{self.name} power ({lim2str(self.pwr_lim_f2s)} from / {lim2str(self.pwr_lim_f2s)} to fleet)'
+        return (f'{self.name} power (max. {lim2str(self.pwr_lim_s2f)} kW charge / '
+                f'{lim2str(self.pwr_lim_f2s)} kW discharge)')
 
 
 class DispatchGroup(NonElectricBlock):
