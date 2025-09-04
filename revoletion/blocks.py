@@ -2591,13 +2591,26 @@ class ThermalDemand(ThermalBlock):
             (T_TARGET_HEATING - self.temperature_tolerance - self.scenario.temp_air) / (T_TARGET_HEATING - self.scenario.temp_air),
             0)
         )
+        self.flows_apriori['delta'] = self.flows_apriori['delta'].clip(lower=0)
 
         self.flows_apriori['min'] = self.flows_apriori['demand_heating'] - self.flows_apriori['delta']
         self.flows_apriori['max'] = self.flows_apriori['demand_heating'] + self.flows_apriori['delta']
         self.flows_apriori['dif'] = self.flows_apriori['max'] - self.flows_apriori['min']
 
+
+        self.capacity_storage_heating = (self.flows_apriori['delta'].max() * 2) * 0.25
+
         # define the storage sizes in energy instead of liters
-        self.capacity_storage_heating = self.flows_apriori['delta'].max() * 2
+
+        #####
+        self.flows_apriori['min_%'] = ((self.flows_apriori['demand_heating'] - self.flows_apriori['delta']) / (
+                    self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max())).clip(lower=0)
+        #self.flows_apriori.to_csv("flows_apriori_results.csv", sep=";", decimal=",", index=True)
+        self.heating_max = self.flows_apriori['demand_heating'].max()
+
+
+
+        #####
 
         t_delta_storage_dhw = T_DHW_HOT - T_DHW_COLD  # hot water temperature: 55 °C, cold water temperature: 10 °C
         self.capacity_storage_dhw = self.size_storage_dhw * CAPACITY_HEAT_SPEC_H2O * t_delta_storage_dhw / 3600
@@ -2617,7 +2630,7 @@ class ThermalDemand(ThermalBlock):
             outputs={self.components['bus_internal_heating']: solph.Flow(
                 nominal_capacity=self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max(),
                 max=(self.flows_apriori['demand_heating'] + self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max()),
-                min=(self.flows_apriori['demand_heating'] - self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max())
+                min=((self.flows_apriori['demand_heating'] - self.flows_apriori['delta']) / (self.flows_apriori['demand_heating'].max() + self.flows_apriori['delta'].max())).clip(lower =0)
             )},
             initial_storage_level=0.5,
             loss_rate=0.0,

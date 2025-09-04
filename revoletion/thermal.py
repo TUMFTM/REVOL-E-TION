@@ -16,7 +16,7 @@ class HeatpumpCopAnalyzer:
                  working_fluid: str = "R290",
                  nominal_cop: float = 4.9,
                  nominal_power: float = 9100,
-                 temperature_range=np.arange(-10, 21)
+                 temperature_range=np.arange(-15, 21)
                  ):
 
         fluid_map = {
