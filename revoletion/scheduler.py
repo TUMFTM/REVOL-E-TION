@@ -474,7 +474,7 @@ class AprioriFleetUnit:
                 p_max_fleet_unit_connection = self.block.pwr_ext_ac_max
 
                 self.data_charging.loc[ts, 'p_ext_ac'] += min(p_max_fleet_unit_battery,
-                                                           p_max_fleet_unit_connection)
+                                                              p_max_fleet_unit_connection)
 
                 # calculate charging power observed at battery
                 self.data_battery.loc[ts, 'p_chg'] += self.data_charging.loc[ts, 'p_ext_ac'] * self._get_eff('ac')
@@ -491,14 +491,14 @@ class AprioriFleetUnit:
                 # ToDo: add soh/aging: if soc_chg_nxt < self.convert_soc_ui2internal(0.05):
                 if soc_chg_nxt < 0.05:
                     # calculate charging power at external DC charger (measurement point at connection to charger)
-                    p_max_fleet_unit_battery = self.data_battery.loc[ts, 'p_max'] / self._get_eff('dc')
+                    p_max_fleet_unit_battery = self.data_battery.loc[ts, 'p_max'] / self._get_eff('dc_ext')
                     p_max_fleet_unit_connection = self.block.pwr_ext_dc_max
 
                     self.data_charging.loc[ts, 'p_ext_dc'] += min(p_max_fleet_unit_battery,
                                                                   p_max_fleet_unit_connection)
 
                     # calculate charging power observed at battery
-                    self.data_battery.loc[ts, 'p_chg'] += self.data_charging.loc[ts, 'p_ext_dc'] * self._get_eff('dc')
+                    self.data_battery.loc[ts, 'p_chg'] += self.data_charging.loc[ts, 'p_ext_dc'] * self._get_eff('dc_ext')
 
     def calc_soc(self,
                  ts: pd.Timestamp):
@@ -531,10 +531,12 @@ class AprioriFleetUnit:
     def _get_eff(self,
                  mode: str):
         # get charging efficiency for the selected mode: ac, dc, consumption
-        if mode not in ['ac', 'dc', 'consumption']:
-            raise ValueError(f'Invalid mode "{mode}" selected. Valid modes are "ac", "dc" and "consumption')
+        if mode not in ['ac', 'dc', 'dc_ext', 'consumption']:
+            raise ValueError(f'Invalid mode "{mode}" selected. Valid modes are "ac", "dc" , "dc_ext", and "consumption')
 
         eff = {'ac': self.block.eff['chg_ac'] * np.sqrt(self.block.eff['storage_roundtrip']),
                'dc': self.block.eff['chg_dc'] * np.sqrt(self.block.eff['storage_roundtrip']),
+               # 100% efficiency for external DC charger as measurement point is behind power electronics
+               'dc_ext': np.sqrt(self.block.eff['storage_roundtrip']),
                'consumption': np.sqrt(self.block.eff['storage_roundtrip'])}[mode]
         return eff
