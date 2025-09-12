@@ -120,7 +120,7 @@ To ensure this get the version of both your gurobi license and installation (```
 ## Basic Usage
 ### 1. Running REVOL-E-TION as package
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
-1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
+1. Call to the main module: ```python -m revoletion <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
 <details style="margin-bottom: 1em;">

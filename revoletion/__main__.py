@@ -19,7 +19,6 @@ except ImportError:
 
 from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
-from .utils import infer_dtype
 import revoletion.example
 
 
