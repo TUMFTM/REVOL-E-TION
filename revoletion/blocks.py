@@ -1907,7 +1907,8 @@ class StationaryBattery(StorageBlock):
         super().create_result_messages()
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
+        return (f'{self.name} (dis-)charge power '
+                f'(max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
                 f'{self.sizes["storage"].total * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
@@ -2376,6 +2377,17 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def create_plot_traces(self):
         super().create_plot_traces()
 
+        legend = f'{self.name} consumption power'
+        self.scenario.plot_traces.append(
+            plot_line=go.Scatter(x=self.scenario.times.eval.dti,
+                                 y=self.log.loc[self.scenario.times.eval.dti, 'consumption'],
+                                 mode='lines',
+                                 name=legend,
+                                 line=dict(width=2, dash=None, shape='hv'),
+                                 visible='legendonly',
+                                 ),
+            secondary_y=False)
+
         for mode in ['ac', 'dc']:
             pwr = getattr(self, f'pwr_ext_{mode}_max', 0)
             if pwr == 0:
@@ -2393,7 +2405,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 secondary_y=False)
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
+        return (f'{self.name} (dis-)charge power '
+                f'(max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
                 f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 
