@@ -120,6 +120,7 @@ class DispatchEnvironment:
         self.time = DispatchTimer(dti_base=self.scenario.times.sim.dti)
         self.env = simpy.Environment()
         self.dispatchers = dict()
+        self.kpis = dict()
 
         # region create individual dispatchers
         # Battery Dispatchers need to be initialized first to allow for range extension of Vehicle Dispatchers
@@ -148,13 +149,15 @@ class DispatchEnvironment:
 
         for disp in self.dispatchers.values():
             disp.generate_log(dti_output=self.scenario.times.sim.dti)
+            disp.calc_kpis()
             if not self.scenario.settings.largescalemode:
                 path_log = self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{disp.params.name}_log.csv')
                 disp.save_data(path_log=path_log)
 
         for group in self.groups.values():
             group.log = group.dispatcher.log
-
+            group.rate_success = group.dispatcher.rate_success
+            group.rate_use = group.dispatcher.rate_use
 
 
 @dataclass
@@ -265,6 +268,9 @@ class GroupDispatcher:
         self.logger = logger
         self.factor_derate = factor_derate
 
+        self.rate_success = None
+        self.rate_failure = None
+
         # create logger for standalone operation
         if self.logger is None:
             self.logger = logging.getLogger('null')
@@ -287,7 +293,6 @@ class GroupDispatcher:
         )
         self.log = pd.DataFrame(index=self.time.dti, columns=log_cols)
 
-        self.kpis = dict()
         self.stores = dict()
 
         # region estimate usable energy and power
@@ -377,7 +382,7 @@ class GroupDispatcher:
                      dti_output: pd.DatetimeIndex = None):
         """
         post DES method
-        convert processes to time based log and calculate KPIs
+        convert processes to time based log
         """
         if dti_output is None:
             dti_output = self.time.dti_base
@@ -409,6 +414,17 @@ class GroupDispatcher:
 
         self.log = self.log.loc[dti_output, :]
         # endregion
+
+    def calc_kpis(self):
+        """
+        Calculate usage and failure rate
+        """
+        self.rate_success = np.mean(['success' in process.status for process in self.processes.values()])
+
+        time_active_total = np.sum([process.dtime_rental + process.dtime_chg_prim for process in self.processes.values()])
+        time_total = self.time.time_end - self.time.time_start
+        n_units = sum([store.capacity for store in self.stores.values()])
+        self.rate_use = time_active_total / time_total / n_units
 
     def save_data(self,
                   path_log: str = None):
