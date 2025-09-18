@@ -209,7 +209,7 @@ class SubFleetParams:
             is_electric=is_electric,
         )
 
-        if is_electric:
+        if is_electric and subfleet.subblocks:  # subfleet has units in it
             unit = subfleet.subblocks[next(iter(subfleet.subblocks))]  # representative
 
             soc_minmax = min([unit.states.at[subfleet.scenario.times.sim.start, 'soc_max'] for unit in subfleet.subblocks.values()])
@@ -297,7 +297,7 @@ class GroupDispatcher:
                                                      capacity=len(sfp.units),
                                                      initial=list(sfp.units))
 
-            if sfp.is_electric:
+            if sfp.is_electric and sfp.units:  # subfleet has units
                 sfp.energy_total = sfp.size_unit
                 sfp.dsoc_usable = sfp.soc_upper - sfp.soc_lower
                 if sfp.dsoc_usable <= 0:
@@ -314,7 +314,7 @@ class GroupDispatcher:
                          )
                         * self.factor_derate)
 
-            else:  # non electric
+            else:  # non electric or no units
                 sfp.energy_total = np.inf
                 sfp.energy_usable = np.inf
                 sfp.dsoc_usable = 1
@@ -479,6 +479,9 @@ class DispatchProcess:
             for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
 
                 sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
+
+                if not sfp_prim.units:
+                    continue  # request from next subfleet if this one is empty
 
                 if self.dispatcher_prim.params.is_vehicle_group:
                     self.num_prim = 1
