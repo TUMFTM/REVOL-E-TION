@@ -352,7 +352,8 @@ class ElectricBlock(BaseBlock):
             energy = flow[self.scenario.times.eval.dti].sum() * self.scenario.timestep.hours
             self.energies.loc[flow_name, 'sim'] = energy
             if ('circular' in flow_name) and (energy != 0):
-                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected - check energy results')
+                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected '
+                                             f'(flows name: {flow_name}) - check energy results')
 
         self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
         self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
@@ -546,7 +547,7 @@ class SystemCore(ElectricBlock):
         post scenario method
         """
         super().calc_results_flows()
-        self.flows['circular'] = self.flows[['dcac', 'acdc']].min(axis=1)
+        self.flows['circular_dcac_acdc'] = self.flows[['dcac', 'acdc']].min(axis=1)
 
     def create_plot_traces(self):
         self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
@@ -1512,7 +1513,7 @@ class GridConnection(ElectricBlock):
 
     def calc_results_flows(self):
         super().calc_results_flows()
-        self.flows['circular'] = self.flows[['in', 'out']].min(axis=1)
+        self.flows['circular_in_out'] = self.flows[['in', 'out']].min(axis=1)
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -1832,8 +1833,8 @@ class StorageBlock(ElectricBlock):
         self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)  # same as Block
         self.flows['bat_total'] = self.flows.get(key='bat_out', default=0) - self.flows.get(key='bat_in', default=0)
 
-        self.flows['circular'] = self.flows[['in', 'out']].min(axis=1)
-        self.flows['bat_circular'] = self.flows[['bat_in', 'bat_out']].min(axis=1)
+        self.flows['circular_in_out'] = self.flows[['in', 'out']].min(axis=1)
+        self.flows['bat_circular_bat_in_bat_out'] = self.flows[['bat_in', 'bat_out']].min(axis=1)
 
     def create_plot_traces(self):
         """
@@ -1908,7 +1909,8 @@ class StationaryBattery(StorageBlock):
         super().create_result_messages()
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
+        return (f'{self.name} (dis-)charge power '
+                f'(max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
                 f'{self.sizes["storage"].total * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
 
 
@@ -2377,6 +2379,17 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def create_plot_traces(self):
         super().create_plot_traces()
 
+        legend = f'{self.name} consumption power'
+        self.scenario.plot_traces.append(
+            plot_line=go.Scatter(x=self.scenario.times.eval.dti,
+                                 y=self.log.loc[self.scenario.times.eval.dti, 'consumption'],
+                                 mode='lines',
+                                 name=legend,
+                                 line=dict(width=2, dash=None, shape='hv'),
+                                 visible='legendonly',
+                                 ),
+            secondary_y=False)
+
         for mode in ['ac', 'dc']:
             pwr = getattr(self, f'pwr_ext_{mode}_max', 0)
             if pwr == 0:
@@ -2394,7 +2407,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 secondary_y=False)
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
+        return (f'{self.name} (dis-)charge power '
+                f'(max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
                 f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
 
 

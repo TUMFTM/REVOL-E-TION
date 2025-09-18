@@ -74,8 +74,19 @@ class Location:
                     location = geolocator.reverse(query=(self.latitude, self.longitude),
                                                   language="en",
                                                   exactly_one=True)
+
             if location:
-                self.country, self.state = location.raw['address']['ISO3166-2-lvl4'].split('-')
+                address = location.raw.get("address", {})
+
+                if "ISO3166-2-lvl4" in address:
+                    self.country, self.state = address["ISO3166-2-lvl4"].split("-")
+                elif "ISO3166-2-lvl3" in address:
+                    self.country, self.state = address["ISO3166-2-lvl3"].split("-")
+                else:
+                    # fallback: try country_code + state name
+                    self.country = address.get("country_code", "").upper()
+                    self.state = address.get("state", "")
+
         except geopy.exc.GeocoderUnavailable:
             self._logger.warning(f'Connection to Geocoder failed. '
                                  f'Using default country ({self.country}) and state ({self.state}).')
