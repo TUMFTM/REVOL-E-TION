@@ -2848,21 +2848,21 @@ class Heatpump(SinkBlock):
         ETA_AT_MIN_CHG = 0.99
         ETA_AT_MAX_CHG = 1
 
-        slope_in, offset_in = solph.components.slope_offset_from_nonconvex_output(
+        slope, offset = solph.components.slope_offset_from_nonconvex_output(
             max_load=MAX_LOAD_CHG, min_load=MIN_LOAD_CHG,
             eta_at_max=ETA_AT_MAX_CHG, eta_at_min=ETA_AT_MIN_CHG
         )
 
         self.components['heatpump'] = solph.components.OffsetConverter(
-            label="inflow_charger",
             inputs={self.bus_connected: solph.Flow()},
-            outputs={self.components['bus']: solph.Flow(nominal_capacity=9100,
-                    min=MIN_LOAD_CHG,
-                    max=MAX_LOAD_CHG,
+            outputs={self.components['bus']: solph.Flow(
+                nominal_capacity=9100,
+                min=MIN_LOAD_CHG,
+                max=MAX_LOAD_CHG,
                 nonconvex=solph.NonConvex()
             )},
             conversion_factors={self.bus_connected: self.cop},
-            normed_offsets={self.bus_connected: offset_in},
+            normed_offsets={self.bus_connected: offset},
         )
 
         self.components['buffer'] = solph.components.GenericStorage(
