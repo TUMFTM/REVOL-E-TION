@@ -111,7 +111,7 @@ class EcoTools:
         share_debt = 1 - share_equity
         cost_equity = rate_riskfree + volatility_relative * (rate_market - rate_riskfree)  # CAPM
         wacc_nominal = share_debt * rate_debt * (1 - rate_tax) + share_equity * cost_equity
-        wacc_real = (1 + wacc_nominal) / (1 + rate_inflation)  # fisher formula
+        wacc_real = wacc_nominal * ((1 + wacc_nominal) / (1 + rate_inflation))  # fisher formula
         return wacc_nominal, wacc_real
 
     @staticmethod
