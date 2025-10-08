@@ -8,28 +8,28 @@ the resulting technoeconomic potentials in terms of costs and revenues within th
 mobility system). It is built as a wrapper on top of the [oemof](https://oemof.org) energy system model framework. 
 
 ## Created by 
-Philipp Rosner, M.Sc. and Brian Dietermann, M.Sc.  
-Institute of Automotive Technology  
-Department of Mobility Systems Engineering  
-TUM School of Engineering and Design  
-Technical University of Munich  
-philipp.rosner@tum.de  
-September 2nd, 2021
+Philipp Rosner, M.Sc. and Brian Dietermann, M.Sc.<br>
+Institute of Automotive Technology<br>
+Department of Mobility Systems Engineering<br>
+TUM School of Engineering and Design<br>
+Technical University of Munich<br>
+philipp.rosner@tum.de<br>
+September 2nd, 2021<br>
 
 #### Contributors
-Marcel Brödel, M.Sc. - Research Associate 01/2024-  
-David Eickholt, B.Sc. - Semester Thesis submitted 07/2021  
-Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022  
-Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022  
-Marc Alsina Planelles, B.Sc. - Master's Thesis submitted 10/2022  
-Juan Forero Yacaman - Bachelor's Thesis submitted 04/2023  
-Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023  
-Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023  
-Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024  
-Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024  
-Florian Honeder, B.Sc. - Semester Thesis submitted 09/2025  
-Jan-Niklas Weghorn, B.Sc. - IDP submitted 09/2025
-Jan-Niklas Weghorn, B.Sc. - Master's Thesis ongoing
+Marcel Brödel, M.Sc. - Research Associate 01/2024-<br>
+David Eickholt, B.Sc. - Semester Thesis submitted 07/2021<br>
+Marcel Brödel, B.Sc. - Semester Thesis submitted 05/2022<br>
+Hannes Henglein, B.Sc. - Semester Thesis submitted 10/2022<br>
+Marc Alsina Planelles, B.Sc. - Master's Thesis submitted 10/2022<br>
+Juan Forero Yacaman - Bachelor's Thesis submitted 04/2023<br>
+Elisabeth Spiegl - Bachelor's Thesis submitted 06/2023<br>
+Alejandro Hernando Armengol, B.Sc. - Master's Thesis submitted 10/2023<br>
+Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024<br>
+Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024<br>
+Florian Honeder, B.Sc. - Semester Thesis submitted 09/2025<br>
+Jan-Niklas Weghorn, B.Sc. - IDP submitted 09/2025<br>
+Jan-Niklas Weghorn, B.Sc. - Master's Thesis ongoing<br>
 
 ## Table of Contents
 - [Licensing](#licensing)
@@ -47,7 +47,7 @@ Jan-Niklas Weghorn, B.Sc. - Master's Thesis ongoing
 - [Outputs](#outputs)
 
 ## Licensing
-REVOL-E-TION is licensed under the Apache 2.0 open source license.  
+REVOL-E-TION is licensed under the Apache 2.0 open source license.<br>
 The full license text can be found in the LICENSE file in the root directory of the repository.
 
 ## Related publications
@@ -66,7 +66,7 @@ Electric vehicles (in fact, any mobile storage devices) as well as Internal Comb
 Their behavior (i.e. when they depart and arrive again, how much energy they use in between and whether they can be charged externally) is described in a so-called log file.
 Log files can be created using the integrated Discrete Event Simulation (DES), which is also capable of modeling range extension through mobile batteries as well as multiple use cases in different time frames (e.g. summer/winter) for the FleetUnits.
 
-The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):  
+The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):<br>
 
 <div style="text-align: center;">
   <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
@@ -731,7 +731,7 @@ Only if the dispatch of the FleetUnits is left to the optimizer (as opposed to t
 ### A Priori Power Scheduling
 Dependent on the chosen scheduling method ("mode_scheduling") of a SubFleet a charging schedule for the SubFleet's FleetUnits is calculated before the linear optimization starts (a priori).
 This approach is applied to FleetUnits in SubFleets with optimization level of all types of uncoordinated charging ('uc') and rule-based strategies ('equal', 'fcfs', 'soc').
-All optimization levels causing an a priori calculation of the FleetUnit's charging power require a unidirectional ('ud') integration level ("lvl_cap").  
+All optimization levels causing an a priori calculation of the FleetUnit's charging power require a unidirectional ('ud') integration level ("lvl_cap").<br>
 In addition to the optimization level, rule-based systems may implement a static load management system by defining the maximum available power using the "power_lim_static" parameter.
 If "power_lim_static" is set to 'None', static load management is disabled, and the system defaults to dynamic load management.
 For all FleetUnits within uncoordinated or rule-based SubFleets in addition to the charging power when being plugged in at the local energy system the required charging power on-route at external charging infrastructure is calculated.
@@ -756,8 +756,8 @@ Furthermore, if this integration level is supposed to be 'equal', all SubFleets 
 As a dynamic load management system requires knowledge about the available power within the local energy system for each timestep, it is not possible to combine a dynamic load management system with a StationaryBattery block.
 This would require an a priori calculation of the StationaryBattery's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
 
-#### Charge Scheduling Modes  ("mode_scheduling")
-- uncoordinated charging: only a single FleetUnit neglecting effects caused by other FleetUnits and the local energy system's limitations is taken into account to determine its charging power.  
+#### Charge Scheduling Modes ("mode_scheduling")
+- uncoordinated charging: only a single FleetUnit neglecting effects caused by other FleetUnits and the local energy system's limitations is taken into account to determine its charging power.<br>
   - 'uc':Once plugged in to the local energy system, the FleetUnit charges at the maximum charging power specified for the FleetUnit in the scenario file until the target SOC is reached.
          Charging power is determined for a single FleetUnit in isolation, neither considering the influence of other FleetUnits nor any type of load management system.
 - rule-based charging strategies: multiple FleetUnits (within the same Fleet for static load management or across several Fleets for dynamic load management) are considered to determine their charging power.
