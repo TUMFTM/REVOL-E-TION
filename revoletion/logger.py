@@ -6,47 +6,41 @@ import sys
 
 
 class OptimizationSuccessfulFilter(logging.Filter):
-    def filter(self,
-               record):
+    def filter(self, record):
         # Filter out log messages from the root logger
-        return not (record.name == 'root' and record.msg == 'Optimization successful...')
+        return not (record.name == "root" and record.msg == "Optimization successful...")
 
 
-def _get_logger_level(settings: 'SimulationSettings'):
+def _get_logger_level(settings: "SimulationSettings"):
     """
     Determine the logger level based on the settings.
     """
     return logging.DEBUG if settings.debugmode else logging.INFO
 
 
-def _get_logger(settings: 'SimulationSettings',
-                name: str = None,
-                ):
+def _get_logger(
+    settings: "SimulationSettings",
+    name: str = None,
+):
     logger = logging.getLogger(name)
 
     # needs to be set here as root logger does not filter messages from the queue
     logger.setLevel(_get_logger_level(settings))
 
     # supress pyomo warnings
-    logging.getLogger('pyomo.core').setLevel(logging.ERROR)
+    logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
     # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
-    logging.getLogger('gurobipy').disabled = True
+    logging.getLogger("gurobipy").disabled = True
 
     return logger
 
 
-def get_root_logger(paths: 'SimulationPaths',
-                    settings: 'SimulationSettings',
-                    len_scn_max: int):
-
-    logger = _get_logger(settings=settings,
-                         name='root')
+def get_root_logger(paths: "SimulationPaths", settings: "SimulationSettings", len_scn_max: int):
+    logger = _get_logger(settings=settings, name="root")
 
     # define log formatter
-    log_formatter = logging.Formatter(f'%(levelname)-{len("WARNING")}s  '
-                                      f'%(name)-{len_scn_max}s  '
-                                      f'%(message)s')
+    log_formatter = logging.Formatter(f"%(levelname)-{len('WARNING')}s  %(name)-{len_scn_max}s  %(message)s")
 
     # define root logger handler for console output
     log_stream_handler = logging.StreamHandler(sys.stdout)
@@ -63,37 +57,39 @@ def get_root_logger(paths: 'SimulationPaths',
     return logger
 
 
-def get_process_logger_sequential(name: str,
-                                  settings: 'SimulationSettings',
-                                  ):
-
-    logger = _get_logger(name=name,
-                         settings=settings,
-                         )
+def get_process_logger_sequential(
+    name: str,
+    settings: "SimulationSettings",
+):
+    logger = _get_logger(
+        name=name,
+        settings=settings,
+    )
 
     return logger
 
 
-def get_process_logger_parallel(name: str,
-                                settings: 'SimulationSettings',
-                                log_queue: mp.Queue,
-                                ):
-
-    logger = _get_logger(name=name,
-                         settings=settings,
-                         )
+def get_process_logger_parallel(
+    name: str,
+    settings: "SimulationSettings",
+    log_queue: mp.Queue,
+):
+    logger = _get_logger(
+        name=name,
+        settings=settings,
+    )
 
     logger.propagate = False  # prevent inheritance of handlers from the root logger and duplicated messages
 
     queue_handler = logging.handlers.QueueHandler(log_queue)
-    queue_handler.setFormatter(logging.Formatter('%(message)s'))
+    queue_handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(queue_handler)
 
     return logger
 
 
 def read_mplogger_queue(queue: mp.Queue):
-    main_logger = logging.getLogger('main')
+    main_logger = logging.getLogger("main")
 
     while True:
         record = queue.get()

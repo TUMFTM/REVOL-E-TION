@@ -2,12 +2,12 @@
 
 ## Resilient Electric Vehicle Optimization model for Local Energy TransitION
 
-REVOL-E-TION is an energy system model toolbox designed to optimize integration of electric vehicle fleets into 
+REVOL-E-TION is an energy system model toolbox designed to optimize integration of electric vehicle fleets into
 local energy systems such as mini- and microgrids, company sites, apartment blocks or single homes and estimate
 the resulting technoeconomic potentials in terms of costs and revenues within the energy (and optionally also the
-mobility system). It is built as a wrapper on top of the [oemof](https://oemof.org) energy system model framework. 
+mobility system). It is built as a wrapper on top of the [oemof](https://oemof.org) energy system model framework.
 
-## Created by 
+## Created by
 Philipp Rosner, M.Sc. and Brian Dietermann, M.Sc.<br>
 Institute of Automotive Technology<br>
 Department of Mobility Systems Engineering<br>
@@ -77,7 +77,7 @@ REVOL-E-TION is designed to run under Windows 11, Ubuntu 22.04 LTS and macOS 15 
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
-REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodelling/revol-e-tion) and can be cloned from there using 
+REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodelling/revol-e-tion) and can be cloned from there using
 ```bash
 git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 ```
@@ -158,7 +158,7 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 
 The scenario file is a CSV table.
 Its exact API is described in the section "Scenario Input Parameters".
-A runnable example scenario file is provided in the example directory. 
+A runnable example scenario file is provided in the example directory.
 Some parameters in the scenario file reference to other files specified by file name, mostly for timeseries data.
 These are searched within the input directory specified.
 
@@ -184,7 +184,7 @@ settings = revoletion.SimulationSettings()
 
 # specify the relevant paths
 paths = revoletion.SimulationPaths(scenario='path/to/your/scenario.csv',  # this is the only required parameter
-                                   input='path/to/your/input/dir',  # same logic as --input argument 
+                                   input='path/to/your/input/dir',  # same logic as --input argument
                                    output='path/to/your/output/dir',  # same logic as --output argument
                                    )
 
@@ -204,7 +204,7 @@ revoletion.SimulationRun(paths=paths,
 | Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.11. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                  |
-| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). The python package gurobipy is NOT required to run REVOL-E-TION. |                                                                                                                                                                                                                                                                                                                                                
+| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). The python package gurobipy is NOT required to run REVOL-E-TION. |
 | ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                    |
 | ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                 |
 | ```Scenario failed: Infeasible or Unbounded (To solve this error try to set investment limits for blocks or for the scenario)``` | Depending on the costs specified the optimization problem might be unbounded as infinite investment is beneficial | Redefine the provided cost structure (i.e. reduce prices for energy feed-in or increase CAPEX or OPEX for energy generation)                                                                                                                                                                                                                                                           |
@@ -251,9 +251,9 @@ Although the SystemCore must not be specified in the ```blocks``` dict, its para
 Instances of type GridMarket and SubFleet are also not specified in the scenario's ```blocks``` parameter, but in the parameters of their parent classes GridConnection and Fleet, respectively.
 
 Complex (multidimensional) parameters are mostly defined through links to other files (by filename) in the scenario file.
-As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly. 
+As all string values specified in the scenario definition file are converted to lower case, all files have to be named in lower case to be read in properly.
 The following table specifies each parameter for each possible block class in the scenario file.
-If and only if a block of a certain class exists within the scenario, these parameters are required and read in. 
+If and only if a block of a certain class exists within the scenario, these parameters are required and read in.
 Therefore, not every scenario file contains all possible parameters.
 An example scenario file is provided in the ```.revoletion/example``` directory.
 
@@ -598,7 +598,7 @@ Fleet consisting of one or several DispatchGroups.
 
 | Key                   | Name                                                    | Type         | Not required for            | Description                                                                                                                                                                                                                                                                                                                                      | Valid values or format                                                                            |
 |-----------------------|---------------------------------------------------------|--------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| ```dispatch_groups``` | Dispatch Groups                                         | dict         |                             | Dictionary in text representation containing the DispatchGroup name in string format as key and a list of contained subfleet names as strings as value. List order determines priority. No subfleet may be in more than one DispatchGroup                                                                                                        | "['subfleet1', 'subfleet2']"                                                                      |
+| ```groups_dispatch``` | Dispatch Groups                                         | dict         |                             | Dictionary in text representation containing the DispatchGroup name in string format as key and a list of contained subfleet names as strings as value. List order determines priority. No subfleet may be in more than one DispatchGroup                                                                                                        | "['subfleet1', 'subfleet2']"                                                                      |
 | ```system```          | System                                                  | str          |                             | The bus (AC or DC) the block is connected to.                                                                                                                                                                                                                                                                                                    | 'AC', 'DC'                                                                                        |
 | ```pwr_lim_f2s```     | Power limit of fleet to site                            | float        |                             | Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None.                                                                                                                                                                                                                    | [0, inf[ or None                                                                                  |
 | ```pwr_lim_s2f```     | Power limit of site to fleet                            | float        |                             | Maximum power flow from the local site to Fleet (Site2Fleet) in W. To enable unlimited power flow set this parameter to None.                                                                                                                                                                                                                    | [0, inf[ or None                                                                                  |
@@ -756,8 +756,8 @@ Furthermore, if this integration level is supposed to be 'equal', all SubFleets 
 As a dynamic load management system requires knowledge about the available power within the local energy system for each timestep, it is not possible to combine a dynamic load management system with a StationaryBattery block.
 This would require an a priori calculation of the StationaryBattery's SOC which is not possible in a straight-forward way, due to different prioritization of power sources based on their current opex and the efficiency of the SystemCore.
 
-#### Charge Scheduling Modes ("mode_scheduling")
-- uncoordinated charging: only a single FleetUnit neglecting effects caused by other FleetUnits and the local energy system's limitations is taken into account to determine its charging power.<br>
+#### Charge Scheduling Modes  ("mode_scheduling")
+- uncoordinated charging: only a single FleetUnit neglecting effects caused by other FleetUnits and the local energy system's limitations is taken into account to determine its charging power.
   - 'uc':Once plugged in to the local energy system, the FleetUnit charges at the maximum charging power specified for the FleetUnit in the scenario file until the target SOC is reached.
          Charging power is determined for a single FleetUnit in isolation, neither considering the influence of other FleetUnits nor any type of load management system.
 - rule-based charging strategies: multiple FleetUnits (within the same Fleet for static load management or across several Fleets for dynamic load management) are considered to determine their charging power.
@@ -770,7 +770,7 @@ This would require an a priori calculation of the StationaryBattery's SOC which 
 The power for all FleetUnits with available external charging infrastructure (column 'atac' or 'atdc' in log file is set to True) is calculated.
 - AC charging: Once AC charging gets available, the required energy until the return to the local energy system is calculated.
   If the current SOC does not ensure a return SOC above the specified minimum return SOC (does not consider self-discharge), AC charging is activated. The specified charging power is then applied until the target SOC is reached.
-- DC charging: If DC charging is available and the SOC at the next timestep with a charging possibility is below 5 %, DC charging is activated for the current timestep. The maximum SOC for DC charging is 80 % neglecting "soc_target". 
+- DC charging: If DC charging is available and the SOC at the next timestep with a charging possibility is below 5 %, DC charging is activated for the current timestep. The maximum SOC for DC charging is 80 % neglecting "soc_target".
 
 ### A Posteriori Aging Model (also available for StationaryBattery)
 Simple semi-empirical aging models are implemented for a blocks containing electric storages (ElectricFleetUnit and StationaryBattery).

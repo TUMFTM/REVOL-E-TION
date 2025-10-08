@@ -21,12 +21,11 @@ from . import simulation
 
 
 class SimulationRun:
-
-    def __init__(self,
-                 paths: simulation.SimulationPaths,
-                 settings: simulation.SimulationSettings = None,
-                 ):
-
+    def __init__(
+        self,
+        paths: simulation.SimulationPaths,
+        settings: simulation.SimulationSettings = None,
+    ):
         self.paths = paths
         self.settings = settings if settings is not None else simulation.SimulationSettings()
 
@@ -43,26 +42,24 @@ class SimulationRun:
 
         # region read, copy and check scenario data
         if not self.paths.scenario.is_file():
-            raise FileNotFoundError(f'Scenario file {self.paths.scenario} does not exist')
-        if self.paths.scenario.suffix == '.csv':
-            self.scenario_data = pd.read_csv(self.paths.scenario,
-                                             index_col=[0, 1],
-                                             keep_default_na=False)
-        elif self.paths.scenario.suffix == '.pkl':
+            raise FileNotFoundError(f"Scenario file {self.paths.scenario} does not exist")
+        if self.paths.scenario.suffix == ".csv":
+            self.scenario_data = pd.read_csv(self.paths.scenario, index_col=[0, 1], keep_default_na=False)
+        elif self.paths.scenario.suffix == ".pkl":
             self.scenario_data = pd.read_pickle(self.paths.scenario)
             if not isinstance(self.scenario_data, pd.DataFrame):
-                raise ValueError(f'Scenario file {self.paths.scenario} must be a DataFrame')
+                raise ValueError(f"Scenario file {self.paths.scenario} must be a DataFrame")
         else:
-            raise ValueError(f'Scenario file {self.paths.scenario} must be a CSV or PKL file')
+            raise ValueError(f"Scenario file {self.paths.scenario} must be a CSV or PKL file")
         self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
-        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith('#')]
+        self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith("#")]
 
         # region define logger structure
-        self.logger = logger_fcs.get_root_logger(paths=self.paths,
-                                                 settings=self.settings,
-                                                 len_scn_max=max([len(el)
-                                                                  for el
-                                                                  in list(self.scenario_names) + ["root"]]))
+        self.logger = logger_fcs.get_root_logger(
+            paths=self.paths,
+            settings=self.settings,
+            len_scn_max=max([len(el) for el in list(self.scenario_names) + ["root"]]),
+        )
 
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
@@ -70,61 +67,64 @@ class SimulationRun:
 
         if self.paths.rerun:
             # only run scenarios which have not been optimized successfully (or were infeasible)
-            self.scenario_status = pd.read_csv(self.paths.status,
-                                               index_col=0,
-                                               dtype=str,  # empty columns are interpreted as float -> avoid
-                                               )
+            self.scenario_status = pd.read_csv(
+                self.paths.status,
+                index_col=0,
+                dtype=str,  # empty columns are interpreted as float -> avoid
+            )
 
-            dont_rerun = ['successful', 'infeasible'] if self.settings.rerun_infeasible else ['successful']
-            scenarios_rerun = self.scenario_status[~self.scenario_status['status'].isin(dont_rerun)].index.to_list()
+            dont_rerun = ["successful", "infeasible"] if self.settings.rerun_infeasible else ["successful"]
+            scenarios_rerun = self.scenario_status[~self.scenario_status["status"].isin(dont_rerun)].index.to_list()
             self.scenario_names = [name for name in self.scenario_names if name in scenarios_rerun]
 
             if not self.scenario_names:
                 raise ValueError(
                     f'Parameter "--rerun" was set to {self.paths.rerun}, but the status file contains no scenarios '
-                    f'to rerun.\n'
-                    f'All scenarios were {"either infeasible or " if self.settings.rerun_infeasible else ""}'
-                    f'already completed successfully.\n'
-                    f'Check {(Path(self.paths.status.parent.name) / self.paths.status.name)} '
-                    f'for additional information.')
+                    f"to rerun.\n"
+                    f"All scenarios were {'either infeasible or ' if self.settings.rerun_infeasible else ''}"
+                    f"already completed successfully.\n"
+                    f"Check {(Path(self.paths.status.parent.name) / self.paths.status.name)} "
+                    f"for additional information."
+                )
 
             # delete all temporary results of files which are rerun (happens if SimulationRun terminates unexpected)
             for scenario in self.scenario_names:
-                for file_name in [f'{scenario}_summary_temp.csv',
-                                  f'{scenario}_results.csv']:
+                for file_name in [f"{scenario}_summary_temp.csv", f"{scenario}_results.csv"]:
                     file_path = self.paths.output / file_name
                     if file_path.is_file():
                         file_path.unlink()
 
             # reset status of scenarios to be run to 'queued'
-            self.scenario_status.loc[self.scenario_names, ['status', 'exception', 'traceback']] = (
-                    [['queued', pd.NA, pd.NA]] * len(self.scenario_names))
+            self.scenario_status.loc[self.scenario_names, ["status", "exception", "traceback"]] = [
+                ["queued", pd.NA, pd.NA]
+            ] * len(self.scenario_names)
             self.scenario_status.to_csv(self.paths.status, index=True)
 
         else:
-            self.scenario_status = pd.DataFrame(index=self.scenario_names,
-                                                data={'status': 'queued',
-                                                      'exception': None,
-                                                      'traceback': None}).rename_axis('scenario')
+            self.scenario_status = pd.DataFrame(
+                index=self.scenario_names, data={"status": "queued", "exception": None, "traceback": None}
+            ).rename_axis("scenario")
             self.copy_scenario_file()
         self.scenario_num = len(self.scenario_names)
 
         if self.scenario_num == 0:
-            raise ValueError('No executable scenarios found in scenario file')
+            raise ValueError("No executable scenarios found in scenario file")
 
         self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
         # endregion
 
-        self.logger.info(f'{"Reading scenarios from:":<25} {self.paths.scenario}')
-        self.logger.info(f'{"Reading input data from:":<25} {self.paths.input}')
-        self.logger.info(f'{"Writing results to:":<25} {self.paths.output}')
-        self.logger.info(f'Running {self.scenario_num} scenario{("s" if self.scenario_num > 1 else "")} '
-                         f'with {self.settings.n_processes} process{("es" if self.settings.n_processes > 1 else "")}')
+        self.logger.info(f"{'Reading scenarios from:':<25} {self.paths.scenario}")
+        self.logger.info(f"{'Reading input data from:':<25} {self.paths.input}")
+        self.logger.info(f"{'Writing results to:':<25} {self.paths.output}")
+        self.logger.info(
+            f"Running {self.scenario_num} scenario{('s' if self.scenario_num > 1 else '')} "
+            f"with {self.settings.n_processes} process{('es' if self.settings.n_processes > 1 else '')}"
+        )
 
         self.execute()
 
     def copy_scenario_file(self):
-        target = self.paths.output / f'{self.name}.csv'
+        target = self.paths.output / f"{self.name}.csv"
         try:  # with metadata
             shutil.copy2(self.paths.scenario, target)
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
@@ -144,11 +144,15 @@ class SimulationRun:
                 log_thread.start()
 
                 with mp.Pool(processes=self.settings.n_processes) as pool:
-                    pool.starmap(self.execute_scenario,
-                                 zip(self.scenario_names,
-                                     itertools.repeat(log_queue),
-                                     itertools.repeat(status_queue),
-                                     itertools.repeat(lock)))
+                    pool.starmap(
+                        self.execute_scenario,
+                        zip(
+                            self.scenario_names,
+                            itertools.repeat(log_queue),
+                            itertools.repeat(status_queue),
+                            itertools.repeat(lock),
+                        ),
+                    )
                 status_queue.put(None)
                 status_thread.join()
                 log_queue.put(None)
@@ -158,7 +162,7 @@ class SimulationRun:
                 self.execute_scenario(name=scenario_name)
 
         self.runtime.stop()
-        self.logger.info(f'Total runtime for all scenarios: {self.runtime.duration:.2f} s')
+        self.logger.info(f"Total runtime for all scenarios: {self.runtime.duration:.2f} s")
 
         self.join_results()
 
@@ -167,21 +171,20 @@ class SimulationRun:
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
 
-        self.logger.error(f'Exception type: {exc_type.__name__}')
-        self.logger.error(f'Exception message: {str(exc_value)}')
-        self.logger.error('Traceback:')
-        self.logger.error(''.join(traceback.format_tb(exc_traceback)))
+        self.logger.error(f"Exception type: {exc_type.__name__}")
+        self.logger.error(f"Exception message: {str(exc_value)}")
+        self.logger.error("Traceback:")
+        self.logger.error("".join(traceback.format_tb(exc_traceback)))
 
-        self.logger.error(msg='Uncaught exception',
-                          exc_info=(exc_type, exc_value, exc_traceback))
+        self.logger.error(msg="Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
     def join_results(self):
-
-        filenames = [file
-                     for file in self.paths.output.iterdir()
-                     if file.name.endswith('_summary_temp.pkl')
-                     and self.scenario_status.loc[file.name.removesuffix('_summary_temp.pkl'), 'status'] == 'successful'
-                     ]
+        filenames = [
+            file
+            for file in self.paths.output.iterdir()
+            if file.name.endswith("_summary_temp.pkl")
+            and self.scenario_status.loc[file.name.removesuffix("_summary_temp.pkl"), "status"] == "successful"
+        ]
 
         scenario_frames = [pd.read_pickle(file) for file in filenames]
 
@@ -196,25 +199,37 @@ class SimulationRun:
             joined_results = joined_results[[c for c in self.scenario_data.columns if c in joined_results.columns]]
 
             # get results of run
-            results_run = pd.concat([pd.Series({key: value for key, value in self.__dict__.items()
-                                     if isinstance(value, (int, float, bool, str))}),
-                                     self.runtime.result_summary,
-                                     ])
+            results_run = pd.concat(
+                [
+                    pd.Series(
+                        {
+                            key: value
+                            for key, value in self.__dict__.items()
+                            if isinstance(value, (int, float, bool, str))
+                        }
+                    ),
+                    self.runtime.result_summary,
+                ]
+            )
             # apply MultiIndex
-            results_run.index = pd.MultiIndex.from_tuples(tuples=[('run', key) for key in results_run.index],
-                                                          names=['block', 'key'])
+            results_run.index = pd.MultiIndex.from_tuples(
+                tuples=[("run", key) for key in results_run.index], names=["block", "key"]
+            )
 
             # convert to DataFrame and repeat for all scenarios
             results_run = pd.DataFrame([results_run] * len(joined_results.columns)).T
             results_run.columns = joined_results.columns
 
-            joined_results = pd.concat([results_run,
-                                        joined_results,
-                                        ])
+            joined_results = pd.concat(
+                [
+                    results_run,
+                    joined_results,
+                ]
+            )
 
             joined_results.to_csv(self.paths.summary_csv, index=True)
             joined_results.to_pickle(self.paths.summary_pkl)
-            self.logger.info('Result summary file created')
+            self.logger.info("Result summary file created")
 
         # deletion loop at the end to avoid premature execution of results in case of error
         for file in filenames:
@@ -227,33 +242,38 @@ class SimulationRun:
                 break
             self.update_scenario_status(status_msg)
 
-    def execute_scenario(self,
-                         name: str,
-                         log_queue: mp.Queue = None,
-                         status_queue: mp.Queue = None,
-                         lock: mp.Lock = None):
-
+    def execute_scenario(
+        self, name: str, log_queue: mp.Queue = None, status_queue: mp.Queue = None, lock: mp.Lock = None
+    ):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
         try:
-            simulation.Scenario(paths=self.paths,
-                                settings=self.settings,
-                                run_execution=True,
-                                name=name,
-                                parameters=self.scenario_data[name],
-                                log_queue=log_queue,
-                                lock=lock,
-                                status_update=self.trigger_scenario_status_update,
-                                status_queue=status_queue)
+            simulation.Scenario(
+                paths=self.paths,
+                settings=self.settings,
+                run_execution=True,
+                name=name,
+                parameters=self.scenario_data[name],
+                log_queue=log_queue,
+                lock=lock,
+                status_update=self.trigger_scenario_status_update,
+                status_queue=status_queue,
+            )
         except Exception as e:
-            self.trigger_scenario_status_update(queue=status_queue,
-                                                status_msg={'scenario': name,
-                                                            'status': 'failed',
-                                                            'exception': str(e),
-                                                            'traceback': traceback.format_exc()})
+            self.trigger_scenario_status_update(
+                queue=status_queue,
+                status_msg={
+                    "scenario": name,
+                    "status": "failed",
+                    "exception": str(e),
+                    "traceback": traceback.format_exc(),
+                },
+            )
 
-            self.logger.error(msg=f'{str(e)} - continue on next scenario', # todo is not written to log or stream
-                              exc_info=True)
+            self.logger.error(
+                msg=f"{str(e)} - continue on next scenario",  # todo is not written to log or stream
+                exc_info=True,
+            )
 
     def trigger_scenario_status_update(self, queue, status_msg):
         if queue is not None:
@@ -262,7 +282,6 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def update_scenario_status(self, status_msg):
-        for col in [key for key, value in status_msg.items() if key != 'scenario' and value is not None]:
-            self.scenario_status.loc[status_msg['scenario'], col] = status_msg[col]
-        self.scenario_status.to_csv(self.paths.status,
-                                    index=True)
+        for col in [key for key, value in status_msg.items() if key != "scenario" and value is not None]:
+            self.scenario_status.loc[status_msg["scenario"], col] = status_msg[col]
+        self.scenario_status.to_csv(self.paths.status, index=True)

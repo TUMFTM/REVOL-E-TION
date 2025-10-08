@@ -33,16 +33,14 @@ class BlockScenarioInterface(ABC):
         ...
 
     @abstractmethod
-    def pre_horizon(self,
-                    horizon: simulation.PredictionHorizon) -> None:
+    def pre_horizon(self, horizon: simulation.PredictionHorizon) -> None:
         """
         Trigger actions to be executed before each horizon.
         """
         ...
 
     @abstractmethod
-    def post_horizon(self,
-                     horizon: simulation.PredictionHorizon) -> None:
+    def post_horizon(self, horizon: simulation.PredictionHorizon) -> None:
         """
         Trigger actions to be executed after each horizon.
         """
@@ -69,12 +67,13 @@ class BaseBlock(BlockScenarioInterface):
         # add a new column to block.states
         pass
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 params: dict = None,
-                 parent: BaseBlock | simulation.Scenario = None,
-                 ):
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+        params: dict = None,
+        parent: BaseBlock | simulation.Scenario = None,
+    ):
         """
         Initialize (Sub)Block object with attributes and data structures
         """
@@ -98,12 +97,9 @@ class BaseBlock(BlockScenarioInterface):
         self.expansion_equal = False
         self.params_preprocessing()
 
-        self.aggregator = eco.EcoAggregator(name=self.name,
-                                            scenario=self.scenario,
-                                            block=self)
+        self.aggregator = eco.EcoAggregator(name=self.name, scenario=self.scenario, block=self)
 
-        self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd,
-                                   dtype='float64')
+        self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd, dtype="float64")
         self.init_states()
 
         self.sizes = dict()  # entries are created by EcoEvaluator
@@ -132,7 +128,7 @@ class BaseBlock(BlockScenarioInterface):
             self.scenario.block_registry.setdefault(name_class, {})[self.name] = self
 
         if self.top_level_block:
-            self.scenario.block_registry.setdefault('TopLevelBlock', {})[self.name] = self
+            self.scenario.block_registry.setdefault("TopLevelBlock", {})[self.name] = self
         else:  # is subblock
             self.parent.subblocks[self.name] = self
 
@@ -141,13 +137,15 @@ class BaseBlock(BlockScenarioInterface):
 
     def init_equalizable_variables(self, name_vars: list):
         name_var1, name_var2 = name_vars
-        if (getattr(self, name_var1) == 'equal') and (getattr(self, name_var2) == 'equal'):
-            error_msg = (f'"{self.name}" parameters {name_var1} and {name_var2} were both set to equal.'
-                         f' Maximum one of these variables is allowed to be set to "equal"')
+        if (getattr(self, name_var1) == "equal") and (getattr(self, name_var2) == "equal"):
+            error_msg = (
+                f'"{self.name}" parameters {name_var1} and {name_var2} were both set to equal.'
+                f' Maximum one of these variables is allowed to be set to "equal"'
+            )
             self.scenario.logger.error(error_msg)
-        elif getattr(self, name_var1) == 'equal':
+        elif getattr(self, name_var1) == "equal":
             setattr(self, name_var1, getattr(self, name_var2))
-        elif getattr(self, name_var2) == 'equal':
+        elif getattr(self, name_var2) == "equal":
             setattr(self, name_var2, getattr(self, name_var1))
 
     def pre_scenario(self):
@@ -157,15 +155,11 @@ class BaseBlock(BlockScenarioInterface):
         for subblock in self.subblocks.values():
             subblock.pre_scenario()
 
-    def pre_horizon(self,
-                    horizon: simulation.PredictionHorizon):
-
+    def pre_horizon(self, horizon: simulation.PredictionHorizon):
         for subblock in self.subblocks.values():
             subblock.pre_horizon(horizon=horizon)
 
-    def post_horizon(self,
-                     horizon: simulation.PredictionHorizon):
-
+    def post_horizon(self, horizon: simulation.PredictionHorizon):
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
 
@@ -195,8 +189,13 @@ class BaseBlock(BlockScenarioInterface):
 
     def create_result_summary(self):
         # get attributes of type int, float, bool and str for scenario.result_summary
-        self.result_summary.extend([pd.Series({key: value for key, value in self.__dict__.items()
-                                               if isinstance(value, (int, float, bool, str))})])
+        self.result_summary.extend(
+            [
+                pd.Series(
+                    {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))}
+                )
+            ]
+        )
 
         # get energy results for scenario.result_summary
         for size in self.sizes.values():
@@ -206,25 +205,23 @@ class BaseBlock(BlockScenarioInterface):
         self.result_summary.append(self.aggregator.write_result_summary())
 
     @abstractmethod
-    def create_result_timeseries(self):
-        ...
+    def create_result_timeseries(self): ...
 
     def create_result_messages(self):
         for size in self.sizes.values():
-            if (msg := size.result_msg) != '':
+            if (msg := size.result_msg) != "":
                 self.result_messages.append(msg)
 
     @abstractmethod
-    def create_plot_traces(self):
-        ...
+    def create_plot_traces(self): ...
 
     def write_results_to_scenario(self):
         # result_summary
         # concat all result_summary and apply MultiIndex with
         self.result_summary = pd.concat(self.result_summary)
-        self.result_summary.index = pd.MultiIndex.from_tuples(tuples=[(self.name, key)
-                                                                      for key in self.result_summary.index],
-                                                              names=['block', 'key'])
+        self.result_summary.index = pd.MultiIndex.from_tuples(
+            tuples=[(self.name, key) for key in self.result_summary.index], names=["block", "key"]
+        )
 
         # write block's results to scenario.result_summary
         self.scenario.result_summary.append(self.result_summary)
@@ -239,11 +236,10 @@ class BaseBlock(BlockScenarioInterface):
         """
         Standard legend entry for simple blocks using power as their size
         """
-        return f'{self.name} power (max. {self.sizes["block"].total / 1e3:.1f} kW)'
+        return f"{self.name} power (max. {self.sizes['block'].total / 1e3:.1f} kW)"
 
 
 class NonElectricBlock(BaseBlock):
-
     def create_plot_traces(self, *_args, **_kwargs):
         """
         dummy method
@@ -258,20 +254,17 @@ class NonElectricBlock(BaseBlock):
 
 
 class ElectricBlock(BaseBlock):
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 flow_apriori_names: list = None,
-                 params: dict = None,
-                 parent: BaseBlock | simulation.Scenario = None,
-                 ):
-
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+        flow_apriori_names: list = None,
+        params: dict = None,
+        parent: BaseBlock | simulation.Scenario = None,
+    ):
         self.flow_names = set()
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         params=params,
-                         parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params, parent=parent)
 
         # empty list not possible as default argument as it is mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
@@ -281,41 +274,37 @@ class ElectricBlock(BaseBlock):
 
         # ToDo: (1) remove flow_apriori_names and use flow names instead
         #       (2) remove flows_apriori and use flows instead to save memory
-        self.flows_apriori = pd.DataFrame(index=self.scenario.times.sim.dti,
-                                          columns=flow_apriori_names,
-                                          dtype='float64'
-                                          )
+        self.flows_apriori = pd.DataFrame(
+            index=self.scenario.times.sim.dti, columns=flow_apriori_names, dtype="float64"
+        )
 
-        self.flows = pd.DataFrame(index=self.scenario.times.sim.dti,
-                                  columns=(['total'] + list(self.flow_names)),
-                                  data=0.0,
-                                  dtype='float64')
+        self.flows = pd.DataFrame(
+            index=self.scenario.times.sim.dti, columns=(["total"] + list(self.flow_names)), data=0.0, dtype="float64"
+        )
 
-        self.energies = pd.DataFrame(index=(['total'] + list(self.flow_names)),
-                                     columns=['sim', 'yrl', 'prj', 'dis'],
-                                     data=0.0,  # cumulative property
-                                     dtype=float)
+        self.energies = pd.DataFrame(
+            index=(["total"] + list(self.flow_names)),
+            columns=["sim", "yrl", "prj", "dis"],
+            data=0.0,  # cumulative property
+            dtype=float,
+        )
 
         self.eff = dict()
         self.initialize_efficiencies()
 
     def initialize_efficiencies(self):
         for key in list(self.__dict__.keys()):  # use list() to safely modify the dict (delattr) while iterating
-            if key.startswith('eff_'):
-                self.eff[re.sub(r'^[^_]+_', '', key)] = getattr(self, key)
+            if key.startswith("eff_"):
+                self.eff[re.sub(r"^[^_]+_", "", key)] = getattr(self, key)
                 delattr(self, key)
 
-    def pre_horizon(self,
-                    horizon: simulation.PredictionHorizon):
-
+    def pre_horizon(self, horizon: simulation.PredictionHorizon):
         self.define_oemof_components(horizon=horizon)
         horizon.es.add(*self.components.values())
 
         super().pre_horizon(horizon=horizon)  # executes pre_horizon for subblocks
 
-    def post_horizon(self,
-                     horizon: simulation.PredictionHorizon):
-
+    def post_horizon(self, horizon: simulation.PredictionHorizon):
         super().post_horizon(horizon=horizon)  # executes post_horizon for subblocks
 
         self.get_horizon_results(horizon=horizon)
@@ -327,19 +316,14 @@ class ElectricBlock(BaseBlock):
         super().post_scenario()
 
     @abstractmethod
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
-        ...
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
 
     @abstractmethod
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
-        ...
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
 
     def calc_results_flows(self):
         # total flow calculation is duplicated in StorageBlock
-        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)
+        self.flows["total"] = self.flows.get(key="out", default=0) - self.flows.get(key="in", default=0)
 
     def calc_results_energies(self):
         """
@@ -348,20 +332,22 @@ class ElectricBlock(BaseBlock):
         """
         for flow_name, flow in self.flows.items():
             energy = flow[self.scenario.times.eval.dti].sum() * self.scenario.timestep.hours
-            self.energies.loc[flow_name, 'sim'] = energy
-            if ('circular' in flow_name) and (energy != 0):
-                self.scenario.logger.warning(f'Block "{self.name}" - circular flow detected '
-                                             f'(flows name: {flow_name}) - check energy results')
+            self.energies.loc[flow_name, "sim"] = energy
+            if ("circular" in flow_name) and (energy != 0):
+                self.scenario.logger.warning(
+                    f'Block "{self.name}" - circular flow detected (flows name: {flow_name}) - check energy results'
+                )
 
-        self.energies['yrl'] = self.energies['sim'] / self.scenario.sim_yr_rat
-        self.energies['prj'] = self.energies['yrl'] * self.scenario.prj_duration_yrs
-        self.energies['dis'] = (self.energies['yrl'] *
-                                self.scenario.discount_factors.loc[self.scenario.periods_prj, 'end'].sum())
+        self.energies["yrl"] = self.energies["sim"] / self.scenario.sim_yr_rat
+        self.energies["prj"] = self.energies["yrl"] * self.scenario.prj_duration_yrs
+        self.energies["dis"] = (
+            self.energies["yrl"] * self.scenario.discount_factors.loc[self.scenario.periods_prj, "end"].sum()
+        )
 
     def create_result_summary(self):
         super().create_result_summary()
         # get energy results for scenario.result_summary
-        self.result_summary.append(utils.create_results_from_dataframe(df=self.energies, name_prefix='energy'))
+        self.result_summary.append(utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"))
 
     def create_result_timeseries(self):
         """
@@ -369,116 +355,104 @@ class ElectricBlock(BaseBlock):
         """
         if not self.scenario.settings.largescalemode:
             # write flows and states to scenario.result_timeseries
-            self.flows.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.flows.columns],
-                                                           names=['block', 'key'])
+            self.flows.columns = pd.MultiIndex.from_tuples(
+                tuples=[(self.name, col) for col in self.flows.columns], names=["block", "key"]
+            )
 
-            self.states.columns = pd.MultiIndex.from_tuples(tuples=[(self.name, col) for col in self.states.columns],
-                                                            names=['block', 'key'])
+            self.states.columns = pd.MultiIndex.from_tuples(
+                tuples=[(self.name, col) for col in self.states.columns], names=["block", "key"]
+            )
 
-            self.result_timeseries.extend([self.flows.loc[self.scenario.times.eval.dti, :],
-                                           self.states.loc[self.scenario.times.eval.dti_extd, :]])
+            self.result_timeseries.extend(
+                [self.flows.loc[self.scenario.times.eval.dti, :], self.states.loc[self.scenario.times.eval.dti_extd, :]]
+            )
 
     def create_plot_traces(self):
-        self.scenario.plot_traces.append(plot_line=go.Scatter(x=self.scenario.times.eval.dti,
-                                                              y=self.flows.loc[self.scenario.times.eval.dti, 'total'],
-                                                              mode='lines',
-                                                              name=self.get_legend_entry(),
-                                                              line=dict(width=2, dash=None, shape='hv'),
-                                                              visible=True if self.top_level_block else 'legendonly',
-                                                              ),
-                                         secondary_y=False,
-                                         )
+        self.scenario.plot_traces.append(
+            plot_line=go.Scatter(
+                x=self.scenario.times.eval.dti,
+                y=self.flows.loc[self.scenario.times.eval.dti, "total"],
+                mode="lines",
+                name=self.get_legend_entry(),
+                line=dict(width=2, dash=None, shape="hv"),
+                visible=True if self.top_level_block else "legendonly",
+            ),
+            secondary_y=False,
+        )
 
 
 class SourceBlock(ElectricBlock):
+    @abstractmethod
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
 
     @abstractmethod
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
-        ...
-
-    @abstractmethod
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
-        ...
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['total', :]
+        self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["total", :]
 
 
 class SinkBlock(ElectricBlock):
+    @abstractmethod
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
 
     @abstractmethod
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
-        ...
-
-    @abstractmethod
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
-        ...
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[('sinks', 'del'), :] -= self.energies.loc['total', :]
+        self.scenario.energies.loc[("sinks", "del"), :] -= self.energies.loc["total", :]
 
 
 class SystemCore(ElectricBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['acdc'] = eco.EcoEvaluator(name='acdc',
-                                                   scenario=self.scenario,
-                                                   block=self,
-                                                   size_name='acdc',
-                                                   size_unit='kW',
-                                                   flow_name='acdc',
-                                                   ls=self.ls,
-                                                   ccr=self.ccr,
-                                                   capex_config=dict(consider_preexisting=self.capex_preexisting_acdc,
-                                                                     spec=self.capex_spec,
-                                                                     ),
-                                                   mntex_config=dict(spec=self.mntex_spec),
-                                                   opex_config=dict(spec=self.opex_spec),
-                                                   )
+        self.evaluators["acdc"] = eco.EcoEvaluator(
+            name="acdc",
+            scenario=self.scenario,
+            block=self,
+            size_name="acdc",
+            size_unit="kW",
+            flow_name="acdc",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(
+                consider_preexisting=self.capex_preexisting_acdc,
+                spec=self.capex_spec,
+            ),
+            mntex_config=dict(spec=self.mntex_spec),
+            opex_config=dict(spec=self.opex_spec),
+        )
 
-        self.evaluators['dcac'] = eco.EcoEvaluator(name='dcac',
-                                                   scenario=self.scenario,
-                                                   block=self,
-                                                   size_name='dcac',
-                                                   size_unit='kW',
-                                                   flow_name='dcac',
-                                                   ls=self.ls,
-                                                   ccr=self.ccr,
-                                                   capex_config=dict(consider_preexisting=self.capex_preexisting_dcac,
-                                                                     spec=self.capex_spec,
-                                                                     ),
-                                                   mntex_config=dict(spec=self.mntex_spec),
-                                                   opex_config=dict(spec=self.opex_spec),
-                                                   )
+        self.evaluators["dcac"] = eco.EcoEvaluator(
+            name="dcac",
+            scenario=self.scenario,
+            block=self,
+            size_name="dcac",
+            size_unit="kW",
+            flow_name="dcac",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(
+                consider_preexisting=self.capex_preexisting_dcac,
+                spec=self.capex_spec,
+            ),
+            mntex_config=dict(spec=self.mntex_spec),
+            opex_config=dict(spec=self.opex_spec),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario):
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
 
     def params_preprocessing(self):
-        self.expansion_equal = True if self.invest_acdc == 'equal' or self.invest_dcac == 'equal' else False
+        self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
 
-        self.init_equalizable_variables(name_vars=['invest_acdc', 'invest_dcac'])
-        self.init_equalizable_variables(name_vars=['size_preexisting_acdc', 'size_preexisting_dcac'])
-        self.init_equalizable_variables(name_vars=['size_max_acdc', 'size_max_dcac'])
+        self.init_equalizable_variables(name_vars=["invest_acdc", "invest_dcac"])
+        self.init_equalizable_variables(name_vars=["size_preexisting_acdc", "size_preexisting_dcac"])
+        self.init_equalizable_variables(name_vars=["size_max_acdc", "size_max_dcac"])
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -489,83 +463,107 @@ class SystemCore(ElectricBlock):
           |<---acdc-x-|
         """
 
-        self.components['ac'] = solph.Bus()
-        self.components['dc'] = solph.Bus()
+        self.components["ac"] = solph.Bus()
+        self.components["dc"] = solph.Bus()
 
-        self.components['acdc'] = solph.components.Converter(
-            inputs={self.components['ac']: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=self.evaluators['acdc'].opt.spec_ep_invest,
-                                                  existing=self.sizes['acdc'].preexisting,
-                                                  maximum=self.sizes['acdc'].expansion_max),
-                variable_costs=self.evaluators['acdc'].opt.spec_ep_operation[horizon.ph.dti])},
-            outputs={self.components['dc']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['dc']: self.eff['acdc']})
+        self.components["acdc"] = solph.components.Converter(
+            inputs={
+                self.components["ac"]: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.evaluators["acdc"].opt.spec_ep_invest,
+                        existing=self.sizes["acdc"].preexisting,
+                        maximum=self.sizes["acdc"].expansion_max,
+                    ),
+                    variable_costs=self.evaluators["acdc"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            },
+            outputs={self.components["dc"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            conversion_factors={self.components["dc"]: self.eff["acdc"]},
+        )
 
-        self.components['dcac'] = solph.components.Converter(
-            inputs={self.components['dc']: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=self.evaluators['dcac'].opt.spec_ep_invest,
-                                                  existing=self.sizes['dcac'].preexisting,
-                                                  maximum=self.sizes['dcac'].expansion_max),
-                variable_costs=self.evaluators['dcac'].opt.spec_ep_operation[horizon.ph.dti])},
-            outputs={self.components['ac']: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['ac']: self.eff['dcac']})
+        self.components["dcac"] = solph.components.Converter(
+            inputs={
+                self.components["dc"]: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.evaluators["dcac"].opt.spec_ep_invest,
+                        existing=self.sizes["dcac"].preexisting,
+                        maximum=self.sizes["dcac"].expansion_max,
+                    ),
+                    variable_costs=self.evaluators["dcac"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            },
+            outputs={self.components["ac"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            conversion_factors={self.components["ac"]: self.eff["dcac"]},
+        )
 
         horizon.constraints.add_invest_costs(
-            invest=(self.components['ac'], self.components['acdc']),
-            capex_spec=self.evaluators['acdc'].capex.spec,
-            invest_type='flow')
+            invest=(self.components["ac"], self.components["acdc"]),
+            capex_spec=self.evaluators["acdc"].capex.spec,
+            invest_type="flow",
+        )
 
         horizon.constraints.add_invest_costs(
-            invest=(self.components['dc'], self.components['dcac']),
-            capex_spec=self.evaluators['dcac'].capex.spec,
-            invest_type='flow')
+            invest=(self.components["dc"], self.components["dcac"]),
+            capex_spec=self.evaluators["dcac"].capex.spec,
+            invest_type="flow",
+        )
 
         if self.expansion_equal:
             # add a tuple of tuples to the list of equal variables of the scenario
-            horizon.constraints.add_equal_invests([{'in': self.components['dc'], 'out': self.components['dcac']},
-                                                   {'in': self.components['ac'], 'out': self.components['acdc']}])
+            horizon.constraints.add_equal_invests(
+                [
+                    {"in": self.components["dc"], "out": self.components["dcac"]},
+                    {"in": self.components["ac"], "out": self.components["acdc"]},
+                ]
+            )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes['acdc'].expansion = horizon.results[(self.components['ac'],
-                                                        self.components['acdc'])]['scalars']['invest']
-        self.sizes['dcac'].expansion = horizon.results[(self.components['dc'],
-                                                        self.components['dcac'])]['scalars']['invest']
+        self.sizes["acdc"].expansion = horizon.results[(self.components["ac"], self.components["acdc"])]["scalars"][
+            "invest"
+        ]
+        self.sizes["dcac"].expansion = horizon.results[(self.components["dc"], self.components["dcac"])]["scalars"][
+            "invest"
+        ]
 
-        self.flows.loc[horizon.ch.dti, 'acdc'] = horizon.results[(self.components['ac'],
-                                                                  self.components['acdc'])]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'dcac'] = horizon.results[(self.components['dc'],
-                                                                  self.components['dcac'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "acdc"] = horizon.results[(self.components["ac"], self.components["acdc"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "dcac"] = horizon.results[(self.components["dc"], self.components["dcac"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
     def calc_results_flows(self):
         """
         post scenario method
         """
         super().calc_results_flows()
-        self.flows['circular_dcac_acdc'] = self.flows[['dcac', 'acdc']].min(axis=1)
+        self.flows["circular_dcac_acdc"] = self.flows[["dcac", "acdc"]].min(axis=1)
 
     def create_plot_traces(self):
-        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
-                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'dcac'],
-                                                                mode='lines',
-                                                                name=f'{self.name} DC-AC power (max. '
-                                                                     f'{self.sizes["dcac"].total / 1e3:.1f} kW)',
-                                                                line=dict(width=2, dash=None, shape='hv'),
-                                                                visible='legendonly',
-                                                                ),
-                                                     go.Scatter(x=self.scenario.times.eval.dti,
-                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'acdc'],
-                                                                mode='lines',
-                                                                name=f'{self.name} AC-DC power (max. '
-                                                                     f'{self.sizes["acdc"].total / 1e3:.1f} kW)',
-                                                                line=dict(width=2, dash=None, shape='hv'),
-                                                                visible='legendonly',
-                                                                ),
-                                                     ],
-                                         secondary_ys=[False, False])
+        self.scenario.plot_traces.extend(
+            plot_lines=[
+                go.Scatter(
+                    x=self.scenario.times.eval.dti,
+                    y=self.flows.loc[self.scenario.times.eval.dti, "dcac"],
+                    mode="lines",
+                    name=f"{self.name} DC-AC power (max. {self.sizes['dcac'].total / 1e3:.1f} kW)",
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible="legendonly",
+                ),
+                go.Scatter(
+                    x=self.scenario.times.eval.dti,
+                    y=self.flows.loc[self.scenario.times.eval.dti, "acdc"],
+                    mode="lines",
+                    name=f"{self.name} AC-DC power (max. {self.sizes['acdc'].total / 1e3:.1f} kW)",
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible="legendonly",
+                ),
+            ],
+            secondary_ys=[False, False],
+        )
 
 
 class RenewableSource(SourceBlock):
@@ -575,41 +573,36 @@ class RenewableSource(SourceBlock):
 
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['block'] = eco.EcoEvaluator(name='block',
-                                                    scenario=self.scenario,
-                                                    block=self,
-                                                    size_name='block',
-                                                    size_unit='kW',
-                                                    flow_name='out',
-                                                    ls=self.ls,
-                                                    ccr=self.ccr,
-                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
-                                                                      spec=self.capex_spec),
-                                                    mntex_config=dict(spec=self.mntex_spec),
-                                                    opex_config=dict(spec=self.opex_spec),
-                                                    )
+        self.evaluators["block"] = eco.EcoEvaluator(
+            name="block",
+            scenario=self.scenario,
+            block=self,
+            size_name="block",
+            size_unit="kW",
+            flow_name="out",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_block, spec=self.capex_spec),
+            mntex_config=dict(spec=self.mntex_spec),
+            opex_config=dict(spec=self.opex_spec),
+        )
 
-        self.evaluators['curt'] = eco.EcoEvaluator(name='curt',
-                                                   scenario=self.scenario,
-                                                   block=self,
-                                                   flow_name='curt',
-                                                   )
+        self.evaluators["curt"] = eco.EcoEvaluator(
+            name="curt",
+            scenario=self.scenario,
+            block=self,
+            flow_name="curt",
+        )
 
-        self.evaluators['pot'] = eco.EcoEvaluator(name='pot',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='pot',
-                                                  )
+        self.evaluators["pot"] = eco.EcoEvaluator(
+            name="pot",
+            scenario=self.scenario,
+            block=self,
+            flow_name="pot",
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
 
         self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
@@ -617,12 +610,9 @@ class RenewableSource(SourceBlock):
         self.share_curtailment = None
 
     @abstractmethod
-    def get_ts_data(self):
-        ...
+    def get_ts_data(self): ...
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -634,88 +624,99 @@ class RenewableSource(SourceBlock):
           |                   |-->name_exc
         """
 
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
-        self.components['bus'] = solph.Bus()
+        self.components["bus"] = solph.Bus()
 
-        self.components['outflow'] = solph.components.Converter(
-            inputs={self.components['bus']: solph.Flow()},
+        self.components["outflow"] = solph.components.Converter(
+            inputs={self.components["bus"]: solph.Flow()},
             outputs={self.bus_connected: solph.Flow()},
-            conversion_factors={self.bus_connected: self.eff['block']}
+            conversion_factors={self.bus_connected: self.eff["block"]},
         )
 
         # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
         # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
         # All other components such as converters and storages only have cost_eps in the output direction.
-        self.components['exc'] = solph.components.Sink(
-            inputs={self.components['bus']: solph.Flow()}
+        self.components["exc"] = solph.components.Sink(inputs={self.components["bus"]: solph.Flow()})
+
+        self.components["src"] = solph.components.Source(
+            outputs={
+                self.components["bus"]: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.evaluators["block"].opt.spec_ep_invest,
+                        existing=self.sizes["block"].preexisting,
+                        maximum=self.sizes["block"].expansion_max,
+                    ),
+                    fix=self.data.loc[horizon.ph.dti, "power_spec"],
+                    variable_costs=self.evaluators["block"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            }
         )
 
-        self.components['src'] = solph.components.Source(
-            outputs={self.components['bus']: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
-                                                  existing=self.sizes['block'].preexisting,
-                                                  maximum=self.sizes['block'].expansion_max),
-                fix=self.data.loc[horizon.ph.dti, 'power_spec'],
-                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.ph.dti])}
+        horizon.constraints.add_invest_costs(
+            invest=(self.components["src"], self.components["bus"]),
+            capex_spec=self.evaluators["block"].capex.spec,
+            invest_type="flow",
         )
 
-        horizon.constraints.add_invest_costs(invest=(self.components['src'], self.components['bus']),
-                                             capex_spec=self.evaluators['block'].capex.spec,
-                                             invest_type='flow')
-
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes['block'].expansion = horizon.results[(self.components['src'],
-                                                         self.components['bus'])]['scalars']['invest']
+        self.sizes["block"].expansion = horizon.results[(self.components["src"], self.components["bus"])]["scalars"][
+            "invest"
+        ]
 
-        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'pot'] = horizon.results[(self.components['src'],
-                                                                 self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'curt'] = horizon.results[(self.components['bus'],
-                                                                  self.components['exc'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["outflow"], self.bus_connected)][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "pot"] = horizon.results[(self.components["src"], self.components["bus"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "curt"] = horizon.results[(self.components["bus"], self.components["exc"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
     def calc_results_energies(self):
-
         super().calc_results_energies()
         # add curt and pot to scenario.energies
-        self.scenario.energies.loc[('renewable', 'act'), :] += self.energies.loc['out', :]
+        self.scenario.energies.loc[("renewable", "act"), :] += self.energies.loc["out", :]
 
         # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        if self.energies.loc['pot', 'sim'] == 0:
-            self.scenario.logger.warning(f'Block {self.name}: Curtailment share calculation: division by zero')
+        if self.energies.loc["pot", "sim"] == 0:
+            self.scenario.logger.warning(f"Block {self.name}: Curtailment share calculation: division by zero")
         else:
-            self.share_curtailment = self.energies.loc['curt', 'sim'] / self.energies.loc['pot', 'sim']
+            self.share_curtailment = self.energies.loc["curt", "sim"] / self.energies.loc["pot", "sim"]
 
     def create_plot_traces(self):
         super().create_plot_traces()
-        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=self.scenario.times.eval.dti,
-                                                                y=-1 * self.flows.loc[self.scenario.times.eval.dti, 'curt'],
-                                                                mode='lines',
-                                                                name=f'{self.name} curtailed power',
-                                                                line=dict(width=2, dash=None, shape='hv'),
-                                                                visible='legendonly',
-                                                                ),
-                                                     go.Scatter(x=self.scenario.times.eval.dti,
-                                                                y=self.flows.loc[self.scenario.times.eval.dti, 'pot'],
-                                                                mode='lines',
-                                                                name=f'{self.name} potential power',
-                                                                line=dict(width=2, dash=None, shape='hv'),
-                                                                visible='legendonly',
-                                                                ),
-                                                     ],
-                                         secondary_ys=[False, False])
+        self.scenario.plot_traces.extend(
+            plot_lines=[
+                go.Scatter(
+                    x=self.scenario.times.eval.dti,
+                    y=-1 * self.flows.loc[self.scenario.times.eval.dti, "curt"],
+                    mode="lines",
+                    name=f"{self.name} curtailed power",
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible="legendonly",
+                ),
+                go.Scatter(
+                    x=self.scenario.times.eval.dti,
+                    y=self.flows.loc[self.scenario.times.eval.dti, "pot"],
+                    mode="lines",
+                    name=f"{self.name} potential power",
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible="legendonly",
+                ),
+            ],
+            secondary_ys=[False, False],
+        )
 
     def get_legend_entry(self):
-        return f'{self.name} power (nom. {self.sizes["block"].total / 1e3:.1f} kW)'
+        return f"{self.name} power (nom. {self.sizes['block'].total / 1e3:.1f} kW)"
 
 
 class PVSource(RenewableSource):
-
     def get_ts_data(self):
         """
         pre scenario (init) method
@@ -731,7 +732,7 @@ class PVSource(RenewableSource):
 
             u0 = 26.9  # W/(˚C.m2) - cSi Free standing
             u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-            mod_temp = self.data['temp_air'] + (self.data['gti'] / (u0 + (u1 * self.data['speed_wind'])))
+            mod_temp = self.data["temp_air"] + (self.data["gti"] / (u0 + (u1 * self.data["speed_wind"])))
 
             # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
             # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
@@ -742,60 +743,60 @@ class PVSource(RenewableSource):
             k4 = 0.000149
             k5 = 0.000170
             k6 = 0.000005
-            g = self.data['gti'] / 1000
+            g = self.data["gti"] / 1000
             t = mod_temp - 25
             lng = np.zeros_like(g)
             lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
 
             # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
             # Prog. Photovolt. Res. Appl.2008, 16, 307–315
-            eff_rel = (1 +
-                       (k1 * lng) +
-                       (k2 * (lng ** 2)) +
-                       (k3 * t) +
-                       (k4 * t * lng) +
-                       (k5 * t * (lng ** 2)) +
-                       (k6 * (t ** 2)))
+            eff_rel = 1 + (k1 * lng) + (k2 * (lng**2)) + (k3 * t) + (k4 * t * lng) + (k5 * t * (lng**2)) + (k6 * (t**2))
             eff_rel = eff_rel.fillna(0)
 
             # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-            self.data['P'] = np.maximum(0, eff_rel * self.data['gti'])
+            self.data["P"] = np.maximum(0, eff_rel * self.data["gti"])
 
         # region get data from PVGIS API
-        if self.data_source == 'pvgis api':  # PVGIS API example selected
-            api_startyear = self.scenario.times.sim.start.tz_convert('utc').year
-            api_endyear = self.scenario.times.sim.end.tz_convert('utc').year
+        if self.data_source == "pvgis api":  # PVGIS API example selected
+            api_startyear = self.scenario.times.sim.start.tz_convert("utc").year
+            api_endyear = self.scenario.times.sim.end.tz_convert("utc").year
             api_length = api_endyear - api_startyear
-            api_shift = pd.to_timedelta('0 days')
+            api_shift = pd.to_timedelta("0 days")
 
             API_MAX_YEAR = 2023
             API_MIN_YEAR = 2005
             API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
 
             if api_length > API_MAX_LENGTH:
-                raise ValueError('PVGIS API request exceeds maximum length of available data')
+                raise ValueError("PVGIS API request exceeds maximum length of available data")
             elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-                api_shift = (pd.to_datetime(f'{API_MAX_YEAR}-01-01 00:00:00+00:00') -
-                             pd.to_datetime(f'{api_endyear}-01-01 00:00:00+00:00'))
+                api_shift = pd.to_datetime(f"{API_MAX_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
+                    f"{api_endyear}-01-01 00:00:00+00:00"
+                )
                 api_endyear = API_MAX_YEAR
                 api_startyear = API_MAX_YEAR - api_length
-                self.scenario.logger.warning(f'PVGIS API request exceeds available endtime - data shifted by '
-                                             f'{abs(api_shift)} year{"s" if abs(api_shift) == 1 else ""} to '
-                                             f'end in {API_MAX_YEAR}')
+                self.scenario.logger.warning(
+                    f"PVGIS API request exceeds available endtime - data shifted by "
+                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
+                    f"end in {API_MAX_YEAR}"
+                )
             elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-                api_shift = (pd.to_datetime(f'{API_MIN_YEAR}-01-01 00:00:00+00:00') -
-                             pd.to_datetime(f'{api_startyear}-01-01 00:00:00+00:00'))
+                api_shift = pd.to_datetime(f"{API_MIN_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
+                    f"{api_startyear}-01-01 00:00:00+00:00"
+                )
                 api_startyear = API_MIN_YEAR
                 api_endyear = API_MIN_YEAR + api_length
-                self.scenario.logger.warning(f'PVGIS API request exceeds available starttime - data shifted by '
-                                             f'{abs(api_shift)} year{"s" if abs(api_shift) == 1 else ""} to '
-                                             f'start in {API_MIN_YEAR}')
+                self.scenario.logger.warning(
+                    f"PVGIS API request exceeds available starttime - data shifted by "
+                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
+                    f"start in {API_MIN_YEAR}"
+                )
             # Todo leap years can result in data shifting not landing at the same point in time
 
-            optimal_tilt = True if self.tilt == 'optimal' else False
-            optimal_angles = True if self.azimuth == 'optimal' else False
+            optimal_tilt = True if self.tilt == "optimal" else False
+            optimal_angles = True if self.azimuth == "optimal" else False
             if optimal_angles and not optimal_tilt:
-                raise ValueError('Optimal azimuth requires optimal tilt as well')
+                raise ValueError("Optimal azimuth requires optimal tilt as well")
 
             self.data, *_ = pvlib.iotools.get_pvgis_hourly(
                 latitude=self.scenario.location.latitude,
@@ -805,371 +806,391 @@ class PVSource(RenewableSource):
                 # PVGIS API is case sensitive and all inputs are lowered -> revert
                 raddatabase=self.raddatabase.upper(),
                 components=True,  # output solar radiation components (beam, diffuse, and reflected)
-                surface_tilt=self.tilt if self.tilt != 'optimal' else 0,  # has to be numeric
-                surface_azimuth=self.azimuth if self.azimuth != 'optimal' else 0,  # has to be numeric
-                outputformat='json',
+                surface_tilt=self.tilt if self.tilt != "optimal" else 0,  # has to be numeric
+                surface_azimuth=self.azimuth if self.azimuth != "optimal" else 0,  # has to be numeric
+                outputformat="json",
                 usehorizon=self.horizon,
                 userhorizon=self.horizon_custom,
                 pvcalculation=True,
                 peakpower=1,
                 # PVGIS API is case sensitive and all inputs are lowered -> revert
-                pvtechchoice={'crystsi': 'crystSi',
-                              'cis': 'CIS',
-                              'cdte': 'CdTe',
-                              'unknown': 'Unknown'}[self.pvtechchoice],
+                pvtechchoice={"crystsi": "crystSi", "cis": "CIS", "cdte": "CdTe", "unknown": "Unknown"}[
+                    self.pvtechchoice
+                ],
                 mountingplace=self.mountingplace,
                 loss=0,
                 trackingtype=self.trackingtype,
                 optimal_surface_tilt=optimal_tilt,
                 optimalangles=optimal_angles,
-                url='https://re.jrc.ec.europa.eu/api/v5_3/',
+                url="https://re.jrc.ec.europa.eu/api/v5_3/",
                 map_variables=True,
                 timeout=30,  # default value
             )
 
             # rename column wind_speed to speed_wind
-            self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
+            self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
 
-            self.data.index = self.data.index.round('h')  # PVGIS does not give time slots as full hours
+            self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
             self.data.index = self.data.index - api_shift
         # endregion
 
         # region get data from Solcast API
-        elif self.data_source == 'solcast api':  # solcast API example selected
+        elif self.data_source == "solcast api":  # solcast API example selected
             # set api key as bearer token
             if self.scenario.settings.key_solcast_api is None:
-                raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: '
-                                 f'No Solcast API key specified in run arguments')
+                raise ValueError(
+                    f"Scenario {self.scenario.name} - Block {self.name}: No Solcast API key specified in run arguments"
+                )
 
             latitude = self.scenario.location.latitude  # unmetered location for testing 41.89021
             longitude = self.scenario.location.longitude  # unmetered location for testing 12.492231
 
             # Avoid unintended use of metered coordinates
             if latitude != 41.89021 or longitude != 12.492231:
-                raise ValueError('Remove this line if you want to proceed with metered coordinates!')
+                raise ValueError("Remove this line if you want to proceed with metered coordinates!")
 
-            params = dict(latitude=latitude,
-                          longitude=longitude,
-                          start=self.scenario.times.sim.start,
-                          end=self.scenario.sim_extd_endtime,
-                          period='PT5M',
-                          output_parameters=['air_temp',
-                                             'albedo',
-                                             'azimuth',
-                                             'clearsky_dhi',
-                                             'clearsky_dni',
-                                             'clearsky_ghi',
-                                             'clearsky_gti',
-                                             'cloud_opacity',
-                                             'dewpoint_temp',
-                                             'dhi',
-                                             'dni',
-                                             'ghi',
-                                             'gti',
-                                             'precipitable_water',
-                                             'precipitation_rate',
-                                             'relative_humidity',
-                                             'surface_pressure',
-                                             'snow_depth',
-                                             'snow_water_equivalent',
-                                             'snow_soiling_rooftop',
-                                             'snow_soiling_ground',
-                                             'wind_direction_100m',
-                                             'wind_direction_10m',
-                                             'wind_speed_100m',
-                                             'wind_speed_10m',
-                                             'zenith'],
-                          format='json',
-                          array_type={0: 'fixed', 1: 'horizontal_single_axis'}[self.trackingtype],
-                          time_zone='utc',
-                          include_etadata=False,
-                          terrain_shading=self.horizon,
-                          )
+            params = dict(
+                latitude=latitude,
+                longitude=longitude,
+                start=self.scenario.times.sim.start,
+                end=self.scenario.sim_extd_endtime,
+                period="PT5M",
+                output_parameters=[
+                    "air_temp",
+                    "albedo",
+                    "azimuth",
+                    "clearsky_dhi",
+                    "clearsky_dni",
+                    "clearsky_ghi",
+                    "clearsky_gti",
+                    "cloud_opacity",
+                    "dewpoint_temp",
+                    "dhi",
+                    "dni",
+                    "ghi",
+                    "gti",
+                    "precipitable_water",
+                    "precipitation_rate",
+                    "relative_humidity",
+                    "surface_pressure",
+                    "snow_depth",
+                    "snow_water_equivalent",
+                    "snow_soiling_rooftop",
+                    "snow_soiling_ground",
+                    "wind_direction_100m",
+                    "wind_direction_10m",
+                    "wind_speed_100m",
+                    "wind_speed_10m",
+                    "zenith",
+                ],
+                format="json",
+                array_type={0: "fixed", 1: "horizontal_single_axis"}[self.trackingtype],
+                time_zone="utc",
+                include_etadata=False,
+                terrain_shading=self.horizon,
+            )
 
             # add parameters azimuth and tilt. If not specified, Solcast uses default/optimized values
-            if self.tilt != 'optimal':
-                params['tilt'] = self.tilt
-            if self.azimuth != 'optimal':
+            if self.tilt != "optimal":
+                params["tilt"] = self.tilt
+            if self.azimuth != "optimal":
                 # Convert to Solcast convention: (-180, 180], north=0, east=-90, south=180, west=90
-                params['azimuth'] = x - 360 if (x := (-1 * self.azimuth) % 360) > 180 else x
+                params["azimuth"] = x - 360 if (x := (-1 * self.azimuth) % 360) > 180 else x
 
             # get data from Solcast API
-            response = requests.get(url='https://api.solcast.com.au/data/historic/radiation_and_weather',
-                                    headers={'Authorization': f'Bearer {self.scenario.settings.key_solcast_api}'},
-                                    params=params)
+            response = requests.get(
+                url="https://api.solcast.com.au/data/historic/radiation_and_weather",
+                headers={"Authorization": f"Bearer {self.scenario.settings.key_solcast_api}"},
+                params=params,
+            )
 
             if response.status_code != 200:
-                raise ValueError(f'Block {self.name} - '
-                                 f'Solcast API returned {response.status_code} instead of 200: '
-                                 f'{response.json()["response_status"]["message"]}')
+                raise ValueError(
+                    f"Block {self.name} - "
+                    f"Solcast API returned {response.status_code} instead of 200: "
+                    f"{response.json()['response_status']['message']}"
+                )
 
-            self.data = pd.json_normalize(response.json()['estimated_actuals'])
+            self.data = pd.json_normalize(response.json()["estimated_actuals"])
             # save solcast file
             if not self.scenario.settings.largescalemode:
-                self.data.to_csv(self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_'
-                                                                               f'{self.name}_log_solcast_raw.csv'),
-                                 index=False,
-                                 )
+                self.data.to_csv(
+                    self.scenario.paths.create_result_path(
+                        suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
+                    ),
+                    index=False,
+                )
 
             # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-            self.data['period_start'] = pd.to_datetime(self.data['period_end']) - pd.to_timedelta(self.data['period'])
-            self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+            self.data["period_start"] = pd.to_datetime(self.data["period_end"]) - pd.to_timedelta(self.data["period"])
+            self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
             self.data = self.data.tz_convert(self.scenario.location.timezone)
-            self.data.drop(columns=['period', 'period_start', 'period_end'], inplace=True)
+            self.data.drop(columns=["period", "period_start", "period_end"], inplace=True)
             # rename columns according to further processing steps
-            self.data.rename(columns={'air_temp': 'temp_air',
-                                      'wind_speed_10m': 'speed_wind'}, inplace=True)
+            self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
             # calculate specific pv power
             calc_power_from_irradiation()
         # endregion
 
-        elif 'file' in self.data_source:
+        elif "file" in self.data_source:
             # region get data from file
-            path_input_file = self.scenario.paths.input / utils.set_extension(filename=self.filename,
-                                                                              default_extension='.csv')
+            path_input_file = self.scenario.paths.input / utils.set_extension(
+                filename=self.filename, default_extension=".csv"
+            )
 
             # region read input data from timeseries csv with specific power
-            if self.data_source == 'file':
-                self.data = utils.read_timeseries_csv(path_input_file=path_input_file,
-                                                      block=self,
-                                                      scenario=self.scenario,
-                                                      multiheader=False,
-                                                      resampling=False)
+            if self.data_source == "file":
+                self.data = utils.read_timeseries_csv(
+                    path_input_file=path_input_file,
+                    block=self,
+                    scenario=self.scenario,
+                    multiheader=False,
+                    resampling=False,
+                )
             # endregion
-            elif self.data_source in ['pvgis file', 'solcast file']:
+            elif self.data_source in ["pvgis file", "solcast file"]:
                 # region get data from PVGIS file
-                if self.data_source == 'pvgis file':
+                if self.data_source == "pvgis file":
                     self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                    self.scenario.location.latitude = meta['inputs']['latitude']
-                    self.scenario.location.longitude = meta['inputs']['longitude']
+                    self.scenario.location.latitude = meta["inputs"]["latitude"]
+                    self.scenario.location.longitude = meta["inputs"]["longitude"]
                     # rename column wind_speed to speed_wind
-                    self.data.rename(columns={'wind_speed': 'speed_wind'}, inplace=True)
-                    self.data.index = self.data.index.round('h')  # PVGIS does not necessarily give full hour time vals
+                    self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+                    self.data.index = self.data.index.round("h")  # PVGIS does not necessarily give full hour time vals
                 # endregion
 
                 # region get data from Solcast file
-                elif self.data_source == 'solcast file':
+                elif self.data_source == "solcast file":
                     # no lat/lon contained in solcast files
                     self.data = pd.read_csv(path_input_file)
-                    self.data.rename(columns={'air_temp': 'temp_air',
-                                              'wind_speed_10m': 'speed_wind'}, inplace=True)
-                    self.data['period_start'] = (pd.to_datetime(self.data['period_end'], utc=True) -
-                                                 pd.to_timedelta(self.data['period']))
-                    self.data.set_index(pd.DatetimeIndex(self.data['period_start']), inplace=True)
+                    self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+                    self.data["period_start"] = pd.to_datetime(self.data["period_end"], utc=True) - pd.to_timedelta(
+                        self.data["period"]
+                    )
+                    self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
                     self.data = self.data.tz_convert(self.scenario.location.timezone)
 
                     # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
                     if self.azimuth is not None or self.tilt is not None:
-                        if self.azimuth is None or self.azimuth == 'optimal':
+                        if self.azimuth is None or self.azimuth == "optimal":
                             azimuth = 0 if self.scenario.location.latitude < 0 else 180  # Solcast "optimum"
                         else:
                             azimuth = self.azimuth
 
-                        if self.tilt is None or self.tilt == 'optimal':
+                        if self.tilt is None or self.tilt == "optimal":
                             abs(self.scenario.location.latitude)  # Something close to Solcast "optimum"
                         else:
                             tilt = self.tilt
 
                         # calculate solar position for location (gets altitude from lookup table)
-                        solar_position = (pvlib.location.Location(latitude=self.scenario.location.latitude,
-                                                                  longitude=self.scenario.location.longitude)
-                                          .get_solarposition(times=self.data.index,
-                                                             method='nrel_numpy')
-                                          )
-                        solar_azimuth = solar_position['azimuth']
-                        solar_zenith = solar_position['zenith']
+                        solar_position = pvlib.location.Location(
+                            latitude=self.scenario.location.latitude, longitude=self.scenario.location.longitude
+                        ).get_solarposition(times=self.data.index, method="nrel_numpy")
+                        solar_azimuth = solar_position["azimuth"]
+                        solar_zenith = solar_position["zenith"]
 
                         # alternatively use solcast data, but this data is rounded to integers  # ToDo: benchmark
                         # solar_azimuth = self.data['azimuth']
                         # solar_zenith = self.data['zenith']
 
-                        self.data['gti'] = pvlib.irradiance.get_total_irradiance(
+                        self.data["gti"] = pvlib.irradiance.get_total_irradiance(
                             surface_tilt=tilt,
                             surface_azimuth=azimuth,
                             solar_zenith=solar_zenith,
                             solar_azimuth=solar_azimuth,
-                            dni=self.data['dni'],
-                            ghi=self.data['ghi'],
-                            dhi=self.data['dhi'],
+                            dni=self.data["dni"],
+                            ghi=self.data["ghi"],
+                            dhi=self.data["dhi"],
                             dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
-                            model='haydavies',  # 'haydavies', 'reindl', 'klucher', or 'isotropic' too
-                            albedo=self.data['albedo'],
-                        )['poa_global']
+                            model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic' too
+                            albedo=self.data["albedo"],
+                        )["poa_global"]
 
-                    self.data = self.data[['temp_air', 'speed_wind', 'gti']]
+                    self.data = self.data[["temp_air", "speed_wind", "gti"]]
                     calc_power_from_irradiation()
                 # endregion
 
             else:
-                raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified')
+                raise ValueError(
+                    f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified"
+                )
 
         # region resample, localize, and transform data
         # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
-        if 'power_spec' not in self.data.columns:
-            self.data['power_spec'] = self.data['P'] / 1e3
+        if "power_spec" not in self.data.columns:
+            self.data["power_spec"] = self.data["P"] / 1e3
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
         # convert to local time
         self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
 
         # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.times.sim.dti_extd, ['power_spec', 'speed_wind', 'temp_air']]
+        self.data = self.data.loc[self.scenario.times.sim.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
         # endregion
 
         if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{self.name}_log.csv'))
+            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
 
-        if getattr(self, 'temp_scn', False):  # parameter only exists for instances specified in scenario.temp_air
-            self.scenario.temp_air = self.data['temp_air']
+        if getattr(self, "temp_scn", False):  # parameter only exists for instances specified in scenario.temp_air
+            self.scenario.temp_air = self.data["temp_air"]
 
 
 class WindSource(RenewableSource):
-
     def get_ts_data(self):
         """
         pre scenario (init) method
         get potential power profile from PVSource block or file
         """
-        if self.data_source in self.scenario.block_registry.get('TopLevelBlock', {}).keys():
+        if self.data_source in self.scenario.block_registry.get("TopLevelBlock", {}).keys():
             # region get data from PVSource block
-            self.data = self.scenario.block_registry.get('TopLevelBlock', {})[self.data_source].data.copy()
-            self.data['speed_wind_adj'] = windpowerlib.wind_speed.hellman(self.data['speed_wind'], 10, self.height)
+            self.data = self.scenario.block_registry.get("TopLevelBlock", {})[self.data_source].data.copy()
+            self.data["speed_wind_adj"] = windpowerlib.wind_speed.hellman(self.data["speed_wind"], 10, self.height)
 
-            path_turbine_data_file = self.scenario.paths.data_persist / 'turbine_data.pkl'
+            path_turbine_data_file = self.scenario.paths.data_persist / "turbine_data.pkl"
             turbine_data = pd.read_pickle(path_turbine_data_file)
             # smallest fully filled wind turbine in dataseta as per June 2024
-            turbine_data = turbine_data.loc[turbine_data['turbine_type'] == 'E-53/800'].reset_index()
+            turbine_data = turbine_data.loc[turbine_data["turbine_type"] == "E-53/800"].reset_index()
 
-            self.data['power_original'] = windpowerlib.power_output.power_curve(
-                wind_speed=self.data['speed_wind_adj'],
-                power_curve_wind_speeds=ast.literal_eval(turbine_data.loc[0, 'power_curve_wind_speeds']),
-                power_curve_values=ast.literal_eval(turbine_data.loc[0, 'power_curve_values']),
-                density_correction=False)
-            self.data['power_spec'] = self.data['power_original'] / turbine_data.loc[0, 'nominal_power']
+            self.data["power_original"] = windpowerlib.power_output.power_curve(
+                wind_speed=self.data["speed_wind_adj"],
+                power_curve_wind_speeds=ast.literal_eval(turbine_data.loc[0, "power_curve_wind_speeds"]),
+                power_curve_values=ast.literal_eval(turbine_data.loc[0, "power_curve_values"]),
+                density_correction=False,
+            )
+            self.data["power_spec"] = self.data["power_original"] / turbine_data.loc[0, "nominal_power"]
             # endregion
-        elif self.data_source == 'file':
+        elif self.data_source == "file":
             # region get data from file
-            self.data = utils.read_timeseries_csv(path_input_file=(self.scenario.paths.input /
-                                                                   utils.set_extension(filename=self.filename,
-                                                                                       default_extension='.csv')),
-                                                  block=self,
-                                                  scenario=self.scenario)
+            self.data = utils.read_timeseries_csv(
+                path_input_file=(
+                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+                ),
+                block=self,
+                scenario=self.scenario,
+            )
             # endregion
         else:
-            raise ValueError(f'Scenario {self.scenario.name} - Block {self.name}: No usable data input specified')
+            raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable data input specified")
 
         if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{self.name}_log.csv'))
+            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
 
 
 class FixedDemand(SinkBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['block'] = eco.EcoEvaluator(name='block',
-                                                    scenario=self.scenario,
-                                                    block=self,
-                                                    flow_name='in',
-                                                    crev_config=dict(spec=self.crev_spec),
-                                                    )
+        self.evaluators["block"] = eco.EcoEvaluator(
+            name="block",
+            scenario=self.scenario,
+            block=self,
+            flow_name="in",
+            crev_config=dict(spec=self.crev_spec),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=['demand'],
-                         params=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=["demand"], params=None, parent=scenario)
 
         self.get_flows_apriori()
 
     def get_flows_apriori(self):
-        self.flows_apriori.index = self.scenario.times.sim.dti  # ToDo: Why needs this to be set explicitly? Should be done in init()
-        if self.load_profile in ['h0', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'l0', 'l1', 'l2']:
+        self.flows_apriori.index = (
+            self.scenario.times.sim.dti
+        )  # ToDo: Why needs this to be set explicitly? Should be done in init()
+        if self.load_profile in ["h0", "g0", "g1", "g2", "g3", "g4", "g5", "g6", "l0", "l1", "l2"]:
+
             def get_timeframe(date):
                 month = date.month
                 day = date.day
                 if ((month, day) >= (11, 1)) or ((month, day) <= (3, 20)):
-                    return 'Winter'
+                    return "Winter"
                 elif (5, 15) <= (month, day) <= (9, 14):
-                    return 'Summer'
+                    return "Summer"
                 else:  # Transition months
-                    return 'Transition'
+                    return "Transition"
 
             def get_daytype(date, holidays):
                 if date.date() in holidays or date.weekday() == 6:
-                    return 'Sunday'
+                    return "Sunday"
                 # Treat Christmas Eve and New Year's Eve as Saturdays if they are not Sundays
                 elif (date.weekday() == 5) or ((date.month, date.day) in [(12, 24), (12, 31)]):
-                    return 'Saturday'
+                    return "Saturday"
                 else:
-                    return 'Workday'
+                    return "Workday"
 
             # Read BDEW SLP profiles
-            slp = pd.read_csv(self.scenario.paths.data_persist / 'slp_bdew.csv',
-                              skiprows=[0],
-                              header=[0, 1, 2],
-                              index_col=0)
+            slp = pd.read_csv(
+                self.scenario.paths.data_persist / "slp_bdew.csv", skiprows=[0], header=[0, 1, 2], index_col=0
+            )
 
-            slp.index = pd.to_datetime(slp.index, format='%H:%M').time
+            slp.index = pd.to_datetime(slp.index, format="%H:%M").time
 
             # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
-            freq_slp = '15min'
-            dti_slp = pd.DatetimeIndex(pd.date_range(start=self.scenario.times.sim.start.floor(freq_slp),
-                                                     end=self.scenario.times.sim.end.ceil(freq_slp),
-                                                     freq=freq_slp))
+            freq_slp = "15min"
+            dti_slp = pd.DatetimeIndex(
+                pd.date_range(
+                    start=self.scenario.times.sim.start.floor(freq_slp),
+                    end=self.scenario.times.sim.end.ceil(freq_slp),
+                    freq=freq_slp,
+                )
+            )
 
-            data = pd.Series(index=dti_slp, data=0, dtype='float64')
+            data = pd.Series(index=dti_slp, data=0, dtype="float64")
 
             data = data.index.to_series().apply(
-                lambda x: slp.loc[x.time(), (self.load_profile.upper(), get_timeframe(x),
-                                             get_daytype(x, self.scenario.holiday_dates))])
+                lambda x: slp.loc[
+                    x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))
+                ]
+            )
 
             # apply dynamic correction for household profiles
-            if self.load_profile == 'h0':
+            if self.load_profile == "h0":
                 # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
-                num_day = data.index.dayofyear.astype('int64')
-                data = round(data * (-3.92e-10 * num_day ** 4 + 3.2e-7 * num_day ** 3 -
-                                     7.02e-5 * num_day ** 2 + 2.1e-3 * num_day ** 1 + 1.24),
-                             ndigits=1)
+                num_day = data.index.dayofyear.astype("int64")
+                data = round(
+                    data
+                    * (
+                        -3.92e-10 * num_day**4 + 3.2e-7 * num_day**3 - 7.02e-5 * num_day**2 + 2.1e-3 * num_day**1 + 1.24
+                    ),
+                    ndigits=1,
+                )
 
             # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
             # this calculation leads to small deviations from the specified yearly consumption due to varying holidays and
             # leap years, but is the correct way as stated by the VDEW manual
-            data *= (self.consumption_yrl / 1e6)
+            data *= self.consumption_yrl / 1e6
 
             # resample to simulation time step
-            self.flows_apriori['demand'] = data.resample(self.scenario.timestep.td).mean().ffill().bfill()
-        elif self.load_profile in ['const', 'constant']:
-            self.flows_apriori['demand'] = self.consumption_yrl / (365 * 24)
+            self.flows_apriori["demand"] = data.resample(self.scenario.timestep.td).mean().ffill().bfill()
+        elif self.load_profile in ["const", "constant"]:
+            self.flows_apriori["demand"] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
-            data = utils.read_timeseries_csv(path_input_file=(self.scenario.paths.input /
-                                                              utils.set_extension(filename=self.load_profile,
-                                                                                  default_extension='.csv')),
-                                             block=self,
-                                             scenario=self.scenario,
-                                             )
+            data = utils.read_timeseries_csv(
+                path_input_file=(
+                    self.scenario.paths.input
+                    / utils.set_extension(filename=self.load_profile, default_extension=".csv")
+                ),
+                block=self,
+                scenario=self.scenario,
+            )
 
             if data.shape[1] != 1:
-                self.scenario.logger.warning(f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
-                                             f'"load_profile" in block "{self.name}" has more than one column. '
-                                             f'Sum of all columns is calculated for load profile.')
+                self.scenario.logger.warning(
+                    f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
+                    f'"load_profile" in block "{self.name}" has more than one column. '
+                    f"Sum of all columns is calculated for load profile."
+                )
 
             data = data.sum(axis=1)[self.flows_apriori.index]  # convert to series and slice to sim timeframe
-            self.flows_apriori['demand'] = data
+            self.flows_apriori["demand"] = data
         else:
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
         if not self.scenario.settings.largescalemode:
-            self.flows_apriori['demand'].to_csv(
-                self.scenario.paths.create_result_path(suffix=f'{self.scenario.name}_{self.name}_flow.csv')
+            self.flows_apriori["demand"].to_csv(
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.csv")
             )
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1180,55 +1201,47 @@ class FixedDemand(SinkBlock):
           |
         """
 
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
-        self.components['snk'] = solph.components.Sink(
-            inputs={self.bus_connected: solph.Flow(nominal_capacity=1,
-                                                   fix=self.flows_apriori['demand'][horizon.ph.dti])}
+        self.components["snk"] = solph.components.Sink(
+            inputs={
+                self.bus_connected: solph.Flow(nominal_capacity=1, fix=self.flows_apriori["demand"][horizon.ph.dti])
+            }
         )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['snk'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.bus_connected, self.components["snk"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
     def get_legend_entry(self):
-        return f'{self.name} power'
+        return f"{self.name} power"
 
 
 class ControllableSource(SourceBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['block'] = eco.EcoEvaluator(name='block',
-                                                    scenario=self.scenario,
-                                                    block=self,
-                                                    size_name='block',
-                                                    size_unit='kW',
-                                                    flow_name='out',
-                                                    ls=self.ls,
-                                                    ccr=self.ccr,
-                                                    capex_config=dict(consider_preexisting=self.capex_preexisting_block,
-                                                                      spec=self.capex_spec),
-                                                    mntex_config=dict(spec=self.mntex_spec),
-                                                    opex_config=dict(spec=self.opex_spec),
-                                                    )
+        self.evaluators["block"] = eco.EcoEvaluator(
+            name="block",
+            scenario=self.scenario,
+            block=self,
+            size_name="block",
+            size_unit="kW",
+            flow_name="out",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_block, spec=self.capex_spec),
+            mntex_config=dict(spec=self.mntex_spec),
+            opex_config=dict(spec=self.opex_spec),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario):
-        super().__init__(name=name,
-                         scenario=scenario,
-                         params=None,
-                         flow_apriori_names=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario: simulation.Scenario):
+        super().__init__(name=name, scenario=scenario, params=None, flow_apriori_names=None, parent=scenario)
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1239,71 +1252,71 @@ class ControllableSource(SourceBlock):
           |
         """
 
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
-        self.components['src'] = solph.components.Source(
-            outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=self.evaluators['block'].opt.spec_ep_invest,
-                                                  existing=self.sizes['block'].preexisting,
-                                                  maximum=self.sizes['block'].expansion_max),
-                variable_costs=self.evaluators['block'].opt.spec_ep_operation[horizon.ph.dti])}
+        self.components["src"] = solph.components.Source(
+            outputs={
+                self.bus_connected: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.evaluators["block"].opt.spec_ep_invest,
+                        existing=self.sizes["block"].preexisting,
+                        maximum=self.sizes["block"].expansion_max,
+                    ),
+                    variable_costs=self.evaluators["block"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            }
         )
 
-        horizon.constraints.add_invest_costs(invest=(self.components['src'], self.bus_connected),
-                                             capex_spec=self.evaluators['block'].capex.spec,
-                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(
+            invest=(self.components["src"], self.bus_connected),
+            capex_spec=self.evaluators["block"].capex.spec,
+            invest_type="flow",
+        )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes['block'].expansion = horizon.results[(self.components['src'],
-                                                         self.bus_connected)]['scalars']['invest']
+        self.sizes["block"].expansion = horizon.results[(self.components["src"], self.bus_connected)]["scalars"][
+            "invest"
+        ]
 
-        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['src'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["src"], self.bus_connected)][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
 
 class GridConnection(ElectricBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['g2s'] = eco.EcoEvaluator(name='g2s',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  size_name='g2s',
-                                                  size_unit='kW',
-                                                  flow_name='out',
-                                                  ls=self.ls,
-                                                  ccr=self.ccr,
-                                                  capex_config=dict(consider_preexisting=self.capex_preexisting_g2s,
-                                                                    spec=self.capex_spec),
-                                                  mntex_config=dict(spec=self.mntex_spec),
-                                                  )
+        self.evaluators["g2s"] = eco.EcoEvaluator(
+            name="g2s",
+            scenario=self.scenario,
+            block=self,
+            size_name="g2s",
+            size_unit="kW",
+            flow_name="out",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_g2s, spec=self.capex_spec),
+            mntex_config=dict(spec=self.mntex_spec),
+        )
 
-        self.evaluators['s2g'] = eco.EcoEvaluator(name='s2g',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  size_name='s2g',
-                                                  size_unit='kW',
-                                                  flow_name='in',
-                                                  ls=self.ls,
-                                                  ccr=self.ccr,
-                                                  capex_config=dict(consider_preexisting=self.capex_preexisting_s2g,
-                                                                    spec=self.capex_spec),
-                                                  mntex_config=dict(spec=self.mntex_spec),
-                                                  )
+        self.evaluators["s2g"] = eco.EcoEvaluator(
+            name="s2g",
+            scenario=self.scenario,
+            block=self,
+            size_name="s2g",
+            size_unit="kW",
+            flow_name="in",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_s2g, spec=self.capex_spec),
+            mntex_config=dict(spec=self.mntex_spec),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario: simulation.Scenario):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
 
         self.inflows = dict()
         self.outflows = dict()
@@ -1314,32 +1327,31 @@ class GridConnection(ElectricBlock):
         self.initialize_peakshaving()
 
         if not self.markets:
-            raise ValueError(f'Block "{self.name}": No markets defined! '
-                             f'At least one market has to be defined to buy and sell energy to the grid.')
+            raise ValueError(
+                f'Block "{self.name}": No markets defined! '
+                f"At least one market has to be defined to buy and sell energy to the grid."
+            )
 
-        self.subblocks = {market: GridMarket(name=market,
-                                             scenario=self.scenario,
-                                             params=None,
-                                             parent=self)
-                          for market in self.markets}
+        self.subblocks = {
+            market: GridMarket(name=market, scenario=self.scenario, params=None, parent=self) for market in self.markets
+        }
         del self.markets
 
     def params_preprocessing(self):
+        self.expansion_equal = True if self.invest_g2s == "equal" or self.invest_s2g == "equal" else False
 
-        self.expansion_equal = True if self.invest_g2s == 'equal' or self.invest_s2g == 'equal' else False
-
-        self.init_equalizable_variables(name_vars=['invest_s2g', 'invest_g2s'])
-        self.init_equalizable_variables(name_vars=['size_preexisting_g2s', 'size_preexisting_s2g'])
-        self.init_equalizable_variables(name_vars=['size_max_g2s', 'size_max_s2g'])
+        self.init_equalizable_variables(name_vars=["invest_s2g", "invest_g2s"])
+        self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
+        self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
     def initialize_peakshaving(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
         periods_func = {
-            'day': lambda x: x.strftime('%Y-%m-%d'),
-            'week': lambda x: x.strftime('%Y-CW%W'),
-            'month': lambda x: x.strftime('%Y-%m'),
-            'quarter': lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-            'year': lambda x: x.strftime('%Y'),
+            "day": lambda x: x.strftime("%Y-%m-%d"),
+            "week": lambda x: x.strftime("%Y-CW%W"),
+            "month": lambda x: x.strftime("%Y-%m"),
+            "quarter": lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
+            "year": lambda x: x.strftime("%Y"),
         }
 
         if self.peak_period not in periods_func.keys():
@@ -1347,13 +1359,16 @@ class GridConnection(ElectricBlock):
 
         # Get dummies directly from the 'periods' data
         self.bus_activation = pd.get_dummies(
-            self.scenario.times.sim.dti.to_series().map(periods_func[str(self.peak_period)])).astype(int)
+            self.scenario.times.sim.dti.to_series().map(periods_func[str(self.peak_period)])
+        ).astype(int)
 
         # Create a series to store peak power values
-        self.peak_periods = pd.DataFrame(index=self.bus_activation.columns,
-                                         columns=['power'],
-                                         data=self.peak_power_init,  # cumulative variable
-                                         dtype='float64')
+        self.peak_periods = pd.DataFrame(
+            index=self.bus_activation.columns,
+            columns=["power"],
+            data=self.peak_power_init,  # cumulative variable
+            dtype="float64",
+        )
 
         def process_period(period):
             dti_period = self.bus_activation[self.bus_activation[period] == 1].index
@@ -1363,19 +1378,23 @@ class GridConnection(ElectricBlock):
             if len(dti_period_sim) == 0:
                 period_fraction = 0.0
             else:
-                if period == 'day':
+                if period == "day":
                     start = dti_period_sim.min().normalize()
                     end = start + pd.DateOffset(days=1) - self.scenario.timestep.td
-                elif period == 'week':
+                elif period == "week":
                     start = dti_period_sim.min().normalize() - pd.Timedelta(days=dti_period_sim[0].weekday())
                     end = start + pd.DateOffset(weeks=1) - self.scenario.timestep.td
-                elif period == 'month':
+                elif period == "month":
                     start = dti_period_sim.min().normalize().replace(day=1)
                     end = start + pd.DateOffset(months=1) - self.scenario.timestep.td
-                elif period == 'quarter':
-                    start = dti_period_sim.min().normalize().replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
+                elif period == "quarter":
+                    start = (
+                        dti_period_sim.min()
+                        .normalize()
+                        .replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
+                    )
                     end = start + pd.DateOffset(months=3) - self.scenario.timestep.td
-                elif period == 'year':
+                elif period == "year":
                     start = dti_period_sim.min().normalize().replace(day=1, month=1)
                     end = start + pd.DateOffset(years=1) - self.scenario.timestep.td
                 else:
@@ -1384,29 +1403,41 @@ class GridConnection(ElectricBlock):
 
                 period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep.td))
 
-            return pd.Series({'period_fraction': period_fraction,
-                              'start': dti_period.min(),
-                              'end': dti_period.max()})
+            return pd.Series({"period_fraction": period_fraction, "start": dti_period.min(), "end": dti_period.max()})
 
         # Apply the function to each period in peak_periods
-        self.peak_periods[['period_fraction', 'start', 'end']] = self.peak_periods.index.to_series().apply(process_period)
+        self.peak_periods[["period_fraction", "start", "end"]] = self.peak_periods.index.to_series().apply(
+            process_period
+        )
 
-        self.n_peak_periods_yr = (pd.date_range(start=self.scenario.times.sim.start,
-                                                end=self.scenario.times.sim.start + pd.DateOffset(years=1),
-                                                freq=self.scenario.timestep.td,
-                                                inclusive='left')
-                                  .to_series().apply(periods_func[str(self.peak_period)])).unique().size
+        self.n_peak_periods_yr = (
+            (
+                pd.date_range(
+                    start=self.scenario.times.sim.start,
+                    end=self.scenario.times.sim.start + pd.DateOffset(years=1),
+                    freq=self.scenario.timestep.td,
+                    inclusive="left",
+                )
+                .to_series()
+                .apply(periods_func[str(self.peak_period)])
+            )
+            .unique()
+            .size
+        )
 
-        self.evaluators.update({period: eco.EcoEvaluator(name=period,
-                                                         block=self,
-                                                         scenario=self.scenario,
-                                                         opex_config_peak=dict(spec_peak=self.opex_spec_peak),
-                                                         )
-                                for period in self.peak_periods.index})
+        self.evaluators.update(
+            {
+                period: eco.EcoEvaluator(
+                    name=period,
+                    block=self,
+                    scenario=self.scenario,
+                    opex_config_peak=dict(spec_peak=self.opex_spec_peak),
+                )
+                for period in self.peak_periods.index
+            }
+        )
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1426,109 +1457,148 @@ class GridConnection(ElectricBlock):
           |<--name_outflow_n--x----|
         """
 
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
-        self.components['bus'] = solph.Bus()
+        self.components["bus"] = solph.Bus()
 
-        self.inflows = {f'{self.name}_inflow_1': solph.components.Converter(
-            # Peakshaving not implemented for feed-in into grid
-            inputs={self.bus_connected: solph.Flow()},
-            # Size optimization
-            outputs={self.components['bus']: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=self.evaluators['s2g'].opt.spec_ep_invest,
-                                                  existing=self.sizes['s2g'].preexisting,
-                                                  maximum=self.sizes['s2g'].expansion_max),
-                variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components['bus']: 1})}
+        self.inflows = {
+            f"{self.name}_inflow_1": solph.components.Converter(
+                # Peakshaving not implemented for feed-in into grid
+                inputs={self.bus_connected: solph.Flow()},
+                # Size optimization
+                outputs={
+                    self.components["bus"]: solph.Flow(
+                        nominal_capacity=solph.Investment(
+                            ep_costs=self.evaluators["s2g"].opt.spec_ep_invest,
+                            existing=self.sizes["s2g"].preexisting,
+                            maximum=self.sizes["s2g"].expansion_max,
+                        ),
+                        variable_costs=self.scenario.cost_eps,
+                    )
+                },
+                conversion_factors={self.components["bus"]: 1},
+            )
+        }
 
         self.components.update(self.inflows)
 
-        self.outflows = {f'{self.name}_outflow_{period}': solph.components.Converter(
-            # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
-            # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
-            inputs={self.components['bus']: solph.Flow(
-                nominal_capacity=solph.Investment(ep_costs=(self.evaluators['g2s'].opt.spec_ep_invest if period == self.peak_periods.index[0] else 0),
-                                                  existing=self.sizes['g2s'].preexisting,
-                                                  maximum=self.sizes['g2s'].expansion_max)
-            )},
-            # Peakshaving
-            outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=(solph.Investment(ep_costs=(self.evaluators[period].opt.spec_ep_peak
-                                                             if self.peakshaving else 0),
-                                                   existing=self.peak_periods.loc[period, 'power'])
-                                  ),
-                max=(self.bus_activation.loc[horizon.ph.dti, period]))},
-            conversion_factors={self.bus_connected: 1}) for period in self.peak_periods.index}
+        self.outflows = {
+            f"{self.name}_outflow_{period}": solph.components.Converter(
+                # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
+                # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
+                inputs={
+                    self.components["bus"]: solph.Flow(
+                        nominal_capacity=solph.Investment(
+                            ep_costs=(
+                                self.evaluators["g2s"].opt.spec_ep_invest if period == self.peak_periods.index[0] else 0
+                            ),
+                            existing=self.sizes["g2s"].preexisting,
+                            maximum=self.sizes["g2s"].expansion_max,
+                        )
+                    )
+                },
+                # Peakshaving
+                outputs={
+                    self.bus_connected: solph.Flow(
+                        nominal_capacity=(
+                            solph.Investment(
+                                ep_costs=(self.evaluators[period].opt.spec_ep_peak if self.peakshaving else 0),
+                                existing=self.peak_periods.loc[period, "power"],
+                            )
+                        ),
+                        max=(self.bus_activation.loc[horizon.ph.dti, period]),
+                    )
+                },
+                conversion_factors={self.bus_connected: 1},
+            )
+            for period in self.peak_periods.index
+        }
 
         self.components.update(self.outflows)
 
-        horizon.constraints.add_invest_costs(invest=(self.components[f'{self.name}_inflow_1'],
-                                                     self.components['bus']),
-                                             capex_spec=self.evaluators['s2g'].capex.spec,
-                                             invest_type='flow')
-        horizon.constraints.add_invest_costs(invest=(self.components['bus'],
-                                                     self.components[f'{self.name}_outflow_{self.peak_periods.index[0]}']),
-                                             capex_spec=self.evaluators['g2s'].capex.spec,
-                                             invest_type='flow')
+        horizon.constraints.add_invest_costs(
+            invest=(self.components[f"{self.name}_inflow_1"], self.components["bus"]),
+            capex_spec=self.evaluators["s2g"].capex.spec,
+            invest_type="flow",
+        )
+        horizon.constraints.add_invest_costs(
+            invest=(self.components["bus"], self.components[f"{self.name}_outflow_{self.peak_periods.index[0]}"]),
+            capex_spec=self.evaluators["g2s"].capex.spec,
+            invest_type="flow",
+        )
 
         # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
         # represent the same grid connection
-        equal_investments = [{'in': self.components['bus'], 'out': outflow}
-                             for outflow in self.outflows.values()]
+        equal_investments = [{"in": self.components["bus"], "out": outflow} for outflow in self.outflows.values()]
 
         # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
         if self.expansion_equal:
-            equal_investments.append({'in': self.components[f'{self.name}_inflow_1'],
-                                      'out': self.components['bus']})  # currently only works without peakshaving for inflows
+            equal_investments.append(
+                {"in": self.components[f"{self.name}_inflow_1"], "out": self.components["bus"]}
+            )  # currently only works without peakshaving for inflows
 
         # add list of variables to the scenario constraints if list contains more than one element
         # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
         if len(equal_investments) > 1:
             horizon.constraints.add_equal_invests(equal_investments)
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes['g2s'].expansion = horizon.results[(self.components['bus'],
-                                                       list(self.outflows.values())[0])]['scalars']['invest']
-        self.sizes['s2g'].expansion = horizon.results[(list(self.inflows.values())[0],
-                                                       self.components['bus'])]['scalars']['invest']
+        self.sizes["g2s"].expansion = horizon.results[(self.components["bus"], list(self.outflows.values())[0])][
+            "scalars"
+        ]["invest"]
+        self.sizes["s2g"].expansion = horizon.results[(list(self.inflows.values())[0], self.components["bus"])][
+            "scalars"
+        ]["invest"]
 
-        self.flows.loc[horizon.ch.dti, 'in'] = sum([horizon.results[(inflow, self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
-                                                    for inflow in self.inflows.values()])
-        self.flows.loc[horizon.ch.dti, 'out'] = sum([horizon.results[(self.components['bus'], outflow)]['sequences']['flow'][horizon.ch.dti]
-                                                     for outflow in self.outflows.values()])
+        self.flows.loc[horizon.ch.dti, "in"] = sum(
+            [
+                horizon.results[(inflow, self.components["bus"])]["sequences"]["flow"][horizon.ch.dti]
+                for inflow in self.inflows.values()
+            ]
+        )
+        self.flows.loc[horizon.ch.dti, "out"] = sum(
+            [
+                horizon.results[(self.components["bus"], outflow)]["sequences"]["flow"][horizon.ch.dti]
+                for outflow in self.outflows.values()
+            ]
+        )
 
         def get_peak_power(row):
-            peak_power = max(row['power'],
-                             horizon.results[(self.outflows[f'{self.name}_outflow_{row.name}'],
-                                              self.bus_connected)]['sequences']['flow'][horizon.ch.dti].max())
+            peak_power = max(
+                row["power"],
+                horizon.results[(self.outflows[f"{self.name}_outflow_{row.name}"], self.bus_connected)]["sequences"][
+                    "flow"
+                ][horizon.ch.dti].max(),
+            )
             return peak_power
 
-        self.peak_periods['power'] = self.peak_periods.apply(get_peak_power, axis=1)
+        self.peak_periods["power"] = self.peak_periods.apply(get_peak_power, axis=1)
 
     def calc_results_flows(self):
         super().calc_results_flows()
-        self.flows['circular_in_out'] = self.flows[['in', 'out']].min(axis=1)
+        self.flows["circular_in_out"] = self.flows[["in", "out"]].min(axis=1)
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[('sources', 'pro'), :] += self.energies.loc['out', :]
-        self.scenario.energies.loc[('sinks', 'del'), :] += self.energies.loc['in', :]
+        self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["out", :]
+        self.scenario.energies.loc[("sinks", "del"), :] += self.energies.loc["in", :]
 
     def create_result_summary(self):
         super().create_result_summary()
 
         peak_power_results = {}
         for period, row in self.peak_periods.iterrows():
-            if row['start'] < self.scenario.times.eval.end:
-                peak_power_results.update({
-                    f'{period}_peak_power': row['power'],
-                    f'{period}_peak_period_fraction': row['period_fraction'],
-                    f'{period}_peak_opex_sim': self.evaluators[period].opex_peak.sim
-                })
+            if row["start"] < self.scenario.times.eval.end:
+                peak_power_results.update(
+                    {
+                        f"{period}_peak_power": row["power"],
+                        f"{period}_peak_period_fraction": row["period_fraction"],
+                        f"{period}_peak_opex_sim": self.evaluators[period].opex_peak.sim,
+                    }
+                )
         self.result_summary.append(pd.Series(peak_power_results))
 
     def create_result_messages(self, *_):
@@ -1536,49 +1606,45 @@ class GridConnection(ElectricBlock):
 
         # add peak power results
         self.result_messages.extend(
-            [f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
-             f'"{period}": {row["power"] / 1e3:.1f} kW '
-             f'- OPEX in simulation period: {self.evaluators[period].opex_peak.sim:.2f} {self.scenario.currency}'
-             for period, row in self.peak_periods.iterrows() if row['start'] < self.scenario.times.eval.end]
+            [
+                f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
+                f'"{period}": {row["power"] / 1e3:.1f} kW '
+                f"- OPEX in simulation period: {self.evaluators[period].opex_peak.sim:.2f} {self.scenario.currency}"
+                for period, row in self.peak_periods.iterrows()
+                if row["start"] < self.scenario.times.eval.end
+            ]
         )
 
     def get_legend_entry(self):
-        return (f'{self.name} power (max. {self.sizes["g2s"].total / 1e3:.1f} kW from / '
-                f'{self.sizes["s2g"].total / 1e3:.1f} kW to grid)')
+        return (
+            f"{self.name} power (max. {self.sizes['g2s'].total / 1e3:.1f} kW from / "
+            f"{self.sizes['s2g'].total / 1e3:.1f} kW to grid)"
+        )
 
 
 class GridMarket(ElectricBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['g2s'] = eco.EcoEvaluator(name='g2s',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='out',
-                                                  opex_config=dict(spec=self.opex_spec_g2s),
-                                                  )
+        self.evaluators["g2s"] = eco.EcoEvaluator(
+            name="g2s",
+            scenario=self.scenario,
+            block=self,
+            flow_name="out",
+            opex_config=dict(spec=self.opex_spec_g2s),
+        )
 
-        self.evaluators['s2g'] = eco.EcoEvaluator(name='s2g',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='in',
-                                                  opex_config=dict(spec=self.opex_spec_s2g),
-                                                  )
+        self.evaluators["s2g"] = eco.EcoEvaluator(
+            name="s2g",
+            scenario=self.scenario,
+            block=self,
+            flow_name="in",
+            opex_config=dict(spec=self.opex_spec_s2g),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.PredictionHorizon,
-                 params,
-                 parent):
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=params,
-                         parent=parent)
+    def __init__(self, name: str, scenario: simulation.PredictionHorizon, params, parent):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=params, parent=parent)
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
 
@@ -1589,44 +1655,53 @@ class GridMarket(ElectricBlock):
             |
         """
 
-        self.components['src'] = solph.components.Source(
-            outputs={self.parent.components['bus']: solph.Flow(
-                nominal_capacity=self.pwr_g2s,
-                max=1 if self.pwr_g2s else None,
-                variable_costs=self.evaluators['g2s'].opt.spec_ep_operation[horizon.ph.dti])
-            }
-        )
-
-        self.components['snk'] = solph.components.Sink(
-            inputs={
-                self.parent.components['bus']: solph.Flow(
-                    nominal_capacity=self.pwr_s2g,
-                    max=1 if self.pwr_s2g else None,
-                    variable_costs=(self.evaluators['s2g'].opt.spec_ep_operation[horizon.ph.dti]),
+        self.components["src"] = solph.components.Source(
+            outputs={
+                self.parent.components["bus"]: solph.Flow(
+                    nominal_capacity=self.pwr_g2s,
+                    max=1 if self.pwr_g2s else None,
+                    variable_costs=self.evaluators["g2s"].opt.spec_ep_operation[horizon.ph.dti],
                 )
             }
         )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+        self.components["snk"] = solph.components.Sink(
+            inputs={
+                self.parent.components["bus"]: solph.Flow(
+                    nominal_capacity=self.pwr_s2g,
+                    max=1 if self.pwr_s2g else None,
+                    variable_costs=(self.evaluators["s2g"].opt.spec_ep_operation[horizon.ph.dti]),
+                )
+            }
+        )
+
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
 
-        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.parent.components['bus'],
-                                                                self.components['snk'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.parent.components["bus"], self.components["snk"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
-        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['src'],
-                                                                 self.parent.components['bus'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[
+            (self.components["src"], self.parent.components["bus"])
+        ]["sequences"]["flow"][horizon.ch.dti]
 
     def get_legend_entry(self):
-        powers = {power: min(self.parent.sizes[power].total,
-                             (getattr(self, f'pwr_{power}')
-                              if pd.notna(getattr(self, f'pwr_{power}'))
-                              else self.parent.sizes[power].total))
-                  for power in ['g2s', 's2g']}
+        powers = {
+            power: min(
+                self.parent.sizes[power].total,
+                (
+                    getattr(self, f"pwr_{power}")
+                    if pd.notna(getattr(self, f"pwr_{power}"))
+                    else self.parent.sizes[power].total
+                ),
+            )
+            for power in ["g2s", "s2g"]
+        }
 
-        return f'{self.name} power (max. {powers["g2s"] / 1e3:.1f} kW from / {powers["s2g"] / 1e3:.1f} kW to grid)'
+        return f"{self.name} power (max. {powers['g2s'] / 1e3:.1f} kW from / {powers['s2g'] / 1e3:.1f} kW to grid)"
 
 
 class StorageBlock(ElectricBlock):
@@ -1636,91 +1711,93 @@ class StorageBlock(ElectricBlock):
 
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['storage'] = eco.EcoEvaluator(name='storage',
-                                                      scenario=self.scenario,
-                                                      block=self,
-                                                      size_name='storage',
-                                                      size_unit='kWh',
-                                                      ls=self.ls,
-                                                      ccr=self.ccr,
-                                                      capex_config=dict(consider_preexisting=self.capex_preexisting_storage,
-                                                                        spec=self.capex_spec),
-                                                      mntex_config=dict(spec=self.mntex_spec),
-                                                      )
+        self.evaluators["storage"] = eco.EcoEvaluator(
+            name="storage",
+            scenario=self.scenario,
+            block=self,
+            size_name="storage",
+            size_unit="kWh",
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_storage, spec=self.capex_spec),
+            mntex_config=dict(spec=self.mntex_spec),
+        )
 
-        self.evaluators['in'] = eco.EcoEvaluator(name='in',
-                                                 scenario=self.scenario,
-                                                 block=self,
-                                                 flow_name='in',
-                                                 opex_config=dict(spec=self.opex_spec),
-                                                 )
+        self.evaluators["in"] = eco.EcoEvaluator(
+            name="in",
+            scenario=self.scenario,
+            block=self,
+            flow_name="in",
+            opex_config=dict(spec=self.opex_spec),
+        )
 
-        self.evaluators['out'] = eco.EcoEvaluator(name='out',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='out',
-                                                  )
+        self.evaluators["out"] = eco.EcoEvaluator(
+            name="out",
+            scenario=self.scenario,
+            block=self,
+            flow_name="out",
+        )
 
-        self.evaluators['bat_in'] = eco.EcoEvaluator(name='bat_in',
-                                                     scenario=self.scenario,
-                                                     block=self,
-                                                     flow_name='bat_in',
-                                                     )
+        self.evaluators["bat_in"] = eco.EcoEvaluator(
+            name="bat_in",
+            scenario=self.scenario,
+            block=self,
+            flow_name="bat_in",
+        )
 
-        self.evaluators['bat_out'] = eco.EcoEvaluator(name='bat_out',
-                                                      scenario=self.scenario,
-                                                      block=self,
-                                                      flow_name='bat_out',
-                                                      )
+        self.evaluators["bat_out"] = eco.EcoEvaluator(
+            name="bat_out",
+            scenario=self.scenario,
+            block=self,
+            flow_name="bat_out",
+        )
 
     def init_states(self):
         super().init_states()
-        for state in ['energy', 'soc', 'soh', 'q_loss_cal', 'q_loss_cyc', 'soc_min', 'soc_max']:
+        for state in ["energy", "soc", "soh", "q_loss_cal", "q_loss_cyc", "soc_min", "soc_max"]:
             self.states[state] = np.nan
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 flow_apriori_names: list = None,
-                 params: dict = None,
-                 parent: BaseBlock | simulation.Scenario = None,
-                 ):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=flow_apriori_names,
-                         params=params,
-                         parent=parent)
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+        flow_apriori_names: list = None,
+        params: dict = None,
+        parent: BaseBlock | simulation.Scenario = None,
+    ):
+        super().__init__(
+            name=name, scenario=scenario, flow_apriori_names=flow_apriori_names, params=params, parent=parent
+        )
 
         def calc_loss_rate_per_period(period: pd.Timedelta = pd.Timedelta(hours=1)) -> float:
             """
             convert self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per target time step.
             oemof specifies one hour as the target time step for the loss rate.
             """
-            ratio_timestep = period / pd.Timedelta('30 days')  # assumption: 30 days per month
+            ratio_timestep = period / pd.Timedelta("30 days")  # assumption: 30 days per month
             return 1 - (1 - self.sdr) ** ratio_timestep
 
         self.loss_rate_per_hour = calc_loss_rate_per_period(period=pd.Timedelta(hours=1))
         self.loss_rate_per_ts = calc_loss_rate_per_period(period=self.scenario.timestep.td)
-        delattr(self, 'sdr')
+        delattr(self, "sdr")
 
         # set initial SOC
-        self.states.loc[self.scenario.times.eval.start, 'soc'] = self.soc_init
-        delattr(self, 'soc_init')
+        self.states.loc[self.scenario.times.eval.start, "soc"] = self.soc_init
+        delattr(self, "soc_init")
 
         # set initial SOH
-        self.states.loc[self.scenario.times.eval.start, 'soh'] = 1 - self.q_loss_cal_init - self.q_loss_cyc_init
+        self.states.loc[self.scenario.times.eval.start, "soh"] = 1 - self.q_loss_cal_init - self.q_loss_cyc_init
 
         # set initial calendric loss
-        self.states.loc[self.scenario.times.eval.start, 'q_loss_cal'] = self.q_loss_cal_init
-        delattr(self, 'q_loss_cal_init')
+        self.states.loc[self.scenario.times.eval.start, "q_loss_cal"] = self.q_loss_cal_init
+        delattr(self, "q_loss_cal_init")
 
         # set inital cyclic loss
-        self.states.loc[self.scenario.times.eval.start, 'q_loss_cyc'] = self.q_loss_cyc_init
-        delattr(self, 'q_loss_cyc_init')
+        self.states.loc[self.scenario.times.eval.start, "q_loss_cyc"] = self.q_loss_cyc_init
+        delattr(self, "q_loss_cyc_init")
 
-        self.states.loc[:, 'soc_min'] = (1 - self.states.loc[self.scenario.times.eval.start, 'soh']) / 2
-        self.states.loc[:, 'soc_max'] = 1 - ((1 - self.states.loc[self.scenario.times.eval.start, 'soh']) / 2)
+        self.states.loc[:, "soc_min"] = (1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2
+        self.states.loc[:, "soc_max"] = 1 - ((1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2)
 
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
@@ -1729,10 +1806,11 @@ class StorageBlock(ElectricBlock):
         super().pre_scenario()
         self.aging_model = bat.BatteryPackModel(self)
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None,
-                                ):
+    def define_oemof_components(
+        self,
+        horizon: simulation.PredictionHorizon,
+        params: dict = None,
+    ):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1747,92 +1825,110 @@ class StorageBlock(ElectricBlock):
         """
 
         if params is None:
-            raise ValueError(f'Block "{self.name}": Parameter "params" is required for StorageBlock method '
-                             f'define_oemof_components()')
-
-        self.components['bus'] = solph.Bus()
-
-        self.components['inflow'] = solph.components.Converter(
-            inputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['inflow_nominal_capacity'],
-                max=params['inflow_max'],
-                fix=params['inflow_fix'],
-            )},
-            outputs={self.components['bus']: solph.Flow(
-                variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
-            )},
-            conversion_factors={self.components['bus']: self.eff['chg_int']})
-
-        self.components['outflow'] = solph.components.Converter(
-            inputs={self.components['bus']: solph.Flow()},
-            outputs={self.bus_connected: solph.Flow(
-                nominal_capacity=params['outflow_nominal_capacity'],
-                max=params['outflow_max'],
-                fix=params['outflow_fix'],
-                variable_costs=self.scenario.cost_eps * 4  # disincentivize waste loop with inflow (sum must be positive)
+            raise ValueError(
+                f'Block "{self.name}": Parameter "params" is required for StorageBlock method define_oemof_components()'
             )
-            },
-            conversion_factors={self.bus_connected: self.eff['dis_int']})
 
-        self.components['storage'] = solph.components.GenericStorage(
-            inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['in'].opt.spec_ep_operation[horizon.ph.dti]
-            )},
+        self.components["bus"] = solph.Bus()
+
+        self.components["inflow"] = solph.components.Converter(
+            inputs={
+                self.bus_connected: solph.Flow(
+                    nominal_capacity=params["inflow_nominal_capacity"],
+                    max=params["inflow_max"],
+                    fix=params["inflow_fix"],
+                )
+            },
             outputs={
-                self.components['bus']: solph.Flow(
-                    variable_costs=self.scenario.cost_eps
-                )},
-            loss_rate=self.loss_rate_per_hour,
-            balanced=params['storage_balanced'],
-            initial_storage_level=self.states.loc[horizon.ph.start, ['soc', 'soc_min', 'soc_max']].median(),
-            # crate measured "outside" of conversion factor (efficiency)
-            invest_relation_input_capacity=params['invest_relation_input_capacity'],
-            invest_relation_output_capacity=params['invest_relation_output_capacity'],
-            inflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
-            outflow_conversion_factor=np.sqrt(self.eff['storage_roundtrip']),
-            nominal_capacity=solph.Investment(
-                ep_costs=self.evaluators['storage'].opt.spec_ep_invest,
-                existing=self.sizes['storage'].preexisting,
-                maximum=self.sizes['storage'].expansion_max),
-            max_storage_level=self.states.loc[horizon.ph.dti_extd, 'soc_max'],
-            min_storage_level=self.states.loc[horizon.ph.dti_extd, 'soc_min']
+                self.components["bus"]: solph.Flow(
+                    variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
+                )
+            },
+            conversion_factors={self.components["bus"]: self.eff["chg_int"]},
         )
 
-        horizon.constraints.add_invest_costs(invest=(self.components['storage'],),
-                                             capex_spec=self.evaluators['storage'].capex.spec,
-                                             invest_type='storage')
+        self.components["outflow"] = solph.components.Converter(
+            inputs={self.components["bus"]: solph.Flow()},
+            outputs={
+                self.bus_connected: solph.Flow(
+                    nominal_capacity=params["outflow_nominal_capacity"],
+                    max=params["outflow_max"],
+                    fix=params["outflow_fix"],
+                    variable_costs=self.scenario.cost_eps
+                    * 4,  # disincentivize waste loop with inflow (sum must be positive)
+                )
+            },
+            conversion_factors={self.bus_connected: self.eff["dis_int"]},
+        )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+        self.components["storage"] = solph.components.GenericStorage(
+            inputs={
+                self.components["bus"]: solph.Flow(
+                    variable_costs=self.evaluators["in"].opt.spec_ep_operation[horizon.ph.dti]
+                )
+            },
+            outputs={self.components["bus"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            loss_rate=self.loss_rate_per_hour,
+            balanced=params["storage_balanced"],
+            initial_storage_level=self.states.loc[horizon.ph.start, ["soc", "soc_min", "soc_max"]].median(),
+            # crate measured "outside" of conversion factor (efficiency)
+            invest_relation_input_capacity=params["invest_relation_input_capacity"],
+            invest_relation_output_capacity=params["invest_relation_output_capacity"],
+            inflow_conversion_factor=np.sqrt(self.eff["storage_roundtrip"]),
+            outflow_conversion_factor=np.sqrt(self.eff["storage_roundtrip"]),
+            nominal_capacity=solph.Investment(
+                ep_costs=self.evaluators["storage"].opt.spec_ep_invest,
+                existing=self.sizes["storage"].preexisting,
+                maximum=self.sizes["storage"].expansion_max,
+            ),
+            max_storage_level=self.states.loc[horizon.ph.dti_extd, "soc_max"],
+            min_storage_level=self.states.loc[horizon.ph.dti_extd, "soc_min"],
+        )
+
+        horizon.constraints.add_invest_costs(
+            invest=(self.components["storage"],),
+            capex_spec=self.evaluators["storage"].capex.spec,
+            invest_type="storage",
+        )
+
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes['storage'].expansion = horizon.results[(self.components['storage'], None)]['scalars']['invest']
+        self.sizes["storage"].expansion = horizon.results[(self.components["storage"], None)]["scalars"]["invest"]
 
-        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['inflow'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["outflow"], self.bus_connected)][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.bus_connected, self.components["inflow"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
-        self.flows.loc[horizon.ch.dti, 'bat_out'] = horizon.results[(self.components['storage'],
-                                                                     self.components['bus'])]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'bat_in'] = horizon.results[(self.components['bus'],
-                                                                    self.components['storage'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "bat_out"] = horizon.results[
+            (self.components["storage"], self.components["bus"])
+        ]["sequences"]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "bat_in"] = horizon.results[
+            (self.components["bus"], self.components["storage"])
+        ]["sequences"]["flow"][horizon.ch.dti]
 
-        self.states.loc[horizon.ch.dti_extd, 'energy'] = horizon.results[(self.components['storage'], None)]['sequences']['storage_content'][horizon.ch.dti_extd]
+        self.states.loc[horizon.ch.dti_extd, "energy"] = horizon.results[(self.components["storage"], None)][
+            "sequences"
+        ]["storage_content"][horizon.ch.dti_extd]
         # divide by 0 (size=0) -> pandas returns NaN -> SOC init = NaN in next horizon -> pyomo fails -> fillna(0)
-        self.states.loc[horizon.ch.dti_extd, 'soc'] = (
-                self.states.loc[horizon.ch.dti_extd, 'energy'] /
-                self.sizes['storage'].total).fillna(0)
+        self.states.loc[horizon.ch.dti_extd, "soc"] = (
+            self.states.loc[horizon.ch.dti_extd, "energy"] / self.sizes["storage"].total
+        ).fillna(0)
 
         self.aging_model.age(horizon=horizon)
 
     def calc_results_flows(self):
-        self.flows['total'] = self.flows.get(key='out', default=0) - self.flows.get(key='in', default=0)  # same as Block
-        self.flows['bat_total'] = self.flows.get(key='bat_out', default=0) - self.flows.get(key='bat_in', default=0)
+        self.flows["total"] = self.flows.get(key="out", default=0) - self.flows.get(
+            key="in", default=0
+        )  # same as Block
+        self.flows["bat_total"] = self.flows.get(key="bat_out", default=0) - self.flows.get(key="bat_in", default=0)
 
-        self.flows['circular_in_out'] = self.flows[['in', 'out']].min(axis=1)
-        self.flows['bat_circular_bat_in_bat_out'] = self.flows[['bat_in', 'bat_out']].min(axis=1)
+        self.flows["circular_in_out"] = self.flows[["in", "out"]].min(axis=1)
+        self.flows["bat_circular_bat_in_bat_out"] = self.flows[["bat_in", "bat_out"]].min(axis=1)
 
     def create_plot_traces(self):
         """
@@ -1841,104 +1937,105 @@ class StorageBlock(ElectricBlock):
 
         super().create_plot_traces()
 
-        data_soc = self.states.loc[self.scenario.times.eval.dti_extd, 'soc'].dropna()
-        data_soh = self.states.loc[self.scenario.times.eval.dti_extd, 'soh'].dropna()
-        self.scenario.plot_traces.extend(plot_lines=[go.Scatter(x=data_soc.index,
-                                                                y=data_soc,
-                                                                mode='lines',
-                                                                name=f'{self.name} SOC',
-                                                                line=dict(width=2, dash=None),
-                                                                visible='legendonly',
-                                                                ),
-                                                     go.Scatter(x=data_soh.index,
-                                                                y=data_soh,
-                                                                mode='lines',
-                                                                name=f'{self.name} SOH',
-                                                                line=dict(width=2, dash=None),
-                                                                visible='legendonly',
-                                                                ),
-                                                     ],
-                                         secondary_ys=[True, True])
+        data_soc = self.states.loc[self.scenario.times.eval.dti_extd, "soc"].dropna()
+        data_soh = self.states.loc[self.scenario.times.eval.dti_extd, "soh"].dropna()
+        self.scenario.plot_traces.extend(
+            plot_lines=[
+                go.Scatter(
+                    x=data_soc.index,
+                    y=data_soc,
+                    mode="lines",
+                    name=f"{self.name} SOC",
+                    line=dict(width=2, dash=None),
+                    visible="legendonly",
+                ),
+                go.Scatter(
+                    x=data_soh.index,
+                    y=data_soh,
+                    mode="lines",
+                    name=f"{self.name} SOH",
+                    line=dict(width=2, dash=None),
+                    visible="legendonly",
+                ),
+            ],
+            secondary_ys=[True, True],
+        )
 
 
 class StationaryBattery(StorageBlock):
-
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 ):
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=None,
-                         parent=scenario,
-                         )
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+    ):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=None,
+            parent=scenario,
+        )
 
     def initialize_efficiencies(self):
-        self.eff['chg'] = self.eff_acdc if self.system == 'ac' else 1
-        self.eff['dis'] = self.eff_dcac if self.system == 'ac' else 1
+        self.eff["chg"] = self.eff_acdc if self.system == "ac" else 1
+        self.eff["dis"] = self.eff_dcac if self.system == "ac" else 1
 
         # necessary for common efficiency definition with ElectricFleetUnit
-        self.eff['chg_int'] = self.eff['chg']
-        self.eff['dis_int'] = self.eff['dis']
+        self.eff["chg_int"] = self.eff["chg"]
+        self.eff["dis_int"] = self.eff["dis"]
 
-        for attr in ['eff_acdc', 'eff_dcac']:
+        for attr in ["eff_acdc", "eff_dcac"]:
             delattr(self, attr)
 
         super().initialize_efficiencies()
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
-        params = {'inflow_nominal_capacity': None,
-                  'outflow_nominal_capacity': None,
-                  'inflow_max': None,
-                  'outflow_max': None,
-                  'inflow_fix': None,
-                  'outflow_fix': None,
-                  'invest_relation_input_capacity': self.crate_chg,
-                  'invest_relation_output_capacity': self.crate_dis,
-                  'storage_balanced': True if self.scenario.strategy == 'go' else False,
-                  }
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
+        params = {
+            "inflow_nominal_capacity": None,
+            "outflow_nominal_capacity": None,
+            "inflow_max": None,
+            "outflow_max": None,
+            "inflow_fix": None,
+            "outflow_fix": None,
+            "invest_relation_input_capacity": self.crate_chg,
+            "invest_relation_output_capacity": self.crate_dis,
+            "storage_balanced": True if self.scenario.strategy == "go" else False,
+        }
         super().define_oemof_components(horizon, params)
 
     def create_result_messages(self, *_):
         super().create_result_messages()
 
     def get_legend_entry(self):
-        return (f'{self.name} (dis-)charge power '
-                f'(max. {self.sizes["storage"].total * self.crate_chg * self.eff["chg"] / 1e3:.1f} kW charge / '
-                f'{self.sizes["storage"].total * self.crate_dis * self.eff["dis"] / 1e3:.1f} kW discharge)')
+        return (
+            f"{self.name} (dis-)charge power "
+            f"(max. {self.sizes['storage'].total * self.crate_chg * self.eff['chg'] / 1e3:.1f} kW charge / "
+            f"{self.sizes['storage'].total * self.crate_dis * self.eff['dis'] / 1e3:.1f} kW discharge)"
+        )
 
 
 class Fleet(SinkBlock):
-
     def init_evaluators(self):
         super().init_evaluators()
-        self.evaluators['f2s'] = eco.EcoEvaluator(name='f2s',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='out',
-                                                  opex_config=dict(spec=self.opex_spec_f2s),
-                                                  )
+        self.evaluators["f2s"] = eco.EcoEvaluator(
+            name="f2s",
+            scenario=self.scenario,
+            block=self,
+            flow_name="out",
+            opex_config=dict(spec=self.opex_spec_f2s),
+        )
 
-        self.evaluators['s2f'] = eco.EcoEvaluator(name='s2f',
-                                                  scenario=self.scenario,
-                                                  block=self,
-                                                  flow_name='in',
-                                                  opex_config=dict(spec=self.opex_spec_s2f),
-                                                  )
+        self.evaluators["s2f"] = eco.EcoEvaluator(
+            name="s2f",
+            scenario=self.scenario,
+            block=self,
+            flow_name="in",
+            opex_config=dict(spec=self.opex_spec_s2f),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         flow_apriori_names=None,
-                         params=None,
-                         parent=scenario)
+    def __init__(self, name: str, scenario: simulation.Scenario):
+        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
 
         if not self.groups_dispatch:
             raise ValueError(f'Block "{self.name}": At least one dispatch group has to be defined.')
@@ -1950,14 +2047,12 @@ class Fleet(SinkBlock):
             raise ValueError(f'Block "{self.name}": Subfleet(s) {subfleets_dupl} is/are duplicated.')
         # endregion
 
-        [DispatchGroup(name=key,
-                       scenario=self.scenario,
-                       parent=self,
-                       subfleets=value) for key, value in self.groups_dispatch.items()]
+        [
+            DispatchGroup(name=key, scenario=self.scenario, parent=self, subfleets=value)
+            for key, value in self.groups_dispatch.items()
+        ]
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
 
@@ -1972,151 +2067,140 @@ class Fleet(SinkBlock):
           |                     |   (CombustionVehicle Instance)
         """
 
-        self.components['bus'] = solph.Bus()
-        self.bus_connected = self.scenario.block_registry.get('TopLevelBlock', {})['core'].components[self.system]
+        self.components["bus"] = solph.Bus()
+        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
-        self.components['inflow'] = solph.components.Converter(
-            inputs={self.bus_connected: solph.Flow(
-                variable_costs=self.evaluators['s2f'].opt.spec_ep_operation[horizon.ph.dti],
-                nominal_capacity=self.pwr_lim_s2f,
-                # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
-            )},
-            outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: 1}
+        self.components["inflow"] = solph.components.Converter(
+            inputs={
+                self.bus_connected: solph.Flow(
+                    variable_costs=self.evaluators["s2f"].opt.spec_ep_operation[horizon.ph.dti],
+                    nominal_capacity=self.pwr_lim_s2f,
+                    # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
+                )
+            },
+            outputs={self.components["bus"]: solph.Flow()},
+            conversion_factors={self.components["bus"]: 1},
         )
 
-        self.components['outflow'] = solph.components.Converter(
-            inputs={self.components['bus']: solph.Flow(
-                variable_costs=self.evaluators['f2s'].opt.spec_ep_operation[horizon.ph.dti],
-                nominal_capacity=self.pwr_lim_f2s,
-                # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
-            )},
-            outputs={self.bus_connected: solph.Flow(
-                variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.bus_connected: 1}
+        self.components["outflow"] = solph.components.Converter(
+            inputs={
+                self.components["bus"]: solph.Flow(
+                    variable_costs=self.evaluators["f2s"].opt.spec_ep_operation[horizon.ph.dti],
+                    nominal_capacity=self.pwr_lim_f2s,
+                    # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
+                )
+            },
+            outputs={self.bus_connected: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            conversion_factors={self.bus_connected: 1},
         )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.flows.loc[horizon.ch.dti, 'out'] = horizon.results[(self.components['outflow'],
-                                                                 self.bus_connected)]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'in'] = horizon.results[(self.bus_connected,
-                                                                self.components['inflow'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["outflow"], self.bus_connected)][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.bus_connected, self.components["inflow"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
     def get_legend_entry(self):
         def lim2str(lim) -> str:
             if lim is None:
-                return 'unlimited'
+                return "unlimited"
             else:
-                return f'{lim / 1e3:.1f}'
+                return f"{lim / 1e3:.1f}"
 
-        return (f'{self.name} power (max. {lim2str(self.pwr_lim_s2f)} kW charge / '
-                f'{lim2str(self.pwr_lim_f2s)} kW discharge)')
+        return (
+            f"{self.name} power (max. {lim2str(self.pwr_lim_s2f)} kW charge / {lim2str(self.pwr_lim_f2s)} kW discharge)"
+        )
 
 
 class DispatchGroup(NonElectricBlock):
-
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 subfleets: list,
-                 parent: Fleet):
-
-        super().__init__(name=name,
-                         scenario=scenario,
-                         parent=parent)
+    def __init__(self, name: str, scenario: simulation.Scenario, subfleets: list, parent: Fleet):
+        super().__init__(name=name, scenario=scenario, parent=parent)
 
         self.demand = None
         self.log = None
 
-        self.types_units = {self.scenario.parameters[(subfleet, 'type_unit')] for subfleet in subfleets}
+        self.types_units = {self.scenario.parameters[(subfleet, "type_unit")] for subfleet in subfleets}
 
-        if self.types_units <= {'ev', 'icev'}:
+        if self.types_units <= {"ev", "icev"}:
             self.is_vehicle_group = True
-        elif self.types_units <= {'mb'}:
+        elif self.types_units <= {"mb"}:
             self.is_vehicle_group = False
         else:
-            raise ValueError(f'Dispatch Group {self.name} has (a) both vehicle and battery subfleets or (b) invalid unit types assigned.')
-
-        # region create and fill demand object
-        if self.data_source in ['usecases', 'demand']:
-            cls_demand = {True: mobility.VehicleDemand,
-                          False: mobility.BatteryDemand}.get(self.is_vehicle_group)
-            self.demand = cls_demand(dti=self.scenario.times.sim.dti)
-            self.scenario.block_registry.setdefault('DispatchGroupActive', {})[self.name] = self
-
-        if self.data_source == 'usecases':
-            path_demand = self.scenario.paths.create_result_path(
-                suffix=f'{self.scenario.name}_{self.name}_demand.csv') \
-                if not self.scenario.settings.largescalemode else None
-            self.demand.from_usecases(
-                path_usecases=self.scenario.paths.input / utils.set_extension(
-                    filename=self.filename,
-                    default_extension='.csv'),
-                path_timeframe_mapper=self.scenario.paths.input / f'{self.filename_mapper}.py',
-                path_demand=path_demand,
-                key_timeframe_mapper=self.name
+            raise ValueError(
+                f"Dispatch Group {self.name} has (a) both vehicle and battery subfleets or (b) invalid unit types assigned."
             )
 
-        elif self.data_source == 'demand':
+        # region create and fill demand object
+        if self.data_source in ["usecases", "demand"]:
+            cls_demand = {True: mobility.VehicleDemand, False: mobility.BatteryDemand}.get(self.is_vehicle_group)
+            self.demand = cls_demand(dti=self.scenario.times.sim.dti)
+            self.scenario.block_registry.setdefault("DispatchGroupActive", {})[self.name] = self
+
+        if self.data_source == "usecases":
+            path_demand = (
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.csv")
+                if not self.scenario.settings.largescalemode
+                else None
+            )
+            self.demand.from_usecases(
+                path_usecases=self.scenario.paths.input
+                / utils.set_extension(filename=self.filename, default_extension=".csv"),
+                path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
+                path_demand=path_demand,
+                key_timeframe_mapper=self.name,
+            )
+
+        elif self.data_source == "demand":
             self.demand.from_file(
-                path_demand=(self.scenario.paths.input / utils.set_extension(
-                    filename=self.subfleet.filename,
-                    default_extension='.csv')),
+                path_demand=(
+                    self.scenario.paths.input
+                    / utils.set_extension(filename=self.subfleet.filename, default_extension=".csv")
+                ),
                 dti=self.scenario.times.sim.dti,
             )
 
-        elif self.data_source in ['log', 'logfile']:
-            self.scenario.logger.info(f'DispatchGroup "{self.name}": Logfile specified as data source - read logfile per SubFleet')
+        elif self.data_source in ["log", "logfile"]:
+            self.scenario.logger.info(
+                f'DispatchGroup "{self.name}": Logfile specified as data source - read logfile per SubFleet'
+            )
 
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
         # endregion
 
         # create subfleets
-        [SubFleet(name=item,
-                  scenario=self.scenario,
-                  parent=self) for item in subfleets]
+        [SubFleet(name=item, scenario=self.scenario, parent=self) for item in subfleets]
 
 
 class SubFleet(NonElectricBlock):
-
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 parent):
-
+    def __init__(self, name: str, scenario: simulation.Scenario, parent):
         # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
         params = scenario.parameters.loc[name]
-        params_subfleet = {key: params.pop(key) if key in params else None for key in ['num', 'type_unit', 'rex', 'filename']}
+        params_subfleet = {
+            key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex", "filename"]
+        }
 
-        super().__init__(name=name,
-                         scenario=scenario,
-                         params=params_subfleet,
-                         parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent)
 
         self.demand = self.log = None
 
-        cls_fu = {'ev': ElectricVehicle,
-                  'icev': CombustionVehicle,
-                  'mb': MobileBattery}.get(self.type_unit)
-        self.unit_names = [f'{self.name}{i}' for i in range(self.num)]
-        [cls_fu(name=name,
-                scenario=self.scenario,
-                params=params,
-                parent=self) for name in self.unit_names]
+        cls_fu = {"ev": ElectricVehicle, "icev": CombustionVehicle, "mb": MobileBattery}.get(self.type_unit)
+        self.unit_names = [f"{self.name}{i}" for i in range(self.num)]
+        [cls_fu(name=name, scenario=self.scenario, params=params, parent=self) for name in self.unit_names]
 
-        if params.get('mode_scheduling') in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
-            self.scenario.block_registry.setdefault('SubFleetScheduling', {})[self.name] = self
+        if params.get("mode_scheduling") in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
+            self.scenario.block_registry.setdefault("SubFleetScheduling", {})[self.name] = self
 
-        if getattr(self, 'invest', False) and self.data_source in ['usecases', 'demand']:
+        if getattr(self, "invest", False) and self.data_source in ["usecases", "demand"]:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
     def pre_scenario(self):
-        if self.parent.data_source in ['log', 'logfile']:
+        if self.parent.data_source in ["log", "logfile"]:
             self.log = self.read_input_log()
         else:
             self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
@@ -2127,28 +2211,31 @@ class SubFleet(NonElectricBlock):
         Read in a predetermined log file for group behavior.
         """
 
-        df = utils.read_timeseries_csv(path_input_file=(self.scenario.paths.input /
-                                                        utils.set_extension(filename=self.filename,
-                                                                            default_extension='.csv')),
-                                       block=self,
-                                       scenario=self.scenario,
-                                       multiheader=True,
-                                       resampling=False)  # Normal resampling cannot be used as consumption must be
+        df = utils.read_timeseries_csv(
+            path_input_file=(
+                self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+            ),
+            block=self,
+            scenario=self.scenario,
+            multiheader=True,
+            resampling=False,
+        )  # Normal resampling cannot be used as consumption must be
         # meaned, while booleans, distances and dsocs must not.
 
         # Timedelta of frequency of log file
         freq_log = pd.infer_freq(df.index).lower()
         # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
-        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else '1' + freq_log))
+        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else "1" + freq_log))
 
         # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
         if freq_log != self.scenario.timestep.td:
-            self.scenario.logger.warning(f'Block "{self.name}": '
-                                         f'log file does not match specified timestep - Resampling')
+            self.scenario.logger.warning(
+                f'Block "{self.name}": log file does not match specified timestep - Resampling'
+            )
 
             cols = df.columns  # save orignal column sorting to apply after resampling
-            cols_consumption = df.columns[df.columns.get_level_values(1) == 'consumption']
-            cols_dist = df.columns[df.columns.get_level_values(1) == 'dist']
+            cols_consumption = df.columns[df.columns.get_level_values(1) == "consumption"]
+            cols_dist = df.columns[df.columns.get_level_values(1) == "dist"]
             cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
             # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
             df_new = pd.DataFrame()
@@ -2164,32 +2251,26 @@ class SubFleet(NonElectricBlock):
         df = df.loc[self.scenario.times.sim.dti]  # need dsoc for last timestep
 
         # rename fleet units according to schema subfleet.name{idx}
-        unit_names_log = sorted(df.columns.get_level_values(0).unique()[:self.num].tolist())
-        unit_names_map = {log_name: f'{self.name}{idx}' for idx, log_name in enumerate(unit_names_log)}
+        unit_names_log = sorted(df.columns.get_level_values(0).unique()[: self.num].tolist())
+        unit_names_map = {log_name: f"{self.name}{idx}" for idx, log_name in enumerate(unit_names_log)}
         df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
 
         return df
 
 
 class FleetUnit:
-
     def init_evaluators(self):
-        self.evaluators['glider'] = eco.EcoEvaluator(name='glider',
-                                                     scenario=self.scenario,
-                                                     block=self,
-                                                     ls=self.ls,
-                                                     ccr=self.ccr,
-                                                     capex_config=dict(
-                                                         consider_preexisting=self.capex_preexisting_glider,
-                                                         fix=self.capex_fix_glider),
-                                                     mntex_config=dict(
-                                                         fix=self.mntex_fix_glider),
-                                                     opex_config_fleetunit=dict(
-                                                         dist=self.opex_spec_dist),
-                                                     crev_config_fleetunit=dict(
-                                                         dist=self.crev_spec_dist,
-                                                         time=self.crev_spec_time),
-                                                     )
+        self.evaluators["glider"] = eco.EcoEvaluator(
+            name="glider",
+            scenario=self.scenario,
+            block=self,
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_glider, fix=self.capex_fix_glider),
+            mntex_config=dict(fix=self.mntex_fix_glider),
+            opex_config_fleetunit=dict(dist=self.opex_spec_dist),
+            crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
+        )
 
     def __init__(self):
         self.log = None
@@ -2201,12 +2282,14 @@ class FleetUnit:
         self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
         # ensure that all columns are present in the log file
-        for col_name, col_value in [('atac', False),
-                                    ('atdc', False),
-                                    ('atbase', True),
-                                    ('consumption', 0.0),
-                                    ('dist', 0.0),
-                                    ('dsoc', 0.0)]:
+        for col_name, col_value in [
+            ("atac", False),
+            ("atdc", False),
+            ("atbase", True),
+            ("consumption", 0.0),
+            ("dist", 0.0),
+            ("dsoc", 0.0),
+        ]:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
 
@@ -2220,64 +2303,68 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         StorageBlock.init_evaluators(self)
         FleetUnit.init_evaluators(self)
 
-        self.evaluators['charger'] = eco.EcoEvaluator(name='charger',
-                                                      scenario=self.scenario,
-                                                      block=self,
-                                                      ls=self.ls,
-                                                      ccr=self.ccr,
-                                                      capex_config=dict(consider_preexisting=self.capex_preexisting_charger,
-                                                                        fix=self.capex_fix_charger),
-                                                      )
+        self.evaluators["charger"] = eco.EcoEvaluator(
+            name="charger",
+            scenario=self.scenario,
+            block=self,
+            ls=self.ls,
+            ccr=self.ccr,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_charger, fix=self.capex_fix_charger),
+        )
 
-        self.evaluators['ext_ac'] = eco.EcoEvaluator(name='ext_ac',
-                                                     scenario=self.scenario,
-                                                     block=self,
-                                                     flow_name='ext_ac',
-                                                     opex_config=dict(spec=self.opex_spec_ext_ac),
-                                                     )
+        self.evaluators["ext_ac"] = eco.EcoEvaluator(
+            name="ext_ac",
+            scenario=self.scenario,
+            block=self,
+            flow_name="ext_ac",
+            opex_config=dict(spec=self.opex_spec_ext_ac),
+        )
 
-        self.evaluators['ext_dc'] = eco.EcoEvaluator(name='ext_dc',
-                                                     scenario=self.scenario,
-                                                     block=self,
-                                                     flow_name='ext_dc',
-                                                     opex_config=dict(spec=self.opex_spec_ext_dc),
-                                                     )
+        self.evaluators["ext_dc"] = eco.EcoEvaluator(
+            name="ext_dc",
+            scenario=self.scenario,
+            block=self,
+            flow_name="ext_dc",
+            opex_config=dict(spec=self.opex_spec_ext_dc),
+        )
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 parent: SubFleet,
-                 params: dict):
-
-        StorageBlock.__init__(self=self,
-                              name=name,
-                              scenario=scenario,
-                              flow_apriori_names=['p_int_chg', 'p_ext_ac_chg', 'p_ext_dc_chg',
-                                                  'p_int_dis', 'p_ext_ac_dis', 'p_ext_dc_dis'],
-                              params=params,
-                              parent=parent)
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
+        StorageBlock.__init__(
+            self=self,
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=[
+                "p_int_chg",
+                "p_ext_ac_chg",
+                "p_ext_dc_chg",
+                "p_int_dis",
+                "p_ext_ac_dis",
+                "p_ext_dc_dis",
+            ],
+            params=params,
+            parent=parent,
+        )
 
         FleetUnit.__init__(self=self)
 
         self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
         if any([size.invest for size in self.sizes.values()]) and self.mode_scheduling in self.scenario.apriori_lvls:
-            raise ValueError(f'ElectricFleetUnit "{self.name}": size optimization not '
-                             f'implemented for a priori integration levels: {self.scenario.apriori_lvls}')
+            raise ValueError(
+                f'ElectricFleetUnit "{self.name}": size optimization not '
+                f"implemented for a priori integration levels: {self.scenario.apriori_lvls}"
+            )
 
     def initialize_efficiencies(self):
-        self.eff['chg_int'] = {'ac': self.eff_chg_ac, 'dc': self.eff_chg_dc}[self.parent.parent.parent.system]
-        self.eff['dis_int'] = {'ac': self.eff_dis_ac, 'dc': self.eff_dis_dc}[self.parent.parent.parent.system]
+        self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.parent.system]
+        self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.parent.system]
         super().initialize_efficiencies()
 
     def pre_scenario(self):
         StorageBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
 
-    def define_oemof_components(self,
-                                horizon: simulation.PredictionHorizon,
-                                params: dict = None):
-
+    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
 
@@ -2293,149 +2380,171 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         """
 
         # region calc minimum soc targets before usage and max soc for myopic optimization
-        dsoc_ph = self.log.loc[horizon.ph.dti, 'dsoc']
-        if (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, ElectricVehicle):
+        dsoc_ph = self.log.loc[horizon.ph.dti, "dsoc"]
+        if (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, ElectricVehicle):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
-                lower=self.states.loc[horizon.ph.dti_extd, 'soc_min'],
-                upper=self.states.loc[horizon.ph.dti_extd, 'soc_max'])
-        elif (self.scenario.strategy == 'rh') and (self.mode_scheduling == 'oc') and isinstance(self, MobileBattery):
+                lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
+                upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
+            )
+        elif (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, MobileBattery):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
-                lower=self.states.loc[horizon.ph.dti_extd, 'soc_min'],
-                upper=self.states.loc[horizon.ph.dti_extd, 'soc_max'])
+                lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
+                upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
+            )
         else:  # a priori or global optimization
-            soc_min_hor = self.states.loc[horizon.ph.dti_extd, 'soc_min']
-        self.states.update({'soc_min': soc_min_hor.astype('float64')})
+            soc_min_hor = self.states.loc[horizon.ph.dti_extd, "soc_min"]
+        self.states.update({"soc_min": soc_min_hor.astype("float64")})
         # endregion
 
-        self.bus_connected = self.parent.parent.parent.components['bus']
+        self.bus_connected = self.parent.parent.parent.components["bus"]
 
-        params = {'inflow_nominal_capacity': self.pwr_chg_max,
-                  'outflow_nominal_capacity': self.pwr_dis_max * self.eff['dis_int'],
-                  'inflow_max': None if self.apriori else self.log.loc[horizon.ph.dti, 'atbase'].astype(int),
-                  'outflow_max': None if self.apriori else self.log.loc[horizon.ph.dti, 'atbase'].astype(int),
-                  'inflow_fix': self.flows_apriori.loc[horizon.ph.dti, 'p_int_chg'] if self.apriori else None,
-                  'outflow_fix': self.flows_apriori.loc[horizon.ph.dti, 'p_int_dis'] if self.apriori else None,
-                  'invest_relation_input_capacity': None,
-                  'invest_relation_output_capacity': None,
-                  'storage_balanced': False,
-                  }
+        params = {
+            "inflow_nominal_capacity": self.pwr_chg_max,
+            "outflow_nominal_capacity": self.pwr_dis_max * self.eff["dis_int"],
+            "inflow_max": None if self.apriori else self.log.loc[horizon.ph.dti, "atbase"].astype(int),
+            "outflow_max": None if self.apriori else self.log.loc[horizon.ph.dti, "atbase"].astype(int),
+            "inflow_fix": self.flows_apriori.loc[horizon.ph.dti, "p_int_chg"] if self.apriori else None,
+            "outflow_fix": self.flows_apriori.loc[horizon.ph.dti, "p_int_dis"] if self.apriori else None,
+            "invest_relation_input_capacity": None,
+            "invest_relation_output_capacity": None,
+            "storage_balanced": False,
+        }
 
-        super().define_oemof_components(horizon=horizon,
-                                        params=params)
+        super().define_oemof_components(horizon=horizon, params=params)
 
-        self.components['snk'] = solph.components.Sink(
-            inputs={self.components['bus']: solph.Flow(
-                nominal_capacity=1,
-                fix=self.log.loc[horizon.ph.dti, 'consumption']
-            )})
-
-        self.components['bus_ext_ac'] = solph.Bus()
-
-        self.components['src_ext_ac'] = solph.components.Source(
-            outputs={self.components['bus_ext_ac']: solph.Flow(
-                nominal_capacity=self.pwr_ext_ac_max,
-                max=None if self.apriori else self.log.loc[horizon.ph.dti, 'atac'].astype(int),
-                fix=self.flows_apriori.loc[horizon.ph.dti, 'p_ext_ac_chg'] if self.apriori else None,
-                variable_costs=self.evaluators['ext_ac'].opt.spec_ep_operation[horizon.ph.dti])}
+        self.components["snk"] = solph.components.Sink(
+            inputs={
+                self.components["bus"]: solph.Flow(nominal_capacity=1, fix=self.log.loc[horizon.ph.dti, "consumption"])
+            }
         )
 
-        self.components['conv_ext_ac'] = solph.components.Converter(
-            inputs={self.components['bus_ext_ac']: solph.Flow()},
-            outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: self.eff['chg_ac']}
+        self.components["bus_ext_ac"] = solph.Bus()
+
+        self.components["src_ext_ac"] = solph.components.Source(
+            outputs={
+                self.components["bus_ext_ac"]: solph.Flow(
+                    nominal_capacity=self.pwr_ext_ac_max,
+                    max=None if self.apriori else self.log.loc[horizon.ph.dti, "atac"].astype(int),
+                    fix=self.flows_apriori.loc[horizon.ph.dti, "p_ext_ac_chg"] if self.apriori else None,
+                    variable_costs=self.evaluators["ext_ac"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            }
         )
 
-        self.components['bus_ext_dc'] = solph.Bus()
-
-        self.components['src_ext_dc'] = solph.components.Source(
-            outputs={self.components['bus_ext_dc']: solph.Flow(
-                nominal_capacity=self.pwr_ext_dc_max,
-                max=None if self.apriori else self.log.loc[horizon.ph.dti, 'atdc'].astype(int),
-                fix=self.flows_apriori.loc[horizon.ph.dti, 'p_ext_dc_chg'] if self.apriori else None,
-                variable_costs=self.evaluators['ext_dc'].opt.spec_ep_operation[horizon.ph.dti])}
+        self.components["conv_ext_ac"] = solph.components.Converter(
+            inputs={self.components["bus_ext_ac"]: solph.Flow()},
+            outputs={self.components["bus"]: solph.Flow()},
+            conversion_factors={self.components["bus"]: self.eff["chg_ac"]},
         )
 
-        self.components['conv_ext_dc'] = solph.components.Converter(
-            inputs={self.components['bus_ext_dc']: solph.Flow()},
-            outputs={self.components['bus']: solph.Flow()},
-            conversion_factors={self.components['bus']: 1}  # billed energy is already dc in external dc charging
+        self.components["bus_ext_dc"] = solph.Bus()
+
+        self.components["src_ext_dc"] = solph.components.Source(
+            outputs={
+                self.components["bus_ext_dc"]: solph.Flow(
+                    nominal_capacity=self.pwr_ext_dc_max,
+                    max=None if self.apriori else self.log.loc[horizon.ph.dti, "atdc"].astype(int),
+                    fix=self.flows_apriori.loc[horizon.ph.dti, "p_ext_dc_chg"] if self.apriori else None,
+                    variable_costs=self.evaluators["ext_dc"].opt.spec_ep_operation[horizon.ph.dti],
+                )
+            }
         )
 
-    def get_horizon_results(self,
-                            horizon: simulation.PredictionHorizon):
+        self.components["conv_ext_dc"] = solph.components.Converter(
+            inputs={self.components["bus_ext_dc"]: solph.Flow()},
+            outputs={self.components["bus"]: solph.Flow()},
+            conversion_factors={self.components["bus"]: 1},  # billed energy is already dc in external dc charging
+        )
+
+    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
 
-        self.flows.loc[horizon.ch.dti, 'ext_ac'] = horizon.results[
-            (self.components['bus_ext_ac'], self.components['conv_ext_ac'])]['sequences']['flow'][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, 'ext_dc'] = horizon.results[
-            (self.components['bus_ext_dc'], self.components['conv_ext_dc'])]['sequences']['flow'][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "ext_ac"] = horizon.results[
+            (self.components["bus_ext_ac"], self.components["conv_ext_ac"])
+        ]["sequences"]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "ext_dc"] = horizon.results[
+            (self.components["bus_ext_dc"], self.components["conv_ext_dc"])
+        ]["sequences"]["flow"][horizon.ch.dti]
 
         super().get_horizon_results(horizon=horizon)
 
     def create_plot_traces(self):
         super().create_plot_traces()
 
-        legend = f'{self.name} consumption power'
+        legend = f"{self.name} consumption power"
         self.scenario.plot_traces.append(
-            plot_line=go.Scatter(x=self.scenario.times.eval.dti,
-                                 y=self.log.loc[self.scenario.times.eval.dti, 'consumption'],
-                                 mode='lines',
-                                 name=legend,
-                                 line=dict(width=2, dash=None, shape='hv'),
-                                 visible='legendonly',
-                                 ),
-            secondary_y=False)
+            plot_line=go.Scatter(
+                x=self.scenario.times.eval.dti,
+                y=self.log.loc[self.scenario.times.eval.dti, "consumption"],
+                mode="lines",
+                name=legend,
+                line=dict(width=2, dash=None, shape="hv"),
+                visible="legendonly",
+            ),
+            secondary_y=False,
+        )
 
-        for mode in ['ac', 'dc']:
-            pwr = getattr(self, f'pwr_ext_{mode}_max', 0)
+        for mode in ["ac", "dc"]:
+            pwr = getattr(self, f"pwr_ext_{mode}_max", 0)
             if pwr == 0:
                 continue
 
-            legend = f'{self.name} external {mode.upper()} charging power (max. {pwr / 1e3:.1f} kW)'
+            legend = f"{self.name} external {mode.upper()} charging power (max. {pwr / 1e3:.1f} kW)"
             self.scenario.plot_traces.append(
-                plot_line=go.Scatter(x=self.scenario.times.eval.dti,
-                                     y=self.flows.loc[self.scenario.times.eval.dti, f'ext_{mode}'],
-                                     mode='lines',
-                                     name=legend,
-                                     line=dict(width=2, dash=None, shape='hv'),
-                                     visible='legendonly',
-                                     ),
-                secondary_y=False)
+                plot_line=go.Scatter(
+                    x=self.scenario.times.eval.dti,
+                    y=self.flows.loc[self.scenario.times.eval.dti, f"ext_{mode}"],
+                    mode="lines",
+                    name=legend,
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible="legendonly",
+                ),
+                secondary_y=False,
+            )
 
     def get_legend_entry(self):
-        return (f'{self.name} (dis-)charge power '
-                f'(max. {self.pwr_chg_max / 1e3:.1f} kW charge / '
-                f'{(self.pwr_dis_max * self.eff["dis_int"]) / 1e3:.1f} kW discharge)')
+        return (
+            f"{self.name} (dis-)charge power "
+            f"(max. {self.pwr_chg_max / 1e3:.1f} kW charge / "
+            f"{(self.pwr_dis_max * self.eff['dis_int']) / 1e3:.1f} kW discharge)"
+        )
 
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):
-
     def init_evaluators(self):
         NonElectricBlock.init_evaluators(self=self)
         FleetUnit.init_evaluators(self=self)
 
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 parent: SubFleet,
-                 params: dict):
-
-        NonElectricBlock.__init__(self=self,
-                                  name=name,
-                                  scenario=scenario,
-                                  params=params,
-                                  parent=parent)
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
+        NonElectricBlock.__init__(self=self, name=name, scenario=scenario, params=params, parent=parent)
 
         FleetUnit.__init__(self=self)
 
         # delete parameters not needed for CombustionVehicles
         # ToDo: specify required parameters instead of obsolete ones
-        for param in ['aging', 'chemistry', 'temp_battery', 'q_loss_cal_init', 'q_loss_cyc_init',
-                      'soc_init', 'soc_target', 'soc_return', 'dsoc_buffer',
-                      'pwr_chg_max', 'pwr_dis_max', 'pwr_ext_ac_max', 'pwr_ext_dc_max',
-                      'eff_storage_roundtrip', 'eff_chg_ac', 'eff_chg_dc', 'eff_dis_ac', 'eff_dis_dc', 'sdr']:
+        for param in [
+            "aging",
+            "chemistry",
+            "temp_battery",
+            "q_loss_cal_init",
+            "q_loss_cyc_init",
+            "soc_init",
+            "soc_target",
+            "soc_return",
+            "dsoc_buffer",
+            "pwr_chg_max",
+            "pwr_dis_max",
+            "pwr_ext_ac_max",
+            "pwr_ext_dc_max",
+            "eff_storage_roundtrip",
+            "eff_chg_ac",
+            "eff_chg_dc",
+            "eff_dis_ac",
+            "eff_dis_dc",
+            "sdr",
+        ]:
             if hasattr(self, param):
                 delattr(self, param)
 
@@ -2453,14 +2562,7 @@ class ElectricVehicle(ElectricFleetUnit):
 
 
 class MobileBattery(ElectricFleetUnit):
-    def __init__(self,
-                 name: str,
-                 scenario: simulation.Scenario,
-                 parent: SubFleet,
-                 params: dict):
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
         self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
         self.opex_spec_time = 0.0  # no distance based opex for mobile battery
-        super().__init__(name=name,
-                         scenario=scenario,
-                         parent=parent,
-                         params=params)
+        super().__init__(name=name, scenario=scenario, parent=parent, params=params)
