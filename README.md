@@ -73,7 +73,7 @@ The following system diagram shows the basic structure including one example of 
 </div>
 
 ## Installation
-REVOL-E-TION is designed to run under Windows 10, Ubuntu 22.04 LTS and macOS 15 Sequoia.
+REVOL-E-TION is designed to run under Windows 11, Ubuntu 22.04 LTS and macOS 15 Sequoia.
 While portability is generally built in, other operating systems are untested.
 
 #### Step 1: Getting the source code
