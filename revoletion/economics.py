@@ -16,75 +16,51 @@ if TYPE_CHECKING:
 
 class EcoTools:
     @staticmethod
-    def discount(future_value: float,
-                 periods: int,
-                 discount_rate: float,
-                 occurs_at: str) -> float:
+    def discount(future_value: float, periods: int, discount_rate: float, occurs_at: str) -> float:
         """
         calculate the present value of a future value in some periods at a discount rate per period
         """
         q = 1 + discount_rate
-        exp = {'beginning': 1,
-               'start': 1,
-               'bop': 1,
-               'middle': 0.5,
-               'mid': 0.5,
-               'mop': 0.5,
-               'end': 0,
-               'eop': 0}.get(occurs_at, 0)
+        exp = {"beginning": 1, "start": 1, "bop": 1, "middle": 0.5, "mid": 0.5, "mop": 0.5, "end": 0, "eop": 0}.get(
+            occurs_at, 0
+        )
         present_value = future_value / (q ** (periods - exp))
         return present_value
 
     @staticmethod
-    def acc_discount(nominal_value: float | pd.Series,
-                     observation_horizon: int | pd.Series,
-                     discount_rate: float,
-                     occurs_at: str) -> float:
+    def acc_discount(
+        nominal_value: float | pd.Series, observation_horizon: int | pd.Series, discount_rate: float, occurs_at: str
+    ) -> float:
         """
         calculate the accumulated present value of a periodical, nominally repeating cashflow in the future
         (from present to the observation horizon) at a discount rate per period
         """
         q = 1 + discount_rate
-        exp = {'beginning': 1,
-               'start': 1,
-               'bop': 1,
-               'middle': 0.5,
-               'mid': 0.5,
-               'mop': 0.5,
-               'end': 0,
-               'eop': 0}.get(occurs_at, 0)
-        discount_factor = (q ** exp) * (1 - (q ** -observation_horizon)) / discount_rate
+        exp = {"beginning": 1, "start": 1, "bop": 1, "middle": 0.5, "mid": 0.5, "mop": 0.5, "end": 0, "eop": 0}.get(
+            occurs_at, 0
+        )
+        discount_factor = (q**exp) * (1 - (q**-observation_horizon)) / discount_rate
         return nominal_value * discount_factor
 
     @staticmethod
-    def annuity(present_value: float,
-                observation_horizon: int,
-                discount_rate: float,
-                occurs_at: str) -> float:
+    def annuity(present_value: float, observation_horizon: int, discount_rate: float, occurs_at: str) -> float:
         """
         calculate the annuity (the equivalent periodical, nominally recurring value to generate the same
         NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
         the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
         """
         q = 1 + discount_rate
-        exp = {'beginning': 1,
-               'start': 1,
-               'bop': 1,
-               'middle': 0.5,
-               'mid': 0.5,
-               'mop': 0.5,
-               'end': 0,
-               'eop': 0}.get(occurs_at, 0)
+        exp = {"beginning": 1, "start": 1, "bop": 1, "middle": 0.5, "mid": 0.5, "mop": 0.5, "end": 0, "eop": 0}.get(
+            occurs_at, 0
+        )
         try:
-            annuity = present_value * discount_rate / ((1 - (q ** -observation_horizon)) * (q ** exp))
+            annuity = present_value * discount_rate / ((1 - (q**-observation_horizon)) * (q**exp))
         except ZeroDivisionError:  # observation_horizon = 0
             annuity = present_value / observation_horizon
         return annuity
 
     @staticmethod
-    def reinvest_periods(lifespan: int,
-                         observation_horizon: int,
-                         include_init: bool = False) -> list:
+    def reinvest_periods(lifespan: int, observation_horizon: int, include_init: bool = False) -> list:
         """
         return a list of period numbers to reinvest into a component (i.e. replace it),
         given its lifespan and the observation horizon. Initial investment is removed by default.
@@ -96,13 +72,13 @@ class EcoTools:
 
     @staticmethod
     def calc_wacc(
-            share_equity: float,  # share of equity in capital structure
-            rate_debt: float,  # interest rate on debt
-            rate_market: float = 0.07,  # expected return on market
-            rate_riskfree: float = 0.03,  # risk-free return rate
-            rate_tax: float = 0.25,  # corporate tax rate
-            rate_inflation: float = 0.02,  # expected inflation rate
-            volatility_relative: float = 1,  # volatility of stock price relative to market
+        share_equity: float,  # share of equity in capital structure
+        rate_debt: float,  # interest rate on debt
+        rate_market: float = 0.07,  # expected return on market
+        rate_riskfree: float = 0.03,  # risk-free return rate
+        rate_tax: float = 0.25,  # corporate tax rate
+        rate_inflation: float = 0.02,  # expected inflation rate
+        volatility_relative: float = 1,  # volatility of stock price relative to market
     ) -> (float, float):
         """
         This function calculates the nominal (including inflation) weighted average cost of capital (WACC) using the
@@ -115,35 +91,36 @@ class EcoTools:
         return wacc_nominal, wacc_real
 
     @staticmethod
-    def transform_scalar_var(value: str |  float | pd.Series,
-                             scenario: simulation.Scenario,
-                             block: Optional[blocks.BaseBlock] = None):
+    def transform_scalar_var(
+        value: str | float | pd.Series, scenario: simulation.Scenario, block: Optional[blocks.BaseBlock] = None
+    ):
         """
         Transform a value holding either the filename of a csv file containing a timeseries or a scalar
         to a pandas Series with the same DatetimeIndex as the simulation.
         """
         if isinstance(value, str):  # value contains filename
-            filename = utils.set_extension(filename=value,
-                                           default_extension='.csv')
+            filename = utils.set_extension(filename=value, default_extension=".csv")
 
-            df = utils.read_timeseries_csv(path_input_file=scenario.paths.input / filename,
-                                           block=block,
-                                           scenario=scenario,
-                                           multiheader=False,
-                                           resampling=True)
+            df = utils.read_timeseries_csv(
+                path_input_file=scenario.paths.input / filename,
+                block=block,
+                scenario=scenario,
+                multiheader=False,
+                resampling=True,
+            )
             if df.shape[1] != 1:
-                scenario.logger.warning(f'Block "{block.name}": Input data in {filename} contains more than one column - '
-                                        f'only first column is used.')
+                scenario.logger.warning(
+                    f'Block "{block.name}": Input data in {filename} contains more than one column - '
+                    f"only first column is used."
+                )
 
             return df.iloc[:, 0]  # return only first column
 
         else:  # value is given as scalar
-            return pd.Series(data=value,
-                             index=scenario.times.sim.dti)
+            return pd.Series(data=value, index=scenario.times.sim.dti)
 
     @staticmethod
-    def calc_frac_remaining_ls(ls: int,
-                               project_duration: int) -> float:
+    def calc_frac_remaining_ls(ls: int, project_duration: int) -> float:
         """
         Calculate the fraction of the remaining lifespan of a component after the project duration.
         A remaining lifespan fraction of 1 is considered as 0 as the component is not replaced anymore.
@@ -160,43 +137,30 @@ class EcoTools:
 class Size:
     name: Optional[str] = None
     block: Optional[blocks.BaseBlock] = None
-    unit: str = ''
+    unit: str = ""
 
     # parameters that are set in __post_init__
-    _preexisting: float = field(init=False,
-                                repr=False,
-                                default=0.0)
-    _invest: bool = field(init=False,
-                          repr=False,
-                          default=False)
+    _preexisting: float = field(init=False, repr=False, default=0.0)
+    _invest: bool = field(init=False, repr=False, default=False)
 
-    _total_max: Optional[float] = field(init=False,
-                                        repr=False,
-                                        default=None)  # "Optional" is equal to "float | None"
+    _total_max: Optional[float] = field(init=False, repr=False, default=None)  # "Optional" is equal to "float | None"
 
     # parameters that are set after optimization
-    _expansion: float = field(default=0.0,
-                              init=False,
-                              repr=False)  # set after optimization, initialized with 0.0
+    _expansion: float = field(default=0.0, init=False, repr=False)  # set after optimization, initialized with 0.0
 
     def __post_init__(self):
         if self.name and self.block:  # name and block are None for default size object
-            self.preexisting = self._get_param(param='size_preexisting',
-                                               default=self.preexisting)
+            self.preexisting = self._get_param(param="size_preexisting", default=self.preexisting)
 
-            self.invest = self._get_param(param='invest',
-                                          default=self.invest)
+            self.invest = self._get_param(param="invest", default=self.invest)
 
-            self.total_max = self._get_param(param='size_max',
-                                             default=self.total_max)
+            self.total_max = self._get_param(param="size_max", default=self.total_max)
 
-    def _get_param(self,
-                   param: str,
-                   default: Any) -> Any:
+    def _get_param(self, param: str, default: Any) -> Any:
         """
         Get a parameter from the block's input data.
         """
-        name_param = f'{param}_{self.name}'
+        name_param = f"{param}_{self.name}"
         value = getattr(self.block, name_param, default)
         # ToDo: implement removal of parameters from block (also ls and ccr)
         # if hasattr(self.block, name_param):
@@ -268,12 +232,16 @@ class Size:
         Create a pd.Series with the size's attributes for result_summary.
         """
         if self.name and self.block:  # name and block are None for default size object
-            return pd.Series({f'size_{self.name}_preexisting': self.preexisting,
-                              f'size_{self.name}_invest': self.invest,
-                              f'size_{self.name}_total_max': self.total_max,
-                              f'size_{self.name}_expansion_max': self.expansion_max,
-                              f'size_{self.name}_expansion': self.expansion,
-                              f'size_{self.name}_total': self.total})
+            return pd.Series(
+                {
+                    f"size_{self.name}_preexisting": self.preexisting,
+                    f"size_{self.name}_invest": self.invest,
+                    f"size_{self.name}_total_max": self.total_max,
+                    f"size_{self.name}_expansion_max": self.expansion_max,
+                    f"size_{self.name}_expansion": self.expansion,
+                    f"size_{self.name}_total": self.total,
+                }
+            )
         else:
             return pd.Series()
 
@@ -282,11 +250,14 @@ class Size:
         """
         Create a message string for result_messages.
         """
-        return (f'Optimized size of component "{self.name}" in block "{self.block.name}": '
-                f'{self.total / 1e3:.1f} {self.unit} '
-                f'(existing: {self.preexisting / 1e3:.1f} {self.unit} - '
-                f'expansion: {self.expansion / 1e3:.1f} {self.unit})'
-                if self.invest else '')
+        return (
+            f'Optimized size of component "{self.name}" in block "{self.block.name}": '
+            f"{self.total / 1e3:.1f} {self.unit} "
+            f"(existing: {self.preexisting / 1e3:.1f} {self.unit} - "
+            f"expansion: {self.expansion / 1e3:.1f} {self.unit})"
+            if self.invest
+            else ""
+        )
 
 
 @dataclass
@@ -295,24 +266,32 @@ class OptimizationConverter:
 
     def __post_init__(self):
         # calculate annuity due factor to compensate investment costs for difference between simulation and project time
-        self.factor_ep_invest: float = (EcoTools.annuity(present_value=1,
-                                                         observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                                         discount_rate=self.poi.scenario.wacc,
-                                                         occurs_at='beginning')
-                                        if self.poi.scenario.compensate_sim_prj else 1)
+        self.factor_ep_invest: float = (
+            EcoTools.annuity(
+                present_value=1,
+                observation_horizon=self.poi.scenario.prj_duration_yrs,
+                discount_rate=self.poi.scenario.wacc,
+                occurs_at="beginning",
+            )
+            if self.poi.scenario.compensate_sim_prj
+            else 1
+        )
 
         # calculate specific present value of investment (addition of capex and mntex) cost
         # join maintenance and capex specific present values for the project duration
-        self.spec_ep_invest: float = ((self._get_spec_prj_ep_capex() + self._get_spec_prj_ep_mntex()) *
-                                      self.factor_ep_invest)
+        self.spec_ep_invest: float = (
+            self._get_spec_prj_ep_capex() + self._get_spec_prj_ep_mntex()
+        ) * self.factor_ep_invest
 
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        self.factor_ep_operation: float = ((1 / self.poi.scenario.sim_yr_rat)
-                                           if self.poi.scenario.compensate_sim_prj else 1)
+        self.factor_ep_operation: float = (
+            (1 / self.poi.scenario.sim_yr_rat) if self.poi.scenario.compensate_sim_prj else 1
+        )
 
         # calculate specific present value of operation cost
-        self.spec_ep_operation: float = (self.poi.opex.spec * self.factor_ep_operation
-                                         if self.poi.opex else 0.0)  # default value if opex is not defined
+        self.spec_ep_operation: float = (
+            self.poi.opex.spec * self.factor_ep_operation if self.poi.opex else 0.0
+        )  # default value if opex is not defined
 
     def _get_spec_prj_ep_capex(self) -> float:
         """
@@ -323,51 +302,58 @@ class OptimizationConverter:
         if not self.poi.capex:
             return 0.0
 
-        spec_prj_ep = np.array([0.0] * len(self.poi.discount_factors.index),
-                               dtype=float)
+        spec_prj_ep = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
 
         # apply specific capex for replacement periods
-        spec_prj_ep[EcoTools.reinvest_periods(lifespan=self.poi.ls,
-                                              observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                              include_init=True)] = self.poi.capex.spec
+        spec_prj_ep[
+            EcoTools.reinvest_periods(
+                lifespan=self.poi.ls, observation_horizon=self.poi.scenario.prj_duration_yrs, include_init=True
+            )
+        ] = self.poi.capex.spec
 
         # apply specific salvage value after project duration considering the remaining lifespan
         # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
         # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
         # beginning of the last project year
         spec_prj_ep[self.poi.scenario.prj_duration_yrs] = (
-                -1 * self.poi.capex.spec * EcoTools.calc_frac_remaining_ls(
-            ls=self.poi.ls,
-            project_duration=self.poi.scenario.prj_duration_yrs
-            )
+            -1
+            * self.poi.capex.spec
+            * EcoTools.calc_frac_remaining_ls(ls=self.poi.ls, project_duration=self.poi.scenario.prj_duration_yrs)
         )
 
         # adjust specific capex by appropriate cost change ratio
-        spec_prj_ep *= self.poi.ccr ** self.poi.discount_factors.index
+        spec_prj_ep *= self.poi.ccr**self.poi.discount_factors.index
 
         # sum up all specific discounted capex for the project duration
-        spec_prj_ep = spec_prj_ep @ self.poi.discount_factors['beginning']
+        spec_prj_ep = spec_prj_ep @ self.poi.discount_factors["beginning"]
 
         return spec_prj_ep
 
     def _get_spec_prj_ep_mntex(self) -> float:
         # calculate specific present value of mntex for the project duration
-        return (EcoTools.acc_discount(nominal_value=self.poi.mntex.spec,
-                                      observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                      discount_rate=self.poi.scenario.wacc,
-                                      occurs_at='beginning')
-                if self.poi.mntex else 0.0)  # default value if mntex is not defined
+        return (
+            EcoTools.acc_discount(
+                nominal_value=self.poi.mntex.spec,
+                observation_horizon=self.poi.scenario.prj_duration_yrs,
+                discount_rate=self.poi.scenario.wacc,
+                occurs_at="beginning",
+            )
+            if self.poi.mntex
+            else 0.0
+        )  # default value if mntex is not defined
 
 
 @dataclass
 class PeakOptimizationConverter(OptimizationConverter):
-
     def __post_init__(self):
         super().__post_init__()
 
         # calculate annuity due factor to compensate peak opex for difference between simulation and project time
-        self.factor_ep_peak = (self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
-                               if self.poi.scenario.compensate_sim_prj else 1)
+        self.factor_ep_peak = (
+            self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
+            if self.poi.scenario.compensate_sim_prj
+            else 1
+        )
 
         # calculate specific present value of peak power operation cost
         self.spec_ep_peak = self.poi.opex_peak.spec_peak * self.factor_ep_peak
@@ -377,24 +363,16 @@ class PeakOptimizationConverter(OptimizationConverter):
 class CostAggregator(ABC):
     poi: EcoPOI
 
-    prj: float = field(init=False,
-                       repr=False,
-                       default=0)
+    prj: float = field(init=False, repr=False, default=0)
 
-    dis: float = field(init=False,
-                       repr=False,
-                       default=0)
+    dis: float = field(init=False, repr=False, default=0)
 
-    ann: float = field(init=False,
-                       repr=False,
-                       default=0)
+    ann: float = field(init=False, repr=False, default=0)
 
-    _cashflows: np.ndarray = field(init=False,
-                                   repr=False)
+    _cashflows: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
-        self.cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
-                                  dtype=float)
+        self.cashflows = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
 
     @property
     @abstractmethod
@@ -412,7 +390,7 @@ class CostAggregator(ABC):
     @property
     def attr_list(self) -> list[str]:
         # List of attributes to be aggregated and returned in result_series
-        return ['prj', 'dis', 'ann', 'cashflows'] + self.attr_list_expansion
+        return ["prj", "dis", "ann", "cashflows"] + self.attr_list_expansion
 
     @property
     def aggregator(self) -> CostAggregator:
@@ -434,18 +412,22 @@ class CostAggregator(ABC):
     def aggregate(self):
         if self.aggregator:
             for attr in self.attr_list:
-                setattr(self.aggregator,
-                        attr,
-                        getattr(self.aggregator, attr) + getattr(self, attr),
-                        )
+                setattr(
+                    self.aggregator,
+                    attr,
+                    getattr(self.aggregator, attr) + getattr(self, attr),
+                )
 
     @property
     def result_series(self) -> pd.Series:
-        return pd.Series({f'{self.cost_type}_{attr}': getattr(self, attr)
-                          for attr
-                          in self.attr_list
-                          if isinstance(getattr(self, attr), (str, int, float, bool))}
-                         )
+        return pd.Series(
+            {
+                f"{self.cost_type}_{attr}": getattr(self, attr)
+                for attr in self.attr_list
+                if isinstance(getattr(self, attr), (str, int, float, bool))
+            }
+        )
+
 
 @dataclass
 class CostEvaluator(CostAggregator):
@@ -468,60 +450,48 @@ class CostEvaluator(CostAggregator):
 
     @property
     def ann(self) -> float:
-        return EcoTools.annuity(present_value=self.dis,
-                                observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                discount_rate=self.poi.scenario.wacc,
-                                occurs_at=self.occurs_at)
+        return EcoTools.annuity(
+            present_value=self.dis,
+            observation_horizon=self.poi.scenario.prj_duration_yrs,
+            discount_rate=self.poi.scenario.wacc,
+            occurs_at=self.occurs_at,
+        )
+
 
 @dataclass
 class CapexAggregator(CostAggregator):
     poi: EcoPOI
 
     # all attributes have to be initialized with 0 and calculated
-    preexisting: float = field(init=False,
-                               repr=False,
-                               default=0.0)
+    preexisting: float = field(init=False, repr=False, default=0.0)
 
-    expansion: float = field(init=False,
-                             repr=False,
-                             default=0.0)
+    expansion: float = field(init=False, repr=False, default=0.0)
 
-    init: float = field(init=False,
-                        repr=False,
-                        default=0.0)
+    init: float = field(init=False, repr=False, default=0.0)
 
-    replacement: float = field(init=False,
-                               repr=False,
-                               default=0.0)
+    replacement: float = field(init=False, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
 
     @property
     def cost_type(self) -> str:
-        return 'capex'
+        return "capex"
 
     @property
     def attr_list_expansion(self) -> list[str]:
-        return ['preexisting', 'expansion', 'init', 'replacement']
-
+        return ["preexisting", "expansion", "init", "replacement"]
 
 
 @dataclass
 class CapexEvaluator(CapexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
-    consider_preexisting: bool = field(init=True,
-                                       repr=False,
-                                       default=True)
+    consider_preexisting: bool = field(init=True, repr=False, default=True)
 
-    spec: float = field(init=True,
-                        repr=False,
-                        default=0.0)
+    spec: float = field(init=True, repr=False, default=0.0)
 
-    fix: float = field(init=True,
-                       repr=False,
-                       default=0.0)
+    fix: float = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
@@ -530,7 +500,7 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
 
     @property
     def occurs_at(self) -> str:
-        return 'beginning'
+        return "beginning"
 
     @property
     def preexisting(self) -> float:
@@ -550,21 +520,20 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
 
     @CapexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
-        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
-                             dtype=float)
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
 
         cashflows[0] += self.init
 
-        for period in EcoTools.reinvest_periods(lifespan=self.poi.ls,
-                                                observation_horizon=self.poi.scenario.prj_duration_yrs,
-                                                include_init=False):
-            cashflows[period] += self.replacement * (self.poi.ccr ** period)
+        for period in EcoTools.reinvest_periods(
+            lifespan=self.poi.ls, observation_horizon=self.poi.scenario.prj_duration_yrs, include_init=False
+        ):
+            cashflows[period] += self.replacement * (self.poi.ccr**period)
 
         # Subtract salvage value capex (negative capex)
         cashflows[self.poi.scenario.prj_duration_yrs] -= (
-                self.replacement * (self.poi.ccr ** self.poi.scenario.prj_duration_yrs) *
-                EcoTools.calc_frac_remaining_ls(ls=self.poi.ls,
-                                                project_duration=self.poi.scenario.prj_duration_yrs)
+            self.replacement
+            * (self.poi.ccr**self.poi.scenario.prj_duration_yrs)
+            * EcoTools.calc_frac_remaining_ls(ls=self.poi.ls, project_duration=self.poi.scenario.prj_duration_yrs)
         )
 
         return cashflows
@@ -574,44 +543,36 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
 class MntexAggregator(CostAggregator):
     poi: EcoPOI
 
-    sim: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    sim: float = field(init=False, repr=False, default=0.0)
 
-    yrl: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    yrl: float = field(init=False, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
 
     @property
     def cost_type(self) -> str:
-        return 'mntex'
+        return "mntex"
 
     @property
     def attr_list_expansion(self) -> list[str]:
-        return ['sim', 'yrl']
+        return ["sim", "yrl"]
 
 
 @dataclass
 class MntexEvaluator(MntexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
-    spec: float = field(init=True,
-                        repr=False,
-                        default=0.0)
+    spec: float = field(init=True, repr=False, default=0.0)
 
-    fix: float = field(init=True,
-                       repr=False,
-                       default=0.0)
+    fix: float = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
 
     @property
     def occurs_at(self) -> str:
-        return 'beginning'
+        return "beginning"
 
     @property
     def yrl(self) -> float:
@@ -623,8 +584,7 @@ class MntexEvaluator(MntexAggregator, CostEvaluator):
 
     @MntexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
-        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
-                             dtype=float)
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
         cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
@@ -633,43 +593,35 @@ class MntexEvaluator(MntexAggregator, CostEvaluator):
 class OpexAggregator(CostAggregator):
     poi: EcoPOI
 
-    sim: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    sim: float = field(init=False, repr=False, default=0.0)
 
-    yrl: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    yrl: float = field(init=False, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
 
     @property
     def cost_type(self) -> str:
-        return 'opex'
+        return "opex"
 
     @property
     def attr_list_expansion(self) -> list[str]:
-        return ['sim', 'yrl']
+        return ["sim", "yrl"]
 
 
 @dataclass
 class OpexEvaluator(OpexAggregator, CostEvaluator):
     poi: EcoEvaluator
 
-    spec: str | float | pd.Series = field(init=True,
-                                          repr=False,
-                                          default=0.0)
+    spec: str | float | pd.Series = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
-        self.spec = EcoTools.transform_scalar_var(value=self.spec,
-                                                  scenario=self.poi.scenario,
-                                                  block=self.poi.block)
+        self.spec = EcoTools.transform_scalar_var(value=self.spec, scenario=self.poi.scenario, block=self.poi.block)
 
     @property
     def occurs_at(self) -> str:
-        return 'end'
+        return "end"
 
     @property
     def sim(self) -> float:
@@ -681,42 +633,41 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
 
     @OpexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
-        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
-                             dtype=float)
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
         cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
 
 @dataclass
 class FleetUnitOpexEvaluator(OpexEvaluator):
-    dist: str | float | pd.Series = field(init=True,
-                                          repr=False,
-                                          default=0.0)
+    dist: str | float | pd.Series = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
-        self.dist = EcoTools.transform_scalar_var(value=self.dist,
-                                                  scenario=self.poi.scenario,
-                                                  block=self.poi.block)
+        self.dist = EcoTools.transform_scalar_var(value=self.dist, scenario=self.poi.scenario, block=self.poi.block)
 
     @property
     def sim(self) -> float:
         sim = super().sim
-        sim += (self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'dist'] @
-                self.dist[self.poi.scenario.times.eval.dti])
+        sim += (
+            self.poi.block.log.loc[self.poi.scenario.times.eval.dti, "dist"]
+            @ self.dist[self.poi.scenario.times.eval.dti]
+        )
         return sim
 
 
 @dataclass
 class PeakOpexEvaluator(OpexEvaluator):
-    spec_peak: float = field(init=True,
-                             default=0.0)
+    spec_peak: float = field(init=True, default=0.0)
 
     @property
     def sim(self) -> float:
         sim = super().sim
-        sim += (self.poi.block.peak_periods.loc[self.poi.name, 'power'] * self.spec_peak *
-                            self.poi.block.peak_periods.loc[self.poi.name, 'period_fraction'])
+        sim += (
+            self.poi.block.peak_periods.loc[self.poi.name, "power"]
+            * self.spec_peak
+            * self.poi.block.peak_periods.loc[self.poi.name, "period_fraction"]
+        )
         return sim
 
 
@@ -724,43 +675,35 @@ class PeakOpexEvaluator(OpexEvaluator):
 class CrevAggregator(CostAggregator):
     poi: EcoPOI
 
-    sim: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    sim: float = field(init=False, repr=False, default=0.0)
 
-    yrl: float = field(init=False,
-                       repr=False,
-                       default=0.0)
+    yrl: float = field(init=False, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
 
     @property
     def cost_type(self) -> str:
-        return 'crev'
+        return "crev"
 
     @property
     def attr_list_expansion(self) -> list[str]:
-        return ['sim', 'yrl']
+        return ["sim", "yrl"]
 
 
 @dataclass
 class CrevEvaluator(CrevAggregator, CostEvaluator):
     poi: EcoEvaluator
 
-    spec: str | float | pd.Series = field(init=True,
-                                          repr=False,
-                                          default=0.0)
+    spec: str | float | pd.Series = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
-        self.spec = EcoTools.transform_scalar_var(value=self.spec,
-                                                  scenario=self.poi.scenario,
-                                                  block=self.poi.block)
+        self.spec = EcoTools.transform_scalar_var(value=self.spec, scenario=self.poi.scenario, block=self.poi.block)
 
     @property
     def occurs_at(self) -> str:
-        return 'end'
+        return "end"
 
     @property
     def sim(self) -> float:
@@ -772,40 +715,35 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
 
     @CrevAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
-        cashflows = np.array([0.0] * len(self.poi.discount_factors.index),
-                             dtype=float)
+        cashflows = np.array([0.0] * len(self.poi.discount_factors.index), dtype=float)
         cashflows[self.poi.scenario.periods_prj] = self.yrl
         return cashflows
 
 
 @dataclass
 class FleetUnitCrevEvaluator(CrevEvaluator):
-    dist: str | float | pd.Series = field(init=True,
-                                          repr=False,
-                                          default=0.0)
+    dist: str | float | pd.Series = field(init=True, repr=False, default=0.0)
 
-    time: str | float | pd.Series = field(init=True,
-                                          repr=False,
-                                          default=0.0)
+    time: str | float | pd.Series = field(init=True, repr=False, default=0.0)
 
     def __post_init__(self):
         super().__post_init__()
-        self.dist = EcoTools.transform_scalar_var(value=self.dist,
-                                                  scenario=self.poi.scenario,
-                                                  block=self.poi.block)
+        self.dist = EcoTools.transform_scalar_var(value=self.dist, scenario=self.poi.scenario, block=self.poi.block)
 
-        self.time = EcoTools.transform_scalar_var(value=self.time,
-                                                  scenario=self.poi.scenario,
-                                                  block=self.poi.block)
+        self.time = EcoTools.transform_scalar_var(value=self.time, scenario=self.poi.scenario, block=self.poi.block)
 
     @property
     def sim(self) -> float:
         sim = super().sim
-        sim += (self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'dist'] @
-                self.dist[self.poi.scenario.times.eval.dti])
+        sim += (
+            self.poi.block.log.loc[self.poi.scenario.times.eval.dti, "dist"]
+            @ self.dist[self.poi.scenario.times.eval.dti]
+        )
 
-        sim += ((~self.poi.block.log.loc[self.poi.scenario.times.eval.dti, 'atbase'] @
-                 self.time[self.poi.scenario.times.eval.dti]) * self.poi.scenario.timestep.hours)
+        sim += (
+            ~self.poi.block.log.loc[self.poi.scenario.times.eval.dti, "atbase"]
+            @ self.time[self.poi.scenario.times.eval.dti]
+        ) * self.poi.scenario.timestep.hours
 
         return sim
 
@@ -816,7 +754,7 @@ class TotexAggregator(CostAggregator):
 
     @property
     def cost_type(self) -> str:
-        return 'totex'
+        return "totex"
 
     @property
     def attr_list_expansion(self) -> list[str]:
@@ -824,15 +762,19 @@ class TotexAggregator(CostAggregator):
         return []
 
     def aggregate(self):
-        for attr_name in ['cashflows', 'prj', 'dis', 'ann']:
-            setattr(self,
-                    attr_name,
-                    # totex = capex + mntex + opex (if available)
-                    sum([getattr(getattr(self.poi, attr), attr_name)
-                         for attr
-                         in ['capex', 'mntex', 'opex']
-                         if getattr(self.poi, attr)])  # Start with the current value (self.<attr_name>)
-                    )
+        for attr_name in ["cashflows", "prj", "dis", "ann"]:
+            setattr(
+                self,
+                attr_name,
+                # totex = capex + mntex + opex (if available)
+                sum(
+                    [
+                        getattr(getattr(self.poi, attr), attr_name)
+                        for attr in ["capex", "mntex", "opex"]
+                        if getattr(self.poi, attr)
+                    ]
+                ),  # Start with the current value (self.<attr_name>)
+            )
 
         super().aggregate()
 
@@ -843,7 +785,7 @@ class ValueAggregator(CostAggregator):
 
     @property
     def cost_type(self) -> str:
-        return 'value'
+        return "value"
 
     @property
     def attr_list_expansion(self) -> list[str]:
@@ -851,15 +793,17 @@ class ValueAggregator(CostAggregator):
         return []
 
     def aggregate(self):
-        for attr_name in ['cashflows', 'prj', 'dis', 'ann']:
-            setattr(self,
-                    attr_name,
-                    # value = crev - totex (if crev is available)
-                    (getattr(self.poi.crev, attr_name) - getattr(self.poi.totex, attr_name)
-                     if self.poi.crev
-                     else -1 * getattr(self.poi.totex, attr_name)
-                     )  #  0 as default value is not possible due to cashflows being a numpy array
-                    )
+        for attr_name in ["cashflows", "prj", "dis", "ann"]:
+            setattr(
+                self,
+                attr_name,
+                # value = crev - totex (if crev is available)
+                (
+                    getattr(self.poi.crev, attr_name) - getattr(self.poi.totex, attr_name)
+                    if self.poi.crev
+                    else -1 * getattr(self.poi.totex, attr_name)
+                ),  #  0 as default value is not possible due to cashflows being a numpy array
+            )
 
         super().aggregate()
 
@@ -871,10 +815,18 @@ class EcoPOI(ABC):
     block: Optional[blocks.BaseBlock] = None
 
     # Initialize in __post_init__()
-    capex: Optional[CapexAggregator | CapexEvaluator] = field(init=False,)
-    mntex: Optional[MntexAggregator | MntexEvaluator] = field(init=False,)
-    opex: Optional[OpexAggregator | OpexEvaluator] = field(init=False,)
-    crev: Optional[CrevAggregator | CrevEvaluator] = field(init=False,)
+    capex: Optional[CapexAggregator | CapexEvaluator] = field(
+        init=False,
+    )
+    mntex: Optional[MntexAggregator | MntexEvaluator] = field(
+        init=False,
+    )
+    opex: Optional[OpexAggregator | OpexEvaluator] = field(
+        init=False,
+    )
+    crev: Optional[CrevAggregator | CrevEvaluator] = field(
+        init=False,
+    )
 
     @abstractmethod
     def __post_init__(self):
@@ -894,7 +846,7 @@ class EcoPOI(ABC):
     @property
     def attr2agg(self) -> list[str]:
         # get a list of names of all attributes which are to be aggregated or written in result_series
-        return ['capex', 'mntex', 'opex', 'crev'] + self.attr2agg_additional
+        return ["capex", "mntex", "opex", "crev"] + self.attr2agg_additional
 
     @property
     @abstractmethod
@@ -912,8 +864,12 @@ class EcoPOI(ABC):
 @dataclass
 class EcoAggregator(EcoPOI):
     # add totex and value as additional attributes for EcoAggregator
-    totex: TotexAggregator = field(init=False,)
-    value: ValueAggregator = field(init=False,)
+    totex: TotexAggregator = field(
+        init=False,
+    )
+    value: ValueAggregator = field(
+        init=False,
+    )
 
     def __post_init__(self):
         # specify EcoPOI attributes
@@ -929,13 +885,13 @@ class EcoAggregator(EcoPOI):
     @property
     def attr2agg_additional(self) -> List[str]:
         # additional attributes to be aggregated and written in result_series
-        return ['totex', 'value']
+        return ["totex", "value"]
 
     @property
     def aggregator(self) -> EcoAggregator:
         # EcoAggregators aggregate their results in the aggregator of the block's parent
         # The class Scenario does not have an attribute parent -> no aggregator is returned
-        return self.block.parent.aggregator if hasattr(self.block, 'parent') else None
+        return self.block.parent.aggregator if hasattr(self.block, "parent") else None
 
     def write_result_summary(self) -> pd.Series:
         # concat the result_series of all relevant attributes (type hint required for IDE to recognize the type)
@@ -948,7 +904,7 @@ class EcoEvaluator(EcoPOI):
     block: blocks.BaseBlock
 
     size_name: Optional[str] = field(init=True, repr=False, default=None)
-    size_unit: str = field(init=True, repr=False, default='kW')
+    size_unit: str = field(init=True, repr=False, default="kW")
     flow_name: Optional[str] = field(init=True, repr=False, default=None)
     ls: Optional[int] = field(init=True, repr=False, default=None)
     ccr: Optional[float] = field(init=True, repr=False, default=1.0)
@@ -962,11 +918,18 @@ class EcoEvaluator(EcoPOI):
     crev_config_fleetunit: InitVar[dict] = None
     opex_config_peak: InitVar[dict] = None
 
-    opt: OptimizationConverter = field(init=False,
-                                       repr=False)
+    opt: OptimizationConverter = field(init=False, repr=False)
 
-    def __post_init__(self, capex_config, mntex_config, opex_config, crev_config,
-                      opex_config_fleetunit, crev_config_fleetunit, opex_config_peak):
+    def __post_init__(
+        self,
+        capex_config,
+        mntex_config,
+        opex_config,
+        crev_config,
+        opex_config_fleetunit,
+        crev_config_fleetunit,
+        opex_config_peak,
+    ):
         if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
             self.ls = self.scenario.prj_duration_yrs
 
@@ -974,18 +937,17 @@ class EcoEvaluator(EcoPOI):
             if self.size_name in self.block.sizes:
                 raise ValueError(f"Size with name '{self.size_name}' already exists in block '{self.block.name}'.")
 
-            self.block.sizes[self.name] = Size(name=self.name,
-                                               block=self.block,
-                                               unit=self.size_unit
-                                               )
+            self.block.sizes[self.name] = Size(name=self.name, block=self.block, unit=self.size_unit)
 
         # Only add flow_name to block's flow_names if block.flow_names exist -> only ElectricBlock instances
         if self.flow_name:
-            if hasattr(self.block, 'flow_names'):
+            if hasattr(self.block, "flow_names"):
                 self.block.flow_names.add(self.flow_name)
             else:
-                raise AttributeError(f"Attribute 'flow_name' was specified for EcoPOI '{self.name}' in block "
-                                     f"'{self.block.name}'. This block does not have an attribute 'flow_names'.")
+                raise AttributeError(
+                    f"Attribute 'flow_name' was specified for EcoPOI '{self.name}' in block "
+                    f"'{self.block.name}'. This block does not have an attribute 'flow_names'."
+                )
 
         # Define Evaluators if the corresponding config is provided
         self.capex = CapexEvaluator(poi=self, **capex_config) if capex_config else None
@@ -994,10 +956,12 @@ class EcoEvaluator(EcoPOI):
         self.crev = CrevEvaluator(poi=self, **crev_config) if crev_config else None
 
         # Define additional Evaluators for FleetUnit if required
-        self.opex_fleetunit = (FleetUnitOpexEvaluator(poi=self, **opex_config_fleetunit)
-                               if opex_config_fleetunit else None)
-        self.crev_fleetunit = (FleetUnitCrevEvaluator(poi=self, **crev_config_fleetunit)
-                               if crev_config_fleetunit else None)
+        self.opex_fleetunit = (
+            FleetUnitOpexEvaluator(poi=self, **opex_config_fleetunit) if opex_config_fleetunit else None
+        )
+        self.crev_fleetunit = (
+            FleetUnitCrevEvaluator(poi=self, **crev_config_fleetunit) if crev_config_fleetunit else None
+        )
 
         # Define additional Evaluators for PeakPower if required
         self.opex_peak = PeakOpexEvaluator(poi=self, **opex_config_peak) if opex_config_peak else None
@@ -1010,7 +974,7 @@ class EcoEvaluator(EcoPOI):
     @property
     def attr2agg_additional(self) -> list[str]:
         # additional attributes to be aggregated
-        return ['opex_fleetunit', 'crev_fleetunit', 'opex_peak']
+        return ["opex_fleetunit", "crev_fleetunit", "opex_peak"]
 
     @property
     def aggregator(self) -> EcoAggregator:
@@ -1029,9 +993,8 @@ class EcoEvaluator(EcoPOI):
     @property
     def flow(self) -> np.ndarray:
         # if flow with name self.flow_name exists in block return this flow as numpy array
-        if hasattr(self.block, 'flows') and self.flow_name in self.block.flows.columns:
+        if hasattr(self.block, "flows") and self.flow_name in self.block.flows.columns:
             return self.block.flows.loc[self.scenario.times.eval.dti, self.flow_name].values
         # else return default flow array with zeros
         else:
-            return np.array([0.0] * len(self.scenario.times.eval.dti),
-                            dtype=float)
+            return np.array([0.0] * len(self.scenario.times.eval.dti), dtype=float)

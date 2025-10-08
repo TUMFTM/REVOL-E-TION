@@ -7,7 +7,7 @@ class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
         self.equal_invests = []
-        self.invest_costs = {'flow': [], 'storage': []}
+        self.invest_costs = {"flow": [], "storage": []}
 
     def apply_constraints(self, model):
         # Add pyomo block to model to store custom constraints
@@ -33,10 +33,10 @@ class CustomConstraints:
 
     def add_invest_costs(self, invest, capex_spec, invest_type):
         # needs to be a custom solution, as peakshaving also uses investement objects but should not be considered
-        if invest_type == 'flow':
-            self.invest_costs[invest_type].append({'fi': invest[0], 'fo': invest[1], 'capex_spec': capex_spec})
-        elif invest_type == 'storage':
-            self.invest_costs[invest_type].append({'so': invest[0], 'capex_spec': capex_spec})
+        if invest_type == "flow":
+            self.invest_costs[invest_type].append({"fi": invest[0], "fo": invest[1], "capex_spec": capex_spec})
+        elif invest_type == "storage":
+            self.invest_costs[invest_type].append({"so": invest[0], "capex_spec": capex_spec})
 
     def equate_invests(self, model):
         # Goal:     Several sizes (e.g. SystemCore's AC/DC and DC/AC converter, GridConnection sizes) can be forced to
@@ -56,9 +56,11 @@ class CustomConstraints:
                 _equate_invest_variables(
                     m=model,
                     block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
-                    name="_equal_".join([f'{var["in"]}_to_{var["out"]}' for var in [var_list[0], var_equal]]),
-                    variables=[model.InvestmentFlowBlock.invest[var['in'], var['out'], 0]
-                               for var in [var_list[0], var_equal]])
+                    name="_equal_".join([f"{var['in']}_to_{var['out']}" for var in [var_list[0], var_equal]]),
+                    variables=[
+                        model.InvestmentFlowBlock.invest[var["in"], var["out"], 0] for var in [var_list[0], var_equal]
+                    ],
+                )
 
     def limit_pwr_gridmarket(self, model):
         # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
@@ -88,18 +90,26 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_limit_flows_rule))
 
         # Apply constraints for every GridConnection
-        for grid in self.scenario.block_registry.get('GridConnection', {}).values():
-            _limit_flows(m=model,
-                         block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_g2s_markets',
-                         flows_markets=[(market.components['src'], grid.components['bus']) for market in grid.subblocks.values()],
-                         flows_grid=[(grid.components['bus'], converter) for converter in grid.outflows.values()])
+        for grid in self.scenario.block_registry.get("GridConnection", {}).values():
+            _limit_flows(
+                m=model,
+                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
+                name=f"limit_{grid.name}_g2s_markets",
+                flows_markets=[
+                    (market.components["src"], grid.components["bus"]) for market in grid.subblocks.values()
+                ],
+                flows_grid=[(grid.components["bus"], converter) for converter in grid.outflows.values()],
+            )
 
-            _limit_flows(m=model,
-                         block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                         name=f'limit_{grid.name}_s2g_markets',
-                         flows_markets=[(grid.components['bus'], market.components['snk']) for market in grid.subblocks.values()],
-                         flows_grid=[(converter, grid.components['bus']) for converter in grid.inflows.values()])
+            _limit_flows(
+                m=model,
+                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
+                name=f"limit_{grid.name}_s2g_markets",
+                flows_markets=[
+                    (grid.components["bus"], market.components["snk"]) for market in grid.subblocks.values()
+                ],
+                flows_grid=[(converter, grid.components["bus"]) for converter in grid.inflows.values()],
+            )
 
     def renewables_only(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
@@ -115,44 +125,63 @@ class CustomConstraints:
         # Add new block within the CUSTOM_CONSTRAINTS block to store all constraints related to renewable energy only
         model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY = po.Block()
         # Add the variables to store the renewable power flows (format: res_[from bus][to bus])
-        for var_name in ['pwr_res_acac', 'pwr_res_acdc', 'pwr_res_dcac', 'pwr_res_dcdc']:
-            setattr(model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                    var_name,
-                    po.Var(model.TIMEINDEX, within=po.NonNegativeReals))
+        for var_name in ["pwr_res_acac", "pwr_res_acdc", "pwr_res_dcac", "pwr_res_dcdc"]:
+            setattr(
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY, var_name, po.Var(model.TIMEINDEX, within=po.NonNegativeReals)
+            )
 
         # Get discharging flows of all StationaryBattery instances which only allow storing renewable energy
-        from_storage_ac = [(block.components['outflow'], block.bus_connected)
-                           for block in self.scenario.block_registry.get('StationaryBattery', {}).values()
-                           if block.res_only and block.system == 'ac']
-        to_storage_ac = [(block.bus_connected, block.components['inflow'])
-                         for block in self.scenario.block_registry.get('StationaryBattery', {}).values()
-                         if block.res_only and block.system == 'ac']
-        from_storage_dc = [(block.components['outflow'], block.bus_connected)
-                           for block in self.scenario.block_registry.get('StationaryBattery', {}).values()
-                           if block.res_only and block.system == 'dc']
-        to_storage_dc = [(block.bus_connected, block.components['inflow'])
-                         for block in self.scenario.block_registry.get('StationaryBattery', {}).values()
-                         if block.res_only and block.system == 'dc']
-
+        from_storage_ac = [
+            (block.components["outflow"], block.bus_connected)
+            for block in self.scenario.block_registry.get("StationaryBattery", {}).values()
+            if block.res_only and block.system == "ac"
+        ]
+        to_storage_ac = [
+            (block.bus_connected, block.components["inflow"])
+            for block in self.scenario.block_registry.get("StationaryBattery", {}).values()
+            if block.res_only and block.system == "ac"
+        ]
+        from_storage_dc = [
+            (block.components["outflow"], block.bus_connected)
+            for block in self.scenario.block_registry.get("StationaryBattery", {}).values()
+            if block.res_only and block.system == "dc"
+        ]
+        to_storage_dc = [
+            (block.bus_connected, block.components["inflow"])
+            for block in self.scenario.block_registry.get("StationaryBattery", {}).values()
+            if block.res_only and block.system == "dc"
+        ]
 
         # Get flows of all components connected to each SystemCore bus which only allow feed-in of renewable energy
         flows_res_from_bus = {
-            'ac': [(market.parent.components['bus'], market.components['snk'])
-                   for market in self.scenario.block_registry.get('GridMarket', {}).values()
-                   if market.res_only and market.parent.system == 'ac'] + to_storage_ac,
-            'dc': [(market.parent.components['bus'], market.components['snk'])
-                   for market in self.scenario.block_registry.get('GridMarket', {}).values()
-                   if market.res_only and market.parent.system == 'dc'] + to_storage_dc,
+            "ac": [
+                (market.parent.components["bus"], market.components["snk"])
+                for market in self.scenario.block_registry.get("GridMarket", {}).values()
+                if market.res_only and market.parent.system == "ac"
+            ]
+            + to_storage_ac,
+            "dc": [
+                (market.parent.components["bus"], market.components["snk"])
+                for market in self.scenario.block_registry.get("GridMarket", {}).values()
+                if market.res_only and market.parent.system == "dc"
+            ]
+            + to_storage_dc,
         }
 
         # Get all renewable power flows
         flows_res_to_bus = {
-            'ac': [(block.components['outflow'], block.bus_connected)
-                   for block in self.scenario.block_registry.get('RenewableSource', {}).values()
-                   if block.system == 'ac'] + from_storage_ac,
-            'dc': [(block.components['outflow'], block.bus_connected)
-                   for block in self.scenario.block_registry.get('RenewableSource', {}).values()
-                   if block.system == 'dc'] + from_storage_dc
+            "ac": [
+                (block.components["outflow"], block.bus_connected)
+                for block in self.scenario.block_registry.get("RenewableSource", {}).values()
+                if block.system == "ac"
+            ]
+            + from_storage_ac,
+            "dc": [
+                (block.components["outflow"], block.bus_connected)
+                for block in self.scenario.block_registry.get("RenewableSource", {}).values()
+                if block.system == "dc"
+            ]
+            + from_storage_dc,
         }
 
         def _sum_res(m, block, name, sum_flow, split_flows):
@@ -169,19 +198,27 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_sum_res_rule))
 
         # define res_ac as sum of pwr_res_acac and pwr_res_acdc
-        _sum_res(m=model,
-                 block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                 name='sum_res_ac',
-                 sum_flow=flows_res_to_bus['ac'],
-                 split_flows=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
-                              model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc])
+        _sum_res(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="sum_res_ac",
+            sum_flow=flows_res_to_bus["ac"],
+            split_flows=[
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc,
+            ],
+        )
         # define res_dc as sum of pwr_res_dcac and pwr_res_dcdc
-        _sum_res(m=model,
-                 block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                 name='sum_res_dc',
-                 sum_flow=flows_res_to_bus['dc'],
-                 split_flows=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
-                              model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc])
+        _sum_res(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="sum_res_dc",
+            sum_flow=flows_res_to_bus["dc"],
+            split_flows=[
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc,
+            ],
+        )
 
         def _limit_res_to_conv(m, block, name, conv_flow, res_flow):
             def _limit_res2conv_rule(block):
@@ -195,19 +232,27 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_limit_res2conv_rule))
 
         # limit flow of renewable power from AC to DC to the maximum power of the AC/DC converter in SystemCore
-        _limit_res_to_conv(m=model,
-                           block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                           name='limit_pwr_res_acdc_to_conv',
-                           conv_flow=(self.scenario.block_registry.get('TopLevelBlock', {})['core'].components['ac'],
-                                      self.scenario.block_registry.get('TopLevelBlock', {})['core'].components['acdc']),
-                           res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc)
+        _limit_res_to_conv(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="limit_pwr_res_acdc_to_conv",
+            conv_flow=(
+                self.scenario.block_registry.get("TopLevelBlock", {})["core"].components["ac"],
+                self.scenario.block_registry.get("TopLevelBlock", {})["core"].components["acdc"],
+            ),
+            res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acdc,
+        )
         # limit flow of renewable power from DC to AC to the maximum power of the DC/AC converter in SystemCore
-        _limit_res_to_conv(m=model,
-                           block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                           name='limit_pwr_res_dcac_to_conv',
-                           conv_flow=(self.scenario.block_registry.get('TopLevelBlock', {})['core'].components['dc'],
-                                      self.scenario.block_registry.get('TopLevelBlock', {})['core'].components['dcac']),
-                           res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac)
+        _limit_res_to_conv(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="limit_pwr_res_dcac_to_conv",
+            conv_flow=(
+                self.scenario.block_registry.get("TopLevelBlock", {})["core"].components["dc"],
+                self.scenario.block_registry.get("TopLevelBlock", {})["core"].components["dcac"],
+            ),
+            res_flow=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+        )
 
         def _limit_feed_in(m, block, name, flows_feed_in, flows_res, eff_conv):
             def _limit_feed_in_rule(block):
@@ -224,23 +269,31 @@ class CustomConstraints:
 
         # limit feed-in of renewable power from the AC bus to components connected to the AC-bus considering the
         # SystemCore's converter efficiency
-        _limit_feed_in(m=model,
-                       block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                       name='limit_res_ac_feed_in',
-                       flows_feed_in=flows_res_from_bus['ac'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
-                                  model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac],
-                       eff_conv=[1, self.scenario.block_registry.get('TopLevelBlock', {})['core'].eff['dcac']])
+        _limit_feed_in(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="limit_res_ac_feed_in",
+            flows_feed_in=flows_res_from_bus["ac"],
+            flows_res=[
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_acac,
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+            ],
+            eff_conv=[1, self.scenario.block_registry.get("TopLevelBlock", {})["core"].eff["dcac"]],
+        )
 
         # limit feed-in of renewable power from the DC bus to components connected to the DC-bus considering the
         # SystemCore's converter efficiency
-        _limit_feed_in(m=model,
-                       block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
-                       name='limit_res_dc_feed_in',
-                       flows_feed_in=flows_res_from_bus['dc'],
-                       flows_res=[model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
-                                  model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc],
-                       eff_conv=[self.scenario.block_registry.get('TopLevelBlock', {})['core'].eff['acdc'], 1])
+        _limit_feed_in(
+            m=model,
+            block=model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY,
+            name="limit_res_dc_feed_in",
+            flows_feed_in=flows_res_from_bus["dc"],
+            flows_res=[
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcac,
+                model.CUSTOM_CONSTRAINTS.RENEWABLES_ONLY.pwr_res_dcdc,
+            ],
+            eff_conv=[self.scenario.block_registry.get("TopLevelBlock", {})["core"].eff["acdc"], 1],
+        )
 
     def external_charging_to_storage(self, model):
         # Goal:         Force all external charged power to flow into the commodity's storage.
@@ -263,14 +316,18 @@ class CustomConstraints:
             setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
 
         # Apply constraints for every ElectricFleetUnit
-        for efu in self.scenario.block_registry.get('ElectricFleetUnit', {}).values():
-            _equal_flows(m=model,
-                         block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
-                         name=f'limit_{efu.name}_external_charging_to_storage',
-                         flows_charging=[(efu.components['inflow'], efu.components['bus']),
-                                        (efu.components['conv_ext_ac'], efu.components['bus']),
-                                        (efu.components['conv_ext_dc'], efu.components['bus'])],
-                         flows_storage=[(efu.components['bus'], efu.components['storage'])])
+        for efu in self.scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            _equal_flows(
+                m=model,
+                block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
+                name=f"limit_{efu.name}_external_charging_to_storage",
+                flows_charging=[
+                    (efu.components["inflow"], efu.components["bus"]),
+                    (efu.components["conv_ext_ac"], efu.components["bus"]),
+                    (efu.components["conv_ext_dc"], efu.components["bus"]),
+                ],
+                flows_storage=[(efu.components["bus"], efu.components["storage"])],
+            )
 
     def limit_invest_costs(self, model):
         # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)
@@ -282,12 +339,16 @@ class CustomConstraints:
                 expr = 0
 
                 # Add investment costs for all flow objects
-                expr += sum(m.InvestmentFlowBlock.invest[invest_flow['fi'], invest_flow['fo'], 0] *
-                            invest_flow['capex_spec'] for invest_flow in self.invest_costs['flow'])
+                expr += sum(
+                    m.InvestmentFlowBlock.invest[invest_flow["fi"], invest_flow["fo"], 0] * invest_flow["capex_spec"]
+                    for invest_flow in self.invest_costs["flow"]
+                )
 
                 # Add investment costs for all storage objects
-                expr += sum(m.GenericInvestmentStorageBlock.invest[invest_storage['so'], 0] *
-                            invest_storage['capex_spec'] for invest_storage in self.invest_costs['storage'])
+                expr += sum(
+                    m.GenericInvestmentStorageBlock.invest[invest_storage["so"], 0] * invest_storage["capex_spec"]
+                    for invest_storage in self.invest_costs["storage"]
+                )
 
                 expr += self.scenario.capex_preexisting_considered
 
@@ -297,6 +358,4 @@ class CustomConstraints:
 
         # Add additional user-specific constraints for investment cost limit
         if self.scenario.invest_max is not None:
-            _limit_invests(m=model,
-                           block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
-                           name='limit_invest_costs')
+            _limit_invests(m=model, block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS, name="limit_invest_costs")

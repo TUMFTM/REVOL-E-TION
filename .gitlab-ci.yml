@@ -1,0 +1,28 @@
+stages:
+  - style
+
+variables:
+  UV_VERSION: 0.5
+  PYTHON_VERSION: 3.11
+  BASE_LAYER: bookworm-slim
+  # GitLab CI creates a separate mountpoint for the build directory,
+  # so we need to copy instead of using hard links.
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
+
+
+default:
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  cache:
+    paths:
+      - $UV_CACHE_DIR
+
+pre_commit:
+  stage: style
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git
+    - uv sync --only-dev
+  script:
+    - uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+    - uv cache prune --ci
