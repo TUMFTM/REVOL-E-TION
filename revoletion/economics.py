@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
-from dataclasses import dataclass, field, InitVar
+
+from abc import ABC, abstractmethod
+from dataclasses import InitVar, dataclass, field
+from typing import TYPE_CHECKING, Any, List, Optional
+
 import numpy as np
 import pandas as pd
-from typing import TYPE_CHECKING, Optional, Any, List
-from abc import ABC, abstractmethod
+
 from . import utils
 
-
 if TYPE_CHECKING:
-    from . import blocks
-    from . import simulation
+    from . import blocks, simulation
 
 
 class EcoTools:
@@ -101,13 +102,16 @@ class EcoTools:
         if isinstance(value, str):  # value contains filename
             filename = utils.set_extension(filename=value, default_extension=".csv")
 
-            df = utils.read_timeseries_csv(
-                path_input_file=scenario.paths.input / filename,
-                block=block,
-                scenario=scenario,
-                multiheader=False,
-                resampling=True,
-            )
+            try:
+                df = utils.read_timeseries_csv(
+                    path_input_file=scenario.paths.input / filename,
+                    scenario=scenario,
+                    multiheader=False,
+                    resampling=True,
+                )
+            except IndexError as exc:
+                raise IndexError(f"Failed to load timeseries data for block {block.name}: {exc}")
+
             if df.shape[1] != 1:
                 scenario.logger.warning(
                     f'Block "{block.name}": Input data in {filename} contains more than one column - '

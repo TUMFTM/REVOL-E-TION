@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 
 import ast
-from dataclasses import dataclass, field
 import importlib.metadata
 import importlib.util
 import logging
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -128,14 +127,12 @@ def import_module_from_path(module_name, file_path):
 
 
 def read_timeseries_csv(
-    path_input_file: str | Path,
-    block: "blocks.BaseBlock",
-    scenario: "simulation.Scenario",
-    multiheader: bool = False,
-    resampling: bool = True,
+    path_input_file: str | Path, scenario: "simulation.Scenario", multiheader: bool = False, resampling: bool = True
 ):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
+
+    :raises IndexError: If timeseries data does not cover simulation timeframe.
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
@@ -172,9 +169,7 @@ def read_timeseries_csv(
         df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
 
         if not (scenario.times.sim.dti.isin(df.index).all()):
-            raise IndexError(
-                f'Block "{block.name}":Input timeseries data in {path_input_file} does not cover simulation timeframe'
-            )
+            raise IndexError(f"Input timeseries data in {path_input_file} does not cover simulation timeframe")
         return df.loc[scenario.times.sim.dti]
 
 
@@ -224,3 +219,40 @@ def get_revoletion_python_package_version() -> str:
             "Failed to query REVOL-E_TION package version. This probably means that the package is not correctly installed in your current python environment."
         )
         return UNKNOWN_VERSION
+
+
+def read_scenario_from_file(scenario_path: Path) -> pd.DataFrame:
+    """
+    Load the scenario from the scenario path. Valid formats are CSV and Python pickle.
+
+    Args:
+        scenario_path: Path to the scenario file.
+
+    Returns:
+        The pandas DataFrame containing the scenario parameters.
+
+    Raises:
+        FileNotFoundError: Either if `scenario_path` does not exist or if it isn't a valid file.
+        TypeError: If the scenario file content is not a pandas DataFrame.
+        ValueError: If the file is neither a CSV nor a pickle file.
+    """
+    if not scenario_path.exists():
+        raise FileNotFoundError(f"Scenario file '{scenario_path}' does not exist")
+
+    if not scenario_path.is_file():
+        raise FileNotFoundError(f"Scenario at '{scenario_path}' is not a file")
+
+    if scenario_path.suffix == ".csv":
+        parameters = pd.read_csv(scenario_path, index_col=[0, 1], keep_default_na=False)
+    elif scenario_path.suffix == ".pkl":
+        parameters = pd.read_pickle(scenario_path)
+        if not isinstance(parameters, pd.DataFrame):
+            raise TypeError(
+                f"Scenario parameters from file '{scenario_path}' have wrong format:"
+                + "Expected '{type(pd.DataFrame)} but got {type(parameters)}'"
+            )
+    else:
+        raise ValueError(f"Scenario file '{scenario_path}' is neither CSV nor PKL file.")
+
+    parameters = parameters.sort_index(sort_remaining=True).map(infer_dtype)
+    return parameters

@@ -5,19 +5,18 @@ import copy
 import logging
 import statistics
 
+# from packages
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any, Callable, Optional, Tuple
+
 # packages
 import numpy as np
 import pandas as pd
 import simpy
 
-# from packages
-from dataclasses import dataclass, fields
-from pathlib import Path
-from typing import Callable, List, Tuple, Any, Optional
-
 # from local packages
 from . import blocks
-from .blocks import SubFleet
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):

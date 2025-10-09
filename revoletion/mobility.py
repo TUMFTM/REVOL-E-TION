@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import scipy as sp
-
-from pathlib import Path
 
 from . import utils
 

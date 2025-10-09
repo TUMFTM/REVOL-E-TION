@@ -28,6 +28,7 @@ dependencies = [
     "simpy",
     "timezonefinder",
     "tk",
+    "typing-extensions>=4.15.0",
     "windpowerlib",
     "pydantic"
 ]
