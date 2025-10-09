@@ -28,7 +28,8 @@ dependencies = [
     "simpy",
     "timezonefinder",
     "tk",
-    "windpowerlib"
+    "windpowerlib",
+    "pydantic"
 ]
 
 [dependency-groups]
