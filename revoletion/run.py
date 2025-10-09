@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-import importlib.metadata
 import itertools
+import logging
 import multiprocessing as mp
 import os
 import shutil
-import subprocess
 import sys
 import threading
-import time
 import traceback
 from pathlib import Path
 
@@ -16,18 +14,19 @@ import pandas as pd
 from oemof import solph as solph
 
 from . import logger as logger_fcs
-from . import utils
-from . import simulation
+from . import simulation, utils
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class SimulationRun:
     def __init__(
         self,
         paths: simulation.SimulationPaths,
-        settings: simulation.SimulationSettings = None,
+        settings: simulation.SimulationSettings | None = None,
     ):
         self.paths = paths
-        self.settings = settings if settings is not None else simulation.SimulationSettings()
+        self.settings = settings or simulation.SimulationSettings()
 
         self.runtime = utils.RunTime()
 
@@ -41,26 +40,11 @@ class SimulationRun:
         # endregion
 
         # region read, copy and check scenario data
-        if not self.paths.scenario.is_file():
-            raise FileNotFoundError(f"Scenario file {self.paths.scenario} does not exist")
-        if self.paths.scenario.suffix == ".csv":
-            self.scenario_data = pd.read_csv(self.paths.scenario, index_col=[0, 1], keep_default_na=False)
-        elif self.paths.scenario.suffix == ".pkl":
-            self.scenario_data = pd.read_pickle(self.paths.scenario)
-            if not isinstance(self.scenario_data, pd.DataFrame):
-                raise ValueError(f"Scenario file {self.paths.scenario} must be a DataFrame")
-        else:
-            raise ValueError(f"Scenario file {self.paths.scenario} must be a CSV or PKL file")
-        self.scenario_data = self.scenario_data.sort_index(sort_remaining=True).map(utils.infer_dtype)
+        self.scenario_data = utils.read_scenario_from_file(self.paths.scenario)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith("#")]
 
         # region define logger structure
-        self.logger = logger_fcs.get_root_logger(
-            paths=self.paths,
-            settings=self.settings,
-            len_scn_max=max([len(el) for el in list(self.scenario_names) + ["root"]]),
-        )
-
+        self.logger = _LOGGER
         # make sure that uncaught errors (i.e. errors occurring outside simulate_scenario method) are logged to logfile
         sys.excepthook = self.handle_exception
         # endregion
@@ -121,8 +105,6 @@ class SimulationRun:
             f"with {self.settings.n_processes} process{('es' if self.settings.n_processes > 1 else '')}"
         )
 
-        self.execute()
-
     def copy_scenario_file(self):
         target = self.paths.output / f"{self.name}.csv"
         try:  # with metadata
@@ -130,7 +112,7 @@ class SimulationRun:
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
             shutil.copyfile(self.paths.scenario, target)
 
-    def execute(self):
+    def execute(self, plot: bool = True):
         if self.settings.n_processes > 1:
             with mp.Manager() as manager:
                 lock = manager.Lock()
@@ -143,14 +125,18 @@ class SimulationRun:
                 log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
                 log_thread.start()
 
-                with mp.Pool(processes=self.settings.n_processes) as pool:
+                with mp.Pool(
+                    processes=self.settings.n_processes,
+                    initializer=_worker_init,
+                    initargs=(log_queue, self.settings.debugmode),
+                ) as pool:
                     pool.starmap(
                         self.execute_scenario,
                         zip(
                             self.scenario_names,
-                            itertools.repeat(log_queue),
                             itertools.repeat(status_queue),
                             itertools.repeat(lock),
+                            itertools.repeat(plot),
                         ),
                     )
                 status_queue.put(None)
@@ -159,7 +145,7 @@ class SimulationRun:
                 log_thread.join()
         else:
             for scenario_name in self.scenario_names:
-                self.execute_scenario(name=scenario_name)
+                self.execute_scenario(name=scenario_name, plot=plot)
 
         self.runtime.stop()
         self.logger.info(f"Total runtime for all scenarios: {self.runtime.duration:.2f} s")
@@ -242,23 +228,29 @@ class SimulationRun:
                 break
             self.update_scenario_status(status_msg)
 
-    def execute_scenario(
-        self, name: str, log_queue: mp.Queue = None, status_queue: mp.Queue = None, lock: mp.Lock = None
-    ):
+    def execute_scenario(self, name: str, status_queue: mp.Queue = None, lock: mp.Lock = None, plot: bool = True):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
+
+        max_scenario_name_len = max([len(scenario_name) for scenario_name in self.scenario_names])
+        scenario_logger = logger_fcs.ContextLoggerAdapter(
+            self.logger, {"context_str": f"{name:<{max_scenario_name_len}}"}
+        )
         try:
-            simulation.Scenario(
+            scenario = simulation.Scenario(
                 paths=self.paths,
                 settings=self.settings,
-                run_execution=True,
                 name=name,
                 parameters=self.scenario_data[name],
-                log_queue=log_queue,
+                logger=scenario_logger,
                 lock=lock,
                 status_update=self.trigger_scenario_status_update,
                 status_queue=status_queue,
             )
+            scenario.execute()
+            if plot:
+                scenario.generate_and_save_plot()
+            scenario.save_result_summary()
         except Exception as e:
             self.trigger_scenario_status_update(
                 queue=status_queue,
@@ -285,3 +277,13 @@ class SimulationRun:
         for col in [key for key, value in status_msg.items() if key != "scenario" and value is not None]:
             self.scenario_status.loc[status_msg["scenario"], col] = status_msg[col]
         self.scenario_status.to_csv(self.paths.status, index=True)
+
+
+def _worker_init(log_queue: mp.Queue, debugmode: bool) -> None:
+    """
+    Initialize a worker process and configure logging.
+
+    :param log_queue: The queue to which log messages will be sent.
+    :param debugmode: Configure the log level in the worker process according to the level of the parent.
+    """
+    logger_fcs.configure_process_logger_parallel(log_queue, debugmode)

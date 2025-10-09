@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import importlib.resources
-from pathlib import Path
 import argparse
+import importlib.resources
 import warnings
+from pathlib import Path
 
 try:
     import tkinter as tk
@@ -15,9 +15,11 @@ except ImportError:
     warnings.warn("tkinter is not available in this environment. GUI file selection will be disabled.")
 
 
+import revoletion.example
+
+from .logger import configure_root_logger
 from .run import SimulationRun
 from .simulation import Scenario, SimulationPaths, SimulationSettings
-import revoletion.example
 
 
 def main():
@@ -132,17 +134,22 @@ def main():
         key_solcast_api=args.key_solcast_api,
     )
 
-    paths = SimulationPaths(
+    paths = SimulationPaths.from_plain_paths(
         scenario=path_scenario,
         input=None if not args.input or scenarios_example else Path(args.input),
         output=None if not args.output or scenarios_example else Path(args.output),
         rerun=None if not args.rerun else args.rerun,
     )
 
+    # Configure the level of the logger according to `debugmode` and setup handlers.
+    configure_root_logger(paths.log, args.debugmode)
+
     if args.multiscenario:
-        SimulationRun(paths=paths, settings=settings)
+        simulation_run = SimulationRun(paths=paths, settings=settings)
+        simulation_run.execute()
     else:
-        Scenario(paths=paths, settings=settings)
+        scenario = Scenario.create_from_file(paths=paths, settings=settings)
+        scenario.execute()
 
 
 if __name__ == "__main__":

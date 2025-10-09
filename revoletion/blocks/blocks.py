@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
+
 import ast
 import collections
+import re
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
-import plotly.graph_objects as go
 import pvlib
-import re
 import requests
-from typing import TYPE_CHECKING
 import windpowerlib
+from typing_extensions import override
 
-from abc import ABC, abstractmethod
-
-from . import battery as bat
-from . import economics as eco
-from . import mobility
-from . import utils
+from revoletion import battery as bat
+from revoletion import economics as eco
+from revoletion import mobility, utils
 
 if TYPE_CHECKING:
-    from . import simulation
+    from revoletion import simulation
 
 
 class BlockScenarioInterface(ABC):
@@ -54,7 +54,7 @@ class BlockScenarioInterface(ABC):
         ...
 
 
-class BaseBlock(BlockScenarioInterface):
+class BaseBlock(BlockScenarioInterface, ABC):
     """
     abstract class
     """
@@ -109,11 +109,6 @@ class BaseBlock(BlockScenarioInterface):
 
         # region initialize data structures
         self.subblocks = dict()
-
-        # initialize result data structures
-        self.result_summary = []  # -> list of pd.Series
-        self.result_timeseries = []  # -> list of pd.DataFrames
-        self.result_messages = []
         # endregion
 
     def __repr__(self):
@@ -148,6 +143,7 @@ class BaseBlock(BlockScenarioInterface):
         elif getattr(self, name_var2) == "equal":
             setattr(self, name_var2, getattr(self, name_var1))
 
+    @override
     def pre_scenario(self):
         """
         trigger actions to be executed after all inits
@@ -155,31 +151,23 @@ class BaseBlock(BlockScenarioInterface):
         for subblock in self.subblocks.values():
             subblock.pre_scenario()
 
+    @override
     def pre_horizon(self, horizon: simulation.PredictionHorizon):
         for subblock in self.subblocks.values():
             subblock.pre_horizon(horizon=horizon)
 
+    @override
     def post_horizon(self, horizon: simulation.PredictionHorizon):
         for subblock in self.subblocks.values():
             subblock.post_horizon(horizon=horizon)
 
+    @override
     def post_scenario(self):
-        # has to be done before subblocks.post_scenario() to ensure correct plotting order
-        self.create_plot_traces()
-
         for subblock in self.subblocks.values():
             subblock.post_scenario()
 
         # calculate results
         self.calc_results_economics()
-
-        # create result outputs
-        self.create_result_messages()
-        self.create_result_summary()
-        self.create_result_timeseries()
-
-        # add block results to scenario's structures
-        self.write_results_to_scenario()
 
     def calc_results_economics(self):
         # calculate economic results and write one level up
@@ -187,73 +175,11 @@ class BaseBlock(BlockScenarioInterface):
             evaluator.aggregate()
         self.aggregator.aggregate()
 
-    def create_result_summary(self):
-        # get attributes of type int, float, bool and str for scenario.result_summary
-        self.result_summary.extend(
-            [
-                pd.Series(
-                    {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))}
-                )
-            ]
-        )
 
-        # get energy results for scenario.result_summary
-        for size in self.sizes.values():
-            self.result_summary.append(size.result_summary)
-
-        # get economic results for scenario.result_summary
-        self.result_summary.append(self.aggregator.write_result_summary())
-
-    @abstractmethod
-    def create_result_timeseries(self): ...
-
-    def create_result_messages(self):
-        for size in self.sizes.values():
-            if (msg := size.result_msg) != "":
-                self.result_messages.append(msg)
-
-    @abstractmethod
-    def create_plot_traces(self): ...
-
-    def write_results_to_scenario(self):
-        # result_summary
-        # concat all result_summary and apply MultiIndex with
-        self.result_summary = pd.concat(self.result_summary)
-        self.result_summary.index = pd.MultiIndex.from_tuples(
-            tuples=[(self.name, key) for key in self.result_summary.index], names=["block", "key"]
-        )
-
-        # write block's results to scenario.result_summary
-        self.scenario.result_summary.append(self.result_summary)
-
-        # result_timeseries
-        self.scenario.result_timeseries.extend(self.result_timeseries)
-
-        # result_messages
-        self.scenario.result_messages.extend(self.result_messages)
-
-    def get_legend_entry(self):
-        """
-        Standard legend entry for simple blocks using power as their size
-        """
-        return f"{self.name} power (max. {self.sizes['block'].total / 1e3:.1f} kW)"
+class NonElectricBlock(BaseBlock): ...
 
 
-class NonElectricBlock(BaseBlock):
-    def create_plot_traces(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-    def create_result_timeseries(self, *_args, **_kwargs):
-        """
-        dummy method
-        """
-        pass
-
-
-class ElectricBlock(BaseBlock):
+class ElectricBlock(BaseBlock, ABC):
     def __init__(
         self,
         name: str,
@@ -275,11 +201,16 @@ class ElectricBlock(BaseBlock):
         # ToDo: (1) remove flow_apriori_names and use flow names instead
         #       (2) remove flows_apriori and use flows instead to save memory
         self.flows_apriori = pd.DataFrame(
-            index=self.scenario.times.sim.dti, columns=flow_apriori_names, dtype="float64"
+            index=self.scenario.times.sim.dti,
+            columns=flow_apriori_names,
+            dtype="float64",
         )
 
         self.flows = pd.DataFrame(
-            index=self.scenario.times.sim.dti, columns=(["total"] + list(self.flow_names)), data=0.0, dtype="float64"
+            index=self.scenario.times.sim.dti,
+            columns=(["total"] + list(self.flow_names)),
+            data=0.0,
+            dtype="float64",
         )
 
         self.energies = pd.DataFrame(
@@ -344,44 +275,8 @@ class ElectricBlock(BaseBlock):
             self.energies["yrl"] * self.scenario.discount_factors.loc[self.scenario.periods_prj, "end"].sum()
         )
 
-    def create_result_summary(self):
-        super().create_result_summary()
-        # get energy results for scenario.result_summary
-        self.result_summary.append(utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"))
 
-    def create_result_timeseries(self):
-        """
-        write flows and states to scenario.result_timeseries
-        """
-        if not self.scenario.settings.largescalemode:
-            # write flows and states to scenario.result_timeseries
-            self.flows.columns = pd.MultiIndex.from_tuples(
-                tuples=[(self.name, col) for col in self.flows.columns], names=["block", "key"]
-            )
-
-            self.states.columns = pd.MultiIndex.from_tuples(
-                tuples=[(self.name, col) for col in self.states.columns], names=["block", "key"]
-            )
-
-            self.result_timeseries.extend(
-                [self.flows.loc[self.scenario.times.eval.dti, :], self.states.loc[self.scenario.times.eval.dti_extd, :]]
-            )
-
-    def create_plot_traces(self):
-        self.scenario.plot_traces.append(
-            plot_line=go.Scatter(
-                x=self.scenario.times.eval.dti,
-                y=self.flows.loc[self.scenario.times.eval.dti, "total"],
-                mode="lines",
-                name=self.get_legend_entry(),
-                line=dict(width=2, dash=None, shape="hv"),
-                visible=True if self.top_level_block else "legendonly",
-            ),
-            secondary_y=False,
-        )
-
-
-class SourceBlock(ElectricBlock):
+class SourceBlock(ElectricBlock, ABC):
     @abstractmethod
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
 
@@ -393,7 +288,7 @@ class SourceBlock(ElectricBlock):
         self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["total", :]
 
 
-class SinkBlock(ElectricBlock):
+class SinkBlock(ElectricBlock, ABC):
     @abstractmethod
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
 
@@ -443,7 +338,13 @@ class SystemCore(ElectricBlock):
         )
 
     def __init__(self, name: str, scenario):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=None,
+            parent=scenario,
+        )
 
     def params_preprocessing(self):
         self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
@@ -452,6 +353,7 @@ class SystemCore(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_preexisting_acdc", "size_preexisting_dcac"])
         self.init_equalizable_variables(name_vars=["size_max_acdc", "size_max_dcac"])
 
+    @override
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
         pre horizon method
@@ -542,31 +444,8 @@ class SystemCore(ElectricBlock):
         super().calc_results_flows()
         self.flows["circular_dcac_acdc"] = self.flows[["dcac", "acdc"]].min(axis=1)
 
-    def create_plot_traces(self):
-        self.scenario.plot_traces.extend(
-            plot_lines=[
-                go.Scatter(
-                    x=self.scenario.times.eval.dti,
-                    y=self.flows.loc[self.scenario.times.eval.dti, "dcac"],
-                    mode="lines",
-                    name=f"{self.name} DC-AC power (max. {self.sizes['dcac'].total / 1e3:.1f} kW)",
-                    line=dict(width=2, dash=None, shape="hv"),
-                    visible="legendonly",
-                ),
-                go.Scatter(
-                    x=self.scenario.times.eval.dti,
-                    y=self.flows.loc[self.scenario.times.eval.dti, "acdc"],
-                    mode="lines",
-                    name=f"{self.name} AC-DC power (max. {self.sizes['acdc'].total / 1e3:.1f} kW)",
-                    line=dict(width=2, dash=None, shape="hv"),
-                    visible="legendonly",
-                ),
-            ],
-            secondary_ys=[False, False],
-        )
 
-
-class RenewableSource(SourceBlock):
+class RenewableSource(SourceBlock, ABC):
     """
     abstract class
     """
@@ -602,7 +481,13 @@ class RenewableSource(SourceBlock):
         )
 
     def __init__(self, name: str, scenario):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=None,
+            parent=scenario,
+        )
 
         self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
@@ -687,33 +572,6 @@ class RenewableSource(SourceBlock):
             self.scenario.logger.warning(f"Block {self.name}: Curtailment share calculation: division by zero")
         else:
             self.share_curtailment = self.energies.loc["curt", "sim"] / self.energies.loc["pot", "sim"]
-
-    def create_plot_traces(self):
-        super().create_plot_traces()
-        self.scenario.plot_traces.extend(
-            plot_lines=[
-                go.Scatter(
-                    x=self.scenario.times.eval.dti,
-                    y=-1 * self.flows.loc[self.scenario.times.eval.dti, "curt"],
-                    mode="lines",
-                    name=f"{self.name} curtailed power",
-                    line=dict(width=2, dash=None, shape="hv"),
-                    visible="legendonly",
-                ),
-                go.Scatter(
-                    x=self.scenario.times.eval.dti,
-                    y=self.flows.loc[self.scenario.times.eval.dti, "pot"],
-                    mode="lines",
-                    name=f"{self.name} potential power",
-                    line=dict(width=2, dash=None, shape="hv"),
-                    visible="legendonly",
-                ),
-            ],
-            secondary_ys=[False, False],
-        )
-
-    def get_legend_entry(self):
-        return f"{self.name} power (nom. {self.sizes['block'].total / 1e3:.1f} kW)"
 
 
 class PVSource(RenewableSource):
@@ -814,9 +672,12 @@ class PVSource(RenewableSource):
                 pvcalculation=True,
                 peakpower=1,
                 # PVGIS API is case sensitive and all inputs are lowered -> revert
-                pvtechchoice={"crystsi": "crystSi", "cis": "CIS", "cdte": "CdTe", "unknown": "Unknown"}[
-                    self.pvtechchoice
-                ],
+                pvtechchoice={
+                    "crystsi": "crystSi",
+                    "cis": "CIS",
+                    "cdte": "CdTe",
+                    "unknown": "Unknown",
+                }[self.pvtechchoice],
                 mountingplace=self.mountingplace,
                 loss=0,
                 trackingtype=self.trackingtype,
@@ -927,7 +788,10 @@ class PVSource(RenewableSource):
             self.data = self.data.tz_convert(self.scenario.location.timezone)
             self.data.drop(columns=["period", "period_start", "period_end"], inplace=True)
             # rename columns according to further processing steps
-            self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+            self.data.rename(
+                columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"},
+                inplace=True,
+            )
             # calculate specific pv power
             calc_power_from_irradiation()
         # endregion
@@ -940,13 +804,15 @@ class PVSource(RenewableSource):
 
             # region read input data from timeseries csv with specific power
             if self.data_source == "file":
-                self.data = utils.read_timeseries_csv(
-                    path_input_file=path_input_file,
-                    block=self,
-                    scenario=self.scenario,
-                    multiheader=False,
-                    resampling=False,
-                )
+                try:
+                    self.data = utils.read_timeseries_csv(
+                        path_input_file=path_input_file,
+                        scenario=self.scenario,
+                        multiheader=False,
+                        resampling=False,
+                    )
+                except IndexError as exc:
+                    raise IndexError(f"Failed to load data for block {self.name}: {exc}")
             # endregion
             elif self.data_source in ["pvgis file", "solcast file"]:
                 # region get data from PVGIS file
@@ -963,7 +829,13 @@ class PVSource(RenewableSource):
                 elif self.data_source == "solcast file":
                     # no lat/lon contained in solcast files
                     self.data = pd.read_csv(path_input_file)
-                    self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+                    self.data.rename(
+                        columns={
+                            "air_temp": "temp_air",
+                            "wind_speed_10m": "speed_wind",
+                        },
+                        inplace=True,
+                    )
                     self.data["period_start"] = pd.to_datetime(self.data["period_end"], utc=True) - pd.to_timedelta(
                         self.data["period"]
                     )
@@ -984,7 +856,8 @@ class PVSource(RenewableSource):
 
                         # calculate solar position for location (gets altitude from lookup table)
                         solar_position = pvlib.location.Location(
-                            latitude=self.scenario.location.latitude, longitude=self.scenario.location.longitude
+                            latitude=self.scenario.location.latitude,
+                            longitude=self.scenario.location.longitude,
                         ).get_solarposition(times=self.data.index, method="nrel_numpy")
                         solar_azimuth = solar_position["azimuth"]
                         solar_zenith = solar_position["zenith"]
@@ -1061,14 +934,16 @@ class WindSource(RenewableSource):
             # endregion
         elif self.data_source == "file":
             # region get data from file
-            self.data = utils.read_timeseries_csv(
-                path_input_file=(
-                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
-                ),
-                block=self,
-                scenario=self.scenario,
-            )
-            # endregion
+            try:
+                self.data = utils.read_timeseries_csv(
+                    path_input_file=(
+                        self.scenario.paths.input
+                        / utils.set_extension(filename=self.filename, default_extension=".csv")
+                    ),
+                    scenario=self.scenario,
+                )
+            except IndexError as exc:
+                raise IndexError(f"Failed to load timeseries data for block {self.name}: {exc}")
         else:
             raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable data input specified")
 
@@ -1088,7 +963,13 @@ class FixedDemand(SinkBlock):
         )
 
     def __init__(self, name: str, scenario):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=["demand"], params=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=["demand"],
+            params=None,
+            parent=scenario,
+        )
 
         self.get_flows_apriori()
 
@@ -1096,7 +977,19 @@ class FixedDemand(SinkBlock):
         self.flows_apriori.index = (
             self.scenario.times.sim.dti
         )  # ToDo: Why needs this to be set explicitly? Should be done in init()
-        if self.load_profile in ["h0", "g0", "g1", "g2", "g3", "g4", "g5", "g6", "l0", "l1", "l2"]:
+        if self.load_profile in [
+            "h0",
+            "g0",
+            "g1",
+            "g2",
+            "g3",
+            "g4",
+            "g5",
+            "g6",
+            "l0",
+            "l1",
+            "l2",
+        ]:
 
             def get_timeframe(date):
                 month = date.month
@@ -1119,7 +1012,10 @@ class FixedDemand(SinkBlock):
 
             # Read BDEW SLP profiles
             slp = pd.read_csv(
-                self.scenario.paths.data_persist / "slp_bdew.csv", skiprows=[0], header=[0, 1, 2], index_col=0
+                self.scenario.paths.data_persist / "slp_bdew.csv",
+                skiprows=[0],
+                header=[0, 1, 2],
+                index_col=0,
             )
 
             slp.index = pd.to_datetime(slp.index, format="%H:%M").time
@@ -1138,7 +1034,12 @@ class FixedDemand(SinkBlock):
 
             data = data.index.to_series().apply(
                 lambda x: slp.loc[
-                    x.time(), (self.load_profile.upper(), get_timeframe(x), get_daytype(x, self.scenario.holiday_dates))
+                    x.time(),
+                    (
+                        self.load_profile.upper(),
+                        get_timeframe(x),
+                        get_daytype(x, self.scenario.holiday_dates),
+                    ),
                 ]
             )
 
@@ -1164,14 +1065,16 @@ class FixedDemand(SinkBlock):
         elif self.load_profile in ["const", "constant"]:
             self.flows_apriori["demand"] = self.consumption_yrl / (365 * 24)
         elif isinstance(self.load_profile, str):  # load_profile is a file name
-            data = utils.read_timeseries_csv(
-                path_input_file=(
-                    self.scenario.paths.input
-                    / utils.set_extension(filename=self.load_profile, default_extension=".csv")
-                ),
-                block=self,
-                scenario=self.scenario,
-            )
+            try:
+                data = utils.read_timeseries_csv(
+                    path_input_file=(
+                        self.scenario.paths.input
+                        / utils.set_extension(filename=self.load_profile, default_extension=".csv")
+                    ),
+                    scenario=self.scenario,
+                )
+            except IndexError as exc:
+                raise IndexError(f"Failed to read load profile for block {self.name}: {exc}")
 
             if data.shape[1] != 1:
                 self.scenario.logger.warning(
@@ -1217,9 +1120,6 @@ class FixedDemand(SinkBlock):
             "sequences"
         ]["flow"][horizon.ch.dti]
 
-    def get_legend_entry(self):
-        return f"{self.name} power"
-
 
 class ControllableSource(SourceBlock):
     def init_evaluators(self):
@@ -1239,7 +1139,13 @@ class ControllableSource(SourceBlock):
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario):
-        super().__init__(name=name, scenario=scenario, params=None, flow_apriori_names=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=None,
+            flow_apriori_names=None,
+            parent=scenario,
+        )
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -1316,7 +1222,13 @@ class GridConnection(ElectricBlock):
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=None,
+            parent=scenario,
+        )
 
         self.inflows = dict()
         self.outflows = dict()
@@ -1403,7 +1315,13 @@ class GridConnection(ElectricBlock):
 
                 period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep.td))
 
-            return pd.Series({"period_fraction": period_fraction, "start": dti_period.min(), "end": dti_period.max()})
+            return pd.Series(
+                {
+                    "period_fraction": period_fraction,
+                    "start": dti_period.min(),
+                    "end": dti_period.max(),
+                }
+            )
 
         # Apply the function to each period in peak_periods
         self.peak_periods[["period_fraction", "start", "end"]] = self.peak_periods.index.to_series().apply(
@@ -1522,7 +1440,10 @@ class GridConnection(ElectricBlock):
             invest_type="flow",
         )
         horizon.constraints.add_invest_costs(
-            invest=(self.components["bus"], self.components[f"{self.name}_outflow_{self.peak_periods.index[0]}"]),
+            invest=(
+                self.components["bus"],
+                self.components[f"{self.name}_outflow_{self.peak_periods.index[0]}"],
+            ),
             capex_spec=self.evaluators["g2s"].capex.spec,
             invest_type="flow",
         )
@@ -1534,7 +1455,10 @@ class GridConnection(ElectricBlock):
         # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
         if self.expansion_equal:
             equal_investments.append(
-                {"in": self.components[f"{self.name}_inflow_1"], "out": self.components["bus"]}
+                {
+                    "in": self.components[f"{self.name}_inflow_1"],
+                    "out": self.components["bus"],
+                }
             )  # currently only works without peakshaving for inflows
 
         # add list of variables to the scenario constraints if list contains more than one element
@@ -1569,9 +1493,12 @@ class GridConnection(ElectricBlock):
         def get_peak_power(row):
             peak_power = max(
                 row["power"],
-                horizon.results[(self.outflows[f"{self.name}_outflow_{row.name}"], self.bus_connected)]["sequences"][
-                    "flow"
-                ][horizon.ch.dti].max(),
+                horizon.results[
+                    (
+                        self.outflows[f"{self.name}_outflow_{row.name}"],
+                        self.bus_connected,
+                    )
+                ]["sequences"]["flow"][horizon.ch.dti].max(),
             )
             return peak_power
 
@@ -1585,41 +1512,6 @@ class GridConnection(ElectricBlock):
         super().calc_results_energies()
         self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["out", :]
         self.scenario.energies.loc[("sinks", "del"), :] += self.energies.loc["in", :]
-
-    def create_result_summary(self):
-        super().create_result_summary()
-
-        peak_power_results = {}
-        for period, row in self.peak_periods.iterrows():
-            if row["start"] < self.scenario.times.eval.end:
-                peak_power_results.update(
-                    {
-                        f"{period}_peak_power": row["power"],
-                        f"{period}_peak_period_fraction": row["period_fraction"],
-                        f"{period}_peak_opex_sim": self.evaluators[period].opex_peak.sim,
-                    }
-                )
-        self.result_summary.append(pd.Series(peak_power_results))
-
-    def create_result_messages(self, *_):
-        super().create_result_messages()
-
-        # add peak power results
-        self.result_messages.extend(
-            [
-                f'{"Optimized peak" if self.peakshaving else "Peak"} power in component "{self.name}" for peak period '
-                f'"{period}": {row["power"] / 1e3:.1f} kW '
-                f"- OPEX in simulation period: {self.evaluators[period].opex_peak.sim:.2f} {self.scenario.currency}"
-                for period, row in self.peak_periods.iterrows()
-                if row["start"] < self.scenario.times.eval.end
-            ]
-        )
-
-    def get_legend_entry(self):
-        return (
-            f"{self.name} power (max. {self.sizes['g2s'].total / 1e3:.1f} kW from / "
-            f"{self.sizes['s2g'].total / 1e3:.1f} kW to grid)"
-        )
 
 
 class GridMarket(ElectricBlock):
@@ -1642,7 +1534,13 @@ class GridMarket(ElectricBlock):
         )
 
     def __init__(self, name: str, scenario: simulation.PredictionHorizon, params, parent):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=params, parent=parent)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=params,
+            parent=parent,
+        )
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -1688,21 +1586,6 @@ class GridMarket(ElectricBlock):
             (self.components["src"], self.parent.components["bus"])
         ]["sequences"]["flow"][horizon.ch.dti]
 
-    def get_legend_entry(self):
-        powers = {
-            power: min(
-                self.parent.sizes[power].total,
-                (
-                    getattr(self, f"pwr_{power}")
-                    if pd.notna(getattr(self, f"pwr_{power}"))
-                    else self.parent.sizes[power].total
-                ),
-            )
-            for power in ["g2s", "s2g"]
-        }
-
-        return f"{self.name} power (max. {powers['g2s'] / 1e3:.1f} kW from / {powers['s2g'] / 1e3:.1f} kW to grid)"
-
 
 class StorageBlock(ElectricBlock):
     """
@@ -1719,7 +1602,10 @@ class StorageBlock(ElectricBlock):
             size_unit="kWh",
             ls=self.ls,
             ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_storage, spec=self.capex_spec),
+            capex_config=dict(
+                consider_preexisting=self.capex_preexisting_storage,
+                spec=self.capex_spec,
+            ),
             mntex_config=dict(spec=self.mntex_spec),
         )
 
@@ -1754,7 +1640,15 @@ class StorageBlock(ElectricBlock):
 
     def init_states(self):
         super().init_states()
-        for state in ["energy", "soc", "soh", "q_loss_cal", "q_loss_cyc", "soc_min", "soc_max"]:
+        for state in [
+            "energy",
+            "soc",
+            "soh",
+            "q_loss_cal",
+            "q_loss_cyc",
+            "soc_min",
+            "soc_max",
+        ]:
             self.states[state] = np.nan
 
     def __init__(
@@ -1766,10 +1660,16 @@ class StorageBlock(ElectricBlock):
         parent: BaseBlock | simulation.Scenario = None,
     ):
         super().__init__(
-            name=name, scenario=scenario, flow_apriori_names=flow_apriori_names, params=params, parent=parent
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=flow_apriori_names,
+            params=params,
+            parent=parent,
         )
 
-        def calc_loss_rate_per_period(period: pd.Timedelta = pd.Timedelta(hours=1)) -> float:
+        def calc_loss_rate_per_period(
+            period: pd.Timedelta = pd.Timedelta(hours=1),
+        ) -> float:
             """
             convert self-discharge rate (sdr) per month of a battery storage to a loss rate (lr) per target time step.
             oemof specifies one hour as the target time step for the loss rate.
@@ -1930,37 +1830,6 @@ class StorageBlock(ElectricBlock):
         self.flows["circular_in_out"] = self.flows[["in", "out"]].min(axis=1)
         self.flows["bat_circular_bat_in_bat_out"] = self.flows[["bat_in", "bat_out"]].min(axis=1)
 
-    def create_plot_traces(self):
-        """
-        post-scenario plotting of SOC and SOH traces in timeseries plot
-        """
-
-        super().create_plot_traces()
-
-        data_soc = self.states.loc[self.scenario.times.eval.dti_extd, "soc"].dropna()
-        data_soh = self.states.loc[self.scenario.times.eval.dti_extd, "soh"].dropna()
-        self.scenario.plot_traces.extend(
-            plot_lines=[
-                go.Scatter(
-                    x=data_soc.index,
-                    y=data_soc,
-                    mode="lines",
-                    name=f"{self.name} SOC",
-                    line=dict(width=2, dash=None),
-                    visible="legendonly",
-                ),
-                go.Scatter(
-                    x=data_soh.index,
-                    y=data_soh,
-                    mode="lines",
-                    name=f"{self.name} SOH",
-                    line=dict(width=2, dash=None),
-                    visible="legendonly",
-                ),
-            ],
-            secondary_ys=[True, True],
-        )
-
 
 class StationaryBattery(StorageBlock):
     def __init__(
@@ -2004,16 +1873,6 @@ class StationaryBattery(StorageBlock):
         }
         super().define_oemof_components(horizon, params)
 
-    def create_result_messages(self, *_):
-        super().create_result_messages()
-
-    def get_legend_entry(self):
-        return (
-            f"{self.name} (dis-)charge power "
-            f"(max. {self.sizes['storage'].total * self.crate_chg * self.eff['chg'] / 1e3:.1f} kW charge / "
-            f"{self.sizes['storage'].total * self.crate_dis * self.eff['dis'] / 1e3:.1f} kW discharge)"
-        )
-
 
 class Fleet(SinkBlock):
     def init_evaluators(self):
@@ -2035,7 +1894,13 @@ class Fleet(SinkBlock):
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario):
-        super().__init__(name=name, scenario=scenario, flow_apriori_names=None, params=None, parent=scenario)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            flow_apriori_names=None,
+            params=None,
+            parent=scenario,
+        )
 
         if not self.groups_dispatch:
             raise ValueError(f'Block "{self.name}": At least one dispatch group has to be defined.')
@@ -2105,17 +1970,6 @@ class Fleet(SinkBlock):
             "sequences"
         ]["flow"][horizon.ch.dti]
 
-    def get_legend_entry(self):
-        def lim2str(lim) -> str:
-            if lim is None:
-                return "unlimited"
-            else:
-                return f"{lim / 1e3:.1f}"
-
-        return (
-            f"{self.name} power (max. {lim2str(self.pwr_lim_s2f)} kW charge / {lim2str(self.pwr_lim_f2s)} kW discharge)"
-        )
-
 
 class DispatchGroup(NonElectricBlock):
     def __init__(self, name: str, scenario: simulation.Scenario, subfleets: list, parent: Fleet):
@@ -2137,7 +1991,10 @@ class DispatchGroup(NonElectricBlock):
 
         # region create and fill demand object
         if self.data_source in ["usecases", "demand"]:
-            cls_demand = {True: mobility.VehicleDemand, False: mobility.BatteryDemand}.get(self.is_vehicle_group)
+            cls_demand = {
+                True: mobility.VehicleDemand,
+                False: mobility.BatteryDemand,
+            }.get(self.is_vehicle_group)
             self.demand = cls_demand(dti=self.scenario.times.sim.dti)
             self.scenario.block_registry.setdefault("DispatchGroupActive", {})[self.name] = self
 
@@ -2189,14 +2046,21 @@ class SubFleet(NonElectricBlock):
 
         self.demand = self.log = None
 
-        cls_fu = {"ev": ElectricVehicle, "icev": CombustionVehicle, "mb": MobileBattery}.get(self.type_unit)
+        cls_fu = {
+            "ev": ElectricVehicle,
+            "icev": CombustionVehicle,
+            "mb": MobileBattery,
+        }.get(self.type_unit)
         self.unit_names = [f"{self.name}{i}" for i in range(self.num)]
         [cls_fu(name=name, scenario=self.scenario, params=params, parent=self) for name in self.unit_names]
 
         if params.get("mode_scheduling") in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault("SubFleetScheduling", {})[self.name] = self
 
-        if getattr(self, "invest", False) and self.data_source in ["usecases", "demand"]:
+        if getattr(self, "invest", False) and self.data_source in [
+            "usecases",
+            "demand",
+        ]:
             raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
 
     def pre_scenario(self):
@@ -2211,15 +2075,17 @@ class SubFleet(NonElectricBlock):
         Read in a predetermined log file for group behavior.
         """
 
-        df = utils.read_timeseries_csv(
-            path_input_file=(
-                self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
-            ),
-            block=self,
-            scenario=self.scenario,
-            multiheader=True,
-            resampling=False,
-        )  # Normal resampling cannot be used as consumption must be
+        try:
+            df = utils.read_timeseries_csv(
+                path_input_file=(
+                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+                ),
+                scenario=self.scenario,
+                multiheader=True,
+                resampling=False,
+            )  # Normal resampling cannot be used as consumption must be
+        except IndexError as exc:
+            raise IndexError(f"Failed to load input log for block {self.name}: {exc}")
         # meaned, while booleans, distances and dsocs must not.
 
         # Timedelta of frequency of log file
@@ -2266,7 +2132,10 @@ class FleetUnit:
             block=self,
             ls=self.ls,
             ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_glider, fix=self.capex_fix_glider),
+            capex_config=dict(
+                consider_preexisting=self.capex_preexisting_glider,
+                fix=self.capex_fix_glider,
+            ),
             mntex_config=dict(fix=self.mntex_fix_glider),
             opex_config_fleetunit=dict(dist=self.opex_spec_dist),
             crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
@@ -2309,7 +2178,10 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             block=self,
             ls=self.ls,
             ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_charger, fix=self.capex_fix_charger),
+            capex_config=dict(
+                consider_preexisting=self.capex_preexisting_charger,
+                fix=self.capex_fix_charger,
+            ),
         )
 
         self.evaluators["ext_ac"] = eco.EcoEvaluator(
@@ -2469,47 +2341,6 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         ]["sequences"]["flow"][horizon.ch.dti]
 
         super().get_horizon_results(horizon=horizon)
-
-    def create_plot_traces(self):
-        super().create_plot_traces()
-
-        legend = f"{self.name} consumption power"
-        self.scenario.plot_traces.append(
-            plot_line=go.Scatter(
-                x=self.scenario.times.eval.dti,
-                y=self.log.loc[self.scenario.times.eval.dti, "consumption"],
-                mode="lines",
-                name=legend,
-                line=dict(width=2, dash=None, shape="hv"),
-                visible="legendonly",
-            ),
-            secondary_y=False,
-        )
-
-        for mode in ["ac", "dc"]:
-            pwr = getattr(self, f"pwr_ext_{mode}_max", 0)
-            if pwr == 0:
-                continue
-
-            legend = f"{self.name} external {mode.upper()} charging power (max. {pwr / 1e3:.1f} kW)"
-            self.scenario.plot_traces.append(
-                plot_line=go.Scatter(
-                    x=self.scenario.times.eval.dti,
-                    y=self.flows.loc[self.scenario.times.eval.dti, f"ext_{mode}"],
-                    mode="lines",
-                    name=legend,
-                    line=dict(width=2, dash=None, shape="hv"),
-                    visible="legendonly",
-                ),
-                secondary_y=False,
-            )
-
-    def get_legend_entry(self):
-        return (
-            f"{self.name} (dis-)charge power "
-            f"(max. {self.pwr_chg_max / 1e3:.1f} kW charge / "
-            f"{(self.pwr_dis_max * self.eff['dis_int']) / 1e3:.1f} kW discharge)"
-        )
 
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):

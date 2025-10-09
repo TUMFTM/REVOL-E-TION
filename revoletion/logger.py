@@ -3,6 +3,9 @@
 import logging
 import multiprocessing as mp
 import sys
+from pathlib import Path
+
+from typing_extensions import override
 
 
 class OptimizationSuccessfulFilter(logging.Filter):
@@ -11,88 +14,88 @@ class OptimizationSuccessfulFilter(logging.Filter):
         return not (record.name == "root" and record.msg == "Optimization successful...")
 
 
-def _get_logger_level(settings: "SimulationSettings"):
+def _get_logger_level(debugmode: bool):
     """
     Determine the logger level based on the settings.
     """
-    return logging.DEBUG if settings.debugmode else logging.INFO
+    return logging.DEBUG if debugmode else logging.INFO
 
 
-def _get_logger(
-    settings: "SimulationSettings",
-    name: str = None,
-):
-    logger = logging.getLogger(name)
-
-    # needs to be set here as root logger does not filter messages from the queue
-    logger.setLevel(_get_logger_level(settings))
-
+def _configure_third_party_loggers() -> None:
     # supress pyomo warnings
     logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
     # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
     logging.getLogger("gurobipy").disabled = True
 
-    return logger
 
+def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
+    """
+    Configure the `revoletion` root logger with its level according to `debugmode` and
+    output handlers to console and the file `log_file`.
 
-def get_root_logger(paths: "SimulationPaths", settings: "SimulationSettings", len_scn_max: int):
-    logger = _get_logger(settings=settings, name="root")
+    Args:
+        log_file: File where the logs are writting to.
+        debugmode: Flag to control whether debugging is enabled. If True the log level is set to 'debug' else 'info'.
+    """
+    root_logger = logging.getLogger()
+    root_logger.setLevel(_get_logger_level(debugmode))
 
+    # Pad the level name column to the maximum level name length.
+    level_name_len = len("WARNING")
     # define log formatter
-    log_formatter = logging.Formatter(f"%(levelname)-{len('WARNING')}s  %(name)-{len_scn_max}s  %(message)s")
+    log_formatter = logging.Formatter(fmt=f"%(levelname)-{level_name_len}s %(message)s")
 
     # define root logger handler for console output
     log_stream_handler = logging.StreamHandler(sys.stdout)
     log_stream_handler.setFormatter(log_formatter)
     log_stream_handler.addFilter(OptimizationSuccessfulFilter())
-    logger.addHandler(log_stream_handler)
+    root_logger.addHandler(log_stream_handler)
 
     # define root logger handler for file output
-    log_file_handler = logging.FileHandler(paths.log)
+    log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(log_formatter)
     log_file_handler.addFilter(OptimizationSuccessfulFilter())
-    logger.addHandler(log_file_handler)
+    root_logger.addHandler(log_file_handler)
 
-    return logger
-
-
-def get_process_logger_sequential(
-    name: str,
-    settings: "SimulationSettings",
-):
-    logger = _get_logger(
-        name=name,
-        settings=settings,
-    )
-
-    return logger
+    _configure_third_party_loggers()
 
 
-def get_process_logger_parallel(
-    name: str,
-    settings: "SimulationSettings",
-    log_queue: mp.Queue,
-):
-    logger = _get_logger(
-        name=name,
-        settings=settings,
-    )
+def configure_process_logger_parallel(log_queue: mp.Queue, debugmode: bool):
+    """
+    Setup logging in a multiprocessing worker.
 
-    logger.propagate = False  # prevent inheritance of handlers from the root logger and duplicated messages
+    Ensures that all log messages are sent to the main process and not logged inside the worker process.
+
+    Args:
+        log_queue: Queue to sent the log messages to.
+    """
+    logger = logging.getLogger()
+    # For multiprocessing environments using the `spawn` method, the root logger is not inherited
+    # from the parent. If the log level is not set in the worker, no log messages are forwarded to the parent.
+    logger.setLevel(_get_logger_level(debugmode))
+    logger.handlers.clear()
+
+    # Ensure that no duplicate log messages appear.
+    logger.propagate = False
 
     queue_handler = logging.handlers.QueueHandler(log_queue)
-    queue_handler.setFormatter(logging.Formatter("%(message)s"))
+
     logger.addHandler(queue_handler)
 
-    return logger
+    _configure_third_party_loggers()
 
 
 def read_mplogger_queue(queue: mp.Queue):
-    main_logger = logging.getLogger("main")
-
+    logger = logging.getLogger()
     while True:
         record = queue.get()
         if record is None:
             break
-        main_logger.handle(record)
+        logger.handle(record)
+
+
+class ContextLoggerAdapter(logging.LoggerAdapter[logging.Logger]):
+    @override
+    def process(self, msg, kwargs):
+        return f"{self.extra['context_str']} {msg}", kwargs

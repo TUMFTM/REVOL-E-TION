@@ -1,109 +1,152 @@
 #!/usr/bin/env python3
 
-from dataclasses import dataclass, field
-from functools import cached_property
-import geopy
-import holidays
 import importlib.resources
 import logging
 import math
-from pathlib import Path
-import numpy as np
-import plotly.subplots
+import multiprocessing as mp
+import multiprocessing.synchronize as mps
 import pprint
-import pytz
 import time
-from typing import List
-
-import timezonefinder
 import traceback
 import warnings
 import webbrowser
+from dataclasses import dataclass, field
+from functools import cached_property
+from pathlib import Path
 
-import multiprocessing as mp
+import geopy
+import geopy.geocoders
+import holidays
+import numpy as np
 import numpy_financial as npf
 import oemof.solph as solph
 import pandas as pd
-import plotly.graph_objects as go
+import plotly.subplots
 import pyomo.environ as po
-
-from . import blocks
-from . import constraints
-from . import dispatch
-from . import economics as eco
-from . import logger as logger_fcs
-from . import scheduler
-from . import utils
+import pytz
+import timezonefinder
+from typing_extensions import Self
 
 import revoletion.data
 
+from . import blocks, constraints, dispatch, scheduler, utils
+from . import economics as eco
+from . import logger as logger_fcs
+
+_LOGGER = logging.getLogger(__name__)
+
 
 class OptimizationError(Exception):
-    pass
+    def __init__(
+        self, msg: str, prediction_horizon_idx: int | None = None, prediction_horizon_num: int | None = None
+    ) -> None:
+        """
+        Create a new OptimizationError.
+
+        :param msg: The error message.
+        :param prediction_horizon_idx: Optionally provide the index of the prediction horizon that failed, to include more information in the error message.
+        :param prediction_horizon_num: Optionally provide the total number of the prediction horizon, to include more information in the error message.
+
+        :returns: The new OptimizationError.
+        """
+        self.prediction_horizon_idx = prediction_horizon_idx
+        self.prediction_horizon_num = prediction_horizon_num
+
+        if self.prediction_horizon_idx is not None and self.prediction_horizon_num is not None:
+            msg = f"Horizon {self.prediction_horizon_idx} of {self.prediction_horizon_num} - {msg}"
+
+        super().__init__(msg)
 
 
 @dataclass
 class Location:
     latitude: float
     longitude: float
-    _lock: mp.Lock = field(repr=False)
-    _logger: logging.Logger = field(repr=False)
+    timezone: pytz.BaseTzInfo = field(default_factory=lambda: pytz.timezone("Europe/Berlin"))
+    country: str = "DE"
+    state: str = "BY"
 
-    timezone: pytz.BaseTzInfo = field(init=False, default_factory=lambda: pytz.timezone("Europe/Berlin"))
-    country: str = field(init=False, default="DE")
-    state: str = field(init=False, default="BY")
-
-    def __post_init__(self):
+    @classmethod
+    def create_from_lat_lon(
+        cls, latitude: float, longitude: float, logger: logging.Logger, lock: mps.Lock | None = None
+    ) -> Self:
         tzfinder = timezonefinder.TimezoneFinder()
-        self.timezone = pytz.timezone(tzfinder.certain_timezone_at(lat=self.latitude, lng=self.longitude))
+        timezone_raw = tzfinder.certain_timezone_at(lat=latitude, lng=longitude)
+        if timezone_raw is None:
+            raise ValueError(f"Failed to determine timezone at {latitude}/{longitude}")
 
-        geolocator = geopy.geocoders.Nominatim(user_agent=f"location_finder")
-        try:
-            location = None
-            if self._lock is None:  # sequential
-                location = geolocator.reverse(query=(self.latitude, self.longitude), language="en", exactly_one=True)
-            else:  # parallel
-                with self._lock:
-                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
-                    location = geolocator.reverse(
-                        query=(self.latitude, self.longitude), language="en", exactly_one=True
-                    )
+        timezone = pytz.timezone(timezone_raw)
 
-            if location:
-                address = location.raw.get("address", {})
+        location = cls._reverse_geocode_location(latitude, longitude, lock)
 
-                if "ISO3166-2-lvl4" in address:
-                    self.country, self.state = address["ISO3166-2-lvl4"].split("-")
-                elif "ISO3166-2-lvl3" in address:
-                    self.country, self.state = address["ISO3166-2-lvl3"].split("-")
-                else:
-                    # fallback: try country_code + state name
-                    self.country = address.get("country_code", "").upper()
-                    self.state = address.get("state", "")
-
-        except geopy.exc.GeocoderUnavailable:
-            self._logger.warning(
-                f"Connection to Geocoder failed. Using default country ({self.country}) and state ({self.state})."
+        if location is None:
+            location = cls(
+                latitude=latitude,
+                longitude=longitude,
+                timezone=timezone,
             )
+            logger.warning(
+                f"Connection to Geocoder failed. "
+                f"Using default country ({location.country}) and state ({location.state})."
+            )
+
+            return location
+
+        address = location.raw.get("address", {})
+
+        if "ISO3166-2-lvl4" in address:
+            country, state = address["ISO3166-2-lvl4"].split("-")
+        elif "ISO3166-2-lvl3" in address:
+            country, state = address["ISO3166-2-lvl3"].split("-")
+        else:
+            # fallback: try country_code + state name
+            country = address.get("country_code", "").upper()
+            state = address.get("state", "")
+
+        return cls(latitude=latitude, longitude=longitude, timezone=timezone, country=country, state=state)
+
+    @staticmethod
+    def _reverse_geocode_location(
+        latitude: float, longitude: float, lock: mps.Lock | None = None
+    ) -> None | geopy.Location:
+        geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
+        try:
+            if lock is None:  # sequential
+                return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
+            else:  # parallel
+                with lock:
+                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
+                    return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
+        except geopy.exc.GeocoderUnavailable:
+            return None
 
 
 @dataclass
 class TimeSettings:
     start: pd.Timestamp
+    end: pd.Timestamp
+    duration: pd.Timedelta
+
     _timestep: pd.Timedelta
-    end: pd.Timestamp = field(default=None)
-    duration: pd.Timedelta = field(default=None)
 
-    def __post_init__(self):
-        if (self.end is None and self.duration is None) or (self.end is not None and self.duration is not None):
+    @classmethod
+    def create_from_start_timestamp(
+        cls,
+        start: pd.Timestamp,
+        timestep: pd.Timedelta,
+        end: pd.Timestamp | None = None,
+        duration: pd.Timedelta | None = None,
+    ) -> Self:
+        if (end is None and duration is None) or (end is not None and duration is not None):
             raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
-
-        elif self.duration is None:
-            self.duration = (self.end - self.start).floor(self._timestep)
-        elif self.end is None:
-            self.duration = self.duration.floor(self._timestep)
+        elif duration is None:
+            duration = (end - start).floor(timestep)
+        elif end is None:
+            duration = duration.floor(timestep)
         # always recalculate end to ensure consistency
-        self.end = self.start + self.duration
+        end = start + duration
+
+        return cls(start=start, end=end, duration=duration, _timestep=timestep)
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
@@ -116,62 +159,73 @@ class TimeSettings:
 
 @dataclass
 class SimulationTimes:
-    _scenario: "Scenario"
+    sim: TimeSettings
+    eval: TimeSettings
+    prj: TimeSettings
 
-    sim: TimeSettings = field(init=False)
-    eval: TimeSettings = field(init=False)
-    prj: TimeSettings = field(init=False)
+    @classmethod
+    def create_from_plain(
+        cls,
+        timestep: str,
+        timezone: pytz.BaseTzInfo,
+        starttime: str,
+        sim_endtime: str,
+        sim_duration: str,
+        prj_duration: str,
+    ) -> Self:
+        starttime_timestamp = cls._convert_time_str(starttime, timestep, timezone)
+        if starttime_timestamp is None:
+            raise ValueError(f"Failed to convert starttime ({starttime}) to pd.Timestamp")
 
-    def __post_init__(self):
-        def convert_time(value: str) -> pd.Timestamp | None:
-            if value is None:
-                return None
-            value = value  # ToDo: reformat time
-            value = value if len(value) > 10 else value + " 00:00"
-            value = (
-                pd.to_datetime(value, format="%d.%m.%Y %H:%M")
-                .floor(self._scenario.timestep)
-                .tz_localize(self._scenario.location.timezone)
-            )
-            return value
+        sim_endtime_timestamp = cls._convert_time_str(sim_endtime, timestep, timezone)
 
-        starttime = convert_time(self._scenario.starttime)
-        sim_endtime = convert_time(self._scenario.sim_endtime)
+        timestep_timedelta = utils.convert2timedelta(timestep, unit="minute")
+        if timestep_timedelta is None:
+            raise ValueError(f"Failed to convert timestep ({timestep}) to pd.Timedelta")
 
-        timestep = utils.convert2timedelta(self._scenario.timestep, unit="minute")
+        sim_duration_timedelta = utils.convert2timedelta(sim_duration, unit="day")
 
-        self.sim = TimeSettings(
-            start=starttime,
-            _timestep=timestep,
-            end=sim_endtime,
-            duration=utils.convert2timedelta(value=self._scenario.sim_duration, unit="day"),
+        sim = TimeSettings.create_from_start_timestamp(
+            start=starttime_timestamp,
+            timestep=timestep_timedelta,
+            end=sim_endtime_timestamp,
+            duration=sim_duration_timedelta,
         )
-        self.eval = TimeSettings(
-            start=starttime,
-            _timestep=timestep,
-            end=sim_endtime,
-            duration=utils.convert2timedelta(value=self._scenario.sim_duration, unit="day"),
+        eval = TimeSettings.create_from_start_timestamp(
+            start=starttime_timestamp,
+            timestep=timestep_timedelta,
+            end=sim_endtime_timestamp,
+            duration=sim_duration_timedelta,
         )
-        self.prj = TimeSettings(
-            start=starttime, _timestep=timestep, end=starttime + pd.DateOffset(years=self._scenario.prj_duration)
+        prj = TimeSettings.create_from_start_timestamp(
+            start=starttime_timestamp,
+            timestep=timestep_timedelta,
+            end=starttime_timestamp + pd.DateOffset(years=prj_duration),
         )
 
-        for attr in ["starttime", "sim_endtime", "sim_duration", "prj_duration"]:
-            if hasattr(self._scenario, attr):
-                delattr(self._scenario, attr)
-        delattr(self, "_scenario")
+        return cls(sim=sim, eval=eval, prj=prj)
+
+    @staticmethod
+    def _convert_time_str(time_str: str | None, timestep: str, timezone: pytz.BaseTzInfo) -> pd.Timestamp | None:
+        if time_str is None:
+            return None
+
+        # ToDo: reformat time
+        time_str = time_str if len(time_str) > 10 else time_str + " 00:00"
+        value = pd.to_datetime(time_str, format="%d.%m.%Y %H:%M").floor(timestep).tz_localize(timezone)
+        return value
 
 
 @dataclass
 class Timestep:
-    str: str
-    hours: float = field(init=False, default=None)
+    hours: float
+    td: pd.Timedelta
 
-    td: pd.Timedelta = field(init=False, default=None)
+    @classmethod
+    def from_str(cls, timestep_str: str) -> Self:
+        td = pd.Timedelta(timestep_str)
 
-    def __post_init__(self):
-        self.td = pd.Timedelta(self.str)
-        self.hours = self.td.total_seconds() / 3600
+        return cls(td=td, hours=td.total_seconds() / 3600)
 
 
 @dataclass
@@ -191,54 +245,72 @@ class SimulationPaths:
     log: Path to the log file
     """
 
-    scenario: Path | str
-    input: Path | str = None
-    output: Path | str = None
-    rerun: Path | str = None
+    scenario: Path
+    input: Path
+    output: Path
+    rerun: Path | str | None
 
-    def __post_init__(self):
-        self.scenario = Path(self.scenario)
-        if self.input is None:
-            self.input = self.scenario.parent
+    @classmethod
+    def from_plain_paths(
+        cls,
+        scenario: Path | str,
+        input: Path | str | None = None,
+        output: Path | str | None = None,
+        rerun: Path | str | None = None,
+    ):
+        scenario_path = Path(scenario)
+
+        if input is None:
+            input_path = scenario_path.parent
         else:
-            self.input = Path(self.input)
-        if self.output is None:
-            self.output = Path.cwd() / "results"
+            input_path = Path(input)
+
+        if output is None:
+            output_path = Path.cwd() / "results"
         else:
-            self.output = Path(self.output)
-        if self.rerun is None:
-            self.output = self.output / Path(f"{pd.Timestamp.now().strftime('%y%m%d_%H%M%S')}_{self.scenario.stem}")
-        elif self.rerun == "latest":
+            output_path = Path(output)
+
+        rerun_path = None
+        if rerun is None:
+            output_path = output_path / Path(f"{pd.Timestamp.now().strftime('%y%m%d_%H%M%S')}_{scenario_path.stem}")
+        elif rerun == "latest":
             # get all directories in the output directory already sorted alphabetically
-            directories = [d for d in sorted(self.output.iterdir()) if d.is_dir()]
+            directories = [d for d in sorted(output_path.iterdir()) if d.is_dir()]
 
             # return the last directory (if any)
             if directories:
-                self.output = directories[-1]
+                output_path = directories[-1]
             else:
-                raise NotADirectoryError(f"No previous runs available in specified output directory {self.output}")
+                raise NotADirectoryError(f"No previous runs available in specified output directory {output_path}")
         else:
-            self.rerun = Path(self.rerun)
-            if self.rerun.is_absolute():
-                self.output = self.rerun
+            rerun_path = Path(rerun)
+            if rerun_path.is_absolute():
+                output_path = rerun_path
             else:
-                self.output = self.output / self.rerun.name
+                output_path = output_path / rerun_path.name
 
         # ensure all paths are absolute
-        self.scenario = self.scenario.resolve()
-        self.input = self.input.resolve()
-        self.output = self.output.resolve()
+        scenario_path = scenario_path.resolve()
+        input_path = input_path.resolve()
+        output_path = output_path.resolve()
 
         # ensure that all paths exist
-        if not self.scenario.is_file():
-            raise FileNotFoundError(f"Scenario file not found: {self.scenario}")
-        if not self.input.is_dir():
-            raise NotADirectoryError(f"Input directory path not interpretable: {self.input}")
-        if not self.rerun:
-            self.output.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
+        if not scenario_path.is_file():
+            raise FileNotFoundError(f"Scenario file not found: {scenario_path}")
+        if not input_path.is_dir():
+            raise NotADirectoryError(f"Input directory path not interpretable: {input_path}")
+        if not rerun:
+            output_path.mkdir(parents=True)  # create parents if missing -> relevant for default "results"
         else:
-            if not self.output.is_dir():
-                raise NotADirectoryError(f"Specified rerun directory {self.output} does not exist.")
+            if not output_path.is_dir():
+                raise NotADirectoryError(f"Specified rerun directory {output_path} does not exist.")
+
+        return cls(
+            scenario=scenario_path,
+            output=output_path,
+            input=input_path,
+            rerun=rerun_path if rerun_path is not None else rerun,
+        )
 
     def create_result_path(self, suffix: str) -> Path:
         return self.output / f"{self.output.name}_{suffix}"
@@ -279,40 +351,14 @@ class SimulationSettings:
     key_solcast_api: str = None
 
 
-@dataclass
-class PlotTraces:
-    _plot_traces: List[go.Scatter] = field(default_factory=list, repr=False)
-    _secondary_y: List[bool] = field(default_factory=list, repr=False)
-
-    def append(self, plot_line: go.Scatter, secondary_y: bool = False) -> None:
-        self._plot_traces.append(plot_line)
-        self._secondary_y.append(secondary_y)
-
-    def extend(self, plot_lines: List[go.Scatter], secondary_ys: List[bool] = None) -> None:
-        if not secondary_ys:
-            secondary_ys = [False] * len(plot_lines)
-
-        self._plot_traces.extend(plot_lines)
-        self._secondary_y.extend(secondary_ys)
-
-    @property
-    def plot_lines(self) -> List[go.Scatter]:
-        return self._plot_traces
-
-    @property
-    def secondary_ys(self) -> List[bool]:
-        return self._secondary_y
-
-
 class Scenario:
     def __init__(
         self,
         paths: SimulationPaths,
         settings: SimulationSettings,
-        run_execution: bool = False,
-        name: str = None,  # will be set to the stem of the scenario filename for single scenario execution
-        parameters: pd.Series = None,
-        log_queue: mp.Queue = None,
+        name: str,  # will be set to the stem of the scenario filename for single scenario execution
+        parameters: pd.Series,
+        logger: logging.Logger,
         lock: mp.Lock = None,
         status_update: "SimulationRun.trigger_scenario_status_update" = None,
         status_queue: mp.Queue = None,
@@ -320,66 +366,22 @@ class Scenario:
         self.paths = paths
         self.settings = settings
 
-        if run_execution:
-            if name is None:
-                raise ValueError("Scenario name must be provided when run_execution is True")
-            if parameters is None:
-                raise ValueError("Parameters must be provided when run_execution is True")
-
         self.name = name
         self.parent = None  # attribute needs to exist for economic aggregation
 
-        if not run_execution:
-            self.logger = logger_fcs.get_root_logger(
-                paths=self.paths,
-                settings=self.settings,
-                len_scn_max=len("root"),
-            )
+        # Set given parameters as attribute
+        if not isinstance(parameters, pd.Series):
+            raise ValueError("Parameters of type pd.Series must be provided to scenario")
+        self.parameters = parameters
 
-            # read scenario file
-            if self.paths.scenario.suffix == ".csv":
-                self.parameters = pd.read_csv(self.paths.scenario, index_col=[0, 1], keep_default_na=False)
-                self.parameters = self.parameters.sort_index(sort_remaining=True).map(utils.infer_dtype)
-            elif self.paths.scenario.suffix == ".pkl":
-                self.parameters = pd.read_pickle(self.paths.scenario)
-            else:
-                raise ValueError("Scenario file specified in SimulationPaths object is neither CSV nor PKL file.")
-
-            # check if scenario file contains more than one scenario (then it has to be run via a SimulationRun)
-            if len(self.parameters.columns) > 1:
-                raise ValueError("More than one scenario detected. Provide a single column CSV or PKL file.")
-
-            if self.name is None:
-                self.name = self.parameters.columns[0]
-
-            # convert DataFrame to Series
-            self.parameters = self.parameters.iloc[:, 0]
-
-        else:
-            # Define logger
-            if log_queue is not None:
-                self.logger = logger_fcs.get_process_logger_parallel(
-                    name=self.name,
-                    settings=self.settings,
-                    log_queue=log_queue,
-                )
-            else:
-                self.logger = logger_fcs.get_process_logger_sequential(
-                    name=self.name,
-                    settings=self.settings,
-                )
-
-            # Set given parameters as attribute
-            if not isinstance(parameters, pd.Series):
-                raise ValueError("Parameters of type pd.Series must be provided to scenario when run_execution is True")
-            self.parameters = parameters
+        self.logger = logger
 
         self.status_update = status_update
         self.status_queue = status_queue
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
-            if not "Optimization ended with status warning and termination condition" in str(message):
+            if "Optimization ended with status warning and termination condition" not in str(message):
                 self.logger.warning(f"{category.__name__}: {message} (in {filename}, line {lineno})")
 
         warnings.showwarning = custom_warning_handler
@@ -407,24 +409,34 @@ class Scenario:
 
         if not isinstance(self.blocks, dict):
             raise ValueError(
-                f'Scenario parameter "blocks" has to be defined in a dictionary format '
+                'Scenario parameter "blocks" has to be defined in a dictionary format '
                 "(\"{'name1':'classname1','name2':'classname2'}\") - "
-                f"check for missing or additional single or double quotes"
+                "check for missing or additional single or double quotes"
             )
 
         if not self.blocks:
-            raise ValueError(f'Scenario parameter "blocks" is empty - Definition of at least one block is required')
+            raise ValueError('Scenario parameter "blocks" is empty - Definition of at least one block is required')
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        self.location = Location(latitude=self.latitude, longitude=self.longitude, _lock=lock, _logger=self.logger)
-
-        for param in ["latitude", "longitude"]:
-            delattr(self, param)
+        self.location = Location.create_from_lat_lon(
+            latitude=self.latitude, longitude=self.longitude, logger=self.logger, lock=lock
+        )
 
         self.prj_duration_yrs = self.prj_duration
-        self.times = SimulationTimes(_scenario=self)
-        self.timestep = Timestep(self.timestep)
+        self.times = SimulationTimes.create_from_plain(
+            timestep=self.timestep,
+            timezone=self.location.timezone,
+            starttime=self.starttime,
+            sim_endtime=self.sim_endtime,
+            sim_duration=self.sim_duration,
+            prj_duration=self.prj_duration,
+        )
+        self.timestep = Timestep.from_str(self.timestep)
+
+        for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
+            if hasattr(self, param):
+                delattr(self, param)
 
         # generate variables for calculations
         self.sim_yr_rat = self.times.sim.duration / pd.Timedelta(days=365)  # no leap years
@@ -448,9 +460,9 @@ class Scenario:
         self.nhorizons = math.ceil(self.times.sim.duration / self.len_ch)  # number of timeslices to run
         if not self.truncate_ph:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
-            self.times.sim = TimeSettings(
+            self.times.sim = TimeSettings.create_from_start_timestamp(
                 start=self.times.sim.start,
-                _timestep=self.timestep.td,
+                timestep=self.timestep.td,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 
@@ -490,13 +502,16 @@ class Scenario:
             isinstance(self.temp_air, str)
             and (self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")).is_file()
         ):
-            self.temp_air = utils.read_timeseries_csv(
-                path_input_file=(
-                    self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")
-                ),
-                block=self,  # only uses block.name -> scenario works, too
-                scenario=self,
-            ).iloc[:, 0]
+            try:
+                self.temp_air = utils.read_timeseries_csv(
+                    path_input_file=(
+                        self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")
+                    ),
+                    scenario=self,
+                ).iloc[:, 0]
+            except IndexError as exc:
+                raise IndexError(f"Failed to load air temperature timeseries data: {exc}")
+
         else:
             self.logger.warning(
                 f"Specified argument for scenario parameter temp_air ({self.temp_air}) not found - "
@@ -559,13 +574,6 @@ class Scenario:
             dtype=float,
         )
 
-        # Define object to store all traces for plotting
-        self.plot_traces = PlotTraces()
-
-        self.result_messages = []
-        self.result_summary = []
-        self.result_timeseries = []
-
         self.e_eta = None
         self.renewable_share = None
         self.lcoe_total = self.lcoe_wocs = None
@@ -583,7 +591,7 @@ class Scenario:
             self.scheduler = scheduler.AprioriPowerScheduler(scenario=self)
         # endregion
 
-        self.logger.debug(f"Scenario initialization completed")
+        self.logger.debug("Scenario initialization completed")
 
         self.update_scenario_status(status_msg={"status": "fully initialized"})
 
@@ -609,10 +617,38 @@ class Scenario:
         #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
         #                          f' be connected to the same bus')
 
-        # region execute scenario
+    @classmethod
+    def create_from_file(cls, paths: SimulationPaths, settings: SimulationSettings) -> Self:
+        """
+        Create a new scenario from a scenario file.
+
+        Args:
+            paths: The paths configuration for the scenario.
+            settings: The settings for the simulation.
+
+        Returns:
+            A new `Scenario` which is ready for execution.
+        """
+        parameters = utils.read_scenario_from_file(paths.scenario)
+        # check if scenario file contains more than one scenario (then it has to be run via a SimulationRun)
+        if len(parameters.columns) > 1:
+            raise ValueError("More than one scenario detected. Provide a single column CSV or PKL file.")
+
+        name = str(parameters.columns[0])
+
+        # convert DataFrame to Series
+        parameters_series = parameters.iloc[:, 0]
+
+        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+
+        return cls(paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger)
+
+    def execute(self) -> None:
         try:
             for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
-                PredictionHorizon(index=horizon_index, scenario=self)
+                prediction_horizon = PredictionHorizon(index=horizon_index, scenario=self, logger=self.logger)
+
+                prediction_horizon.execute()
 
                 self.update_scenario_status(
                     status_msg={"status": f"completed horizon {horizon_index + 1} out of {self.nhorizons}"}
@@ -639,19 +675,16 @@ class Scenario:
             self.calc_meta_results()
 
             if not self.settings.largescalemode:
-                self.result_timeseries = pd.concat(self.result_timeseries, axis=1)
-                self.result_timeseries.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
-                for msg in self.result_messages:
+                result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(self.block_registry)
+                result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
+                result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
+
+                result_messages = blocks.MessageCollectionBlockVisitor().collect_messages(self.block_registry)
+                for msg in result_messages:
                     self.logger.info(msg)
-                self.generate_and_save_plot()
 
             self.runtime.stop()
             self.logger.info(f"Scenario finished - runtime {self.runtime.duration:.2f} s")
-
-            self.save_result_summary()
-
-        logging.shutdown()
-        # endregion
 
     def update_scenario_status(self, status_msg: dict):
         if self.status_update is not None:
@@ -661,19 +694,19 @@ class Scenario:
     def calc_meta_results(self):
         # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
         if self.energies.loc[("sources", "pro"), "sim"] == 0:
-            self.logger.warning(f"Core efficiency calculation: division by zero")
+            self.logger.warning("Core efficiency calculation: division by zero")
         else:
             self.e_eta = self.energies.loc[("sinks", "del"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
 
         if self.energies.loc[("sources", "pro"), "sim"] == 0:
-            self.logger.warning(f"Renewable share calculation: division by zero")
+            self.logger.warning("Renewable share calculation: division by zero")
         else:
             self.renewable_share = (
                 self.energies.loc[("renewable", "act"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
             )
 
         if self.energies.loc[("sinks", "del"), "sim"] == 0:
-            self.logger.warning(f"LCOE calculation: division by zero")
+            self.logger.warning("LCOE calculation: division by zero")
         else:
             self.lcoe_total = self.aggregator.totex.dis / self.energies.loc[("sinks", "del"), "dis"]
             self.lcoe_wocs = (
@@ -699,7 +732,9 @@ class Scenario:
     def generate_and_save_plot(self):
         figure = plotly.subplots.make_subplots(specs=[[{"secondary_y": True}]])
 
-        figure.add_traces(self.plot_traces.plot_lines, secondary_ys=self.plot_traces.secondary_ys)
+        plot_traces = blocks.VisualizationBlockVisitor().create_plot_traces(self.block_registry)
+
+        figure.add_traces(plot_traces.plot_lines, secondary_ys=plot_traces.secondary_ys)
 
         if self.strategy == "go":
             title = f"Global Optimum Results - {self.paths.output.name} - Scenario: {self.name}"
@@ -779,124 +814,131 @@ class Scenario:
             tuples=[("scenario", key) for key in results_scenario.index], names=["block", "key"]
         )
 
+        blocks_result_summary = blocks.SummaryCollectionBlockVisitor().collect_summary(self.block_registry)
         # write results from run and scenario to result_summary
-        self.result_summary = pd.concat([results_scenario, *self.result_summary])
+        result_summary = pd.concat([results_scenario, *blocks_result_summary])
 
         # convert result_summary to DataFrame and save to temporary file
-        pd.DataFrame(self.result_summary, columns=[self.name]).to_pickle(
-            self.paths.output / f"{self.name}_summary_temp.pkl"
-        )
+        pd.DataFrame(result_summary, columns=[self.name]).to_pickle(self.paths.output / f"{self.name}_summary_temp.pkl")
 
 
 class PredictionHorizon:
-    def __init__(self, index, scenario):
+    def __init__(self, index: int, scenario: Scenario, logger: logging.Logger):
         self.index = index
         self.scenario = scenario
 
-        del index, scenario
+        # Setup the logger as a child of the scenario logger with some additional metadata
+        # about the index of the prediction horizon.
+        logging_ctx_str = f"Horizon {self.index + 1} of {self.scenario.nhorizons} -"
+        self._logger = logger_fcs.ContextLoggerAdapter(logger, {"context_str": logging_ctx_str})
 
-        self.results = None
+        self._results = None
 
         # region time and data generation and slicing
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
-        self.ph = TimeSettings(
+        self.ph = TimeSettings.create_from_start_timestamp(
             start=start,
-            _timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
-        self.ch = TimeSettings(
+        self.ch = TimeSettings.create_from_start_timestamp(
             start=start,
-            _timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
-        del start
-
-        def log_msg(msg: str):
-            return f"Horizon {self.index + 1} of {self.scenario.nhorizons} - {msg}"
-
-        self.constraints = constraints.CustomConstraints(scenario=self.scenario)
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
         if self.ph.duration < self.scenario.len_ph:
-            self.scenario.logger.info(log_msg(msg="Prediction Horizon truncated to simulation end time"))
+            self._logger.info(msg="Prediction Horizon truncated to simulation end time")
 
-        self.scenario.logger.info(
-            log_msg(msg=f"Start: {self.ph.start} - " + f"CH end: {self.ch.end} - " + f"PH end: {self.ph.end}")
-        )
-
-        # if apriori power scheduling is necessary, calculate power schedules:
-        if self.scenario.scheduler:
-            self.scenario.logger.debug(
-                log_msg(msg="Calculating power schedules for commodities with rulebased charging strategies")
-            )
-            self.scenario.scheduler.calc_ph_schedule(self)
-        # endregion
-
-        # region build energy system model
-        self.scenario.logger.info(log_msg(msg="Building oemof model"))
+        self._logger.info("Start: %s - CH end: %s - PH end: %s", self.ph.start, self.ch.end, self.ph.end)
 
         self.es = solph.EnergySystem(
             timeindex=self.ph.dti, infer_last_interval=True
         )  # initialize energy system model instance
 
-        for block in self.scenario.block_registry.get("TopLevelBlock", {}).values():
-            block.pre_horizon(self)
+        self.constraints = constraints.CustomConstraints(scenario=self.scenario)
 
-        self.scenario.logger.debug(log_msg("Model build completed"))
+        # if apriori power scheduling is necessary, calculate power schedules:
+        if self.scenario.scheduler:
+            self._logger.debug("Calculating power schedules for commodities with rulebased charging strategies")
+            self.scenario.scheduler.calc_ph_schedule(self)
         # endregion
 
-        # region build optimization problem
-        self.scenario.logger.info(log_msg(msg="Building optimization problem from oemof model"))
+    @property
+    def results(self):
+        """Get the results of the previous execution."""
+        return self._results
 
-        self.model = solph.Model(self.es, debug=self.scenario.settings.debugmode)
-        self.constraints.apply_constraints(model=self.model)
+    def execute(self) -> None:
+        """
+        Perform the concrete optimization across a prediction horizon.
+        """
 
-        if self.scenario.settings.debugmode and self.index == 1:
-            self.model.write(self.scenario.path.dump, io_options={"symbolic_solver_labels": True})
-        # endregion
+        self._logger.info("Building oemof model")
+        self._pre_horizon()
+        self._logger.debug("Model build completed")
 
-        # region solve optimization problem
-        self.scenario.logger.info(log_msg(msg="Model built, starting optimization"))
-        results = self.model.solve(
+        model = self._create_model()
+
+        self._logger.info("Model built, starting optimization")
+        results = model.solve(
             solver=self.scenario.settings.solver, solve_kwargs={"tee": self.scenario.settings.debugmode}
         )
-
         if (results.solver.status == po.SolverStatus.ok) and (
             results.solver.termination_condition == po.TerminationCondition.optimal
         ):
-            self.scenario.logger.info(log_msg(msg="Optimization completed, getting results"))
+            self._logger.info("Optimization completed, getting results")
             if (
                 self.scenario.nhorizons == 1
             ):  # Don't store objective for multiple horizons in scenario (most RH scenarios)
-                self.scenario.objective_opt = self.model.objective()
+                self.scenario.objective_opt = model.objective()
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
-            raise OptimizationError(log_msg(msg="Scenario failed: Infeasible"))
+            raise OptimizationError(
+                "Scenario failed: Infeasible",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
+            )
         elif results.solver.termination_condition == po.TerminationCondition.unbounded:
-            raise OptimizationError(log_msg(msg="Scenario failed: Unbounded"))
+            raise OptimizationError(
+                "Scenario failed: Unbounded",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
+            )
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
             raise OptimizationError(
-                log_msg(
-                    msg="Scenario failed: Infeasible or Unbounded (To solve this error try to "
-                    "set investment limits for blocks or for the scenario)"
-                )
+                "Scenario failed: Infeasible or Unbounded (To solve this error try to "
+                "set investment limits for blocks or for the scenario)",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
             )
         else:
-            raise Exception(
-                log_msg(msg=f"Optimization terminated with unknown status: {results.solver.termination_condition}")
-            )
-        # endregion
+            raise Exception(f"Optimization terminated with unknown status: {results.solver.termination_condition}")
 
-        # region get results
+        self._logger.debug(pprint.pformat(solph.processing.meta_results(model)))
+
         # Get result data slice for current CH from results and save in result dataframes for later analysis
         # Get (possibly optimized) component sizes from results to handle outputs more easily
-        self.results = solph.processing.results(self.model)  # Get the results of the solved horizon from the solver
+        self._results = solph.processing.results(model)
 
-        self.scenario.logger.debug(pprint.pformat(solph.processing.meta_results(self.model)))
+        self._post_horizon()
 
-        # free up RAM
-        del self.model
+    def _create_model(self) -> solph.Model:
+        self._logger.info("Building optimization problem from oemof model")
 
+        model = solph.Model(self.es, debug=self.scenario.settings.debugmode)
+        self.constraints.apply_constraints(model=model)
+
+        if self.scenario.settings.debugmode and self.index == 1:
+            model.write(self.scenario.path.dump, io_options={"symbolic_solver_labels": True})
+
+        return model
+
+    def _pre_horizon(self) -> None:
+        for block in self.scenario.block_registry.get("TopLevelBlock", {}).values():
+            block.pre_horizon(self)
+
+    def _post_horizon(self) -> None:
         for block in self.scenario.block_registry.get("TopLevelBlock", {}).values():
             block.post_horizon(self)
-        # endregion
