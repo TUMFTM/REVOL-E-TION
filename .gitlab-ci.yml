@@ -1,8 +1,9 @@
 stages:
   - style
+  - testing
 
 variables:
-  UV_VERSION: 0.5
+  UV_VERSION: 0.8
   PYTHON_VERSION: 3.11
   BASE_LAYER: bookworm-slim
   # GitLab CI creates a separate mountpoint for the build directory,
@@ -13,9 +14,28 @@ variables:
 
 default:
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  before_script: &default_before_script
+    - apt-get update
+    - apt-get install -y --no-install-recommends git coinor-cbc
   cache:
     paths:
       - $UV_CACHE_DIR
+
+main_testing:
+  stage: testing
+  before_script:
+    - *default_before_script
+    - uv sync --group tests
+  script:
+    - uv run coverage run -m pytest tests/
+    - uv run coverage report -m || true
+    - uv run coverage xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
 
 pre_commit:
   stage: style

@@ -34,6 +34,11 @@ dependencies = [
 ]
 
 [dependency-groups]
+tests = [
+    "coverage[toml]>=7.10.7",
+    "pytest>=8.4.2",
+]
+
 dev = ["pre-commit"]
 
 [tool.setuptools]
@@ -56,3 +61,11 @@ extend-select = ["I"]
 
 [project.scripts]
 revoletion = "revoletion.__main__:main"
+
+[tool.pytest.ini_options]
+# Disable warnings spam
+addopts = "-p no:warnings"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["revoletion"]
