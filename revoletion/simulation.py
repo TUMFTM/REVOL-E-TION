@@ -358,7 +358,7 @@ class Scenario:
         settings: SimulationSettings,
         name: str,  # will be set to the stem of the scenario filename for single scenario execution
         parameters: pd.Series,
-        logger: logging.Logger,
+        logger: logging.Logger | None = None,
         lock: mp.Lock = None,
         status_update: "SimulationRun.trigger_scenario_status_update" = None,
         status_queue: mp.Queue = None,
@@ -374,6 +374,8 @@ class Scenario:
             raise ValueError("Parameters of type pd.Series must be provided to scenario")
         self.parameters = parameters
 
+        if logger is None:
+            logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
         self.logger = logger
 
         self.status_update = status_update
