@@ -1,3 +1,10 @@
+/*
+    Custom CSS to enforce a white background and black text
+    for markdown-rendered content, overriding any theme styles.
+    This is required for better readability of the README.md in dark mode themes.
+ */
+
+
 /* Set general body styles: white background, black text, sans-serif font */
 body {
     background-color: #ffffff !important;    /* White background */
