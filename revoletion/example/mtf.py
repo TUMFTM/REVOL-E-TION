@@ -2,7 +2,7 @@
 
 
 def map_timeframes(df, name):
-    cs_map = {"ld": map_timeframes_vehicles, "pue": map_timeframes_batteries}
+    cs_map = {"vehicles": map_timeframes_vehicles, "brs": map_timeframes_batteries}  # fleet: mapping_function
     return cs_map[name](df)
 
 

@@ -602,41 +602,19 @@ Stationary battery energy storage systems.
   Fleet
 </summary>
 
-Fleet consisting of one or several DispatchGroups.
+Fleet consisting of one or several SubFleets.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `groups_dispatch` | Dispatch Groups | dict |  | Dictionary in text representation containing the DispatchGroup name in string format as key and a list of contained subfleet names as strings as value. List order determines priority. No subfleet may be in more than one DispatchGroup | {'ld': ['icev', 'bev']} |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to | 'AC', 'DC' |
+| `subfleets` | Subfleets | list |  | List of names of subfleets in Fleet in no particular order. Each of these subfleets must exist as such in the scenario file. |  |
+| `data_source` | Data source | str |  | Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations. | 'usecases', 'demand', 'log' |
+| `filename` | Filename of input file | str or None |  | Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Base search path is the scenario file's path, unless explicitly specified. | string with filename or None |
+| `filename_mapper` | Filename of TimeframeMapper file | str |  | Filename of the file containing the mapping function assigning timeframes to individual days (e.g. weekday/weekend) for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. Base search path is the scenario file's path, unless explicitly specified. | string with filename of python file with or without '.py' |
 | `pwr_lim_f2s` | Power limit of fleet to site | float or None |  | Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None. | [0, inf[ or None |
 | `pwr_lim_s2f` | Power limit of site to fleet | float or None |  | Maximum power flow from the local site to Fleet (Site2Fleet) in W. To enable unlimited power flow set this parameter to None. | [0, inf[ or None |
 | `opex_spec_f2s` | Specific operational expenditures for fleet charging | float or str |  | Specific operational expenditures for Fleet charging: cost in currency per energy charged into Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
 | `opex_spec_s2f` | Specific operational expenditures for fleet discharging | float or str |  | Specific operational expenditures for Fleet discharging: cost in currency per energy discharged from Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
-
-</details>
-
-
-<details style="margin-bottom: 1em;">
-<summary style="border: 2px solid #333333;
-  padding: 10px;
-  font-weight: bold;
-  border-radius: 6px;
-  cursor: pointer;
-">
-  <span style="display: inline-block;width: 3em;text-align: center;font-size: 1.5em;">
-    ⚙️🔀
-  </span>
-  DispatchGroup
-</summary>
-
-Group of actual Subfleets that are dispatched onto a common demand.
-    Therefore, these subfleets are typically similar in capability such as BEV and ICEV variants of the same vehicle type.
-
-| Key | Name | Type | Not required for | Description | Valid values or format |
-|-----|------|------|------------------|-------------|------------------------|
-| `data_source` | Data source | str |  | Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations. | 'usecases', 'demand', 'log' |
-| `filename` | Filename | str or None |  | Filename of csv file containing (a) use case definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Log files are specified on SubFleet level. | string with filename or None |
-| `filename_mapper` | Filename TimeframeMapper | str |  | Filename of the file containing the mapping function for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. | string with filename of python file with or without '.py' |
 
 </details>
 
@@ -661,9 +639,6 @@ SubFleet consisting of initially identical FleetUnits (Electric Vehicle, Interna
 |-----|------|------|------------------|-------------|------------------------|
 | `num` | Number of fleet units | int |  | Number of fleet units within the SubFleet. | [1, inf[ |
 | `type_unit` | Fleet unit type | str |  | Type of Fleet units contained in the Subfleet. 'ev': Electric Vehicle, 'icev': Internal Combustion Engine Vehicle, 'mb': Mobile Battery | 'ev', 'icev', 'mb' |
-| `data_source` | Data source | str |  | Define whether usage timeseries should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations | 'usecases', 'demand', 'log' |
-| `filename` | Filename | str or None |  | Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or (c) existing log file | string with filename or None |
-| `filename_mapper` | Filename TimeframeMapper | str or None |  | Filename of the file containing the mapping function for the SubFleet's DES. The filename has to be given without the ending ".py". The file itself has to be placed in the input directory | string with filename of python file without '.py' |
 | `size_preexisting_storage` | Preexisting size of storage | float | `type_unit` == 'icev' | Installed nominal capacity of the Fleet unit's storage in Wh per single Fleet unit for all Fleet units within the Subfleet. Parameter is neglected if type_unit is set to 'icev' | [0.0, inf[ |
 | `size_max_storage` | Maximum size of storage | float or None | `type_unit` == 'icev' | Maximum size of storage per Fleet unit including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None | [0, inf[ or None |
 | `invest_storage` | Investment into storage | bool | `type_unit` == 'icev' | Enable additional investment into the Fleet units' storages | True, False |

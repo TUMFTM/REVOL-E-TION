@@ -102,13 +102,13 @@ class DispatchTimer:
 
 class DispatchEnvironment:
     """
-    Intermediary between REVOl-E-TION scenario and the GroupDispatchers - not required for standalone operation
+    Interface between REVOl-E-TION scenario and the standalone FleetDispatchers
     """
 
     def __init__(self, scenario: "simulation.Scenario"):
         self.scenario = scenario
 
-        self.groups = self.scenario.block_registry.get("DispatchGroupActive", {})
+        self.fleets = self.scenario.block_registry.get("DispatchFleet", {})
         self.time = DispatchTimer(dti_base=self.scenario.times.sim.dti)
         self.env = simpy.Environment()
         self.dispatchers = dict()
@@ -116,31 +116,31 @@ class DispatchEnvironment:
 
         # region create individual dispatchers
         # Battery Dispatchers need to be initialized first to allow for range extension of Vehicle Dispatchers
-        for name, group in [(n, g) for n, g in self.groups.items() if not g.is_vehicle_group]:
-            self.dispatchers[name] = GroupDispatcher(
+        for name, fleet in [(n, f) for n, f in self.fleets.items() if not f.is_vehicle_fleet]:
+            self.dispatchers[name] = FleetDispatcher(
                 timer=self.time,
-                demand=group.demand,
+                demand=fleet.demand,
                 env=self.env,
-                params=DispatchGroupParams.from_obj(group=group),
+                params=FleetParams.from_obj(fleet=fleet),
                 logger=self.scenario.logger,
             )
-            group.dispatcher = self.dispatchers[name]
+            fleet.dispatcher = self.dispatchers[name]
 
-        for name, group in [(n, g) for n, g in self.groups.items() if g.is_vehicle_group]:
-            self.dispatchers[name] = GroupDispatcher(
+        for name, fleet in [(n, f) for n, f in self.fleets.items() if f.is_vehicle_fleet]:
+            self.dispatchers[name] = FleetDispatcher(
                 timer=self.time,
-                demand=group.demand,
+                demand=fleet.demand,
                 env=self.env,
-                params=DispatchGroupParams.from_obj(group=group),
+                params=FleetParams.from_obj(fleet=fleet),
                 logger=self.scenario.logger,
             )
-            group.dispatcher = self.dispatchers[name]
+            fleet.dispatcher = self.dispatchers[name]
         # endregion
 
         self.env.run()
 
         for dispatcher in self.dispatchers.values():
-            if dispatcher.params.is_vehicle_group:
+            if dispatcher.params.is_vehicle_fleet:
                 dispatcher.transfer_rex_processes()
 
         for disp in self.dispatchers.values():
@@ -152,26 +152,26 @@ class DispatchEnvironment:
                 )
                 disp.save_data(path_log=path_log)
 
-        for group in self.groups.values():
-            group.log = group.dispatcher.log
-            group.rate_success = group.dispatcher.rate_success
-            group.rate_use = group.dispatcher.rate_use
+        for fleet in self.fleets.values():
+            fleet.log = fleet.dispatcher.log
+            fleet.rate_success = fleet.dispatcher.rate_success
+            fleet.rate_use = fleet.dispatcher.rate_use
 
 
 @dataclass
-class DispatchGroupParams:
+class FleetParams:
     name: str
     subfleet_params: list
-    is_vehicle_group: bool
+    is_vehicle_fleet: bool
 
     @classmethod
-    def from_obj(cls, group: "blocks.DispatchGroup") -> "DispatchGroupParams":
-        subfleet_params = {name: SubFleetParams.from_obj(subfleet) for name, subfleet in group.subblocks.items()}
+    def from_obj(cls, fleet: "blocks.Fleet") -> "FleetParams":
+        subfleet_params = {name: SubFleetParams.from_obj(subfleet) for name, subfleet in fleet.subblocks.items()}
 
         params = dict(
-            name=group.name,
+            name=fleet.name,
             subfleet_params=subfleet_params,
-            is_vehicle_group=group.is_vehicle_group,
+            is_vehicle_fleet=fleet.is_vehicle_fleet,
         )
 
         return cls(**params)
@@ -195,7 +195,7 @@ class SubFleetParams:
     pwr_chg_usable: Optional[float] = None
     rex_available: Optional[bool] = False
     rex_subfleet: Optional["blocks.SubFleet"] = None
-    rex_dispatcher: Optional["GroupDispatcher"] = None
+    rex_dispatcher: Optional["FleetDispatcher"] = None
 
     @classmethod
     def from_obj(cls, subfleet: "blocks.SubFleet") -> "SubFleetParams":
@@ -254,13 +254,13 @@ class SubFleetParams:
         return cls(**params)
 
 
-class GroupDispatcher:
+class FleetDispatcher:
     def __init__(
         self,
         timer: DispatchTimer,
         demand: pd.DataFrame,
         env: simpy.Environment,
-        params: DispatchGroupParams | SubFleetParams,
+        params: FleetParams | SubFleetParams,
         logger: logging.Logger = None,
         factor_derate: float = 0.9,
     ):  # conservativeness factor on assumed charge power vs actually available power
@@ -279,10 +279,10 @@ class GroupDispatcher:
             self.logger = logging.getLogger("null")
             self.logger.addHandler(logging.NullHandler())
 
-        # SubFleetParams object given -> convert to single subfleet DispatchGroupParams
+        # SubFleetParams object given -> convert to single subfleet FleetParams object
         if isinstance(self.params, SubFleetParams):
-            self.params = DispatchGroupParams(
-                name=f"{self.params.name}_group", subfleet_params={self.params.name: self.params}, is_vehicle_group=True
+            self.params = FleetParams(
+                name=f"{self.params.name}_fp", subfleet_params={self.params.name: self.params}, is_vehicle_fleet=True
             )
 
         unit_names = [unit for sfparams in self.params.subfleet_params.values() for unit in sfparams.units]
@@ -353,7 +353,7 @@ class GroupDispatcher:
 
     def transfer_rex_processes(self):
         """
-        create additional processes in the battery GroupDispatcher processes dict representing the rex processes
+        create additional processes in the battery FleetDispatcher processes dict representing the rex processes
         """
 
         def switch_prim_rex(process, pid):
@@ -435,7 +435,7 @@ class GroupDispatcher:
 class DispatchProcess:
     pid: str
     status: str
-    dispatcher_prim: GroupDispatcher
+    dispatcher_prim: FleetDispatcher
     time_req: pd.Timestamp
     step_req: int
     energy_req: float
@@ -460,7 +460,7 @@ class DispatchProcess:
     steps_chg_prim: Optional[int] = None
     request_prim: Optional[simpy.Process] = None
     result_prim: Optional[simpy.Resource] = None
-    dispatcher_rex: Optional[GroupDispatcher] = None
+    dispatcher_rex: Optional[FleetDispatcher] = None
     needs_rex: Optional[bool] = None
     num_rex: Optional[int] = None
     dsoc_rex: Optional[float] = None
@@ -491,9 +491,9 @@ class DispatchProcess:
                 if not sfp_prim.units:
                     continue  # request from next subfleet if this one is empty
 
-                if self.dispatcher_prim.params.is_vehicle_group:
+                if self.dispatcher_prim.params.is_vehicle_fleet:
                     self.num_prim = 1
-                else:  # Battery DispatchGroup
+                else:  # BatteryFleet
                     self.num_prim = np.ceil(self.energy_req / sfp_prim.energy_usable).astype(int)
 
                 if sfp_prim.rex_available:  # rex is available for this subfleet/store
