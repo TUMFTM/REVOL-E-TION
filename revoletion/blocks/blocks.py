@@ -1902,20 +1902,112 @@ class Fleet(SinkBlock):
             parent=scenario,
         )
 
-        if not self.groups_dispatch:
-            raise ValueError(f'Block "{self.name}": At least one dispatch group has to be defined.')
+        self.demand = None
+        self.log = None
 
-        # region check for duplicate subfleets
-        subfleets = [subfleet for subfleet_list in self.groups_dispatch.values() for subfleet in subfleet_list]
-        subfleets_dupl = [item for item, count in collections.Counter(subfleets).items() if count > 1]
-        if subfleets_dupl:
-            raise ValueError(f'Block "{self.name}": Subfleet(s) {subfleets_dupl} is/are duplicated.')
+        types_units = {self.scenario.parameters[(subfleet, "type_unit")] for subfleet in self.subfleets}
+
+        if types_units <= {"ev", "icev"}:
+            self.is_vehicle_fleet = True
+            cls_demand = mobility.VehicleFleetDemand
+        elif types_units <= {"mb"}:
+            self.is_vehicle_fleet = False
+            cls_demand = mobility.BatteryFleetDemand
+        else:
+            raise ValueError(
+                f"Fleet {self.name} has (a) both vehicle and battery subfleets or (b) invalid unit types assigned."
+            )
+
+        # region create and fill demand object
+        if self.data_source in ["usecases", "demand"]:
+            self.demand = cls_demand(dti=self.scenario.times.sim.dti)
+            self.scenario.block_registry.setdefault("DispatchFleet", {})[self.name] = self
+
+        if self.data_source == "usecases":
+            path_demand = (
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.csv")
+                if not self.scenario.settings.largescalemode
+                else None
+            )
+            self.demand.from_usecases(
+                path_usecases=self.scenario.paths.input
+                / utils.set_extension(filename=self.filename, default_extension=".csv"),
+                path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
+                path_demand=path_demand,
+                key_timeframe_mapper=self.name,
+            )
+
+        elif self.data_source == "demand":
+            self.demand.from_file(
+                path_demand=(
+                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+                ),
+                dti=self.scenario.times.sim.dti,
+            )
+
+        elif self.data_source in ["log", "logfile"]:
+            self.log = self.read_logfile()
+
+        else:
+            raise ValueError(f'Block "{self.name}": invalid data source')
         # endregion
 
-        [
-            DispatchGroup(name=key, scenario=self.scenario, parent=self, subfleets=value)
-            for key, value in self.groups_dispatch.items()
-        ]
+        # create subfleets
+        [SubFleet(name=item, scenario=self.scenario, parent=self) for item in self.subfleets]
+
+        # check for dispatch inconsistency after subblocks are available
+        if any(
+            (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand"])
+            for subfleet in self.subblocks.values()
+        ):
+            raise ValueError(f"all subfleets with range extension must be actively dispatched")
+
+    def read_logfile(self) -> pd.DataFrame:
+        """
+        Read in a predetermined log file for group behavior.
+        """
+
+        try:
+            df = utils.read_timeseries_csv(
+                path_input_file=(
+                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+                ),
+                scenario=self.scenario,
+                multiheader=True,
+                resampling=False,
+            )  # Normal resampling cannot be used as consumption must be
+        # meaned, while booleans, distances and dsocs must not.
+        except IndexError as exc:
+            raise IndexError(f"Failed to load input log for block {self.name}: {exc}")
+
+        # Timedelta of frequency of log file
+        freq_log = pd.infer_freq(df.index).lower()
+        # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
+        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else "1" + freq_log))
+
+        # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
+        if freq_log != self.scenario.timestep.td:
+            self.scenario.logger.warning(
+                f'Block "{self.name}": log file does not match specified timestep - Resampling'
+            )
+
+            cols = df.columns  # save orignal column sorting to apply after resampling
+            cols_consumption = df.columns[df.columns.get_level_values(1) == "consumption"]
+            cols_dist = df.columns[df.columns.get_level_values(1) == "dist"]
+            cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
+            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
+            df_new = pd.DataFrame()
+            df_new[cols_consumption] = df[cols_consumption].resample(self.scenario.timestep.td).mean().ffill().bfill()
+            df_new[cols_dist] = df[cols_dist].resample(self.scenario.timestep.td).sum().ffill().bfill()
+            df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep.td).ffill().bfill()
+            df = df_new[cols]  # ensure right sorting
+
+        if not (self.scenario.times.sim.dti.isin(df.index).all()):
+            self.scenario.logger.error(
+                f'Block "{self.name}": Input timeseries data does not cover simulation timeframe'
+            )
+
+        return df.loc[self.scenario.times.sim.dti]  # need dsoc for last timestep
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -1971,80 +2063,16 @@ class Fleet(SinkBlock):
         ]["flow"][horizon.ch.dti]
 
 
-class DispatchGroup(NonElectricBlock):
-    def __init__(self, name: str, scenario: simulation.Scenario, subfleets: list, parent: Fleet):
-        super().__init__(name=name, scenario=scenario, parent=parent)
-
-        self.demand = None
-        self.log = None
-
-        self.types_units = {self.scenario.parameters[(subfleet, "type_unit")] for subfleet in subfleets}
-
-        if self.types_units <= {"ev", "icev"}:
-            self.is_vehicle_group = True
-        elif self.types_units <= {"mb"}:
-            self.is_vehicle_group = False
-        else:
-            raise ValueError(
-                f"Dispatch Group {self.name} has (a) both vehicle and battery subfleets or (b) invalid unit types assigned."
-            )
-
-        # region create and fill demand object
-        if self.data_source in ["usecases", "demand"]:
-            cls_demand = {
-                True: mobility.VehicleDemand,
-                False: mobility.BatteryDemand,
-            }.get(self.is_vehicle_group)
-            self.demand = cls_demand(dti=self.scenario.times.sim.dti)
-            self.scenario.block_registry.setdefault("DispatchGroupActive", {})[self.name] = self
-
-        if self.data_source == "usecases":
-            path_demand = (
-                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.csv")
-                if not self.scenario.settings.largescalemode
-                else None
-            )
-            self.demand.from_usecases(
-                path_usecases=self.scenario.paths.input
-                / utils.set_extension(filename=self.filename, default_extension=".csv"),
-                path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
-                path_demand=path_demand,
-                key_timeframe_mapper=self.name,
-            )
-
-        elif self.data_source == "demand":
-            self.demand.from_file(
-                path_demand=(
-                    self.scenario.paths.input
-                    / utils.set_extension(filename=self.subfleet.filename, default_extension=".csv")
-                ),
-                dti=self.scenario.times.sim.dti,
-            )
-
-        elif self.data_source in ["log", "logfile"]:
-            self.scenario.logger.info(
-                f'DispatchGroup "{self.name}": Logfile specified as data source - read logfile per SubFleet'
-            )
-
-        else:
-            raise ValueError(f'Block "{self.name}": invalid data source')
-        # endregion
-
-        # create subfleets
-        [SubFleet(name=item, scenario=self.scenario, parent=self) for item in subfleets]
-
-
 class SubFleet(NonElectricBlock):
     def __init__(self, name: str, scenario: simulation.Scenario, parent):
         # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
         params = scenario.parameters.loc[name]
-        params_subfleet = {
-            key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex", "filename"]
-        }
+        params_subfleet = {key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex"]}
 
         super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent)
 
-        self.demand = self.log = None
+        self.demand = None
+        self.log = None
 
         cls_fu = {
             "ev": ElectricVehicle,
@@ -2061,67 +2089,13 @@ class SubFleet(NonElectricBlock):
             "usecases",
             "demand",
         ]:
-            raise ValueError(f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"')
-
-    def pre_scenario(self):
-        if self.parent.data_source in ["log", "logfile"]:
-            self.log = self.read_input_log()
-        else:
-            self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
-        super().pre_scenario()
-
-    def read_input_log(self) -> pd.DataFrame:
-        """
-        Read in a predetermined log file for group behavior.
-        """
-
-        try:
-            df = utils.read_timeseries_csv(
-                path_input_file=(
-                    self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
-                ),
-                scenario=self.scenario,
-                multiheader=True,
-                resampling=False,
-            )  # Normal resampling cannot be used as consumption must be
-        except IndexError as exc:
-            raise IndexError(f"Failed to load input log for block {self.name}: {exc}")
-        # meaned, while booleans, distances and dsocs must not.
-
-        # Timedelta of frequency of log file
-        freq_log = pd.infer_freq(df.index).lower()
-        # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
-        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else "1" + freq_log))
-
-        # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
-        if freq_log != self.scenario.timestep.td:
-            self.scenario.logger.warning(
-                f'Block "{self.name}": log file does not match specified timestep - Resampling'
+            self.scenario.logger.Error(
+                f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"'
             )
 
-            cols = df.columns  # save orignal column sorting to apply after resampling
-            cols_consumption = df.columns[df.columns.get_level_values(1) == "consumption"]
-            cols_dist = df.columns[df.columns.get_level_values(1) == "dist"]
-            cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
-            # mean ensures equal energy consumption after downsampling, ffill and bfill fill upsampled NaN values
-            df_new = pd.DataFrame()
-            df_new[cols_consumption] = df[cols_consumption].resample(self.scenario.timestep.td).mean().ffill().bfill()
-            df_new[cols_dist] = df[cols_dist].resample(self.scenario.timestep.td).sum().ffill().bfill()
-            df_new[cols_bool] = df[cols_bool].resample(self.scenario.timestep.td).ffill().bfill()
-            df = df_new[cols]  # ensure right sorting
-
-        if not (self.scenario.times.sim.dti.isin(df.index).all()):
-            raise IndexError(f'Block "{self.name}": Input timeseries data does not cover simulation timeframe')
-
-        # extract the relevant time series
-        df = df.loc[self.scenario.times.sim.dti]  # need dsoc for last timestep
-
-        # rename fleet units according to schema subfleet.name{idx}
-        unit_names_log = sorted(df.columns.get_level_values(0).unique()[: self.num].tolist())
-        unit_names_map = {log_name: f"{self.name}{idx}" for idx, log_name in enumerate(unit_names_log)}
-        df.columns = df.columns.map(lambda x: (unit_names_map.get(x[0], x[0]), *x[1:]))
-
-        return df
+    def pre_scenario(self):
+        self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
+        super().pre_scenario()
 
 
 class FleetUnit:
@@ -2228,8 +2202,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             )
 
     def initialize_efficiencies(self):
-        self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.parent.system]
-        self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.parent.system]
+        self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.system]
+        self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.system]
         super().initialize_efficiencies()
 
     def pre_scenario(self):
@@ -2268,7 +2242,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.states.update({"soc_min": soc_min_hor.astype("float64")})
         # endregion
 
-        self.bus_connected = self.parent.parent.parent.components["bus"]
+        self.bus_connected = self.parent.parent.components["bus"]
 
         params = {
             "inflow_nominal_capacity": self.pwr_chg_max,

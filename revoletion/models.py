@@ -822,28 +822,41 @@ class StationaryBatteryModel(RevoletionBaseModel):
 
 
 class FleetModel(RevoletionBaseModel):
-    """Fleet consisting of one or several DispatchGroups."""
+    """Fleet consisting of one or several SubFleets."""
 
     _revoletion_docs_title: str = "Fleet"
     _revoletion_docs_icon: str = " 🚚🚗"
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    groups_dispatch: dict[str, list[str]] = Field(
-        title="Dispatch Groups",
-        description="Dictionary in text representation containing the DispatchGroup name in string format as key and a list of contained subfleet names as strings as value. List order determines priority. No subfleet may be in more than one DispatchGroup",
-        json_schema_extra={"valid_values_or_format": "{'ld': ['icev', 'bev']}"},
+    system: Literal["AC", "DC"] = Field(
+        title="System",
+        description="The bus (AC or DC) the block is connected to",
     )
-
-    system: Literal["AC", "DC"] = Field(title="System", description="The bus (AC or DC) the block is connected to")
-
+    subfleets: list[str] = Field(
+        title="Subfleets",
+        description="List of names of subfleets in Fleet in no particular order. Each of these subfleets must exist as such in the scenario file.",
+    )
+    data_source: Literal["usecases", "demand", "log"] = Field(
+        title="Data source",
+        description="Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations.",
+    )
+    filename: str | None = Field(
+        title="Filename of input file",
+        description="Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Base search path is the scenario file's path, unless explicitly specified.",
+        json_schema_extra={"valid_values_or_format": "string with filename or None"},
+    )
+    filename_mapper: str = Field(
+        title="Filename of TimeframeMapper file",
+        description="Filename of the file containing the mapping function assigning timeframes to individual days (e.g. weekday/weekend) for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. Base search path is the scenario file's path, unless explicitly specified.",
+        json_schema_extra={"valid_values_or_format": "string with filename of python file with or without '.py'"},
+    )
     pwr_lim_f2s: float | None = Field(
         ge=0.0,
         title="Power limit of fleet to site",
         description="Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
     )
-
     pwr_lim_s2f: float | None = Field(
         default=None,
         ge=0.0,
@@ -851,42 +864,15 @@ class FleetModel(RevoletionBaseModel):
         description="Maximum power flow from the local site to Fleet (Site2Fleet) in W. To enable unlimited power flow set this parameter to None.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
     )
-
     opex_spec_f2s: float | str = Field(
         title="Specific operational expenditures for fleet charging",
         description="Specific operational expenditures for Fleet charging: cost in currency per energy charged into Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries",
         json_schema_extra={"valid_values_or_format": "string with filename or [0, inf["},
     )
-
     opex_spec_s2f: float | str = Field(
         title="Specific operational expenditures for fleet discharging",
         description="Specific operational expenditures for Fleet discharging: cost in currency per energy discharged from Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries",
         json_schema_extra={"valid_values_or_format": "string with filename or [0, inf["},
-    )
-
-
-class DispatchGroupModel(RevoletionBaseModel):
-    """
-    Group of actual Subfleets that are dispatched onto a common demand.
-    Therefore, these subfleets are typically similar in capability such as BEV and ICEV variants of the same vehicle type.
-    """
-
-    _revoletion_docs_title: str = "DispatchGroup"
-    _revoletion_docs_icon: str = "⚙️🔀"
-
-    data_source: Literal["usecases", "demand", "log"] = Field(
-        title="Data source",
-        description="Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations.",
-    )
-    filename: str | None = Field(
-        title="Filename",
-        description="Filename of csv file containing (a) use case definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Log files are specified on SubFleet level.",
-        json_schema_extra={"valid_values_or_format": "string with filename or None"},
-    )
-    filename_mapper: str = Field(
-        title="Filename TimeframeMapper",
-        description="Filename of the file containing the mapping function for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory.",
-        json_schema_extra={"valid_values_or_format": "string with filename of python file with or without '.py'"},
     )
 
 
@@ -911,23 +897,6 @@ class SubFleetModel(RevoletionBaseModel):
     type_unit: Literal["ev", "icev", "mb"] = Field(
         title="Fleet unit type",
         description="Type of Fleet units contained in the Subfleet. 'ev': Electric Vehicle, 'icev': Internal Combustion Engine Vehicle, 'mb': Mobile Battery",
-    )
-
-    data_source: Literal["usecases", "demand", "log"] = Field(
-        title="Data source",
-        description="Define whether usage timeseries should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations",
-    )
-
-    filename: str | None = Field(
-        title="Filename",
-        description="Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or (c) existing log file",
-        json_schema_extra={"valid_values_or_format": "string with filename or None"},
-    )
-
-    filename_mapper: str | None = Field(
-        title="Filename TimeframeMapper",
-        description='Filename of the file containing the mapping function for the SubFleet\'s DES. The filename has to be given without the ending ".py". The file itself has to be placed in the input directory',
-        json_schema_extra={"valid_values_or_format": "string with filename of python file without '.py'"},
     )
 
     size_preexisting_storage: float = Field(

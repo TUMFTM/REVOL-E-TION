@@ -15,7 +15,6 @@ from typing import Any
 
 from revoletion.models import (
     ControllableSourceModel,
-    DispatchGroupModel,
     FixedDemandModel,
     FleetModel,
     GridConnectionModel,
@@ -68,7 +67,6 @@ MODELS = [
     GridMarketModel,
     StationaryBatteryModel,
     FleetModel,
-    DispatchGroupModel,
     SubFleetModel,
 ]
 

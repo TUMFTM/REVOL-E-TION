@@ -134,17 +134,16 @@ ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
-vehicles,groups_dispatch,{'ld': ['icev']},"{'ld': ['bev', 'icev']}","{'ld': ['icev', 'bev']}","{'ld': ['icev', 'bev']}"
 vehicles,system,ac,ac,ac,ac
+vehicles,subfleets,"['icev']","['bev', 'icev']","['bev', 'icev']","['bev', 'icev']"
+vehicles,data_source,usecases,usecases,usecases,usecases
+vehicles,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
+vehicles,filename_mapper,mtf,mtf,mtf,mtf
 vehicles,pwr_lim_f2s,43000,43000,43000,43000
 vehicles,pwr_lim_s2f,43000,43000,43000,43000
 vehicles,opex_spec_f2s,0,0,0,0
 vehicles,opex_spec_s2f,0,0,0,0
-ld,data_source,usecases,usecases,usecases,usecases
-ld,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
-ld,filename_mapper,mtf,mtf,mtf,mtf
 bev,num,5,5,5,5
-bev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 bev,type_unit,ev,ev,ev,ev
 bev,size_preexisting_storage,30000,30000,30000,30000
 bev,size_max_storage,None,None,None,None
@@ -188,7 +187,6 @@ bev,eff_dis_ac,0.95,0.95,0.95,0.95
 bev,eff_dis_dc,0.95,0.95,0.95,0.95
 bev,sdr,0.02,0.02,0.02,0.02
 icev,num,5,5,5,5
-icev,filename,vehicle_log,vehicle_log,vehicle_log,vehicle_log
 icev,type_unit,icev,icev,icev,icev
 icev,filename_mapper,mtf,mtf,mtf,mtf
 icev,capex_fix_glider,25000,25000,25000,25000
@@ -199,17 +197,16 @@ icev,mntex_fix_glider,500,500,500,500
 icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
-brs,groups_dispatch,{'pue': ['mb']},{'pue': ['mb']},{'pue': ['mb']},{'pue': ['mb']}
 brs,system,ac,ac,ac,ac
+brs,subfleets,"['mb']","['mb']","['mb']","['mb']"
+brs,data_source,usecases,usecases,usecases,usecases
+brs,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
+brs,filename_mapper,mtf,mtf,mtf,mtf
 brs,pwr_lim_f2s,7200,7200,7200,7200
 brs,pwr_lim_s2f,7200,7200,7200,7200
 brs,opex_spec_f2s,0,0,0,0
 brs,opex_spec_s2f,0,0,0,0
-pue,data_source,usecases,usecases,usecases,usecases
-pue,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
-pue,filename_mapper,mtf,mtf,mtf,mtf
 mb,num,5,5,5,5
-mb,filename,brs_log,brs_log,brs_log,brs_log
 mb,type_unit,mb,mb,mb,mb
 mb,capex_fix_glider,500,500,500,500
 mb,capex_preexisting_glider,True,True,True,True
