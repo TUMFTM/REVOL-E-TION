@@ -95,6 +95,25 @@ def _parse_bounds(field: dict[str, str | float | int]) -> str:
     return ", ".join(bounds)
 
 
+def _resolve_field_types(field: dict[str, Any]) -> list[str]:
+    """Recursively resolve which types are valid for one field."""
+    if "anyOf" in field:
+        field_types = []
+        # `anyOf` relates to union types (e.g. `float | None`)
+        for sub_field in field["anyOf"]:
+            if "type" not in sub_field:
+                # For some combinations, the JSON schema contains nested `anyOf` sections.
+                # Those are resolved recursively here.
+                field_types.extend(_resolve_field_types(sub_field))
+            else:
+                field_types.append(sub_field["type"])
+        return field_types
+    elif "type" in field:
+        return [field["type"]]
+    else:
+        return []
+
+
 _TYPE_MAP = {
     "null": "None",
     "integer": "int",
@@ -128,23 +147,13 @@ def generate_markdown_table_for_block(model: type[RevoletionBaseModel]) -> str:
         # Get field details
         field_title = field.get("title", field_name.replace("_", " ").title())
 
-        # NOTE: Currently, the automatic bounds generation are not supported for union types with None.
-        # The bounds must be specified in `valid_values_or_format` in `json_schema_extra`.
-        if "anyOf" in field:
-            # `anyOf` relates to union types (e.g. `float | None`)
-            field_types = []
-            for sub_field in field["anyOf"]:
-                if "type" not in sub_field:
-                    raise ValueError(f"Invalid field {field_name} on model {model._name__}")
-                field_types.append(sub_field["type"])
-        elif "type" in field:
-            field_types = [field["type"]]
-        else:
-            field_types = []
+        field_types = _resolve_field_types(field)
 
         field_desc = field.get("description", "")
 
         # Determine valid values/format
+        # NOTE: Currently, the automatic bounds generation is not supported for union types with None.
+        # For those fields the bounds must be specified in `valid_values_or_format` in `json_schema_extra`.
         valid_values = []
         if "valid_values_or_format" in field:
             # The field has a specific `valid_values_or_format` set which takes precedence.

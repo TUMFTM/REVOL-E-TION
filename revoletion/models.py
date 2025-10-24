@@ -1,26 +1,38 @@
+import ast
 import logging
 import os
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 import pandas as pd
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    ValidationInfo,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator
+
+from revoletion import utils
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class RevoletionBaseModel(BaseModel):
     _revoletion_docs_title: str
+    """Specify the title that is displayed in the documentation section about this model."""
+
     _revoletion_docs_icon: str
+    """Specify the icon that is displayed in the documentation section about this model."""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _infer_dtype(cls, value: Any) -> Any:
+        """Infer the data type of a value from its string representation.
+
+        Used to correctly convert the raw values from scenario specifications to python datatypes.
+        E.g., `blocks` are specified as a dict espaced as a string in the scenario file.
+        This validator ensures that those values are correctly converted to the corresponding pyhon dict and not stored as string.
+
+        :param value: String value or value which can be converted to string.
+        :returns: The corresponding parsed value.
+        """
+        return utils.infer_dtype(value)
 
 
 class ScenarioModel(RevoletionBaseModel):
@@ -36,11 +48,9 @@ class ScenarioModel(RevoletionBaseModel):
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
     starttime: str = Field(
-        "00:00",
         title="Start Time",
         description="Start time of the project and the simulation in local time. If no time is given in addition to the date the project starts at 00:00 local time",
         json_schema_extra={"valid_values_or_format": "'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM'"},
-        validate_default=True,
     )
     timestep: str = Field(
         title="Time step",
@@ -150,13 +160,13 @@ class ScenarioModel(RevoletionBaseModel):
         """Validate that starttime is in the correct format."""
         try:
             # Try parsing with time
-            datetime.strptime(v, "%d.%m.%Y %H:%M")
+            _ = pd.to_datetime(v, format="%d.%m.%Y %H:%M")
         except ValueError:
             try:
                 # Try parsing without time (will be set to 00:00)
-                datetime.strptime(v, "%d.%m.%Y")
+                _ = pd.to_datetime(v, format="%d.%m.%Y")
             except ValueError:
-                raise ValueError("starttime must be in format 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM'")
+                raise ValueError(f"Invalid 'starttime' {v} must be in format 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM'")
         return v
 
     @field_validator("timestep")
@@ -204,12 +214,12 @@ class SystemCoreModel(RevoletionBaseModel):
         title="Consideration of preexisting AC/DC size in capex",
         description="Trigger whether to consider preexisting component size specified in size_preexisting_acdc in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_acdc: float | None = Field(
+    size_max_acdc: float | None | Literal["equal"] = Field(
         default=None,
         title="Maximum size of AC/DC converter",
         description="Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_preexisting_acdc. To enable unlimited investment set this parameter to None. Set either size_max_acdc or size_max_dcac to 'equal' to set both converters' maximum investments to the same value.",
         ge=0,
-        json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
+        json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
     invest_acdc: bool | Literal["equal"] = Field(
         title="Investment into AC/DC converter",
@@ -224,11 +234,11 @@ class SystemCoreModel(RevoletionBaseModel):
         title="Consideration of preexisting DC/AC size in capex",
         description="Consider existing DC/AC size in initial capex calculation.",
     )
-    size_max_dcac: float | None = Field(
+    size_max_dcac: float | None | Literal["equal"] = Field(
         default=None,
         title="Maximum size of DC/AC converter",
         description="Maximum size of the DC/AC converter of the SystemCore including preexisting size specified in `size_preexisting_dcac`. To enable unlimited investment set this parameter to None. Set either `size_max_acdc` or `size_max_dcac` to 'equal' to set both converters' maximum investments to the same value.",
-        json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
+        json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
     invest_dcac: bool | Literal["equal"] = Field(
         title="Investment into DC/AC converter",
@@ -293,7 +303,7 @@ class FixedDemandModel(RevoletionBaseModel):
         description="Yearly consumption in Wh. Neglected if a filename is provided in load_profile.",
         ge=0,
     )
-    system: Literal["AC", "DC"] = Field(
+    system: Literal["ac", "dc"] = Field(
         description="The bus (AC or DC) the block is connected to.",
         title="System",
     )
@@ -342,7 +352,7 @@ class PVSourceModel(RevoletionBaseModel):
         description="Name of a PVGIS, Solcast, or custom csv file if data_source is set to 'pvgis file', 'solcast file', or 'file', respectively. Otherwise set to None.",
         json_schema_extra={"valid_values_or_format": "filename or None"},
     )
-    system: Literal["AC", "DC"] = Field(
+    system: Literal["ac", "dc"] = Field(
         title="System",
         description="The bus (AC or DC) the block is connected to",
     )
@@ -396,11 +406,11 @@ class PVSourceModel(RevoletionBaseModel):
         title="Consideration of a horizon",
         description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 150m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
     )
-    horizon_custom: list[float] = Field(
+    horizon_custom: list[float] | None = Field(
         title="User horizon",
         description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
         json_schema_extra={
-            "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]"'
+            "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None'
         },
     )
     raddatabase: str | None = Field(
@@ -452,7 +462,7 @@ class WindSourceModel(RevoletionBaseModel):
         title="Investment",
         description="Enable additional investment into the wind turbine",
     )
-    system: Literal["AC", "DC"] = Field(
+    system: Literal["ac", "dc"] = Field(
         title="System",
         description="The bus (AC or DC) the block is connected to",
     )
@@ -466,10 +476,10 @@ class WindSourceModel(RevoletionBaseModel):
         description="Hub height of the wind turbine in meters",
         ge=0,
     )
-    filename: str = Field(
+    filename: str | None = Field(
         title="Filename",
         description="Filename of csv file containing wind power data including the columns 'time' (timezone aware timestamps) and 'power_spec' (specific power in W per rated power in W). Only considered if 'file' is given in data_source.",
-        json_schema_extra={"valid_values_or_format": "string with filename"},
+        json_schema_extra={"valid_values_or_format": "string with filename or None"},
     )
     capex_spec: float = Field(
         title="Specific capital expenditures",
@@ -531,7 +541,7 @@ class ControllableSourceModel(RevoletionBaseModel):
         description="Enable additional investment into the power source",
         title="Investment",
     )
-    system: Literal["AC", "DC"] = Field(description="The bus (AC or DC) the block is connected to")
+    system: Literal["ac", "dc"] = Field(description="The bus (AC or DC) the block is connected to")
     capex_spec: float = Field(
         title="Specific capital expenditures",
         description="Specific capital expenditures: cost in currency per installed power in W",
@@ -609,7 +619,7 @@ class GridConnectionModel(RevoletionBaseModel):
         title="Investment into Site2Grid",
         description="Enable additional investment into the maximum power from the local site to the grid. To ensure the same additional power for both directions set one invest variable to 'equal'.",
     )
-    system: Literal["AC", "DC"] = Field(title="System", description="The bus (AC or DC) the block is connected to.")
+    system: Literal["ac", "dc"] = Field(title="System", description="The bus (AC or DC) the block is connected to.")
     peakshaving: bool = Field(
         title="Activation of peak shaving",
         description="Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here.",
@@ -723,7 +733,7 @@ class StationaryBatteryModel(RevoletionBaseModel):
         title="Investment",
         description="Enable additional investment into the storage capacity.",
     )
-    system: Literal["AC", "DC"] = Field(title="System", description="The bus (AC or DC) the block is connected to.")
+    system: Literal["ac", "dc"] = Field(title="System", description="The bus (AC or DC) the block is connected to.")
     res_only: bool = Field(
         title="Renewable energy sources only",
         description="If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter.",
@@ -732,7 +742,7 @@ class StationaryBatteryModel(RevoletionBaseModel):
         title="Consideration of battery aging",
         description="Battery aging calculation after each horizon. Aging results are taken into account for the next horizon by limiting the available SOC range. Maximum power is not reduced.",
     )
-    chemistry: Literal["NMC", "LFP"] = Field(
+    chemistry: Literal["nmc", "lfp"] = Field(
         title="Cell Chemistry",
         description="Cell chemistry of the storage to select the correct aging model for aging calculation.",
     )
@@ -829,7 +839,7 @@ class FleetModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    system: Literal["AC", "DC"] = Field(
+    system: Literal["ac", "dc"] = Field(
         title="System",
         description="The bus (AC or DC) the block is connected to",
     )
@@ -1246,23 +1256,19 @@ def validate_scenario_csv_file(scenario_path: Path) -> bool:
     if not os.path.exists(scenario_path):
         raise FileNotFoundError(f"Scenario file not found at {scenario_path}")
 
-    df = pd.read_csv(scenario_path)
-    df.set_index(["block", "key"], inplace=True)
+    scenario_parameters = utils.read_scenario_from_file(scenario_path)
 
-    for scenario_name in df.columns:
-        # First, the blocks are mapped to python dicts, to make processing easier.
+    for scenario_name in scenario_parameters.columns:
+        if scenario_name.startswith("#"):
+            # Scenarios starting with a '#' are excluded in `SimulationRun`.
+            # This behavior is replicated there, to make sure only the intended scenarios are validated.
+            _LOGGER.debug(f"Skipping validation of scenario '{scenario_name}'")
+            continue
+
+        # The blocks are mapped to python dicts to make processing with pydantic easier.
         blocks = defaultdict(dict)
-        for (block, key), value in df[scenario_name].items():
-            if pd.isna(value) or value == "None":
-                parsed_value = None
-            elif value == "True":
-                parsed_value = True
-            elif value == "False":
-                parsed_value = False
-            else:
-                parsed_value = value
-
-            blocks[block][key] = parsed_value
+        for (block, key), value in scenario_parameters[scenario_name].items():
+            blocks[block][key] = value
 
         # The scenario config contains further information about which blocks are used, so it needs to be validated and loaded first.
         try:
@@ -1275,7 +1281,7 @@ def validate_scenario_csv_file(scenario_path: Path) -> bool:
 
         # The core block must always be specified, and it is not included in the blocks description in the scenario config.
         try:
-            _ = _validate_and_get_block("core", ScenarioModel, blocks)
+            _ = _validate_and_get_block("core", SystemCoreModel, blocks)
         except RuntimeError as e:
             _LOGGER.warning(f"Failed to validate block 'core' in scenario {scenario_name} from {scenario_path}: {e}")
             return False

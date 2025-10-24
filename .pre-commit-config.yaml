@@ -13,3 +13,11 @@ repos:
     rev: v0.12.11
     hooks:
     - id: ruff-format
+  - repo: local
+    hooks:
+      - id: generate_scenario_schema
+        name: Generate the senario schema in the README
+        entry: python scripts/generate_scenario_schema.py
+        language: system
+        pass_filenames: false
+        files: ^(README\.md|revoletion/models\.py)$

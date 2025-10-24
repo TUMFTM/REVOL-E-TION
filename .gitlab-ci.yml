@@ -40,9 +40,8 @@ main_testing:
 pre_commit:
   stage: style
   before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends git
-    - uv sync --only-dev
+    - *default_before_script
+    - uv sync --group dev
   script:
     - uv run --no-sync pre-commit run --all-files --show-diff-on-failure
     - uv cache prune --ci

@@ -1,21 +1,20 @@
 import importlib.resources
-from pathlib import Path
 import tempfile
-import time
-import pytest
+from pathlib import Path
 
 import pandas as pd
+import pytest
 
 import revoletion.example
 from revoletion.simulation import Scenario, SimulationPaths, SimulationSettings
 from revoletion.utils import read_scenario_from_file
 
-
 _POWER_TOLERANCE = 0.1
 
 
 def test_process_example_scenarios():
-    with importlib.resources.path(revoletion.example, "scenarios_example.csv") as example_scenarios_path:
+    example_scenarios_traversable = importlib.resources.files(revoletion.example).joinpath("scenarios_example.csv")
+    with importlib.resources.as_file(example_scenarios_traversable) as example_scenarios_path:
         with tempfile.TemporaryDirectory() as tempdir_raw:
             tempdir_path = Path(tempdir_raw)
             simulation_paths = SimulationPaths.from_plain_paths(
