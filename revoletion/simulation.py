@@ -3,10 +3,7 @@
 import importlib.resources
 import logging
 import math
-import multiprocessing as mp
-import multiprocessing.synchronize as mps
 import pprint
-import time
 import traceback
 import warnings
 import webbrowser
@@ -68,7 +65,7 @@ class Location:
 
     @classmethod
     def create_from_lat_lon(
-        cls, latitude: float, longitude: float, logger: logging.Logger, lock: mps.Lock | None = None
+        cls, latitude: float, longitude: float, logger: logging.Logger, geocode: bool = True
     ) -> Self:
         tzfinder = timezonefinder.TimezoneFinder()
         timezone_raw = tzfinder.certain_timezone_at(lat=latitude, lng=longitude)
@@ -77,7 +74,10 @@ class Location:
 
         timezone = pytz.timezone(timezone_raw)
 
-        location = cls._reverse_geocode_location(latitude, longitude, lock)
+        if geocode:
+            location = cls._reverse_geocode_location(latitude, longitude)
+        else:
+            location = None
 
         if location is None:
             location = cls(
@@ -106,17 +106,10 @@ class Location:
         return cls(latitude=latitude, longitude=longitude, timezone=timezone, country=country, state=state)
 
     @staticmethod
-    def _reverse_geocode_location(
-        latitude: float, longitude: float, lock: mps.Lock | None = None
-    ) -> None | geopy.Location:
+    def _reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
         geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
         try:
-            if lock is None:  # sequential
-                return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-            else:  # parallel
-                with lock:
-                    time.sleep(2)  # max 1 request per second --> wait for 2 seconds to make sure to not avoid the limit
-                    return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
+            return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
         except geopy.exc.GeocoderUnavailable:
             return None
 
@@ -358,16 +351,15 @@ class Scenario:
         settings: SimulationSettings,
         name: str,  # will be set to the stem of the scenario filename for single scenario execution
         parameters: pd.Series,
+        location: Location,
         logger: logging.Logger | None = None,
-        lock: mp.Lock = None,
-        status_update: "SimulationRun.trigger_scenario_status_update" = None,
-        status_queue: mp.Queue = None,
     ):
         self.paths = paths
         self.settings = settings
 
         self.name = name
         self.parent = None  # attribute needs to exist for economic aggregation
+        self.location = location
 
         # Set given parameters as attribute
         if not isinstance(parameters, pd.Series):
@@ -375,11 +367,9 @@ class Scenario:
         self.parameters = parameters
 
         if logger is None:
-            logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
-        self.logger = logger
-
-        self.status_update = status_update
-        self.status_queue = status_queue
+            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+        else:
+            self.logger = logger
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
             # Force warnings in custom formatting and ignore warnings about infeasible or unbounded optimizations
@@ -388,23 +378,10 @@ class Scenario:
 
         warnings.showwarning = custom_warning_handler
 
-        self.update_scenario_status(status_msg={"status": "started"})
-
         # General Information --------------------------------
 
         # integration levels at which power consumption is determined a priori
         self.apriori_lvls = ["uc", "fcfs", "equal", "soc"]
-
-        self.runtime = utils.RunTime()
-
-        self.worker = mp.current_process()
-
-        msg_parallel = (
-            f" on {self.worker.name.ljust(18)} - Parent: {self.worker._parent_name}"
-            if hasattr(self.worker, "_parent_name")
-            else ""
-        )
-        self.logger.info(f"Scenario initialized{msg_parallel}")
 
         for key, value in self.parameters.loc["scenario", :].items():
             setattr(self, key, value)  # this sets all the parameters defined in the csv file
@@ -420,10 +397,6 @@ class Scenario:
             raise ValueError('Scenario parameter "blocks" is empty - Definition of at least one block is required')
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
-
-        self.location = Location.create_from_lat_lon(
-            latitude=self.latitude, longitude=self.longitude, logger=self.logger, lock=lock
-        )
 
         self.prj_duration_yrs = self.prj_duration
         self.times = SimulationTimes.create_from_plain(
@@ -595,8 +568,6 @@ class Scenario:
 
         self.logger.debug("Scenario initialization completed")
 
-        self.update_scenario_status(status_msg={"status": "fully initialized"})
-
         # todo adapt to new fleet structure
         # # check example parameter configuration of rulebased charging for validity
         # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
@@ -618,6 +589,28 @@ class Scenario:
         #         raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
         #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
         #                          f' be connected to the same bus')
+
+    @classmethod
+    def create_from_parameters(
+        cls,
+        paths: SimulationPaths,
+        settings: SimulationSettings,
+        name: str,
+        parameters: pd.Series,
+        logger: logging.Logger | None = None,
+    ) -> Self:
+        latitude = parameters.loc["scenario", "latitude"]
+        longitude = parameters.loc["scenario", "longitude"]
+        location = Location.create_from_lat_lon(latitude=latitude, longitude=longitude, logger=logger)
+
+        return cls(
+            paths=paths,
+            settings=settings,
+            name=name,
+            parameters=parameters,
+            location=location,
+            logger=logger,
+        )
 
     @classmethod
     def create_from_file(cls, paths: SimulationPaths, settings: SimulationSettings) -> Self:
@@ -643,7 +636,9 @@ class Scenario:
 
         scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
 
-        return cls(paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger)
+        return cls.create_from_parameters(
+            paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger
+        )
 
     def execute(self) -> None:
         try:
