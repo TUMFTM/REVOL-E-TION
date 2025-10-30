@@ -10,6 +10,7 @@ The script will automatically locate the README.md file in the parent directory 
 update it with generated documentation between the defined entry and exit point markers.
 """
 
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -192,7 +193,7 @@ def generate_markdown_table_for_block(model: type[RevoletionBaseModel]) -> str:
     # Get special attributes, which should be defined on each model.
     block_description = ""
     if model.__doc__ is not None:
-        block_description = model.__doc__.strip()
+        block_description = textwrap.dedent(model.__doc__).strip()
     block_title = model._revoletion_docs_title.default
     block_icon = model._revoletion_docs_icon.default
 
