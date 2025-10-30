@@ -19,7 +19,7 @@ import revoletion.example
 
 from .logger import configure_root_logger
 from .run import SimulationRun
-from .simulation import Scenario, SimulationPaths, SimulationSettings
+from .simulation import SimulationPaths, SimulationSettings
 
 
 def main():
@@ -144,12 +144,8 @@ def main():
     # Configure the level of the logger according to `debugmode` and setup handlers.
     configure_root_logger(paths.log, args.debugmode)
 
-    if args.multiscenario:
-        simulation_run = SimulationRun(paths=paths, settings=settings)
-        simulation_run.execute()
-    else:
-        scenario = Scenario.create_from_file(paths=paths, settings=settings)
-        scenario.execute()
+    simulation_run = SimulationRun(paths=paths, settings=settings)
+    simulation_run.execute()
 
 
 if __name__ == "__main__":

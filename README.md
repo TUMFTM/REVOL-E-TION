@@ -276,8 +276,8 @@ A further explanation of each block and its parameters is given in the expandabl
 </summary>
 
 Each run can contain multiple scenario objects.
-    A scenario object holds several parameters that are used by multiple blocks in the scenario.
-    After a successful optimization it also contains the aggregated techno-economic results such as energy throughput, costs, revenues as well as LCOE, NPC, and NPV.
+A scenario object holds several parameters that are used by multiple blocks in the scenario.
+After a successful optimization it also contains the aggregated techno-economic results such as energy throughput, costs, revenues as well as LCOE, NPC, and NPV.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
@@ -317,8 +317,8 @@ Each run can contain multiple scenario objects.
 </summary>
 
 Collection of central energy system components (AC and DC buses and the two unidirectional transformers between them).
-    This is present once and only once in every energy system defined in REVOL-E-TION under the name "core".
-    For pure AC or DC systems, the respective core cost and size parameters can be set to zero to have no effect on the result.
+This is present once and only once in every energy system defined in REVOL-E-TION under the name "core".
+For pure AC or DC systems, the respective core cost and size parameters can be set to zero to have no effect on the result.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
@@ -380,7 +380,7 @@ Undeferrable (i.e. inflexible) power demand such as households.
 </summary>
 
 Photovoltaic array. Power potential is defined either using Solcast (pre-downloaded CSV file or API), PVGIS (pre-downloaded CSV file or API), or a timeseries CSV file.
-    Although the Solcast API requires an active subscription plan, there is a limited free plan for researchers.
+Although the Solcast API requires an active subscription plan, there is a limited free plan for researchers.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
@@ -423,7 +423,7 @@ Photovoltaic array. Power potential is defined either using Solcast (pre-downloa
 </summary>
 
 Wind turbine. Power potential is defined either in a csv timeseries file or retrieved from PVSource data containing wind speed, which is then converted to power for a specific turbine height.
-    For the latter option, a PVSource block must exist.
+For the latter option, a PVSource block must exist.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
@@ -557,8 +557,8 @@ Virtual GridMarket connected to a specific physical GridConnection.
 </summary>
 
 Stationary battery energy storage systems.
-    A posteriori aging (i.e. capacity reduction) estimation is possible and will be taken into the next horizon as a reduced available SOC range.
-    Storage modelling is done linearly without SOC or temperature based limits of charge or discharge power.
+A posteriori aging (i.e. capacity reduction) estimation is possible and will be taken into the next horizon as a reduced available SOC range.
+Storage modelling is done linearly without SOC or temperature based limits of charge or discharge power.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
@@ -633,7 +633,7 @@ Fleet consisting of one or several SubFleets.
 </summary>
 
 SubFleet consisting of initially identical FleetUnits (Electric Vehicle, Internal Combustion Engine Vehicle, Mobile Battery).
-    Behavior can either be given or generated within the integrated Discrete Event Simulation from stochastic behavioral parameters (use case definition in CSV file and python script with timeframe mapper)
+Behavior can either be given or generated within the integrated Discrete Event Simulation from stochastic behavioral parameters (use case definition in CSV file and python script with timeframe mapper)
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|

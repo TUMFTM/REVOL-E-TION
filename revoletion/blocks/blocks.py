@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import collections
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -1960,7 +1959,7 @@ class Fleet(SinkBlock):
             (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand"])
             for subfleet in self.subblocks.values()
         ):
-            raise ValueError(f"all subfleets with range extension must be actively dispatched")
+            raise ValueError("all subfleets with range extension must be actively dispatched")
 
     def read_logfile(self) -> pd.DataFrame:
         """

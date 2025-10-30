@@ -37,12 +37,23 @@ class _ScenarioStatus(enum.Enum):
 
 @dataclass
 class _ScenarioStatusMessage:
+    """
+    Container for information sent by worker processes to the parent `SimulationRun`.
+    """
+
     scenario_name: str
+    """The name of the scenario that is currently being processed by the worker."""
+
     status: _ScenarioStatus
+    """Indicate the current status of the worker process."""
+
     extras: dict[str, typing.Any] | None = None
+    """The worker process can include additional information, like an error message or a traceback."""
 
 
 class _StatusUpdateCallback(typing.Protocol):
+    """Type signature for the callback that is passed to each worker process so it can communicate its status to the parent `SimulationRun`."""
+
     def __call__(self, status_msg: _ScenarioStatusMessage, queue: mpq.Queue | None = None) -> None: ...
 
 
@@ -248,7 +259,9 @@ class SimulationRun:
         for file in filenames:
             file.unlink()
 
-    def execute_scenario(self, name: str, status_queue: mp.Queue = None, lock: mp.Lock = None, plot: bool = True):
+    def execute_scenario(
+        self, name: str, status_queue: mpq.Queue | None = None, lock: mps.Lock | None = None, plot: bool = True
+    ):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
 
@@ -270,13 +283,12 @@ class SimulationRun:
             worker.execute(plot=plot)
         except Exception as e:
             self.trigger_scenario_status_update(
+                status_msg=_ScenarioStatusMessage(
+                    scenario_name=name,
+                    status=_ScenarioStatus.FAILED,
+                    extras={"exception": str(e), "traceback": traceback.format_exc()},
+                ),
                 queue=status_queue,
-                status_msg={
-                    "scenario": name,
-                    "status": "failed",
-                    "exception": str(e),
-                    "traceback": traceback.format_exc(),
-                },
             )
 
             self.logger.error(
@@ -302,6 +314,7 @@ class SimulationRun:
     def update_scenario_status(self, status_msg: _ScenarioStatusMessage):
         self.scenario_status.loc[status_msg.scenario_name, "status_msg"] = status_msg.status.value
 
+        # If the worker provided extra information, this information is directly dumped into the CSV.
         if status_msg.extras is not None:
             for key, value in status_msg.extras.items():
                 if value is None:
@@ -312,6 +325,12 @@ class SimulationRun:
 
 
 class ScenarioWorker:
+    """
+    Worker to process a scenario.
+
+    Handles the execution of a scenario for single- and multiprocess runs.
+    """
+
     def __init__(
         self,
         paths: simulation.SimulationPaths,
@@ -320,7 +339,7 @@ class ScenarioWorker:
         parameters: pd.Series,
         logger: logging.Logger,
         status_update: _StatusUpdateCallback,
-        status_queue: mp.Queue,
+        status_queue: mpq.Queue | None = None,
         lock: mps.Lock | None = None,
     ) -> None:
         self._paths = paths
@@ -332,12 +351,13 @@ class ScenarioWorker:
         self._status_update = status_update
         self._status_queue = status_queue
 
-    def update_scenario_status(self, status: _ScenarioStatus, extras: dict[str, typing.Any] | None = None) -> None:
+    def update_scenario_status(self, status: _ScenarioStatus, extras: dict[str, str] | None = None) -> None:
         status_msg = _ScenarioStatusMessage(scenario_name=self._name, status=status, extras=extras)
+
         self._status_update(status_msg, self._status_queue)
 
     def execute(self, plot: bool = True) -> None:
-        self.update_scenario_status(status=_ScenarioStatus.STARTED)
+        self.update_scenario_status(_ScenarioStatus.STARTED)
 
         run_time = utils.RunTime()
 
@@ -345,10 +365,12 @@ class ScenarioWorker:
         msg_parallel = (
             f" on {worker.name.ljust(18)} - Parent: {worker._parent_name}" if hasattr(worker, "_parent_name") else ""
         )
-        self._logger.info(f"Scenario initialized{msg_parallel}")
+        self._logger.info(f"Scenario initialization{msg_parallel}")
 
         if self._lock:
-            self._lock.acquire()
+            # During multiprocessing the construction of each scenario is delayed by 2 seconds.
+            # This is necessary, since otherwise the OSM API would rate limit us.
+            _ = self._lock.acquire()
             time.sleep(2)
 
         try:
@@ -357,14 +379,15 @@ class ScenarioWorker:
             )
         except Exception as e:
             self.update_scenario_status(
-                status=_ScenarioStatus.FAILED,
-                extras={"exception": str(e), "traceback": traceback.format_exc()},
+                status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
             )
             return
         finally:
+            # After the scenario has been constructed, the lock can be released so other scenarios to be constructed.
             if self._lock:
                 self._lock.release()
 
+        self._logger.info("Scenario fully initialized")
         self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
 
         try:
@@ -386,13 +409,14 @@ class ScenarioWorker:
                 extras={"exception": str(e), "traceback": traceback.format_exc()},
             )
 
-            scenario.logger.error(
+            self._logger.error(
                 msg=f"{str(e)} - continue on next scenario", exc_info=(not isinstance(e, simulation.OptimizationError))
             )
         finally:
-            pass
+            scenario.process_results()
 
         run_time.stop()
+        self._logger.info(f"Scenario finished - runtime {run_time}")
 
         if plot:
             scenario.generate_and_save_plot()

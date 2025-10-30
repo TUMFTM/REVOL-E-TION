@@ -4,7 +4,6 @@ import importlib.resources
 import logging
 import math
 import pprint
-import traceback
 import warnings
 import webbrowser
 from dataclasses import dataclass, field
@@ -640,53 +639,21 @@ class Scenario:
             paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger
         )
 
-    def execute(self) -> None:
-        try:
-            for horizon_index in range(self.nhorizons):  # Inner optimization loop over all prediction horizons
-                prediction_horizon = PredictionHorizon(index=horizon_index, scenario=self, logger=self.logger)
+    def process_results(self) -> None:
+        for block in self.block_registry.get("TopLevelBlock", {}).values():
+            block.post_scenario()
+        self.aggregator.aggregate()
 
-                prediction_horizon.execute()
+        self.calc_meta_results()
 
-                self.update_scenario_status(
-                    status_msg={"status": f"completed horizon {horizon_index + 1} out of {self.nhorizons}"}
-                )
+        if not self.settings.largescalemode:
+            result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(self.block_registry)
+            result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
+            result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
 
-            self.update_scenario_status(status_msg={"status": "successful"})
-
-        except Exception as e:
-            # Scenario has failed -> store scenario name to dataframe containing failed scenarios
-            status = "infeasible" if isinstance(e, OptimizationError) else "failed"
-            self.update_scenario_status(
-                status_msg={"status": status, "exception": str(e), "traceback": traceback.format_exc()}
-            )
-
-            self.logger.error(
-                msg=f"{str(e)} - continue on next scenario", exc_info=(not isinstance(e, OptimizationError))
-            )
-
-        finally:  # save results up to exception - valuable in RH strategy
-            for block in self.block_registry.get("TopLevelBlock", {}).values():
-                block.post_scenario()
-            self.aggregator.aggregate()
-
-            self.calc_meta_results()
-
-            if not self.settings.largescalemode:
-                result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(self.block_registry)
-                result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
-                result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
-
-                result_messages = blocks.MessageCollectionBlockVisitor().collect_messages(self.block_registry)
-                for msg in result_messages:
-                    self.logger.info(msg)
-
-            self.runtime.stop()
-            self.logger.info(f"Scenario finished - runtime {self.runtime.duration:.2f} s")
-
-    def update_scenario_status(self, status_msg: dict):
-        if self.status_update is not None:
-            status_msg.update(scenario=self.name)
-            self.status_update(queue=self.status_queue, status_msg=status_msg)
+            result_messages = blocks.MessageCollectionBlockVisitor().collect_messages(self.block_registry)
+            for msg in result_messages:
+                self.logger.info(msg)
 
     def calc_meta_results(self):
         # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
