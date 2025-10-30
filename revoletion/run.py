@@ -312,7 +312,7 @@ class SimulationRun:
             self.update_scenario_status(status_msg)
 
     def update_scenario_status(self, status_msg: _ScenarioStatusMessage):
-        self.scenario_status.loc[status_msg.scenario_name, "status_msg"] = status_msg.status.value
+        self.scenario_status.loc[status_msg.scenario_name, "status"] = status_msg.status.value
 
         # If the worker provided extra information, this information is directly dumped into the CSV.
         if status_msg.extras is not None:
@@ -383,7 +383,7 @@ class ScenarioWorker:
             )
             return
         finally:
-            # After the scenario has been constructed, the lock can be released so other scenarios to be constructed.
+            # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
             if self._lock:
                 self._lock.release()
 
