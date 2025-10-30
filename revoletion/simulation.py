@@ -84,10 +84,12 @@ class Location:
                 longitude=longitude,
                 timezone=timezone,
             )
-            logger.warning(
-                f"Connection to Geocoder failed. "
-                f"Using default country ({location.country}) and state ({location.state})."
-            )
+            if geocode:
+                # Warning is only necessary if geocoding was requested.
+                logger.warning(
+                    f"Connection to Geocoder failed. "
+                    f"Using default country ({location.country}) and state ({location.state})."
+                )
 
             return location
 
@@ -743,7 +745,7 @@ class Scenario:
         except webbrowser.Error:  # webbrowser is not available on most remote machines
             pass
 
-    def save_result_summary(self):
+    def save_result_summary(self, extras: list[pd.Series] | None = None):
         """
         Saves all int, float and str attributes of run, scenario (incl. technoeconomic KPIs) and all blocks to the
         results dataframe
@@ -768,9 +770,8 @@ class Scenario:
                 utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"),
                 # get economic results for scenario.result_summary
                 self.aggregator.write_result_summary(),
-                # get RunTime results
-                self.runtime.result_summary,
             ]
+            + (extras if extras is not None else [])
         )
 
         # apply MultiIndex

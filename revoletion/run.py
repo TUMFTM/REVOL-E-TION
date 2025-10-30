@@ -420,7 +420,7 @@ class ScenarioWorker:
 
         if plot:
             scenario.generate_and_save_plot()
-        scenario.save_result_summary()
+        scenario.save_result_summary([run_time.result_summary])
 
 
 def _worker_init(log_queue: mp.Queue, debugmode: bool) -> None:
