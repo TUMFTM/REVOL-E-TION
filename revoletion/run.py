@@ -381,6 +381,7 @@ class ScenarioWorker:
             self.update_scenario_status(
                 status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
             )
+            self._logger.error(f"Failed to initialize scenario {self._name}: {e}")
             return
         finally:
             # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.

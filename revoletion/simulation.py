@@ -6,12 +6,9 @@ import math
 import pprint
 import warnings
 import webbrowser
-from dataclasses import dataclass, field
-from functools import cached_property
+from dataclasses import dataclass
 from pathlib import Path
 
-import geopy
-import geopy.geocoders
 import holidays
 import numpy as np
 import numpy_financial as npf
@@ -20,7 +17,6 @@ import pandas as pd
 import plotly.subplots
 import pyomo.environ as po
 import pytz
-import timezonefinder
 from typing_extensions import Self
 
 import revoletion.data
@@ -55,107 +51,10 @@ class OptimizationError(Exception):
 
 
 @dataclass
-class Location:
-    latitude: float
-    longitude: float
-    timezone: pytz.BaseTzInfo = field(default_factory=lambda: pytz.timezone("Europe/Berlin"))
-    country: str = "DE"
-    state: str = "BY"
-
-    @classmethod
-    def create_from_lat_lon(
-        cls, latitude: float, longitude: float, logger: logging.Logger, geocode: bool = True
-    ) -> Self:
-        tzfinder = timezonefinder.TimezoneFinder()
-        timezone_raw = tzfinder.certain_timezone_at(lat=latitude, lng=longitude)
-        if timezone_raw is None:
-            raise ValueError(f"Failed to determine timezone at {latitude}/{longitude}")
-
-        timezone = pytz.timezone(timezone_raw)
-
-        if geocode:
-            location = cls._reverse_geocode_location(latitude, longitude)
-        else:
-            location = None
-
-        if location is None:
-            location = cls(
-                latitude=latitude,
-                longitude=longitude,
-                timezone=timezone,
-            )
-            if geocode:
-                # Warning is only necessary if geocoding was requested.
-                logger.warning(
-                    f"Connection to Geocoder failed. "
-                    f"Using default country ({location.country}) and state ({location.state})."
-                )
-
-            return location
-
-        address = location.raw.get("address", {})
-
-        if "ISO3166-2-lvl4" in address:
-            country, state = address["ISO3166-2-lvl4"].split("-")
-        elif "ISO3166-2-lvl3" in address:
-            country, state = address["ISO3166-2-lvl3"].split("-")
-        else:
-            # fallback: try country_code + state name
-            country = address.get("country_code", "").upper()
-            state = address.get("state", "")
-
-        return cls(latitude=latitude, longitude=longitude, timezone=timezone, country=country, state=state)
-
-    @staticmethod
-    def _reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
-        geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
-        try:
-            return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-        except geopy.exc.GeocoderUnavailable:
-            return None
-
-
-@dataclass
-class TimeSettings:
-    start: pd.Timestamp
-    end: pd.Timestamp
-    duration: pd.Timedelta
-
-    _timestep: pd.Timedelta
-
-    @classmethod
-    def create_from_start_timestamp(
-        cls,
-        start: pd.Timestamp,
-        timestep: pd.Timedelta,
-        end: pd.Timestamp | None = None,
-        duration: pd.Timedelta | None = None,
-    ) -> Self:
-        if (end is None and duration is None) or (end is not None and duration is not None):
-            raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
-        elif duration is None:
-            duration = (end - start).floor(timestep)
-        elif end is None:
-            duration = duration.floor(timestep)
-        # always recalculate end to ensure consistency
-        end = start + duration
-
-        return cls(start=start, end=end, duration=duration, _timestep=timestep)
-
-    @cached_property
-    def dti(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left")
-
-    @cached_property
-    def dti_extd(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both")
-
-
-@dataclass
 class SimulationTimes:
-    sim: TimeSettings
-    eval: TimeSettings
-    prj: TimeSettings
+    sim: utils.TimeSettings
+    eval: utils.TimeSettings
+    prj: utils.TimeSettings
 
     @classmethod
     def create_from_plain(
@@ -179,19 +78,19 @@ class SimulationTimes:
 
         sim_duration_timedelta = utils.convert2timedelta(sim_duration, unit="day")
 
-        sim = TimeSettings.create_from_start_timestamp(
+        sim = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
-        eval = TimeSettings.create_from_start_timestamp(
+        eval = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
-        prj = TimeSettings.create_from_start_timestamp(
+        prj = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=starttime_timestamp + pd.DateOffset(years=prj_duration),
@@ -208,18 +107,6 @@ class SimulationTimes:
         time_str = time_str if len(time_str) > 10 else time_str + " 00:00"
         value = pd.to_datetime(time_str, format="%d.%m.%Y %H:%M").floor(timestep).tz_localize(timezone)
         return value
-
-
-@dataclass
-class Timestep:
-    hours: float
-    td: pd.Timedelta
-
-    @classmethod
-    def from_str(cls, timestep_str: str) -> Self:
-        td = pd.Timedelta(timestep_str)
-
-        return cls(td=td, hours=td.total_seconds() / 3600)
 
 
 @dataclass
@@ -352,7 +239,7 @@ class Scenario:
         settings: SimulationSettings,
         name: str,  # will be set to the stem of the scenario filename for single scenario execution
         parameters: pd.Series,
-        location: Location,
+        location: utils.Location,
         logger: logging.Logger | None = None,
     ):
         self.paths = paths
@@ -408,7 +295,7 @@ class Scenario:
             sim_duration=self.sim_duration,
             prj_duration=self.prj_duration,
         )
-        self.timestep = Timestep.from_str(self.timestep)
+        self.timestep = utils.Timestep.from_str(self.timestep)
 
         for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
             if hasattr(self, param):
@@ -436,7 +323,7 @@ class Scenario:
         self.nhorizons = math.ceil(self.times.sim.duration / self.len_ch)  # number of timeslices to run
         if not self.truncate_ph:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
-            self.times.sim = TimeSettings.create_from_start_timestamp(
+            self.times.sim = utils.TimeSettings.create_from_start_timestamp(
                 start=self.times.sim.start,
                 timestep=self.timestep.td,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
@@ -483,7 +370,8 @@ class Scenario:
                     path_input_file=(
                         self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")
                     ),
-                    scenario=self,
+                    timezone=self.location.timezone,
+                    resampling_dti=self.times.sim.dti,
                 ).iloc[:, 0]
             except IndexError as exc:
                 raise IndexError(f"Failed to load air temperature timeseries data: {exc}")
@@ -602,7 +490,7 @@ class Scenario:
     ) -> Self:
         latitude = parameters.loc["scenario", "latitude"]
         longitude = parameters.loc["scenario", "longitude"]
-        location = Location.create_from_lat_lon(latitude=latitude, longitude=longitude, logger=logger)
+        location = utils.Location.create_from_lat_lon(latitude=latitude, longitude=longitude, logger=logger)
 
         return cls(
             paths=paths,
@@ -801,13 +689,13 @@ class PredictionHorizon:
 
         # region time and data generation and slicing
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
-        self.ph = TimeSettings.create_from_start_timestamp(
+        self.ph = utils.TimeSettings.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
-        self.ch = TimeSettings.create_from_start_timestamp(
+        self.ch = utils.TimeSettings.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
