@@ -593,7 +593,7 @@ class PVSource(RenewableSource):
         try:
             data_source = data_manager.DataSource(self.data_source)
         except ValueError as e:
-            raise RuntimeError(f"Failed to retrive time series data for block {self.name}") from e
+            raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
 
         if self.filename is not None:
             path_input_file = self.scenario.paths.input / utils.set_extension(
@@ -602,13 +602,16 @@ class PVSource(RenewableSource):
         else:
             path_input_file = None
 
-        self.data = manager.get_for_data_source(
-            data_source,
-            pv_installation_info,
-            file_path=path_input_file,
-            time_settings=self.scenario.times.sim,
-            solcast_api_key=self.scenario.settings.key_solcast_api,
-        )
+        try:
+            self.data = manager.get_for_data_source(
+                data_source,
+                pv_installation_info,
+                file_path=path_input_file,
+                time_settings=self.scenario.times.sim,
+                solcast_api_key=self.scenario.settings.key_solcast_api,
+            )
+        except data_manager.DataProviderError as e:
+            raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
 
         if not self.scenario.settings.largescalemode:
             self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))

@@ -18,39 +18,13 @@ import typing_extensions
 
 from . import utils
 
-# Solcast offers free results for the following coordinates.
-_SOLCAST_UNMETERED_LATITUDE = 41.89021
-_SOLCAST_UNMETERED_LONGITUDE = 12.492231
-_SOLCAST_DEFAULT_PERIOD = "PT5M"
-_SOLCAST_DEFAULT_OUTPUT_PARAMETERS = [
-    "air_temp",
-    "albedo",
-    "azimuth",
-    "clearsky_dhi",
-    "clearsky_dni",
-    "clearsky_ghi",
-    "clearsky_gti",
-    "cloud_opacity",
-    "dewpoint_temp",
-    "dhi",
-    "dni",
-    "ghi",
-    "gti",
-    "precipitable_water",
-    "precipitation_rate",
-    "relative_humidity",
-    "surface_pressure",
-    "snow_depth",
-    "snow_water_equivalent",
-    "snow_soiling_rooftop",
-    "snow_soiling_ground",
-    "wind_direction_100m",
-    "wind_direction_10m",
-    "wind_speed_100m",
-    "wind_speed_10m",
-    "zenith",
-]
-_SOLCAST_TRACKING_TYPE_MAPPING = {0: "fixed", 1: "horizontal_single_axis"}
+
+class DataProviderError(utils.RevoletionError): ...
+
+
+class DataProviderApiError(DataProviderError):
+    def __init__(self, location: utils.Location, api_name: str, msg: str) -> None:
+        super().__init__(f"Failed to fetch timeseries data for location {location} from {api_name} API: {msg}")
 
 
 class PvInstallationInfo(pydantic.BaseModel):
@@ -87,8 +61,10 @@ class DataProvider(abc.ABC):
         self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
     ) -> pd.DataFrame:
         if "power_spec" not in raw_data.columns:
+            # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
             raw_data["power_spec"] = raw_data["P"] / 1e3
-        # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
+
+        # resample to timestep, fill NaN values with previous ones (or next ones, if not available
         time_step = utils.Timestep.from_dti(dti)
         data = raw_data.resample(time_step.td).mean().ffill().bfill()
         # convert to local time
@@ -111,10 +87,47 @@ class DataProvider(abc.ABC):
         ...
 
 
+# Solcast offers free results for the following coordinates.
+_SOLCAST_UNMETERED_LATITUDE = 41.89021
+_SOLCAST_UNMETERED_LONGITUDE = 12.492231
+_SOLCAST_DEFAULT_PERIOD = "PT5M"
+_SOLCAST_DEFAULT_OUTPUT_PARAMETERS = [
+    "air_temp",
+    "albedo",
+    "azimuth",
+    "clearsky_dhi",
+    "clearsky_dni",
+    "clearsky_ghi",
+    "clearsky_gti",
+    "cloud_opacity",
+    "dewpoint_temp",
+    "dhi",
+    "dni",
+    "ghi",
+    "gti",
+    "precipitable_water",
+    "precipitation_rate",
+    "relative_humidity",
+    "surface_pressure",
+    "snow_depth",
+    "snow_water_equivalent",
+    "snow_soiling_rooftop",
+    "snow_soiling_ground",
+    "wind_direction_100m",
+    "wind_direction_10m",
+    "wind_speed_100m",
+    "wind_speed_10m",
+    "zenith",
+]
+_SOLCAST_TRACKING_TYPE_MAPPING = {0: "fixed", 1: "horizontal_single_axis"}
+
+
 class SolcastDataProvider(DataProvider):
     """Provider to request and load Solcast data."""
 
-    def __init__(self, logger: logging.Logger, solcast_api_key: str) -> None:
+    _API_NAME = "Solcast"
+
+    def __init__(self, logger: logging.Logger, solcast_api_key: str | None = None) -> None:
         super().__init__(logger)
         self._solcast_api_key = solcast_api_key
 
@@ -129,7 +142,8 @@ class SolcastDataProvider(DataProvider):
             },
         )
         period_timedelta = pd.to_timedelta(solcast_data["period"])
-        solcast_data["period_start"] = pd.to_datetime(solcast_data["period_end"], utc=True) - period_timedelta
+        period_end = pd.to_datetime(solcast_data["period_end"], utc=True)
+        solcast_data["period_start"] = period_end - period_timedelta
         solcast_data.set_index(pd.DatetimeIndex(solcast_data["period_start"]), inplace=True)
         solcast_data = solcast_data.tz_convert(location.timezone)
 
@@ -144,12 +158,22 @@ class SolcastDataProvider(DataProvider):
     def request_ts_data_from_api(
         self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvInstallationInfo
     ) -> pd.DataFrame:
+        # Cannot request timeseries data without an API key.
+        if self._solcast_api_key is None:
+            raise DataProviderApiError(location, self._API_NAME, "Missing Solcast API key")
+
         if location.latitude != _SOLCAST_UNMETERED_LATITUDE or location.longitude != _SOLCAST_UNMETERED_LONGITUDE:
-            raise ValueError("Remove this line if you want to proceed with metered coordinates!")
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                "trying to request timeseries data for metered coordinates. Remove this line if you want to proceed with metered coordinates!",
+            )
 
         if info.tracking_type not in _SOLCAST_TRACKING_TYPE_MAPPING:
-            raise ValueError(
-                f"Failed to fetch data for location {location} from Solcast API: tracking type {info.tracking_type} cannot be mapped to valid solcast array type"
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                "tracking type {info.tracking_type} cannot be mapped to valid solcast array type",
             )
         array_type = _SOLCAST_TRACKING_TYPE_MAPPING[info.tracking_type]
 
@@ -159,7 +183,7 @@ class SolcastDataProvider(DataProvider):
             start=start,
             end=end,
             period=_SOLCAST_DEFAULT_PERIOD,
-            output_parameters=_SOLCAST_DEFAULT_PERIOD,
+            output_parameters=_SOLCAST_DEFAULT_OUTPUT_PARAMETERS,
             format="json",
             array_type=array_type,
             time_zone="utc",
@@ -179,21 +203,23 @@ class SolcastDataProvider(DataProvider):
             params=params,
         )
         if response.status_code != 200:
-            raise RuntimeError(
-                f"Failed to fetch data for location {location} from Solcast API: Solcast API returned status {response.status_code}: {response.json()['response_status']['message']}"
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                f"Solcast API returned status {response.status_code}: {response.json()['response_status']['message']}",
             )
 
         try:
             json_data = response.json()
         except json.JSONDecodeError as e:
-            raise RuntimeError(
-                f"Failed to fetch data for location {location} from Solcast API: response is not valid JSON"
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                "response is not valid JSON",
             ) from e
 
         if "estimated_actuals" not in json_data:
-            raise RuntimeError(
-                f"Failed to fetch data for location {location} from Solcast API: missing key 'estimated_actuals' in Solcast response"
-            )
+            raise DataProviderApiError(location, self._API_NAME, "missing key 'estimated_actuals' in Solcast response")
 
         data = pd.json_normalize(json_data["estimated_actuals"])
         return data
@@ -203,7 +229,7 @@ class SolcastDataProvider(DataProvider):
         self, file: pathlib.Path, location: utils.Location, info: PvInstallationInfo | None = None
     ) -> pd.DataFrame:
         if info is None:
-            raise ValueError(
+            raise DataProviderError(
                 f"Cannot load data for location {location} from Solcast file: required PV installation info is missing"
             )
 
@@ -237,7 +263,7 @@ class SolcastDataProvider(DataProvider):
 
         extra_radiation = pvlib.irradiance.get_extra_radiation(data.index)
         total_irradiance = pvlib.irradiance.get_total_irradiance(
-            surface_tilt=info.tilt,
+            surface_tilt=tilt,
             surface_azimuth=azimuth,
             solar_zenith=solar_zenith,
             solar_azimuth=solar_azimuth,
@@ -269,10 +295,13 @@ _PVGIS_API_PV_TECH_MAPPING = {
 class PvgisDataProvider(DataProvider):
     """Provider to request and load PVGIS data."""
 
+    _API_NAME: str = "PVGIS"
+
     @typing_extensions.override
     def remap_raw_ts_data(
         self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
     ) -> pd.DataFrame:
+        # rename column wind_speed to speed_wind
         data = raw_data.rename(columns={"wind_speed": "speed_wind"})
         data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
         return super().remap_raw_ts_data(data, location, dti)
@@ -315,12 +344,14 @@ class PvgisDataProvider(DataProvider):
         optimal_tilt = True if info.tilt == "optimal" else False
         optimal_angles = True if info.azimuth == "optimal" else False
         if optimal_angles and not optimal_tilt:
-            raise ValueError(
-                f"Failed to fetch timeseries data for location {location} from PVGIS API: Optimal azimuth requires optimal tilt as well (azimuth={info.azimuth}; tilt={info.tilt})"
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                f"optimal azimuth requires optimal tilt as well (azimuth={info.azimuth}; tilt={info.tilt})",
             )
 
         if info.pv_tech not in _PVGIS_API_PV_TECH_MAPPING:
-            raise ValueError()
+            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {info.pv_tech}")
         pv_tech_choice = _PVGIS_API_PV_TECH_MAPPING[info.pv_tech]
 
         pvgis_data, *_ = pvlib.iotools.get_pvgis_hourly(

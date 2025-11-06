@@ -412,3 +412,6 @@ def read_scenario_from_file(scenario_path: Path) -> pd.DataFrame:
 
     parameters = parameters.sort_index(sort_remaining=True).map(infer_dtype)
     return parameters
+
+
+class RevoletionError(Exception): ...
