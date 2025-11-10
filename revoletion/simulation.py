@@ -142,7 +142,7 @@ class OptimizationHorizon:
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
             self._logger.debug("Calculating power schedules for commodities with rulebased charging strategies")
-            self.scenario.scheduler.calc_ph_schedule(self)
+            self.scenario.scheduler.calc_ph_schedule(self.ph)
         # endregion
 
     def execute(self) -> None:

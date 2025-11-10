@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from . import blocks
+from . import scenario as scn
 
 
 def get_mode_scheduling(fleet_units: dict, block: blocks.BaseBlock) -> str | None:
@@ -22,10 +23,10 @@ class AprioriPowerScheduler:
 
         self.core = AprioriCore(block=self.scenario.block_registry.get("TopLevelBlock", {})["core"], scheduler=self)
 
-    def calc_ph_schedule(self, horizon: "OptimizationHorizon") -> None:
+    def calc_ph_schedule(self, horizon: scn.TimeSettings) -> None:
         self.core.init_ph(horizon=horizon)
 
-        for ts in horizon.ph.dti:
+        for ts in horizon.dti:
             self.core.simulate_ts(ts=ts, horizon=horizon)
 
         for fu in {**self.core.fu_uc, **self.core.fu_stat, **self.core.fu_dyn}.values():
@@ -56,16 +57,16 @@ class AprioriCore:
         if self.mode_scheduling_dyn == "equal":
             raise ValueError('Fleet units with dynamic load management are not allowed to use scheduling mode "equal"')
 
-    def init_ph(self, horizon: "OptimizationHorizon"):
+    def init_ph(self, horizon: scn.TimeSettings):
         # initialize power availability (system and converter) and fixed power consumption
-        self.p_sys_avail = self.p_sys_avail.reindex(horizon.ph.dti)
+        self.p_sys_avail = self.p_sys_avail.reindex(horizon.dti)
         self.p_sys_avail[:] = 0
 
-        self.p_conv_avail = self.p_conv_avail.reindex(horizon.ph.dti)
+        self.p_conv_avail = self.p_conv_avail.reindex(horizon.dti)
         self.p_conv_avail["ac"] = self.block.sizes["acdc"].preexisting
         self.p_conv_avail["dc"] = self.block.sizes["dcac"].preexisting
 
-        self.p_sys_fix = self.p_sys_avail.reindex(horizon.ph.dti)
+        self.p_sys_fix = self.p_sys_avail.reindex(horizon.dti)
         self.p_sys_fix[:] = 0
 
         # get power production and consumption for each non-fleet top level block
@@ -74,17 +75,17 @@ class AprioriCore:
                 self.p_sys_avail.loc[:, block.system] += block.sizes["g2s"].preexisting * block.eff["block"]
             elif isinstance(block, blocks.RenewableSource):
                 self.p_sys_avail.loc[:, block.system] += (
-                    block.data.loc[horizon.ph.dti, "power_spec"] * block.sizes["block"].preexisting * block.eff["block"]
+                    block.data.loc[horizon.dti, "power_spec"] * block.sizes["block"].preexisting * block.eff["block"]
                 )
             elif isinstance(block, blocks.ControllableSource):
                 self.p_sys_avail.loc[:, block.system] += block.sizes["block"].preexisting * block.eff["block"]
             elif isinstance(block, blocks.FixedDemand):
-                self.p_sys_fix.loc[:, block.system] += block.flows_apriori.loc[horizon.ph.dti, "demand"]
+                self.p_sys_fix.loc[:, block.system] += block.flows_apriori.loc[horizon.dti, "demand"]
 
         for fleet in self.fleets.values():
             fleet.init_ph(horizon=horizon)
 
-    def simulate_ts(self, ts: pd.Timestamp, horizon: "OptimizationHorizon") -> None:
+    def simulate_ts(self, ts: pd.Timestamp, horizon: scn.TimeSettings) -> None:
         for fu in {**self.fu_uc, **self.fu_stat, **self.fu_dyn}.values():
             fu.calc_p_bat_chg_max(ts=ts)
 
@@ -215,12 +216,12 @@ class AprioriFleet:
         self.p_avail = pd.Series()
         self.p_fix = pd.Series()
 
-    def init_ph(self, horizon: "OptimizationHorizon"):
+    def init_ph(self, horizon: scn.TimeSettings):
         # initialize power availability and fixed power consumption
-        self.p_avail = self.p_avail.reindex(horizon.ph.dti)
+        self.p_avail = self.p_avail.reindex(horizon.dti)
         self.p_avail[:] = np.inf if self.lm == "dyn" else self.block.pwr_lim_s2f
 
-        self.p_fix = self.p_fix.reindex(horizon.ph.dti)
+        self.p_fix = self.p_fix.reindex(horizon.dti)
         self.p_fix[:] = 0
 
         for fu in self.fleet_units.values():
@@ -302,26 +303,26 @@ class AprioriFleetUnit:
         # initialize variable for charging during single parking process
         self.parking_charging = False
 
-    def init_ph(self, horizon: "OptimizationHorizon"):
+    def init_ph(self, horizon: scn.TimeSettings):
         # apply new index to data
-        self.data_battery = self.data_battery.reindex(horizon.ph.dti)
+        self.data_battery = self.data_battery.reindex(horizon.dti)
         self.data_battery[:] = 0
 
         # add power consumption to data
         self.data_battery.loc[:, "p_consumption"] = (
-            -1 * self.block.log.loc[horizon.ph.dti, "consumption"] / self._get_eff("consumption")
+            -1 * self.block.log.loc[horizon.dti, "consumption"] / self._get_eff("consumption")
         ).astype("float64")
 
         # get current SOC
-        self.data_battery.loc[horizon.ph.dti.min(), "soc"] = self.block.states.loc[
-            horizon.ph.start, ["soc", "soc_min", "soc_max"]
+        self.data_battery.loc[horizon.dti.min(), "soc"] = self.block.states.loc[
+            horizon.start, ["soc", "soc_min", "soc_max"]
         ].median()
 
-        self.data_charging = self.data_charging.reindex(horizon.ph.dti)
+        self.data_charging = self.data_charging.reindex(horizon.dti)
         self.data_charging[:] = 0
 
         # get soh for current prediction horizon
-        self.soh = self.block.states.loc[horizon.ph.start, "soh"]
+        self.soh = self.block.states.loc[horizon.start, "soh"]
 
     def calc_soc_target(self, ts: pd.Timestamp) -> float:
         # ToDo: add input parameter to specify target SOCs
@@ -423,7 +424,7 @@ class AprioriFleetUnit:
 
         return p_chg_atbase
 
-    def calc_p_chg_external(self, ts: pd.Timestamp, horizon: "OptimizationHorizon"):
+    def calc_p_chg_external(self, ts: pd.Timestamp, horizon: scn.TimeSettings):
         """
         calculate charging power from external sources
         """
@@ -434,7 +435,7 @@ class AprioriFleetUnit:
                 # calculate all upcoming arrival times at the base
                 arrivals = self.arr_base_dti[self.arr_base_dti >= ts]
                 # use current time and next arrival index to calculate consumption and convert to SOC
-                arr_nxt = arrivals.min() if not arrivals.empty else horizon.ph.dti.max()
+                arr_nxt = arrivals.min() if not arrivals.empty else horizon.dti.max()
                 e_trip_remaining = (
                     (-1) * self.data_battery.loc[ts:arr_nxt, "p_consumption"].sum() * self.scenario.timestep.hours
                 )
@@ -493,7 +494,7 @@ class AprioriFleetUnit:
 
         self.data_battery.loc[(ts + self.scenario.timestep.td), "soc"] = self.data_battery.loc[ts, "soc"] + soc_delta
 
-    def write_power_to_flows_apriori(self, horizon: "OptimizationHorizon") -> None:
+    def write_power_to_flows_apriori(self, horizon: scn.TimeSettings) -> None:
         self.block.flows_apriori.update(
             {
                 "p_int_chg": (self.data_charging["p_int"].clip(lower=0) / self.block.pwr_chg_max),
@@ -506,7 +507,7 @@ class AprioriFleetUnit:
         )
 
         # fix NaN values caused by max_power = 0 leading and therefore division by 0
-        self.block.flows_apriori.loc[horizon.ph.dti, :] = self.block.flows_apriori.loc[horizon.ph.dti, :].fillna(0.0)
+        self.block.flows_apriori.loc[horizon.dti, :] = self.block.flows_apriori.loc[horizon.dti, :].fillna(0.0)
 
     def _get_eff(self, mode: str):
         # get charging efficiency for the selected mode: ac, dc, consumption
