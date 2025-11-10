@@ -31,6 +31,14 @@ class OemofOptimizationResult(base.OptimizationResult):
     @singledispatchmethod
     @override
     def get_power_flow(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+        """
+        Get the power flow time series for a given block.
+
+        :param block: The block for which power flows should be returned.
+        :param dti: The datetime index specifying the time horizon of interest.
+
+        :returns: Dictionary mapping flow direction identifiers to power flow series.
+        """
         return {}
 
     @get_power_flow.register
@@ -101,6 +109,9 @@ class OemofOptimizationResult(base.OptimizationResult):
 
     @get_power_flow.register
     def _(self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+        """
+        Adds external AC/DC conversion flows for fleet units.
+        """
         power_flows = self._get_power_flow_storage(block, dti)
         power_flows.update(
             {
@@ -113,22 +124,36 @@ class OemofOptimizationResult(base.OptimizationResult):
     def _get_flow_for_components(
         self, block: blocks.ElectricBlock, components: tuple[str, ...], dti: pd.DatetimeIndex
     ) -> pd.Series:
+        """
+        Internal helper to retrieve oemof flow series for a component pair.
+
+        Components can be referenced by their block scope label and will be automatically resolved.
+        """
         remapped_components_key = tuple(map(lambda label: self._components.get_component(block, label), components))
         return self._raw_results[remapped_components_key]["sequences"]["flow"][dti]  # type: ignore
 
     @override
     def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float | pd.Series:
+        """
+        Returns stored energy content of storage components.
+        """
         energy = self._raw_results[(self._components.get_component(block, "storage"), None)]["sequences"][
             "storage_content"
         ][dti]
         return energy
 
     @override
-    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float: ...
+    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float:
+        raise NotImplementedError("Opex is currently not available for oemof optimization result.")
 
     @singledispatchmethod
     @override
     def get_capex(self, block: blocks.ElectricBlock) -> dict[str, float]:
+        """
+        Returns capital expenditures for a block.
+
+        :returns: Mapping of component identifier to CAPEX.
+        """
         return {}
 
     @get_capex.register
@@ -182,7 +207,7 @@ class OemofOptimizationResult(base.OptimizationResult):
         return self._objective
 
 
-_VALID_OEMOF_SOLVERS = {base.Solver.CBC, base.Solver.GUROBI}
+_VALID_oemof_SOLVERS = {base.Solver.CBC, base.Solver.GUROBI}
 
 
 class OemofOptimizationModel(base.OptimizationModel):
@@ -234,12 +259,12 @@ class OemofOptimizationModel(base.OptimizationModel):
     def optimize_time_step(
         self, time_step: pd.DatetimeIndex
     ) -> tuple[base.OptimizationStatus, base.OptimizationResult | None]:
-        raise NotImplementedError("Optimizing a single time step is currently not supported with OEMOF")
+        raise NotImplementedError("Optimizing a single time step is currently not supported with oemof")
 
     def _do_optimize(self, dti: pd.DatetimeIndex) -> tuple[base.OptimizationStatus, OemofOptimizationResult | None]:
-        if self._config.solver not in _VALID_OEMOF_SOLVERS:
+        if self._config.solver not in _VALID_oemof_SOLVERS:
             raise ValueError(
-                f"Failed to optimize OEMOF energy system: solver {self._config.solver.name} is not supported for OEMOF"
+                f"Failed to optimize oemof energy system: solver {self._config.solver.name} is not supported for oemof"
             )
 
         self._logger.info("Building oemof model")
@@ -249,7 +274,7 @@ class OemofOptimizationModel(base.OptimizationModel):
         results = model.solve(
             solver=self._config.solver.value,
             solve_kwargs={"tee": self._config.debug},
-            # We explicitly handle the return code, so OEMOF should not raise an error if the result is not optimal.
+            # We explicitly handle the return code, so oemof should not raise an error if the result is not optimal.
             allow_nonoptimal=True,
         )
 
