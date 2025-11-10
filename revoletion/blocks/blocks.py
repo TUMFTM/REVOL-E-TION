@@ -32,20 +32,6 @@ class BlockScenarioInterface(ABC):
         ...
 
     @abstractmethod
-    def pre_horizon(self, horizon: simulation.PredictionHorizon) -> None:
-        """
-        Trigger actions to be executed before each horizon.
-        """
-        ...
-
-    @abstractmethod
-    def post_horizon(self, horizon: simulation.PredictionHorizon) -> None:
-        """
-        Trigger actions to be executed after each horizon.
-        """
-        ...
-
-    @abstractmethod
     def post_scenario(self) -> None:
         """
         Trigger actions to be executed after the scenario has been run.
@@ -151,16 +137,6 @@ class BaseBlock(BlockScenarioInterface, ABC):
             subblock.pre_scenario()
 
     @override
-    def pre_horizon(self, horizon: simulation.PredictionHorizon):
-        for subblock in self.subblocks.values():
-            subblock.pre_horizon(horizon=horizon)
-
-    @override
-    def post_horizon(self, horizon: simulation.PredictionHorizon):
-        for subblock in self.subblocks.values():
-            subblock.post_horizon(horizon=horizon)
-
-    @override
     def post_scenario(self):
         for subblock in self.subblocks.values():
             subblock.post_scenario()
@@ -228,28 +204,11 @@ class ElectricBlock(BaseBlock, ABC):
                 self.eff[re.sub(r"^[^_]+_", "", key)] = getattr(self, key)
                 delattr(self, key)
 
-    def pre_horizon(self, horizon: simulation.PredictionHorizon):
-        self.define_oemof_components(horizon=horizon)
-        horizon.es.add(*self.components.values())
-
-        super().pre_horizon(horizon=horizon)  # executes pre_horizon for subblocks
-
-    def post_horizon(self, horizon: simulation.PredictionHorizon):
-        super().post_horizon(horizon=horizon)  # executes post_horizon for subblocks
-
-        self.get_horizon_results(horizon=horizon)
-
     def post_scenario(self):
         self.calc_results_flows()
         self.calc_results_energies()
 
         super().post_scenario()
-
-    @abstractmethod
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
-
-    @abstractmethod
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
 
     def calc_results_flows(self):
         # total flow calculation is duplicated in StorageBlock
@@ -276,24 +235,12 @@ class ElectricBlock(BaseBlock, ABC):
 
 
 class SourceBlock(ElectricBlock, ABC):
-    @abstractmethod
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
-
-    @abstractmethod
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
-
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["total", :]
 
 
 class SinkBlock(ElectricBlock, ABC):
-    @abstractmethod
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
-
-    @abstractmethod
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
-
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies.loc[("sinks", "del"), :] -= self.energies.loc["total", :]
@@ -351,90 +298,6 @@ class SystemCore(ElectricBlock):
         self.init_equalizable_variables(name_vars=["invest_acdc", "invest_dcac"])
         self.init_equalizable_variables(name_vars=["size_preexisting_acdc", "size_preexisting_dcac"])
         self.init_equalizable_variables(name_vars=["size_max_acdc", "size_max_dcac"])
-
-    @override
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
-        """
-        pre horizon method
-        x denotes the flow measurement point in results
-
-          dc          ac
-          |-x--dcac-->|
-          |           |
-          |<---acdc-x-|
-        """
-
-        self.components["ac"] = solph.Bus()
-        self.components["dc"] = solph.Bus()
-
-        self.components["acdc"] = solph.components.Converter(
-            inputs={
-                self.components["ac"]: solph.Flow(
-                    nominal_capacity=solph.Investment(
-                        ep_costs=self.evaluators["acdc"].opt.spec_ep_invest,
-                        existing=self.sizes["acdc"].preexisting,
-                        maximum=self.sizes["acdc"].expansion_max,
-                    ),
-                    variable_costs=self.evaluators["acdc"].opt.spec_ep_operation[horizon.ph.dti],
-                )
-            },
-            outputs={self.components["dc"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components["dc"]: self.eff["acdc"]},
-        )
-
-        self.components["dcac"] = solph.components.Converter(
-            inputs={
-                self.components["dc"]: solph.Flow(
-                    nominal_capacity=solph.Investment(
-                        ep_costs=self.evaluators["dcac"].opt.spec_ep_invest,
-                        existing=self.sizes["dcac"].preexisting,
-                        maximum=self.sizes["dcac"].expansion_max,
-                    ),
-                    variable_costs=self.evaluators["dcac"].opt.spec_ep_operation[horizon.ph.dti],
-                )
-            },
-            outputs={self.components["ac"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            conversion_factors={self.components["ac"]: self.eff["dcac"]},
-        )
-
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["ac"], self.components["acdc"]),
-            capex_spec=self.evaluators["acdc"].capex.spec,
-            invest_type="flow",
-        )
-
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["dc"], self.components["dcac"]),
-            capex_spec=self.evaluators["dcac"].capex.spec,
-            invest_type="flow",
-        )
-
-        if self.expansion_equal:
-            # add a tuple of tuples to the list of equal variables of the scenario
-            horizon.constraints.add_equal_invests(
-                [
-                    {"in": self.components["dc"], "out": self.components["dcac"]},
-                    {"in": self.components["ac"], "out": self.components["acdc"]},
-                ]
-            )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
-        """
-        post horizon method
-        """
-        self.sizes["acdc"].expansion = horizon.results[(self.components["ac"], self.components["acdc"])]["scalars"][
-            "invest"
-        ]
-        self.sizes["dcac"].expansion = horizon.results[(self.components["dc"], self.components["dcac"])]["scalars"][
-            "invest"
-        ]
-
-        self.flows.loc[horizon.ch.dti, "acdc"] = horizon.results[(self.components["ac"], self.components["acdc"])][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, "dcac"] = horizon.results[(self.components["dc"], self.components["dcac"])][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
 
     def calc_results_flows(self):
         """
@@ -495,71 +358,6 @@ class RenewableSource(SourceBlock, ABC):
 
     @abstractmethod
     def get_ts_data(self): ...
-
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
-        """
-        pre horizon method
-        x denotes the flow measurement point in results
-
-        bus_connected      name_bus
-          |                   |
-          |<--x----name_out---|<--name_src
-          |                   |
-          |                   |-->name_exc
-        """
-
-        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
-
-        self.components["bus"] = solph.Bus()
-
-        self.components["outflow"] = solph.components.Converter(
-            inputs={self.components["bus"]: solph.Flow()},
-            outputs={self.bus_connected: solph.Flow()},
-            conversion_factors={self.bus_connected: self.eff["block"]},
-        )
-
-        # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
-        # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
-        # All other components such as converters and storages only have cost_eps in the output direction.
-        self.components["exc"] = solph.components.Sink(inputs={self.components["bus"]: solph.Flow()})
-
-        self.components["src"] = solph.components.Source(
-            outputs={
-                self.components["bus"]: solph.Flow(
-                    nominal_capacity=solph.Investment(
-                        ep_costs=self.evaluators["block"].opt.spec_ep_invest,
-                        existing=self.sizes["block"].preexisting,
-                        maximum=self.sizes["block"].expansion_max,
-                    ),
-                    fix=self.data.loc[horizon.ph.dti, "power_spec"],
-                    variable_costs=self.evaluators["block"].opt.spec_ep_operation[horizon.ph.dti],
-                )
-            }
-        )
-
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["src"], self.components["bus"]),
-            capex_spec=self.evaluators["block"].capex.spec,
-            invest_type="flow",
-        )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
-        """
-        post horizon method
-        """
-        self.sizes["block"].expansion = horizon.results[(self.components["src"], self.components["bus"])]["scalars"][
-            "invest"
-        ]
-
-        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["outflow"], self.bus_connected)][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, "pot"] = horizon.results[(self.components["src"], self.components["bus"])][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
-        self.flows.loc[horizon.ch.dti, "curt"] = horizon.results[(self.components["bus"], self.components["exc"])][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -1092,33 +890,6 @@ class FixedDemand(SinkBlock):
                 self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.csv")
             )
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
-        """
-        pre horizon method
-        x denotes the flow measurement point in results
-
-        bus_connected
-          |
-          |-x->name_snk
-          |
-        """
-
-        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
-
-        self.components["snk"] = solph.components.Sink(
-            inputs={
-                self.bus_connected: solph.Flow(nominal_capacity=1, fix=self.flows_apriori["demand"][horizon.ph.dti])
-            }
-        )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
-        """
-        post horizon method
-        """
-        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.bus_connected, self.components["snk"])][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
-
 
 class ControllableSource(SourceBlock):
     def init_evaluators(self):
@@ -1146,7 +917,7 @@ class ControllableSource(SourceBlock):
             parent=scenario,
         )
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
+    def define_oemof_components(self, horizon: simulation.OptimizationHorizon, params: dict = None):
         """
         pre horizon method
         x denotes the flow measurement point in results
@@ -1177,18 +948,6 @@ class ControllableSource(SourceBlock):
             capex_spec=self.evaluators["block"].capex.spec,
             invest_type="flow",
         )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
-        """
-        post horizon method
-        """
-        self.sizes["block"].expansion = horizon.results[(self.components["src"], self.bus_connected)]["scalars"][
-            "invest"
-        ]
-
-        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["src"], self.bus_connected)][
-            "sequences"
-        ]["flow"][horizon.ch.dti]
 
 
 class GridConnection(ElectricBlock):
@@ -1354,118 +1113,7 @@ class GridConnection(ElectricBlock):
             }
         )
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
-        """
-        pre horizon method
-        x denotes the flow measurement point in results
-
-        bus_connected          name_bus
-          |                        |
-          |---name_inflow_1--x---->|
-          |<--name_outflow_1--x----|
-          |                        |---(GridMarket Instance)
-          |---name_inflow_2--x---->|
-          |<--name_outflow_2--x----|
-          |                        |---(GridMarket Instance)
-
-                     ...
-
-          |---name_inflow_n--x---->|
-          |<--name_outflow_n--x----|
-        """
-
-        self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
-
-        self.components["bus"] = solph.Bus()
-
-        self.inflows = {
-            f"{self.name}_inflow_1": solph.components.Converter(
-                # Peakshaving not implemented for feed-in into grid
-                inputs={self.bus_connected: solph.Flow()},
-                # Size optimization
-                outputs={
-                    self.components["bus"]: solph.Flow(
-                        nominal_capacity=solph.Investment(
-                            ep_costs=self.evaluators["s2g"].opt.spec_ep_invest,
-                            existing=self.sizes["s2g"].preexisting,
-                            maximum=self.sizes["s2g"].expansion_max,
-                        ),
-                        variable_costs=self.scenario.cost_eps,
-                    )
-                },
-                conversion_factors={self.components["bus"]: 1},
-            )
-        }
-
-        self.components.update(self.inflows)
-
-        self.outflows = {
-            f"{self.name}_outflow_{period}": solph.components.Converter(
-                # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
-                # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
-                inputs={
-                    self.components["bus"]: solph.Flow(
-                        nominal_capacity=solph.Investment(
-                            ep_costs=(
-                                self.evaluators["g2s"].opt.spec_ep_invest if period == self.peak_periods.index[0] else 0
-                            ),
-                            existing=self.sizes["g2s"].preexisting,
-                            maximum=self.sizes["g2s"].expansion_max,
-                        )
-                    )
-                },
-                # Peakshaving
-                outputs={
-                    self.bus_connected: solph.Flow(
-                        nominal_capacity=(
-                            solph.Investment(
-                                ep_costs=(self.evaluators[period].opt.spec_ep_peak if self.peakshaving else 0),
-                                existing=self.peak_periods.loc[period, "power"],
-                            )
-                        ),
-                        max=(self.bus_activation.loc[horizon.ph.dti, period]),
-                    )
-                },
-                conversion_factors={self.bus_connected: 1},
-            )
-            for period in self.peak_periods.index
-        }
-
-        self.components.update(self.outflows)
-
-        horizon.constraints.add_invest_costs(
-            invest=(self.components[f"{self.name}_inflow_1"], self.components["bus"]),
-            capex_spec=self.evaluators["s2g"].capex.spec,
-            invest_type="flow",
-        )
-        horizon.constraints.add_invest_costs(
-            invest=(
-                self.components["bus"],
-                self.components[f"{self.name}_outflow_{self.peak_periods.index[0]}"],
-            ),
-            capex_spec=self.evaluators["g2s"].capex.spec,
-            invest_type="flow",
-        )
-
-        # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
-        # represent the same grid connection
-        equal_investments = [{"in": self.components["bus"], "out": outflow} for outflow in self.outflows.values()]
-
-        # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
-        if self.expansion_equal:
-            equal_investments.append(
-                {
-                    "in": self.components[f"{self.name}_inflow_1"],
-                    "out": self.components["bus"],
-                }
-            )  # currently only works without peakshaving for inflows
-
-        # add list of variables to the scenario constraints if list contains more than one element
-        # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
-        if len(equal_investments) > 1:
-            horizon.constraints.add_equal_invests(equal_investments)
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.OptimizationHorizon):
         """
         post horizon method
         """
@@ -1532,7 +1180,7 @@ class GridMarket(ElectricBlock):
             opex_config=dict(spec=self.opex_spec_s2g),
         )
 
-    def __init__(self, name: str, scenario: simulation.PredictionHorizon, params, parent):
+    def __init__(self, name: str, scenario: simulation.OptimizationHorizon, params, parent):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1541,38 +1189,7 @@ class GridMarket(ElectricBlock):
             parent=parent,
         )
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
-        """
-        pre horizon method
-
-        parent_bus
-            |<---x----name_src
-            |
-            |----x--->name_snk
-            |
-        """
-
-        self.components["src"] = solph.components.Source(
-            outputs={
-                self.parent.components["bus"]: solph.Flow(
-                    nominal_capacity=self.pwr_g2s,
-                    max=1 if self.pwr_g2s else None,
-                    variable_costs=self.evaluators["g2s"].opt.spec_ep_operation[horizon.ph.dti],
-                )
-            }
-        )
-
-        self.components["snk"] = solph.components.Sink(
-            inputs={
-                self.parent.components["bus"]: solph.Flow(
-                    nominal_capacity=self.pwr_s2g,
-                    max=1 if self.pwr_s2g else None,
-                    variable_costs=(self.evaluators["s2g"].opt.spec_ep_operation[horizon.ph.dti]),
-                )
-            }
-        )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.OptimizationHorizon):
         """
         post horizon method
         """
@@ -1705,92 +1322,7 @@ class StorageBlock(ElectricBlock):
         super().pre_scenario()
         self.aging_model = bat.BatteryPackModel(self)
 
-    def define_oemof_components(
-        self,
-        horizon: simulation.PredictionHorizon,
-        params: dict = None,
-    ):
-        """
-        pre horizon method
-        x denotes the flow measurement point in results
-
-        bus_connected   name_bus
-             |             |
-             |<-x-name_xc--|
-             |             |<--->name_ess
-             |-x-name_ess->|
-             |             |
-
-        """
-
-        if params is None:
-            raise ValueError(
-                f'Block "{self.name}": Parameter "params" is required for StorageBlock method define_oemof_components()'
-            )
-
-        self.components["bus"] = solph.Bus()
-
-        self.components["inflow"] = solph.components.Converter(
-            inputs={
-                self.bus_connected: solph.Flow(
-                    nominal_capacity=params["inflow_nominal_capacity"],
-                    max=params["inflow_max"],
-                    fix=params["inflow_fix"],
-                )
-            },
-            outputs={
-                self.components["bus"]: solph.Flow(
-                    variable_costs=self.scenario.cost_eps * -3  # incentivize charging of StorageBlocks vs. curtailment
-                )
-            },
-            conversion_factors={self.components["bus"]: self.eff["chg_int"]},
-        )
-
-        self.components["outflow"] = solph.components.Converter(
-            inputs={self.components["bus"]: solph.Flow()},
-            outputs={
-                self.bus_connected: solph.Flow(
-                    nominal_capacity=params["outflow_nominal_capacity"],
-                    max=params["outflow_max"],
-                    fix=params["outflow_fix"],
-                    variable_costs=self.scenario.cost_eps
-                    * 4,  # disincentivize waste loop with inflow (sum must be positive)
-                )
-            },
-            conversion_factors={self.bus_connected: self.eff["dis_int"]},
-        )
-
-        self.components["storage"] = solph.components.GenericStorage(
-            inputs={
-                self.components["bus"]: solph.Flow(
-                    variable_costs=self.evaluators["in"].opt.spec_ep_operation[horizon.ph.dti]
-                )
-            },
-            outputs={self.components["bus"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
-            loss_rate=self.loss_rate_per_hour,
-            balanced=params["storage_balanced"],
-            initial_storage_level=self.states.loc[horizon.ph.start, ["soc", "soc_min", "soc_max"]].median(),
-            # crate measured "outside" of conversion factor (efficiency)
-            invest_relation_input_capacity=params["invest_relation_input_capacity"],
-            invest_relation_output_capacity=params["invest_relation_output_capacity"],
-            inflow_conversion_factor=np.sqrt(self.eff["storage_roundtrip"]),
-            outflow_conversion_factor=np.sqrt(self.eff["storage_roundtrip"]),
-            nominal_capacity=solph.Investment(
-                ep_costs=self.evaluators["storage"].opt.spec_ep_invest,
-                existing=self.sizes["storage"].preexisting,
-                maximum=self.sizes["storage"].expansion_max,
-            ),
-            max_storage_level=self.states.loc[horizon.ph.dti_extd, "soc_max"],
-            min_storage_level=self.states.loc[horizon.ph.dti_extd, "soc_min"],
-        )
-
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["storage"],),
-            capex_spec=self.evaluators["storage"].capex.spec,
-            invest_type="storage",
-        )
-
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.OptimizationHorizon):
         """
         post horizon method
         """
@@ -1857,7 +1389,7 @@ class StationaryBattery(StorageBlock):
 
         super().initialize_efficiencies()
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
+    def define_oemof_components(self, horizon: simulation.OptimizationHorizon, params: dict = None):
         self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
         params = {
             "inflow_nominal_capacity": None,
@@ -2008,7 +1540,7 @@ class Fleet(SinkBlock):
 
         return df.loc[self.scenario.times.sim.dti]  # need dsoc for last timestep
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
+    def define_oemof_components(self, horizon: simulation.OptimizationHorizon, params: dict = None):
         """
         pre horizon method
 
@@ -2050,7 +1582,7 @@ class Fleet(SinkBlock):
             conversion_factors={self.bus_connected: 1},
         )
 
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.OptimizationHorizon):
         """
         post horizon method
         """
@@ -2209,7 +1741,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         StorageBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
 
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
+    def define_oemof_components(self, horizon: simulation.OptimizationHorizon, params: dict = None):
         """
         pre horizon method
 
@@ -2301,7 +1833,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             conversion_factors={self.components["bus"]: 1},  # billed energy is already dc in external dc charging
         )
 
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon):
+    def get_horizon_results(self, horizon: simulation.OptimizationHorizon):
         """
         post horizon method
         """

@@ -20,6 +20,7 @@ import pandas as pd
 from oemof import solph as solph
 
 from . import logger as logger_fcs
+from . import scenario as scn
 from . import simulation, utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -270,7 +271,7 @@ class SimulationRun:
             self.logger, {"context_str": f"{name:<{max_scenario_name_len}}"}
         )
         try:
-            worker = ScenarioWorker(
+            worker = OptimizationWorker(
                 paths=self.paths,
                 settings=self.settings,
                 name=name,
@@ -324,7 +325,7 @@ class SimulationRun:
         self.scenario_status.to_csv(self.paths.status, index=True)
 
 
-class ScenarioWorker:
+class OptimizationWorker:
     """
     Worker to process a scenario.
 
@@ -333,8 +334,8 @@ class ScenarioWorker:
 
     def __init__(
         self,
-        paths: simulation.SimulationPaths,
-        settings: simulation.SimulationSettings,
+        paths: scn.SimulationPaths,
+        settings: scn.SimulationSettings,
         name: str,
         parameters: pd.Series,
         logger: logging.Logger,
@@ -374,14 +375,9 @@ class ScenarioWorker:
             time.sleep(2)
 
         try:
-            scenario = simulation.Scenario.create_from_parameters(
+            scenario = scn.Scenario.create_from_parameters(
                 self._paths, self._settings, self._name, self._parameters, self._logger
             )
-        except Exception as e:
-            self.update_scenario_status(
-                status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
-            )
-            return
         finally:
             # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
             if self._lock:
@@ -390,12 +386,16 @@ class ScenarioWorker:
         self._logger.info("Scenario fully initialized")
         self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
 
+        n_horizons = scenario.nhorizons
         try:
-            for horizon_index in range(scenario.nhorizons):
-                prediction_horizon = simulation.PredictionHorizon(
-                    index=horizon_index, scenario=scenario, logger=scenario.logger
+            for horizon_index in range(n_horizons):
+                logging_ctx_str = f"Horizon {horizon_index + 1} of {n_horizons} -"
+                logger = logger_fcs.ContextLoggerAdapter(self._logger, {"context_str": logging_ctx_str})
+                optimization_horizon = simulation.OptimizationHorizon(
+                    index=horizon_index, scenario=scenario, logger=logger
                 )
-                prediction_horizon.execute()
+
+                optimization_result = optimization_horizon.execute()
 
                 self.update_scenario_status(status=_ScenarioStatus.COMPLETED_HORIZON)
             self.update_scenario_status(status=_ScenarioStatus.SUCCESSFUL)

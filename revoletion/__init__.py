@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
-
 from .run import SimulationRun  # allows for "revoletion.SimulationRun()" after "import revoletion"
-from .simulation import Scenario, SimulationPaths, SimulationSettings
+from .scenario import Scenario, SimulationPaths, SimulationSettings
+
+__all__ = ["SimulationRun", "Scenario", "SimulationPaths", "SimulationSettings"]

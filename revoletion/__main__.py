@@ -19,7 +19,7 @@ import revoletion.example
 
 from .logger import configure_root_logger
 from .run import SimulationRun
-from .simulation import SimulationPaths, SimulationSettings
+from .scenario import SimulationPaths, SimulationSettings
 
 
 def main():

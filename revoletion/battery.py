@@ -115,8 +115,7 @@ class BatteryPackModel:
 
         # If aging is disabled, keep initial SOH
         if not self.block.aging:
-            self.block.states.loc[horizon.ch.end, "soh"] = self.block.states.loc[horizon.ph.start, "soh"]
-            return
+            raise RuntimeError(f"Tried to age battery {self.block.name}, but aging is disable on this block!")
 
         if horizon.index == 0:  # first horizon of simulation - pack level values dependent on size are not set yet
             self.get_pack_parameters()

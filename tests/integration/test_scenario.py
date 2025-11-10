@@ -28,7 +28,7 @@ def test_process_example_scenarios(scenario_name: str):
 
             single_scenario_parameters = scenario_parameters[scenario_name]
 
-            worker = run.ScenarioWorker(
+            worker = run.OptimizationWorker(
                 simulation_paths,
                 simulation_settings,
                 name=scenario_name,
