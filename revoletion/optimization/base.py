@@ -7,7 +7,7 @@ from functools import singledispatchmethod
 import pandas as pd
 from typing_extensions import Self
 
-from revoletion import blocks
+from revoletion import blocks, utils
 from revoletion import scenario as scn
 
 
@@ -72,7 +72,7 @@ class OptimizationModel(abc.ABC):
     def from_revoletion_scenario(
         cls,
         scenario: scn.Scenario,
-        horizon: scn.TimeSettings,
+        horizon: utils.TimeSettings,
         logger: logging.Logger,
         config: OptimizationModelConfig | None = None,
     ) -> Self: ...

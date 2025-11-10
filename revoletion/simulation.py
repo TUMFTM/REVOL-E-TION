@@ -2,9 +2,10 @@
 
 import logging
 import types
-from typing import override
 
-from . import blocks, optimization
+from typing_extensions import override
+
+from . import blocks, optimization, utils
 from . import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +33,14 @@ class OptimizationError(Exception):
         super().__init__(msg)
 
 
-class OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
+class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
+    """
+    Process the results of an optimization horizon execution.
+
+    This transforms the results produced by an `OptimizationModel` into flows and investments.
+    The results are written to each block, to expose the data to subsequent optimizations or the final result collection.
+    """
+
     def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
         self._optimization_result = optimization_result
 
@@ -41,15 +49,25 @@ class OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
         cls,
         optimization_result: optimization.OptimizationResult,
         scenario: scn.Scenario,
-        horizon: scn.TimeSettings,
+        horizon: utils.TimeSettings,
         horizon_index: int,
     ) -> None:
+        """
+        Collect the optimization results and write them back to each individual block.
+
+        :param optimization_result: The optimization results from an `OptimizationHorizon`.
+        :param scenario: The scenario which was optimized.
+        :param horizon: The time horizon of the optimization.
+        :param horizon_index: The index of the optimization horizon.
+        """
         visitor = cls(optimization_result)
         for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            # `horizon_index` must be passed down, because the battery aging model currently uses it.
+            # TODO: Ideally, the aging model would be independent of this and the `horizon_index` can be removed.
             visitor.visit_block(block, horizon=horizon, horizon_index=horizon_index)
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: scn.TimeSettings, horizon_index: int) -> None:
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
         # Always traverse to children even for NonElectricBlock. This is necessary, since
         # SubFleet is a NonElectricBlock, but it might have electric subblocks.
         for subblock in block.subblocks.values():
@@ -60,11 +78,12 @@ class OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
         if not isinstance(block, blocks.ElectricBlock):
             return
 
+        # Investments are directly written back to each block.
         investments = self._optimization_result.get_capex(block)
         for size_name, investment in investments.items():
             block.sizes[size_name].expansion = investment
 
-        # `GridConnection` needs some special power flow extraction.
+        # `GridConnection` needs some special power flow extraction to handle peak-periods.
         if isinstance(block, blocks.GridConnection):
             return self.visit_grid_connection(block, horizon)
 
@@ -76,7 +95,12 @@ class OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
         if isinstance(block, blocks.StorageBlock):
             self.visit_storage_block(block, horizon, horizon_index)
 
-    def visit_grid_connection(self, block: blocks.GridConnection, horizon: scn.TimeSettings) -> None:
+    def visit_grid_connection(self, block: blocks.GridConnection, horizon: utils.TimeSettings) -> None:
+        """
+        Collect the results for a `GridConnection`.
+
+        Aggregates the individual results for each peak-period.
+        """
         power_flows = self._optimization_result.get_power_flow(block, horizon.dti)
 
         outflows = {flow_name: flow for flow_name, flow in power_flows.items() if flow_name.startswith("out")}
@@ -92,7 +116,7 @@ class OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
 
         block.peak_periods["power"] = block.peak_periods.apply(get_peak_power, axis=1)
 
-    def visit_storage_block(self, block: blocks.StorageBlock, horizon: scn.TimeSettings, horizon_index: int) -> None:
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
         stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti_extd)
         block.states.loc[horizon.dti_extd, "energy"] = stored_energy
         block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
@@ -121,13 +145,13 @@ class OptimizationHorizon:
 
         # region time and data generation and slicing
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
-        self.ph = scn.TimeSettings.create_from_start_timestamp(
+        self.ph = utils.TimeSettings.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
-        self.ch = scn.TimeSettings.create_from_start_timestamp(
+        self.ch = utils.TimeSettings.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep.td,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
@@ -183,6 +207,6 @@ class OptimizationHorizon:
         if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
             self.scenario.objective_opt = optimization_result.get_objective()
 
-        OptimizationHorizonResultProcessor.collect_optimization_results(
+        _OptimizationHorizonResultProcessor.collect_optimization_results(
             optimization_result, self.scenario, horizon=self.ch, horizon_index=self.index
         )

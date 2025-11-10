@@ -8,9 +8,9 @@ import pandas as pd
 import pyomo.environ as po
 from typing_extensions import Self, override
 
-from revoletion import blocks
+import revoletion.optimization.base as base
+from revoletion import blocks, utils
 from revoletion import scenario as scn
-from revoletion.optimization import base
 
 from ._oemof_block_visitor import OemofBlockVisitor, WrappedEnergySystem
 
@@ -202,7 +202,7 @@ class OemofOptimizationModel(base.OptimizationModel):
     def from_revoletion_scenario(
         cls,
         scenario: scn.Scenario,
-        horizon: scn.TimeSettings,
+        horizon: utils.TimeSettings,
         logger: logging.Logger,
         config: base.OptimizationModelConfig | None = None,
     ) -> Self:
@@ -244,8 +244,8 @@ class OemofOptimizationModel(base.OptimizationModel):
 
         self._logger.info("Building oemof model")
         model = self._create_model()
-        self._logger.debug("Model build completed")
 
+        self._logger.info("Model built, starting optimization")
         results = model.solve(
             solver=self._config.solver.value,
             solve_kwargs={"tee": self._config.debug},
@@ -274,10 +274,10 @@ class OemofOptimizationModel(base.OptimizationModel):
 
         self._energy_system.constraints.apply_constraints(model=model)
 
-        # if self._config.debug:
-        #     model.write(self._scenario.paths.dump, io_options={"symbolic_solver_labels": True})
+        if self._config.debug:
+            model.write(self._scenario.paths.dump, format="lp", io_options={"symbolic_solver_labels": True})
 
-        return model
+        return model  # type: ignore
 
     def _get_optimization_status_from_optimization_results(self, results) -> base.OptimizationStatus:
         if (results.solver.status == po.SolverStatus.ok) and (

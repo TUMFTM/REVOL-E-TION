@@ -61,11 +61,11 @@ class _StatusUpdateCallback(typing.Protocol):
 class SimulationRun:
     def __init__(
         self,
-        paths: simulation.SimulationPaths,
-        settings: simulation.SimulationSettings | None = None,
+        paths: scn.SimulationPaths,
+        settings: scn.SimulationSettings | None = None,
     ):
         self.paths = paths
-        self.settings = settings or simulation.SimulationSettings()
+        self.settings = settings or scn.SimulationSettings()
 
         self.runtime = utils.RunTime()
 
@@ -395,7 +395,7 @@ class OptimizationWorker:
                     index=horizon_index, scenario=scenario, logger=logger
                 )
 
-                optimization_result = optimization_horizon.execute()
+                optimization_horizon.execute()
 
                 self.update_scenario_status(status=_ScenarioStatus.COMPLETED_HORIZON)
             self.update_scenario_status(status=_ScenarioStatus.SUCCESSFUL)
@@ -416,7 +416,7 @@ class OptimizationWorker:
             scenario.process_results()
 
         run_time.stop()
-        self._logger.info(f"Scenario finished - runtime {run_time}")
+        self._logger.info(f"Scenario finished - runtime {run_time.duration:.2f}s")
 
         if plot:
             scenario.generate_and_save_plot()

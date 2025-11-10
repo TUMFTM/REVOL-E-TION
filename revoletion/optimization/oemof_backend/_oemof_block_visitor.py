@@ -6,9 +6,9 @@ import oemof.network
 import oemof.solph as solph
 from typing_extensions import override
 
-from revoletion import blocks
+import revoletion.optimization.constraints as constraints
+from revoletion import blocks, utils
 from revoletion import scenario as scn
-from revoletion.optimization import constraints
 
 _CHARGE_INCENTIVE_MULTIPLIER = -3  # Prioritize storage over curtailment
 _WASTE_LOOP_PENALTY_MULTIPLIER = 4  # Prevent inefficient cycling
@@ -70,7 +70,7 @@ class WrappedEnergySystem:
             )
         return self._components[block][label]
 
-    def get_components(self, block: blocks.BaseBLock) -> dict[str, oemof.network.Node]:
+    def get_components(self, block: blocks.BaseBlock) -> dict[str, oemof.network.Node]:
         return self._components[block]
 
 
@@ -88,14 +88,14 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     _CORE_AC_BUS_NAME = "ac"
     _CORE_DC_BUS_NAME = "dc"
 
-    def __init__(self, scenario: scn.Scenario, horizon: scn.TimeSettings, cost_eps: float) -> None:
+    def __init__(self, scenario: scn.Scenario, horizon: utils.TimeSettings, cost_eps: float) -> None:
         self._scenario = scenario
         self._horizon = horizon
         self._cost_eps = cost_eps
 
     @classmethod
     def create_oemof_energy_system(
-        cls, scenario: scn.Scenario, horizon: scn.TimeSettings, cost_eps: float
+        cls, scenario: scn.Scenario, horizon: utils.TimeSettings, cost_eps: float
     ) -> WrappedEnergySystem:
         """
         Factory method that constructs a complete OEMOF energy system from a scenario.
@@ -188,9 +188,6 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         |-x--dcac-->|
         |           |
         |<---acdc-x-|
-
-        :param block: The SystemCore block containing parameters for AC-DC conversion.
-        :param es: The wrapped energy system to add core components to.
         """
         ac_bus = solph.Bus()
         dc_bus = solph.Bus()
@@ -255,8 +252,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         self, block: blocks.RenewableSource, es: WrappedEnergySystem, bus_connected: solph.Bus
     ) -> None:
         """
-        pre horizon method
-        x denotes the flow measurement point in results
+        Build OEMOF model for a `RenewableSource`.
 
         bus_connected      name_bus
           |                   |
@@ -302,7 +298,8 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
 
     def visit_fixed_demand(self, block: blocks.FixedDemand, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
         """
-        pre horizon method
+        Build OEMOF model for a `FixedDemand`.
+
         x denotes the flow measurement point in results
 
         bus_connected
@@ -319,6 +316,17 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     def visit_controllable_source(
         self, block: blocks.ControllableSource, es: WrappedEnergySystem, bus_connected: solph.Bus
     ) -> None:
+        """
+        Build OEMOF model for a `ControllableSource`.
+
+        x denotes the flow measurement point in results
+
+        bus_connected
+          |
+          |<-name_gen
+          |
+        """
+
         src = solph.components.Source(
             outputs={
                 bus_connected: solph.Flow(
@@ -342,7 +350,8 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         self, block: blocks.GridConnection, es: WrappedEnergySystem, bus_connected: solph.Bus
     ) -> None:
         """
-        pre horizon method
+        Build OEMOF model for a `GridConnection`.
+
         x denotes the flow measurement point in results
 
         bus_connected          name_bus
@@ -467,7 +476,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
 
     def visit_grid_market(self, block: blocks.GridMarket, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
         """
-        pre horizon method
+        Build OEMOF model for a `GridMarket`.
 
         parent_bus
             |<---x----name_src
@@ -501,6 +510,19 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     def visit_stationary_battery(
         self, block: blocks.StationaryBattery, es: WrappedEnergySystem, bus_connected: solph.Bus
     ) -> None:
+        """
+        Build OEMOF model for a `StationaryBattery`.
+
+        x denotes the flow measurement point in results
+
+        bus_connected   name_bus
+             |             |
+             |<-x-name_xc--|
+             |             |<--->name_ess
+             |-x-name_ess->|
+             |             |
+        """
+
         params = {
             "inflow_nominal_capacity": None,
             "outflow_nominal_capacity": None,
@@ -515,11 +537,25 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         self._visit_storage_block(block, es, bus_connected, params)
 
     def visit_fleet(self, block: blocks.Fleet, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
+        """
+        Build OEMOF model for a `Fleet`.
+
+        x denotes the flow measurement point in results
+        xc denotes ac or dc, depending on the parameter 'system'
+
+        bus_connected        name_bus
+          |<----name_outflow--x-|---(ElectricFleetUnit Instance)
+          |                     |
+          |-x----name_inflow--->|---(ElectricFleetUnit Instance)
+          |                     |
+          |                     |   (CombustionVehicle Instance)
+        """
+
         bus = solph.Bus()
 
         inflow = solph.components.Converter(
             inputs={
-                block.bus_connected: solph.Flow(
+                bus_connected: solph.Flow(
                     variable_costs=block.evaluators["s2f"].opt.spec_ep_operation[self._horizon.dti],
                     nominal_capacity=block.pwr_lim_s2f,
                     # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
@@ -537,7 +573,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                     # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
                 )
             },
-            outputs={block.bus_connected: solph.Flow(variable_costs=self._cost_eps)},
+            outputs={bus_connected: solph.Flow(variable_costs=self._cost_eps)},
             conversion_factors={block.bus_connected: 1},
         )
         es.add(block, "bus", bus)
@@ -560,6 +596,23 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     def visit_electric_fleet_unit(
         self, block: blocks.ElectricFleetUnit, es: WrappedEnergySystem, bus_connected: solph.Bus
     ) -> None:
+        """
+        Build OEMOF model for an `ElectricFleetUnit`.
+
+        parent.parent_bus     name_bus
+            |<--x--name_fleet---|<-x->name_storage (handled in `_visit_storage_block`)
+            |                   |
+            |---x--fleet_name-->|-->name_snk (handled in `_visit_storage_block`)
+            |                   |
+            |                   |<--name_ext_ac-x- (external charging AC)
+            |                   |
+            |                   |<--name_ext_dc-x- (external charging DC)
+
+        :param block: The `ElectricFleetUnit` block to process.
+        :param es: The energy system to which the components of the block are added.
+        :param bus_connected: The `Fleet` bus, the `ElectricFleetUnit` should be attached to.
+        """
+
         params = {
             "inflow_nominal_capacity": block.pwr_chg_max,
             "outflow_nominal_capacity": block.pwr_dis_max * block.eff["dis_int"],
@@ -571,10 +624,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             "invest_relation_output_capacity": None,
             "storage_balanced": False,
         }
-        self._visit_storage_block(block, es, bus_connected, params)
-
-        bus_internal = es.get_component(block, "bus")
-        assert bus_internal is not None
+        bus_internal = self._visit_storage_block(block, es, bus_connected, params)
 
         snk = solph.components.Sink(
             inputs={bus_internal: solph.Flow(nominal_capacity=1, fix=block.log.loc[self._horizon.dti, "consumption"])}
@@ -619,17 +669,31 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         )
 
         es.add(block, "snk", snk)
+
+        # External AC charging.
         es.add(block, "bus_ext_ac", bus_ext_ac)
         es.add(block, "src_ext_ac", src_ext_ac)
         es.add(block, "conv_ext_ac", conv_ext_ac)
 
+        # External DC charging.
         es.add(block, "bus_ext_dc", bus_ext_dc)
         es.add(block, "src_ext_dc", src_ext_dc)
         es.add(block, "conv_ext_dc", conv_ext_dc)
 
     def _visit_storage_block(
         self, block: blocks.StorageBlock, es: WrappedEnergySystem, bus_connected: solph.Bus, params: dict[str, Any]
-    ) -> None:
+    ) -> solph.Bus:
+        """
+        Generic handler to build the OEMOF models for `StorageBlock`s.
+
+        :param block: The `StorageBlock`.
+        :param es: The energy system to which the components are added.
+        :param bus_connected: The parent bus, to which the `StorageBlock` is connected.
+        :param params: Parameters for the storage.
+
+        :returns: The internal bus of the storage block, so callers can attach custom components to the storage.
+        """
+
         bus_internal = solph.Bus()
 
         inflow = solph.components.Converter(
@@ -695,3 +759,5 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             capex_spec=block.evaluators["storage"].capex.spec,
             invest_type="storage",
         )
+
+        return bus_internal

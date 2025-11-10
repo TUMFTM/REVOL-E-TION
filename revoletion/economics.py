@@ -12,7 +12,8 @@ import pandas as pd
 from . import utils
 
 if TYPE_CHECKING:
-    from . import blocks, simulation
+    from . import blocks
+    from . import scenario as scn
 
 
 class EcoTools:
@@ -93,7 +94,7 @@ class EcoTools:
 
     @staticmethod
     def transform_scalar_var(
-        value: str | float | pd.Series, scenario: simulation.Scenario, block: Optional[blocks.BaseBlock] = None
+        value: str | float | pd.Series, scenario: scn.Scenario, block: Optional[blocks.BaseBlock] = None
     ):
         """
         Transform a value holding either the filename of a csv file containing a timeseries or a scalar
@@ -815,7 +816,7 @@ class ValueAggregator(CostAggregator):
 @dataclass
 class EcoPOI(ABC):
     name: str
-    scenario: simulation.Scenario
+    scenario: scn.Scenario
     block: Optional[blocks.BaseBlock] = None
 
     # Initialize in __post_init__()

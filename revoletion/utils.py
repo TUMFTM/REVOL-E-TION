@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 
 import geopy
@@ -116,6 +117,42 @@ class Location:
             return None
 
 
+@dataclass
+class TimeSettings:
+    start: pd.Timestamp
+    end: pd.Timestamp
+    duration: pd.Timedelta
+
+    _timestep: pd.Timedelta
+
+    @classmethod
+    def create_from_start_timestamp(
+        cls,
+        start: pd.Timestamp,
+        timestep: pd.Timedelta,
+        end: pd.Timestamp | None = None,
+        duration: pd.Timedelta | None = None,
+    ) -> Self:
+        if (end is None and duration is None) or (end is not None and duration is not None):
+            raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
+        elif duration is None:
+            duration = (end - start).floor(timestep)
+        elif end is None:
+            duration = duration.floor(timestep)
+        # always recalculate end to ensure consistency
+        end = start + duration
+
+        return cls(start=start, end=end, duration=duration, _timestep=timestep)
+
+    @cached_property
+    def dti(self) -> pd.DatetimeIndex:
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left")
+
+    @cached_property
+    def dti_extd(self) -> pd.DatetimeIndex:
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both")
+
+
 def infer_dtype(value):
     """
     infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
@@ -193,7 +230,7 @@ def import_module_from_path(module_name, file_path):
 
 
 def read_timeseries_csv(
-    path_input_file: str | Path, scenario: "simulation.Scenario", multiheader: bool = False, resampling: bool = True
+    path_input_file: str | Path, scenario: "scn.Scenario", multiheader: bool = False, resampling: bool = True
 ):
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex

@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 
 import revoletion.example
-from revoletion import run, simulation, utils
+from revoletion import run, utils
+from revoletion import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
 _POWER_TOLERANCE = 0.1
@@ -19,11 +20,11 @@ def test_process_example_scenarios(scenario_name: str):
     with importlib.resources.as_file(example_scenarios_traversable) as example_scenarios_path:
         with tempfile.TemporaryDirectory() as tempdir_raw:
             tempdir_path = Path(tempdir_raw)
-            simulation_paths = simulation.SimulationPaths.from_plain_paths(
+            simulation_paths = scn.SimulationPaths.from_plain_paths(
                 scenario=example_scenarios_path,
                 output=tempdir_path,
             )
-            simulation_settings = simulation.SimulationSettings(solver="cbc")
+            simulation_settings = scn.SimulationSettings(solver="cbc")
             scenario_parameters = utils.read_scenario_from_file(simulation_paths.scenario)
 
             single_scenario_parameters = scenario_parameters[scenario_name]
