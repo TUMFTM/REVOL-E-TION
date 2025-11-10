@@ -416,7 +416,7 @@ class ScenarioWorker:
             scenario.process_results()
 
         run_time.stop()
-        self._logger.info(f"Scenario finished - runtime {run_time}")
+        self._logger.info(f"Scenario finished - runtime {run_time.duration:.2f}s")
 
         if plot:
             scenario.generate_and_save_plot()
