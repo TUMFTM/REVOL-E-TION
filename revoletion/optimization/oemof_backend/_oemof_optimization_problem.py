@@ -144,7 +144,7 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
 
     @singledispatchmethod
     @override
-    def get_capex(self, block: blocks.ElectricBlock) -> dict[str, float]:
+    def get_expansion(self, block: blocks.ElectricBlock) -> dict[str, float]:
         """
         Returns capital expenditures for a block.
 
@@ -152,26 +152,26 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         """
         return {}
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.SystemCore) -> dict[str, float]:
         return {
-            "acdc": self._get_capex_for_components(block, ("ac", "acdc")),
-            "dcac": self._get_capex_for_components(block, ("dc", "dcac")),
+            "acdc": self._get_expansion_for_components(block, ("ac", "acdc")),
+            "dcac": self._get_expansion_for_components(block, ("dc", "dcac")),
         }
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.StorageBlock) -> dict[str, float]:
-        return {"storage": self._get_capex_for_components(block, ("storage", None))}
+        return {"storage": self._get_expansion_for_components(block, ("storage", None))}
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.RenewableSource) -> dict[str, float]:
-        return {"block": self._get_capex_for_components(block, ("src", "bus"))}
+        return {"block": self._get_expansion_for_components(block, ("src", "bus"))}
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.ControllableSource) -> dict[str, float]:
-        return {"block": self._get_capex_for_components(block, ("src", "bus-connected"))}
+        return {"block": self._get_expansion_for_components(block, ("src", "bus-connected"))}
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.GridConnection) -> dict[str, float]:
         grid_components = self._components.get_components(block)
 
@@ -188,11 +188,11 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         s2g = self._raw_results[(inflow_components[0], bus_component)]["scalars"]["invest"]
         return {"g2s": g2s, "s2g": s2g}
 
-    @get_capex.register
+    @get_expansion.register
     def _(self, block: blocks.StorageBlock) -> dict[str, float]:
-        return {"storage": self._get_capex_for_components(block, ("storage", None))}
+        return {"storage": self._get_expansion_for_components(block, ("storage", None))}
 
-    def _get_capex_for_components(self, block: blocks.BaseBlock, components: tuple[str | None, ...]) -> float:
+    def _get_expansion_for_components(self, block: blocks.BaseBlock, components: tuple[str | None, ...]) -> float:
         remapped_components_key = tuple(
             self._components.get_component(block, component) if component else None for component in components
         )

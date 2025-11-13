@@ -79,9 +79,9 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
             return
 
         # Investments are directly written back to each block.
-        investments = self._optimization_result.get_capex(block)
-        for size_name, investment in investments.items():
-            block.sizes[size_name].expansion = investment
+        expansions = self._optimization_result.get_expansion(block)
+        for size_name, expansion in expansions.items():
+            block.sizes[size_name].expansion = expansion
 
         # `GridConnection` needs some special power flow extraction to handle peak-periods.
         if isinstance(block, blocks.GridConnection):
