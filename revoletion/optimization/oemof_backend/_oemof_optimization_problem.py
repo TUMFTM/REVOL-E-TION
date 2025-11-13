@@ -239,7 +239,7 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
         raise NotImplementedError()
 
     @override
-    def set_output_power(self, block: blocks.ElectricBlock, power: float, dti: pd.DatetimeIndex) -> None:
+    def set_output_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
         raise NotImplementedError()
 
     @override
