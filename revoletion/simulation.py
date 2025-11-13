@@ -175,24 +175,24 @@ class OptimizationHorizon:
         """
         solver = optimization.Solver(self.scenario.settings.solver)
 
-        optimization_model_config = optimization.OptimizationModelConfig(
+        optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
             debug=self.scenario.settings.debugmode,
             solver=solver,
             invest=True,
         )
 
-        optimization_model = optimization.OemofOptimizationModel.from_revoletion_scenario(
+        optimization_problem = optimization.OemofOptimizationProblem.from_revoletion_scenario(
             scenario=self.scenario,
             horizon=self.ph,
             logger=self._logger,
-            config=optimization_model_config,
+            config=optimization_problem_config,
         )
 
-        status, optimization_result = optimization_model.optimize()
+        status, optimization_result = optimization_problem.solve()
         if status != optimization.OptimizationStatus.OPTIMAL:
             raise OptimizationError(
-                f"Scenario failed: {status.value}. Enable debug mode for more information.",
+                f"Scenario failed: {status}. Enable debug mode for more information.",
                 optimization_horizon_idx=self.index,
                 optimization_horizon_num=self.scenario.nhorizons,
             )

@@ -1,12 +1,18 @@
-from .base import OptimizationModel, OptimizationModelConfig, OptimizationResult, OptimizationStatus, Solver
-from .oemof_backend import OemofOptimizationModel, OemofOptimizationResult
+from .oemof_backend import OemofOptimizationProblem, OemofOptimizationResult
+from .optimization_problem import (
+    OptimizationProblem,
+    OptimizationProblemConfig,
+    OptimizationResult,
+    OptimizationStatus,
+    Solver,
+)
 
 __all__ = [
-    "OptimizationModel",
+    "OptimizationProblem",
     "OptimizationStatus",
     "OptimizationResult",
-    "OptimizationModelConfig",
+    "OptimizationProblemConfig",
     "Solver",
-    "OemofOptimizationModel",
+    "OemofOptimizationProblem",
     "OemofOptimizationResult",
 ]

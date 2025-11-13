@@ -8,14 +8,14 @@ import pandas as pd
 import pyomo.environ as po
 from typing_extensions import Self, override
 
-import revoletion.optimization.base as base
+import revoletion.optimization.optimization_problem as optimization_problem
 from revoletion import blocks, utils
 from revoletion import scenario as scn
 
 from ._oemof_block_visitor import OemofBlockVisitor, WrappedEnergySystem
 
 
-class OemofOptimizationResult(base.OptimizationResult):
+class OemofOptimizationResult(optimization_problem.OptimizationResult):
     _components: WrappedEnergySystem
     _raw_results: dict[Any, Any]
     _objective: float
@@ -142,10 +142,6 @@ class OemofOptimizationResult(base.OptimizationResult):
         ][dti]
         return energy
 
-    @override
-    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float:
-        raise NotImplementedError("Opex is currently not available for oemof optimization result.")
-
     @singledispatchmethod
     @override
     def get_capex(self, block: blocks.ElectricBlock) -> dict[str, float]:
@@ -207,16 +203,16 @@ class OemofOptimizationResult(base.OptimizationResult):
         return self._objective
 
 
-_VALID_oemof_SOLVERS = {base.Solver.CBC, base.Solver.GUROBI}
+_VALID_OEMOF_SOLVERS = {optimization_problem.Solver.CBC, optimization_problem.Solver.GUROBI}
 
 
-class OemofOptimizationModel(base.OptimizationModel):
+class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
     def __init__(
         self,
         energy_system: WrappedEnergySystem,
         scenario: scn.Scenario,
         logger: logging.Logger,
-        config: base.OptimizationModelConfig | None = None,
+        config: optimization_problem.OptimizationProblemConfig | None = None,
     ) -> None:
         super().__init__(logger, config)
         self._energy_system = energy_system
@@ -229,10 +225,10 @@ class OemofOptimizationModel(base.OptimizationModel):
         scenario: scn.Scenario,
         horizon: utils.TimeSettings,
         logger: logging.Logger,
-        config: base.OptimizationModelConfig | None = None,
+        config: optimization_problem.OptimizationProblemConfig | None = None,
     ) -> Self:
         if config is None:
-            config = base.OptimizationModelConfig()
+            config = optimization_problem.OptimizationProblemConfig()
 
         energy_system = OemofBlockVisitor.create_oemof_energy_system(scenario, horizon, config.cost_eps)
 
@@ -247,22 +243,8 @@ class OemofOptimizationModel(base.OptimizationModel):
         raise NotImplementedError()
 
     @override
-    def optimize(
-        self, dti: pd.DatetimeIndex | None = None
-    ) -> tuple[base.OptimizationStatus, base.OptimizationResult | None]:
-        if dti is None:
-            dti = self._energy_system.es.timeindex
-
-        return self._do_optimize(dti)
-
-    @override
-    def optimize_time_step(
-        self, time_step: pd.DatetimeIndex
-    ) -> tuple[base.OptimizationStatus, base.OptimizationResult | None]:
-        raise NotImplementedError("Optimizing a single time step is currently not supported with oemof")
-
-    def _do_optimize(self, dti: pd.DatetimeIndex) -> tuple[base.OptimizationStatus, OemofOptimizationResult | None]:
-        if self._config.solver not in _VALID_oemof_SOLVERS:
+    def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
+        if self._config.solver not in _VALID_OEMOF_SOLVERS:
             raise ValueError(
                 f"Failed to optimize oemof energy system: solver {self._config.solver.name} is not supported for oemof"
             )
@@ -278,8 +260,11 @@ class OemofOptimizationModel(base.OptimizationModel):
             allow_nonoptimal=True,
         )
 
+        # The optimization result has two status codes: one for the solver and one for the termination condition.
+        # We only care whether the problem was solved or not, so it is reduced down to a single `OptimizationStatus`.
         status = self._get_optimization_status_from_optimization_results(results)
-        if status != base.OptimizationStatus.OPTIMAL:
+        if status != optimization_problem.OptimizationStatus.OPTIMAL:
+            # No optimization result available, so no further post-processing should be applied.
             return status, None
 
         if self._logger.isEnabledFor(logging.DEBUG):
@@ -291,6 +276,12 @@ class OemofOptimizationModel(base.OptimizationModel):
         return status, OemofOptimizationResult(
             components=self._energy_system, raw_optimization_results=results_dict, objective=objective
         )
+
+    @override
+    def solve_time_step(
+        self, time_step: pd.DatetimeIndex
+    ) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
+        raise NotImplementedError("Optimizing a single time step is currently not supported with oemof")
 
     def _create_model(self) -> solph.Model:
         self._logger.info("Building optimization problem from oemof model")
@@ -304,16 +295,16 @@ class OemofOptimizationModel(base.OptimizationModel):
 
         return model  # type: ignore
 
-    def _get_optimization_status_from_optimization_results(self, results) -> base.OptimizationStatus:
+    def _get_optimization_status_from_optimization_results(self, results) -> optimization_problem.OptimizationStatus:
         if (results.solver.status == po.SolverStatus.ok) and (
             results.solver.termination_condition == po.TerminationCondition.optimal
         ):
-            return base.OptimizationStatus.OPTIMAL
+            return optimization_problem.OptimizationStatus.OPTIMAL
         elif results.solver.termination_condition == po.TerminationCondition.infeasible:
-            return base.OptimizationStatus.INFEASIBLE
+            return optimization_problem.OptimizationStatus.INFEASIBLE
         elif results.solver.termination_condition == po.TerminationCondition.unbounded:
-            return base.OptimizationStatus.UNBOUNDED
+            return optimization_problem.OptimizationStatus.UNBOUNDED
         elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
-            return base.OptimizationStatus.INFEASIBLE_OR_UNBOUNDED
+            return optimization_problem.OptimizationStatus.INFEASIBLE_OR_UNBOUNDED
         else:
-            return base.OptimizationStatus.ERROR
+            return optimization_problem.OptimizationStatus.ERROR
