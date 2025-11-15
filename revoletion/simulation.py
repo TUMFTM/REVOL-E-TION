@@ -2,6 +2,7 @@
 
 import logging
 import types
+from dataclasses import dataclass
 
 from typing_extensions import override
 
@@ -131,15 +132,27 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
         block.aging_model.age(comp_horizon)
 
 
+@dataclass
+class SimulationSettings:
+    solver: optimization.Solver = optimization.Solver.GUROBI
+    backend: optimization.OptimizationBackend = optimization.OptimizationBackend.OEMOF
+    n_processes: int = 1
+    largescalemode: bool = False
+    debugmode: bool = False
+    rerun_infeasible: bool = True
+    key_solcast_api: str | None = None
+
+
 class OptimizationHorizon:
     index: int
     scenario: scn.Scenario
 
     _logger: logging.Logger
 
-    def __init__(self, index: int, scenario: scn.Scenario, logger: logging.Logger):
+    def __init__(self, index: int, scenario: scn.Scenario, settings: SimulationSettings, logger: logging.Logger):
         self.index = index
         self.scenario = scenario
+        self._settings = settings
 
         self._logger = logger
 
@@ -173,16 +186,16 @@ class OptimizationHorizon:
         """
         Perform the concrete optimization across an optimization horizon.
         """
-        solver = optimization.Solver(self.scenario.settings.solver)
 
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
-            debug=self.scenario.settings.debugmode,
-            solver=solver,
+            debug=self._settings.debugmode,
+            solver=self._settings.solver,
             invest=True,
         )
 
-        optimization_problem = optimization.OemofOptimizationProblem.from_revoletion_scenario(
+        optimization_problem = optimization.create_optimization_problem(
+            backend=self._settings.backend,
             scenario=self.scenario,
             horizon=self.ph,
             logger=self._logger,
@@ -190,6 +203,7 @@ class OptimizationHorizon:
         )
 
         status, optimization_result = optimization_problem.solve()
+
         if status != optimization.OptimizationStatus.OPTIMAL:
             raise OptimizationError(
                 f"Scenario failed: {status}. Enable debug mode for more information.",

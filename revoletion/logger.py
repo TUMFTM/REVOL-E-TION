@@ -28,6 +28,12 @@ def _configure_third_party_loggers() -> None:
     # deactivate logging messages from gurobipy as it is not part of REVOL-E-TION's dependencies
     logging.getLogger("gurobipy").disabled = True
 
+    pypsa_logger = logging.getLogger("pypsa")
+    pypsa_logger.setLevel(logging.ERROR)
+
+    linopy_logger = logging.getLogger("linopy")
+    linopy_logger.setLevel(logging.ERROR)
+
 
 def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     """

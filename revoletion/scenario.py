@@ -208,12 +208,8 @@ class SimulationPaths:
 
 
 @dataclass
-class SimulationSettings:
-    solver: str = "gurobi"
-    n_processes: int = 1
+class ScenarioSettings:
     largescalemode: bool = False
-    debugmode: bool = False
-    rerun_infeasible: bool = True
     key_solcast_api: str | None = None
 
 
@@ -221,7 +217,7 @@ class Scenario:
     def __init__(
         self,
         paths: SimulationPaths,
-        settings: SimulationSettings,
+        settings: ScenarioSettings,
         name: str,  # will be set to the stem of the scenario filename for single scenario execution
         parameters: pd.Series,
         location: utils.Location,
@@ -467,7 +463,7 @@ class Scenario:
     def create_from_parameters(
         cls,
         paths: SimulationPaths,
-        settings: SimulationSettings,
+        settings: ScenarioSettings,
         name: str,
         parameters: pd.Series,
         logger: logging.Logger | None = None,
@@ -486,7 +482,7 @@ class Scenario:
         )
 
     @classmethod
-    def create_from_file(cls, paths: SimulationPaths, settings: SimulationSettings) -> Self:
+    def create_from_file(cls, paths: SimulationPaths, settings: ScenarioSettings) -> Self:
         """
         Create a new scenario from a scenario file.
 

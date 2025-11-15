@@ -3,6 +3,7 @@ import enum
 import logging
 from dataclasses import dataclass
 from functools import singledispatchmethod
+from typing import TypedDict
 
 import pandas as pd
 from typing_extensions import Self
@@ -30,6 +31,9 @@ class OptimizationStatus(enum.Enum):
     ERROR = enum.auto()
     """Optimizer encountered a generic error, e.g., requested solver is not available."""
 
+    OTHER = enum.auto()
+    """Optimizer returned with an unkown status."""
+
 
 class OptimizationResult(abc.ABC):
     @singledispatchmethod
@@ -38,6 +42,10 @@ class OptimizationResult(abc.ABC):
 
     @abc.abstractmethod
     def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float | pd.Series: ...
+
+    @singledispatchmethod
+    @abc.abstractmethod
+    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float: ...
 
     @singledispatchmethod
     @abc.abstractmethod
@@ -50,6 +58,10 @@ class OptimizationResult(abc.ABC):
 class Solver(enum.Enum):
     CBC = "cbc"
     GUROBI = "gurobi"
+    HIGHS = "highs"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass

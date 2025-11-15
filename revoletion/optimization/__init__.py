@@ -1,4 +1,5 @@
 from .oemof_backend import OemofOptimizationProblem, OemofOptimizationResult
+from .optimization_backend import OptimizationBackend, create_optimization_problem
 from .optimization_problem import (
     OptimizationProblem,
     OptimizationProblemConfig,
@@ -6,6 +7,7 @@ from .optimization_problem import (
     OptimizationStatus,
     Solver,
 )
+from .pypsa_backend import PypsaOptimizationProblem, PypsaOptimizationResult
 
 __all__ = [
     "OptimizationProblem",
@@ -13,6 +15,10 @@ __all__ = [
     "OptimizationResult",
     "OptimizationProblemConfig",
     "Solver",
+    "OptimizationBackend",
+    "create_optimization_problem",
     "OemofOptimizationProblem",
     "OemofOptimizationResult",
+    "PypsaOptimizationProblem",
+    "PypsaOptimizationResult",
 ]

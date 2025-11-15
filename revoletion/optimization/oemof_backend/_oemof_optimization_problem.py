@@ -144,6 +144,11 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
 
     @singledispatchmethod
     @override
+    def get_opex(self, block: blocks.ElectricBlock) -> float:
+        raise NotImplementedError("Operational expenditures are currently not implemented for oemof.")
+
+    @singledispatchmethod
+    @override
     def get_expansion(self, block: blocks.ElectricBlock) -> dict[str, float]:
         """
         Returns capital expenditures for a block.
@@ -203,7 +208,7 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         return self._objective
 
 
-_VALID_OEMOF_SOLVERS = {optimization_problem.Solver.CBC, optimization_problem.Solver.GUROBI}
+VALID_OEMOF_SOLVERS = {optimization_problem.Solver.CBC, optimization_problem.Solver.GUROBI}
 
 
 class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
@@ -244,7 +249,7 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
 
     @override
     def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
-        if self._config.solver not in _VALID_OEMOF_SOLVERS:
+        if self._config.solver not in VALID_OEMOF_SOLVERS:
             raise ValueError(
                 f"Failed to optimize oemof energy system: solver {self._config.solver.name} is not supported for oemof"
             )

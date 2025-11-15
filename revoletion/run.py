@@ -62,10 +62,10 @@ class SimulationRun:
     def __init__(
         self,
         paths: scn.SimulationPaths,
-        settings: scn.SimulationSettings | None = None,
+        settings: simulation.SimulationSettings | None = None,
     ):
         self.paths = paths
-        self.settings = settings or scn.SimulationSettings()
+        self.settings = settings or simulation.SimulationSettings()
 
         self.runtime = utils.RunTime()
 
@@ -335,7 +335,7 @@ class OptimizationWorker:
     def __init__(
         self,
         paths: scn.SimulationPaths,
-        settings: scn.SimulationSettings,
+        settings: simulation.SimulationSettings,
         name: str,
         parameters: pd.Series,
         logger: logging.Logger,
@@ -374,9 +374,13 @@ class OptimizationWorker:
             _ = self._lock.acquire()
             time.sleep(2)
 
+        scenario_settings = scn.ScenarioSettings(
+            largescalemode=self._settings.largescalemode,
+            key_solcast_api=self._settings.key_solcast_api,
+        )
         try:
             scenario = scn.Scenario.create_from_parameters(
-                self._paths, self._settings, self._name, self._parameters, self._logger
+                self._paths, scenario_settings, self._name, self._parameters, self._logger
             )
         finally:
             # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
@@ -392,7 +396,7 @@ class OptimizationWorker:
                 logging_ctx_str = f"Horizon {horizon_index + 1} of {n_horizons} -"
                 logger = logger_fcs.ContextLoggerAdapter(self._logger, {"context_str": logging_ctx_str})
                 optimization_horizon = simulation.OptimizationHorizon(
-                    index=horizon_index, scenario=scenario, logger=logger
+                    index=horizon_index, scenario=scenario, settings=self._settings, logger=logger
                 )
 
                 optimization_horizon.execute()
