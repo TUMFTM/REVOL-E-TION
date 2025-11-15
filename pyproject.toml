@@ -32,6 +32,7 @@ dependencies = [
     "windpowerlib",
     "pydantic",
     "pypsa>=1.0.3",
+    "polars[rtcompat]"
 ]
 
 [dependency-groups]
