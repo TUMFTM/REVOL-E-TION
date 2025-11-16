@@ -9,15 +9,6 @@ from .oemof_backend import VALID_OEMOF_SOLVERS, OemofOptimizationProblem
 from .pypsa_backend import VALID_PYPSA_SOLVERS, PypsaOptimizationProblem
 
 
-class Solver(enum.Enum):
-    CBC = "cbc"
-    GUROBI = "gurobi"
-    HIGHS = "highs"
-
-    def __str__(self) -> str:
-        return self.value
-
-
 class OptimizationBackend(enum.Enum):
     OEMOF = "oemof"
     PYPSA = "pypsa"

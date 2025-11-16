@@ -1,3 +1,5 @@
+"""Module which handles the construction of a PyPSA network from a REVOL-E-TION block structure."""
+
 import logging
 
 import numpy as np
@@ -43,7 +45,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
     @override
     def visit_block(self, block: blocks.BaseBlock, *args, **kwargs) -> None:
-        # Inject the connected bus.
+        # All top-level blocks except the system core must be connected to the system cores AC or DC bus.
+        # This injects the correct bus into the parameters for each block construction method.
         if hasattr(block, "system"):
             bus_connected_label = self._CORE_AC_BUS_NAME if block.system == "ac" else self._CORE_DC_BUS_NAME
             kwargs["bus_connected"] = bus_connected_label
@@ -69,8 +72,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
     def visit_system_core(self, block: blocks.SystemCore, builder: PyPSANetworkBuilder) -> None:
         # Define the core buses for AC and DC. All other blocks most directly or indirectly connect to one of those buses.
-        builder.add_bus(name=self._CORE_AC_BUS_NAME, carrier="AC")
-        builder.add_bus(name=self._CORE_DC_BUS_NAME, carrier="DC")
+        builder.add_bus(name=self._CORE_AC_BUS_NAME, carrier=self._AC_CARRIER)
+        builder.add_bus(name=self._CORE_DC_BUS_NAME, carrier=self._DC_CARRIER)
 
         # The AC/DC converter is modeled as a lossy link between the AC and DC bus.
         builder.add_link(
@@ -124,6 +127,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             marginal_cost=self._cost_eps,
             capital_cost=block.evaluators["s2g"].opt.spec_ep_invest,
         )
+
+        # TODO: add peakshaving.
 
         # Link for energy from the site to the grid.
         builder.add_link(

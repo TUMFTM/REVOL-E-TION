@@ -18,6 +18,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PypsaOptimizationResult(optimization_problem.OptimizationResult):
+    """
+    Result of optimizing a `PyPSAOptimizationProblem`.
+
+    Since PyPSA saves the results directly on the network, this result object is basically just a wrapper around a PyPSA network.
+    """
+
     def __init__(self, net: pypsa.Network) -> None:
         super().__init__()
         self._net = net
@@ -113,11 +119,17 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return power_flows
 
     def _get_power_flow_link(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str) -> pd.Series:
+        """
+        Helper method to determine the power flow of a PyPSA link.
+        """
         normalized_dti = normalize_datetime_index(dti)
         pypsa_link_name = make_pypsa_label(block, label)
         return self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
 
     def _get_power_flow_generator(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str) -> pd.Series:
+        """
+        Helper method to determine the power flow of a PyPSA generator.
+        """
         normalized_dti = normalize_datetime_index(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
         return self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
@@ -300,7 +312,6 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
 VALID_PYPSA_SOLVERS = {
     optimization_problem.Solver.CBC,
-    optimization_problem.Solver.GUROBI,
     optimization_problem.Solver.HIGHS,
 }
 

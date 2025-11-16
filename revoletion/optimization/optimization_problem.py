@@ -3,7 +3,6 @@ import enum
 import logging
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import TypedDict
 
 import pandas as pd
 from typing_extensions import Self
@@ -32,7 +31,7 @@ class OptimizationStatus(enum.Enum):
     """Optimizer encountered a generic error, e.g., requested solver is not available."""
 
     OTHER = enum.auto()
-    """Optimizer returned with an unkown status."""
+    """Optimizer returned an unkown status."""
 
 
 class OptimizationResult(abc.ABC):
