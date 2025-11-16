@@ -39,6 +39,11 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
     def create_pypsa_network(self, block_registry: dict[str, dict[str, blocks.BaseBlock]]) -> pypsa.Network:
         builder = PyPSANetworkBuilder(self._datetime_index)
+        # Register the carriers with PyPSA. While this does not change anything for AC and DC
+        # it makes PyPSA stop complaining.
+        builder.add_carrier(self._AC_CARRIER)
+        builder.add_carrier(self._DC_CARRIER)
+
         for block in block_registry.get("TopLevelBlock", {}).values():
             self.visit_block(block, builder=builder)
         return builder.build()
@@ -84,7 +89,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["acdc"].preexisting,
             p_nom_min=block.sizes["acdc"].preexisting,
-            p_nom_max=block.sizes["acdc"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["acdc"].expansion_max if block.sizes["acdc"].invest else None,
             p_nom_extendable=block.sizes["acdc"].invest,
             efficiency=block.eff["acdc"],
             capital_cost=block.evaluators["acdc"].opt.spec_ep_invest,
@@ -100,7 +106,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["dcac"].preexisting,
             p_nom_min=block.sizes["dcac"].preexisting,
-            p_nom_max=block.sizes["dcac"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["dcac"].expansion_max if block.sizes["dcac"].invest else None,
             p_nom_extendable=block.sizes["dcac"].invest,
             efficiency=block.eff["dcac"],
             capital_cost=block.evaluators["dcac"].opt.spec_ep_invest,
@@ -122,7 +129,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["s2g"].preexisting,
             p_nom_min=block.sizes["s2g"].preexisting,
-            p_nom_max=block.sizes["s2g"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["s2g"].expansion_max if block.sizes["s2g"].invest else None,
             p_nom_extendable=block.sizes["s2g"].invest,
             marginal_cost=self._cost_eps,
             capital_cost=block.evaluators["s2g"].opt.spec_ep_invest,
@@ -139,7 +147,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["g2s"].preexisting,
             p_nom_min=block.sizes["g2s"].preexisting,
-            p_nom_max=block.sizes["g2s"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["g2s"].expansion_max if block.sizes["g2s"].invest else None,
             p_nom_extendable=block.sizes["g2s"].invest,
             marginal_cost=self._cost_eps,
             capital_cost=block.evaluators["g2s"].opt.spec_ep_invest,
@@ -218,7 +227,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["block"].preexisting,
             p_nom_min=block.sizes["block"].preexisting,
-            p_nom_max=block.sizes["block"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["block"].expansion_max if block.sizes["block"].invest else None,
             p_nom_extendable=block.sizes["block"].invest,
             marginal_cost=variable_costs,
             control="PQ",
@@ -236,7 +246,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases p_nom_min is used instead of p_nom.
             p_nom=block.sizes["block"].preexisting,
             p_nom_min=block.sizes["block"].preexisting,
-            p_nom_max=block.sizes["block"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            p_nom_max=block.sizes["block"].expansion_max if block.sizes["block"].invest else None,
             p_nom_extendable=block.sizes["block"].invest,
             marginal_cost=variable_costs,
             control="PQ",
@@ -298,7 +309,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # For investment cases e_nom_min is used instead of p_nom.
             e_nom=battery_capacity_w,
             e_nom_min=battery_capacity_w,
-            e_nom_max=block.sizes["storage"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            e_nom_max=block.sizes["storage"].expansion_max if block.sizes["storage"].invest else None,
             e_initial=battery_energy_initial_w,
             e_nom_extendable=block.sizes["storage"].invest,
             capital_cost=block.evaluators["storage"].opt.spec_ep_invest,
@@ -433,7 +445,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             bus=bus_battery_name,
             e_nom=battery_capacity_wh,
             e_nom_min=battery_capacity_wh,
-            e_nom_max=block.sizes["storage"].expansion_max,
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            e_nom_max=block.sizes["storage"].expansion_max if block.sizes["storage"].invest else None,
             e_nom_extendable=block.sizes["storage"].invest,
             e_initial=battery_e_initial_wh,
             e_min_pu=block.states.loc[self._datetime_index, "soc_min"],

@@ -81,7 +81,6 @@ class WrappedEnergySystem:
         Get the component of a block using its label.
         """
         if label not in self._components[block]:
-            print(self._components[block])
             raise ValueError(
                 f"Cannot get component '{label}' for block '{block.name}': component is not registered for block"
             )

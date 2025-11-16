@@ -168,6 +168,11 @@ class PyPSANetworkBuilder:
                 standing_loss=self._scale_hourly_to_time_step(standing_loss),
             )
 
+    def add_carrier(self, name: str) -> None:
+        _LOGGER.debug(f"Adding carrier '{name}'")
+
+        _ = self._net.add("Carrier", name=name)
+
     def build(self) -> pypsa.Network:
         return self._net
 

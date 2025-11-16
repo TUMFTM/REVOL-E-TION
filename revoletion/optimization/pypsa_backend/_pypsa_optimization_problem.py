@@ -388,8 +388,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
 
-        p_max_pu = min(power_unit, prev_p_max_pu)
-        p_min_pu = max(power_unit - 0.01, prev_p_min_pu)
+        p_max_pu = min(power_unit + 0.1, prev_p_max_pu)
+        p_min_pu = max(power_unit - 0.1, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = p_min_pu
