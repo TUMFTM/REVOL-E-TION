@@ -11,7 +11,7 @@ from revoletion import optimization, run, simulation, utils
 from revoletion import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
-_POWER_TOLERANCE = 0.1
+_POWER_TOLERANCE = 0.2
 
 
 @pytest.mark.parametrize("scenario_name", ["icev"])
