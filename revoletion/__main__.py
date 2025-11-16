@@ -27,6 +27,11 @@ from .simulation import SimulationSettings
 def main():
     parser = argparse.ArgumentParser()
 
+    # Add subparsers to handle subcommands `optimize`.
+    subparsers = parser.add_subparsers(
+        title="subcommands", dest="command", required=True, help="Choose which workflow to run"
+    )
+
     settings_template = SimulationSettings()  # use this to only define default values once in SimulationSettings
 
     def filter_bool(value):
@@ -37,20 +42,25 @@ def main():
         else:
             return value
 
-    parser.add_argument("-scn", "--scenario", type=str, default=None, help="Path to the scenario CSV file")
-    parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
-    parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
-    parser.add_argument(
+    optimize_parser = subparsers.add_parser(
+        name="optimize",
+        help="Run system optimization including investments",
+    )
+
+    optimize_parser.add_argument("-scn", "--scenario", type=str, default=None, help="Path to the scenario CSV file")
+    optimize_parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
+    optimize_parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
+    optimize_parser.add_argument(
         "-msc", "--multiscenario", type=filter_bool, default=True, help="Combine multiple scenarios in a single run."
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-rer",
         "--rerun",
         type=filter_bool,
         default=None,
         help="Directory name of run including failed scenarios which should be rerun",
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-slv",
         "--solver",
         type=Solver,
@@ -58,7 +68,7 @@ def main():
         help="Pyomo compatible solver to be used for the optimization problem.",
         choices=list(Solver),
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-bnd",
         "--backend",
         type=OptimizationBackend,
@@ -66,14 +76,14 @@ def main():
         help="Set the backend with which the optimization problem is modeled.",
         choices=list(OptimizationBackend),
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-np",
         "--n_processes",
         type=int,
         default=settings_template.n_processes,
         help="Number of processes (i.e. cores) to use in parallel operation",
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-ls",
         "--largescalemode",
         type=filter_bool,
@@ -81,26 +91,33 @@ def main():
         help="Omit detailed output data (generated input timeseries, system graphs, "
         "result timeseries, and timeseries plots)",
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-db",
         "--debugmode",
         type=filter_bool,
         default=settings_template.debugmode,
         help="Generate debug output and dump .lp model file for external solving",
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-rin",
         "--rerun_infeasible",
         type=filter_bool,
         default=settings_template.rerun_infeasible,
         help="Rerun infeasible or unbounded scenarios",
     )
-    parser.add_argument(
+    optimize_parser.add_argument(
         "-ksc", "--key_solcast_api", type=str, default=settings_template.key_solcast_api, help="API key for Solcast API"
     )
 
     args = parser.parse_args()
 
+    if args.command == "optimize":
+        _optimize_cmd(args)
+    else:
+        parser.error(f"Invalid subcommand: {args.command}")
+
+
+def _optimize_cmd(args: argparse.Namespace) -> None:
     # check boolean arguments
     for arg_name in ["multiscenario", "largescalemode", "debugmode", "rerun_infeasible"]:
         arg = getattr(args, arg_name)
