@@ -86,9 +86,8 @@ class PyPSANetworkBuilder:
         name: str,
         bus: str,
         p_set: _OptTimeSeriesArg = None,
-        p_nom_extendable: bool = False,
     ) -> None:
-        _LOGGER.debug(f"Adding load '{name}' to '{bus}': invest={p_nom_extendable}")
+        _LOGGER.debug(f"Adding load '{name}' to '{bus}'")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -97,7 +96,6 @@ class PyPSANetworkBuilder:
                 name=name,
                 bus=bus,
                 p_set=self._normalize_optional_timeseries_input(p_set),
-                p_nom_extendable=p_nom_extendable,
             )
 
     def add_generator(
