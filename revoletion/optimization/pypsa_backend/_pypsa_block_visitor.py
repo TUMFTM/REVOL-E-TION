@@ -416,8 +416,11 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
         battery_soc_initial_percent = block.states.loc[self._datetime_index, "soc"].median()
         battery_capacity_wh = block.sizes["storage"].preexisting
-        battery_e_initial_wh = battery_capacity_wh * battery_soc_initial_percent
-
+        battery_e_initial_wh = (
+            battery_capacity_wh * battery_soc_initial_percent
+            if battery_soc_initial_percent == np.nan
+            else battery_capacity_wh
+        )
         # In oemof the storage has a dedicated inflow and outflow efficiency. By default
         # PyPSA does not support this, so additional links are required.
         bus_battery_name = make_pypsa_label(block, "battery-bus")
@@ -430,6 +433,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             efficiency=np.sqrt(
                 block.eff["storage_roundtrip"],
             ),
+            # Stop PyPSA from creating circular flows.
+            marginal_cost=self._cost_eps,
         )
         builder.add_link(
             name=make_pypsa_label(block, "battery-int-dis-link"),
@@ -439,6 +444,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             efficiency=np.sqrt(
                 block.eff["storage_roundtrip"],
             ),
+            # Stop PyPSA from creating circular flows.
+            marginal_cost=self._cost_eps,
         )
         builder.add_store(
             name=make_pypsa_label(block, "battery-store"),

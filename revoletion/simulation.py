@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import logging
+import pathlib
+import tempfile
 import types
 from dataclasses import dataclass
 
 from typing_extensions import override
 
-from . import blocks, optimization, utils
+from . import blocks, optimization, rl, utils
 from . import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,19 +36,52 @@ class OptimizationError(Exception):
         super().__init__(msg)
 
 
-class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
-    """
-    Process the results of an optimization horizon execution.
-
-    This transforms the results produced by an `OptimizationModel` into flows and investments.
-    The results are written to each block, to expose the data to subsequent optimizations or the final result collection.
-    """
-
+class _ExpansionResultProcessor(blocks.BlockVisitor[None]):
     def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
         self._optimization_result = optimization_result
 
     @classmethod
-    def collect_optimization_results(
+    def collect_expansions(
+        cls,
+        optimization_result: optimization.OptimizationResult,
+        scenario: scn.Scenario,
+        horizon: utils.TimeSettings,
+    ) -> None:
+        """
+        Collect the optimization results and write them back to each individual block.
+
+        :param optimization_result: The optimization results from an `OptimizationHorizon`.
+        :param scenario: The scenario which was optimized.
+        :param horizon: The time horizon of the optimization.
+        """
+        visitor = cls(optimization_result)
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            visitor.visit_block(block, horizon=horizon)
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+        # Always traverse to children even for NonElectricBlock. This is necessary, since
+        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, horizon=horizon)
+
+        # For `NonElectricBlock` no further processing should be done, since they have no power flows
+        # and also no investment option.
+        if not isinstance(block, blocks.ElectricBlock):
+            return
+
+        # Investments are directly written back to each block.
+        expansions = self._optimization_result.get_expansion(block)
+        for size_name, expansion in expansions.items():
+            block.sizes[size_name].expansion = expansion
+
+
+class _BatteryHealthResultProcessor(blocks.BlockVisitor[None]):
+    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
+        self._optimization_result = optimization_result
+
+    @classmethod
+    def collect_health_status(
         cls,
         optimization_result: optimization.OptimizationResult,
         scenario: scn.Scenario,
@@ -76,13 +111,65 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
 
         # For `NonElectricBlock` no further processing should be done, since they have no power flows
         # and also no investment option.
-        if not isinstance(block, blocks.ElectricBlock):
+        if not isinstance(block, blocks.StorageBlock):
             return
 
-        # Investments are directly written back to each block.
-        expansions = self._optimization_result.get_expansion(block)
-        for size_name, expansion in expansions.items():
-            block.sizes[size_name].expansion = expansion
+        self.visit_storage_block(block, horizon, horizon_index)
+
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
+        if not block.aging:
+            block.states.loc[horizon.end, "soh"] = block.states.loc[horizon.start, "soh"]
+            return
+
+        # This is a small hack to make the battery aging model compatible with the new results extraction API.
+        # TODO: decouple the battery aging model from the horizon and remove this hack.
+        comp_horizon = types.SimpleNamespace(ch=horizon, index=horizon_index)
+        block.aging_model.age(comp_horizon)
+
+
+class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
+    """
+    Process the results of an optimization horizon execution.
+
+    This transforms the results produced by an `OptimizationModel` into flows and investments.
+    The results are written to each block, to expose the data to subsequent optimizations or the final result collection.
+    """
+
+    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
+        self._optimization_result = optimization_result
+
+    @classmethod
+    def collect_power_flows(
+        cls,
+        optimization_result: optimization.OptimizationResult,
+        scenario: scn.Scenario,
+        horizon: utils.TimeSettings,
+    ) -> None:
+        """
+        Collect the optimization results and write them back to each individual block.
+
+        :param optimization_result: The optimization results from an `OptimizationHorizon`.
+        :param scenario: The scenario which was optimized.
+        :param horizon: The time horizon of the optimization.
+        :param horizon_index: The index of the optimization horizon.
+        """
+        visitor = cls(optimization_result)
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            # `horizon_index` must be passed down, because the battery aging model currently uses it.
+            # TODO: Ideally, the aging model would be independent of this and the `horizon_index` can be removed.
+            visitor.visit_block(block, horizon=horizon)
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+        # Always traverse to children even for NonElectricBlock. This is necessary, since
+        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, horizon=horizon)
+
+        # For `NonElectricBlock` no further processing should be done, since they have no power flows
+        # and also no investment option.
+        if not isinstance(block, blocks.ElectricBlock):
+            return
 
         # `GridConnection` needs some special power flow extraction to handle peak-periods.
         if isinstance(block, blocks.GridConnection):
@@ -94,7 +181,7 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
             block.flows.loc[horizon.dti, power_flow_name] = power_flow
 
         if isinstance(block, blocks.StorageBlock):
-            self.visit_storage_block(block, horizon, horizon_index)
+            self.visit_storage_block(block, horizon)
 
     def visit_grid_connection(self, block: blocks.GridConnection, horizon: utils.TimeSettings) -> None:
         """
@@ -117,19 +204,11 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
 
         block.peak_periods["power"] = block.peak_periods.apply(get_peak_power, axis=1)
 
-    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
-        stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti_extd)
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings) -> None:
+        # TODO: dti or dti_extd??
+        stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti)
         block.states.loc[horizon.dti_extd, "energy"] = stored_energy
         block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
-
-        if not block.aging:
-            block.states.loc[horizon.end, "soh"] = block.states.loc[horizon.start, "soh"]
-            return
-
-        # This is a small hack to make the battery aging model compatible with the new results extraction API.
-        # TODO: decouple the battery aging model from the horizon and remove this hack.
-        comp_horizon = types.SimpleNamespace(ch=horizon, index=horizon_index)
-        block.aging_model.age(comp_horizon)
 
 
 @dataclass
@@ -221,6 +300,96 @@ class OptimizationHorizon:
         if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
             self.scenario.objective_opt = optimization_result.get_objective()
 
-        _OptimizationHorizonResultProcessor.collect_optimization_results(
+        _BatteryHealthResultProcessor.collect_health_status(
             optimization_result, self.scenario, horizon=self.ch, horizon_index=self.index
         )
+        _PowerFlowResultProcessor.collect_power_flows(
+            optimization_result,
+            self.scenario,
+            horizon=self.ch,
+        )
+        _ExpansionResultProcessor.collect_expansions(
+            optimization_result,
+            self.scenario,
+            horizon=self.ch,
+        )
+
+
+@dataclass
+class DispatchSettings:
+    n_processes: int = 1
+    agent_algorithm: rl.AgentAlgorithm = rl.AgentAlgorithm.PPO
+    debugmode: bool = False
+
+
+class DispatchScenarioFactory:
+    def __init__(self, scenario_path: pathlib.Path) -> None:
+        self._scenario_path = scenario_path
+        self._scenario_name = self._scenario_path.stem
+        self._temp_dirs = []
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self._temp_dir_path = pathlib.Path(self._temp_dir.name)
+
+        self._simulation_paths = scn.SimulationPaths.from_plain_paths(
+            scenario=self._scenario_path,
+            output=self._temp_dir_path,
+        )
+        scenario_parameters = utils.read_scenario_from_file(self._simulation_paths.scenario)
+
+        self._scenario_parameters = scenario_parameters[self._scenario_name]
+
+        self._location = utils.Location.create_from_lat_lon(
+            latitude=self._scenario_parameters.loc["scenario", "latitude"],
+            longitude=self._scenario_parameters.loc["scenario", "longitude"],
+            logger=_LOGGER,
+        )
+
+    def create_scenario(self) -> scn.Scenario:
+        return scn.Scenario(
+            self._simulation_paths,
+            scn.ScenarioSettings(),
+            name=self._scenario_name,
+            parameters=self._scenario_parameters,
+            location=self._location,
+        )
+
+
+class DispatchHorizon:
+    def __init__(
+        self,
+        scenario_factory: DispatchScenarioFactory,
+        settings: DispatchSettings,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self._scenario_factory = scenario_factory
+        self._settings = settings
+        self._logger = logger or _LOGGER
+
+    def execute(self) -> None:
+        agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
+        agent_config.tensorboard_log = "/tmp/revol"
+
+        self._logger.info(f"Training agent '{self._settings.agent_algorithm}' on scenario")
+        agent = rl.train(
+            self._settings.agent_algorithm,
+            self._scenario_factory.create_scenario,
+            n_proc=self._settings.n_processes,
+            config=agent_config,
+            total_timesteps=1000,
+        )
+
+        scenario = self._scenario_factory.create_scenario()
+
+        self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
+        reward, optimization_result = rl.evaluate_with_agent(scenario, agent)
+        self._logger.info(f"Agent got a reward of {reward}")
+
+        _PowerFlowResultProcessor.collect_power_flows(
+            optimization_result,
+            scenario,
+            scenario.times.sim,
+        )
+
+        # scenario.process_results()
+        scenario.generate_and_save_plot()
+        scenario.save_result_summary()

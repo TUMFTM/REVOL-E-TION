@@ -21,21 +21,22 @@ from .environment import (
     ActType,
     ObsType,
     RevoletionEnvironment,
+    RevoletionEnvironmentConfig,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class AgentAlgorithm(enum.Enum):
-    RANDOM = enum.auto()
-    FULL_CHARGING = enum.auto()
-    FULL_DISCHARGE = enum.auto()
-    BASIC = enum.auto()
+    RANDOM = "random"
+    FULL_CHARGING = "full-charge"
+    FULL_DISCHARGE = "full-discharge"
+    BASIC = "basic"
 
-    PPO = enum.auto()
-    TD3 = enum.auto()
-    A2C = enum.auto()
-    SAC = enum.auto()
+    PPO = "ppo"
+    TD3 = "td3"
+    A2C = "a2c"
+    SAC = "sac"
 
     def needs_training(self) -> bool:
         return self not in {
@@ -44,6 +45,9 @@ class AgentAlgorithm(enum.Enum):
             AgentAlgorithm.FULL_DISCHARGE,
             AgentAlgorithm.BASIC,
         }
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass
@@ -94,57 +98,64 @@ class RevoletionSB3Agent(RevoletionAgent):
         return self._sb3_agent.predict(obs, deterministic=deterministic)
 
 
-def _build_rl_environment(scenario_factory: typing.Callable[[], scn.Scenario]) -> gym.Env[ObsType, ActType]:
-    scenario = scenario_factory()
-    opt_config = optimization.OptimizationProblemConfig(
-        cost_eps=scenario.cost_eps, debug=False, solver=optimization.Solver.HIGHS, invest=False
-    )
-    opt_model = optimization.create_optimization_problem(
-        backend=optimization.OptimizationBackend.PYPSA,
-        scenario=scenario,
-        horizon=scenario.times.sim,
-        logger=scenario.logger,
-        config=opt_config,
-    )
+_ScenarioFactoryT = typing.Callable[[], scn.Scenario]
 
-    # TODO: compute number time steps from horizon length and time step size
-    env = RevoletionEnvironment(opt_model, scenario.block_registry, scenario.times.sim.dti, time_steps=96)
+
+def _build_rl_environment(
+    scenario_or_scenario_factory: scn.Scenario | _ScenarioFactoryT, train: bool = True
+) -> gym.Env[ObsType, ActType]:
+    if isinstance(scenario_or_scenario_factory, scn.Scenario):
+        scenario = scenario_or_scenario_factory
+    else:
+        scenario = scenario_or_scenario_factory()
+
+    if scenario.scheduler:
+        scenario.scheduler.calc_ph_schedule(scenario.times.sim)
+    env_config = RevoletionEnvironmentConfig(
+        penalty_factor_charge_cost=0.0,
+        penalty_factor_grid_cost=0.0,
+        episode_length=None if train else len(scenario.times.sim),
+    )
+    env = RevoletionEnvironment(scenario, scenario.times.sim, config=env_config)
     return env
 
 
 def train(
     algorithm: AgentAlgorithm,
-    scenario_factory: typing.Callable[[], scn.Scenario],
+    scenario_factory: _ScenarioFactoryT,
     config: AgentConfig | None = None,
     n_proc: int | None = None,
+    total_timesteps: int = 10000,
 ) -> RevoletionAgent:
     if not algorithm.needs_training():
         return _create_non_trainable_agent(algorithm)
 
-    if n_proc is None:
+    if n_proc is None or n_proc < 2:
         env = _build_rl_environment(scenario_factory)
     else:
         env = SubprocVecEnv([lambda: _build_rl_environment(scenario_factory) for _ in range(n_proc)])
 
     agent = _create_trainable_agent(algorithm, env, config)
 
-    _ = agent.learn(total_timesteps=10000)
+    _ = agent.learn(total_timesteps=total_timesteps)
     return agent
 
 
-def evaluate_with_model(scenario_factory: typing.Callable[[], scn.Scenario], agent: RevoletionAgent) -> float:
-    env = _build_rl_environment(scenario_factory)
+def evaluate_with_agent(
+    scenario: scn.Scenario, agent: RevoletionAgent
+) -> tuple[float, optimization.OptimizationResult]:
+    env = _build_rl_environment(scenario, train=False)
     obs, _ = env.reset()
     total_reward = 0.0
 
-    for _ in range(10):
+    for _ in scenario.times.sim.dti:
         action = agent.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, _ = env.step(action)
         total_reward += reward
         if terminated or truncated:
             break
 
-    return total_reward
+    return total_reward, env.last_optimization_result
 
 
 def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
@@ -228,7 +239,7 @@ class RandomChargingAgent(RevoletionAgent):
 
         charge_pattern = 2 * np.random.sample(num_cars) - 1
         # Random charge pattern masked by car availability
-        return charge_pattern * cars_available
+        return charge_pattern * cars_available[:, 0]
 
 
 class FullChargingAgent(RevoletionAgent):
@@ -238,7 +249,7 @@ class FullChargingAgent(RevoletionAgent):
         num_cars = len(cars_available)
 
         charge_pattern = np.ones(num_cars)
-        return charge_pattern * cars_available
+        return charge_pattern * cars_available[:, 0]
 
 
 class FullDischargingAgent(RevoletionAgent):
@@ -248,7 +259,7 @@ class FullDischargingAgent(RevoletionAgent):
         num_cars = len(cars_available)
 
         charge_pattern = np.zeros(num_cars)
-        return charge_pattern * cars_available
+        return charge_pattern * cars_available[:, 0]
 
 
 class BasicChargingAgent(RevoletionAgent):

@@ -1,4 +1,7 @@
+import contextlib
 import logging
+import os
+import sys
 from functools import singledispatchmethod
 
 import linopy.constants
@@ -15,6 +18,8 @@ from ._pypsa_block_visitor import PyPSABlockVisitor, make_pypsa_label
 from ._utils import normalize_datetime_index
 
 _LOGGER = logging.getLogger(__name__)
+
+_CHARGE_POWER_BUFFER = 0.01
 
 
 class PypsaOptimizationResult(optimization_problem.OptimizationResult):
@@ -199,7 +204,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return power_wh * costs
 
     @get_opex.register
-    def _(self, block: blocks.RenewableSource, dti: pd.DatetimeIndex) -> float:
+    def _(self, block: blocks.StationaryBattery, dti: pd.DatetimeIndex) -> float:
         normalized_dti = normalize_datetime_index(dti)
         pypsa_inflow_link_name = make_pypsa_label(block, "inflow-link")
         pypsa_outflow_link_name = make_pypsa_label(block, "outflow-link")
@@ -357,14 +362,14 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         normalized_dti = normalize_datetime_index(dti)
 
-        charger_in = f"{block.name}-inflow-link"
-        charger_out = f"{block.name}-outflow-link"
+        charger_in = make_pypsa_label(block, "inflow-link")
+        charger_out = make_pypsa_label(block, "outflow-link")
 
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
 
-        p_max_pu = min(power_unit + 0.1, prev_p_max_pu)
-        p_min_pu = max(power_unit - 0.1, prev_p_min_pu)
+        p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
+        p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = p_min_pu
@@ -382,14 +387,14 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         normalized_dti = normalize_datetime_index(dti)
 
-        charger_in = f"{block.name}-inflow-link"
-        charger_out = f"{block.name}-outflow-link"
+        charger_in = make_pypsa_label(block, "inflow-link")
+        charger_out = make_pypsa_label(block, "outflow-link")
 
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
 
-        p_max_pu = min(power_unit + 0.1, prev_p_max_pu)
-        p_min_pu = max(power_unit - 0.1, prev_p_min_pu)
+        p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
+        p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = p_min_pu
@@ -443,16 +448,20 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         # This should reduce the I/O interactions and significantly speed up optimizations for large scenarios.
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
-        solver_status_str, termination_condition_str = self._net.optimize(
-            dti,
-            # By default, PyPSA and linopy would print status information about the optimization problem to the console.
-            # This is quite spammy and therefore it is only enabled for debug mode.
-            log_to_console=self._config.debug,
-            # Do not show a progress indicator, regardless of debug mode.
-            progress=False,
-            io_api=io_api,
-            solver_name=self._config.solver.value,
-        )
+        with suppress_output():
+            solver_status_str, termination_condition_str = self._net.optimize(
+                dti,
+                # By default, PyPSA and linopy would print status information about the optimization problem to the console.
+                # This is quite spammy and therefore it is only enabled for debug mode.
+                log_to_console=self._config.debug,
+                # Do not show a progress indicator, regardless of debug mode.
+                progress=False,
+                io_api=io_api,
+                solver_name=self._config.solver.value,
+                solver_options={
+                    "output_flag": False,
+                },
+            )
         self._logger.debug(
             f"Optimization with solver {self._config.solver.value} finished with status '{solver_status_str}' and termination condition '{termination_condition_str}'"
         )
@@ -496,3 +505,26 @@ def _linopy_status_and_termination_condition_to_optimization_status(
             return optimization_problem.OptimizationStatus.ERROR
         case _, _:
             return optimization_problem.OptimizationStatus.OTHER
+
+
+@contextlib.contextmanager
+def suppress_output():
+    """Redirect both Python and C-level stdout/stderr to os.devnull."""
+    with open(os.devnull, "w") as devnull:
+        # Save original file descriptors
+        old_stdout_fd = os.dup(1)
+        old_stderr_fd = os.dup(2)
+        try:
+            # Flush any pending text
+            sys.stdout.flush()
+            sys.stderr.flush()
+            # Redirect low-level fds to devnull
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            yield
+        finally:
+            # Restore fds
+            os.dup2(old_stdout_fd, 1)
+            os.dup2(old_stderr_fd, 2)
+            os.close(old_stdout_fd)
+            os.close(old_stderr_fd)

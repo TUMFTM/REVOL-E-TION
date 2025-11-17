@@ -35,7 +35,7 @@ def _configure_third_party_loggers() -> None:
     linopy_logger.setLevel(logging.ERROR)
 
 
-def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
+def configure_root_logger(log_file: Path | None = None, debugmode: bool = False) -> None:
     """
     Configure the `revoletion` root logger with its level according to `debugmode` and
     output handlers to console and the file `log_file`.
@@ -58,11 +58,12 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     log_stream_handler.addFilter(OptimizationSuccessfulFilter())
     root_logger.addHandler(log_stream_handler)
 
-    # define root logger handler for file output
-    log_file_handler = logging.FileHandler(log_file)
-    log_file_handler.setFormatter(log_formatter)
-    log_file_handler.addFilter(OptimizationSuccessfulFilter())
-    root_logger.addHandler(log_file_handler)
+    if log_file is not None:
+        # define root logger handler for file output
+        log_file_handler = logging.FileHandler(log_file)
+        log_file_handler.setFormatter(log_formatter)
+        log_file_handler.addFilter(OptimizationSuccessfulFilter())
+        root_logger.addHandler(log_file_handler)
 
     _configure_third_party_loggers()
 
