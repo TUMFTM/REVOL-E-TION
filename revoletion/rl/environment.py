@@ -1,4 +1,3 @@
-import copy
 import logging
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
@@ -58,6 +57,8 @@ OBS_KEY_RENEWABLES_SCHEDULE = "renewables_schedule"
 OBS_KEY_DEMANDS_SCHEDULE = "demands_schedule"
 OBS_KEY_GRID_IMPORT_COSTS = "grid_import_costs"
 OBS_KEY_GRID_EXPORT_COSTS = "grid_export_costs"
+
+INFO_KEY_OPTIMIZATION_RESULT = "optimization_result"
 
 
 class RevoletionEnvironment(gym.Env[ObsType, ActType]):
@@ -343,13 +344,12 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
 
         optimization_status, optimization_result = self._optimization_problem.solve_time_step(self.current_time_step)
+        infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
         if optimization_status != optimization.OptimizationStatus.OPTIMAL or optimization_result is None:
             previous_profit = max(sum(filter(lambda x: x >= 0.0, self._reward_history)), 1.0)
             reward = -self._config.penalty_factor_infeasible * previous_profit
             _LOGGER.debug(f"Optimization failed at {self._step_idx}. Infeasibility penalty: {reward}")
-            return self._get_obs(), reward, False, True, {}
-
-        self.last_optimization_result = optimization_result
+            return self._get_obs(), reward, False, True, infos
 
         obs = self._get_obs(optimization_result)
 
@@ -360,7 +360,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._step_idx += 1
         terminated, truncated = self._is_done()
 
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated, infos
 
     def _normalize_charge_power(self, block: blocks.ElectricFleetUnit, power: float) -> tuple[float, float]:
         """Normalize the charge power to ensure it stays within the bounds of the energy system"""
@@ -403,7 +403,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         normalized_power = np.round(np.clip(power, lower_limit, upper_limit), 1)
 
-        power_diff = round(abs(abs(power) - abs(normalized_power)), 2)
+        power_diff = np.round(abs(abs(power) - abs(normalized_power)), 2)
         return normalized_power, power_diff * self._config.penalty_factor_power_diff
 
     def _compute_reward(self, optimization_result: optimization.OptimizationResult) -> float:

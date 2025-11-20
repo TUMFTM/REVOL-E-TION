@@ -3,18 +3,21 @@ import enum
 import logging
 import typing
 from dataclasses import dataclass
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
 import typing_extensions
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
+from stable_baselines3.common.env_util import make_vec_env
 from typing_extensions import Self
 
 from revoletion import optimization
 from revoletion import scenario as scn
 
 from .environment import (
+    INFO_KEY_OPTIMIZATION_RESULT,
     OBS_KEY_CARS_AVAILABLE,
     OBS_KEY_CARS_REQUIRED_SOCS,
     OBS_KEY_CARS_SOC,
@@ -75,6 +78,13 @@ class AgentConfig:
 
 
 class RevoletionAgent(abc.ABC):
+    def __init__(self, algorithm: AgentAlgorithm) -> None:
+        self._algorithm = algorithm
+
+    @property
+    def algorithm(self) -> AgentAlgorithm:
+        return self._algorithm
+
     def learn(self, total_timesteps: int) -> None:
         pass
 
@@ -87,8 +97,12 @@ class RevoletionAgent(abc.ABC):
 
 
 class RevoletionSB3Agent(RevoletionAgent):
-    def __init__(self, sb3_agent) -> None:
+    def __init__(self, algorithm: AgentAlgorithm, sb3_agent) -> None:
+        super().__init__(algorithm)
         self._sb3_agent = sb3_agent
+
+    def save(self, model_path: Path) -> None:
+        self._sb3_agent.save(model_path)
 
     def learn(self, total_timesteps: int) -> None:
         return self._sb3_agent.learn(total_timesteps)
@@ -131,9 +145,9 @@ def train(
         return _create_non_trainable_agent(algorithm)
 
     if n_proc is None or n_proc < 2:
-        env = _build_rl_environment(scenario_factory)
+        env = make_vec_env(lambda: _build_rl_environment(scenario_factory), n_envs=1)
     else:
-        env = SubprocVecEnv([lambda: _build_rl_environment(scenario_factory) for _ in range(n_proc)])
+        env = make_vec_env(lambda: _build_rl_environment(scenario_factory), n_envs=n_proc, vec_env_cls=SubprocVecEnv)
 
     agent = _create_trainable_agent(algorithm, env, config)
 
@@ -144,89 +158,101 @@ def train(
 def evaluate_with_agent(
     scenario: scn.Scenario, agent: RevoletionAgent
 ) -> tuple[float, optimization.OptimizationResult]:
-    env = _build_rl_environment(scenario, train=False)
-    obs, _ = env.reset()
+    env = make_vec_env(lambda: _build_rl_environment(scenario, train=False), n_envs=1)
+    obs = env.reset()
     total_reward = 0.0
+    infos = {}
 
     for _ in scenario.times.sim.dti:
         action = agent.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, _ = env.step(action)
+        obs, reward, dones, infos = env.step(action)
         total_reward += reward
-        if terminated or truncated:
+        if dones.any():
             break
 
-    return total_reward, env.last_optimization_result
+    return total_reward, infos[0].get(INFO_KEY_OPTIMIZATION_RESULT)
+
+
+def _get_path_for_algorithm(algorithm: AgentAlgorithm, models_path: Path) -> Path:
+    return (models_path / algorithm.value).with_suffix(".zip")
+
+
+def save_agent(agent: RevoletionAgent, models_path: Path) -> None:
+    # Only save trained agents
+    if not agent.algorithm.needs_training():
+        return
+
+    if not isinstance(agent, RevoletionSB3Agent):
+        raise ValueError("Only agents based on stable-baselines3 can be saved")
+
+    save_path = _get_path_for_algorithm(agent.algorithm, models_path)
+    agent.save(save_path)
+    _LOGGER.info(f"Saved agent {agent.algorithm} to {save_path}")
+
+
+def load_agent(algorithm: AgentAlgorithm, models_path: Path) -> RevoletionAgent | None:
+    if not algorithm.needs_training():
+        return _create_non_trainable_agent(algorithm)
+
+    load_path = _get_path_for_algorithm(algorithm, models_path)
+
+    if not load_path.exists():
+        return None
+
+    sb3_type = _get_sb3_type(algorithm)
+    sb3_agent = sb3_type.load(load_path)
+
+    agent = RevoletionSB3Agent(algorithm=algorithm, sb3_agent=sb3_agent)
+
+    _LOGGER.info(f"Loaded agent {algorithm} from {load_path}")
+    return agent
 
 
 def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
     match algorithm:
         case AgentAlgorithm.RANDOM:
-            return RandomChargingAgent()
+            return RandomChargingAgent(algorithm)
         case AgentAlgorithm.FULL_CHARGING:
-            return FullChargingAgent()
+            return FullChargingAgent(algorithm)
         case AgentAlgorithm.FULL_DISCHARGE:
-            return FullDischargingAgent()
+            return FullDischargingAgent(algorithm)
         case AgentAlgorithm.BASIC:
-            return BasicChargingAgent()
+            return BasicChargingAgent(algorithm)
         case _:
             raise ValueError()
 
 
 def _create_trainable_agent(
     algorithm: AgentAlgorithm, env: gym.Env[ObsType, ActType] | SubprocVecEnv, config: AgentConfig | None = None
-) -> RevoletionAgent:
+) -> RevoletionSB3Agent:
     if config is None:
         config = AgentConfig.default_for_algorithm(algorithm)
 
+    sb3_type = _get_sb3_type(algorithm)
+    return RevoletionSB3Agent(
+        algorithm,
+        sb3_agent=sb3_type(
+            "MultiInputPolicy",
+            env=env,
+            learning_rate=config.learning_rate,
+            gamma=config.gamma,
+            seed=config.seed,
+            n_steps=config.n_steps,
+            tensorboard_log=config.tensorboard_log,
+        ),
+    )
+
+
+def _get_sb3_type(algorithm: AgentAlgorithm):
     match algorithm:
         case AgentAlgorithm.PPO:
-            return RevoletionSB3Agent(
-                stable_baselines3.PPO(
-                    "MultiInputPolicy",
-                    env=env,
-                    learning_rate=config.learning_rate,
-                    gamma=config.gamma,
-                    seed=config.seed,
-                    n_steps=config.n_steps,
-                    tensorboard_log=config.tensorboard_log,
-                )
-            )
+            return stable_baselines3.PPO
         case AgentAlgorithm.TD3:
-            return RevoletionSB3Agent(
-                stable_baselines3.TD3(
-                    "MultiInputPolicy",
-                    env=env,
-                    learning_rate=config.learning_rate,
-                    gamma=config.gamma,
-                    seed=config.seed,
-                    n_steps=config.n_steps,
-                    tensorboard_log=config.tensorboard_log,
-                )
-            )
+            return stable_baselines3.TD3
         case AgentAlgorithm.A2C:
-            return RevoletionSB3Agent(
-                stable_baselines3.A2C(
-                    "MultiInputPolicy",
-                    env=env,
-                    learning_rate=config.learning_rate,
-                    gamma=config.gamma,
-                    seed=config.seed,
-                    n_steps=config.n_steps,
-                    tensorboard_log=config.tensorboard_log,
-                )
-            )
+            return stable_baselines3.A2C
         case AgentAlgorithm.SAC:
-            return RevoletionSB3Agent(
-                stable_baselines3.SAC(
-                    "MultiInputPolicy",
-                    env=env,
-                    learning_rate=config.learning_rate,
-                    gamma=config.gamma,
-                    seed=config.seed,
-                    n_steps=config.n_steps,
-                    tensorboard_log=config.tensorboard_log,
-                )
-            )
+            return stable_baselines3.SAC
         case _:
             raise ValueError(f"Unkown agent algorithm: {algorithm}")
 

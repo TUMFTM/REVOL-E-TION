@@ -19,7 +19,7 @@ from ._utils import normalize_datetime_index
 
 _LOGGER = logging.getLogger(__name__)
 
-_CHARGE_POWER_BUFFER = 0.01
+_CHARGE_POWER_BUFFER = 1e-6
 
 
 class PypsaOptimizationResult(optimization_problem.OptimizationResult):
@@ -49,7 +49,8 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _(self, block: blocks.FixedDemand, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
         normalized_dti = normalize_datetime_index(dti)
         pypsa_load_name = make_pypsa_label(block, "load")
-        return {"in": self._net.loads_t.p.loc[normalized_dti, pypsa_load_name]}
+        pypsa_load = self._net.loads_t.p.loc[normalized_dti, pypsa_load_name]
+        return {"in": self._align_pypsa_values_to_dti(pypsa_load, dti)}
 
     @get_power_flow.register
     def _(self, block: blocks.RenewableSource, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
@@ -59,7 +60,8 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         # `pot` is the potential available power from the generator, which might not be fully utilized.
         normalized_dti = normalize_datetime_index(dti)
         pypsa_gen_name = make_pypsa_label(block, "gen")
-        pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name]
+        pypsa_pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name]
+        pot = self._align_pypsa_values_to_dti(pypsa_pot, dti)
 
         # `curt` represents the curtailed power, i.e., the unused amount of available generation power.
         curt = pot - out
@@ -96,7 +98,8 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_power_flow_storage(self, block: blocks.StorageBlock, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
         normalized_dti = normalize_datetime_index(dti)
         pypsa_store_name = make_pypsa_label(block, "battery-store")
-        bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
+        pypsa_bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
+        bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
 
         return {
             "out": self._get_power_flow_link(block, dti, "outflow-link"),
@@ -129,7 +132,9 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         normalized_dti = normalize_datetime_index(dti)
         pypsa_link_name = make_pypsa_label(block, label)
-        return self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
+        pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
+
+        return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
 
     def _get_power_flow_generator(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str) -> pd.Series:
         """
@@ -137,7 +142,15 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         normalized_dti = normalize_datetime_index(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
-        return self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
+        pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
+        return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
+
+    def _align_pypsa_values_to_dti(
+        self, pypsa_values: pd.Series | pd.DataFrame | float, dti: pd.DatetimeIndex
+    ) -> pd.Series | pd.DataFrame | float:
+        if isinstance(pypsa_values, float):
+            return pypsa_values
+        return pypsa_values.tz_localize(dti.tz)
 
     @override
     def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float | pd.Series:
@@ -147,7 +160,8 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         pypsa_store_name = make_pypsa_label(block, "battery-store")
         if pypsa_store_name in self._net.stores_t.e:
             normalized_dti = normalize_datetime_index(dti)
-            e_curr = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
+            pypsa_e_curr = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
+            e_curr = self._align_pypsa_values_to_dti(pypsa_e_curr, dti)
         else:
             e_curr = self._net.stores.loc[pypsa_store_name, "e_initial"]
         return e_curr
@@ -468,6 +482,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         solver_status = linopy.constants.SolverStatus(solver_status_str)
         termination_condition = linopy.constants.TerminationCondition(termination_condition_str)
         status = _linopy_status_and_termination_condition_to_optimization_status(solver_status, termination_condition)
+
+        # Cleanup the solver model, to reduce the size of the pypsa network and allow downstream code to copy optimization results.
+        self._net.model.solver_model = None
 
         return status
 

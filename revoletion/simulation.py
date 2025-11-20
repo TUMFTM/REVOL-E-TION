@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import logging
-import pathlib
-import tempfile
 import types
 from dataclasses import dataclass
+from pathlib import Path
 
+import pandas as pd
 from typing_extensions import override
 
 from . import blocks, optimization, rl, utils
@@ -166,8 +166,7 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         for subblock in block.subblocks.values():
             self.visit_block(subblock, horizon=horizon)
 
-        # For `NonElectricBlock` no further processing should be done, since they have no power flows
-        # and also no investment option.
+        # For `NonElectricBlock` no further processing should be done, since they have no power flows.
         if not isinstance(block, blocks.ElectricBlock):
             return
 
@@ -320,21 +319,15 @@ class DispatchSettings:
     n_processes: int = 1
     agent_algorithm: rl.AgentAlgorithm = rl.AgentAlgorithm.PPO
     debugmode: bool = False
+    models_path: Path | None = None
 
 
 class DispatchScenarioFactory:
-    def __init__(self, scenario_path: pathlib.Path) -> None:
-        self._scenario_path = scenario_path
-        self._scenario_name = self._scenario_path.stem
-        self._temp_dirs = []
-        self._temp_dir = tempfile.TemporaryDirectory()
-        self._temp_dir_path = pathlib.Path(self._temp_dir.name)
+    def __init__(self, paths: scn.SimulationPaths) -> None:
+        self._paths = paths
+        self._scenario_name = self._paths.scenario.stem
 
-        self._simulation_paths = scn.SimulationPaths.from_plain_paths(
-            scenario=self._scenario_path,
-            output=self._temp_dir_path,
-        )
-        scenario_parameters = utils.read_scenario_from_file(self._simulation_paths.scenario)
+        scenario_parameters = utils.read_scenario_from_file(self._paths.scenario)
 
         self._scenario_parameters = scenario_parameters[self._scenario_name]
 
@@ -346,7 +339,7 @@ class DispatchScenarioFactory:
 
     def create_scenario(self) -> scn.Scenario:
         return scn.Scenario(
-            self._simulation_paths,
+            self._paths,
             scn.ScenarioSettings(),
             name=self._scenario_name,
             parameters=self._scenario_parameters,
@@ -366,17 +359,25 @@ class DispatchHorizon:
         self._logger = logger or _LOGGER
 
     def execute(self) -> None:
-        agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
-        agent_config.tensorboard_log = "/tmp/revol"
+        agent = None
+        if self._settings.models_path is not None:
+            agent = rl.load_agent(self._settings.agent_algorithm, self._settings.models_path)
 
-        self._logger.info(f"Training agent '{self._settings.agent_algorithm}' on scenario")
-        agent = rl.train(
-            self._settings.agent_algorithm,
-            self._scenario_factory.create_scenario,
-            n_proc=self._settings.n_processes,
-            config=agent_config,
-            total_timesteps=1000,
-        )
+        if agent is None:
+            agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
+            agent_config.tensorboard_log = "/tmp/revol"
+
+            self._logger.info(f"Training agent '{self._settings.agent_algorithm}' on scenario")
+            agent = rl.train(
+                self._settings.agent_algorithm,
+                self._scenario_factory.create_scenario,
+                n_proc=self._settings.n_processes,
+                config=agent_config,
+                total_timesteps=1000,
+            )
+
+            if self._settings.models_path is not None:
+                rl.save_agent(agent, self._settings.models_path)
 
         scenario = self._scenario_factory.create_scenario()
 
@@ -390,6 +391,10 @@ class DispatchHorizon:
             scenario.times.sim,
         )
 
-        # scenario.process_results()
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            block.post_scenario()
+
+        result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(scenario.block_registry)
+        result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
+        result_timeseries_aggregated.to_csv(scenario.paths.create_result_path(suffix=f"{scenario.name}_results_ts.csv"))
         scenario.generate_and_save_plot()
-        scenario.save_result_summary()

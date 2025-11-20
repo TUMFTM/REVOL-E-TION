@@ -146,6 +146,10 @@ def main():
     dispatch_parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
     dispatch_parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
 
+    dispatch_parser.add_argument(
+        "-mp", "--models-path", type=str, help="Path to a folder from which models can be loaded and saved."
+    )
+
     args = parser.parse_args()
 
     if args.command == "optimize":
@@ -226,13 +230,21 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
 
 
 def _dispatch_cmd(args: argparse.Namespace) -> None:
-    scenario_factory = simulation.DispatchScenarioFactory(Path(args.scenario))
+    paths = SimulationPaths.from_plain_paths(
+        scenario=args.scenario,
+        input=None if not args.input else Path(args.input),
+        output=None if not args.output else Path(args.output),
+    )
+    scenario_factory = simulation.DispatchScenarioFactory(paths)
 
     # Configure the level of the logger according to `debugmode` and setup handlers.
     configure_root_logger(debugmode=args.debugmode)
 
     settings = simulation.DispatchSettings(
-        n_processes=args.n_processes, agent_algorithm=args.algo, debugmode=args.debugmode
+        n_processes=args.n_processes,
+        agent_algorithm=args.algo,
+        debugmode=args.debugmode,
+        models_path=None if args.models_path is None else Path(args.models_path),
     )
 
     dispatch_horizon = simulation.DispatchHorizon(
