@@ -60,7 +60,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         # `pot` is the potential available power from the generator, which might not be fully utilized.
         normalized_dti = normalize_datetime_index(dti)
         pypsa_gen_name = make_pypsa_label(block, "gen")
-        pypsa_pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name]
+        pypsa_pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name] * block.sizes["block"].total
         pot = self._align_pypsa_values_to_dti(pypsa_pot, dti)
 
         # `curt` represents the curtailed power, i.e., the unused amount of available generation power.
@@ -426,7 +426,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         status = self._do_solve(dti)
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
-        return status, PypsaOptimizationResult(net=self._net)
+        return status, PypsaOptimizationResult(net=self._net.copy())
 
     @override
     def solve_time_step(
@@ -455,7 +455,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
         # Therefore, the network is just wrapped inside the `PypsaOptimizationResult`.
-        return status, PypsaOptimizationResult(net=self._net)
+        return status, PypsaOptimizationResult(net=self._net.copy())
 
     def _do_solve(self, dti: pd.DatetimeIndex) -> optimization_problem.OptimizationStatus:
         # Try to directly communicate the optimization problem to the HiGHS solver, without writing it to a file.

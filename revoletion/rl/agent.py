@@ -9,8 +9,8 @@ import gymnasium as gym
 import numpy as np
 import stable_baselines3
 import typing_extensions
-from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
 
 from revoletion import optimization
@@ -130,7 +130,7 @@ def _build_rl_environment(
         penalty_factor_grid_cost=0.0,
         episode_length=None if train else len(scenario.times.sim),
     )
-    env = RevoletionEnvironment(scenario, scenario.times.sim, config=env_config)
+    env = RevoletionEnvironment(scenario, scenario.times.sim, config=env_config, train=train)
     return env
 
 
@@ -158,26 +158,28 @@ def train(
 def evaluate_with_agent(
     scenario: scn.Scenario, agent: RevoletionAgent
 ) -> tuple[float, optimization.OptimizationResult]:
-    env = make_vec_env(lambda: _build_rl_environment(scenario, train=False), n_envs=1)
-    obs = env.reset()
+    env = _build_rl_environment(scenario, train=False)
+    obs, _ = env.reset()
     total_reward = 0.0
     infos = {}
 
     for _ in scenario.times.sim.dti:
         action = agent.predict(obs, deterministic=True)
-        obs, reward, dones, infos = env.step(action)
+        if isinstance(action, tuple):
+            action = action[0]
+        obs, reward, terminated, truncated, infos = env.step(action)
         total_reward += reward
-        if dones.any():
+        if terminated or truncated:
             break
 
-    return total_reward, infos[0].get(INFO_KEY_OPTIMIZATION_RESULT)
+    return total_reward, infos.get(INFO_KEY_OPTIMIZATION_RESULT)
 
 
-def _get_path_for_algorithm(algorithm: AgentAlgorithm, models_path: Path) -> Path:
-    return (models_path / algorithm.value).with_suffix(".zip")
+def _get_path_for_algorithm(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Path:
+    return (models_path / f"{name}-{algorithm.value}").with_suffix(".zip")
 
 
-def save_agent(agent: RevoletionAgent, models_path: Path) -> None:
+def save_agent(agent: RevoletionAgent, name: str, models_path: Path) -> None:
     # Only save trained agents
     if not agent.algorithm.needs_training():
         return
@@ -185,16 +187,16 @@ def save_agent(agent: RevoletionAgent, models_path: Path) -> None:
     if not isinstance(agent, RevoletionSB3Agent):
         raise ValueError("Only agents based on stable-baselines3 can be saved")
 
-    save_path = _get_path_for_algorithm(agent.algorithm, models_path)
+    save_path = _get_path_for_algorithm(agent.algorithm, name, models_path)
     agent.save(save_path)
     _LOGGER.info(f"Saved agent {agent.algorithm} to {save_path}")
 
 
-def load_agent(algorithm: AgentAlgorithm, models_path: Path) -> RevoletionAgent | None:
+def load_agent(algorithm: AgentAlgorithm, name: str, models_path: Path) -> RevoletionAgent | None:
     if not algorithm.needs_training():
         return _create_non_trainable_agent(algorithm)
 
-    load_path = _get_path_for_algorithm(algorithm, models_path)
+    load_path = _get_path_for_algorithm(algorithm, name, models_path)
 
     if not load_path.exists():
         return None

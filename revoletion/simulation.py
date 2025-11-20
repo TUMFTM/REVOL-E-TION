@@ -318,18 +318,22 @@ class OptimizationHorizon:
 class DispatchSettings:
     n_processes: int = 1
     agent_algorithm: rl.AgentAlgorithm = rl.AgentAlgorithm.PPO
-    debugmode: bool = False
+    train_timesteps: int | None = None
     models_path: Path | None = None
+    debugmode: bool = False
+
+
+_DEFAULT_TRAIN_TIMESTEPS = 10_000
 
 
 class DispatchScenarioFactory:
     def __init__(self, paths: scn.SimulationPaths) -> None:
         self._paths = paths
-        self._scenario_name = self._paths.scenario.stem
+        self.scenario_name = self._paths.scenario.stem
 
         scenario_parameters = utils.read_scenario_from_file(self._paths.scenario)
 
-        self._scenario_parameters = scenario_parameters[self._scenario_name]
+        self._scenario_parameters = scenario_parameters[self.scenario_name]
 
         self._location = utils.Location.create_from_lat_lon(
             latitude=self._scenario_parameters.loc["scenario", "latitude"],
@@ -341,7 +345,7 @@ class DispatchScenarioFactory:
         return scn.Scenario(
             self._paths,
             scn.ScenarioSettings(),
-            name=self._scenario_name,
+            name=self.scenario_name,
             parameters=self._scenario_parameters,
             location=self._location,
         )
@@ -361,23 +365,28 @@ class DispatchHorizon:
     def execute(self) -> None:
         agent = None
         if self._settings.models_path is not None:
-            agent = rl.load_agent(self._settings.agent_algorithm, self._settings.models_path)
+            self._settings.models_path.mkdir(exist_ok=True)
+            agent = rl.load_agent(
+                self._settings.agent_algorithm, self._scenario_factory.scenario_name, self._settings.models_path
+            )
 
         if agent is None:
             agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
             agent_config.tensorboard_log = "/tmp/revol"
 
-            self._logger.info(f"Training agent '{self._settings.agent_algorithm}' on scenario")
+            self._logger.info(
+                f"Training agent '{self._settings.agent_algorithm}' on scenario {self._scenario_factory.scenario_name}"
+            )
             agent = rl.train(
                 self._settings.agent_algorithm,
                 self._scenario_factory.create_scenario,
                 n_proc=self._settings.n_processes,
                 config=agent_config,
-                total_timesteps=1000,
+                total_timesteps=self._settings.train_timesteps or _DEFAULT_TRAIN_TIMESTEPS,
             )
 
             if self._settings.models_path is not None:
-                rl.save_agent(agent, self._settings.models_path)
+                rl.save_agent(agent, self._scenario_factory.scenario_name, self._settings.models_path)
 
         scenario = self._scenario_factory.create_scenario()
 

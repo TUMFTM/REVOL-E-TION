@@ -68,6 +68,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         horizon: utils.TimeSettings,
         config: RevoletionEnvironmentConfig | None = None,
         logger: logging.Logger | None = None,
+        train: bool = True,
     ) -> None:
         super().__init__()
 
@@ -143,6 +144,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._reward_history = []
 
         self._prev_obs = None
+
+        self._train = train
 
     @property
     def current_time_step(self) -> pd.DatetimeIndex:
@@ -344,7 +347,10 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
 
         optimization_status, optimization_result = self._optimization_problem.solve_time_step(self.current_time_step)
-        infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
+        if not self._train:
+            infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
+        else:
+            infos = {}
         if optimization_status != optimization.OptimizationStatus.OPTIMAL or optimization_result is None:
             previous_profit = max(sum(filter(lambda x: x >= 0.0, self._reward_history)), 1.0)
             reward = -self._config.penalty_factor_infeasible * previous_profit

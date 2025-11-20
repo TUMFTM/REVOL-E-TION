@@ -147,7 +147,16 @@ def main():
     dispatch_parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
 
     dispatch_parser.add_argument(
-        "-mp", "--models-path", type=str, help="Path to a folder from which models can be loaded and saved."
+        "--models-path",
+        type=str,
+        default=None,
+        help="Path to a folder where trained models will be saved to and loaded from",
+    )
+    dispatch_parser.add_argument(
+        "--train-timesteps",
+        type=int,
+        default=None,
+        help="Number of time steps the agent is traiend for",
     )
 
     args = parser.parse_args()
@@ -232,8 +241,8 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
 def _dispatch_cmd(args: argparse.Namespace) -> None:
     paths = SimulationPaths.from_plain_paths(
         scenario=args.scenario,
-        input=None if not args.input else Path(args.input),
-        output=None if not args.output else Path(args.output),
+        input=None if args.input is None else Path(args.input),
+        output=None if args.output is None else Path(args.output),
     )
     scenario_factory = simulation.DispatchScenarioFactory(paths)
 
@@ -244,7 +253,8 @@ def _dispatch_cmd(args: argparse.Namespace) -> None:
         n_processes=args.n_processes,
         agent_algorithm=args.algo,
         debugmode=args.debugmode,
-        models_path=None if args.models_path is None else Path(args.models_path),
+        models_path=args.models_path if args.models_path is None else Path(args.models_path),
+        train_timesteps=args.train_timesteps,
     )
 
     dispatch_horizon = simulation.DispatchHorizon(
