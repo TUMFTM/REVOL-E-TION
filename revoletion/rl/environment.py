@@ -351,11 +351,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
         else:
             infos = {}
+
         if optimization_status != optimization.OptimizationStatus.OPTIMAL or optimization_result is None:
             previous_profit = max(sum(filter(lambda x: x >= 0.0, self._reward_history)), 1.0)
             reward = -self._config.penalty_factor_infeasible * previous_profit
             _LOGGER.debug(f"Optimization failed at {self._step_idx}. Infeasibility penalty: {reward}")
-            return self._get_obs(), reward, False, True, infos
+            terminated = False
+            truncated = True
+            return self._get_obs(), reward, terminated, truncated, infos
 
         obs = self._get_obs(optimization_result)
 
@@ -465,8 +468,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return reward
 
     def _is_done(self) -> tuple[bool, bool]:
-        terminated = False
-        truncated = self._step_idx >= self._max_step_idx
+        terminated = self._step_idx >= self._max_step_idx
+        truncated = False
         return terminated, truncated
 
     def _get_grid_cost_normalization_params(self) -> tuple[float, float]:

@@ -2,7 +2,9 @@ import contextlib
 import logging
 import os
 import sys
+import tempfile
 from functools import singledispatchmethod
+from pathlib import Path
 
 import linopy.constants
 import numpy as np
@@ -344,6 +346,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     ) -> None:
         super().__init__(logger, config)
         self._net = net
+        self._model = self._net.optimize.create_model()
+
+        self._temp_dir = tempfile.TemporaryDirectory()
 
     @property
     def pypsa_network(self) -> pypsa.Network:
@@ -361,7 +366,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if config is None:
             config = optimization_problem.OptimizationProblemConfig()
 
-        visitor = PyPSABlockVisitor(horizon.dti, config.cost_eps, enable_investment=config.invest)
+        visitor = PyPSABlockVisitor(
+            horizon.dti, config.cost_eps, enable_investment=config.invest, enable_fixed_dispatch=False
+        )
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
 
         return cls(pypsa_network, logger, config)
@@ -384,12 +391,22 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = p_min_pu
+
+        inflow_capacity = block.pwr_chg_max
+
+        p_max = p_max_pu * inflow_capacity
+        p_min = p_min_pu * inflow_capacity
+
+        self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = p_max
+        self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_in] = p_min
+
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
 
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = 0.0
+        self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = 0.0
 
     @override
     def set_output_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
@@ -401,20 +418,35 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         charger_in = make_pypsa_label(block, "inflow-link")
         charger_out = make_pypsa_label(block, "outflow-link")
 
+        outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]
+
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
 
         p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
         p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
 
+        p_max = p_max_pu * outflow_capacity
+        p_min = p_min_pu * outflow_capacity
+
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = p_min_pu
+
+        outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]
+        p_max = p_max_pu * outflow_capacity
+        p_min = p_min_pu * outflow_capacity
+
+        self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = p_max
+        self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_out] = p_min
+
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
 
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = 0.0
+
+        self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = 0.0
 
     @override
     def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
@@ -459,9 +491,13 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         # This should reduce the I/O interactions and significantly speed up optimizations for large scenarios.
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
+        self._net._model = self._model
+
+        basis_file = Path(self._temp_dir.name) / "basis"
+
         with suppress_output():
-            solver_status_str, termination_condition_str = self._net.optimize(
-                dti,
+            # Solve the created model.
+            solver_status_str, termination_condition_str = self._net.optimize.solve_model(
                 # By default, PyPSA and linopy would print status information about the optimization problem to the console.
                 # This is quite spammy and therefore it is only enabled for debug mode.
                 log_to_console=self._config.debug,
@@ -472,7 +508,10 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
                 solver_options={
                     "output_flag": False,
                 },
+                basis_fn=basis_file,
+                warmstart_fn=basis_file,
             )
+
         self._logger.debug(
             f"Optimization with solver {self._config.solver.value} finished with status '{solver_status_str}' and termination condition '{termination_condition_str}'"
         )
@@ -480,9 +519,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         termination_condition = linopy.constants.TerminationCondition(termination_condition_str)
         status = _linopy_status_and_termination_condition_to_optimization_status(solver_status, termination_condition)
 
-        # Cleanup the solver model, to reduce the size of the pypsa network and allow downstream code to copy optimization results.
-        # If the model is still part of the network
-        self._net.model.solver_model = None
+        # # Cleanup the solver model, to reduce the size of the pypsa network and allow downstream code to copy optimization results.
+        # # If the model is still part of the network
+        self._net._model = None
 
         return status
 

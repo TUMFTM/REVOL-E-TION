@@ -157,7 +157,7 @@ def train(
 
 def evaluate_with_agent(
     scenario: scn.Scenario, agent: RevoletionAgent
-) -> tuple[float, optimization.OptimizationResult]:
+) -> tuple[float, optimization.OptimizationResult | None]:
     env = _build_rl_environment(scenario, train=False)
     obs, _ = env.reset()
     total_reward = 0.0
@@ -169,7 +169,9 @@ def evaluate_with_agent(
             action = action[0]
         obs, reward, terminated, truncated, infos = env.step(action)
         total_reward += reward
-        if terminated or truncated:
+        if truncated:
+            return total_reward, None
+        elif terminated:
             break
 
     return total_reward, infos.get(INFO_KEY_OPTIMIZATION_RESULT)

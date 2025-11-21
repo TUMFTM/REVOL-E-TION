@@ -28,7 +28,13 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
     _AC_CARRIER = "AC"
     _DC_CARRIER = "DC"
 
-    def __init__(self, datetime_index: pd.DatetimeIndex, cost_eps: float, enable_investment: bool = True):
+    def __init__(
+        self,
+        datetime_index: pd.DatetimeIndex,
+        cost_eps: float,
+        enable_investment: bool = True,
+        enable_fixed_dispatch: bool = True,
+    ):
         """
         :param datetime_index: The datetime index covering the scenario data. Required to correctly initialize the time series data in the PyPSA network.
         :param cost_eps:
@@ -37,6 +43,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         self._datetime_index = datetime_index
         self._cost_eps = cost_eps
         self._enable_investment = enable_investment
+        self._enable_fixed_dispatch = enable_fixed_dispatch
 
     def create_pypsa_network(self, block_registry: dict[str, dict[str, blocks.BaseBlock]]) -> pypsa.Network:
         builder = PyPSANetworkBuilder(self._datetime_index)
@@ -373,7 +380,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         )
         inflow_fix = (
             block.flows_apriori.loc[self._datetime_index, "p_int_chg"] * inflow_capacity
-            if block.apriori
+            if self._enable_fixed_dispatch and block.apriori
             else pd.Series(np.nan, index=self._datetime_index)
         )
         # The variable costs are fixed similar to how it is defined for OEMOF.
@@ -399,7 +406,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         )
         outflow_fix = (
             block.flows_apriori.loc[self._datetime_index, "p_int_dis"] * outflow_capacity
-            if block.apriori
+            if self._enable_fixed_dispatch and block.apriori
             else pd.Series(np.nan, index=self._datetime_index)
         )
         # The variable costs are fixed similar to how it is defined for OEMOF.

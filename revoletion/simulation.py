@@ -362,7 +362,7 @@ class DispatchHorizon:
         self._settings = settings
         self._logger = logger or _LOGGER
 
-    def execute(self) -> None:
+    def execute(self, plot=True) -> None:
         agent = None
         if self._settings.models_path is not None:
             self._settings.models_path.mkdir(exist_ok=True)
@@ -375,7 +375,7 @@ class DispatchHorizon:
             agent_config.tensorboard_log = "/tmp/revol"
 
             self._logger.info(
-                f"Training agent '{self._settings.agent_algorithm}' on scenario {self._scenario_factory.scenario_name}"
+                f"Training agent '{self._settings.agent_algorithm}' on scenario '{self._scenario_factory.scenario_name}'"
             )
             agent = rl.train(
                 self._settings.agent_algorithm,
@@ -393,6 +393,9 @@ class DispatchHorizon:
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
         reward, optimization_result = rl.evaluate_with_agent(scenario, agent)
         self._logger.info(f"Agent got a reward of {reward}")
+        if optimization_result is None:
+            self._logger.error("Evaluation failed")
+            return
 
         _PowerFlowResultProcessor.collect_power_flows(
             optimization_result,
@@ -406,4 +409,5 @@ class DispatchHorizon:
         result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(scenario.block_registry)
         result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
         result_timeseries_aggregated.to_csv(scenario.paths.create_result_path(suffix=f"{scenario.name}_results_ts.csv"))
-        scenario.generate_and_save_plot()
+        if plot:
+            scenario.generate_and_save_plot()
