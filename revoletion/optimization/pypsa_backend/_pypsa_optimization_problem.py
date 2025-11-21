@@ -361,11 +361,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if config is None:
             config = optimization_problem.OptimizationProblemConfig()
 
-        visitor = PyPSABlockVisitor(horizon.dti, config.cost_eps)
+        visitor = PyPSABlockVisitor(horizon.dti, config.cost_eps, enable_investment=config.invest)
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
-
-        if not config.invest:
-            _pypsa_disable_investment_for_network(pypsa_network)
 
         return cls(pypsa_network, logger, config)
 
@@ -484,22 +481,10 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         status = _linopy_status_and_termination_condition_to_optimization_status(solver_status, termination_condition)
 
         # Cleanup the solver model, to reduce the size of the pypsa network and allow downstream code to copy optimization results.
+        # If the model is still part of the network
         self._net.model.solver_model = None
 
         return status
-
-
-def _pypsa_disable_investment_for_network(net: pypsa.Network) -> None:
-    net.shapes["p_nom_extendable"] = False
-    net.buses["p_nom_extendable"] = False
-    net.lines["p_nom_extendable"] = False
-    net.transformers["p_nom_extendable"] = False
-    net.links["p_nom_extendable"] = False
-    net.loads["p_nom_extendable"] = False
-    net.generators["p_nom_extendable"] = False
-    net.storage_units["p_nom_extendable"] = False
-    net.stores["p_nom_extendable"] = False
-    net.shapes["p_nom_extendable"] = False
 
 
 def _linopy_status_and_termination_condition_to_optimization_status(
