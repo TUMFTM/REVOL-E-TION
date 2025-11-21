@@ -37,27 +37,28 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
     @singledispatchmethod
     @override
-    def get_power_flow(self, block: blocks.ElectricBlock, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def get_power_flow(
+        self, block: blocks.ElectricBlock, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         return {}
 
     @get_power_flow.register
-    def _(self, block: blocks.SystemCore, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(self, block: blocks.SystemCore, dti: pd.DatetimeIndex) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         return {
-            "acdc": self._get_power_flow_link(block, dti, "acdc-link"),
-            "dcac": self._get_power_flow_link(block, dti, "dcac-link"),
+            "acdc": self._get_pypsa_link_power_flow(block, dti, "acdc-link"),
+            "dcac": self._get_pypsa_link_power_flow(block, dti, "dcac-link"),
         }
 
     @get_power_flow.register
-    def _(self, block: blocks.FixedDemand, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
-        normalized_dti = normalize_datetime_index(dti)
-        pypsa_load_name = make_pypsa_label(block, "load")
-        pypsa_load = self._net.loads_t.p.loc[normalized_dti, pypsa_load_name]
-        return {"in": self._align_pypsa_values_to_dti(pypsa_load, dti)}
+    def _(self, block: blocks.FixedDemand, dti: pd.DatetimeIndex) -> dict[str, optimization_problem.FloatOrTimeSeries]:
+        return {"in": self._get_pypsa_link_power_flow(block, dti, "inflow-link")}
 
     @get_power_flow.register
-    def _(self, block: blocks.RenewableSource, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(
+        self, block: blocks.RenewableSource, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         # `out` is the
-        out = self._get_power_flow_link(block, dti, "outflow-link")
+        out = self._get_pypsa_link_power_flow(block, dti, "outflow-link")
 
         # `pot` is the potential available power from the generator, which might not be fully utilized.
         normalized_dti = normalize_datetime_index(dti)
@@ -70,65 +71,75 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return {"out": out, "pot": pot, "curt": curt}
 
     @get_power_flow.register
-    def _(self, block: blocks.ControllableSource, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
-        return {"out": self._get_power_flow_generator(block, dti, "gen")}
+    def _(
+        self, block: blocks.ControllableSource, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
+        return {"out": self._get_pypsa_power_flow_generator(block, dti, "gen")}
 
     @get_power_flow.register
-    def _(self, block: blocks.GridConnection, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(
+        self, block: blocks.GridConnection, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         flows: dict[str, pd.Series] = {}
 
-        flows["inflow_1"] = self._get_power_flow_link(block, dti, "inflow-link")
+        flows["inflow_1"] = self._get_pypsa_link_power_flow(block, dti, "inflow-link")
 
         # This fakes the peak shaving API of oemof to make the API compatible.
         # TODO: implement the peak shaving behavior for PyPSA.
         for period in block.peak_periods.index:
             label = f"outflow_{period}"
-            flows[label] = self._get_power_flow_link(
+            flows[label] = self._get_pypsa_link_power_flow(
                 block, dti, "outflow-link"
             ).copy()  # identical data for each outflow_n
 
         return flows
 
     @get_power_flow.register
-    def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         return {
-            "out": self._get_power_flow_generator(block, dti, "export-gen"),
-            "in": self._get_power_flow_generator(block, dti, "import-gen"),
+            "out": self._get_pypsa_power_flow_generator(block, dti, "export-gen"),
+            "in": self._get_pypsa_power_flow_generator(block, dti, "import-gen"),
         }
 
     @get_power_flow.register
-    def _get_power_flow_storage(self, block: blocks.StorageBlock, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _get_power_flow_storage(
+        self, block: blocks.StorageBlock, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         normalized_dti = normalize_datetime_index(dti)
         pypsa_store_name = make_pypsa_label(block, "battery-store")
         pypsa_bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
         bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
 
         return {
-            "out": self._get_power_flow_link(block, dti, "outflow-link"),
-            "in": self._get_power_flow_link(block, dti, "inflow-link"),
+            "out": self._get_pypsa_link_power_flow(block, dti, "outflow-link"),
+            "in": self._get_pypsa_link_power_flow(block, dti, "inflow-link"),
             "bat_out": bat_power.clip(lower=0),
             "bat_in": -bat_power.clip(upper=0),
         }
 
     @get_power_flow.register
-    def _(self, block: blocks.Fleet, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(self, block: blocks.Fleet, dti: pd.DatetimeIndex) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         return {
-            "in": self._get_power_flow_link(block, dti, "inflow-link"),
-            "out": self._get_power_flow_link(block, dti, "outflow-link"),
+            "in": self._get_pypsa_link_power_flow(block, dti, "inflow-link"),
+            "out": self._get_pypsa_link_power_flow(block, dti, "outflow-link"),
         }
 
     @get_power_flow.register
-    def _(self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    def _(
+        self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex
+    ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         power_flows = self._get_power_flow_storage(block, dti)
         power_flows.update(
             {
-                "ext_dc": self._get_power_flow_link(block, dti, "ext-dc-inflow-link"),
-                "ext_ac": self._get_power_flow_link(block, dti, "ext-ac-inflow-link"),
+                "ext_dc": self._get_pypsa_link_power_flow(block, dti, "ext-dc-inflow-link"),
+                "ext_ac": self._get_pypsa_link_power_flow(block, dti, "ext-ac-inflow-link"),
             }
         )
         return power_flows
 
-    def _get_power_flow_link(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str) -> pd.Series:
+    def _get_pypsa_link_power_flow(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
+    ) -> optimization_problem.FloatOrTimeSeries:
         """
         Helper method to determine the power flow of a PyPSA link.
         """
@@ -138,7 +149,9 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
         return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
 
-    def _get_power_flow_generator(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str) -> pd.Series:
+    def _get_pypsa_power_flow_generator(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
+    ) -> optimization_problem.FloatOrTimeSeries:
         """
         Helper method to determine the power flow of a PyPSA generator.
         """
@@ -148,121 +161,90 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
 
     def _align_pypsa_values_to_dti(
-        self, pypsa_values: pd.Series | pd.DataFrame | float, dti: pd.DatetimeIndex
-    ) -> pd.Series | pd.DataFrame | float:
+        self, pypsa_values: optimization_problem.FloatOrTimeSeries, dti: pd.DatetimeIndex
+    ) -> optimization_problem.FloatOrTimeSeries:
         if isinstance(pypsa_values, float):
             return pypsa_values
         return pypsa_values.tz_localize(dti.tz)
 
     @override
-    def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float | pd.Series:
+    def get_stored_energy(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex
+    ) -> optimization_problem.FloatOrTimeSeries:
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot determine SoC for block {block.name} of type {type(block)}")
 
         pypsa_store_name = make_pypsa_label(block, "battery-store")
-        if pypsa_store_name in self._net.stores_t.e:
-            normalized_dti = normalize_datetime_index(dti)
-            pypsa_e_curr = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
-            e_curr = self._align_pypsa_values_to_dti(pypsa_e_curr, dti)
-        else:
-            e_curr = self._net.stores.loc[pypsa_store_name, "e_initial"]
-        return e_curr
+        normalized_dti = normalize_datetime_index(dti)
+        pypsa_store_e = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
+        return self._align_pypsa_values_to_dti(pypsa_store_e, dti)
 
     @singledispatchmethod
     @override
-    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float:
+    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
         return 0.0
 
     @get_opex.register
-    def _(self, block: blocks.GridConnection, dti: pd.DatetimeIndex) -> float:
-        normalized_dti = normalize_datetime_index(dti)
-        pypsa_inflow_link_name = make_pypsa_label(block, "inflow-link")
+    def _(self, block: blocks.GridConnection, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
+        grid_conn_opex = self._get_pypsa_link_opex(block, dti, "inflow-link")
 
-        grid_conn_inflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_inflow_link_name]
-        grid_conn_inflow_cost = self._net.c.links.static.marginal_cost[pypsa_inflow_link_name]
+        grid_market_opex = [self.get_opex(grid_market_block, dti) for grid_market_block in block.subblocks.values()]
 
-        grid_market_revenue = [self.get_opex(grid_market_block, dti) for grid_market_block in block.subblocks.values()]
-
-        return grid_conn_inflow_power_wh * grid_conn_inflow_cost + sum(grid_market_revenue)
+        return grid_conn_opex + sum(grid_market_opex)
 
     @get_opex.register
-    def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> float:
-        normalized_dti = normalize_datetime_index(dti)
-        pypsa_import_gen_name = make_pypsa_label(block, "import-gen")
-        pypsa_export_gen_name = make_pypsa_label(block, "export-gen")
+    def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
+        grid_import_opex = self._get_pypsa_generator_opex(block, dti, "import-gen")
+        grid_export_opex = self._get_pypsa_generator_opex(block, dti, "export-gen")
 
-        grid_import_power_wh = self._net.generators_t.p.loc[normalized_dti, pypsa_import_gen_name]
-        grid_export_power_wh = self._net.generators_t.p.loc[normalized_dti, pypsa_export_gen_name]
-
-        grid_import_cost = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_import_gen_name]
-        grid_export_cost = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_export_gen_name]
-
-        return grid_import_power_wh * grid_import_cost + grid_export_power_wh * grid_export_cost
+        return grid_import_opex + grid_export_opex
 
     @get_opex.register
-    def _(self, block: blocks.RenewableSource, dti: pd.DatetimeIndex) -> float:
-        normalized_dti = normalize_datetime_index(dti)
-        pypsa_gen_name = make_pypsa_label(block, "gen")
-
-        power_wh = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
-        costs = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_gen_name]
-
-        return power_wh * costs
+    def _(self, block: blocks.RenewableSource, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
+        return self._get_pypsa_generator_opex(block, dti, "gen")
 
     @get_opex.register
-    def _(self, block: blocks.ControllableSource, dti: pd.DatetimeIndex) -> float:
-        normalized_dti = normalize_datetime_index(dti)
-        pypsa_gen_name = make_pypsa_label(block, "gen")
-
-        power_wh = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
-        costs = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_gen_name]
-
-        return power_wh * costs
+    def _(self, block: blocks.ControllableSource, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
+        return self._get_pypsa_generator_opex(block, dti, "gen")
 
     @get_opex.register
-    def _(self, block: blocks.StationaryBattery, dti: pd.DatetimeIndex) -> float:
+    def _(self, block: blocks.StorageBlock, dti: pd.DatetimeIndex) -> float:
+        inflow_link_opex = self._get_pypsa_link_opex(block, dti, "inflow-link")
+        outflow_link_opex = self._get_pypsa_link_opex(block, dti, "outflow-link")
+
+        return inflow_link_opex + outflow_link_opex
+
+    def _get_pypsa_link_opex(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
+    ) -> optimization_problem.FloatOrTimeSeries:
         normalized_dti = normalize_datetime_index(dti)
-        pypsa_inflow_link_name = make_pypsa_label(block, "inflow-link")
-        pypsa_outflow_link_name = make_pypsa_label(block, "outflow-link")
+        pypsa_link_name = make_pypsa_label(block, label)
 
-        inflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_inflow_link_name]
-        outflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_outflow_link_name]
+        pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
 
-        if pypsa_inflow_link_name in self._net.c.links.dynamic.marginal_cost:
-            inflow_costs = self._net.c.links.dynamic.marginal_cost.loc[normalized_dti, pypsa_inflow_link_name]
+        if pypsa_link_name in self._net.c.links.dynamic.marginal_cost:
+            marginal_costs = self._net.c.links.dynamic.marginal_cost.loc[normalized_dti, pypsa_link_name]
         else:
-            inflow_costs = self._net.c.links.static.marginal_cost[pypsa_inflow_link_name]
+            marginal_costs = self._net.c.links.static.marginal_cost[pypsa_link_name]
 
-        if pypsa_outflow_link_name in self._net.c.links.dynamic.marginal_cost:
-            outflow_costs = self._net.c.links.dynamic.marginal_cost.loc[normalized_dti, pypsa_outflow_link_name]
-        else:
-            outflow_costs = self._net.c.links.static.marginal_cost[pypsa_outflow_link_name]
+        opex = pypsa_power_flow * marginal_costs
+        return self._align_pypsa_values_to_dti(opex, dti)
 
-        return inflow_power_wh * inflow_costs + outflow_power_wh * outflow_costs
-
-    @get_opex.register
-    def _(self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex) -> float:
+    def _get_pypsa_generator_opex(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
+    ) -> optimization_problem.FloatOrTimeSeries:
         normalized_dti = normalize_datetime_index(dti)
-        pypsa_inflow_link_name = make_pypsa_label(block, "inflow-link")
-        pypsa_outflow_link_name = make_pypsa_label(block, "outflow-link")
+        pypsa_gen_name = make_pypsa_label(block, label)
 
-        inflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_inflow_link_name]
-        outflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_outflow_link_name]
+        pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
 
-        inflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_inflow_link_name]
-        outflow_power_wh = self._net.links_t.p0.loc[normalized_dti, pypsa_outflow_link_name]
-
-        if pypsa_inflow_link_name in self._net.c.links.dynamic.marginal_cost:
-            inflow_costs = self._net.c.links.dynamic.marginal_cost.loc[normalized_dti, pypsa_inflow_link_name]
+        if pypsa_gen_name in self._net.c.generators.dynamic.marginal_cost:
+            marginal_costs = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_gen_name]
         else:
-            inflow_costs = self._net.c.links.static.marginal_cost[pypsa_inflow_link_name]
+            marginal_costs = self._net.c.generators.static.marginal_cost[pypsa_gen_name]
 
-        if pypsa_outflow_link_name in self._net.c.links.dynamic.marginal_cost:
-            outflow_costs = self._net.c.links.dynamic.marginal_cost.loc[normalized_dti, pypsa_outflow_link_name]
-        else:
-            outflow_costs = self._net.c.links.static.marginal_cost[pypsa_outflow_link_name]
-
-        return inflow_power_wh * inflow_costs + outflow_power_wh * outflow_costs
+        opex = pypsa_power_flow * marginal_costs
+        return self._align_pypsa_values_to_dti(opex, dti)
 
     @singledispatchmethod
     @override
@@ -272,34 +254,34 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     @get_expansion.register
     def _(self, block: blocks.SystemCore) -> dict[str, float]:
         return {
-            "acdc": self._get_expansion_of_link(block, "acdc-link"),
-            "dcac": self._get_expansion_of_link(block, "dcac-link"),
+            "acdc": self._get_pypsa_link_expansion(block, "acdc-link"),
+            "dcac": self._get_pypsa_link_expansion(block, "dcac-link"),
         }
 
     @get_expansion.register
     def _(self, block: blocks.StationaryBattery) -> dict[str, float]:
-        return {"storage": self._get_expansion_of_store(block, "battery-store")}
+        return {"storage": self._get_pypsa_store_expansion(block, "battery-store")}
 
     @get_expansion.register
     def _(self, block: blocks.RenewableSource) -> dict[str, float]:
-        return {"block": self._get_expansion_of_generator(block, "gen")}
+        return {"block": self._get_pypsa_generator_expansion(block, "gen")}
 
     @get_expansion.register
     def _(self, block: blocks.ControllableSource) -> dict[str, float]:
-        return {"block": self._get_expansion_of_generator(block, "gen")}
+        return {"block": self._get_pypsa_generator_expansion(block, "gen")}
 
     @get_expansion.register
     def _(self, block: blocks.GridConnection) -> dict[str, float]:
         return {
-            "g2s": self._get_expansion_of_link(block, "outflow-link"),
-            "s2g": self._get_expansion_of_link(block, "inflow-link"),
+            "g2s": self._get_pypsa_link_expansion(block, "outflow-link"),
+            "s2g": self._get_pypsa_link_expansion(block, "inflow-link"),
         }
 
     @get_expansion.register
     def _(self, block: blocks.ElectricFleetUnit) -> dict[str, float]:
-        return {"storage": self._get_expansion_of_store(block, "battery-store")}
+        return {"storage": self._get_pypsa_store_expansion(block, "battery-store")}
 
-    def _get_expansion_of_generator(self, block: blocks.BaseBlock, label: str) -> float:
+    def _get_pypsa_generator_expansion(self, block: blocks.BaseBlock, label: str) -> float:
         """
         Helper method to get the expansion of a generator.
         """
@@ -309,14 +291,14 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         gen_p_nom_expansion = gen_p_nom_opt - gen_p_nom
         return gen_p_nom_expansion
 
-    def _get_expansion_of_link(self, block: blocks.BaseBlock, label: str) -> float:
+    def _get_pypsa_link_expansion(self, block: blocks.BaseBlock, label: str) -> float:
         pypsa_inflow_link_name = make_pypsa_label(block, label)
         link_p_nom = self._net.links.loc[pypsa_inflow_link_name, "p_nom"]
         link_p_nom_opt = self._net.links.loc[pypsa_inflow_link_name, "p_nom_opt"]
         link_p_nom_expansion = link_p_nom_opt - link_p_nom
         return link_p_nom_expansion
 
-    def _get_expansion_of_store(self, block: blocks.BaseBlock, label: str) -> float:
+    def _get_pypsa_store_expansion(self, block: blocks.BaseBlock, label: str) -> float:
         pypsa_gen_name = make_pypsa_label(block, label)
         store_e_nom = self._net.stores.loc[pypsa_gen_name, "e_nom"]
         store_e_nom_opt = self._net.stores.loc[pypsa_gen_name, "e_nom_opt"]
@@ -347,8 +329,6 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         super().__init__(logger, config)
         self._net = net
         self._model = self._net.optimize.create_model()
-
-        self._temp_dir = tempfile.TemporaryDirectory()
 
     @property
     def pypsa_network(self) -> pypsa.Network:
@@ -455,7 +435,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         status = self._do_solve(dti)
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
-        return status, PypsaOptimizationResult(net=self._net.copy())
+        return status, PypsaOptimizationResult(net=self._net)
 
     @override
     def solve_time_step(
@@ -484,7 +464,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
         # Therefore, the network is just wrapped inside the `PypsaOptimizationResult`.
-        return status, PypsaOptimizationResult(net=self._net.copy())
+        return status, PypsaOptimizationResult(net=self._net)
 
     def _do_solve(self, dti: pd.DatetimeIndex) -> optimization_problem.OptimizationStatus:
         # Try to directly communicate the optimization problem to the HiGHS solver, without writing it to a file.
@@ -492,9 +472,6 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
         self._net._model = self._model
-
-        basis_file = Path(self._temp_dir.name) / "basis"
-
         with suppress_output():
             # Solve the created model.
             solver_status_str, termination_condition_str = self._net.optimize.solve_model(
@@ -508,9 +485,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
                 solver_options={
                     "output_flag": False,
                 },
-                basis_fn=basis_file,
-                warmstart_fn=basis_file,
             )
+        del self._net.model
 
         self._logger.debug(
             f"Optimization with solver {self._config.solver.value} finished with status '{solver_status_str}' and termination condition '{termination_condition_str}'"
@@ -518,10 +494,6 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         solver_status = linopy.constants.SolverStatus(solver_status_str)
         termination_condition = linopy.constants.TerminationCondition(termination_condition_str)
         status = _linopy_status_and_termination_condition_to_optimization_status(solver_status, termination_condition)
-
-        # # Cleanup the solver model, to reduce the size of the pypsa network and allow downstream code to copy optimization results.
-        # # If the model is still part of the network
-        self._net._model = None
 
         return status
 

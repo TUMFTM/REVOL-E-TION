@@ -34,17 +34,20 @@ class OptimizationStatus(enum.Enum):
     """Optimizer returned an unkown status."""
 
 
+FloatOrTimeSeries = float | pd.Series
+
+
 class OptimizationResult(abc.ABC):
     @singledispatchmethod
     @abc.abstractmethod
-    def get_power_flow(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> dict[str, pd.Series]: ...
+    def get_power_flow(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> dict[str, FloatOrTimeSeries]: ...
 
     @abc.abstractmethod
-    def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float | pd.Series: ...
+    def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> FloatOrTimeSeries: ...
 
     @singledispatchmethod
     @abc.abstractmethod
-    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> float: ...
+    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> FloatOrTimeSeries: ...
 
     @singledispatchmethod
     @abc.abstractmethod

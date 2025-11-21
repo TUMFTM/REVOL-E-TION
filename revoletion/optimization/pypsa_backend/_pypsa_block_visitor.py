@@ -266,11 +266,21 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
     def visit_fixed_demand(
         self, block: blocks.FixedDemand, builder: PyPSANetworkBuilder, bus_connected: str, bus_carrier: str
     ) -> None:
-        demand = block.flows_apriori["demand"][self._datetime_index]
+        bus_load_name = make_pypsa_label(block, "load-bus")
+        builder.add_bus(name=bus_load_name, carrier=bus_carrier)
+
+        builder.add_link(
+            name=make_pypsa_label(block, "inflow-link"),
+            bus0=bus_connected,
+            bus1=bus_load_name,
+            p_nom=np.inf,
+        )
+
+        demand_fix = block.flows_apriori["demand"][self._datetime_index]
         builder.add_load(
             name=make_pypsa_label(block, "load"),
-            bus=bus_connected,
-            p_set=demand,
+            bus=bus_load_name,
+            p_set=demand_fix,
         )
 
     def visit_stationary_battery(
