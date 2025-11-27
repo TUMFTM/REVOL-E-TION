@@ -4,27 +4,33 @@ import logging
 import typing
 from dataclasses import dataclass
 from pathlib import Path
+import collections
 
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
 import typing_extensions
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
 
-from revoletion import optimization
+from revoletion import optimization, utils
 from revoletion import scenario as scn
 
 from .environment import (
     INFO_KEY_OPTIMIZATION_RESULT,
+    INFO_KEY_REWARD_COMPONENTS,
+    INFO_KEY_STATUS,
     OBS_KEY_CARS_AVAILABLE,
     OBS_KEY_CARS_REQUIRED_SOCS,
     OBS_KEY_CARS_SOC,
     ActType,
+    EnvironmentStepStatus,
     ObsType,
     RevoletionEnvironment,
     RevoletionEnvironmentConfig,
+    RewardConfig,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,7 +72,7 @@ class AgentConfig:
         match algorithm:
             case AgentAlgorithm.PPO:
                 # Parameters based on master thesis
-                return cls(learning_rate=0.0005, gamma=0.987, n_steps=100)
+                return cls(learning_rate=0.0003, gamma=0.99, n_steps=100)
             case AgentAlgorithm.TD3:
                 return cls(learning_rate=0.001, gamma=0.99, n_steps=1)
             case AgentAlgorithm.A2C:
@@ -105,7 +111,7 @@ class RevoletionSB3Agent(RevoletionAgent):
         self._sb3_agent.save(model_path)
 
     def learn(self, total_timesteps: int) -> None:
-        return self._sb3_agent.learn(total_timesteps)
+        return self._sb3_agent.learn(total_timesteps, callback=_TracingCallback())
 
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
@@ -116,27 +122,34 @@ _ScenarioFactoryT = typing.Callable[[], scn.Scenario]
 
 
 def _build_rl_environment(
-    scenario_or_scenario_factory: scn.Scenario | _ScenarioFactoryT, train: bool = True
+    scenario_or_scenario_factory: scn.Scenario | _ScenarioFactoryT, horizon: utils.TimeSettings, train: bool = True
 ) -> gym.Env[ObsType, ActType]:
     if isinstance(scenario_or_scenario_factory, scn.Scenario):
         scenario = scenario_or_scenario_factory
     else:
         scenario = scenario_or_scenario_factory()
 
-    if scenario.scheduler:
-        scenario.scheduler.calc_ph_schedule(scenario.times.sim)
     env_config = RevoletionEnvironmentConfig(
-        penalty_factor_charge_cost=0.0,
-        penalty_factor_grid_cost=0.0,
-        episode_length=None if train else len(scenario.times.sim),
+        reward_config=RewardConfig(
+            penalty_factor_grid_cost=1.0,
+            penalty_factor_charge_cost=1.0,
+            penalty_factor_gen_cost=1.0,
+            penalty_factor_dsoc=1.0,
+            penalty_factor_infeasibility=1.0,
+            penalty_factor_power_diff=1.0,
+            penalty_factor_not_at_base=1.0,
+            reward_factor_dsoc=1.0,
+        ),
+        episode_length=None if train else len(horizon),
     )
-    env = RevoletionEnvironment(scenario, scenario.times.sim, config=env_config, train=train)
+    env = RevoletionEnvironment(scenario, horizon, config=env_config, train=train)
     return env
 
 
 def train(
     algorithm: AgentAlgorithm,
     scenario_factory: _ScenarioFactoryT,
+    horizon: utils.TimeSettings,
     config: AgentConfig | None = None,
     n_proc: int | None = None,
     total_timesteps: int = 10000,
@@ -145,9 +158,11 @@ def train(
         return _create_non_trainable_agent(algorithm)
 
     if n_proc is None or n_proc < 2:
-        env = make_vec_env(lambda: _build_rl_environment(scenario_factory), n_envs=1)
+        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, horizon), n_envs=1)
     else:
-        env = make_vec_env(lambda: _build_rl_environment(scenario_factory), n_envs=n_proc, vec_env_cls=SubprocVecEnv)
+        env = make_vec_env(
+            lambda: _build_rl_environment(scenario_factory, horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
+        )
 
     agent = _create_trainable_agent(algorithm, env, config)
 
@@ -156,14 +171,16 @@ def train(
 
 
 def evaluate_with_agent(
-    scenario: scn.Scenario, agent: RevoletionAgent
+    scenario: scn.Scenario,
+    agent: RevoletionAgent,
+    horizon: utils.TimeSettings,
 ) -> tuple[float, optimization.OptimizationResult | None]:
-    env = _build_rl_environment(scenario, train=False)
+    env = _build_rl_environment(scenario, horizon, train=False)
     obs, _ = env.reset()
     total_reward = 0.0
     infos = {}
 
-    for _ in scenario.times.sim.dti:
+    for _ in horizon.dti:
         action = agent.predict(obs, deterministic=True)
         if isinstance(action, tuple):
             action = action[0]
@@ -243,6 +260,7 @@ def _create_trainable_agent(
             seed=config.seed,
             n_steps=config.n_steps,
             tensorboard_log=config.tensorboard_log,
+            verbose=1,
         ),
     )
 
@@ -315,3 +333,60 @@ class BasicChargingAgent(RevoletionAgent):
                 charge_pattern[i] = 1.0
 
         return charge_pattern
+
+
+_BASE_TRACE_KEY = "revoletion"
+_TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
+_TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
+_TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
+_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/04_grid_cost"
+_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_charge_cost"
+_TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff"
+_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/07_power_diff"
+
+
+_MOVING_AVERAGE_HORIZON = 500
+
+
+class _TracingCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+        self._done_count = 0
+        self._infeasible_count = 0
+
+        self._grid_cost = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._charge_cost = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+
+    def _on_step(self) -> bool:
+        vec_infos = self.locals["infos"]
+        vec_dones = self.locals["dones"]
+        for infos, done in zip(vec_infos, vec_dones):
+            if INFO_KEY_REWARD_COMPONENTS in infos:
+                reward = infos[INFO_KEY_REWARD_COMPONENTS]
+
+                self._grid_cost.append(reward.grid_cost_reward)
+                self._charge_cost.append(reward.charge_cost_reward)
+                self._soc_diff.append(reward.soc_diff_reward)
+                self._power_diff.append(reward.power_diff_reward)
+
+                self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_cost) / len(self._grid_cost))
+                self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_cost) / len(self._charge_cost))
+                self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
+                self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
+
+            if not done:
+                continue
+
+            self._done_count += 1
+
+            if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
+                self._infeasible_count += 1
+                self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
+
+            self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
+            self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, self._infeasible_count / self._done_count)
+
+        return True

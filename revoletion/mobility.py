@@ -30,7 +30,7 @@ class FleetDemand:
         self.usecases = None  # remains unfilled if requests is read from file
         self.requests = pd.DataFrame()  # main DataFrame for requests
 
-        self.rng = np.random.default_rng()  # random number generator
+        self.rng = np.random.default_rng(seed=42)  # random number generator
 
     def from_usecases(
         self, path_usecases: str, path_timeframe_mapper: str, key_timeframe_mapper: str, path_demand: str = None

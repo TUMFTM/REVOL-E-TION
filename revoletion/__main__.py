@@ -14,6 +14,7 @@ except ImportError:
     TKINTER_AVAILABLE = False
     warnings.warn("tkinter is not available in this environment. GUI file selection will be disabled.")
 
+import numpy as np
 
 import revoletion.example
 
@@ -23,6 +24,8 @@ from .optimization import OptimizationBackend, Solver
 from .run import SimulationRun
 from .scenario import SimulationPaths
 from .simulation import SimulationSettings
+
+np.random.seed(42)
 
 
 def main():
@@ -116,43 +119,43 @@ def main():
         help="API key for Solcast API",
     )
 
-    dispatch_settings_template = simulation.DispatchSettings()
+    control_settings_template = simulation.ControlSettings()
 
-    dispatch_parser = subparsers.add_parser(name="dispatch")
+    control_parser = subparsers.add_parser(name="control")
 
-    dispatch_parser.add_argument(
+    control_parser.add_argument(
         "-np",
         "--n_processes",
         type=int,
-        default=dispatch_settings_template.n_processes,
+        default=control_settings_template.n_processes,
         help="Number of processes used for training of the RL agent",
     )
 
-    dispatch_parser.add_argument(
+    control_parser.add_argument(
         "--algo",
         type=rl.AgentAlgorithm,
-        default=dispatch_settings_template.agent_algorithm,
+        default=control_settings_template.agent_algorithm,
         choices=list(rl.AgentAlgorithm),
         help="Algorithm used for dispatch",
     )
 
-    dispatch_parser.add_argument("-scn", "--scenario", type=str, help="Path to the scenario CSV file")
-    dispatch_parser.add_argument(
+    control_parser.add_argument("-scn", "--scenario", type=str, help="Path to the scenario CSV file")
+    control_parser.add_argument(
         "-db",
         "--debugmode",
         type=filter_bool,
-        default=dispatch_settings_template.debugmode,
+        default=control_settings_template.debugmode,
     )
-    dispatch_parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
-    dispatch_parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
+    control_parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
+    control_parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
 
-    dispatch_parser.add_argument(
+    control_parser.add_argument(
         "--models-path",
         type=str,
         default=None,
         help="Path to a folder where trained models will be saved to and loaded from",
     )
-    dispatch_parser.add_argument(
+    control_parser.add_argument(
         "--train-timesteps",
         type=int,
         default=None,
@@ -163,8 +166,8 @@ def main():
 
     if args.command == "optimize":
         _optimize_cmd(args)
-    elif args.command == "dispatch":
-        _dispatch_cmd(args)
+    elif args.command == "control":
+        _control_cmd(args)
     else:
         parser.error(f"Invalid subcommand: {args.command}")
 
@@ -238,18 +241,18 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
     simulation_run.execute(plot=False)
 
 
-def _dispatch_cmd(args: argparse.Namespace) -> None:
+def _control_cmd(args: argparse.Namespace) -> None:
     paths = SimulationPaths.from_plain_paths(
         scenario=args.scenario,
         input=None if args.input is None else Path(args.input),
         output=None if args.output is None else Path(args.output),
     )
-    scenario_factory = simulation.DispatchScenarioFactory(paths)
+    scenario_factory = simulation.ControlScenarioFactory(paths)
 
     # Configure the level of the logger according to `debugmode` and setup handlers.
     configure_root_logger(debugmode=args.debugmode)
 
-    settings = simulation.DispatchSettings(
+    settings = simulation.ControlSettings(
         n_processes=args.n_processes,
         agent_algorithm=args.algo,
         debugmode=args.debugmode,
@@ -257,11 +260,11 @@ def _dispatch_cmd(args: argparse.Namespace) -> None:
         train_timesteps=args.train_timesteps,
     )
 
-    dispatch_horizon = simulation.DispatchHorizon(
+    control_horizon = simulation.ControlHorizon(
         scenario_factory,
         settings,
     )
-    dispatch_horizon.execute()
+    control_horizon.execute(plot=False)
 
 
 if __name__ == "__main__":

@@ -289,38 +289,38 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
 
 
 class TimeseriesCollectionBlockVisitor(BlockVisitor[list[pd.Series]]):
-    def collect_timeseries(self, block_registry: _BlockRegistryT) -> list[pd.Series]:
+    def collect_timeseries(self, block_registry: _BlockRegistryT, horizon: utils.TimeSettings) -> list[pd.Series]:
         timeseries = []
         for block in block_registry.get("TopLevelBlock", {}).values():
-            timeseries.extend(self.visit_block(block))
+            timeseries.extend(self.visit_block(block, horizon))
         return timeseries
 
     @override
-    def visit_block(self, block: blocks.BaseBlock) -> list[pd.Series]:
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> list[pd.Series]:
         timeseries = []
         for subblock in block.subblocks.values():
-            timeseries.extend(self.visit_block(subblock))
+            timeseries.extend(self.visit_block(subblock, horizon))
 
         if isinstance(block, blocks.ElectricBlock):
-            timeseries.extend(self.visit_electric_block(block))
+            timeseries.extend(self.visit_electric_block(block, horizon))
 
         return timeseries
 
-    def visit_electric_block(self, block: blocks.ElectricBlock) -> list[pd.Series]:
+    def visit_electric_block(self, block: blocks.ElectricBlock, horizon: utils.TimeSettings) -> list[pd.Series]:
         timeseries = []
         reindexed_flows = block.flows.copy()
         reindexed_flows.columns = pd.MultiIndex.from_tuples(
             tuples=[(block.name, col) for col in reindexed_flows.columns],
             names=["block", "key"],
         )
-        timeseries.append(reindexed_flows.loc[block.scenario.times.eval.dti, :])
+        timeseries.append(reindexed_flows.loc[horizon.dti, :])
 
         reindexed_states = block.states.copy()
         reindexed_states.columns = pd.MultiIndex.from_tuples(
             tuples=[(block.name, col) for col in reindexed_states.columns],
             names=["block", "key"],
         )
-        timeseries.append(reindexed_states.loc[block.scenario.times.eval.dti_extd, :])
+        timeseries.append(reindexed_states.loc[horizon.dti_extd, :])
         return timeseries
 
 

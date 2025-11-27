@@ -7,7 +7,7 @@ import pandas as pd
 import pypsa
 from typing_extensions import override
 
-from revoletion import blocks
+from revoletion import blocks, utils
 
 from ._pypsa_net_builder import PyPSANetworkBuilder
 
@@ -30,7 +30,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
     def __init__(
         self,
-        datetime_index: pd.DatetimeIndex,
+        horizon: utils.TimeSettings,
         cost_eps: float,
         enable_investment: bool = True,
         enable_fixed_dispatch: bool = True,
@@ -40,13 +40,14 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         :param cost_eps:
         :param external_charging: Whether external charging should be enabled for EVs.
         """
-        self._datetime_index = datetime_index
+        self._horizon = horizon
+        self._datetime_index = horizon.dti
         self._cost_eps = cost_eps
         self._enable_investment = enable_investment
         self._enable_fixed_dispatch = enable_fixed_dispatch
 
     def create_pypsa_network(self, block_registry: dict[str, dict[str, blocks.BaseBlock]]) -> pypsa.Network:
-        builder = PyPSANetworkBuilder(self._datetime_index)
+        builder = PyPSANetworkBuilder(self._horizon)
         # Register the carriers with PyPSA. While this does not change anything for AC and DC
         # it makes PyPSA stop complaining.
         builder.add_carrier(self._AC_CARRIER)
@@ -498,7 +499,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         )
         fix_ext_ac = (
             block.flows_apriori.loc[self._datetime_index, "p_ext_ac_chg"]
-            if block.apriori
+            if block.apriori and self._enable_fixed_dispatch
             else pd.Series(np.nan, index=self._datetime_index)
         )
         variable_costs_ext_ac = block.evaluators["ext_ac"].opt.spec_ep_operation[self._datetime_index]
@@ -526,7 +527,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         )
         fix_ext_dc = (
             block.flows_apriori.loc[self._datetime_index, "p_ext_dc_chg"]
-            if block.apriori
+            if block.apriori and self._enable_fixed_dispatch
             else pd.Series(np.nan, index=self._datetime_index)
         )
         variable_costs_ext_dc = block.evaluators["ext_dc"].opt.spec_ep_operation[self._datetime_index]

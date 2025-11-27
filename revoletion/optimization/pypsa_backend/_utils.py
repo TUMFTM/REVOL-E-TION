@@ -1,8 +1,17 @@
+import logging
+import typing
+
 import pandas as pd
 
+_LOGGER = logging.getLogger(__name__)
 
-def normalize_datetime_index(datetime_index: pd.DatetimeIndex) -> pd.DatetimeIndex:
-    normalized_dti = datetime_index.tz_localize(tz=None)
+
+_T = typing.TypeVar("_T", bound=pd.DatetimeIndex | pd.DataFrame | pd.Series)
+
+
+def normalize_dti_or_df(dti_or_df: _T) -> _T:
+    utc_dti = dti_or_df.tz_convert(tz="UTC")
+    normalized_dti = utc_dti.tz_localize(tz=None)
     return normalized_dti
 
 
@@ -23,8 +32,7 @@ def get_datetime_index_time_step_in_hours(datetime_index: pd.DatetimeIndex) -> f
     min_hours_diff = dti_diff_hours_series.min()
 
     if max_hours_diff != min_hours_diff:
-        raise RuntimeError(
-            f"Cannot determine interval of datetime index: irregular datetime index (max={max_hours_diff}; min={min_hours_diff})"
-        )
+        msg = f"Cannot determine interval of datetime index: irregular datetime index (max={max_hours_diff}; min={min_hours_diff})"
+        raise RuntimeError(msg)
 
     return max_hours_diff

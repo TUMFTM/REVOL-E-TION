@@ -2,7 +2,6 @@ import contextlib
 import logging
 import os
 import sys
-import tempfile
 from functools import singledispatchmethod
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from revoletion import blocks, utils
 from revoletion import scenario as scn
 
 from ._pypsa_block_visitor import PyPSABlockVisitor, make_pypsa_label
-from ._utils import normalize_datetime_index
+from ._utils import normalize_dti_or_df
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         out = self._get_pypsa_link_power_flow(block, dti, "outflow-link")
 
         # `pot` is the potential available power from the generator, which might not be fully utilized.
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, "gen")
         pypsa_pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name] * block.sizes["block"].total
         pot = self._align_pypsa_values_to_dti(pypsa_pot, dti)
@@ -105,7 +104,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_power_flow_storage(
         self, block: blocks.StorageBlock, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_store_name = make_pypsa_label(block, "battery-store")
         pypsa_bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
         bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
@@ -143,7 +142,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         Helper method to determine the power flow of a PyPSA link.
         """
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_link_name = make_pypsa_label(block, label)
         pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
 
@@ -155,7 +154,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         Helper method to determine the power flow of a PyPSA generator.
         """
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
         pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
         return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
@@ -175,7 +174,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
             raise ValueError(f"Cannot determine SoC for block {block.name} of type {type(block)}")
 
         pypsa_store_name = make_pypsa_label(block, "battery-store")
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_store_e = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
         return self._align_pypsa_values_to_dti(pypsa_store_e, dti)
 
@@ -208,16 +207,24 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return self._get_pypsa_generator_opex(block, dti, "gen")
 
     @get_opex.register
-    def _(self, block: blocks.StorageBlock, dti: pd.DatetimeIndex) -> float:
+    def _get_opex_storage_block(self, block: blocks.StorageBlock, dti: pd.DatetimeIndex) -> float:
         inflow_link_opex = self._get_pypsa_link_opex(block, dti, "inflow-link")
         outflow_link_opex = self._get_pypsa_link_opex(block, dti, "outflow-link")
+        store_opex = self._get_pypsa_store_opex(block, dti, "battery-store")
 
-        return inflow_link_opex + outflow_link_opex
+        return inflow_link_opex + outflow_link_opex + store_opex
+
+    @get_opex.register
+    def _(self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
+        ext_ac_opex = self._get_pypsa_generator_opex(block, dti, "ext-ac-gen")
+        ext_dc_opex = self._get_pypsa_generator_opex(block, dti, "ext-dc-gen")
+
+        return self._get_opex_storage_block(block, dti) + ext_ac_opex + ext_dc_opex
 
     def _get_pypsa_link_opex(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_link_name = make_pypsa_label(block, label)
 
         pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
@@ -233,7 +240,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_pypsa_generator_opex(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
 
         pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
@@ -242,6 +249,22 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
             marginal_costs = self._net.c.generators.dynamic.marginal_cost.loc[normalized_dti, pypsa_gen_name]
         else:
             marginal_costs = self._net.c.generators.static.marginal_cost[pypsa_gen_name]
+
+        opex = pypsa_power_flow * marginal_costs
+        return self._align_pypsa_values_to_dti(opex, dti)
+
+    def _get_pypsa_store_opex(
+        self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
+    ) -> optimization_problem.FloatOrTimeSeries:
+        normalized_dti = normalize_dti_or_df(dti)
+        pypsa_gen_name = make_pypsa_label(block, label)
+
+        pypsa_power_flow = self._net.stores_t.p.loc[normalized_dti, pypsa_gen_name]
+
+        if pypsa_gen_name in self._net.c.stores.dynamic.marginal_cost:
+            marginal_costs = self._net.c.stores.dynamic.marginal_cost.loc[normalized_dti, pypsa_gen_name]
+        else:
+            marginal_costs = self._net.c.stores.static.marginal_cost[pypsa_gen_name]
 
         opex = pypsa_power_flow * marginal_costs
         return self._align_pypsa_values_to_dti(opex, dti)
@@ -347,7 +370,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             config = optimization_problem.OptimizationProblemConfig()
 
         visitor = PyPSABlockVisitor(
-            horizon.dti, config.cost_eps, enable_investment=config.invest, enable_fixed_dispatch=False
+            horizon, config.cost_eps, enable_investment=config.invest, enable_fixed_dispatch=False
         )
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
 
@@ -358,34 +381,34 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power unit for block {block.name} of type {type(block)}")
 
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
 
         charger_in = make_pypsa_label(block, "inflow-link")
         charger_out = make_pypsa_label(block, "outflow-link")
 
-        prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
-        prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
+        prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in]
+        prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in]
 
         p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
         p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = p_min_pu
+        self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = 0.0
+
+        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
+
+        if not self._model:
+            return
 
         inflow_capacity = block.pwr_chg_max
 
         p_max = p_max_pu * inflow_capacity
         p_min = p_min_pu * inflow_capacity
-
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = p_max
         self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_in] = p_min
-
-        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
-        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
-
-        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
-        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
-        self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = 0.0
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = 0.0
 
     @override
@@ -393,12 +416,10 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power for block {block.name} of type {type(block)}")
 
-        normalized_dti = normalize_datetime_index(dti)
+        normalized_dti = normalize_dti_or_df(dti)
 
         charger_in = make_pypsa_label(block, "inflow-link")
         charger_out = make_pypsa_label(block, "outflow-link")
-
-        outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]
 
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
@@ -406,11 +427,16 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
         p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
 
-        p_max = p_max_pu * outflow_capacity
-        p_min = p_min_pu * outflow_capacity
-
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = p_min_pu
+        self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = 0.0
+
+        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
+
+        if not self._model:
+            return
 
         outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]
         p_max = p_max_pu * outflow_capacity
@@ -418,14 +444,6 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = p_max
         self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_out] = p_min
-
-        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
-        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
-
-        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
-        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
-        self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = 0.0
-
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = 0.0
 
     @override
@@ -441,7 +459,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     def solve_time_step(
         self, time_step: pd.DatetimeIndex
     ) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
-        normalized_time_step = normalize_datetime_index(time_step)
+        normalized_time_step = normalize_dti_or_df(time_step)
 
         # If we optimize only one time step, we assume rolling horizon optimization.
         # For this case, we must ensure that the initial SoCs are always updated to the previous energy result.
@@ -471,22 +489,38 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         # This should reduce the I/O interactions and significantly speed up optimizations for large scenarios.
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
-        self._net._model = self._model
-        with suppress_output():
-            # Solve the created model.
-            solver_status_str, termination_condition_str = self._net.optimize.solve_model(
-                # By default, PyPSA and linopy would print status information about the optimization problem to the console.
-                # This is quite spammy and therefore it is only enabled for debug mode.
-                log_to_console=self._config.debug,
-                # Do not show a progress indicator, regardless of debug mode.
-                progress=False,
-                io_api=io_api,
-                solver_name=self._config.solver.value,
-                solver_options={
-                    "output_flag": False,
-                },
-            )
-        del self._net.model
+        if self._model:
+            self._net._model = self._model
+            with suppress_output():
+                # Solve the created model.
+                solver_status_str, termination_condition_str = self._net.optimize.solve_model(
+                    # By default, PyPSA and linopy would print status information about the optimization problem to the console.
+                    # This is quite spammy and therefore it is only enabled for debug mode.
+                    log_to_console=self._config.debug,
+                    # Do not show a progress indicator, regardless of debug mode.
+                    progress=False,
+                    io_api=io_api,
+                    solver_name=self._config.solver.value,
+                    solver_options={
+                        "output_flag": False,
+                    },
+                )
+            del self._net.model
+        else:
+            with suppress_output():
+                solver_status_str, termination_condition_str = self._net.optimize(
+                    dti,
+                    # By default, PyPSA and linopy would print status information about the optimization problem to the console.
+                    # This is quite spammy and therefore it is only enabled for debug mode.
+                    log_to_console=self._config.debug,
+                    # Do not show a progress indicator, regardless of debug mode.
+                    progress=False,
+                    io_api=io_api,
+                    solver_name=self._config.solver.value,
+                    solver_options={
+                        "output_flag": False,
+                    },
+                )
 
         self._logger.debug(
             f"Optimization with solver {self._config.solver.value} finished with status '{solver_status_str}' and termination condition '{termination_condition_str}'"

@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, TypeAlias
 
 import gymnasium as gym
@@ -14,23 +15,20 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
-class RevoletionEnvironmentConfig:
-    min_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("6h"))
-    max_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("48h"))
-
-    forecast_horizon: int = 8
-    """The length of the forecast horizon that is provided in the observations to the client."""
-
+class RewardConfig:
     penalty_factor_grid_cost: float = 1.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
     penalty_factor_charge_cost: float = 2.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
+    penalty_factor_gen_cost: float = 2.0
+    """Weight applied to the costs of charging/discharging the EVs."""
+
     penalty_factor_dsoc: float = 3.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
-    penalty_factor_infeasible: float = 2.0
+    penalty_factor_infeasibility: float = 2.0
     """Weight for the penatly if the energy system is determined to be infeasible and cannot be optimizated."""
 
     penalty_factor_power_diff: float = 1.5
@@ -42,7 +40,80 @@ class RevoletionEnvironmentConfig:
     reward_factor_dsoc: float = 4.0
     """Weight of the reward for meeting a SoC requirement."""
 
+
+@dataclass
+class RevoletionEnvironmentConfig:
+    min_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("6h"))
+    max_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("48h"))
+
     episode_length: int | None = None
+
+    forecast_horizon: int = 8
+    """The length of the forecast horizon that is provided in the observations to the client."""
+
+    power_precision: int = 1
+
+    reward_config: RewardConfig = field(default_factory=lambda: RewardConfig())
+
+
+@dataclass
+class RewardComponents:
+    config: RewardConfig
+    grid_cost: float = 0.0
+    charge_cost: float = 0.0
+    gen_cost: float = 0.0
+    power_diff: float = 0.0
+    soc_diff: float = 0.0
+    infeasibility: float = 0.0
+
+    @property
+    def grid_cost_reward(self) -> float:
+        if self.grid_cost < 0.0:
+            return self.grid_cost * self.config.penalty_factor_grid_cost
+        return self.grid_cost
+
+    @property
+    def charge_cost_reward(self) -> float:
+        if self.charge_cost < 0.0:
+            return self.charge_cost * self.config.penalty_factor_charge_cost
+        return self.charge_cost
+
+    @property
+    def gen_cost_reward(self) -> float:
+        if self.gen_cost < 0.0:
+            return self.gen_cost * self.config.penalty_factor_gen_cost
+        return self.gen_cost
+
+    @property
+    def power_diff_reward(self) -> float:
+        return -abs(self.power_diff) * self.config.penalty_factor_power_diff
+
+    @property
+    def soc_diff_reward(self) -> float:
+        if self.soc_diff < 0.0:
+            return self.soc_diff * self.config.penalty_factor_dsoc
+        else:
+            return self.soc_diff * self.config.reward_factor_dsoc
+
+    @property
+    def infeasibility_reward(self) -> float:
+        return -self.infeasibility * self.config.penalty_factor_infeasibility
+
+    @property
+    def total_reward(self) -> float:
+        return (
+            self.grid_cost_reward
+            + self.charge_cost_reward
+            + self.gen_cost_reward
+            + self.power_diff_reward
+            + self.soc_diff_reward
+            + self.infeasibility_reward
+        )
+
+
+class EnvironmentStepStatus(Enum):
+    OK = auto()
+    INFEASIBLE = auto()
 
 
 ActType: TypeAlias = np.ndarray
@@ -59,6 +130,8 @@ OBS_KEY_GRID_IMPORT_COSTS = "grid_import_costs"
 OBS_KEY_GRID_EXPORT_COSTS = "grid_export_costs"
 
 INFO_KEY_OPTIMIZATION_RESULT = "optimization_result"
+INFO_KEY_STATUS = "status"
+INFO_KEY_REWARD_COMPONENTS = "rewards"
 
 
 class RevoletionEnvironment(gym.Env[ObsType, ActType]):
@@ -287,7 +360,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             grid_markets_export_cost.append(export_cost_norm)
 
         return {
-            OBS_KEY_GRID_IMPORT_COSTS: np.array(grid_markets_export_cost, dtype=np.float32),
+            OBS_KEY_GRID_IMPORT_COSTS: np.array(grid_markets_import_cost, dtype=np.float32),
             OBS_KEY_GRID_EXPORT_COSTS: np.array(grid_markets_export_cost, dtype=np.float32),
         }
 
@@ -320,15 +393,15 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
     @override
     def step(self, action: ActType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         _LOGGER.debug(f"Action at {self._step_idx}: {action}")
-        charge_power_penalties = []
+        charge_power_diffs = []
         for i, charge_power_frac in enumerate(action):
             block = self._electric_fleet_unit_blocks[i]
             try:
                 normalized_charge_power_frac, charge_power_penalty = self._normalize_charge_power(
                     block, charge_power_frac
                 )
-                _LOGGER.debug(f"Normalized action at {self._step_idx}: {normalized_charge_power_frac}")
-                charge_power_penalties.append(charge_power_penalty)
+                _LOGGER.debug(f"Normalized action at {self._step_idx} for vehicle {i}: {normalized_charge_power_frac}")
+                charge_power_diffs.append(charge_power_penalty)
                 # By default the input power is adjusted. This is necessary to ensure that actions around 0 do not lead to unintended infeasibilities.
                 # The charging power is always set to a power range. While this ensures that PyPSA
                 # does not run into numerical issues, it hands over some control to PyPSA.
@@ -345,41 +418,50 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                     )
             except ValueError as e:
                 _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
+        reward = RewardComponents(self._config.reward_config)
+        reward.power_diff = sum(charge_power_diffs) / len(charge_power_diffs)
 
         optimization_status, optimization_result = self._optimization_problem.solve_time_step(self.current_time_step)
+        infos = {INFO_KEY_REWARD_COMPONENTS: reward}
         if not self._train:
             infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
-        else:
-            infos = {}
 
         if optimization_status != optimization.OptimizationStatus.OPTIMAL or optimization_result is None:
-            previous_profit = max(sum(filter(lambda x: x >= 0.0, self._reward_history)), 1.0)
-            reward = -self._config.penalty_factor_infeasible * previous_profit
-            _LOGGER.debug(f"Optimization failed at {self._step_idx}. Infeasibility penalty: {reward}")
+            previous_profit = max(
+                sum(filter(lambda x: x >= 0.0, map(lambda x: x.total_reward, self._reward_history))), 1.0
+            )
+            reward.infeasibility = previous_profit
+            _LOGGER.debug(
+                f"Optimization failed at {self._step_idx}. Infeasibility penalty: {reward.infeasibility_reward}"
+            )
+
+            infos[INFO_KEY_STATUS] = EnvironmentStepStatus.INFEASIBLE
+
             terminated = False
             truncated = True
-            return self._get_obs(), reward, terminated, truncated, infos
+            return self._get_obs(), reward.total_reward, terminated, truncated, infos
+
+        infos[INFO_KEY_STATUS] = EnvironmentStepStatus.OK
 
         obs = self._get_obs(optimization_result)
 
-        reward = self._compute_reward(optimization_result)
-        reward -= max(charge_power_penalties)
-        _LOGGER.debug(f"Reward at {self._step_idx}: {reward}")
+        self._compute_rewards(reward, optimization_result)
+        _LOGGER.debug(f"Reward at {self._step_idx}: {reward.total_reward}")
 
         self._step_idx += 1
         terminated, truncated = self._is_done()
 
-        return obs, reward, terminated, truncated, infos
+        return obs, reward.total_reward, terminated, truncated, infos
 
     def _normalize_charge_power(self, block: blocks.ElectricFleetUnit, power: float) -> tuple[float, float]:
         """Normalize the charge power to ensure it stays within the bounds of the energy system"""
-        power = np.round(power, 1)
+        power = np.round(power, self._config.power_precision)
         # If the EV is not present at the charger it cannot be charged.
         # However, the RL agent might still try to charge the EVs. To avoid an increased amount of infeasible scenarios,
         # the agent just receives a penalty and can continue.
         is_at_base = block.log.loc[self.current_time_step, "atbase"]
         if not is_at_base:
-            return 0.0, abs(power) * self._config.penalty_factor_not_at_base
+            return 0.0, abs(power)
 
         nominal_battery_capacity_wh = block.sizes["storage"].preexisting
         current_battery_capacity_wh = (
@@ -391,8 +473,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         # Always leave some remainder in battery for standing loss and numerical errors.
         max_energy_out_wh = current_battery_capacity_wh * 0.95
 
-        # TODO: Either get the timestep from the dti or accept as param to env.
-        timestep_hours = 0.25
+        # TODO: this is not clean.
+        timestep_hours = self._horizon._timestep.seconds / 3600.0
 
         soc_limited_charge_power_w = max_energy_in_wh / timestep_hours
         soc_limited_discharge_power_w = max_energy_out_wh / timestep_hours
@@ -413,38 +495,28 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         normalized_power = np.round(np.clip(power, lower_limit, upper_limit), 1)
 
         power_diff = np.round(abs(abs(power) - abs(normalized_power)), 2)
-        return normalized_power, power_diff * self._config.penalty_factor_power_diff
+        return normalized_power, power_diff
 
-    def _compute_reward(self, optimization_result: optimization.OptimizationResult) -> float:
-        total_costs = 0.0
-
-        total_costs += (
-            sum(
-                [
-                    self._normalize_grid_cost(optimization_result.get_opex(block, self.current_time_step))
-                    for block in self._grid_connection_blocks
-                ]
-            )
-            * self._config.penalty_factor_grid_cost
+    def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
+        reward.grid_cost = sum(
+            [
+                self._normalize_grid_cost(optimization_result.get_opex(block, self.current_time_step))
+                for block in self._grid_connection_blocks
+            ]
         )
-        total_costs += (
-            sum(
-                [
-                    self._normalize_charge_cost(optimization_result.get_opex(block, self.current_time_step))
-                    for block in self._electric_fleet_unit_blocks
-                ]
-            )
-            * self._config.penalty_factor_charge_cost
+        reward.charge_cost = sum(
+            [
+                self._normalize_charge_cost(optimization_result.get_opex(block, self.current_time_step))
+                for block in self._electric_fleet_unit_blocks
+            ]
         )
 
         if self._has_renewable_gen:
-            total_costs += sum(
+            reward.gen_cost = sum(
                 [optimization_result.get_opex(block, self.current_time_step) for block in self._renewable_source_blocks]
             )
 
-        reward = -total_costs
-        _LOGGER.debug(f"cost reward {reward}")
-
+        soc_diffs = []
         for block in self._electric_fleet_unit_blocks:
             dsoc = block.log.loc[self.current_time_step, "dsoc"]
             if dsoc == 0.0:
@@ -453,19 +525,12 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             curr_stored_energy = optimization_result.get_stored_energy(block, self.current_time_step)
             curr_soc = curr_stored_energy / block.sizes["storage"].preexisting
             soc_diff = curr_soc - dsoc
+            soc_diffs.append(soc_diff)
 
-            if soc_diff < 0.0:
-                # Not enough SoC
-                soc_penalty = abs(soc_diff) * self._config.penalty_factor_dsoc
-            else:
-                soc_penalty = -((1.0 + soc_diff) * self._config.reward_factor_dsoc)
-
-            reward -= soc_penalty
-            _LOGGER.debug(f"SoC penalty {soc_penalty}")
+        if len(soc_diffs) > 0:
+            reward.soc_diff = sum(soc_diffs) / len(soc_diffs)
 
         self._reward_history.append(reward)
-
-        return reward
 
     def _is_done(self) -> tuple[bool, bool]:
         terminated = self._step_idx >= self._max_step_idx

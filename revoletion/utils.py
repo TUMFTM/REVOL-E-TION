@@ -192,9 +192,7 @@ class TimeSettings:
         start = self.dti[start_idx]
         end = self.dti_extd[start_idx + length]
 
-        return TimeSettings(
-            start=start, end=end, duration=(end - start).floor(self._timestep), _timestep=self._timestep
-        )
+        return TimeSettings.create_from_start_timestamp(start=start, timestep=self._timestep, end=end)
 
 
 def infer_dtype(value):

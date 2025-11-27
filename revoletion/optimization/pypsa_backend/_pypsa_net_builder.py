@@ -6,7 +6,8 @@ import pandas as pd
 import pypsa
 from typing_extensions import TypeAlias
 
-from ._utils import get_datetime_index_time_step_in_hours, normalize_datetime_index
+from revoletion import utils
+from ._utils import get_datetime_index_time_step_in_hours, normalize_dti_or_df
 
 _OptTimeSeriesArg: TypeAlias = float | pd.Series | pd.DataFrame | None
 
@@ -19,18 +20,18 @@ class PyPSANetworkBuilder:
     The builder handles the temporal alignment of the input data and ensures consistent construction of each PyPSA component.
     """
 
-    def __init__(self, datetime_index: pd.DatetimeIndex) -> None:
+    def __init__(self, horizon: utils.TimeSettings) -> None:
         self._net = pypsa.Network()
 
         # PyPSA does not support snapshots with TZ information.
-        datetime_index = normalize_datetime_index(datetime_index)
+        datetime_index = normalize_dti_or_df(horizon.dti)
         self._net.set_snapshots(datetime_index)  # type: ignore
 
         # PyPSA by default assumes a weighting of 1.0 corresponding to an timestep size of 1h.
         # However, REVOL-E-TION supports arbitrary timesteps, therefore PyPSA must be adjusted
         # according to the time step. This is done through the weighting.
         # E.g., for a datetime index with a freq of 15min the correct weighting is 0.25h.
-        self._weighting = get_datetime_index_time_step_in_hours(datetime_index)
+        self._weighting = horizon._timestep.seconds / 3600
         self._net.snapshot_weightings.objective = self._weighting
         self._net.snapshot_weightings.stores = self._weighting
         self._net.snapshot_weightings.generators = self._weighting
@@ -182,7 +183,8 @@ class PyPSANetworkBuilder:
         This ensures that all timeseries data matches the format required by PyPSA.
         """
         if isinstance(opt_timeseries_data, pd.Series) or isinstance(opt_timeseries_data, pd.DataFrame):
-            return opt_timeseries_data.tz_localize(tz=None).astype(dtype=np.float32)
+            normalized_timeseries_data = normalize_dti_or_df(opt_timeseries_data)
+            return normalized_timeseries_data.astype(dtype=np.float32)
         return opt_timeseries_data
 
     def _scale_hourly_to_time_step(self, value_per_hour: float | int | None) -> float | None:

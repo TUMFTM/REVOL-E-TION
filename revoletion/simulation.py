@@ -210,6 +210,37 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
 
 
+class _OpexResultProcessor(blocks.BlockVisitor[None]):
+    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
+        self._optimization_result = optimization_result
+
+    @classmethod
+    def collect_opex(
+        cls,
+        optimization_result: optimization.OptimizationResult,
+        scenario: scn.Scenario,
+        horizon: utils.TimeSettings,
+    ) -> None:
+        visitor = cls(optimization_result)
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            visitor.visit_block(block, horizon=horizon)
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+        # Always traverse to children even for NonElectricBlock. This is necessary, since
+        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, horizon=horizon)
+
+        # For `NonElectricBlock` no further processing should be done, since they have no power flows
+        # and also no investment option.
+        if not isinstance(block, blocks.ElectricBlock):
+            return
+
+        opex = self._optimization_result.get_opex(block, horizon.dti)
+        block.states.loc[horizon.dti, "opex"] = opex
+
+
 @dataclass
 class SimulationSettings:
     solver: optimization.Solver = optimization.Solver.GUROBI
@@ -315,7 +346,7 @@ class OptimizationHorizon:
 
 
 @dataclass
-class DispatchSettings:
+class ControlSettings:
     n_processes: int = 1
     agent_algorithm: rl.AgentAlgorithm = rl.AgentAlgorithm.PPO
     train_timesteps: int | None = None
@@ -326,7 +357,7 @@ class DispatchSettings:
 _DEFAULT_TRAIN_TIMESTEPS = 10_000
 
 
-class DispatchScenarioFactory:
+class ControlScenarioFactory:
     def __init__(self, paths: scn.SimulationPaths) -> None:
         self._paths = paths
         self.scenario_name = self._paths.scenario.stem
@@ -351,11 +382,11 @@ class DispatchScenarioFactory:
         )
 
 
-class DispatchHorizon:
+class ControlHorizon:
     def __init__(
         self,
-        scenario_factory: DispatchScenarioFactory,
-        settings: DispatchSettings,
+        scenario_factory: ControlScenarioFactory,
+        settings: ControlSettings,
         logger: logging.Logger | None = None,
     ) -> None:
         self._scenario_factory = scenario_factory
@@ -363,6 +394,8 @@ class DispatchHorizon:
         self._logger = logger or _LOGGER
 
     def execute(self, plot=True) -> None:
+        scenario = self._scenario_factory.create_scenario()
+
         agent = None
         if self._settings.models_path is not None:
             self._settings.models_path.mkdir(exist_ok=True)
@@ -374,12 +407,19 @@ class DispatchHorizon:
             agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
             agent_config.tensorboard_log = "/tmp/revol"
 
+            train_horizon = utils.TimeSettings.create_from_start_timestamp(
+                start=scenario.times.sim.start,
+                timestep=scenario.timestep.td,
+                end=scenario.times.sim.start + scenario.len_ph,
+            )
+
             self._logger.info(
                 f"Training agent '{self._settings.agent_algorithm}' on scenario '{self._scenario_factory.scenario_name}'"
             )
             agent = rl.train(
                 self._settings.agent_algorithm,
                 self._scenario_factory.create_scenario,
+                horizon=train_horizon,
                 n_proc=self._settings.n_processes,
                 config=agent_config,
                 total_timesteps=self._settings.train_timesteps or _DEFAULT_TRAIN_TIMESTEPS,
@@ -388,10 +428,13 @@ class DispatchHorizon:
             if self._settings.models_path is not None:
                 rl.save_agent(agent, self._scenario_factory.scenario_name, self._settings.models_path)
 
-        scenario = self._scenario_factory.create_scenario()
-
+        eval_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start + scenario.len_ph,
+            timestep=scenario.timestep.td,
+            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
+        )
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
-        reward, optimization_result = rl.evaluate_with_agent(scenario, agent)
+        reward, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)
         self._logger.info(f"Agent got a reward of {reward}")
         if optimization_result is None:
             self._logger.error("Evaluation failed")
@@ -400,13 +443,21 @@ class DispatchHorizon:
         _PowerFlowResultProcessor.collect_power_flows(
             optimization_result,
             scenario,
-            scenario.times.sim,
+            eval_horizon,
+        )
+
+        _OpexResultProcessor.collect_opex(
+            optimization_result,
+            scenario,
+            eval_horizon,
         )
 
         for block in scenario.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()
 
-        result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(scenario.block_registry)
+        result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(
+            scenario.block_registry, eval_horizon
+        )
         result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
         result_timeseries_aggregated.to_csv(scenario.paths.create_result_path(suffix=f"{scenario.name}_results_ts.csv"))
         if plot:
