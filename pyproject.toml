@@ -30,7 +30,7 @@ dependencies = [
     "tk",
     "typing-extensions>=4.15.0",
     "windpowerlib",
-    "pydantic"
+    "pydantic",
 ]
 
 [dependency-groups]
