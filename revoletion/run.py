@@ -29,6 +29,7 @@ class SimulationRun:
         self.settings = settings or simulation.SimulationSettings()
 
         self.runtime = utils.RunTime()
+        self.runtime.start()
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
@@ -148,7 +149,7 @@ class SimulationRun:
                 self.execute_scenario(name=scenario_name, plot=plot)
 
         self.runtime.stop()
-        self.logger.info(f"Total runtime for all scenarios: {self.runtime.duration:.2f} s")
+        self.logger.info(f"Total runtime for all scenarios: {self.runtime}")
 
         self.join_results()
 

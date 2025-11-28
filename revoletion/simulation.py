@@ -396,6 +396,7 @@ class Scenario:
         self.apriori_lvls = ["uc", "fcfs", "equal", "soc"]
 
         self.runtime = utils.RunTime()
+        self.runtime.start()
 
         self.worker = mp.current_process()
 
@@ -686,7 +687,7 @@ class Scenario:
                     self.logger.info(msg)
 
             self.runtime.stop()
-            self.logger.info(f"Scenario finished - runtime {self.runtime.duration:.2f} s")
+            self.logger.info(f"Scenario finished - runtime {self.runtime}")
 
     def update_scenario_status(self, status_msg: dict):
         if self.status_update is not None:
