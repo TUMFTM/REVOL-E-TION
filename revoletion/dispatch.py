@@ -344,6 +344,7 @@ class FleetDispatcher:
                 steps_rental=row["steps_rental"],
                 energy_req=row["energy_req"],
                 distance_req=row.get("distance", None),
+                subfleets=row.get("subfleets", None),
             )
             for pid, row in self.demand.requests.iterrows()
         }
@@ -446,6 +447,7 @@ class DispatchProcess:
     steps_patience: int
     processed: Optional[bool] = False
     distance_req: Optional[float] = None
+    subfleets: Optional[list] = None
     num_prim: Optional[int] = None
     steps_wait: Optional[int] = None
     time_dep: Optional[pd.Timestamp] = None
@@ -485,8 +487,14 @@ class DispatchProcess:
         yield env.timeout(self.step_req)
         self.steps_wait = 0
 
+        stores_prim = (
+            {name: store for name, store in self.dispatcher_prim.stores.items() if name in self.subfleets}
+            if self.subfleets is not None
+            else self.dispatcher_prim.stores
+        )
+
         while self.steps_wait <= self.steps_patience:
-            for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
+            for store_prim_name, store_prim in stores_prim.items():
                 sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
 
                 if not sfp_prim.units:
