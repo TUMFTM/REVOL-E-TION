@@ -1,10 +1,10 @@
 import abc
+import collections
 import enum
 import logging
 import typing
 from dataclasses import dataclass
 from pathlib import Path
-import collections
 
 import gymnasium as gym
 import numpy as np
@@ -12,6 +12,7 @@ import stable_baselines3
 import typing_extensions
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
 
@@ -30,6 +31,7 @@ from .environment import (
     ObsType,
     RevoletionEnvironment,
     RevoletionEnvironmentConfig,
+    RewardComponents,
     RewardConfig,
 )
 
@@ -46,6 +48,7 @@ class AgentAlgorithm(enum.Enum):
     TD3 = "td3"
     A2C = "a2c"
     SAC = "sac"
+    DDPG = "ddpg"
 
     def needs_training(self) -> bool:
         return self not in {
@@ -66,19 +69,40 @@ class AgentConfig:
     seed: int = 42
     n_steps: int = 1
     tensorboard_log: str | None = None
+    gradient_steps: int | None = None
+    target_policy_noise: float | None = None
+    target_noise_clip: float | None = None
+    train_freq: int | tuple[int, str] | None = None
+    batch_size: int | None = None
 
     @classmethod
     def default_for_algorithm(cls, algorithm: AgentAlgorithm) -> Self:
         match algorithm:
             case AgentAlgorithm.PPO:
-                # Parameters based on master thesis
                 return cls(learning_rate=0.0003, gamma=0.99, n_steps=100)
             case AgentAlgorithm.TD3:
-                return cls(learning_rate=0.001, gamma=0.99, n_steps=1)
+                return cls(
+                    learning_rate=0.0001,
+                    gamma=0.995,
+                    n_steps=1,
+                    # gradient_steps=-1,
+                    # train_freq=100,
+                    target_policy_noise=0.03,
+                    target_noise_clip=0.1,
+                    batch_size=512,
+                )
             case AgentAlgorithm.A2C:
                 return cls(learning_rate=0.0007, n_steps=5)
             case AgentAlgorithm.SAC:
-                return cls(learning_rate=0.0003)
+                return cls(
+                    learning_rate=0.0003,
+                    gamma=0.99,
+                    # train_freq=100,
+                    # gradient_steps=-1,
+                    batch_size=512,
+                )
+            case AgentAlgorithm.DDPG:
+                return cls(learning_rate=0.0001)
             case _:
                 return cls()
 
@@ -130,16 +154,7 @@ def _build_rl_environment(
         scenario = scenario_or_scenario_factory()
 
     env_config = RevoletionEnvironmentConfig(
-        reward_config=RewardConfig(
-            penalty_factor_grid_cost=1.0,
-            penalty_factor_charge_cost=1.0,
-            penalty_factor_gen_cost=1.0,
-            penalty_factor_dsoc=1.0,
-            penalty_factor_infeasibility=1.0,
-            penalty_factor_power_diff=1.0,
-            penalty_factor_not_at_base=1.0,
-            reward_factor_dsoc=1.0,
-        ),
+        reward_config=RewardConfig(),
         episode_length=None if train else len(horizon),
     )
     env = RevoletionEnvironment(scenario, horizon, config=env_config, train=train)
@@ -250,6 +265,28 @@ def _create_trainable_agent(
         config = AgentConfig.default_for_algorithm(algorithm)
 
     sb3_type = _get_sb3_type(algorithm)
+
+    kwargs = {}
+    if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG, AgentAlgorithm.SAC}:
+        n_actions = env.action_space.shape[-1]
+        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.03 * np.ones(n_actions))
+        kwargs["action_noise"] = action_noise
+
+    if config.gradient_steps is not None:
+        kwargs["gradient_steps"] = config.gradient_steps
+
+    if config.train_freq is not None:
+        kwargs["train_freq"] = config.train_freq
+
+    if config.target_noise_clip is not None:
+        kwargs["target_noise_clip"] = config.target_noise_clip
+
+    if config.target_policy_noise is not None:
+        kwargs["target_policy_noise"] = config.target_policy_noise
+
+    if config.batch_size is not None:
+        kwargs["batch_size"] = config.batch_size
+
     return RevoletionSB3Agent(
         algorithm,
         sb3_agent=sb3_type(
@@ -261,6 +298,7 @@ def _create_trainable_agent(
             n_steps=config.n_steps,
             tensorboard_log=config.tensorboard_log,
             verbose=1,
+            **kwargs,
         ),
     )
 
@@ -275,6 +313,8 @@ def _get_sb3_type(algorithm: AgentAlgorithm):
             return stable_baselines3.A2C
         case AgentAlgorithm.SAC:
             return stable_baselines3.SAC
+        case AgentAlgorithm.DDPG:
+            return stable_baselines3.DDPG
         case _:
             raise ValueError(f"Unkown agent algorithm: {algorithm}")
 
@@ -339,10 +379,15 @@ _BASE_TRACE_KEY = "revoletion"
 _TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
 _TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
 _TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
-_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/04_grid_cost"
-_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_charge_cost"
-_TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff"
-_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/07_power_diff"
+_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/04_grid_opex_reward"
+_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_charge_opex_reward"
+_TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff_reward"
+_TRACE_KEY_SOC_VIOLATIONS_COUNT = f"{_BASE_TRACE_KEY}/07_soc_violations_count"
+_TRACE_KEY_MEAN_SOC_VIOLATIONS = f"{_BASE_TRACE_KEY}/08_soc_violations_mean"
+_TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/09_soc_violations_rate"
+_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/09_power_diff_reward"
+_TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/10_infeasibility_reward"
+_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/11_mean_step_reward"
 
 
 _MOVING_AVERAGE_HORIZON = 500
@@ -354,28 +399,45 @@ class _TracingCallback(BaseCallback):
 
         self._done_count = 0
         self._infeasible_count = 0
+        self._soc_count = 0
+        self._soc_violation_count = 0
 
-        self._grid_cost = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._charge_cost = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._reward = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._infeasibility = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._soc_violation = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
 
     def _on_step(self) -> bool:
         vec_infos = self.locals["infos"]
         vec_dones = self.locals["dones"]
         for infos, done in zip(vec_infos, vec_dones):
-            if INFO_KEY_REWARD_COMPONENTS in infos:
-                reward = infos[INFO_KEY_REWARD_COMPONENTS]
+            reward: RewardComponents = infos[INFO_KEY_REWARD_COMPONENTS]
 
-                self._grid_cost.append(reward.grid_cost_reward)
-                self._charge_cost.append(reward.charge_cost_reward)
-                self._soc_diff.append(reward.soc_diff_reward)
-                self._power_diff.append(reward.power_diff_reward)
+            self._reward.append(reward.total_reward)
+            self._grid_opex.append(reward.grid_opex_reward)
+            self._charge_opex.append(reward.charge_opex_reward)
+            self._soc_diff.append(reward.soc_diff_reward)
+            self._power_diff.append(reward.power_diff_reward)
 
-                self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_cost) / len(self._grid_cost))
-                self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_cost) / len(self._charge_cost))
-                self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
-                self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
+            self.logger.record(_TRACE_KEY_REWARD, sum(self._reward) / len(self._reward))
+            self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_opex) / len(self._grid_opex))
+            self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
+            self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
+            self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
+
+            for soc_diff in reward.soc_diffs:
+                self._soc_count += 1
+                if soc_diff < 0.0:
+                    self._soc_violation.append(soc_diff)
+                    self.logger.record(
+                        _TRACE_KEY_MEAN_SOC_VIOLATIONS, sum(self._soc_violation) / len(self._soc_violation)
+                    )
+                    self._soc_violation_count += 1
+                    self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_COUNT, self._soc_violation_count)
+                self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_RATE, self._soc_violation_count / self._soc_count)
 
             if not done:
                 continue
@@ -385,6 +447,8 @@ class _TracingCallback(BaseCallback):
             if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
                 self._infeasible_count += 1
                 self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
+                self._infeasibility.append(reward.infeasibility_reward)
+                self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
 
             self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
             self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, self._infeasible_count / self._done_count)

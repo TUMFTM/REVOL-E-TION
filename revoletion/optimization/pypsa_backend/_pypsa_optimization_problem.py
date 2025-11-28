@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 from functools import singledispatchmethod
-from pathlib import Path
 
 import linopy.constants
 import numpy as np
@@ -185,11 +184,12 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
     @get_opex.register
     def _(self, block: blocks.GridConnection, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
-        grid_conn_opex = self._get_pypsa_link_opex(block, dti, "inflow-link")
+        grid_inflow_opex = self._get_pypsa_link_opex(block, dti, "inflow-link")
+        grid_outflow_opex = self._get_pypsa_link_opex(block, dti, "outflow-link")
 
         grid_market_opex = [self.get_opex(grid_market_block, dti) for grid_market_block in block.subblocks.values()]
 
-        return grid_conn_opex + sum(grid_market_opex)
+        return grid_inflow_opex + grid_outflow_opex + sum(grid_market_opex)
 
     @get_opex.register
     def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> optimization_problem.FloatOrTimeSeries:
