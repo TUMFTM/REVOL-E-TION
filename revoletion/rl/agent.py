@@ -42,6 +42,7 @@ class AgentAlgorithm(enum.Enum):
     RANDOM = "random"
     FULL_CHARGING = "full-charge"
     FULL_DISCHARGE = "full-discharge"
+    IDLE = "idle"
     BASIC = "basic"
 
     PPO = "ppo"
@@ -56,6 +57,7 @@ class AgentAlgorithm(enum.Enum):
             AgentAlgorithm.FULL_CHARGING,
             AgentAlgorithm.FULL_DISCHARGE,
             AgentAlgorithm.BASIC,
+            AgentAlgorithm.IDLE,
         }
 
     def __str__(self) -> str:
@@ -254,6 +256,8 @@ def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
             return FullDischargingAgent(algorithm)
         case AgentAlgorithm.BASIC:
             return BasicChargingAgent(algorithm)
+        case AgentAlgorithm.IDLE:
+            return IdleAgent(algorithm)
         case _:
             raise ValueError()
 
@@ -346,7 +350,7 @@ class FullDischargingAgent(RevoletionAgent):
         cars_available = obs[OBS_KEY_CARS_AVAILABLE]
         num_cars = len(cars_available)
 
-        charge_pattern = np.zeros(num_cars)
+        charge_pattern = np.ones(num_cars) * -1
         return charge_pattern * cars_available[:, 0]
 
 
@@ -373,6 +377,16 @@ class BasicChargingAgent(RevoletionAgent):
                 charge_pattern[i] = 1.0
 
         return charge_pattern
+
+
+class IdleAgent(RevoletionAgent):
+    @typing_extensions.override
+    def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
+        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
+        num_cars = len(cars_available)
+
+        charge_pattern = np.zeros(num_cars)
+        return charge_pattern * cars_available[:, 0]
 
 
 _BASE_TRACE_KEY = "revoletion"

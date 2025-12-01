@@ -478,7 +478,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             e_initial=battery_e_initial_wh,
             e_min_pu=block.states.loc[self._datetime_index, "soc_min"],
             e_max_pu=block.states.loc[self._datetime_index, "soc_max"],
-            standing_loss=block.loss_rate_per_hour,
+            standing_loss=block.loss_rate_per_ts,
             marginal_cost=block.evaluators["in"].opt.spec_ep_operation[self._datetime_index],
             capital_cost=block.evaluators["storage"].opt.spec_ep_invest,
         )

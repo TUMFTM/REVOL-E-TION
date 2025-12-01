@@ -11,6 +11,8 @@ from typing_extensions import override
 from revoletion import blocks, optimization, utils
 from revoletion import scenario as scn
 
+from . import _utils as rl_utils
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -19,7 +21,7 @@ class RewardConfig:
     penalty_factor_grid_opex: float = 1.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
-    penalty_factor_charge_opex: float = 1.0
+    penalty_factor_charge_opex: float = 0.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
     penalty_factor_gen_opex: float = 1.0
@@ -53,6 +55,10 @@ class RevoletionEnvironmentConfig:
     """The length of the forecast horizon that is provided in the observations to the client."""
 
     power_precision: int = 1
+
+    power_unit_buffer: float = 1e-6
+
+    min_soc: float = 0.05
 
     reward_config: RewardConfig = field(default_factory=lambda: RewardConfig())
 
@@ -249,6 +255,12 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 shape=(len(self._renewable_source_blocks), self._config.forecast_horizon),
                 dtype=np.float32,
             )
+            obs_dict[OBS_KEY_RENEWABLES_POWER] = gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(self._renewable_source_blocks),),
+                dtype=np.float32,
+            )
 
         if self._has_stationary_batteries:
             obs_dict[OBS_KEY_STATIONARY_BATTERIES_SOC] = gym.spaces.Box(
@@ -260,7 +272,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             obs_dict[OBS_KEY_CONTROLLABLE_SOURCES_POWER] = gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(self._renewable_source_blocks), 2),
+                shape=(len(self._controllable_source_blocks),),
                 dtype=np.float32,
             )
 
@@ -331,6 +343,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         )
 
         self._logger.debug(f"Reset environment: episode_length={episode_length}; start={self._curr_horizon.start}")
+
+        envelopes = {}
+        for electric_fleet_unit_block in self._electric_fleet_unit_blocks:
+            soc_envelope = rl_utils.get_soc_envelope(
+                electric_fleet_unit_block, self._curr_horizon, min_soc=self._config.min_soc
+            )
+            envelopes[electric_fleet_unit_block] = soc_envelope
+        self._soc_envelopes = envelopes
 
         return self._get_obs(), {}
 
@@ -540,11 +560,17 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 # By setting the input power by default instead, PyPSA can use the power range instead to compensate for any standing loss.
                 if normalized_charge_power_frac >= 0:
                     self._optimization_problem.set_input_power_unit(
-                        block, normalized_charge_power_frac, self.current_time_step
+                        block,
+                        normalized_charge_power_frac,
+                        self.current_time_step,
+                        power_unit_buffer=self._config.power_unit_buffer,
                     )
                 else:
                     self._optimization_problem.set_output_power_unit(
-                        block, abs(normalized_charge_power_frac), self.current_time_step
+                        block,
+                        abs(normalized_charge_power_frac),
+                        self.current_time_step,
+                        power_unit_buffer=self._config.power_unit_buffer,
                     )
             except ValueError as e:
                 _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
@@ -591,24 +617,35 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 reward.atbase_violation += 1
             return 0.0
 
+        # TODO: this is not clean.
+        timestep_h = self._horizon._timestep.seconds / 3600.0
+
         nominal_battery_capacity_wh = block.sizes["storage"].preexisting
         current_battery_capacity_wh = (
             nominal_battery_capacity_wh
             * self._prev_obs[OBS_KEY_CARS_SOC][self._electric_fleet_unit_blocks.index(block)]
         )
 
-        max_energy_in_wh = nominal_battery_capacity_wh - current_battery_capacity_wh
+        eff_charge = block.eff["chg_int"]
+        eff_discharge = block.eff["dis_int"]
+        max_charge_power_w = block.pwr_chg_max * eff_charge
+        max_discharge_power_w = block.pwr_dis_max * eff_discharge
+
+        soc_envelope = self._soc_envelopes[block]
+        required_soc = soc_envelope[self.current_time_step]
+        min_capacity_wh = max(
+            0.0,
+            (nominal_battery_capacity_wh * (required_soc + self._config.power_unit_buffer))
+            - current_battery_capacity_wh,
+        )
+
+        max_energy_in_wh = max(0.0, nominal_battery_capacity_wh - current_battery_capacity_wh)
         # Always leave some remainder in battery for standing loss and numerical errors.
-        max_energy_out_wh = current_battery_capacity_wh * 0.95
+        max_energy_out_wh = max(0.0, current_battery_capacity_wh - (nominal_battery_capacity_wh * self._config.min_soc))
 
-        # TODO: this is not clean.
-        timestep_hours = self._horizon._timestep.seconds / 3600.0
-
-        soc_limited_charge_power_w = max_energy_in_wh / timestep_hours
-        soc_limited_discharge_power_w = max_energy_out_wh / timestep_hours
-
-        max_charge_power_w = block.pwr_chg_max
-        max_discharge_power_w = block.pwr_dis_max * block.eff["dis_int"]
+        soc_limited_charge_power_w = max_energy_in_wh / timestep_h
+        soc_limited_discharge_power_w = max_energy_out_wh / timestep_h
+        min_capacity_limited_power_w = (min_capacity_wh / timestep_h) / eff_charge
 
         if max_charge_power_w <= 0.0:
             upper_limit = 0.0
@@ -618,9 +655,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         if max_discharge_power_w <= 0.0:
             lower_limit = 0.0
         else:
-            lower_limit = max(-1.0, -soc_limited_discharge_power_w / max_discharge_power_w)
+            if min_capacity_limited_power_w > 0.0:
+                lower_limit = np.clip(
+                    (min_capacity_limited_power_w / max_charge_power_w) + self._config.power_unit_buffer, 0.0, 1.0
+                )
+            else:
+                lower_limit = max(-1.0, -soc_limited_discharge_power_w / max_discharge_power_w)
 
-        normalized_power = np.round(np.clip(power, lower_limit, upper_limit), 1)
+        normalized_power = np.clip(power, lower_limit, upper_limit)
 
         power_diff = np.round(abs(abs(power) - abs(normalized_power)), 2)
         reward.power_diffs.append(power_diff)

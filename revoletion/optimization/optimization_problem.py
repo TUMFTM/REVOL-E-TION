@@ -106,7 +106,9 @@ class OptimizationProblem(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def set_input_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
+    def set_input_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
+    ) -> None:
         """
         Directly fix the inflow power of an electric block.
 
@@ -122,7 +124,9 @@ class OptimizationProblem(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def set_output_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
+    def set_output_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
+    ) -> None:
         """
         Directly fix the outflow power of an electric block.
 

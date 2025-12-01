@@ -19,8 +19,6 @@ from ._utils import normalize_dti_or_df
 
 _LOGGER = logging.getLogger(__name__)
 
-_CHARGE_POWER_BUFFER = 1e-6
-
 
 class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     """
@@ -377,7 +375,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         return cls(pypsa_network, logger, config)
 
     @override
-    def set_input_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
+    def set_input_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
+    ) -> None:
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power unit for block {block.name} of type {type(block)}")
 
@@ -389,8 +389,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in]
 
-        p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
-        p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
+        p_max_pu = min(power_unit + power_unit_buffer, prev_p_max_pu)
+        p_min_pu = max(power_unit - power_unit_buffer, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_in] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = p_min_pu
@@ -412,7 +412,9 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = 0.0
 
     @override
-    def set_output_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
+    def set_output_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
+    ) -> None:
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power for block {block.name} of type {type(block)}")
 
@@ -424,8 +426,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         prev_p_max_pu = self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out]
         prev_p_min_pu = self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out]
 
-        p_max_pu = min(power_unit + _CHARGE_POWER_BUFFER, prev_p_max_pu)
-        p_min_pu = max(power_unit - _CHARGE_POWER_BUFFER, prev_p_min_pu)
+        p_max_pu = min(power_unit + power_unit_buffer, prev_p_max_pu)
+        p_min_pu = max(power_unit - power_unit_buffer, prev_p_min_pu)
 
         self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = p_max_pu
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = p_min_pu
