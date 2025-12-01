@@ -50,13 +50,15 @@ class RevoletionEnvironmentConfig:
     max_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("48h"))
 
     episode_length: int | None = None
+    """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
 
     forecast_horizon: int = 8
-    """The length of the forecast horizon that is provided in the observations to the client."""
+    """The length of the forecast horizon that is provided in the observations to the agent."""
 
     power_precision: int = 1
 
     power_unit_buffer: float = 1e-6
+    """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimize some room for numerical tie breaking."""
 
     min_soc: float = 0.05
 
@@ -184,7 +186,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._config = config or RevoletionEnvironmentConfig()
         self._logger = logger or logging.getLogger(__name__)
 
-        self._step_size = horizon._timestep
+        self._step_size = horizon.timestep
 
         self._electric_fleet_unit_blocks = list(self._block_registry.get("ElectricFleetUnit", {}).values())
 
@@ -618,7 +620,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             return 0.0
 
         # TODO: this is not clean.
-        timestep_h = self._horizon._timestep.seconds / 3600.0
+        timestep_h = self._curr_horizon.timestep.hours
 
         nominal_battery_capacity_wh = block.sizes["storage"].preexisting
         current_battery_capacity_wh = (

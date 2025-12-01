@@ -5,14 +5,12 @@ from revoletion import blocks, utils
 
 
 def get_soc_envelope(block: blocks.ElectricFleetUnit, horizon: utils.TimeSettings, min_soc: float) -> pd.Series:
-    dt_h = horizon._timestep.seconds / 3600
-
     plugged = block.log.loc[horizon.dti, "atbase"]
 
     nom_capacity_wh = block.sizes["storage"].preexisting
 
     max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"]
-    dsoc_step_max = (max_charge_power_w * dt_h) / nom_capacity_wh
+    dsoc_step_max = (max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
 
     dsoc = block.log.loc[horizon.dti, "dsoc"]
     # Need at least enough SoC to compensate standing loss.

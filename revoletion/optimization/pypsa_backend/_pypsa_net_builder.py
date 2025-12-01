@@ -31,7 +31,7 @@ class PyPSANetworkBuilder:
         # However, REVOL-E-TION supports arbitrary timesteps, therefore PyPSA must be adjusted
         # according to the time step. This is done through the weighting.
         # E.g., for a datetime index with a freq of 15min the correct weighting is 0.25h.
-        self._weighting = horizon._timestep.seconds / 3600
+        self._weighting = horizon.timestep.hours
         self._net.snapshot_weightings.objective = self._weighting
         self._net.snapshot_weightings.stores = self._weighting
         self._net.snapshot_weightings.generators = self._weighting

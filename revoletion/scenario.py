@@ -32,7 +32,7 @@ class SimulationTimes:
     @classmethod
     def create_from_plain(
         cls,
-        timestep: str,
+        timestep: utils.Timestep,
         timezone: pytz.BaseTzInfo,
         starttime: str,
         sim_endtime: str,
@@ -45,53 +45,39 @@ class SimulationTimes:
 
         sim_endtime_timestamp = cls._convert_time_str(sim_endtime, timestep, timezone)
 
-        timestep_timedelta = utils.convert2timedelta(timestep, unit="minute")
-        if timestep_timedelta is None:
-            raise ValueError(f"Failed to convert timestep ({timestep}) to pd.Timedelta")
-
         sim_duration_timedelta = utils.convert2timedelta(sim_duration, unit="day")
 
         sim = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
-            timestep=timestep_timedelta,
+            timestep=timestep,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
         eval = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
-            timestep=timestep_timedelta,
+            timestep=timestep,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
         prj = utils.TimeSettings.create_from_start_timestamp(
             start=starttime_timestamp,
-            timestep=timestep_timedelta,
+            timestep=timestep,
             end=starttime_timestamp + pd.DateOffset(years=prj_duration),
         )
 
         return cls(sim=sim, eval=eval, prj=prj)
 
     @staticmethod
-    def _convert_time_str(time_str: str | None, timestep: str, timezone: pytz.BaseTzInfo) -> pd.Timestamp | None:
+    def _convert_time_str(
+        time_str: str | None, timestep: utils.Timestep, timezone: pytz.BaseTzInfo
+    ) -> pd.Timestamp | None:
         if time_str is None:
             return None
 
         # ToDo: reformat time
         time_str = time_str if len(time_str) > 10 else time_str + " 00:00"
-        value = pd.to_datetime(time_str, format="%d.%m.%Y %H:%M").floor(timestep).tz_localize(timezone)
+        value = pd.to_datetime(time_str, format="%d.%m.%Y %H:%M").floor(timestep.td).tz_localize(timezone)
         return value
-
-
-@dataclass
-class Timestep:
-    hours: float
-    td: pd.Timedelta
-
-    @classmethod
-    def from_str(cls, timestep_str: str) -> Self:
-        td = pd.Timedelta(timestep_str)
-
-        return cls(td=td, hours=td.total_seconds() / 3600)
 
 
 @dataclass
@@ -268,6 +254,7 @@ class Scenario:
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.prj_duration_yrs = self.prj_duration
+        self.timestep = utils.Timestep.from_str(self.timestep)
         self.times = SimulationTimes.create_from_plain(
             timestep=self.timestep,
             timezone=self.location.timezone,
@@ -276,7 +263,6 @@ class Scenario:
             sim_duration=self.sim_duration,
             prj_duration=self.prj_duration,
         )
-        self.timestep = Timestep.from_str(self.timestep)
 
         for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
             if hasattr(self, param):
@@ -306,7 +292,7 @@ class Scenario:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
             self.times.sim = utils.TimeSettings.create_from_start_timestamp(
                 start=self.times.sim.start,
-                timestep=self.timestep.td,
+                timestep=self.timestep,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 

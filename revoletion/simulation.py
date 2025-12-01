@@ -269,13 +269,13 @@ class OptimizationHorizon:
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
         self.ph = utils.TimeSettings.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
         self.ch = utils.TimeSettings.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
 
@@ -409,7 +409,7 @@ class ControlHorizon:
 
             train_horizon = utils.TimeSettings.create_from_start_timestamp(
                 start=scenario.times.sim.start,
-                timestep=scenario.timestep.td,
+                timestep=scenario.timestep,
                 end=scenario.times.sim.start + scenario.len_ph,
             )
 
@@ -430,7 +430,7 @@ class ControlHorizon:
 
         eval_horizon = utils.TimeSettings.create_from_start_timestamp(
             start=scenario.times.sim.start + scenario.len_ph,
-            timestep=scenario.timestep.td,
+            timestep=scenario.timestep,
             end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
         )
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
