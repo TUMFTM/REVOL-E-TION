@@ -129,6 +129,9 @@ class RewardComponents:
             + self.step_reward
         )
 
+    def __str__(self) -> str:
+        return f"{self.total_reward:.2f} (grid={self.grid_opex_reward:.2f}; gen={self.gen_opex_reward:.2f}; power_diff={self.power_diff_reward:.2f}; atbase={self.atbase_violation_reward:.2f}; soc_diff={self.soc_diff_reward:.2f}; infeasibility={self.infeasibility_reward:.2f}; step={self.step_reward:.2f})"
+
 
 class EnvironmentStepStatus(Enum):
     OK = auto()
@@ -143,10 +146,15 @@ OBS_KEY_TIME_FEATURES = "time_of_day"
 OBS_KEY_CARS_AVAILABLE = "cars_available"
 OBS_KEY_CARS_SOC = "cars_soc"
 OBS_KEY_CARS_REQUIRED_SOCS = "cars_required_socs"
+OBS_KEY_RENEWABLES_POWER = "renewables_power"
 OBS_KEY_RENEWABLES_SCHEDULE = "renewables_schedule"
-OBS_KEY_DEMANDS_SCHEDULE = "demands_schedule"
+OBS_KEY_FIXED_DEMANDS = "demands_schedule"
 OBS_KEY_GRID_IMPORT_COSTS = "grid_import_costs"
+OBS_KEY_GRID_IMPORT_POWER = "grid_import_power"
 OBS_KEY_GRID_EXPORT_COSTS = "grid_export_costs"
+OBS_KEY_GRID_EXPORT_POWER = "grid_export_power"
+OBS_KEY_STATIONARY_BATTERIES_SOC = "stationary_batteries_soc"
+OBS_KEY_CONTROLLABLE_SOURCES_POWER = "controllable_sources_power"
 
 INFO_KEY_OPTIMIZATION_RESULT = "optimization_result"
 INFO_KEY_STATUS = "status"
@@ -170,49 +178,71 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._config = config or RevoletionEnvironmentConfig()
         self._logger = logger or logging.getLogger(__name__)
 
-        self._step_size = pd.to_timedelta("15min")
+        self._step_size = horizon._timestep
 
         self._electric_fleet_unit_blocks = list(self._block_registry.get("ElectricFleetUnit", {}).values())
 
         self._grid_market_blocks = list(self._block_registry.get("GridMarket", {}).values())
         self._grid_connection_blocks = list(self._block_registry.get("GridConnection", {}).values())
+        self._has_grid_connection = len(self._grid_connection_blocks) > 0
 
         self._renewable_source_blocks = list(self._block_registry.get("RenewableSource", {}).values())
-        self._has_renewable_gen = len(self._renewable_source_blocks) > 0
+        self._has_renewable_sources = len(self._renewable_source_blocks) > 0
+
+        self._controllable_source_blocks = list(self._block_registry.get("ControllableSource", {}).values())
+        self._has_controllable_sources = len(self._controllable_source_blocks) > 0
+
+        self._stationary_battery_blocks = list(self._block_registry.get("StationaryBattery", {}).values())
+        self._has_stationary_batteries = len(self._stationary_battery_blocks) > 0
 
         self._fixed_demand_blocks = list(self._block_registry.get("FixedDemand", {}).values())
-        self._has_fixed_demand = len(self._fixed_demand_blocks) > 0
+        self._has_fixed_demands = len(self._fixed_demand_blocks) > 0
 
         self.action_space = gym.spaces.Box(
             low=-1.0, high=1.0, shape=(len(self._electric_fleet_unit_blocks),), dtype=np.float32
         )
 
         obs_dict = {
-            OBS_KEY_TIME_FEATURES: gym.spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
+            # Time information like
+            OBS_KEY_TIME_FEATURES: gym.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32),
+            # The SoCs of the vehicles at the current time step.
             OBS_KEY_CARS_SOC: gym.spaces.Box(
                 low=0.0, high=1.0, shape=(len(self._electric_fleet_unit_blocks),), dtype=np.float32
             ),
+            # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
             OBS_KEY_CARS_AVAILABLE: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
                 shape=(len(self._electric_fleet_unit_blocks), self._config.forecast_horizon),
                 dtype=np.float32,
             ),
+            # A forecast for each vehicle, of its required SoC.
             OBS_KEY_CARS_REQUIRED_SOCS: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
                 shape=(len(self._electric_fleet_unit_blocks), self._config.forecast_horizon),
                 dtype=np.float32,
             ),
-            OBS_KEY_GRID_IMPORT_COSTS: gym.spaces.Box(
-                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
-            ),
-            OBS_KEY_GRID_EXPORT_COSTS: gym.spaces.Box(
-                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
-            ),
         }
 
-        if self._has_renewable_gen:
+        if self._has_grid_connection:
+            obs_dict[OBS_KEY_GRID_IMPORT_COSTS] = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
+            )
+
+            obs_dict[OBS_KEY_GRID_IMPORT_POWER] = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
+            )
+
+            obs_dict[OBS_KEY_GRID_EXPORT_COSTS] = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
+            )
+
+            obs_dict[OBS_KEY_GRID_EXPORT_POWER] = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(len(self._grid_market_blocks),), dtype=np.float32
+            )
+
+        if self._has_renewable_sources:
             obs_dict[OBS_KEY_RENEWABLES_SCHEDULE] = gym.spaces.Box(
                 low=0.0,
                 high=1.0,
@@ -220,11 +250,26 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 dtype=np.float32,
             )
 
-        if self._has_fixed_demand:
-            obs_dict[OBS_KEY_DEMANDS_SCHEDULE] = gym.spaces.Box(
+        if self._has_stationary_batteries:
+            obs_dict[OBS_KEY_STATIONARY_BATTERIES_SOC] = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(len(self._stationary_battery_blocks),), dtype=np.float32
+            )
+
+        if self._has_controllable_sources:
+            # The current generation of each controllable source.
+            obs_dict[OBS_KEY_CONTROLLABLE_SOURCES_POWER] = gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(self._fixed_demand_blocks), self._config.forecast_horizon),
+                shape=(len(self._renewable_source_blocks), 2),
+                dtype=np.float32,
+            )
+
+        if self._has_fixed_demands:
+            # The current consumption of each load.
+            obs_dict[OBS_KEY_FIXED_DEMANDS] = gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(self._fixed_demand_blocks),),
                 dtype=np.float32,
             )
 
@@ -246,10 +291,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
     @property
     def previous_time_step(self) -> pd.DatetimeIndex:
         return self._curr_horizon.dti[max(self._step_idx - 1, 0)]
-
-    @property
-    def optimization_problem(self) -> optimization.OptimizationProblem:
-        return self._optimization_problem
 
     @override
     def reset(
@@ -273,7 +314,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._curr_horizon = self._horizon.cut(start_idx, episode_length)
 
         self._step_idx = 0
-        self._max_step_idx = episode_length
+        self._max_step_idx = episode_length - 1
 
         opt_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self._scenario.cost_eps,
@@ -288,8 +329,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             logger=self._logger,
             config=opt_problem_config,
         )
-
-        self._grid_cost_max, self._grid_cost_min = self._get_grid_cost_normalization_params()
 
         self._logger.debug(f"Reset environment: episode_length={episode_length}; start={self._curr_horizon.start}")
 
@@ -306,12 +345,19 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         state_dict.update(self._get_cars_features(optimization_result))
 
-        state_dict.update(self._get_grid_markets_features())
+        if self._has_grid_connection:
+            state_dict.update(self._get_grid_markets_features(optimization_result))
 
-        if self._has_renewable_gen:
-            state_dict.update(self._get_renewable_sources_features())
+        if self._has_renewable_sources:
+            state_dict.update(self._get_renewable_sources_features(optimization_result))
 
-        if self._has_fixed_demand:
+        if self._has_controllable_sources:
+            state_dict.update(self._get_controllable_sources_features(optimization_result))
+
+        if self._has_stationary_batteries:
+            state_dict.update(self._get_stationary_batteries_features(optimization_result))
+
+        if self._has_fixed_demands:
             state_dict.update(self._get_fixed_demands_features())
 
         _LOGGER.debug(f"Observation at {self._step_idx}: {state_dict}")
@@ -331,7 +377,13 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         dow_sin = np.sin(2 * np.pi * day_of_week / 7)
         dow_cos = np.cos(2 * np.pi * day_of_week / 7)
 
-        return {OBS_KEY_TIME_FEATURES: np.array([hour_sin, hour_cos, dow_sin, dow_cos], dtype=np.float32)}
+        day_of_year = self.current_time_step.dayofyear
+        doy_sin = np.sin(2 * np.pi * day_of_year / 365)
+        doy_cos = np.cos(2 * np.pi * day_of_year / 365)
+
+        return {
+            OBS_KEY_TIME_FEATURES: np.array([hour_sin, hour_cos, dow_sin, dow_cos, doy_sin, doy_cos], dtype=np.float32)
+        }
 
     def _get_cars_features(
         self, optimization_result: optimization.OptimizationResult | None = None
@@ -343,7 +395,9 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             if optimization_result is None:
                 soc = electric_fleet_unit_block.states["soc"].median()
             else:
-                stored_energy = optimization_result.get_stored_energy(electric_fleet_unit_block, self.current_time_step)
+                stored_energy = optimization_result.get_stored_energy(
+                    electric_fleet_unit_block, self.previous_time_step
+                )
                 soc = stored_energy / electric_fleet_unit_block.sizes["storage"].preexisting
             cars_soc.append(soc)
 
@@ -358,50 +412,109 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             OBS_KEY_CARS_AVAILABLE: np.array(cars_available, dtype=np.float32),
         }
 
-    def _get_grid_markets_features(self) -> dict[str, np.ndarray]:
+    def _get_grid_markets_features(
+        self, optimization_result: optimization.OptimizationResult | None = None
+    ) -> dict[str, np.ndarray]:
         grid_markets_import_cost = []
+        grid_markets_import_power_unit = []
         grid_markets_export_cost = []
+        grid_markets_export_power_unit = []
         for grid_market_block in self._grid_market_blocks:
-            import_cost_max = grid_market_block.evaluators["g2s"].opt.spec_ep_operation.max()
-            import_cost_min = grid_market_block.evaluators["g2s"].opt.spec_ep_operation.min()
             import_cost = grid_market_block.evaluators["g2s"].opt.spec_ep_operation.loc[self.current_time_step]
-            import_cost_norm = np.clip(
-                (import_cost - import_cost_min) / ((import_cost_max - import_cost_min) + 1e-8), 0.0, 1.0
-            )
-            grid_markets_import_cost.append(import_cost_norm)
+            grid_markets_import_cost.append(import_cost)
 
-            export_cost_max = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.max()
-            export_cost_min = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.min()
             export_cost = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.loc[self.current_time_step]
-            export_cost_norm = np.clip(
-                (export_cost - export_cost_min) / ((export_cost_max - export_cost_min) + 1e-8), 0.0, 1.0
-            )
-            grid_markets_export_cost.append(export_cost_norm)
+            grid_markets_export_cost.append(export_cost)
+
+            if optimization_result is not None:
+                power_flows = optimization_result.get_power_flow(grid_market_block, self.previous_time_step)
+
+                import_power_max = grid_market_block.pwr_g2s
+                import_power_unit = power_flows["in"] / import_power_max
+                clipped_import_power_unit = np.clip(import_power_unit, 0.0, 1.0)
+                grid_markets_import_power_unit.append(clipped_import_power_unit)
+
+                export_power_max = grid_market_block.pwr_s2g
+                export_power_unit = power_flows["out"] / export_power_max
+                clipped_export_power_unit = np.clip(export_power_unit, 0.0, 1.0)
+                grid_markets_export_power_unit.append(clipped_export_power_unit)
+            else:
+                grid_markets_import_power_unit.append(0.0)
+                grid_markets_export_power_unit.append(0.0)
 
         return {
             OBS_KEY_GRID_IMPORT_COSTS: np.array(grid_markets_import_cost, dtype=np.float32),
+            OBS_KEY_GRID_IMPORT_POWER: np.array(grid_markets_import_power_unit, dtype=np.float32),
             OBS_KEY_GRID_EXPORT_COSTS: np.array(grid_markets_export_cost, dtype=np.float32),
+            OBS_KEY_GRID_EXPORT_POWER: np.array(grid_markets_export_power_unit, dtype=np.float32),
         }
 
-    def _get_renewable_sources_features(self) -> dict[str, np.ndarray]:
-        renewable_gens_powers = []
+    def _get_renewable_sources_features(
+        self, optimization_result: optimization.OptimizationResult | None = None
+    ) -> dict[str, np.ndarray]:
+        renewable_gens_schedule = []
+        renewable_gens_power = []
         for renewable_source_block in self._renewable_source_blocks:
             max_renewable_gen = renewable_source_block.sizes["block"].preexisting
-            production_power_forecast = (
-                self._get_forecast(renewable_source_block.data["power_spec"]) / max_renewable_gen
-            )
-            clipped_production_power_forecast = np.clip(production_power_forecast, 0.0, 1.0)
-            renewable_gens_powers.append(clipped_production_power_forecast)
-        return {OBS_KEY_RENEWABLES_SCHEDULE: np.array(renewable_gens_powers, dtype=np.float32)}
+            production_power_forecast = self._get_forecast(renewable_source_block.data["power_spec"])
+            production_power_forecast_unit = production_power_forecast / max_renewable_gen
+            clipped_production_power_unit_forecast = np.clip(production_power_forecast_unit, 0.0, 1.0)
+            renewable_gens_schedule.append(clipped_production_power_unit_forecast)
+
+            if optimization_result is not None:
+                power_flow = optimization_result.get_power_flow(renewable_source_block, self.previous_time_step)
+                production_power_unit = power_flow["out"] / max_renewable_gen
+                clipped_production_power_unit = np.clip(production_power_unit, 0.0, 1.0)
+                renewable_gens_power.append(clipped_production_power_unit)
+            else:
+                renewable_gens_power.append(0.0)
+
+        return {
+            OBS_KEY_RENEWABLES_SCHEDULE: np.array(renewable_gens_schedule, dtype=np.float32),
+            OBS_KEY_RENEWABLES_POWER: np.array(renewable_gens_power, dtype=np.float32),
+        }
 
     def _get_fixed_demands_features(self) -> dict[str, np.ndarray]:
         demands_powers = []
         for demand_block in self._fixed_demand_blocks:
-            max_demand_load = demand_block.flows_apriori.loc["demand"].max()
-            consumption_power_forecast = self._get_forecast(demand_block.flows_apriori["demand"]) / max_demand_load
-            clipped_consumption_power_forecast = np.clip(consumption_power_forecast.values, 0.0, 1.0)
-            demands_powers.append(clipped_consumption_power_forecast)
-        return {OBS_KEY_DEMANDS_SCHEDULE: np.array(demands_powers, dtype=np.float32)}
+            demand_load = demand_block.flows_apriori.loc["demand", self.current_time_step]
+            demands_powers.append(demand_load)
+        return {OBS_KEY_FIXED_DEMANDS: np.array(demands_powers, dtype=np.float32)}
+
+    def _get_controllable_sources_features(
+        self, optimization_result: optimization.OptimizationResult | None = None
+    ) -> dict[str, np.ndarray]:
+        power_units = []
+        for controllable_source_block in self._controllable_source_blocks:
+            max_power_wh = controllable_source_block.sizes["block"].preexisting
+            if optimization_result is not None:
+                power_flow = optimization_result.get_power_flow(controllable_source_block, self.previous_time_step)
+                power_unit = power_flow["out"] / max_power_wh
+                clipped_power_unit = np.clip(power_unit, 0.0, 1.0)
+                power_units.append(clipped_power_unit)
+            else:
+                power_units.append(0.0)
+
+        return {OBS_KEY_CONTROLLABLE_SOURCES_POWER: np.array(power_units, dtype=np.float32)}
+
+    def _get_stationary_batteries_features(
+        self, optimization_result: optimization.OptimizationResult | None = None
+    ) -> dict[str, np.ndarray]:
+        socs = []
+        for stationary_battery_block in self._stationary_battery_blocks:
+            max_energy_wh = stationary_battery_block.sizes["storage"].preexisting
+            if optimization_result is not None:
+                curr_energy_wh = optimization_result.get_stored_energy(
+                    stationary_battery_block, self.previous_time_step
+                )
+                soc = curr_energy_wh / max_energy_wh
+                clipped_soc = np.clip(soc, 0.0, 1.0)
+                socs.append(clipped_soc)
+            else:
+                # TODO: SoC is currently always initialized to 100%, which is not realistic.
+                socs.append(1.0)
+
+        return {OBS_KEY_STATIONARY_BATTERIES_SOC: np.array(socs, dtype=np.float32)}
 
     def _get_forecast(self, time_series: pd.DataFrame) -> np.ndarray:
         forecast_horizon_dti = self._curr_horizon.dti[self._step_idx : self._step_idx + self._config.forecast_horizon]
@@ -456,13 +569,13 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         infos[INFO_KEY_STATUS] = EnvironmentStepStatus.OK
 
-        obs = self._get_obs(optimization_result)
-
         self._compute_rewards(reward, optimization_result)
-        _LOGGER.debug(f"Reward at {self._step_idx}: {reward.total_reward}")
+        _LOGGER.debug(f"Reward at {self._step_idx}: {reward}")
 
         self._step_idx += 1
         terminated, truncated = self._is_done()
+
+        obs = self._get_obs(optimization_result)
 
         return obs, reward.total_reward, terminated, truncated, infos
 
@@ -515,19 +628,13 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
         reward.grid_opex = sum(
-            [
-                self._normalize_grid_cost(optimization_result.get_opex(block, self.current_time_step))
-                for block in self._grid_connection_blocks
-            ]
+            [optimization_result.get_opex(block, self.current_time_step) for block in self._grid_connection_blocks]
         )
         reward.charge_opex = sum(
-            [
-                self._normalize_charge_cost(optimization_result.get_opex(block, self.current_time_step))
-                for block in self._electric_fleet_unit_blocks
-            ]
+            [optimization_result.get_opex(block, self.current_time_step) for block in self._electric_fleet_unit_blocks]
         )
 
-        if self._has_renewable_gen:
+        if self._has_renewable_sources:
             reward.gen_opex = sum(
                 [optimization_result.get_opex(block, self.current_time_step) for block in self._renewable_source_blocks]
             )
@@ -548,32 +655,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._reward_history.append(reward)
 
     def _is_done(self) -> tuple[bool, bool]:
-        terminated = self._step_idx >= self._max_step_idx
+        terminated = bool(self._step_idx >= self._max_step_idx)
         truncated = False
         return terminated, truncated
-
-    def _get_grid_cost_normalization_params(self) -> tuple[float, float]:
-        max_grid_cost = 0.0
-        min_grid_cost = 0.0
-        for grid_conn_block in self._grid_connection_blocks:
-            max_import_capacity = grid_conn_block.sizes["g2s"].preexisting
-            max_export_capacity = grid_conn_block.sizes["s2g"].preexisting
-
-            for grid_market_block in grid_conn_block.subblocks.values():
-                grid_market_import_cost = (
-                    grid_market_block.evaluators["g2s"].opt.spec_ep_operation[self._curr_horizon.dti].max()
-                )
-                max_grid_cost = max(max_import_capacity * grid_market_import_cost, max_grid_cost)
-
-                grid_market_export_cost = (
-                    grid_market_block.evaluators["s2g"].opt.spec_ep_operation[self._curr_horizon.dti].max()
-                )
-                min_grid_cost = min(max_export_capacity * grid_market_export_cost, min_grid_cost)
-
-        return (max_grid_cost, min_grid_cost)
-
-    def _normalize_grid_cost(self, grid_cost: float) -> float:
-        return (grid_cost - self._grid_cost_min) / (self._grid_cost_max - self._grid_cost_min)
-
-    def _normalize_charge_cost(self, ev_cost: float) -> float:
-        return ev_cost
