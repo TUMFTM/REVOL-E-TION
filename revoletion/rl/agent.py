@@ -137,7 +137,10 @@ class RevoletionSB3Agent(RevoletionAgent):
         self._sb3_agent.save(model_path)
 
     def learn(self, total_timesteps: int) -> None:
-        return self._sb3_agent.learn(total_timesteps, callback=_TracingCallback())
+        return self._sb3_agent.learn(
+            total_timesteps,
+            # callback=_TracingCallback(),
+        )
 
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:

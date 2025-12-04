@@ -46,8 +46,8 @@ class RewardConfig:
 
 @dataclass
 class RevoletionEnvironmentConfig:
-    min_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("6h"))
-    max_duration: pd.Timedelta = field(default_factory=lambda: pd.to_timedelta("48h"))
+    min_steps: int = 24  # 6h
+    max_steps: int = 180  # 48h
 
     episode_length: int | None = None
     """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
@@ -186,8 +186,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._config = config or RevoletionEnvironmentConfig()
         self._logger = logger or logging.getLogger(__name__)
 
-        self._step_size = horizon.timestep
-
         self._electric_fleet_unit_blocks = list(self._block_registry.get("ElectricFleetUnit", {}).values())
 
         self._grid_market_blocks = list(self._block_registry.get("GridMarket", {}).values())
@@ -314,8 +312,9 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         if self._config.episode_length is None:
             # Episode length randomization.
-            min_steps = max(int(self._config.min_duration / self._step_size), 0)
-            max_steps = min(int(self._config.max_duration / self._step_size), len(self._horizon) - 1)
+            step_size = self._horizon.timestep.hours
+            min_steps = max(int(self._config.min_steps / step_size), 0)
+            max_steps = min(int(self._config.max_steps / step_size), len(self._horizon) - 1)
             episode_length = self.np_random.integers(min_steps, max_steps)
 
             # Start time randomization.
@@ -578,9 +577,9 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
 
         optimization_status, optimization_result = self._optimization_problem.solve_time_step(self.current_time_step)
-        infos = {INFO_KEY_REWARD_COMPONENTS: reward}
+        infos: dict[str, Any] = {INFO_KEY_REWARD_COMPONENTS: reward}
         if not self._train:
-            infos = {INFO_KEY_OPTIMIZATION_RESULT: optimization_result}
+            infos[INFO_KEY_OPTIMIZATION_RESULT] = optimization_result
 
         if optimization_status != optimization.OptimizationStatus.OPTIMAL or optimization_result is None:
             previous_profit = sum(filter(lambda x: x > 0, map(lambda x: x.total_reward, self._reward_history)))
@@ -619,7 +618,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 reward.atbase_violation += 1
             return 0.0
 
-        # TODO: this is not clean.
         timestep_h = self._curr_horizon.timestep.hours
 
         nominal_battery_capacity_wh = block.sizes["storage"].preexisting
@@ -671,17 +669,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
-        reward.grid_opex = sum(
-            [optimization_result.get_opex(block, self.current_time_step) for block in self._grid_connection_blocks]
-        )
-        reward.charge_opex = sum(
-            [optimization_result.get_opex(block, self.current_time_step) for block in self._electric_fleet_unit_blocks]
-        )
-
-        if self._has_renewable_sources:
-            reward.gen_opex = sum(
-                [optimization_result.get_opex(block, self.current_time_step) for block in self._renewable_source_blocks]
-            )
+        reward.grid_opex = self._compute_grid_opex(optimization_result)
+        reward.gen_opex = self._compute_generator_opex(optimization_result)
 
         soc_diffs = []
         for block in self._electric_fleet_unit_blocks:
@@ -697,6 +686,28 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         reward.soc_diffs = soc_diffs
 
         self._reward_history.append(reward)
+
+    def _compute_grid_opex(self, optimization_result: optimization.OptimizationResult) -> float:
+        grid_opex = 0.0
+        for grid_market_block in self._grid_market_blocks:
+            power_flows = optimization_result.get_power_flow(grid_market_block, self.current_time_step)
+
+            grid_import_costs = grid_market_block.evaluators["g2s"].opt.spec_ep_operation[self.current_time_step]
+            grid_opex += power_flows["in"] * grid_import_costs
+
+            grid_export_profit = grid_market_block.evaluators["s2g"].opt.spec_ep_operation[self.current_time_step]
+            grid_opex += power_flows["out"] * grid_export_profit
+        return grid_opex
+
+    def _compute_generator_opex(self, optimization_result: optimization.OptimizationResult) -> float:
+        gen_opex = 0.0
+        for source_block in self._renewable_source_blocks + self._controllable_source_blocks:
+            power_flows = optimization_result.get_power_flow(source_block, self.current_time_step)
+            variable_costs = source_block.evaluators["block"].opt.spec_ep_operation[self.current_time_step]
+
+            gen_opex += power_flows["out"] * variable_costs
+
+        return gen_opex
 
     def _is_done(self) -> tuple[bool, bool]:
         terminated = bool(self._step_idx >= self._max_step_idx)

@@ -210,37 +210,6 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
 
 
-class _OpexResultProcessor(blocks.BlockVisitor[None]):
-    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
-        self._optimization_result = optimization_result
-
-    @classmethod
-    def collect_opex(
-        cls,
-        optimization_result: optimization.OptimizationResult,
-        scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
-    ) -> None:
-        visitor = cls(optimization_result)
-        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
-            visitor.visit_block(block, horizon=horizon)
-
-    @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
-        # Always traverse to children even for NonElectricBlock. This is necessary, since
-        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
-        for subblock in block.subblocks.values():
-            self.visit_block(subblock, horizon=horizon)
-
-        # For `NonElectricBlock` no further processing should be done, since they have no power flows
-        # and also no investment option.
-        if not isinstance(block, blocks.ElectricBlock):
-            return
-
-        opex = self._optimization_result.get_opex(block, horizon.dti)
-        block.states.loc[horizon.dti, "opex"] = opex
-
-
 @dataclass
 class SimulationSettings:
     solver: optimization.Solver = optimization.Solver.GUROBI
@@ -441,12 +410,6 @@ class ControlHorizon:
             return
 
         _PowerFlowResultProcessor.collect_power_flows(
-            optimization_result,
-            scenario,
-            eval_horizon,
-        )
-
-        _OpexResultProcessor.collect_opex(
             optimization_result,
             scenario,
             eval_horizon,
