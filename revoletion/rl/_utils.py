@@ -4,7 +4,7 @@ import pandas as pd
 from revoletion import blocks, utils
 
 
-def get_soc_envelope(block: blocks.ElectricFleetUnit, horizon: utils.TimeSettings, min_soc: float) -> pd.Series:
+def get_soc_envelope(block: blocks.ElectricFleetUnit, horizon: utils.TimeSettings) -> pd.Series:
     plugged = block.log.loc[horizon.dti, "atbase"]
 
     nom_capacity_wh = block.sizes["storage"].preexisting
@@ -12,11 +12,11 @@ def get_soc_envelope(block: blocks.ElectricFleetUnit, horizon: utils.TimeSetting
     max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"]
     dsoc_step_max = (max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
 
-    dsoc = block.log.loc[horizon.dti, "dsoc"]
+    consumption = block.log.loc[horizon.dti, "consumption"] * horizon.timestep.hours
     # Need at least enough SoC to compensate standing loss.
-    dsoc += block.loss_rate_per_ts / nom_capacity_wh
-    # Configurable minimum SoC which must not be violated
-    dsoc += min_soc
+    consumption += block.loss_rate_per_ts
+
+    dsoc = consumption / nom_capacity_wh
 
     soc_floor = pd.Series(0.0, index=horizon.dti, dtype=np.float64)
 

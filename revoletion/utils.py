@@ -201,7 +201,7 @@ class TimeSettings:
         return len(self.dti)
 
     def cut(self, start_idx: int, length: int) -> "TimeSettings":
-        start = self.dti[start_idx]
+        start = self.dti_extd[start_idx]
         end = self.dti_extd[start_idx + length]
 
         return TimeSettings.create_from_start_timestamp(start=start, timestep=self.timestep, end=end)

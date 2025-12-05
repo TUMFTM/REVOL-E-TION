@@ -79,6 +79,8 @@ class OptimizationProblemConfig:
     invest: bool = True
     """Whether captial investments should be enabled in the optimization."""
 
+    warmstart: bool = False
+
 
 class OptimizationProblem(abc.ABC):
     """

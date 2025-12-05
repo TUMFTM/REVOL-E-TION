@@ -155,8 +155,6 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         """
         visitor = cls(optimization_result)
         for block in scenario.block_registry.get("TopLevelBlock", {}).values():
-            # `horizon_index` must be passed down, because the battery aging model currently uses it.
-            # TODO: Ideally, the aging model would be independent of this and the `horizon_index` can be removed.
             visitor.visit_block(block, horizon=horizon)
 
     @override
@@ -208,6 +206,67 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti)
         block.states.loc[horizon.dti_extd, "energy"] = stored_energy
         block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
+
+
+class _OpexResultProcessor(blocks.BlockVisitor[None]):
+    """
+    Process the results of an optimization horizon execution.
+
+    This transforms the results produced by an `OptimizationModel` into flows and investments.
+    The results are written to each block, to expose the data to subsequent optimizations or the final result collection.
+    """
+
+    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
+        self._optimization_result = optimization_result
+
+    @classmethod
+    def collect_opex(
+        cls,
+        optimization_result: optimization.OptimizationResult,
+        scenario: scn.Scenario,
+        horizon: utils.TimeSettings,
+    ) -> None:
+        """
+        Collect the optimization results and write them back to each individual block.
+
+        :param optimization_result: The optimization results from an `OptimizationHorizon`.
+        :param scenario: The scenario which was optimized.
+        :param horizon: The time horizon of the optimization.
+        :param horizon_index: The index of the optimization horizon.
+        """
+        visitor = cls(optimization_result)
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            visitor.visit_block(block, horizon=horizon)
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+        # Always traverse to children even for NonElectricBlock. This is necessary, since
+        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, horizon=horizon)
+
+        # For `NonElectricBlock` no further processing should be done, since they have no opex.
+        if not isinstance(block, blocks.ElectricBlock):
+            return
+
+        power_flows = self._optimization_result.get_power_flow(block, horizon.dti)
+
+        opex = 0.0
+
+        # `GridConnection` needs some special power flow extraction to handle peak-periods.
+        if isinstance(block, blocks.GridMarket):
+            grid_import_costs = block.evaluators["g2s"].opt.spec_ep_operation[horizon.dti]
+            opex += power_flows["in"] * grid_import_costs
+
+            grid_export_profit = block.evaluators["s2g"].opt.spec_ep_operation[horizon.dti]
+            opex += power_flows["out"] * grid_export_profit
+        elif isinstance(block, blocks.SourceBlock):
+            variable_costs = block.evaluators["block"].opt.spec_ep_operation[horizon.dti]
+            opex += power_flows["out"] * variable_costs
+        else:
+            return
+
+        block.states.loc[horizon.dti, "opex"] = opex
 
 
 @dataclass
@@ -342,13 +401,26 @@ class ControlScenarioFactory:
         )
 
     def create_scenario(self) -> scn.Scenario:
-        return scn.Scenario(
+        scenario = scn.Scenario(
             self._paths,
             scn.ScenarioSettings(),
             name=self.scenario_name,
             parameters=self._scenario_parameters,
             location=self._location,
         )
+
+        full_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start,
+            timestep=scenario.timestep,
+            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
+        )
+
+        for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            soc_envelope = rl.get_soc_envelope(electric_fleet_unit_block, full_horizon)
+
+            electric_fleet_unit_block.states.loc[full_horizon.dti, "soc_min"] = soc_envelope
+
+        return scenario
 
 
 class ControlHorizon:
@@ -414,6 +486,8 @@ class ControlHorizon:
             scenario,
             eval_horizon,
         )
+
+        _OpexResultProcessor.collect_opex(optimization_result, scenario, eval_horizon)
 
         for block in scenario.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()

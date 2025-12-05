@@ -1,3 +1,4 @@
+import collections
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -21,7 +22,7 @@ class RewardConfig:
     penalty_factor_grid_opex: float = 1.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
-    penalty_factor_charge_opex: float = 0.0
+    penalty_factor_charge_opex: float = 0.01
     """Weight applied to the costs of charging/discharging the EVs."""
 
     penalty_factor_gen_opex: float = 1.0
@@ -30,18 +31,18 @@ class RewardConfig:
     penalty_factor_dsoc: float = 16.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
-    reward_factor_dsoc: float = 4.0
+    reward_factor_dsoc: float = 0.0
     """Weight of the reward for meeting a SoC requirement."""
 
     penalty_factor_infeasible: float = 1.0
     """Weight for the penatly if the energy system is determined to be infeasible and cannot be optimizated."""
 
-    penalty_factor_power_diff: float = 0.5
+    penalty_factor_power_diff: float = 1.0
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
     penalty_factor_atbase_violation: float = 1.0
 
-    reward_factor_step: float = 0.01
+    reward_factor_step: float = 0.1
 
 
 @dataclass
@@ -52,7 +53,7 @@ class RevoletionEnvironmentConfig:
     episode_length: int | None = None
     """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
 
-    forecast_horizon: int = 8
+    forecast_horizon: int = 16
     """The length of the forecast horizon that is provided in the observations to the agent."""
 
     power_precision: int = 1
@@ -60,7 +61,7 @@ class RevoletionEnvironmentConfig:
     power_unit_buffer: float = 1e-6
     """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimize some room for numerical tie breaking."""
 
-    min_soc: float = 0.05
+    soc_min: float = 0.05
 
     reward_config: RewardConfig = field(default_factory=lambda: RewardConfig())
 
@@ -86,7 +87,7 @@ class RewardComponents:
 
     @property
     def charge_opex_reward(self) -> float:
-        return self.charge_opex * self.config.penalty_factor_charge_opex
+        return -self.charge_opex * self.config.penalty_factor_charge_opex
 
     @property
     def gen_opex_reward(self) -> float:
@@ -138,7 +139,7 @@ class RewardComponents:
         )
 
     def __str__(self) -> str:
-        return f"{self.total_reward:.2f} (grid={self.grid_opex_reward:.2f}; gen={self.gen_opex_reward:.2f}; power_diff={self.power_diff_reward:.2f}; atbase={self.atbase_violation_reward:.2f}; soc_diff={self.soc_diff_reward:.2f}; infeasibility={self.infeasibility_reward:.2f}; step={self.step_reward:.2f})"
+        return f"{self.total_reward:.2f} (grid={self.grid_opex_reward:.2f}; gen={self.gen_opex_reward:.2f}; charge={self.charge_opex_reward}; power_diff={self.power_diff_reward:.2f}; atbase={self.atbase_violation_reward:.2f}; soc_diff={self.soc_diff_reward:.2f}; infeasibility={self.infeasibility_reward:.2f}; step={self.step_reward:.2f})"
 
 
 class EnvironmentStepStatus(Enum):
@@ -151,9 +152,9 @@ ObsType: TypeAlias = dict[str, np.ndarray]
 
 # Keys in the observation space for consistent access in custom agents.
 OBS_KEY_TIME_FEATURES = "time_of_day"
-OBS_KEY_CARS_AVAILABLE = "cars_available"
-OBS_KEY_CARS_SOC = "cars_soc"
-OBS_KEY_CARS_REQUIRED_SOCS = "cars_required_socs"
+OBS_KEY_EFUS_AVAILABLE = "efus_available"
+OBS_KEY_EFUS_SOC = "efus_soc"
+OBS_KEY_EFUS_REQUIRED_SOCS = "efus_required_socs"
 OBS_KEY_RENEWABLES_POWER = "renewables_power"
 OBS_KEY_RENEWABLES_SCHEDULE = "renewables_schedule"
 OBS_KEY_FIXED_DEMANDS = "demands_schedule"
@@ -163,6 +164,8 @@ OBS_KEY_GRID_EXPORT_COSTS = "grid_export_costs"
 OBS_KEY_GRID_EXPORT_POWER = "grid_export_power"
 OBS_KEY_STATIONARY_BATTERIES_SOC = "stationary_batteries_soc"
 OBS_KEY_CONTROLLABLE_SOURCES_POWER = "controllable_sources_power"
+OBS_KEY_FLEETS_IN_POWER = "fleets_in_power"
+OBS_KEY_FLEETS_OUT_POWER = "fleets_out_power"
 
 INFO_KEY_OPTIMIZATION_RESULT = "optimization_result"
 INFO_KEY_STATUS = "status"
@@ -186,7 +189,15 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._config = config or RevoletionEnvironmentConfig()
         self._logger = logger or logging.getLogger(__name__)
 
-        self._electric_fleet_unit_blocks = list(self._block_registry.get("ElectricFleetUnit", {}).values())
+        self._electric_fleets = _collect_electric_fleets(scenario)
+        self._electric_fleet_unit_blocks = [efu for efus in self._electric_fleets.values() for efu in efus]
+
+        self._efu_index = {}
+        offset = 0
+        for efus in self._electric_fleets.values():
+            for i, efu in enumerate(efus):
+                self._efu_index[efu] = offset + i
+            offset += len(efus)
 
         self._grid_market_blocks = list(self._block_registry.get("GridMarket", {}).values())
         self._grid_connection_blocks = list(self._block_registry.get("GridConnection", {}).values())
@@ -212,21 +223,33 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             # Time information like
             OBS_KEY_TIME_FEATURES: gym.spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32),
             # The SoCs of the vehicles at the current time step.
-            OBS_KEY_CARS_SOC: gym.spaces.Box(
+            OBS_KEY_EFUS_SOC: gym.spaces.Box(
                 low=0.0, high=1.0, shape=(len(self._electric_fleet_unit_blocks),), dtype=np.float32
             ),
             # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
-            OBS_KEY_CARS_AVAILABLE: gym.spaces.Box(
+            OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
                 shape=(len(self._electric_fleet_unit_blocks), self._config.forecast_horizon),
                 dtype=np.float32,
             ),
             # A forecast for each vehicle, of its required SoC.
-            OBS_KEY_CARS_REQUIRED_SOCS: gym.spaces.Box(
+            OBS_KEY_EFUS_REQUIRED_SOCS: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
                 shape=(len(self._electric_fleet_unit_blocks), self._config.forecast_horizon),
+                dtype=np.float32,
+            ),
+            OBS_KEY_FLEETS_IN_POWER: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(self._electric_fleets.keys()),),
+                dtype=np.float32,
+            ),
+            OBS_KEY_FLEETS_OUT_POWER: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(self._electric_fleets.keys()),),
                 dtype=np.float32,
             ),
         }
@@ -296,9 +319,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         self._train = train
 
+        self._soc_envelopes = {}
+
     @property
     def current_time_step(self) -> pd.DatetimeIndex:
-        return self._curr_horizon.dti[self._step_idx]
+        return self._curr_horizon.dti_extd[self._step_idx]
 
     @property
     def previous_time_step(self) -> pd.DatetimeIndex:
@@ -312,9 +337,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         if self._config.episode_length is None:
             # Episode length randomization.
-            step_size = self._horizon.timestep.hours
-            min_steps = max(int(self._config.min_steps / step_size), 0)
-            max_steps = min(int(self._config.max_steps / step_size), len(self._horizon) - 1)
+            min_steps = max(int(self._config.min_steps), 0)
+            max_steps = min(int(self._config.max_steps), len(self._horizon) - 1)
             episode_length = self.np_random.integers(min_steps, max_steps)
 
             # Start time randomization.
@@ -327,12 +351,21 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._curr_horizon = self._horizon.cut(start_idx, episode_length)
 
         self._step_idx = 0
-        self._max_step_idx = episode_length - 1
+        self._max_step_idx = episode_length
+
+        for electric_fleet_unit_block in self._electric_fleet_unit_blocks:
+            soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, self._curr_horizon)
+
+            initial_soc_min = soc_envelope[self._curr_horizon.dti[0]]
+            soc_min = min(initial_soc_min + self._config.soc_min, 1.0)
+            initial_soc = soc_min + ((1.0 - soc_min) / 2)
+            electric_fleet_unit_block.states.loc[self._curr_horizon.dti[0], "soc"] = initial_soc
 
         opt_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self._scenario.cost_eps,
             solver=optimization.Solver.HIGHS,
             invest=False,
+            warmstart=True,
         )
 
         self._optimization_problem = optimization.create_optimization_problem(
@@ -343,15 +376,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             config=opt_problem_config,
         )
 
-        self._logger.debug(f"Reset environment: episode_length={episode_length}; start={self._curr_horizon.start}")
+        self._reward_history = []
 
-        envelopes = {}
-        for electric_fleet_unit_block in self._electric_fleet_unit_blocks:
-            soc_envelope = rl_utils.get_soc_envelope(
-                electric_fleet_unit_block, self._curr_horizon, min_soc=self._config.min_soc
-            )
-            envelopes[electric_fleet_unit_block] = soc_envelope
-        self._soc_envelopes = envelopes
+        self._prev_obs = None
+
+        self._logger.debug(f"Reset environment: episode_length={episode_length}; start={self._curr_horizon.start}")
 
         return self._get_obs(), {}
 
@@ -364,7 +393,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         state_dict.update(self._get_time_features())
 
-        state_dict.update(self._get_cars_features(optimization_result))
+        state_dict.update(self._get_fleets_features(optimization_result))
 
         if self._has_grid_connection:
             state_dict.update(self._get_grid_markets_features(optimization_result))
@@ -406,31 +435,62 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             OBS_KEY_TIME_FEATURES: np.array([hour_sin, hour_cos, dow_sin, dow_cos, doy_sin, doy_cos], dtype=np.float32)
         }
 
-    def _get_cars_features(
+    def _get_fleets_features(
         self, optimization_result: optimization.OptimizationResult | None = None
     ) -> dict[str, np.ndarray]:
+        fleet_in_power_units = []
+        fleet_out_power_units = []
+
         cars_soc = []
         cars_required_socs = []
         cars_available = []
-        for electric_fleet_unit_block in self._electric_fleet_unit_blocks:
-            if optimization_result is None:
-                soc = electric_fleet_unit_block.states["soc"].median()
+
+        for fleet_block, electric_fleet_unit_blocks in self._electric_fleets.items():
+            if optimization_result is not None:
+                fleet_power_flow = optimization_result.get_power_flow(fleet_block, self.previous_time_step)
+
+                fleet_in_power_unit = fleet_power_flow["in"] / fleet_block.pwr_lim_s2f
+                fleet_out_power_unit = fleet_power_flow["out"] / fleet_block.pwr_lim_f2s
+
+                fleet_in_power_units.append(fleet_in_power_unit)
+                fleet_out_power_units.append(fleet_out_power_unit)
             else:
-                stored_energy = optimization_result.get_stored_energy(
-                    electric_fleet_unit_block, self.previous_time_step
+                fleet_in_power_units.append(0.0)
+                fleet_out_power_units.append(0.0)
+
+            for electric_fleet_unit_block in electric_fleet_unit_blocks:
+                if optimization_result is None:
+                    soc = electric_fleet_unit_block.states.loc[self.current_time_step, "soc"]
+                    if np.isnan(soc):
+                        soc = 0.0
+                else:
+                    stored_energy = optimization_result.get_stored_energy(
+                        electric_fleet_unit_block, self.previous_time_step
+                    )
+                    soc = stored_energy / electric_fleet_unit_block.sizes["storage"].preexisting
+                cars_soc.append(soc)
+
+                horizon = self._curr_horizon.cut(
+                    self._step_idx, min(self._config.forecast_horizon, len(self._curr_horizon) - self._step_idx - 1)
                 )
-                soc = stored_energy / electric_fleet_unit_block.sizes["storage"].preexisting
-            cars_soc.append(soc)
+                soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, horizon) + self._config.soc_min
+                self._soc_envelopes[electric_fleet_unit_block] = soc_envelope
+                padded_soc_envelope = np.pad(
+                    soc_envelope.values,
+                    (0, self._config.forecast_horizon - len(soc_envelope.values)),
+                    constant_values=self._config.soc_min,
+                )
+                cars_required_socs.append(padded_soc_envelope)
 
-            required_socs = self._get_forecast(electric_fleet_unit_block.log["dsoc"])
-            cars_required_socs.append(required_socs)
+                car_available = self._get_forecast(electric_fleet_unit_block.log["atbase"]).astype(np.float32)
+                cars_available.append(car_available)
 
-            car_available = self._get_forecast(electric_fleet_unit_block.log["atbase"]).astype(np.float32)
-            cars_available.append(car_available)
         return {
-            OBS_KEY_CARS_SOC: np.array(cars_soc, dtype=np.float32),
-            OBS_KEY_CARS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
-            OBS_KEY_CARS_AVAILABLE: np.array(cars_available, dtype=np.float32),
+            OBS_KEY_EFUS_SOC: np.array(cars_soc, dtype=np.float32),
+            OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
+            OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
+            OBS_KEY_FLEETS_IN_POWER: np.array(fleet_in_power_units, dtype=np.float32),
+            OBS_KEY_FLEETS_OUT_POWER: np.array(fleet_out_power_units, dtype=np.float32),
         }
 
     def _get_grid_markets_features(
@@ -545,36 +605,53 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
     @override
     def step(self, action: ActType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
-        _LOGGER.debug(f"Action at {self._step_idx}: {action}")
+        _LOGGER.debug(f"Action at {self._step_idx} ({self.current_time_step}): {action}")
         reward = RewardComponents(self._config.reward_config)
         reward.step = self._step_idx
-        for i, charge_power_frac in enumerate(action):
-            block = self._electric_fleet_unit_blocks[i]
-            try:
-                normalized_charge_power_frac = self._normalize_charge_power(block, charge_power_frac, reward)
-                _LOGGER.debug(f"Normalized action at {self._step_idx} for vehicle {i}: {normalized_charge_power_frac}")
-                # By default the input power is adjusted. This is necessary to ensure that actions around 0 do not lead to unintended infeasibilities.
-                # The charging power is always set to a power range. While this ensures that PyPSA
-                # does not run into numerical issues, it hands over some control to PyPSA.
-                # So if the agent sets the charge power to around 0 and output power is the default,
-                # PyPSA might decide to discharge the batteries inside the given power range, which could lead to infeasibility.
-                # By setting the input power by default instead, PyPSA can use the power range instead to compensate for any standing loss.
-                if normalized_charge_power_frac >= 0:
-                    self._optimization_problem.set_input_power_unit(
-                        block,
-                        normalized_charge_power_frac,
-                        self.current_time_step,
-                        power_unit_buffer=self._config.power_unit_buffer,
+
+        normalized_charge_powers = []
+
+        for fleet, efus in self._electric_fleets.items():
+            fleet_power_envelopes = self._get_charge_power_envelope(fleet, efus)
+            for electric_fleet_unit in efus:
+                charge_power_frac = action[self._efu_index[electric_fleet_unit]]
+                try:
+                    normalized_charge_power_frac = self._normalize_charge_power(
+                        electric_fleet_unit, charge_power_frac, reward
                     )
-                else:
-                    self._optimization_problem.set_output_power_unit(
-                        block,
-                        abs(normalized_charge_power_frac),
-                        self.current_time_step,
-                        power_unit_buffer=self._config.power_unit_buffer,
-                    )
-            except ValueError as e:
-                _LOGGER.debug(f"Tried to charge vehicle {block.name} which is not available: {e}")
+                    # By default the input power is adjusted. This is necessary to ensure that actions around 0 do not lead to unintended infeasibilities.
+                    # The charging power is always set to a power range. While this ensures that PyPSA
+                    # does not run into numerical issues, it hands over some control to PyPSA.
+                    # So if the agent sets the charge power to around 0 and output power is the default,
+                    # PyPSA might decide to discharge the batteries inside the given power range, which could lead to infeasibility.
+                    # By setting the input power by default instead, PyPSA can use the power range instead to compensate for any loss or numerical issues.
+                    if normalized_charge_power_frac >= 0:
+                        normalized_charge_power_frac = min(
+                            fleet_power_envelopes[electric_fleet_unit], normalized_charge_power_frac
+                        )
+                        self._optimization_problem.set_input_power_unit(
+                            electric_fleet_unit,
+                            normalized_charge_power_frac,
+                            self.current_time_step,
+                            power_unit_buffer=self._config.power_unit_buffer,
+                        )
+                        normalized_charge_powers.append(normalized_charge_power_frac)
+                    else:
+                        self._optimization_problem.set_output_power_unit(
+                            electric_fleet_unit,
+                            abs(normalized_charge_power_frac),
+                            self.current_time_step,
+                            power_unit_buffer=self._config.power_unit_buffer,
+                        )
+                        normalized_charge_powers.append(normalized_charge_power_frac)
+                except ValueError as e:
+                    _LOGGER.debug(f"Failed to charge vehicle {electric_fleet_unit.name}: {e}")
+
+            _LOGGER.debug(
+                f"Normalized action at {self._step_idx} for fleet {fleet}: {np.array(normalized_charge_powers)}"
+            )
+
+            reward.charge_opex += sum(normalized_charge_powers)
 
         optimization_status, optimization_result = self._optimization_problem.solve_time_step(self.current_time_step)
         infos: dict[str, Any] = {INFO_KEY_REWARD_COMPONENTS: reward}
@@ -606,9 +683,53 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         return obs, reward.total_reward, terminated, truncated, infos
 
+    def _get_charge_power_envelope(self, fleet: blocks.Fleet, efus: list[blocks.ElectricFleetUnit]):
+        max_fleet_charge_power = fleet.pwr_lim_s2f
+
+        priority_ordered_efus = []
+        remainder_efus = []
+        for block in efus:
+            nominal_battery_capacity_wh = block.sizes["storage"].preexisting
+            current_battery_capacity_wh = (
+                nominal_battery_capacity_wh * self._prev_obs[OBS_KEY_EFUS_SOC][self._efu_index[block]]
+            )
+            current_soc = current_battery_capacity_wh / nominal_battery_capacity_wh
+            required_soc = self._soc_envelopes[block][self.current_time_step]
+            soc_diff = current_soc - required_soc
+            if soc_diff >= 0:
+                remainder_efus.append(block)
+            else:
+                priority_ordered_efus.append((abs(soc_diff), block))
+
+        priority_ordered_efus = sorted(priority_ordered_efus, key=lambda x: x[0])
+
+        max_efu_charge_power_fracs = {}
+        for _, efu in priority_ordered_efus:
+            if not efu.log.loc[self.current_time_step, "atbase"]:
+                max_efu_charge_power_fracs[efu] = 0.0
+                continue
+
+            max_efu_charge_power = min(efu.pwr_chg_max, max_fleet_charge_power)
+            max_efu_charge_power_frac = np.clip(max_efu_charge_power / efu.pwr_chg_max, 0.0, 1.0)
+            max_efu_charge_power_fracs[efu] = max_efu_charge_power_frac
+
+            max_fleet_charge_power = max(max_fleet_charge_power - efu.pwr_chg_max, 0.0)
+
+        if len(remainder_efus) == 0:
+            return max_efu_charge_power_fracs
+
+        avg_charge_power = max_fleet_charge_power / len(remainder_efus)
+        for remainder_efu in remainder_efus:
+            if not remainder_efu.log.loc[self.current_time_step, "atbase"]:
+                max_efu_charge_power_fracs[remainder_efu] = 0.0
+                continue
+            power_frac = np.clip(avg_charge_power / remainder_efu.pwr_chg_max, 0.0, 1.0)
+            max_efu_charge_power_fracs[remainder_efu] = power_frac
+
+        return max_efu_charge_power_fracs
+
     def _normalize_charge_power(self, block: blocks.ElectricFleetUnit, power: float, reward: RewardComponents) -> float:
         """Normalize the charge power to ensure it stays within the bounds of the energy system"""
-        power = np.round(power, self._config.power_precision)
         # If the EV is not present at the charger it cannot be charged.
         # However, the RL agent might still try to charge the EVs. To avoid an increased amount of infeasible scenarios,
         # the agent just receives a penalty and can continue.
@@ -623,7 +744,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         nominal_battery_capacity_wh = block.sizes["storage"].preexisting
         current_battery_capacity_wh = (
             nominal_battery_capacity_wh
-            * self._prev_obs[OBS_KEY_CARS_SOC][self._electric_fleet_unit_blocks.index(block)]
+            * self._prev_obs[OBS_KEY_EFUS_SOC][self._electric_fleet_unit_blocks.index(block)]
         )
 
         eff_charge = block.eff["chg_int"]
@@ -635,13 +756,12 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         required_soc = soc_envelope[self.current_time_step]
         min_capacity_wh = max(
             0.0,
-            (nominal_battery_capacity_wh * (required_soc + self._config.power_unit_buffer))
-            - current_battery_capacity_wh,
+            (nominal_battery_capacity_wh * required_soc) - current_battery_capacity_wh,
         )
 
         max_energy_in_wh = max(0.0, nominal_battery_capacity_wh - current_battery_capacity_wh)
         # Always leave some remainder in battery for standing loss and numerical errors.
-        max_energy_out_wh = max(0.0, current_battery_capacity_wh - (nominal_battery_capacity_wh * self._config.min_soc))
+        max_energy_out_wh = max(0.0, current_battery_capacity_wh - (nominal_battery_capacity_wh * self._config.soc_min))
 
         soc_limited_charge_power_w = max_energy_in_wh / timestep_h
         soc_limited_discharge_power_w = max_energy_out_wh / timestep_h
@@ -674,13 +794,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         soc_diffs = []
         for block in self._electric_fleet_unit_blocks:
-            dsoc = block.log.loc[self.current_time_step, "dsoc"]
-            if dsoc == 0.0:
-                continue
+            soc_min = block.states.loc[self.current_time_step, "soc_min"]
 
             curr_stored_energy = optimization_result.get_stored_energy(block, self.current_time_step)
             curr_soc = curr_stored_energy / block.sizes["storage"].preexisting
-            soc_diff = curr_soc - dsoc
+            soc_diff = curr_soc - soc_min
             soc_diffs.append(soc_diff)
 
         reward.soc_diffs = soc_diffs
@@ -713,3 +831,17 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         terminated = bool(self._step_idx >= self._max_step_idx)
         truncated = False
         return terminated, truncated
+
+
+def _collect_electric_fleets(scenario: scn.Scenario) -> dict[blocks.Fleet, list[blocks.ElectricFleetUnit]]:
+    electric_fleet_mappings = collections.defaultdict(list)
+    fleets = scenario.block_registry.get("Fleet", {}).values()
+    for fleet in fleets:
+        for subfleet in fleet.subblocks.values():
+            for fleet_unit in subfleet.subblocks.values():
+                if not isinstance(fleet_unit, blocks.ElectricFleetUnit):
+                    continue
+
+                electric_fleet_mappings[fleet].append(fleet_unit)
+
+    return electric_fleet_mappings

@@ -23,9 +23,9 @@ from .environment import (
     INFO_KEY_OPTIMIZATION_RESULT,
     INFO_KEY_REWARD_COMPONENTS,
     INFO_KEY_STATUS,
-    OBS_KEY_CARS_AVAILABLE,
-    OBS_KEY_CARS_REQUIRED_SOCS,
-    OBS_KEY_CARS_SOC,
+    OBS_KEY_EFUS_AVAILABLE,
+    OBS_KEY_EFUS_REQUIRED_SOCS,
+    OBS_KEY_EFUS_SOC,
     ActType,
     EnvironmentStepStatus,
     ObsType,
@@ -139,7 +139,7 @@ class RevoletionSB3Agent(RevoletionAgent):
     def learn(self, total_timesteps: int) -> None:
         return self._sb3_agent.learn(
             total_timesteps,
-            # callback=_TracingCallback(),
+            callback=_TracingCallback(),
         )
 
     @typing_extensions.override
@@ -329,7 +329,7 @@ def _get_sb3_type(algorithm: AgentAlgorithm):
 class RandomChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
         num_cars = len(cars_available)
 
         charge_pattern = 2 * np.random.sample(num_cars) - 1
@@ -340,7 +340,7 @@ class RandomChargingAgent(RevoletionAgent):
 class FullChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
         num_cars = len(cars_available)
 
         charge_pattern = np.ones(num_cars)
@@ -350,7 +350,7 @@ class FullChargingAgent(RevoletionAgent):
 class FullDischargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
         num_cars = len(cars_available)
 
         charge_pattern = np.ones(num_cars) * -1
@@ -360,9 +360,9 @@ class FullDischargingAgent(RevoletionAgent):
 class BasicChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
-        cars_socs = obs[OBS_KEY_CARS_SOC]
-        cars_target_socs = obs[OBS_KEY_CARS_REQUIRED_SOCS]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
+        cars_socs = obs[OBS_KEY_EFUS_SOC]
+        cars_target_socs = obs[OBS_KEY_EFUS_REQUIRED_SOCS]
 
         num_cars = len(cars_available)
 
@@ -385,7 +385,7 @@ class BasicChargingAgent(RevoletionAgent):
 class IdleAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_CARS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
         num_cars = len(cars_available)
 
         charge_pattern = np.zeros(num_cars)
@@ -400,11 +400,11 @@ _TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/04_grid_opex_reward"
 _TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_charge_opex_reward"
 _TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff_reward"
 _TRACE_KEY_SOC_VIOLATIONS_COUNT = f"{_BASE_TRACE_KEY}/07_soc_violations_count"
-_TRACE_KEY_MEAN_SOC_VIOLATIONS = f"{_BASE_TRACE_KEY}/08_soc_violations_mean"
-_TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/09_soc_violations_rate"
-_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/09_power_diff_reward"
-_TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/10_infeasibility_reward"
-_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/11_mean_step_reward"
+_TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/08_soc_violations_rate"
+_TRACE_KEY_MEAN_SOC_VIOLATIONS = f"{_BASE_TRACE_KEY}/09_soc_violations_mean"
+_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/10_power_diff_reward"
+_TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/11_infeasibility_reward"
+_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/12_mean_step_reward"
 
 
 _MOVING_AVERAGE_HORIZON = 500

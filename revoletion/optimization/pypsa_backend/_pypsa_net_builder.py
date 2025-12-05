@@ -149,7 +149,9 @@ class PyPSANetworkBuilder:
         capital_cost: _OptTimeSeriesArg = None,
         standing_loss: float | None = None,
     ) -> None:
-        _LOGGER.debug(f"Adding store '{name}' to '{bus}': capacity={e_nom}; invest={e_nom_extendable}")
+        _LOGGER.debug(
+            f"Adding store '{name}' to '{bus}': capacity={e_nom}; invest={e_nom_extendable}; e_initial={e_initial}"
+        )
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)

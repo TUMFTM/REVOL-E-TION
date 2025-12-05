@@ -434,12 +434,12 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             marginal_cost=outflow_variable_costs,
         )
 
-        battery_soc_initial_percent = block.states.loc[self._datetime_index, "soc"].median()
+        battery_soc_initial_percent = block.states.loc[self._datetime_index[0], "soc"]
         battery_capacity_wh = block.sizes["storage"].preexisting
         battery_e_initial_wh = (
-            battery_capacity_wh * battery_soc_initial_percent
-            if battery_soc_initial_percent == np.nan
-            else battery_capacity_wh
+            battery_capacity_wh
+            if np.isnan(battery_soc_initial_percent)
+            else battery_capacity_wh * battery_soc_initial_percent
         )
         # In oemof the storage has a dedicated inflow and outflow efficiency. By default
         # PyPSA does not support this, so additional links are required.
@@ -472,11 +472,11 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             bus=bus_battery_name,
             e_nom=battery_capacity_wh,
             e_nom_min=battery_capacity_wh,
-            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
+            # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization, since then e_nom_max < e_nom_min.
             e_nom_max=block.sizes["storage"].expansion_max if block.sizes["storage"].invest else None,
             e_nom_extendable=self._enable_investment and block.sizes["storage"].invest,
             e_initial=battery_e_initial_wh,
-            e_min_pu=block.states.loc[self._datetime_index, "soc_min"],
+            # e_min_pu=block.states.loc[self._datetime_index, "soc_min"],
             e_max_pu=block.states.loc[self._datetime_index, "soc_max"],
             standing_loss=block.loss_rate_per_ts,
             marginal_cost=block.evaluators["in"].opt.spec_ep_operation[self._datetime_index],

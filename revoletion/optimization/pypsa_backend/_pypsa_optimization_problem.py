@@ -2,6 +2,7 @@ import contextlib
 import logging
 import os
 import sys
+import tempfile
 from functools import singledispatchmethod
 
 import linopy.constants
@@ -351,6 +352,11 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._net = net
         self._model = self._net.optimize.create_model()
 
+        if self._config.warmstart:
+            self._warmstart_folder = tempfile.TemporaryDirectory()
+        else:
+            self._warmstart_folder = None
+
     @property
     def pypsa_network(self) -> pypsa.Network:
         return self._net
@@ -491,38 +497,33 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         # This should reduce the I/O interactions and significantly speed up optimizations for large scenarios.
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
+        optimize_kwargs = dict(
+            # By default, PyPSA and linopy would print status information about the optimization problem to the console.
+            # This is quite spammy and therefore it is only enabled for debug mode.
+            log_to_console=self._config.debug,
+            # Do not show a progress indicator, regardless of debug mode.
+            progress=False,
+            io_api=io_api,
+            solver_name=self._config.solver.value,
+            solver_options={
+                "output_flag": False,
+            },
+        )
+
+        if self._warmstart_folder is not None:
+            warmstart_file = f"{self._warmstart_folder.name}/basis.lp"
+            optimize_kwargs["basis_fn"] = warmstart_file
+            optimize_kwargs["warmstart_fn"] = warmstart_file
+
         if self._model:
             self._net._model = self._model
             with suppress_output():
                 # Solve the created model.
-                solver_status_str, termination_condition_str = self._net.optimize.solve_model(
-                    # By default, PyPSA and linopy would print status information about the optimization problem to the console.
-                    # This is quite spammy and therefore it is only enabled for debug mode.
-                    log_to_console=self._config.debug,
-                    # Do not show a progress indicator, regardless of debug mode.
-                    progress=False,
-                    io_api=io_api,
-                    solver_name=self._config.solver.value,
-                    solver_options={
-                        "output_flag": False,
-                    },
-                )
+                solver_status_str, termination_condition_str = self._net.optimize.solve_model(**optimize_kwargs)
             del self._net.model
         else:
             with suppress_output():
-                solver_status_str, termination_condition_str = self._net.optimize(
-                    dti,
-                    # By default, PyPSA and linopy would print status information about the optimization problem to the console.
-                    # This is quite spammy and therefore it is only enabled for debug mode.
-                    log_to_console=self._config.debug,
-                    # Do not show a progress indicator, regardless of debug mode.
-                    progress=False,
-                    io_api=io_api,
-                    solver_name=self._config.solver.value,
-                    solver_options={
-                        "output_flag": False,
-                    },
-                )
+                solver_status_str, termination_condition_str = self._net.optimize(dti, **optimize_kwargs)
 
         self._logger.debug(
             f"Optimization with solver {self._config.solver.value} finished with status '{solver_status_str}' and termination condition '{termination_condition_str}'"
