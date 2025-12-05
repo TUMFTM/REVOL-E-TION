@@ -44,6 +44,7 @@ class AgentAlgorithm(enum.Enum):
     FULL_DISCHARGE = "full-discharge"
     IDLE = "idle"
     BASIC = "basic"
+    OPTIMAL = "optimal"
 
     PPO = "ppo"
     TD3 = "td3"

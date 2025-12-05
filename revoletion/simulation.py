@@ -437,6 +437,35 @@ class ControlHorizon:
     def execute(self, plot=True) -> None:
         scenario = self._scenario_factory.create_scenario()
 
+        if self._settings.agent == rl.AgentAlgorithm.OPTIMAL:
+            optimization_result = self._evaluate_with_optimizer(scenario)
+        else:
+            optimization_result = self._evaluate_with_agent(scenario)
+
+        if optimization_result is None:
+            self._logger.error("Evaluation failed")
+            return
+
+        _PowerFlowResultProcessor.collect_power_flows(
+            optimization_result,
+            scenario,
+            eval_horizon,
+        )
+
+        _OpexResultProcessor.collect_opex(optimization_result, scenario, eval_horizon)
+
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            block.post_scenario()
+
+        result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(
+            scenario.block_registry, eval_horizon
+        )
+        result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
+        result_timeseries_aggregated.to_csv(scenario.paths.create_result_path(suffix=f"{scenario.name}_results_ts.csv"))
+        if plot:
+            scenario.generate_and_save_plot()
+
+    def _evaluate_with_agent(self, scenario: scn.Scenario) -> optimization.OptimizationResult | None:
         agent = None
         if self._settings.models_path is not None:
             self._settings.models_path.mkdir(exist_ok=True)
@@ -477,25 +506,25 @@ class ControlHorizon:
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
         reward, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)
         self._logger.info(f"Agent got a reward of {reward}")
-        if optimization_result is None:
-            self._logger.error("Evaluation failed")
-            return
 
-        _PowerFlowResultProcessor.collect_power_flows(
-            optimization_result,
-            scenario,
-            eval_horizon,
+        return optimization_result
+
+    def _evaluate_with_optimizer(self, scenario: scn.Scenario) -> optimization.OptimizationResult | None:
+        eval_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start + scenario.len_ph,
+            timestep=scenario.timestep,
+            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
+        )
+        optimization_problem_config = optimization.OptimizationProblemConfig(
+            cost_eps=scennario.cost_eps,
+            solver=optimization.Solver.HIGHS,
+            invest=False,
         )
 
-        _OpexResultProcessor.collect_opex(optimization_result, scenario, eval_horizon)
+        optimization_problem = optimization.OptimizationProblem.from_revoletion_scenario(scenario, eval_horizon, self._logger, optimization_problem_config,)
 
-        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
-            block.post_scenario()
+        _, optimization_result = optimization_problem.solve()
+        return optimization_result
 
-        result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(
-            scenario.block_registry, eval_horizon
-        )
-        result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
-        result_timeseries_aggregated.to_csv(scenario.paths.create_result_path(suffix=f"{scenario.name}_results_ts.csv"))
-        if plot:
-            scenario.generate_and_save_plot()
+        
+        

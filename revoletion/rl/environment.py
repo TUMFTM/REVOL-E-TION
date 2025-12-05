@@ -377,7 +377,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         )
 
         self._reward_history = []
-
         self._prev_obs = None
 
         self._logger.debug(f"Reset environment: episode_length={episode_length}; start={self._curr_horizon.start}")
