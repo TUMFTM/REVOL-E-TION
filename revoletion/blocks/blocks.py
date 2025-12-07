@@ -616,40 +616,31 @@ class PVSource(RenewableSource):
 
         # region get data from PVGIS API
         if self.data_source == "pvgis api":  # PVGIS API example selected
-            api_startyear = self.scenario.times.sim.start.tz_convert("utc").year
-            api_endyear = self.scenario.times.sim.end.tz_convert("utc").year
-            api_length = api_endyear - api_startyear
-            api_shift = pd.to_timedelta("0 days")
+            scn_startyear = self.scenario.times.sim.start.tz_convert("utc").year
+            scn_endyear = self.scenario.times.sim.end.tz_convert("utc").year
 
-            API_MAX_YEAR = 2023
-            API_MIN_YEAR = 2005
-            API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
+            PVGIS_MAX_YEAR = 2023
+            PVGIS_MIN_YEAR = 2005
 
-            if api_length > API_MAX_LENGTH:
+            req_shift_yrs = 0
+
+            if (scn_endyear - scn_startyear) > (PVGIS_MAX_YEAR - PVGIS_MIN_YEAR):
                 raise ValueError("PVGIS API request exceeds maximum length of available data")
-            elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-                api_shift = pd.to_datetime(f"{API_MAX_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                    f"{api_endyear}-01-01 00:00:00+00:00"
-                )
-                api_endyear = API_MAX_YEAR
-                api_startyear = API_MAX_YEAR - api_length
+            elif scn_endyear > PVGIS_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
+                req_shift_yrs = PVGIS_MAX_YEAR - scn_endyear
                 self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available endtime - data shifted by "
-                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                    f"end in {API_MAX_YEAR}"
+                    f"PVGIS API request exceeds available endtime - request shifted by "
+                    f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
                 )
-            elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-                api_shift = pd.to_datetime(f"{API_MIN_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                    f"{api_startyear}-01-01 00:00:00+00:00"
-                )
-                api_startyear = API_MIN_YEAR
-                api_endyear = API_MIN_YEAR + api_length
+            elif scn_startyear < PVGIS_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
+                req_shift_yrs = scn_startyear - PVGIS_MAX_YEAR
                 self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available starttime - data shifted by "
-                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                    f"start in {API_MIN_YEAR}"
+                    f"PVGIS API request exceeds available starttime - request shifted by "
+                    f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
                 )
-            # Todo leap years can result in data shifting not landing at the same point in time
+
+            req_startyear = scn_startyear + req_shift_yrs
+            req_endyear = scn_endyear + req_shift_yrs
 
             optimal_tilt = True if self.tilt == "optimal" else False
             optimal_angles = True if self.azimuth == "optimal" else False
@@ -659,9 +650,9 @@ class PVSource(RenewableSource):
             self.data, *_ = pvlib.iotools.get_pvgis_hourly(
                 latitude=self.scenario.location.latitude,
                 longitude=self.scenario.location.longitude,
-                start=api_startyear,
-                end=api_endyear,
-                # PVGIS API is case sensitive and all inputs are lowered -> revert
+                start=req_startyear,
+                end=req_endyear,
+                # PVGIS API is case-sensitive and REVOL-E-TION inputs are lowered -> revert
                 raddatabase=self.raddatabase.upper(),
                 components=True,  # output solar radiation components (beam, diffuse, and reflected)
                 surface_tilt=self.tilt if self.tilt != "optimal" else 0,  # has to be numeric
@@ -692,7 +683,7 @@ class PVSource(RenewableSource):
             self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
 
             self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
-            self.data.index = self.data.index - api_shift
+            self.data.index = self.data.index - pd.DateOffset(years=req_shift_yrs)
         # endregion
 
         # region get data from Solcast API
@@ -1236,7 +1227,7 @@ class GridConnection(ElectricBlock):
         self.peak_periods = pd.DataFrame()
         self.bus_activation = pd.DataFrame()
 
-        self.initialize_peakshaving()
+        self.initialize_peak_tracking()
 
         if not self.markets:
             raise ValueError(
@@ -1256,7 +1247,7 @@ class GridConnection(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
         self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
-    def initialize_peakshaving(self):
+    def initialize_peak_tracking(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
         periods_func = {
             "day": lambda x: x.strftime("%Y-%m-%d"),
