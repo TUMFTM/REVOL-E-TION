@@ -59,9 +59,7 @@ class PyPSANetworkBuilder:
         marginal_cost: _OptTimeSeriesArg = None,
         capital_cost: _OptTimeSeriesArg = None,
     ) -> None:
-        _LOGGER.debug(
-            f"Adding link '{name}' from '{bus0}' to '{bus1}': capacity={p_nom}; invest={p_nom_extendable}; eff={efficiency}"
-        )
+        _LOGGER.debug(f"Adding link '{name}' from '{bus0}' to '{bus1}': {p_nom=}; {p_nom_extendable=}; {efficiency=}")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -114,7 +112,7 @@ class PyPSANetworkBuilder:
         control: str | None = None,
         sign: float | None = None,
     ) -> None:
-        _LOGGER.debug(f"Adding generator '{name}' to '{bus}': capacity={p_nom}; invest={p_nom_extendable}")
+        _LOGGER.debug(f"Adding generator '{name}' to '{bus}': {p_nom=}; {p_nom_extendable=}")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -149,9 +147,7 @@ class PyPSANetworkBuilder:
         capital_cost: _OptTimeSeriesArg = None,
         standing_loss: float | None = None,
     ) -> None:
-        _LOGGER.debug(
-            f"Adding store '{name}' to '{bus}': capacity={e_nom}; invest={e_nom_extendable}; e_initial={e_initial}"
-        )
+        _LOGGER.debug(f"Adding store '{name}' to '{bus}': {e_nom=}; {e_nom_extendable=}; {e_initial=}")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)

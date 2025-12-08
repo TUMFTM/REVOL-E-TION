@@ -437,7 +437,7 @@ class ControlHorizon:
     def execute(self, plot=True) -> None:
         scenario = self._scenario_factory.create_scenario()
 
-        if self._settings.agent == rl.AgentAlgorithm.OPTIMAL:
+        if self._settings.agent_algorithm == rl.AgentAlgorithm.OPTIMAL:
             optimization_result = self._evaluate_with_optimizer(scenario)
         else:
             optimization_result = self._evaluate_with_agent(scenario)
@@ -516,15 +516,17 @@ class ControlHorizon:
             end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
         )
         optimization_problem_config = optimization.OptimizationProblemConfig(
-            cost_eps=scennario.cost_eps,
+            cost_eps=scenario.cost_eps,
             solver=optimization.Solver.HIGHS,
             invest=False,
         )
 
-        optimization_problem = optimization.OptimizationProblem.from_revoletion_scenario(scenario, eval_horizon, self._logger, optimization_problem_config,)
+        optimization_problem = optimization.OptimizationProblem.from_revoletion_scenario(
+            scenario,
+            eval_horizon,
+            self._logger,
+            optimization_problem_config,
+        )
 
         _, optimization_result = optimization_problem.solve()
         return optimization_result
-
-        
-        
