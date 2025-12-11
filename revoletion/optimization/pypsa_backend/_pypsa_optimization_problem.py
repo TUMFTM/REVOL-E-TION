@@ -84,10 +84,20 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         # This fakes the peak shaving API of oemof to make the API compatible.
         # TODO: implement the peak shaving behavior for PyPSA.
         for period in block.peak_periods.index:
+            start = block.peak_periods.loc[period]["start"]
+            if start > dti[-1]:
+                continue
+
+            end = block.peak_periods.loc[period]["end"]
+            if end < dti[0]:
+                continue
+
+            period_dti = dti[(dti >= start) & (dti <= end)]
+            if len(period_dti) == 0:
+                continue
+
             label = f"outflow_{period}"
-            flows[label] = self._get_pypsa_link_power_flow(
-                block, dti, "outflow-link"
-            ).copy()  # identical data for each outflow_n
+            flows[label] = self._get_pypsa_link_power_flow(block, period_dti, "outflow-link")
 
         return flows
 
