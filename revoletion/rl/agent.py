@@ -82,16 +82,16 @@ class AgentConfig:
     def default_for_algorithm(cls, algorithm: AgentAlgorithm) -> Self:
         match algorithm:
             case AgentAlgorithm.PPO:
-                return cls(learning_rate=0.0003, gamma=0.99, n_steps=100)
+                return cls(learning_rate=0.0003, gamma=0.99, n_steps=2048, batch_size=128)
             case AgentAlgorithm.TD3:
                 return cls(
                     learning_rate=0.0001,
-                    gamma=0.995,
+                    gamma=0.99,
                     n_steps=1,
                     # gradient_steps=-1,
                     # train_freq=100,
-                    target_policy_noise=0.03,
-                    target_noise_clip=0.1,
+                    target_policy_noise=0.1,
+                    target_noise_clip=0.3,
                     batch_size=512,
                 )
             case AgentAlgorithm.A2C:
@@ -277,7 +277,7 @@ def _create_trainable_agent(
     kwargs = {}
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG, AgentAlgorithm.SAC}:
         n_actions = env.action_space.shape[-1]
-        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.03 * np.ones(n_actions))
+        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
         kwargs["action_noise"] = action_noise
 
     if config.gradient_steps is not None:
@@ -420,6 +420,7 @@ class _TracingCallback(BaseCallback):
         self._soc_count = 0
         self._soc_violation_count = 0
 
+        self._status = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._reward = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
@@ -463,12 +464,15 @@ class _TracingCallback(BaseCallback):
             self._done_count += 1
 
             if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
+                self._status.append(1)
                 self._infeasible_count += 1
                 self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
                 self._infeasibility.append(reward.infeasibility_reward)
                 self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
+            else:
+                self._status.append(0)
 
             self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
-            self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, self._infeasible_count / self._done_count)
+            self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, sum(self._status) / len(self._status))
 
         return True

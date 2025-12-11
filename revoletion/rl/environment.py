@@ -28,10 +28,10 @@ class RewardConfig:
     penalty_factor_gen_opex: float = 1.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_dsoc: float = 4.0
+    penalty_factor_dsoc: float = 8.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
-    reward_factor_dsoc: float = 1.0
+    reward_factor_dsoc: float = 0.5
     """Weight of the reward for meeting a SoC requirement."""
 
     penalty_factor_infeasible: float = 1.0
@@ -43,14 +43,14 @@ class RewardConfig:
     penalty_factor_atbase_violation: float = 1.0
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
-    reward_factor_step: float = 0.1
+    reward_factor_step: float = 0.0
     """Small reward applied each step to encourage the agent to progress."""
 
 
 @dataclass
 class RevoletionEnvironmentConfig:
-    min_steps: int = 24  # 6h
-    max_steps: int = 180  # 48h
+    min_steps: int = 48
+    max_steps: int = 220
 
     episode_length: int | None = None
     """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
@@ -110,6 +110,9 @@ class RewardComponents:
 
     @property
     def soc_diff_reward(self) -> float:
+        if len(self.soc_diffs) == 0:
+            return 0.0
+
         reward = 0.0
         for soc_diff in self.soc_diffs:
             if soc_diff < 0.0:
@@ -117,7 +120,7 @@ class RewardComponents:
             else:
                 reward += soc_diff * self.config.reward_factor_dsoc
 
-        return reward
+        return reward / len(self.soc_diffs)
 
     @property
     def infeasibility_reward(self) -> float:
@@ -880,8 +883,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
-        reward.grid_opex = self._compute_grid_opex(optimization_result)
-        reward.gen_opex = self._compute_generator_opex(optimization_result)
+        reward.grid_opex = self._compute_grid_opex(optimization_result) / len(self._electric_fleet_unit_blocks)
+        reward.gen_opex = self._compute_generator_opex(optimization_result) / len(self._electric_fleet_unit_blocks)
 
         soc_diffs = []
         for block in self._electric_fleet_unit_blocks:

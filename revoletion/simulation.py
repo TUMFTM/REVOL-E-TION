@@ -196,7 +196,10 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         block.flows.loc[horizon.dti, "in"] = inflow
 
         def get_peak_power(row):
-            peak_power = max(row["power"], outflows[f"outflow_{row.name}"].max())
+            outflow_name = f"outflow_{row.name}"
+            if outflow_name not in outflows:
+                return row["power"]
+            peak_power = max(row["power"], outflows[outflow_name].max())
             return peak_power
 
         block.peak_periods["power"] = block.peak_periods.apply(get_peak_power, axis=1)
@@ -446,6 +449,11 @@ class ControlHorizon:
             self._logger.error("Evaluation failed")
             return
 
+        eval_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start + scenario.len_ph,
+            timestep=scenario.timestep,
+            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
+        )
         _PowerFlowResultProcessor.collect_power_flows(
             optimization_result,
             scenario,
