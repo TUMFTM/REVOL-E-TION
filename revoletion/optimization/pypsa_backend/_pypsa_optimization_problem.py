@@ -15,8 +15,8 @@ import revoletion.optimization.optimization_problem as optimization_problem
 from revoletion import blocks, utils
 from revoletion import scenario as scn
 
+from . import _utils as pypsa_utils
 from ._pypsa_block_visitor import PyPSABlockVisitor, make_pypsa_label
-from ._utils import normalize_dti_or_df
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         out = self._get_pypsa_link_power_flow(block, dti, "outflow-link")
 
         # `pot` is the potential available power from the generator, which might not be fully utilized.
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, "gen")
         pypsa_pot = self._net.generators_t.p_max_pu.loc[normalized_dti, pypsa_gen_name] * block.sizes["block"].total
         pot = self._align_pypsa_values_to_dti(pypsa_pot, dti)
@@ -112,7 +112,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_power_flow_storage(
         self, block: blocks.StorageBlock, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_store_name = make_pypsa_label(block, "battery-store")
         pypsa_bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
         bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
@@ -150,7 +150,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         Helper method to determine the power flow of a PyPSA link.
         """
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_link_name = make_pypsa_label(block, label)
         pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
 
@@ -162,7 +162,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         """
         Helper method to determine the power flow of a PyPSA generator.
         """
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
         pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
         return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
@@ -172,7 +172,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     ) -> optimization_problem.FloatOrTimeSeries:
         if isinstance(pypsa_values, float):
             return pypsa_values
-        return pypsa_values.tz_localize(dti.tz)
+        return pypsa_utils.denormalize_dti_or_df(pypsa_values, dti.tz)
 
     @override
     def get_stored_energy(
@@ -182,7 +182,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
             raise ValueError(f"Cannot determine SoC for block {block.name} of type {type(block)}")
 
         pypsa_store_name = make_pypsa_label(block, "battery-store")
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_store_e = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
         return self._align_pypsa_values_to_dti(pypsa_store_e, dti)
 
@@ -233,7 +233,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_pypsa_link_opex(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_link_name = make_pypsa_label(block, label)
 
         pypsa_power_flow = self._net.links_t.p0.loc[normalized_dti, pypsa_link_name]
@@ -249,7 +249,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_pypsa_generator_opex(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
 
         pypsa_power_flow = self._net.generators_t.p.loc[normalized_dti, pypsa_gen_name]
@@ -265,7 +265,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _get_pypsa_store_opex(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         pypsa_gen_name = make_pypsa_label(block, label)
 
         pypsa_power_flow = self._net.stores_t.p.loc[normalized_dti, pypsa_gen_name]
@@ -384,7 +384,11 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             config = optimization_problem.OptimizationProblemConfig()
 
         visitor = PyPSABlockVisitor(
-            horizon, config.cost_eps, enable_investment=config.invest, enable_fixed_dispatch=False
+            horizon,
+            config.cost_eps,
+            enable_investment=config.invest,
+            enable_fixed_dispatch=False,
+            enforce_soc_min=config.enforce_soc_constraints,
         )
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
 
@@ -397,7 +401,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power unit for block {block.name} of type {type(block)}")
 
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
 
         charger_in = make_pypsa_label(block, "inflow-link")
         charger_out = make_pypsa_label(block, "outflow-link")
@@ -434,7 +438,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if not isinstance(block, blocks.ElectricFleetUnit):
             raise ValueError(f"Cannot set output power for block {block.name} of type {type(block)}")
 
-        normalized_dti = normalize_dti_or_df(dti)
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
 
         charger_in = make_pypsa_label(block, "inflow-link")
         charger_out = make_pypsa_label(block, "outflow-link")
@@ -477,7 +481,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     def solve_time_step(
         self, time_step: pd.DatetimeIndex
     ) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
-        normalized_time_step = normalize_dti_or_df(time_step)
+        normalized_time_step = pypsa_utils.normalize_dti_or_df(time_step)
 
         # If we optimize only one time step, we assume rolling horizon optimization.
         # For this case, we must ensure that the initial SoCs are always updated to the previous energy result.

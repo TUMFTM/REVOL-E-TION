@@ -34,6 +34,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         cost_eps: float,
         enable_investment: bool = True,
         enable_fixed_dispatch: bool = True,
+        enforce_soc_min: bool = True,
     ):
         """
         :param datetime_index: The datetime index covering the scenario data. Required to correctly initialize the time series data in the PyPSA network.
@@ -45,6 +46,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         self._cost_eps = cost_eps
         self._enable_investment = enable_investment
         self._enable_fixed_dispatch = enable_fixed_dispatch
+        self._enforce_soc_min = enforce_soc_min
 
     def create_pypsa_network(self, block_registry: dict[str, dict[str, blocks.BaseBlock]]) -> pypsa.Network:
         builder = PyPSANetworkBuilder(self._horizon)
@@ -476,7 +478,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             e_nom_max=block.sizes["storage"].expansion_max if block.sizes["storage"].invest else None,
             e_nom_extendable=self._enable_investment and block.sizes["storage"].invest,
             e_initial=battery_e_initial_wh,
-            # e_min_pu=block.states.loc[self._datetime_index, "soc_min"],
+            e_min_pu=block.states.loc[self._datetime_index, "soc_min"] if self._enforce_soc_min else None,
             e_max_pu=block.states.loc[self._datetime_index, "soc_max"],
             standing_loss=block.loss_rate_per_ts,
             marginal_cost=block.evaluators["in"].opt.spec_ep_operation[self._datetime_index],

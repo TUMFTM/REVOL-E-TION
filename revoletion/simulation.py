@@ -10,6 +10,7 @@ from typing_extensions import override
 
 from . import blocks, optimization, rl, utils
 from . import scenario as scn
+from .rl import _utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -440,20 +441,23 @@ class ControlHorizon:
     def execute(self, plot=True) -> None:
         scenario = self._scenario_factory.create_scenario()
 
-        if self._settings.agent_algorithm == rl.AgentAlgorithm.OPTIMAL:
-            optimization_result = self._evaluate_with_optimizer(scenario)
-        else:
-            optimization_result = self._evaluate_with_agent(scenario)
-
-        if optimization_result is None:
-            self._logger.error("Evaluation failed")
-            return
+        _ = (scenario.paths.output / "algo").write_text(self._settings.agent_algorithm.value)
 
         eval_horizon = utils.TimeSettings.create_from_start_timestamp(
             start=scenario.times.sim.start + scenario.len_ph,
             timestep=scenario.timestep,
             end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
         )
+
+        if self._settings.agent_algorithm == rl.AgentAlgorithm.OPTIMAL:
+            optimization_result = self._evaluate_with_optimizer(scenario, eval_horizon)
+        else:
+            optimization_result = self._evaluate_with_agent(scenario, eval_horizon)
+
+        if optimization_result is None:
+            self._logger.error("Evaluation failed")
+            return
+
         _PowerFlowResultProcessor.collect_power_flows(
             optimization_result,
             scenario,
@@ -473,7 +477,9 @@ class ControlHorizon:
         if plot:
             scenario.generate_and_save_plot()
 
-    def _evaluate_with_agent(self, scenario: scn.Scenario) -> optimization.OptimizationResult | None:
+    def _evaluate_with_agent(
+        self, scenario: scn.Scenario, eval_horizon: utils.TimeSettings
+    ) -> optimization.OptimizationResult | None:
         agent = None
         if self._settings.models_path is not None:
             self._settings.models_path.mkdir(exist_ok=True)
@@ -482,54 +488,58 @@ class ControlHorizon:
             )
 
         if agent is None:
-            agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
-            agent_config.tensorboard_log = "/tmp/revol"
+            agent = self._train_agent(scenario)
 
-            train_horizon = utils.TimeSettings.create_from_start_timestamp(
-                start=scenario.times.sim.start,
-                timestep=scenario.timestep,
-                end=scenario.times.sim.start + scenario.len_ph,
-            )
-
-            self._logger.info(
-                f"Training agent '{self._settings.agent_algorithm}' on scenario '{self._scenario_factory.scenario_name}'"
-            )
-            agent = rl.train(
-                self._settings.agent_algorithm,
-                self._scenario_factory.create_scenario,
-                horizon=train_horizon,
-                n_proc=self._settings.n_processes,
-                config=agent_config,
-                total_timesteps=self._settings.train_timesteps or _DEFAULT_TRAIN_TIMESTEPS,
-            )
-
-            if self._settings.models_path is not None:
-                rl.save_agent(agent, self._scenario_factory.scenario_name, self._settings.models_path)
-
-        eval_horizon = utils.TimeSettings.create_from_start_timestamp(
-            start=scenario.times.sim.start + scenario.len_ph,
-            timestep=scenario.timestep,
-            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
-        )
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
         reward, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)
         self._logger.info(f"Agent got a reward of {reward}")
 
         return optimization_result
 
-    def _evaluate_with_optimizer(self, scenario: scn.Scenario) -> optimization.OptimizationResult | None:
-        eval_horizon = utils.TimeSettings.create_from_start_timestamp(
-            start=scenario.times.sim.start + scenario.len_ph,
+    def _train_agent(self, scenario: scn.Scenario) -> rl.RevoletionAgent:
+        agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
+        agent_config.tensorboard_log = "/tmp/revol"
+
+        train_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start,
             timestep=scenario.timestep,
-            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
+            end=scenario.times.sim.start + scenario.len_ph,
         )
+
+        self._logger.info(
+            f"Training agent '{self._settings.agent_algorithm}' on scenario '{self._scenario_factory.scenario_name}'"
+        )
+        agent = rl.train(
+            self._settings.agent_algorithm,
+            self._scenario_factory.create_scenario,
+            horizon=train_horizon,
+            n_proc=self._settings.n_processes,
+            config=agent_config,
+            total_timesteps=self._settings.train_timesteps or _DEFAULT_TRAIN_TIMESTEPS,
+        )
+
+        if self._settings.models_path is not None:
+            rl.save_agent(agent, self._scenario_factory.scenario_name, self._settings.models_path)
+
+        return agent
+
+    def _evaluate_with_optimizer(
+        self, scenario: scn.Scenario, eval_horizon: utils.TimeSettings
+    ) -> optimization.OptimizationResult | None:
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=scenario.cost_eps,
             solver=optimization.Solver.HIGHS,
             invest=False,
         )
+        electric_fleet_unit_blocks = list(scenario.block_registry.get("ElectricFleetUnit", {}).values())
+        for electric_fleet_unit_block in electric_fleet_unit_blocks:
+            initial_soc_min = electric_fleet_unit_block.states.loc[eval_horizon.dti[0], "soc_min"]
+            soc_min = min(initial_soc_min + 0.05, 1.0)
+            initial_soc = soc_min + ((1.0 - soc_min) / 2)
+            electric_fleet_unit_block.states.loc[eval_horizon.dti[0], "soc"] = initial_soc
+            electric_fleet_unit_block.states.loc[eval_horizon.dti, "soc_min"] += 0.05
 
-        optimization_problem = optimization.OptimizationProblem.from_revoletion_scenario(
+        optimization_problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
             scenario,
             eval_horizon,
             self._logger,

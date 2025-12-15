@@ -81,6 +81,8 @@ class OptimizationProblemConfig:
 
     warmstart: bool = False
 
+    enforce_soc_constraints: bool = True
+
 
 class OptimizationProblem(abc.ABC):
     """

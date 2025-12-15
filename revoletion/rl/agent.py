@@ -13,6 +13,7 @@ import typing_extensions
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
 
@@ -77,22 +78,23 @@ class AgentConfig:
     target_noise_clip: float | None = None
     train_freq: int | tuple[int, str] | None = None
     batch_size: int | None = None
+    learning_starts: int | None = None
+    buffer_size: int | None = None
 
     @classmethod
     def default_for_algorithm(cls, algorithm: AgentAlgorithm) -> Self:
         match algorithm:
             case AgentAlgorithm.PPO:
-                return cls(learning_rate=0.0003, gamma=0.99, n_steps=2048, batch_size=128)
+                return cls(learning_rate=0.0003, gamma=0.99, n_steps=128, batch_size=64)
             case AgentAlgorithm.TD3:
                 return cls(
                     learning_rate=0.0001,
                     gamma=0.99,
-                    n_steps=1,
-                    # gradient_steps=-1,
-                    # train_freq=100,
-                    target_policy_noise=0.1,
-                    target_noise_clip=0.3,
-                    batch_size=512,
+                    target_policy_noise=0.2,
+                    target_noise_clip=0.5,
+                    batch_size=256,
+                    learning_starts=10_000,
+                    buffer_size=50_000,
                 )
             case AgentAlgorithm.A2C:
                 return cls(learning_rate=0.0007, n_steps=5)
@@ -100,9 +102,9 @@ class AgentConfig:
                 return cls(
                     learning_rate=0.0003,
                     gamma=0.99,
-                    # train_freq=100,
-                    # gradient_steps=-1,
-                    batch_size=512,
+                    batch_size=256,
+                    learning_starts=10_000,
+                    buffer_size=50_000,
                 )
             case AgentAlgorithm.DDPG:
                 return cls(learning_rate=0.0001)
@@ -184,6 +186,7 @@ def train(
         env = make_vec_env(
             lambda: _build_rl_environment(scenario_factory, horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
         )
+    env = VecNormalize(env, training=True)
 
     agent = _create_trainable_agent(algorithm, env, config)
 
@@ -196,23 +199,28 @@ def evaluate_with_agent(
     agent: RevoletionAgent,
     horizon: utils.TimeSettings,
 ) -> tuple[float, optimization.OptimizationResult | None]:
-    env = _build_rl_environment(scenario, horizon, train=False)
-    obs, _ = env.reset()
+    env = DummyVecEnv([lambda: _build_rl_environment(scenario, horizon, train=False)])
+    env = VecNormalize(env, training=False)
+    obs = env.reset()
     total_reward = 0.0
-    infos = {}
+    info_dict = {}
 
     for _ in horizon.dti:
         action = agent.predict(obs, deterministic=True)
         if isinstance(action, tuple):
             action = action[0]
-        obs, reward, terminated, truncated, infos = env.step(action)
-        total_reward += reward
-        if truncated:
-            return total_reward, None
-        elif terminated:
+        obs, reward, done, infos = env.step(action)
+        total_reward += reward[0] if isinstance(reward, np.ndarray) else reward
+        done_flag = done[0] if isinstance(done, np.ndarray) else done
+        info_dict = infos[0] if isinstance(infos, list) and len(infos) > 0 else infos
+
+        if done_flag:
             break
 
-    return total_reward, infos.get(INFO_KEY_OPTIMIZATION_RESULT)
+    if info_dict[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
+        return total_reward, None
+
+    return total_reward, info_dict.get(INFO_KEY_OPTIMIZATION_RESULT)
 
 
 def _get_path_for_algorithm(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Path:
@@ -275,9 +283,9 @@ def _create_trainable_agent(
     sb3_type = _get_sb3_type(algorithm)
 
     kwargs = {}
-    if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG, AgentAlgorithm.SAC}:
+    if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]
-        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.3 * np.ones(n_actions))
         kwargs["action_noise"] = action_noise
 
     if config.gradient_steps is not None:
@@ -341,11 +349,14 @@ class RandomChargingAgent(RevoletionAgent):
 class FullChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
-        num_cars = len(cars_available)
+        actions = []
+        for cars_available in obs[OBS_KEY_EFUS_AVAILABLE]:
+            num_cars = len(cars_available)
 
-        charge_pattern = np.ones(num_cars)
-        return charge_pattern * cars_available[:, 0]
+            charge_pattern = np.ones(num_cars)
+            action = charge_pattern * cars_available[:, 0]
+            actions.append(action)
+        return np.array(actions, dtype=np.float32)
 
 
 class FullDischargingAgent(RevoletionAgent):
