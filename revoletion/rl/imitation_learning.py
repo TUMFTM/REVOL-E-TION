@@ -89,18 +89,15 @@ def compute_imitation_trajectories(
     return trajectories
 
 
-def create_imitation_policy(
-    trajectories,
-    env,
-) -> None:
+def train_imitation_policy(trajectories, env, base_policy) -> None:
     transitions = rollout.flatten_trajectories(trajectories)
 
     rng = np.random.default_rng(42)
     bc_trainer = bc.BC(
         observation_space=env.observation_space,
         action_space=env.action_space,
+        policy=base_policy,
         demonstrations=transitions,
         rng=rng,
     )
-    bc_trainer.train(n_epochs=10)
-    return bc_trainer.policy
+    bc_trainer.train(n_epochs=15)

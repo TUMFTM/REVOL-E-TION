@@ -104,7 +104,7 @@ class RewardComponents:
     def power_diff_reward(self) -> float:
         if len(self.power_diffs) == 0:
             return 0
-        avg_power_diff = sum(self.power_diffs) / len(self.power_diffs)
+        avg_power_diff = sum(self.power_diffs)
         return -abs(avg_power_diff) * self.config.penalty_factor_power_diff
 
     @property
@@ -583,8 +583,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
-        reward.grid_opex = self._compute_grid_opex(optimization_result) / len(self._ctx.electric_fleet_unit_blocks)
-        reward.gen_opex = self._compute_generator_opex(optimization_result) / len(self._ctx.electric_fleet_unit_blocks)
+        reward.grid_opex = self._compute_grid_opex(optimization_result)
+        reward.gen_opex = self._compute_generator_opex(optimization_result)
 
         soc_diffs = []
         for block in self._ctx.electric_fleet_unit_blocks:

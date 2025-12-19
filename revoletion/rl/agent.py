@@ -9,10 +9,15 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
+from stable_baselines3.common.utils import FloatSchedule
+import torch
+import torch.nn as nn
 import typing_extensions
+from stable_baselines3.common import policies
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
@@ -21,13 +26,27 @@ from revoletion import optimization, utils
 from revoletion import scenario as scn
 
 from . import imitation_learning
+from ._features import (
+    OBS_KEY_CONTROLLABLE_SOURCES_POWER,
+    OBS_KEY_EFUS_AVAILABLE,
+    OBS_KEY_EFUS_REQUIRED_SOCS,
+    OBS_KEY_EFUS_SOC,
+    OBS_KEY_FIXED_DEMANDS,
+    OBS_KEY_FLEETS_IN_POWER,
+    OBS_KEY_FLEETS_OUT_POWER,
+    OBS_KEY_GRID_EXPORT_COSTS,
+    OBS_KEY_GRID_EXPORT_POWER,
+    OBS_KEY_GRID_IMPORT_COSTS,
+    OBS_KEY_GRID_IMPORT_POWER,
+    OBS_KEY_RENEWABLES_POWER,
+    OBS_KEY_RENEWABLES_SCHEDULE,
+    OBS_KEY_STATIONARY_BATTERIES_SOC,
+    OBS_KEY_TIME_FEATURES,
+)
 from .environment import (
     INFO_KEY_OPTIMIZATION_RESULT,
     INFO_KEY_REWARD_COMPONENTS,
     INFO_KEY_STATUS,
-    OBS_KEY_EFUS_AVAILABLE,
-    OBS_KEY_EFUS_REQUIRED_SOCS,
-    OBS_KEY_EFUS_SOC,
     ActType,
     EnvironmentStepStatus,
     ObsType,
@@ -170,38 +189,6 @@ def _build_rl_environment(
     return env
 
 
-def train(
-    algorithm: AgentAlgorithm,
-    scenario_factory: _ScenarioFactoryT,
-    imitation_horizon: utils.TimeSettings,
-    train_horizon: utils.TimeSettings,
-    config: AgentConfig | None = None,
-    n_proc: int | None = None,
-    total_timesteps: int = 10000,
-) -> RevoletionAgent:
-    if not algorithm.needs_training():
-        return _create_non_trainable_agent(algorithm)
-
-    # scenario = scenario_factory()
-    # trajectories = imitation_learning.compute_imitation_trajectories(scenario, imitation_horizon)
-    # env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
-    # imitation_policy = imitation_learning.create_imitation_policy(trajectories, env)
-
-    if n_proc is None or n_proc < 2:
-        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
-    else:
-        env = make_vec_env(
-            lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
-        )
-    env = VecNormalize(env, training=True)
-
-    agent = _create_trainable_agent(algorithm, env, config)
-    # agent._sb3_agent.policy = imitation_policy
-
-    _ = agent.learn(total_timesteps=total_timesteps)
-    return agent
-
-
 def evaluate_with_agent(
     scenario: scn.Scenario,
     agent: RevoletionAgent,
@@ -266,6 +253,52 @@ def load_agent(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Revol
     return agent
 
 
+def train(
+    algorithm: AgentAlgorithm,
+    scenario_factory: _ScenarioFactoryT,
+    imitation_horizon: utils.TimeSettings,
+    train_horizon: utils.TimeSettings,
+    config: AgentConfig | None = None,
+    n_proc: int | None = None,
+    total_timesteps: int = 10000,
+) -> RevoletionAgent:
+    if not algorithm.needs_training():
+        return _create_non_trainable_agent(algorithm)
+
+    scenario = scenario_factory()
+    env = make_vec_env(lambda: _build_rl_environment(scenario, train_horizon), n_envs=1)
+    base_policy = policies.MultiInputActorCriticPolicy(
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        lr_schedule=FloatSchedule(0.0003),
+        features_extractor_class=StructuredEnergyExtractor,
+        features_extractor_kwargs=dict(
+            features_dim=256,
+            vehicle_embed_dim=64,
+            forecast_embed_dim=32,
+            use_attention=True,
+            num_attention_heads=4,
+        ),
+    )
+
+    trajectories = imitation_learning.compute_imitation_trajectories(scenario, imitation_horizon)
+    imitation_learning.train_imitation_policy(trajectories, env, base_policy)
+
+    if n_proc is None or n_proc < 2:
+        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
+    else:
+        env = make_vec_env(
+            lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
+        )
+    env = VecNormalize(env, training=True)
+
+    agent = _create_trainable_agent(algorithm, env, config)
+    agent._sb3_agent.policy = base_policy
+
+    _ = agent.learn(total_timesteps=total_timesteps)
+    return agent
+
+
 def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
     match algorithm:
         case AgentAlgorithm.RANDOM:
@@ -283,7 +316,9 @@ def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
 
 
 def _create_trainable_agent(
-    algorithm: AgentAlgorithm, env: gym.Env[ObsType, ActType] | SubprocVecEnv, config: AgentConfig | None = None
+    algorithm: AgentAlgorithm,
+    env: gym.Env[ObsType, ActType] | SubprocVecEnv,
+    config: AgentConfig | None = None,
 ) -> RevoletionSB3Agent:
     if config is None:
         config = AgentConfig.default_for_algorithm(algorithm)
@@ -341,6 +376,238 @@ def _get_sb3_type(algorithm: AgentAlgorithm):
             return stable_baselines3.DDPG
         case _:
             raise ValueError(f"Unkown agent algorithm: {algorithm}")
+
+
+_SCALAR_FEATURES = {
+    OBS_KEY_TIME_FEATURES,
+    OBS_KEY_FLEETS_IN_POWER,
+    OBS_KEY_FLEETS_OUT_POWER,
+    OBS_KEY_RENEWABLES_POWER,
+    OBS_KEY_STATIONARY_BATTERIES_SOC,
+    OBS_KEY_CONTROLLABLE_SOURCES_POWER,
+    OBS_KEY_FIXED_DEMANDS,
+}
+
+
+class StructuredEnergyExtractor(BaseFeaturesExtractor):
+    def __init__(
+        self,
+        observation_space: gym.spaces.Dict,
+        forecast_horizon: int = 16,
+        features_dim: int = 256,
+        vehicle_embed_dim: int = 64,
+        forecast_embed_dim: int = 32,
+        use_attention: bool = True,
+        num_attention_heads: int = 4,
+    ):
+        super().__init__(observation_space, features_dim)
+
+        self._observation_space = observation_space.spaces
+        self._forecast_horizon = forecast_horizon
+
+        self._use_attention = use_attention
+        self._vehicle_embed_dim = vehicle_embed_dim
+        self._forecast_embed_dim = forecast_embed_dim
+
+        # Each vehicle has: SoC (1) + availability forecast (H) + required SoC forecast (H)
+        vehicle_input_dim = 1 + 2 * self._forecast_horizon
+
+        self.vehicle_encoder = nn.Sequential(
+            nn.Linear(vehicle_input_dim, vehicle_embed_dim * 2),
+            nn.LayerNorm(vehicle_embed_dim * 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(vehicle_embed_dim * 2, vehicle_embed_dim),
+            nn.LayerNorm(vehicle_embed_dim),
+            nn.ReLU(),
+        )
+
+        # Attention-based pooling across vehicles
+        if use_attention:
+            self.vehicle_attention = nn.MultiheadAttention(
+                embed_dim=vehicle_embed_dim,
+                num_heads=num_attention_heads,
+                batch_first=True,
+                dropout=0.1,
+            )
+            # Learnable query token for pooling
+            self.vehicle_query = nn.Parameter(torch.randn(1, 1, vehicle_embed_dim))
+
+        vehicle_output_dim = vehicle_embed_dim
+
+        # ============================================
+        # 2. Renewable Generation Forecast Processing
+        # ============================================
+        if OBS_KEY_RENEWABLES_SCHEDULE in self._observation_space:
+            self.n_renewables = self._observation_space[OBS_KEY_RENEWABLES_SCHEDULE].shape[0]
+
+            # 1D CNN to extract temporal patterns from forecasts
+            self.renewable_encoder = nn.Sequential(
+                nn.Conv1d(
+                    in_channels=self.n_renewables,
+                    out_channels=forecast_embed_dim,
+                    kernel_size=3,
+                    padding=1,
+                ),
+                nn.ReLU(),
+                nn.Conv1d(
+                    in_channels=forecast_embed_dim,
+                    out_channels=forecast_embed_dim,
+                    kernel_size=3,
+                    padding=1,
+                ),
+                nn.ReLU(),
+                nn.AdaptiveAvgPool1d(1),  # Pool to single value per channel
+            )
+            renewable_output_dim = forecast_embed_dim
+        else:
+            renewable_output_dim = 0
+
+        # ============================================
+        # 3. Grid Features Processing
+        # ============================================
+        if OBS_KEY_GRID_IMPORT_COSTS in self._observation_space:
+            # import_costs, import_power, export_costs, export_power
+            grid_input_dim = self._observation_space[OBS_KEY_GRID_IMPORT_COSTS].shape[0] * 4
+            grid_output_dim = 32
+            self.grid_encoder = nn.Sequential(
+                nn.Linear(grid_input_dim, 64),
+                nn.ReLU(),
+                nn.Linear(64, grid_output_dim),
+                nn.ReLU(),
+            )
+        else:
+            grid_output_dim = 0
+
+        # ============================================
+        # 4. Scalar Features Processing
+        # ============================================
+        scalar_dim = 0
+
+        for scalar_feature in _SCALAR_FEATURES:
+            if scalar_feature not in self._observation_space:
+                continue
+            scalar_dim += self._observation_space[scalar_feature].shape[0]
+
+        if scalar_dim > 0:
+            scalar_output_dim = 64
+            self.scalar_encoder = nn.Sequential(
+                nn.Linear(scalar_dim, 128),
+                nn.ReLU(),
+                nn.Linear(128, scalar_output_dim),
+                nn.ReLU(),
+            )
+        else:
+            scalar_output_dim = 0
+
+        # ============================================
+        # 5. Fusion Layer
+        # ============================================
+        total_dim = vehicle_output_dim + renewable_output_dim + grid_output_dim + scalar_output_dim
+
+        self.fusion = nn.Sequential(
+            nn.Linear(total_dim, features_dim * 2),
+            nn.LayerNorm(features_dim * 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(features_dim * 2, features_dim),
+            nn.LayerNorm(features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Forward pass through the feature extractor.
+
+        Args:
+            observations: Dictionary of observations from the environment
+
+        Returns:
+            Encoded features of shape (batch_size, features_dim)
+        """
+        encoded_parts = []
+
+        # Concatenate per-vehicle features
+        vehicle_features = torch.cat(
+            [
+                observations[OBS_KEY_EFUS_SOC].unsqueeze(-1),  # (B, N, 1)
+                observations[OBS_KEY_EFUS_AVAILABLE],  # (B, N, H)
+                observations[OBS_KEY_EFUS_REQUIRED_SOCS],  # (B, N, H)
+            ],
+            dim=-1,
+        )  # (B, N, 1+2H)
+
+        # Encode each vehicle
+        B, N, F = vehicle_features.shape
+        vehicle_features_flat = vehicle_features.view(B * N, F)
+        vehicle_encoded = self.vehicle_encoder(vehicle_features_flat)
+        vehicle_encoded = vehicle_encoded.view(B, N, self._vehicle_embed_dim)
+
+        # Pool across vehicles
+        if self._use_attention:
+            # Use learnable query for attention pooling
+            query = self.vehicle_query.expand(B, -1, -1)  # (B, 1, D)
+            pooled_vehicle, _ = self.vehicle_attention(query, vehicle_encoded, vehicle_encoded)
+            pooled_vehicle = pooled_vehicle.squeeze(1)  # (B, D)
+        else:
+            # Simple mean pooling
+            pooled_vehicle = vehicle_encoded.mean(dim=1)  # (B, D)
+
+        encoded_parts.append(pooled_vehicle)
+
+        # ============================================
+        # 2. Process Renewable Forecasts
+        # ============================================
+        if OBS_KEY_RENEWABLES_SCHEDULE in observations:
+            renewable_forecast = observations[OBS_KEY_RENEWABLES_SCHEDULE]  # (B, N, H)
+            renewable_encoded = self.renewable_encoder(renewable_forecast)  # (B, D, 1)
+            renewable_encoded = renewable_encoded.squeeze(-1)  # (B, D)
+            encoded_parts.append(renewable_encoded)
+
+        # ============================================
+        # 3. Process Grid Features
+        # ============================================
+        if OBS_KEY_GRID_IMPORT_COSTS in observations:
+            grid_features = torch.cat(
+                [
+                    observations[OBS_KEY_GRID_IMPORT_COSTS],
+                    observations[OBS_KEY_GRID_IMPORT_POWER],
+                    observations[OBS_KEY_GRID_EXPORT_COSTS],
+                    observations[OBS_KEY_GRID_EXPORT_POWER],
+                ],
+                dim=-1,
+            )
+            grid_encoded = self.grid_encoder(grid_features)
+            encoded_parts.append(grid_encoded)
+
+        # ============================================
+        # 4. Process Scalar Features
+        # ============================================
+        scalar_features = []
+
+        if OBS_KEY_TIME_FEATURES in observations:
+            scalar_features.append(observations[OBS_KEY_TIME_FEATURES])
+        if OBS_KEY_FLEETS_IN_POWER in observations:
+            scalar_features.append(observations[OBS_KEY_FLEETS_IN_POWER])
+            scalar_features.append(observations[OBS_KEY_FLEETS_OUT_POWER])
+        if OBS_KEY_RENEWABLES_POWER in observations:
+            scalar_features.append(observations[OBS_KEY_RENEWABLES_POWER])
+        if OBS_KEY_STATIONARY_BATTERIES_SOC in observations:
+            scalar_features.append(observations[OBS_KEY_STATIONARY_BATTERIES_SOC])
+        if OBS_KEY_CONTROLLABLE_SOURCES_POWER in observations:
+            scalar_features.append(observations[OBS_KEY_CONTROLLABLE_SOURCES_POWER])
+        if OBS_KEY_FIXED_DEMANDS in observations:
+            scalar_features.append(observations[OBS_KEY_FIXED_DEMANDS])
+
+        if scalar_features:
+            scalar_cat = torch.cat(scalar_features, dim=-1)
+            scalar_encoded = self.scalar_encoder(scalar_cat)
+            encoded_parts.append(scalar_encoded)
+
+        combined = torch.cat(encoded_parts, dim=-1)
+        output = self.fusion(combined)
+
+        return output
 
 
 class RandomChargingAgent(RevoletionAgent):
