@@ -20,6 +20,7 @@ from typing_extensions import Self
 from revoletion import optimization, utils
 from revoletion import scenario as scn
 
+from . import imitation_learning
 from .environment import (
     INFO_KEY_OPTIMIZATION_RESULT,
     INFO_KEY_REWARD_COMPONENTS,
@@ -172,7 +173,8 @@ def _build_rl_environment(
 def train(
     algorithm: AgentAlgorithm,
     scenario_factory: _ScenarioFactoryT,
-    horizon: utils.TimeSettings,
+    imitation_horizon: utils.TimeSettings,
+    train_horizon: utils.TimeSettings,
     config: AgentConfig | None = None,
     n_proc: int | None = None,
     total_timesteps: int = 10000,
@@ -180,15 +182,21 @@ def train(
     if not algorithm.needs_training():
         return _create_non_trainable_agent(algorithm)
 
+    # scenario = scenario_factory()
+    # trajectories = imitation_learning.compute_imitation_trajectories(scenario, imitation_horizon)
+    # env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
+    # imitation_policy = imitation_learning.create_imitation_policy(trajectories, env)
+
     if n_proc is None or n_proc < 2:
-        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, horizon), n_envs=1)
+        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
     else:
         env = make_vec_env(
-            lambda: _build_rl_environment(scenario_factory, horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
+            lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
         )
     env = VecNormalize(env, training=True)
 
     agent = _create_trainable_agent(algorithm, env, config)
+    # agent._sb3_agent.policy = imitation_policy
 
     _ = agent.learn(total_timesteps=total_timesteps)
     return agent

@@ -117,11 +117,18 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         pypsa_bat_power = self._net.stores_t.p.loc[normalized_dti, pypsa_store_name]
         bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
 
+        if isinstance(bat_power, (pd.Series, pd.DatetimeIndex)):
+            bat_out = -bat_power.clip(upper=0)
+            bat_in = bat_power.clip(lower=0)
+        else:
+            bat_out = -np.clip(bat_power, a_max=0.0, a_min=-np.inf)
+            bat_in = np.clip(bat_power, a_min=0.0, a_max=np.inf)
+
         return {
             "out": self._get_pypsa_link_power_flow(block, dti, "outflow-link"),
             "in": self._get_pypsa_link_power_flow(block, dti, "inflow-link"),
-            "bat_out": bat_power.clip(lower=0),
-            "bat_in": -bat_power.clip(upper=0),
+            "bat_out": bat_out,
+            "bat_in": bat_in,
         }
 
     @get_power_flow.register

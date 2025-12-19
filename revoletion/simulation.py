@@ -10,7 +10,6 @@ from typing_extensions import override
 
 from . import blocks, optimization, rl, utils
 from . import scenario as scn
-from .rl import _utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -500,6 +499,12 @@ class ControlHorizon:
         agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
         agent_config.tensorboard_log = "/tmp/revol"
 
+        imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
+            start=scenario.times.sim.start,
+            timestep=scenario.timestep,
+            end=scenario.times.sim.start + scenario.len_ph,
+        )
+
         train_horizon = utils.TimeSettings.create_from_start_timestamp(
             start=scenario.times.sim.start,
             timestep=scenario.timestep,
@@ -512,7 +517,8 @@ class ControlHorizon:
         agent = rl.train(
             self._settings.agent_algorithm,
             self._scenario_factory.create_scenario,
-            horizon=train_horizon,
+            imitation_horizon=imitation_horizon,
+            train_horizon=train_horizon,
             n_proc=self._settings.n_processes,
             config=agent_config,
             total_timesteps=self._settings.train_timesteps or _DEFAULT_TRAIN_TIMESTEPS,
