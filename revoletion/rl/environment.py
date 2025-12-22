@@ -29,6 +29,8 @@ class RewardConfig:
     penalty_factor_gen_opex: float = 1.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
+    penalty_factor_ext_charge_opex: float = 0.1
+
     penalty_factor_dsoc: float = 16.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
@@ -55,7 +57,7 @@ class RevoletionEnvironmentConfig:
     min_steps: int = 48
     max_steps: int = 220
 
-    episode_length: int | None = 300
+    episode_length: int | None = None
     """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
 
     forecast_horizon: int = 16
@@ -77,6 +79,7 @@ class RewardComponents:
 
     grid_opex: float = 0.0
     charge_opex: float = 0.0
+    ext_charge_opex: float = 0.0
     gen_opex: float = 0.0
     power_diffs: list[float] = field(default_factory=list)
     atbase_violation: int = 0
@@ -93,6 +96,10 @@ class RewardComponents:
     @property
     def charge_opex_reward(self) -> float:
         return -self.charge_opex * self.config.penalty_factor_charge_opex
+
+    @property
+    def ext_charge_opex_reward(self) -> float:
+        return -self.ext_charge_opex * self.config.penalty_factor_ext_charge_opex
 
     @property
     def gen_opex_reward(self) -> float:
@@ -596,6 +603,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             soc_diffs.append(soc_diff)
 
         reward.soc_diffs = soc_diffs
+
+        ext_charge_opex = 0
+        for block in self._ctx.electric_fleet_unit_blocks:
+            power_flows = optimization_result.get_power_flow(block, self.current_time_step)
+            ext_charge_opex += power_flows["ext_ac"]
+            ext_charge_opex += power_flows["ext_dc"]
+
+        reward.ext_charge_opex = ext_charge_opex
 
         self._reward_history.append(reward)
 

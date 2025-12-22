@@ -5,6 +5,7 @@ import types
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from typing_extensions import override
 
@@ -423,6 +424,12 @@ class ControlScenarioFactory:
 
             electric_fleet_unit_block.states.loc[full_horizon.dti, "soc_min"] = soc_envelope
 
+            atbase = electric_fleet_unit_block.log.loc[full_horizon.dti, "atbase"]
+            ext_available = np.invert(atbase.astype(bool))
+
+            electric_fleet_unit_block.log.loc[full_horizon.dti, "atac"] = ext_available
+            electric_fleet_unit_block.log.loc[full_horizon.dti, "atdc"] = ext_available
+
         return scenario
 
 
@@ -430,11 +437,11 @@ class ControlHorizon:
     def __init__(
         self,
         scenario_factory: ControlScenarioFactory,
-        settings: ControlSettings,
+        settings: ControlSettings | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self._scenario_factory = scenario_factory
-        self._settings = settings
+        self._settings = settings or ControlSettings()
         self._logger = logger or _LOGGER
 
     def execute(self, plot=True) -> None:
@@ -499,12 +506,6 @@ class ControlHorizon:
         agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
         agent_config.tensorboard_log = "/tmp/revol"
 
-        imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
-            start=scenario.times.sim.start,
-            timestep=scenario.timestep,
-            end=scenario.times.sim.start + scenario.len_ph,
-        )
-
         train_horizon = utils.TimeSettings.create_from_start_timestamp(
             start=scenario.times.sim.start,
             timestep=scenario.timestep,
@@ -517,7 +518,6 @@ class ControlHorizon:
         agent = rl.train(
             self._settings.agent_algorithm,
             self._scenario_factory.create_scenario,
-            imitation_horizon=imitation_horizon,
             train_horizon=train_horizon,
             n_proc=self._settings.n_processes,
             config=agent_config,

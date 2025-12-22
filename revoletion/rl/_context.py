@@ -8,7 +8,6 @@ from revoletion import scenario as scn
 
 class Context:
     def __init__(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None:
-        self._scenario = scenario
         self._block_registry = scenario.block_registry
         self.horizon = horizon
 

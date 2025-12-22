@@ -9,15 +9,16 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
-from stable_baselines3.common.utils import FloatSchedule
 import torch
 import torch.nn as nn
 import typing_extensions
 from stable_baselines3.common import policies
+from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.utils import FloatSchedule
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
@@ -25,7 +26,6 @@ from typing_extensions import Self
 from revoletion import optimization, utils
 from revoletion import scenario as scn
 
-from . import imitation_learning
 from ._features import (
     OBS_KEY_CONTROLLABLE_SOURCES_POWER,
     OBS_KEY_EFUS_AVAILABLE,
@@ -92,7 +92,7 @@ class AgentConfig:
     gamma: float = 0.99
     seed: int = 42
     n_steps: int = 1
-    tensorboard_log: str | None = None
+    tensorboard_log: str | None = "/tmp/revol"
     gradient_steps: int | None = None
     target_policy_noise: float | None = None
     target_noise_clip: float | None = None
@@ -173,15 +173,18 @@ class RevoletionSB3Agent(RevoletionAgent):
 _ScenarioFactoryT = typing.Callable[[], scn.Scenario]
 
 
-def _build_rl_environment(
-    scenario_or_scenario_factory: scn.Scenario | _ScenarioFactoryT, horizon: utils.TimeSettings, train: bool = True
+def build_rl_environment(
+    scenario_or_scenario_factory: scn.Scenario | _ScenarioFactoryT,
+    horizon: utils.TimeSettings,
+    train: bool = True,
+    env_config: RevoletionEnvironmentConfig | None = None,
 ) -> gym.Env[ObsType, ActType]:
     if isinstance(scenario_or_scenario_factory, scn.Scenario):
         scenario = scenario_or_scenario_factory
     else:
         scenario = scenario_or_scenario_factory()
 
-    env_config = RevoletionEnvironmentConfig(
+    env_config = env_config or RevoletionEnvironmentConfig(
         reward_config=RewardConfig(),
         episode_length=None if train else len(horizon),
     )
@@ -194,7 +197,7 @@ def evaluate_with_agent(
     agent: RevoletionAgent,
     horizon: utils.TimeSettings,
 ) -> tuple[float, optimization.OptimizationResult | None]:
-    env = DummyVecEnv([lambda: _build_rl_environment(scenario, horizon, train=False)])
+    env = DummyVecEnv([lambda: build_rl_environment(scenario, horizon, train=False)])
     env = VecNormalize(env, training=False)
     obs = env.reset()
     total_reward = 0.0
@@ -245,137 +248,12 @@ def load_agent(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Revol
         return None
 
     sb3_type = _get_sb3_type(algorithm)
-    sb3_agent = sb3_type.load(load_path)
+    sb3_agent = _load_sb3_agent(sb3_type, load_path)
 
     agent = RevoletionSB3Agent(algorithm=algorithm, sb3_agent=sb3_agent)
 
     _LOGGER.info(f"Loaded agent {algorithm} from {load_path}")
     return agent
-
-
-def train(
-    algorithm: AgentAlgorithm,
-    scenario_factory: _ScenarioFactoryT,
-    imitation_horizon: utils.TimeSettings,
-    train_horizon: utils.TimeSettings,
-    config: AgentConfig | None = None,
-    n_proc: int | None = None,
-    total_timesteps: int = 10000,
-) -> RevoletionAgent:
-    if not algorithm.needs_training():
-        return _create_non_trainable_agent(algorithm)
-
-    scenario = scenario_factory()
-    env = make_vec_env(lambda: _build_rl_environment(scenario, train_horizon), n_envs=1)
-    base_policy = policies.MultiInputActorCriticPolicy(
-        observation_space=env.observation_space,
-        action_space=env.action_space,
-        lr_schedule=FloatSchedule(0.0003),
-        features_extractor_class=StructuredEnergyExtractor,
-        features_extractor_kwargs=dict(
-            features_dim=256,
-            vehicle_embed_dim=64,
-            forecast_embed_dim=32,
-            use_attention=True,
-            num_attention_heads=4,
-        ),
-    )
-
-    trajectories = imitation_learning.compute_imitation_trajectories(scenario, imitation_horizon)
-    imitation_learning.train_imitation_policy(trajectories, env, base_policy)
-
-    if n_proc is None or n_proc < 2:
-        env = make_vec_env(lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=1)
-    else:
-        env = make_vec_env(
-            lambda: _build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
-        )
-    env = VecNormalize(env, training=True)
-
-    agent = _create_trainable_agent(algorithm, env, config)
-    agent._sb3_agent.policy = base_policy
-
-    _ = agent.learn(total_timesteps=total_timesteps)
-    return agent
-
-
-def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
-    match algorithm:
-        case AgentAlgorithm.RANDOM:
-            return RandomChargingAgent(algorithm)
-        case AgentAlgorithm.FULL_CHARGING:
-            return FullChargingAgent(algorithm)
-        case AgentAlgorithm.FULL_DISCHARGE:
-            return FullDischargingAgent(algorithm)
-        case AgentAlgorithm.BASIC:
-            return BasicChargingAgent(algorithm)
-        case AgentAlgorithm.IDLE:
-            return IdleAgent(algorithm)
-        case _:
-            raise ValueError()
-
-
-def _create_trainable_agent(
-    algorithm: AgentAlgorithm,
-    env: gym.Env[ObsType, ActType] | SubprocVecEnv,
-    config: AgentConfig | None = None,
-) -> RevoletionSB3Agent:
-    if config is None:
-        config = AgentConfig.default_for_algorithm(algorithm)
-
-    sb3_type = _get_sb3_type(algorithm)
-
-    kwargs = {}
-    if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
-        n_actions = env.action_space.shape[-1]
-        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.3 * np.ones(n_actions))
-        kwargs["action_noise"] = action_noise
-
-    if config.gradient_steps is not None:
-        kwargs["gradient_steps"] = config.gradient_steps
-
-    if config.train_freq is not None:
-        kwargs["train_freq"] = config.train_freq
-
-    if config.target_noise_clip is not None:
-        kwargs["target_noise_clip"] = config.target_noise_clip
-
-    if config.target_policy_noise is not None:
-        kwargs["target_policy_noise"] = config.target_policy_noise
-
-    if config.batch_size is not None:
-        kwargs["batch_size"] = config.batch_size
-
-    return RevoletionSB3Agent(
-        algorithm,
-        sb3_agent=sb3_type(
-            "MultiInputPolicy",
-            env=env,
-            learning_rate=config.learning_rate,
-            gamma=config.gamma,
-            seed=config.seed,
-            n_steps=config.n_steps,
-            tensorboard_log=config.tensorboard_log,
-            verbose=1,
-            **kwargs,
-        ),
-    )
-
-
-def _get_sb3_type(algorithm: AgentAlgorithm):
-    match algorithm:
-        case AgentAlgorithm.PPO:
-            return stable_baselines3.PPO
-        case AgentAlgorithm.TD3:
-            return stable_baselines3.TD3
-        case AgentAlgorithm.A2C:
-            return stable_baselines3.A2C
-        case AgentAlgorithm.SAC:
-            return stable_baselines3.SAC
-        case AgentAlgorithm.DDPG:
-            return stable_baselines3.DDPG
-        case _:
-            raise ValueError(f"Unkown agent algorithm: {algorithm}")
 
 
 _SCALAR_FEATURES = {
@@ -610,6 +488,139 @@ class StructuredEnergyExtractor(BaseFeaturesExtractor):
         return output
 
 
+_DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
+    features_dim=256,
+    vehicle_embed_dim=64,
+    forecast_embed_dim=32,
+    use_attention=True,
+    num_attention_heads=4,
+)
+_DEFAULT_POLICY_KWARGS = dict(
+    features_extractor_class=StructuredEnergyExtractor,
+    features_extractor_kwargs=_DEFAULT_FEATURE_EXTRACTOR_KWARGS,
+)
+
+
+def _load_sb3_agent(sb3_type: type[BaseAlgorithm], model_path: Path, env=None) -> BaseAlgorithm:
+    sb3_agent = sb3_type.load(
+        model_path,
+        custom_objects={"policy_kwargs": _DEFAULT_POLICY_KWARGS},
+        env=env,
+    )
+    return sb3_agent
+
+
+def train(
+    algorithm: AgentAlgorithm,
+    scenario_factory: _ScenarioFactoryT,
+    train_horizon: utils.TimeSettings,
+    config: AgentConfig | None = None,
+    n_proc: int | None = None,
+    total_timesteps: int = 10000,
+    base_policy_path: Path | None = None,
+) -> RevoletionAgent:
+    if not algorithm.needs_training():
+        return _create_non_trainable_agent(algorithm)
+
+    if n_proc is None or n_proc < 2:
+        env = make_vec_env(lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=1)
+    else:
+        env = make_vec_env(
+            lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
+        )
+    env = VecNormalize(env, training=True)
+
+    agent = create_trainable_agent(algorithm, env, config, base_policy_path)
+
+    _ = agent.learn(total_timesteps=total_timesteps)
+    return agent
+
+
+def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
+    match algorithm:
+        case AgentAlgorithm.RANDOM:
+            return RandomChargingAgent(algorithm)
+        case AgentAlgorithm.FULL_CHARGING:
+            return FullChargingAgent(algorithm)
+        case AgentAlgorithm.FULL_DISCHARGE:
+            return FullDischargingAgent(algorithm)
+        case AgentAlgorithm.BASIC:
+            return BasicChargingAgent(algorithm)
+        case AgentAlgorithm.IDLE:
+            return IdleAgent(algorithm)
+        case _:
+            raise ValueError()
+
+
+def create_trainable_agent(
+    algorithm: AgentAlgorithm,
+    env: gym.Env[ObsType, ActType] | SubprocVecEnv,
+    config: AgentConfig | None = None,
+    base_policy_path: Path | None = None,
+) -> RevoletionSB3Agent:
+    if config is None:
+        config = AgentConfig.default_for_algorithm(algorithm)
+
+    kwargs: dict[str, typing.Any] = {}
+    kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+    if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
+        n_actions = env.action_space.shape[-1]
+        action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.3 * np.ones(n_actions))
+        kwargs["action_noise"] = action_noise
+
+    if config.gradient_steps is not None:
+        kwargs["gradient_steps"] = config.gradient_steps
+
+    if config.train_freq is not None:
+        kwargs["train_freq"] = config.train_freq
+
+    if config.target_noise_clip is not None:
+        kwargs["target_noise_clip"] = config.target_noise_clip
+
+    if config.target_policy_noise is not None:
+        kwargs["target_policy_noise"] = config.target_policy_noise
+
+    if config.batch_size is not None:
+        kwargs["batch_size"] = config.batch_size
+
+    sb3_type = _get_sb3_type(algorithm)
+    sb3_agent = sb3_type(
+        "MultiInputPolicy",
+        env=env,
+        learning_rate=config.learning_rate,
+        gamma=config.gamma,
+        seed=config.seed,
+        n_steps=config.n_steps,
+        tensorboard_log=config.tensorboard_log,
+        verbose=1,
+        **kwargs,
+    )
+
+    if base_policy_path is not None:
+        sb3_agent.policy = type(sb3_agent.policy).load(str(base_policy_path))
+
+    return RevoletionSB3Agent(
+        algorithm,
+        sb3_agent=sb3_agent,
+    )
+
+
+def _get_sb3_type(algorithm: AgentAlgorithm):
+    match algorithm:
+        case AgentAlgorithm.PPO:
+            return stable_baselines3.PPO
+        case AgentAlgorithm.TD3:
+            return stable_baselines3.TD3
+        case AgentAlgorithm.A2C:
+            return stable_baselines3.A2C
+        case AgentAlgorithm.SAC:
+            return stable_baselines3.SAC
+        case AgentAlgorithm.DDPG:
+            return stable_baselines3.DDPG
+        case _:
+            raise ValueError(f"Unkown agent algorithm: {algorithm}")
+
+
 class RandomChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
@@ -680,18 +691,20 @@ class IdleAgent(RevoletionAgent):
 
 
 _BASE_TRACE_KEY = "revoletion"
-_TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
-_TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
-_TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
-_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/04_grid_opex_reward"
-_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_charge_opex_reward"
+# _TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
+# _TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
+# _TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
+# _TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/04_infeasibility_reward"
+_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/01_mean_step_reward"
+_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/02_grid_opex_reward"
+_TRACE_KEY_GEN_COST = f"{_BASE_TRACE_KEY}/03_gen_opex_reward"
+_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/04_charge_opex_reward"
+_TRACE_KEY_EXT_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_ext_charge_opex_reward"
 _TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff_reward"
 _TRACE_KEY_SOC_VIOLATIONS_COUNT = f"{_BASE_TRACE_KEY}/07_soc_violations_count"
 _TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/08_soc_violations_rate"
 _TRACE_KEY_MEAN_SOC_VIOLATIONS = f"{_BASE_TRACE_KEY}/09_soc_violations_mean"
 _TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/10_power_diff_reward"
-_TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/11_infeasibility_reward"
-_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/12_mean_step_reward"
 
 
 _MOVING_AVERAGE_HORIZON = 500
@@ -701,15 +714,17 @@ class _TracingCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
 
-        self._done_count = 0
-        self._infeasible_count = 0
+        # self._done_count = 0
+        # self._infeasible_count = 0
         self._soc_count = 0
         self._soc_violation_count = 0
 
-        self._status = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        # self._status = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._reward = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._gen_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        self._ext_charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._infeasibility = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
@@ -723,13 +738,17 @@ class _TracingCallback(BaseCallback):
 
             self._reward.append(reward.total_reward)
             self._grid_opex.append(reward.grid_opex_reward)
+            self._gen_opex.append(reward.gen_opex_reward)
             self._charge_opex.append(reward.charge_opex_reward)
+            self._ext_charge_opex.append(reward.ext_charge_opex_reward)
             self._soc_diff.append(reward.soc_diff_reward)
             self._power_diff.append(reward.power_diff_reward)
 
             self.logger.record(_TRACE_KEY_REWARD, sum(self._reward) / len(self._reward))
             self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_opex) / len(self._grid_opex))
+            self.logger.record(_TRACE_KEY_GEN_COST, sum(self._gen_opex) / len(self._gen_opex))
             self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
+            self.logger.record(_TRACE_KEY_EXT_CHARGE_COST, sum(self._ext_charge_opex) / len(self._ext_charge_opex))
             self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
             self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
 
@@ -744,21 +763,21 @@ class _TracingCallback(BaseCallback):
                     self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_COUNT, self._soc_violation_count)
                 self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_RATE, self._soc_violation_count / self._soc_count)
 
-            if not done:
-                continue
+            # if not done:
+            #     continue
 
-            self._done_count += 1
+            # self._done_count += 1
 
-            if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
-                self._status.append(1)
-                self._infeasible_count += 1
-                self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
-                self._infeasibility.append(reward.infeasibility_reward)
-                self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
-            else:
-                self._status.append(0)
+            # if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
+            #     self._status.append(1)
+            #     self._infeasible_count += 1
+            #     self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
+            #     self._infeasibility.append(reward.infeasibility_reward)
+            #     self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
+            # else:
+            #     self._status.append(0)
 
-            self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
-            self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, sum(self._status) / len(self._status))
+            # self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
+            # self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, sum(self._status) / len(self._status))
 
         return True

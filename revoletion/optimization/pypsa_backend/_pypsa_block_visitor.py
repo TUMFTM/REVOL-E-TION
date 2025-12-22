@@ -510,6 +510,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             bus0=bus_ext_ac,
             bus1=bus_efu_name,
             efficiency=block.eff["chg_ac"],
+            p_nom=block.pwr_ext_ac_max,
         )
         builder.add_generator(
             name=make_pypsa_label(block, "ext-ac-gen"),
@@ -539,6 +540,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             bus1=bus_efu_name,
             # billed energy is already dc in external dc charging
             efficiency=1,
+            p_nom=block.pwr_ext_dc_max,
         )
         builder.add_generator(
             name=make_pypsa_label(block, "ext-dc-gen"),
