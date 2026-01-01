@@ -497,8 +497,18 @@ class ControlHorizon:
             agent = self._train_agent(scenario)
 
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
-        reward, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)
+        reward, actions_map, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)
         self._logger.info(f"Agent got a reward of {reward}")
+
+        for efu, actions_trace in actions_map.items():
+            real_actions_trace = []
+            for action in actions_trace:
+                if action < 0:
+                    real_actions_trace.append(action * efu.pwr_dis_max)
+                else:
+                    real_actions_trace.append(action * efu.pwr_chg_max)
+
+            efu.states.loc[eval_horizon.dti, "target_power"] = np.array(real_actions_trace)
 
         return optimization_result
 

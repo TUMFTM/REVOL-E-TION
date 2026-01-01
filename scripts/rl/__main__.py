@@ -68,13 +68,16 @@ def train_imitation_policy(
     duration: str = "365d",
     seed: int = 42,
     n_epochs: int = 10,
+    episode_length: int = 300,
     debug: bool = False,
     n_proc: int = 4,
 ) -> None:
     logger.configure_root_logger(debugmode=debug)
+
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
     )
+
     scenario_factory = simulation.ControlScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
 
@@ -90,7 +93,9 @@ def train_imitation_policy(
 
     print(f"Generating trajectories over horizon {imitation_horizon.start} - {imitation_horizon.end}")
     if n_proc <= 1:
-        trajectories = imitation_learning.compute_imitation_trajectories(scenario, imitation_horizon)
+        trajectories = imitation_learning.compute_imitation_trajectories(
+            scenario, imitation_horizon, episode_length=episode_length
+        )
     else:
         sub_horizon_length = len(imitation_horizon) // n_proc
         sub_horizons = []
@@ -98,22 +103,32 @@ def train_imitation_policy(
             sub_horizons.append(imitation_horizon.cut(i * sub_horizon_length, length=sub_horizon_length))
 
         worker_fn = functools.partial(
-            imitation_learning.compute_imitation_trajectories, scenario_factory.create_scenario
+            imitation_learning.compute_imitation_trajectories,
+            scenario_factory.create_scenario,
+            episode_length=episode_length,
         )
 
         with mp.Pool(processes=n_proc) as pool:
             trajectories_nested = pool.map(worker_fn, sub_horizons)
         trajectories = [xs for xss in trajectories_nested for xs in xss]
+
     print(f"Training base imitation policy: {seed=}; {n_epochs=}; {len(trajectories)=}")
-    imitation_learning.train_imitation_policy(trajectories, env, base_agent._sb3_agent.policy, seed, n_epochs)
+    base_policy = base_agent._sb3_agent.policy
+    imitation_learning.train_imitation_policy_bc(trajectories, env, base_policy, seed, n_epochs)
 
     scenario_fingerprint = hash(scenario)
-    policy_name = (
-        f"{scenario.name}-{algorithm.value}-base-seed_{seed}-epochs_{n_epochs}-{str(scenario_fingerprint)[0:8]}.zip"
-    )
+    policy_name = f"{scenario.name}-{algorithm.value}-base-seed_{seed}-epochs_{n_epochs}-episode_{episode_length}-duration_{duration}-{str(scenario_fingerprint)[0:8]}.zip"
     output_path = output_folder / policy_name
     base_agent._sb3_agent.policy.save(output_path)
     print(f"Base imitation policy was saved to {output_path}")
+
+
+@app.command()
+def test_imitation_policy(
+    scenario_path: Path,
+    debug: bool = False,
+) -> None:
+    logger.configure_root_logger(debugmode=debug)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,11 @@
 import logging
 
 import numpy as np
+import torch as th
 from imitation.algorithms import bc
 from imitation.data import rollout, types
+
+from stable_baselines3.common.type_aliases import PyTorchObs
 
 from revoletion import optimization, utils
 from revoletion import scenario as scn
@@ -99,7 +102,7 @@ def _optimize_over_rollout_horizon(
     return optimization_result
 
 
-def train_imitation_policy(
+def train_imitation_policy_bc(
     trajectories: list[types.Trajectory], env, base_policy, seed: int = 42, n_epochs: int = 15
 ) -> None:
     transitions = rollout.flatten_trajectories(trajectories)

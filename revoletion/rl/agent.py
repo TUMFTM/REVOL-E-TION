@@ -196,18 +196,23 @@ def evaluate_with_agent(
     scenario: scn.Scenario,
     agent: RevoletionAgent,
     horizon: utils.TimeSettings,
-) -> tuple[float, optimization.OptimizationResult | None]:
-    env = DummyVecEnv([lambda: build_rl_environment(scenario, horizon, train=False)])
-    env = VecNormalize(env, training=False)
-    obs = env.reset()
+) -> tuple[float, dict[str, list[float]], optimization.OptimizationResult | None]:
+    base_env = build_rl_environment(scenario, horizon, train=False)
+    vec_env = DummyVecEnv([lambda: base_env])
+    vec_norm_env = VecNormalize(vec_env, training=False)
+    obs = vec_norm_env.reset()
     total_reward = 0.0
     info_dict = {}
+
+    action_trace = []
 
     for _ in horizon.dti:
         action = agent.predict(obs, deterministic=True)
         if isinstance(action, tuple):
             action = action[0]
-        obs, reward, done, infos = env.step(action)
+        action_trace.append(action)
+
+        obs, reward, done, infos = vec_norm_env.step(action)
         total_reward += reward[0] if isinstance(reward, np.ndarray) else reward
         done_flag = done[0] if isinstance(done, np.ndarray) else done
         info_dict = infos[0] if isinstance(infos, list) and len(infos) > 0 else infos
@@ -215,10 +220,16 @@ def evaluate_with_agent(
         if done_flag:
             break
 
+    actions_map = collections.defaultdict(list)
+    for actions_at_timestep in action_trace:
+        for efu in base_env._ctx.electric_fleet_unit_blocks:
+            action = actions_at_timestep[base_env._ctx.get_efu_index(efu)]
+            actions_map[efu].append(action)
+
     if info_dict[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
         return total_reward, None
 
-    return total_reward, info_dict.get(INFO_KEY_OPTIMIZATION_RESULT)
+    return total_reward, actions_map, info_dict.get(INFO_KEY_OPTIMIZATION_RESULT)
 
 
 def _get_path_for_algorithm(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Path:
@@ -692,7 +703,7 @@ class IdleAgent(RevoletionAgent):
 
 _BASE_TRACE_KEY = "revoletion"
 # _TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
-# _TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
+_TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
 # _TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
 # _TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/04_infeasibility_reward"
 _TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/01_mean_step_reward"
@@ -763,15 +774,15 @@ class _TracingCallback(BaseCallback):
                     self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_COUNT, self._soc_violation_count)
                 self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_RATE, self._soc_violation_count / self._soc_count)
 
-            # if not done:
-            #     continue
+            if not done:
+                continue
 
             # self._done_count += 1
 
-            # if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
-            #     self._status.append(1)
-            #     self._infeasible_count += 1
-            #     self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
+            if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
+                # self._status.append(1)
+                self._infeasible_count += 1
+                self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
             #     self._infeasibility.append(reward.infeasibility_reward)
             #     self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
             # else:

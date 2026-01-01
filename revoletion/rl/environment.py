@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = 1.0
+    penalty_factor_grid_opex: float = 0.5
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
     penalty_factor_charge_opex: float = 0.0
@@ -29,15 +29,15 @@ class RewardConfig:
     penalty_factor_gen_opex: float = 1.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_ext_charge_opex: float = 0.1
+    penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_factor_dsoc: float = 16.0
+    penalty_factor_dsoc: float = 50.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
     reward_factor_dsoc: float = 0.0
     """Weight of the reward for meeting a SoC requirement."""
 
-    penalty_factor_infeasible: float = 50.0
+    penalty_factor_infeasible: float = 25.0
     """Weight for the penatly if the energy system is determined to be infeasible and cannot be optimizated."""
 
     penalty_scaling_infeasible: bool = False
@@ -66,7 +66,7 @@ class RevoletionEnvironmentConfig:
     power_precision: int = 1
 
     power_unit_buffer: float = 1e-6
-    """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimize some room for numerical tie breaking."""
+    """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimizer some room for numerical tie breaking."""
 
     soc_min: float = 0.05
 
