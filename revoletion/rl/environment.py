@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = 0.5
+    penalty_factor_grid_opex: float = 1.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
     penalty_factor_charge_opex: float = 0.0
@@ -34,15 +34,17 @@ class RewardConfig:
     penalty_factor_dsoc: float = 50.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
-    reward_factor_dsoc: float = 0.0
+    reward_factor_dsoc: float = 1.0
     """Weight of the reward for meeting a SoC requirement."""
+
+    penalty_continous_dsoc: bool = False
 
     penalty_factor_infeasible: float = 25.0
     """Weight for the penatly if the energy system is determined to be infeasible and cannot be optimizated."""
 
     penalty_scaling_infeasible: bool = False
 
-    penalty_factor_power_diff: float = 0.5
+    penalty_factor_power_diff: float = 1.0
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
     penalty_factor_atbase_violation: float = 1.0
@@ -126,7 +128,7 @@ class RewardComponents:
         reward = 0.0
         for soc_diff in self.soc_diffs:
             if soc_diff < 0.0:
-                reward += soc_diff * self.config.penalty_factor_dsoc
+                reward += (soc_diff - 1) * self.config.penalty_factor_dsoc
             else:
                 reward += soc_diff * self.config.reward_factor_dsoc
 
@@ -593,6 +595,24 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         reward.grid_opex = self._compute_grid_opex(optimization_result)
         reward.gen_opex = self._compute_generator_opex(optimization_result)
 
+        if self._config.reward_config.penalty_continous_dsoc:
+            self._compute_continous_soc_diff_reward(reward, optimization_result)
+        else:
+            self._compute_discrete_soc_diff_reward(reward, optimization_result)
+
+        ext_charge_opex = 0
+        for block in self._ctx.electric_fleet_unit_blocks:
+            power_flows = optimization_result.get_power_flow(block, self.current_time_step)
+            ext_charge_opex += power_flows["ext_ac"]
+            ext_charge_opex += power_flows["ext_dc"]
+
+        reward.ext_charge_opex = ext_charge_opex
+
+        self._reward_history.append(reward)
+
+    def _compute_continous_soc_diff_reward(
+        self, reward: RewardComponents, optimization_result: optimization.OptimizationResult
+    ) -> None:
         soc_diffs = []
         for block in self._ctx.electric_fleet_unit_blocks:
             soc_min = block.states.loc[self.current_time_step, "soc_min"]
@@ -604,15 +624,24 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         reward.soc_diffs = soc_diffs
 
-        ext_charge_opex = 0
+    def _compute_discrete_soc_diff_reward(
+        self, reward: RewardComponents, optimization_result: optimization.OptimizationResult
+    ) -> None:
+        soc_diffs = []
         for block in self._ctx.electric_fleet_unit_blocks:
-            power_flows = optimization_result.get_power_flow(block, self.current_time_step)
-            ext_charge_opex += power_flows["ext_ac"]
-            ext_charge_opex += power_flows["ext_dc"]
+            required_soc = block.log.loc[self.current_time_step, "dsoc"]
+            if required_soc == 0.0:
+                continue
 
-        reward.ext_charge_opex = ext_charge_opex
+            curr_stored_energy = optimization_result.get_stored_energy(block, self.current_time_step)
+            curr_soc = curr_stored_energy / block.sizes["storage"].preexisting
 
-        self._reward_history.append(reward)
+            if curr_soc >= required_soc:
+                soc_diffs.append(1.0)
+            else:
+                soc_diffs.append(curr_soc - required_soc)
+
+        reward.soc_diffs = soc_diffs
 
     def _compute_grid_opex(self, optimization_result: optimization.OptimizationResult) -> float:
         grid_opex = 0.0
