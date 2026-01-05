@@ -1,11 +1,15 @@
 import functools
+import hashlib
 import logging
 import multiprocessing as mp
+import pickle
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import typer
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 from revoletion import logger, simulation, utils
 from revoletion import scenario as scn
@@ -60,14 +64,11 @@ def train_rl(
 
 
 @app.command()
-def train_imitation_policy(
+def generate_trajectories(
     scenario_path: Path,
     output_folder: Path,
-    algorithm: agent.AgentAlgorithm,
-    start: str = "01.01.2022",
+    start: str = "01.01.2020",
     duration: str = "365d",
-    seed: int = 42,
-    n_epochs: int = 10,
     episode_length: int = 300,
     debug: bool = False,
     n_proc: int = 4,
@@ -81,17 +82,24 @@ def train_imitation_policy(
     scenario_factory = simulation.ControlScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
 
+    normalized_start = start.replace(".", "_")
+    trajectories_configuration_str = f"trajectories-{scenario.name}-{normalized_start}-{duration}-{episode_length}"
+    trajectories_configuration_id = hashlib.sha256(trajectories_configuration_str.encode()).hexdigest()[0:8]
+    trajectories_file_name = f"{trajectories_configuration_str}-{trajectories_configuration_id}.pb"
+    trajectories_save_path = output_folder / trajectories_file_name
+
+    if trajectories_save_path.exists():
+        print(f"Trajectories with this configuration already exist at {trajectories_save_path}")
+        return
+
     imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
         start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),
         timestep=scenario.times.sim.timestep,
         duration=pd.Timedelta(duration),
     )
-
-    env = agent.build_rl_environment(scenario, imitation_horizon)
-    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
-    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
-
-    print(f"Generating trajectories over horizon {imitation_horizon.start} - {imitation_horizon.end}")
+    print(
+        f"Generating trajectories over horizon {imitation_horizon.start} - {imitation_horizon.end} with {n_proc} process(es)"
+    )
     if n_proc <= 1:
         trajectories = imitation_learning.compute_imitation_trajectories(
             scenario, imitation_horizon, episode_length=episode_length
@@ -112,23 +120,115 @@ def train_imitation_policy(
             trajectories_nested = pool.map(worker_fn, sub_horizons)
         trajectories = [xs for xss in trajectories_nested for xs in xss]
 
-    print(f"Training base imitation policy: {seed=}; {n_epochs=}; {len(trajectories)=}")
-    base_policy = base_agent._sb3_agent.policy
-    imitation_learning.train_imitation_policy_bc(trajectories, env, base_policy, seed, n_epochs)
+    print(f"Generated {len(trajectories)} trajectories")
+    if len(trajectories) == 0:
+        return
 
-    scenario_fingerprint = hash(scenario)
-    policy_name = f"{scenario.name}-{algorithm.value}-base-seed_{seed}-epochs_{n_epochs}-episode_{episode_length}-duration_{duration}-{str(scenario_fingerprint)[0:8]}.zip"
-    output_path = output_folder / policy_name
-    base_agent._sb3_agent.policy.save(output_path)
-    print(f"Base imitation policy was saved to {output_path}")
+    with open(trajectories_save_path, "wb") as f:
+        pickle.dump(trajectories, f)
+
+    print(f"Saved to {trajectories_save_path}")
 
 
 @app.command()
-def test_imitation_policy(
+def train_imitation_bc(
     scenario_path: Path,
+    trajectories_path: Path,
+    output_folder: Path,
+    algorithm: agent.AgentAlgorithm,
+    start: str = "01.01.2020",
+    duration: str = "365d",
+    seed: int = 42,
+    n_epochs: int = 10,
     debug: bool = False,
 ) -> None:
+    np.random.seed(seed)
+
     logger.configure_root_logger(debugmode=debug)
+    paths = scn.SimulationPaths.from_plain_paths(
+        scenario=scenario_path,
+    )
+    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario = scenario_factory.create_scenario()
+    imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
+        start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),
+        timestep=scenario.times.sim.timestep,
+        duration=pd.Timedelta(duration),
+    )
+    env = agent.build_rl_environment(scenario, imitation_horizon)
+    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
+    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
+
+    with open(trajectories_path, "rb") as f:
+        trajectories = pickle.load(f)
+
+    breakpoint()
+
+    trajectories_id = trajectories_path.stem.split("-")[-1]
+    print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
+
+    base_policy = base_agent._sb3_agent.policy
+    imitation_learning.train_imitation_policy_bc(trajectories, env, base_policy, seed, n_epochs)
+
+    policy_name = f"{scenario.name}-{algorithm.value}-bc-seed_{seed}-epochs_{n_epochs}-{trajectories_id}.zip"
+    output_path = output_folder / policy_name
+    base_policy.save(output_path)
+
+    print(f"BC policy was saved to {output_path}")
+
+
+@app.command()
+def train_imitation_sqil(
+    scenario_path: Path,
+    trajectories_path: Path,
+    output_folder: Path,
+    algorithm: agent.AgentAlgorithm,
+    start: str = "01.01.2020",
+    duration: str = "365d",
+    seed: int = 42,
+    train_timesteps: int = 20_000,
+    n_proc: int = 4,
+    debug: bool = False,
+) -> None:
+    np.random.seed(seed)
+
+    logger.configure_root_logger(debugmode=debug)
+    paths = scn.SimulationPaths.from_plain_paths(
+        scenario=scenario_path,
+    )
+    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario = scenario_factory.create_scenario()
+    train_horizon = utils.TimeSettings.create_from_start_timestamp(
+        start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),
+        timestep=scenario.times.sim.timestep,
+        duration=pd.Timedelta(duration),
+    )
+
+    # env = agent.build_rl_environment(scenario, train_horizon)
+    env = make_vec_env(
+        lambda: agent.build_rl_environment(scenario_factory.create_scenario, train_horizon),
+        n_envs=n_proc,
+        vec_env_cls=SubprocVecEnv,
+    )
+
+    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
+    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
+
+    with open(trajectories_path, "rb") as f:
+        trajectories = pickle.load(f)
+
+    trajectories_id = trajectories_path.stem.split("-")[-1]
+    print(f"Training SQIL policy: {seed=}; {train_timesteps=}; {n_proc=}; {len(trajectories)=}; {trajectories_id=}")
+
+    imitation_learning.train_imitation_policy_sqil(trajectories, env, base_agent._sb3_agent, seed, train_timesteps)
+
+    policy_name = (
+        f"{scenario.name}-{algorithm.value}-sqil-seed_{seed}-timesteps_{train_timesteps}-{trajectories_id}.zip"
+    )
+    output_path = output_folder / policy_name
+    base_agent._sb3_agent.policy.save(output_path)
+
+    print(f"SQIL policy was saved to {output_path}")
 
 
 if __name__ == "__main__":

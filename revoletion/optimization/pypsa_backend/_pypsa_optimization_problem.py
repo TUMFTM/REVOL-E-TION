@@ -367,11 +367,12 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     ) -> None:
         super().__init__(logger, config)
         self._net = net
-        self._model = self._net.optimize.create_model()
 
         if self._config.warmstart:
+            self._model = self._net.optimize.create_model()
             self._warmstart_folder = tempfile.TemporaryDirectory()
         else:
+            self._model = None
             self._warmstart_folder = None
 
     @property
@@ -427,7 +428,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
 
-        if not self._model:
+        if self._model is None:
             return
 
         inflow_capacity = block.pwr_chg_max
@@ -464,7 +465,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
 
-        if not self._model:
+        if self._model is None:
             return
 
         outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]

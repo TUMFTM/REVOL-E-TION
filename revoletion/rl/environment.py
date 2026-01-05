@@ -31,7 +31,7 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_factor_dsoc: float = 50.0
+    penalty_factor_dsoc: float = 100.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
     reward_factor_dsoc: float = 1.0
@@ -47,7 +47,7 @@ class RewardConfig:
     penalty_factor_power_diff: float = 1.0
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
-    penalty_factor_atbase_violation: float = 1.0
+    penalty_factor_atbase_violation: float = 3.0
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
     reward_factor_step: float = 0.0
@@ -71,6 +71,8 @@ class RevoletionEnvironmentConfig:
     """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimizer some room for numerical tie breaking."""
 
     soc_min: float = 0.05
+
+    dsoc_correction: bool = False
 
     reward_config: RewardConfig = field(default_factory=lambda: RewardConfig())
 
@@ -552,15 +554,18 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         max_charge_power_w = block.pwr_chg_max * eff_charge
         max_discharge_power_w = block.pwr_dis_max * eff_discharge
 
-        soc_envelope_horizon = self._ctx.horizon.cut(
-            self._ctx.step_idx, min(self._config.forecast_horizon, len(self._ctx.horizon) - self._ctx.step_idx - 1)
-        )
-        soc_envelope = rl_utils.get_soc_envelope(block, soc_envelope_horizon)
-        required_soc = soc_envelope[self.current_time_step] + self._config.soc_min
-        min_capacity_wh = max(
-            0.0,
-            (nominal_battery_capacity_wh * required_soc) - current_battery_capacity_wh,
-        )
+        if self._config.dsoc_correction:
+            soc_envelope_horizon = self._ctx.horizon.cut(
+                self._ctx.step_idx, min(self._config.forecast_horizon, len(self._ctx.horizon) - self._ctx.step_idx - 1)
+            )
+            soc_envelope = rl_utils.get_soc_envelope(block, soc_envelope_horizon)
+            required_soc = soc_envelope[self.current_time_step] + self._config.soc_min
+            min_capacity_wh = max(
+                0.0,
+                (nominal_battery_capacity_wh * required_soc) - current_battery_capacity_wh,
+            )
+        else:
+            min_capacity_wh = 0.0
 
         max_energy_in_wh = max(0.0, nominal_battery_capacity_wh - current_battery_capacity_wh)
         # Always leave some remainder in battery for standing loss and numerical errors.

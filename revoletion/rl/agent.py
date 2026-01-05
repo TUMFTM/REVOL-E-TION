@@ -210,7 +210,7 @@ def evaluate_with_agent(
         action = agent.predict(obs, deterministic=True)
         if isinstance(action, tuple):
             action = action[0]
-        action_trace.append(action)
+        action_trace.append(action[0])
 
         obs, reward, done, infos = vec_norm_env.step(action)
         total_reward += reward[0] if isinstance(reward, np.ndarray) else reward
@@ -258,8 +258,8 @@ def load_agent(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Revol
     if not load_path.exists():
         return None
 
-    sb3_type = _get_sb3_type(algorithm)
-    sb3_agent = _load_sb3_agent(sb3_type, load_path)
+    sb3_type = get_sb3_type(algorithm)
+    sb3_agent = sb3_type.load(load_path)
 
     agent = RevoletionSB3Agent(algorithm=algorithm, sb3_agent=sb3_agent)
 
@@ -512,14 +512,6 @@ _DEFAULT_POLICY_KWARGS = dict(
 )
 
 
-def _load_sb3_agent(sb3_type: type[BaseAlgorithm], model_path: Path, env=None) -> BaseAlgorithm:
-    sb3_agent = sb3_type.load(
-        model_path,
-        env=env,
-    )
-    return sb3_agent
-
-
 def train(
     algorithm: AgentAlgorithm,
     scenario_factory: _ScenarioFactoryT,
@@ -533,7 +525,9 @@ def train(
         return _create_non_trainable_agent(algorithm)
 
     if n_proc is None or n_proc < 2:
-        env = make_vec_env(lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=1)
+        env = make_vec_env(
+            lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=1, vec_env_cls=DummyVecEnv
+        )
     else:
         env = make_vec_env(
             lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
@@ -580,6 +574,9 @@ def create_trainable_agent(
 
     if algorithm in {AgentAlgorithm.SAC}:
         kwargs["policy_kwargs"]["share_features_extractor"] = True
+        kwargs["use_sde"] = True
+        kwargs["sde_sample_freq"] = 4
+        kwargs["use_sde_at_warmup"] = True
 
     if config.gradient_steps is not None:
         kwargs["gradient_steps"] = config.gradient_steps
@@ -596,7 +593,7 @@ def create_trainable_agent(
     if config.batch_size is not None:
         kwargs["batch_size"] = config.batch_size
 
-    sb3_type = _get_sb3_type(algorithm)
+    sb3_type = get_sb3_type(algorithm)
     sb3_agent = sb3_type(
         "MultiInputPolicy",
         env=env,
@@ -618,7 +615,7 @@ def create_trainable_agent(
     )
 
 
-def _get_sb3_type(algorithm: AgentAlgorithm):
+def get_sb3_type(algorithm: AgentAlgorithm):
     match algorithm:
         case AgentAlgorithm.PPO:
             return stable_baselines3.PPO
@@ -712,7 +709,7 @@ _TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/01_mean_step_reward"
 _TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/02_grid_opex_reward"
 _TRACE_KEY_GEN_COST = f"{_BASE_TRACE_KEY}/03_gen_opex_reward"
 _TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/04_charge_opex_reward"
-_TRACE_KEY_EXT_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_ext_charge_opex_reward"
+# _TRACE_KEY_EXT_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_ext_charge_opex_reward"
 _TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff_reward"
 _TRACE_KEY_SOC_VIOLATIONS_COUNT = f"{_BASE_TRACE_KEY}/07_soc_violations_count"
 _TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/08_soc_violations_rate"
@@ -738,7 +735,7 @@ class _TracingCallback(BaseCallback):
         self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._gen_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._ext_charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        # self._ext_charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._infeasibility = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
@@ -755,7 +752,7 @@ class _TracingCallback(BaseCallback):
             self._grid_opex.append(reward.grid_opex_reward)
             self._gen_opex.append(reward.gen_opex_reward)
             self._charge_opex.append(reward.charge_opex_reward)
-            self._ext_charge_opex.append(reward.ext_charge_opex_reward)
+            # self._ext_charge_opex.append(reward.ext_charge_opex_reward)
             self._soc_diff.append(reward.soc_diff_reward)
             self._power_diff.append(reward.power_diff_reward)
             self._atbase_violation.append(reward.atbase_violation_reward)
@@ -764,7 +761,7 @@ class _TracingCallback(BaseCallback):
             self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_opex) / len(self._grid_opex))
             self.logger.record(_TRACE_KEY_GEN_COST, sum(self._gen_opex) / len(self._gen_opex))
             self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
-            self.logger.record(_TRACE_KEY_EXT_CHARGE_COST, sum(self._ext_charge_opex) / len(self._ext_charge_opex))
+            # self.logger.record(_TRACE_KEY_EXT_CHARGE_COST, sum(self._ext_charge_opex) / len(self._ext_charge_opex))
             self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
             self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
             self.logger.record(_TRACE_KEY_ATBASE_VIOLATION, sum(self._atbase_violation) / len(self._atbase_violation))
