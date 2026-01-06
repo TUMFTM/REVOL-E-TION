@@ -5,7 +5,10 @@ from revoletion import blocks, utils
 
 
 def get_soc_envelope(
-    block: blocks.ElectricFleetUnit, horizon: utils.TimeSettings, dsoc_step: float | None = None
+    block: blocks.ElectricFleetUnit,
+    horizon: utils.TimeSettings,
+    dsoc_step: float | None = None,
+    target_soc: float | None = None,
 ) -> pd.Series:
     plugged = block.log.loc[horizon.dti, "atbase"]
 
@@ -25,10 +28,10 @@ def get_soc_envelope(
 
     soc_floor = pd.Series(0.0, index=horizon.dti, dtype=np.float64)
 
-    required_soc = 0.0
+    required_soc = target_soc or 0.0
 
     for time_step in reversed(horizon.dti):
-        required_soc += dsoc[time_step]
+        required_soc = min(required_soc + dsoc[time_step], 1.0)
 
         soc_floor[time_step] = required_soc
         if plugged[time_step]:

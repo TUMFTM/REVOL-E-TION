@@ -31,7 +31,7 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_factor_dsoc: float = 100.0
+    penalty_factor_dsoc: float = 500.0
     """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
 
     reward_factor_dsoc: float = 1.0
@@ -44,10 +44,10 @@ class RewardConfig:
 
     penalty_scaling_infeasible: bool = False
 
-    penalty_factor_power_diff: float = 1.0
+    penalty_factor_power_diff: float = 0.5
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
-    penalty_factor_atbase_violation: float = 3.0
+    penalty_factor_atbase_violation: float = 0.1
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
     reward_factor_step: float = 0.0
@@ -57,7 +57,7 @@ class RewardConfig:
 @dataclass
 class RevoletionEnvironmentConfig:
     min_steps: int = 48
-    max_steps: int = 220
+    max_steps: int = 200
 
     episode_length: int | None = None
     """Length of one training/evaluation episode in time steps. If not given, episode length randomization is enabled."""
@@ -538,7 +538,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         is_at_base = block.log.loc[self.current_time_step, "atbase"]
         if not is_at_base:
             if np.round(power_frac, self._config.power_precision) != 0.0:
-                reward.atbase_violation += 1
+                reward.atbase_violation += abs(power_frac)
             return 0.0
 
         timestep_h = self._ctx.horizon.timestep.hours
@@ -597,7 +597,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
-        reward.grid_opex = self._compute_grid_opex(optimization_result)
+        reward.grid_opex = self._compute_grid_opex(optimization_result) / len(self._ctx.electric_fleet_unit_blocks)
         reward.gen_opex = self._compute_generator_opex(optimization_result)
 
         if self._config.reward_config.penalty_continous_dsoc:

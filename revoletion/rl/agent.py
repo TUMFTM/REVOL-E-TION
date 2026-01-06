@@ -12,13 +12,10 @@ import stable_baselines3
 import torch
 import torch.nn as nn
 import typing_extensions
-from stable_baselines3.common import policies
-from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.utils import FloatSchedule
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from typing_extensions import Self
@@ -105,7 +102,7 @@ class AgentConfig:
     def default_for_algorithm(cls, algorithm: AgentAlgorithm) -> Self:
         match algorithm:
             case AgentAlgorithm.PPO:
-                return cls(learning_rate=0.0003, gamma=0.99, n_steps=128, batch_size=64)
+                return cls(learning_rate=0.0003, gamma=0.99, n_steps=256, batch_size=64)
             case AgentAlgorithm.TD3:
                 return cls(
                     learning_rate=0.0001,
@@ -186,7 +183,7 @@ def build_rl_environment(
 
     env_config = env_config or RevoletionEnvironmentConfig(
         reward_config=RewardConfig(),
-        episode_length=100 if train else len(horizon),
+        episode_length=None if train else len(horizon),
     )
     env = RevoletionEnvironment(scenario, horizon, config=env_config, train=train)
     return env
@@ -733,8 +730,8 @@ class _TracingCallback(BaseCallback):
         # self._status = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._reward = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._gen_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        # self._gen_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
+        # self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         # self._ext_charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
         self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
@@ -750,8 +747,8 @@ class _TracingCallback(BaseCallback):
 
             self._reward.append(reward.total_reward)
             self._grid_opex.append(reward.grid_opex_reward)
-            self._gen_opex.append(reward.gen_opex_reward)
-            self._charge_opex.append(reward.charge_opex_reward)
+            # self._gen_opex.append(reward.gen_opex_reward)
+            # self._charge_opex.append(reward.charge_opex_reward)
             # self._ext_charge_opex.append(reward.ext_charge_opex_reward)
             self._soc_diff.append(reward.soc_diff_reward)
             self._power_diff.append(reward.power_diff_reward)
@@ -759,8 +756,8 @@ class _TracingCallback(BaseCallback):
 
             self.logger.record(_TRACE_KEY_REWARD, sum(self._reward) / len(self._reward))
             self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_opex) / len(self._grid_opex))
-            self.logger.record(_TRACE_KEY_GEN_COST, sum(self._gen_opex) / len(self._gen_opex))
-            self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
+            # self.logger.record(_TRACE_KEY_GEN_COST, sum(self._gen_opex) / len(self._gen_opex))
+            # self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
             # self.logger.record(_TRACE_KEY_EXT_CHARGE_COST, sum(self._ext_charge_opex) / len(self._ext_charge_opex))
             self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
             self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))

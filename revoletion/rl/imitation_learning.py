@@ -1,5 +1,9 @@
+import functools
+import hashlib
 import logging
+import multiprocessing
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Dict, List, Union
 
 import numpy as np
@@ -32,122 +36,345 @@ from . import _utils as rl_utils
 _LOGGER = logging.getLogger(__name__)
 
 
-def compute_imitation_trajectories(
-    scenario_or_scenario_factory: scn.Scenario, rollout_horizon: utils.TimeSettings, episode_length: int = 300
-) -> list[types.Trajectory]:
-    if isinstance(scenario_or_scenario_factory, scn.Scenario):
-        scenario = scenario_or_scenario_factory
-    else:
-        scenario = scenario_or_scenario_factory()
+@dataclass
+class ImitationTrajectoryComputerConfig:
+    seed: float = 42
 
-    _LOGGER.debug(
-        f"Computing rollout buffer for scenario {scenario.name} over horizon {rollout_horizon.dti[0]} - {rollout_horizon.dti_extd[-1]}"
-    )
+    episode_length: int = 200
+    """The length of each episode that is optimized."""
 
-    len_horizon = len(rollout_horizon)
-    num_episodes = len_horizon // episode_length
+    forecast_horizon: int = 16
+    """Length of the forecast horizon, e.g., car available."""
 
-    trajectories = []
-    feature_extractor = features.FeatureExtractor(forecast_horizon=16, soc_min=0.05)
+    soc_min: float = 0.05
+    """Minimum SoC that is added in the observations."""
 
-    _LOGGER.debug("Collecting rollout buffer")
-    for i in range(0, num_episodes):
-        episode_horizon = rollout_horizon.cut(i * episode_length, episode_length)
+    envelope_split: float = 0.5
+    """Determines the distribution of power envelope vehicles and optimal vehicles."""
+
+    envelope_power_unit_buffer: float = 0.1
+    """The buffer allowed for vehicles with defined power envelope."""
+
+    envelope_max_charge_buffer: float = 0.9
+    """Reduction of max charge power for vehicles with defined power envelope to smooth out charging."""
+
+    envelope_target_soc: float = 0.1
+    """Increase the target SoC at the end of a episode for vehicles with defined power envelope to encourage buffered charging."""
+
+    envelope_soc_padding: float = 0.2
+    """Increase the base SoC for all vehicles with defined power envelope to encourage the agent to keep some buffer in the vehicles."""
+
+
+class ImitationTrajectoryComputer:
+    """
+    Computes imitation learning trajectories by solving optimization problems
+    and extracting observations and actions from the optimal solutions.
+    """
+
+    def __init__(self, config: ImitationTrajectoryComputerConfig | None = None, logger: logging.Logger | None = None):
+        """
+        Initialize the trajectory computer.
+
+        Args:
+            config: Configuration object for trajectory computation
+            logger: Logger instance for debugging output
+        """
+        self._config = config or ImitationTrajectoryComputerConfig()
+        self.logger = logger or logging.getLogger(__name__)
+
+    def compute_trajectories(
+        self, scenario_or_factory, rollout_horizon: utils.TimeSettings, n_procs: int = 1
+    ) -> list[types.Trajectory]:
+        """
+        Compute imitation trajectories for the given scenario and time horizon.
+
+        Automatically uses multiprocessing if configured with n_processes > 1.
+
+        Args:
+            scenario_or_factory: Either a Scenario instance or a callable that returns one
+            rollout_horizon: Time settings defining the rollout period
+
+        Returns:
+            List of computed trajectories
+        """
+        if n_procs > 1:
+            trajectories = self._compute_trajectories_parallel(scenario_or_factory, rollout_horizon, n_procs)
+        else:
+            trajectories = self._compute_imitation_trajectories(scenario_or_factory, rollout_horizon)
+        return trajectories
+
+    def _compute_imitation_trajectories(
+        self, scenario_or_factory, rollout_horizon: utils.TimeSettings
+    ) -> list[types.Trajectory]:
+        scenario = self._get_scenario(scenario_or_factory)
+
+        self.logger.debug(
+            f"Computing rollout buffer for scenario {scenario.name} "
+            + f"over horizon {rollout_horizon.dti[0]} - {rollout_horizon.dti_extd[-1]}"
+        )
+
+        num_episodes = len(rollout_horizon) // self._config.episode_length
+        trajectories = []
+
+        self.logger.debug("Collecting rollout buffer")
+        for episode_idx in range(num_episodes):
+            trajectory = self._compute_episode_trajectory(scenario, rollout_horizon, episode_idx)
+            if trajectory is not None:
+                trajectories.append(trajectory)
+
+        self.logger.debug(
+            f"Collected {len(trajectories)} trajectories for horizon {rollout_horizon.start} - {rollout_horizon.end}"
+        )
+        return trajectories
+
+    def _compute_trajectories_parallel(
+        self, scenario_or_factory, rollout_horizon: utils.TimeSettings, n_procs: int
+    ) -> list[types.Trajectory]:
+        # Split the full rollout horizon into multiple sub-horizons which are then processed by each worker.
+        sub_horizons = self._split_horizon(rollout_horizon, n_procs)
+        worker_fn = functools.partial(self._compute_imitation_trajectories, scenario_or_factory)
+
+        with multiprocessing.Pool(processes=n_procs) as pool:
+            trajectories_nested = pool.map(worker_fn, sub_horizons)
+
+        # Flatten nested list
+        trajectories = [traj for sublist in trajectories_nested for traj in sublist]
+
+        return trajectories
+
+    def _split_horizon(self, horizon: utils.TimeSettings, n_splits: int) -> list[utils.TimeSettings]:
+        """
+        Split a time horizon into equal sub-horizons for parallel processing.
+
+        Args:
+            horizon: The full time horizon to split
+            n_splits: Number of sub-horizons to create
+
+        Returns:
+            List of sub-horizons
+        """
+        sub_horizon_length = len(horizon) // n_splits
+        sub_horizons = []
+
+        for i in range(n_splits):
+            sub_horizon = horizon.cut(i * sub_horizon_length, length=sub_horizon_length)
+            sub_horizons.append(sub_horizon)
+
+        return sub_horizons
+
+    def _get_scenario(self, scenario_or_factory) -> "scn.Scenario":
+        """Extract scenario from either instance or factory."""
+        if callable(scenario_or_factory):
+            return scenario_or_factory()
+        return scenario_or_factory
+
+    def _compute_episode_trajectory(
+        self, scenario: scn.Scenario, rollout_horizon: utils.TimeSettings, episode_idx: int
+    ) -> types.Trajectory | None:
+        """
+        Compute trajectory for a single episode.
+
+        Args:
+            scenario: The scenario to simulate
+            rollout_horizon: Overall time horizon
+            episode_idx: Index of the current episode
+
+        Returns:
+            Computed trajectory or None if optimization failed
+        """
+        episode_horizon = rollout_horizon.cut(episode_idx * self._config.episode_length, self._config.episode_length)
+
+        self.logger.debug(f"Processing episode {episode_idx} from {episode_horizon.start} - {episode_horizon.end}")
+
+        optimization_result = self._solve_optimization(scenario, episode_horizon)
+        if optimization_result is None:
+            return None
+
+        # Collect observations and actions
         ctx = context.Context(scenario, episode_horizon)
-        _LOGGER.debug(f"Processing episode {i} from {episode_horizon.start} - {episode_horizon.end}")
+        observations, actions = self._collect_observations_and_actions(ctx, episode_horizon, optimization_result)
 
-        optimization_problem_config = optimization.OptimizationProblemConfig(
+        return types.Trajectory(
+            obs=np.array(observations),
+            acts=np.array(actions[:-1]),  # One less action than observation
+            infos=None,
+            terminal=True,
+        )
+
+    def _solve_optimization(
+        self, scenario: scn.Scenario, episode_horizon: utils.TimeSettings
+    ) -> optimization.OptimizationResult | None:
+        """
+        Solve the optimization problem for the episode.
+
+        Args:
+            scenario: The scenario to optimize
+            episode_horizon: Time horizon for this episode
+
+        Returns:
+            Optimization result or None if optimization failed
+        """
+        self.logger.debug("Solving optimization problem over rollout horizon")
+
+        problem_config = optimization.OptimizationProblemConfig(
             solver=optimization.Solver.HIGHS,
             invest=False,
             enforce_soc_constraints=True,
             warmstart=False,
         )
-        _LOGGER.debug("Solving optimization problem over rollout horizon")
-        optimization_problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
+
+        problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
             scenario,
             episode_horizon,
-            logger=_LOGGER,
-            config=optimization_problem_config,
+            logger=self.logger,
+            config=problem_config,
         )
 
-        _fix_power_envelope_for_optimization_problem(scenario, episode_horizon, optimization_problem)
-        optimization_status, optimization_result = optimization_problem.solve()
-        if optimization_status != optimization.OptimizationStatus.OPTIMAL:
-            _LOGGER.warning(f"Optimization for episode {episode_horizon.dti[0]} failed")
-            continue
-        assert optimization_result is not None
+        self._apply_power_envelope_constraints(scenario, episode_horizon, problem)
+
+        status, result = problem.solve()
+        if status != optimization.OptimizationStatus.OPTIMAL:
+            self.logger.warning(f"Optimization for episode {episode_horizon.dti[0]} failed")
+            return None
+
+        return result
+
+    def _apply_power_envelope_constraints(
+        self,
+        scenario: scn.Scenario,
+        episode_horizon: utils.TimeSettings,
+        problem: optimization.OptimizationProblem,
+    ) -> None:
+        """
+        Apply power envelope constraints to electric fleet units.
+
+        Args:
+            scenario: The scenario containing fleet units
+            episode_horizon: Time horizon for constraints
+            problem: Optimization problem to constrain
+        """
+        fleet_units = scenario.block_registry.get("ElectricFleetUnit", {}).values()
+
+        for block in fleet_units:
+            if not self._should_apply_envelope():
+                continue
+
+            power_envelope = self._compute_power_envelope(block, episode_horizon)
+            for time_step in episode_horizon.dti:
+                problem.set_input_power_unit(
+                    block,
+                    power_envelope[time_step],
+                    time_step,
+                    power_unit_buffer=self._config.envelope_power_unit_buffer,
+                )
+
+    def _should_apply_envelope(self) -> bool:
+        """Determine if envelope should be applied to this block (random sampling)."""
+        return np.random.random() <= self._config.envelope_split
+
+    def _compute_power_envelope(self, block, episode_horizon: utils.TimeSettings) -> pd.Series:
+        """
+        Compute the power envelope for a fleet unit block.
+
+        Args:
+            block: Electric fleet unit block
+            episode_horizon: Time horizon for envelope
+
+        Returns:
+            Array of target power unit charge values
+        """
+        # Extract block parameters
+        nom_capacity_wh = block.sizes["storage"].preexisting
+        eff_charge = block.eff["chg_int"]
+        max_charge_power_w = block.pwr_chg_max * eff_charge
+        buffered_max_charge_power_w = max_charge_power_w * self._config.envelope_max_charge_buffer
+
+        # Determine a smoothed out dsoc step that is used for the SoC envelope computation.
+        # This gives the optimizer a bit more freedom and reduces the number of infeasibilities.
+        dsoc_step = (buffered_max_charge_power_w * episode_horizon.timestep.hours) / nom_capacity_wh
+
+        soc_envelope = rl_utils.get_soc_envelope(
+            block, episode_horizon, dsoc_step, target_soc=self._config.envelope_target_soc
+        )
+        # Apply some optional padding to the SoC envelope to encourage the agent to not fully discharge each vehicle.
+        padded_soc_envelope = np.clip(soc_envelope + self._config.envelope_soc_padding, 0.0, 1.0)
+
+        # Convert to power envelope
+        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, padded_soc_envelope)
+
+        # Normalize to unit power
+        return np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
+
+    def _collect_observations_and_actions(
+        self,
+        ctx: context.Context,
+        episode_horizon: utils.TimeSettings,
+        optimization_result: optimization.OptimizationResult,
+    ) -> tuple[list[dict[str, Any]], list[float]]:
+        """
+        Collect observations and actions from the optimization result.
+
+        Args:
+            ctx: Context for the episode
+            episode_horizon: Time horizon
+            optimization_result: Result from optimization
+
+        Returns:
+            Tuple of (observations_buffer, actions_buffer)
+        """
+        feature_extractor = features.FeatureExtractor(
+            forecast_horizon=self._config.forecast_horizon, soc_min=self._config.soc_min
+        )
 
         observations_buffer = []
         actions_buffer = []
 
         for time_step in episode_horizon.dti:
+            # Extract observation
             obs_dict = feature_extractor.extract_all_features(ctx, optimization_result)
             obs = types.maybe_wrap_in_dictobs(obs_dict)
             observations_buffer.append(obs)
 
-            unorded_actions = []
-            for efu in ctx.electric_fleet_unit_blocks:
-                power_flow = optimization_result.get_power_flow(efu, time_step)
-
-                out_flow = power_flow["out"]
-                out_power_frac = out_flow / efu.pwr_dis_max
-
-                in_flow = power_flow["in"]
-                in_power_frac = in_flow / efu.pwr_chg_max
-
-                action = in_power_frac if in_power_frac > 0 else -out_power_frac
-                action_idx = ctx.get_efu_index(efu)
-                unorded_actions.append((action_idx, action))
-
-            action_vec = np.array(list(map(lambda a: a[1], sorted(unorded_actions, key=lambda a: a[0]))))
-
+            # Extract actions
+            action_vec = self._extract_actions(ctx, optimization_result, time_step)
             actions_buffer.append(action_vec)
+
             ctx.step()
 
-        trajectory = types.Trajectory(
-            obs=np.array(observations_buffer),
-            # For each episode, we must collect one more observation than actions (to also have an observation for the last action).
-            acts=np.array(actions_buffer[:-1]),
-            infos=None,
-            terminal=True,
-        )
-        trajectories.append(trajectory)
+        return observations_buffer, actions_buffer
 
-    _LOGGER.debug(f"Collected {len(trajectories)} trajectories")
+    def _extract_actions(
+        self, ctx: context.Context, optimization_result: optimization.OptimizationResult, time_step: int
+    ) -> np.ndarray:
+        """
+        Extract action vector for all electric fleet units at a time step.
 
-    return trajectories
+        Args:
+            ctx: Context containing fleet units
+            optimization_result: Optimization result
+            time_step: Current time step
 
+        Returns:
+            Array of actions for all fleet units
+        """
+        unordered_actions = []
 
-def _fix_power_envelope_for_optimization_problem(
-    scenario: scn.Scenario, episode_horizon: utils.TimeSettings, optimization_problem: optimization.OptimizationProblem
-) -> None:
-    for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
-        nom_capacity_wh = block.sizes["storage"].preexisting
-        eff_charge = block.eff["chg_int"]
-        max_charge_power_w = block.pwr_chg_max * eff_charge
-        buffered_max_charge_power_w = max_charge_power_w * 0.9
+        for efu in ctx.electric_fleet_unit_blocks:
+            power_flow = optimization_result.get_power_flow(efu, time_step)
 
-        dsoc_step = (buffered_max_charge_power_w * episode_horizon.timestep.hours) / nom_capacity_wh
+            # Calculate fractional power for charging/discharging
+            out_power_frac = power_flow["out"] / efu.pwr_dis_max
+            in_power_frac = power_flow["in"] / efu.pwr_chg_max
 
-        soc_envelope = rl_utils.get_soc_envelope(block, episode_horizon, dsoc_step)
-        padded_soc_envelope = np.clip(soc_envelope + 0.1, 0.0, 1.0)
-        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, padded_soc_envelope)
+            # Combine into single action (positive=charge, negative=discharge)
+            action = in_power_frac if in_power_frac > 0 else -out_power_frac
+            action_idx = ctx.get_efu_index(efu)
 
-        # Create masks for charging and discharging
-        is_charging = power_envelope >= 0.0
+            unordered_actions.append((action_idx, action))
 
-        target_power_unit_charge = pd.Series(0.0, index=episode_horizon.dti)
-
-        target_power_unit_charge[is_charging] = np.clip(
-            power_envelope[is_charging] / max_charge_power_w,
-            0.0,
-            1.0,
-        )
-
-        for time_step in episode_horizon.dti:
-            optimization_problem.set_input_power_unit(
-                block, target_power_unit_charge[time_step], time_step, power_unit_buffer=0.1
-            )
+        # Sort by index and extract action values
+        sorted_actions = sorted(unordered_actions, key=lambda x: x[0])
+        return np.array([action for _, action in sorted_actions])
 
 
 def train_imitation_policy_bc(

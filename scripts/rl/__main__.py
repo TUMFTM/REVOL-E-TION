@@ -69,10 +69,13 @@ def generate_trajectories(
     output_folder: Path,
     start: str = "01.01.2020",
     duration: str = "365d",
-    episode_length: int = 300,
+    episode_length: int = 200,
     debug: bool = False,
+    envelope_split: float = 0.5,
+    seed: int = 42,
     n_proc: int = 4,
 ) -> None:
+    np.random.seed(seed)
     logger.configure_root_logger(debugmode=debug)
 
     paths = scn.SimulationPaths.from_plain_paths(
@@ -83,7 +86,9 @@ def generate_trajectories(
     scenario = scenario_factory.create_scenario()
 
     normalized_start = start.replace(".", "_")
-    trajectories_configuration_str = f"trajectories-{scenario.name}-{normalized_start}-{duration}-{episode_length}"
+    trajectories_configuration_str = (
+        f"trajectories-{scenario.name}-{normalized_start}-{duration}-{episode_length}-{seed}-{envelope_split}"
+    )
     trajectories_configuration_id = hashlib.sha256(trajectories_configuration_str.encode()).hexdigest()[0:8]
     trajectories_file_name = f"{trajectories_configuration_str}-{trajectories_configuration_id}.pb"
     trajectories_save_path = output_folder / trajectories_file_name
@@ -92,33 +97,31 @@ def generate_trajectories(
         print(f"Trajectories with this configuration already exist at {trajectories_save_path}")
         return
 
+    imitation_trajectory_computer_config = imitation_learning.ImitationTrajectoryComputerConfig(
+        seed=seed,
+        episode_length=episode_length,
+        forecast_horizon=16,
+        soc_min=0.05,
+        envelope_split=envelope_split,
+    )
+
+    imitation_trajectory_computer = imitation_learning.ImitationTrajectoryComputer(
+        config=imitation_trajectory_computer_config
+    )
+
     imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
         start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),
         timestep=scenario.times.sim.timestep,
         duration=pd.Timedelta(duration),
     )
+
     print(
         f"Generating trajectories over horizon {imitation_horizon.start} - {imitation_horizon.end} with {n_proc} process(es)"
     )
-    if n_proc <= 1:
-        trajectories = imitation_learning.compute_imitation_trajectories(
-            scenario, imitation_horizon, episode_length=episode_length
-        )
-    else:
-        sub_horizon_length = len(imitation_horizon) // n_proc
-        sub_horizons = []
-        for i in range(0, n_proc):
-            sub_horizons.append(imitation_horizon.cut(i * sub_horizon_length, length=sub_horizon_length))
 
-        worker_fn = functools.partial(
-            imitation_learning.compute_imitation_trajectories,
-            scenario_factory.create_scenario,
-            episode_length=episode_length,
-        )
-
-        with mp.Pool(processes=n_proc) as pool:
-            trajectories_nested = pool.map(worker_fn, sub_horizons)
-        trajectories = [xs for xss in trajectories_nested for xs in xss]
+    trajectories = imitation_trajectory_computer.compute_trajectories(
+        scenario_or_factory=scenario_factory.create_scenario, rollout_horizon=imitation_horizon, n_procs=n_proc
+    )
 
     print(f"Generated {len(trajectories)} trajectories")
     if len(trajectories) == 0:
@@ -163,7 +166,6 @@ def train_imitation_bc(
         trajectories = pickle.load(f)
 
     breakpoint()
-
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
 
