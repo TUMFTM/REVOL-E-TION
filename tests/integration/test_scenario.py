@@ -1,4 +1,5 @@
 import importlib.resources
+import logging
 import tempfile
 from pathlib import Path
 
@@ -6,33 +7,36 @@ import pandas as pd
 import pytest
 
 import revoletion.example
-from revoletion.simulation import Scenario, SimulationPaths, SimulationSettings
-from revoletion.utils import read_scenario_from_file
+from revoletion import run, simulation, utils
 
+_LOGGER = logging.getLogger(__name__)
 _POWER_TOLERANCE = 0.1
 
 
-def test_process_example_scenarios():
+@pytest.mark.parametrize("scenario_name", ["icev"])
+def test_process_example_scenarios(scenario_name: str):
     example_scenarios_traversable = importlib.resources.files(revoletion.example).joinpath("scenarios_example.csv")
     with importlib.resources.as_file(example_scenarios_traversable) as example_scenarios_path:
         with tempfile.TemporaryDirectory() as tempdir_raw:
             tempdir_path = Path(tempdir_raw)
-            simulation_paths = SimulationPaths.from_plain_paths(
+            simulation_paths = simulation.SimulationPaths.from_plain_paths(
                 scenario=example_scenarios_path,
                 output=tempdir_path,
             )
-            simulation_settings = SimulationSettings(solver="cbc")
-            scenario_parameters = read_scenario_from_file(simulation_paths.scenario)
+            simulation_settings = simulation.SimulationSettings(solver="cbc")
+            scenario_parameters = utils.read_scenario_from_file(simulation_paths.scenario)
 
-            single_scenario_parameters = scenario_parameters["icev"]
+            single_scenario_parameters = scenario_parameters[scenario_name]
 
-            scenario = Scenario(
+            worker = run.ScenarioWorker(
                 simulation_paths,
                 simulation_settings,
-                name="icev",
+                name=scenario_name,
                 parameters=single_scenario_parameters,
+                logger=_LOGGER,
+                status_update=lambda status, queue: None,
             )
-            scenario.execute()
+            worker.execute(plot=False)
 
             result_dir_entries = list(tempdir_path.iterdir())
             assert len(result_dir_entries) == 1, (
