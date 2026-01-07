@@ -115,7 +115,7 @@ class Location:
             return None
 
 
-@dataclass(freeze=True)
+@dataclass(frozen=True)
 class TimeSettings:
     start: pd.Timestamp
     end: pd.Timestamp
