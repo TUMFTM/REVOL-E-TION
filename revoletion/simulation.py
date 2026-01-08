@@ -513,8 +513,7 @@ class ControlHorizon:
         return optimization_result
 
     def _train_agent(self, scenario: scn.Scenario) -> rl.RevoletionAgent:
-        agent_config = rl.AgentConfig.default_for_algorithm(self._settings.agent_algorithm)
-        agent_config.tensorboard_log = "/tmp/revol"
+        agent_config = rl.get_default_agent_config_for_algorithm(self._settings.agent_algorithm)
 
         train_horizon = utils.TimeSettings.create_from_start_timestamp(
             start=scenario.times.sim.start,

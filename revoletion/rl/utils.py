@@ -49,13 +49,12 @@ def get_power_envelope(
     Returns:
         Series of minimum charging power in Watts (positive = charging required)
     """
-    # Get the SoC envelope first
-
     # Initialize power envelope
     power_envelope = pd.Series(0.0, index=horizon.dti, dtype=np.float64)
 
     # Get necessary parameters
     plugged = block.log.loc[horizon.dti, "atbase"]
+    current_soc = block.states.loc[horizon.start, "soc"]
     nom_capacity_wh = block.sizes["storage"].preexisting
     timestep_hours = horizon.timestep.hours
 
@@ -65,23 +64,20 @@ def get_power_envelope(
         next_time = horizon.dti[i + 1]
 
         if plugged[current_time]:
-            # Calculate the change in SoC needed
-            dsoc = soc_envelope[next_time] - soc_envelope[current_time]
+            required_dsoc = max(soc_envelope[next_time] - current_soc, 0.0)
 
-            # Convert to power (W)
-            # Positive dsoc means SoC needs to increase (charging)
-            power_required = (dsoc * nom_capacity_wh) / timestep_hours
+            if required_dsoc > 0.0:
+                # Convert to power (W)
+                # Positive dsoc means SoC needs to increase (charging)
+                power_required = (required_dsoc * nom_capacity_wh) / timestep_hours / block.eff["chg_int"]
 
-            # Account for charging efficiency (power from grid)
-            if power_required > 0:
-                power_required = power_required / block.eff["chg_int"]
-
-            power_envelope[current_time] = max(power_required, 0.0)
+                power_envelope[current_time] = max(power_required, 0.0)
+                current_soc += required_dsoc
+            else:
+                power_envelope[current_time] = 0.0
         else:
+            current_soc = max(current_soc - (soc_envelope[current_time] - soc_envelope[next_time]), 0.0)
             # Not plugged in, cannot charge
             power_envelope[current_time] = 0.0
-
-    # Last time step has no "next" so set to 0
-    power_envelope[horizon.dti[-1]] = 0.0
 
     return power_envelope

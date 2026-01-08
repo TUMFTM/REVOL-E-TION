@@ -385,6 +385,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         bus_efu_name = make_pypsa_label(block, "efu-bus")
         builder.add_bus(name=bus_efu_name)
 
+        # At-Site Charging
+
         inflow_capacity = block.pwr_chg_max
         inflow_max = (
             pd.Series(1.0, index=self._datetime_index)
@@ -436,6 +438,71 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             marginal_cost=outflow_variable_costs,
         )
 
+        # External AC/DC Charging
+
+        bus_ext_ac = make_pypsa_label(block, "ext-ac-bus")
+        builder.add_bus(bus_ext_ac)
+        ext_ac_capacity = block.pwr_ext_ac_max * block.eff["chg_ac"]
+        max_ext_ac = (
+            pd.Series(1.0, index=self._datetime_index)
+            if block.apriori
+            else block.log.loc[self._datetime_index, "atac"].astype(int)
+        )
+        fix_ext_ac = (
+            block.flows_apriori.loc[self._datetime_index, "p_ext_ac_chg"]
+            if block.apriori and self._enable_fixed_dispatch
+            else pd.Series(np.nan, index=self._datetime_index)
+        )
+        variable_costs_ext_ac = block.evaluators["ext_ac"].opt.spec_ep_operation[self._datetime_index]
+        builder.add_link(
+            name=make_pypsa_label(block, "ext-ac-inflow-link"),
+            bus0=bus_ext_ac,
+            bus1=bus_efu_name,
+            efficiency=block.eff["chg_ac"],
+            p_nom=ext_ac_capacity,
+        )
+        builder.add_generator(
+            name=make_pypsa_label(block, "ext-ac-gen"),
+            bus=bus_ext_ac,
+            p_nom=ext_ac_capacity,
+            p_set=fix_ext_ac,
+            p_max_pu=max_ext_ac,
+            marginal_cost=variable_costs_ext_ac,
+        )
+
+        bus_ext_dc = make_pypsa_label(block, "ext-dc-bus")
+        builder.add_bus(bus_ext_dc)
+        ext_dc_capacity = block.pwr_ext_dc_max
+        max_ext_dc = (
+            pd.Series(1.0, index=self._datetime_index)
+            if block.apriori
+            else block.log.loc[self._datetime_index, "atdc"].astype(int)
+        )
+        fix_ext_dc = (
+            block.flows_apriori.loc[self._datetime_index, "p_ext_dc_chg"]
+            if block.apriori and self._enable_fixed_dispatch
+            else pd.Series(np.nan, index=self._datetime_index)
+        )
+        variable_costs_ext_dc = block.evaluators["ext_dc"].opt.spec_ep_operation[self._datetime_index]
+        builder.add_link(
+            name=make_pypsa_label(block, "ext-dc-inflow-link"),
+            bus0=bus_ext_dc,
+            bus1=bus_efu_name,
+            # billed energy is already dc in external dc charging
+            efficiency=1,
+            p_nom=ext_dc_capacity,
+        )
+        builder.add_generator(
+            name=make_pypsa_label(block, "ext-dc-gen"),
+            bus=bus_ext_dc,
+            p_nom=ext_dc_capacity,
+            p_set=fix_ext_dc,
+            p_max_pu=max_ext_dc,
+            marginal_cost=variable_costs_ext_dc,
+        )
+
+        # Battery
+
         battery_soc_initial_percent = block.states.loc[self._datetime_index[0], "soc"]
         battery_capacity_wh = block.sizes["storage"].preexisting
         battery_e_initial_wh = (
@@ -447,22 +514,25 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         # PyPSA does not support this, so additional links are required.
         bus_battery_name = make_pypsa_label(block, "battery-bus")
         builder.add_bus(bus_battery_name)
+        max_int_chg = max(ext_dc_capacity, ext_ac_capacity, inflow_capacity)
         builder.add_link(
             name=make_pypsa_label(block, "battery-int-chg-link"),
             bus0=bus_efu_name,
             bus1=bus_battery_name,
-            p_nom=np.inf,
+            p_nom=max_int_chg,
             efficiency=np.sqrt(
                 block.eff["storage_roundtrip"],
             ),
             # Stop PyPSA from creating circular flows.
             marginal_cost=self._cost_eps,
         )
+
+        max_int_dis = outflow_capacity
         builder.add_link(
             name=make_pypsa_label(block, "battery-int-dis-link"),
             bus0=bus_battery_name,
             bus1=bus_efu_name,
-            p_nom=np.inf,
+            p_nom=max_int_dis,
             efficiency=np.sqrt(
                 block.eff["storage_roundtrip"],
             ),
@@ -490,65 +560,6 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             name=make_pypsa_label(block, "battery-load"),
             bus=bus_efu_name,
             p_set=load_battery_power,
-        )
-
-        bus_ext_ac = make_pypsa_label(block, "ext-ac-bus")
-        builder.add_bus(bus_ext_ac)
-        max_ext_ac = (
-            pd.Series(1.0, index=self._datetime_index)
-            if block.apriori
-            else block.log.loc[self._datetime_index, "atac"].astype(int)
-        )
-        fix_ext_ac = (
-            block.flows_apriori.loc[self._datetime_index, "p_ext_ac_chg"]
-            if block.apriori and self._enable_fixed_dispatch
-            else pd.Series(np.nan, index=self._datetime_index)
-        )
-        variable_costs_ext_ac = block.evaluators["ext_ac"].opt.spec_ep_operation[self._datetime_index]
-        builder.add_link(
-            name=make_pypsa_label(block, "ext-ac-inflow-link"),
-            bus0=bus_ext_ac,
-            bus1=bus_efu_name,
-            efficiency=block.eff["chg_ac"],
-            p_nom=block.pwr_ext_ac_max,
-        )
-        builder.add_generator(
-            name=make_pypsa_label(block, "ext-ac-gen"),
-            bus=bus_ext_ac,
-            p_nom=block.pwr_ext_ac_max,
-            p_set=fix_ext_ac,
-            p_max_pu=max_ext_ac,
-            marginal_cost=variable_costs_ext_ac,
-        )
-
-        bus_ext_dc = make_pypsa_label(block, "ext-dc-bus")
-        builder.add_bus(bus_ext_dc)
-        max_ext_dc = (
-            pd.Series(1.0, index=self._datetime_index)
-            if block.apriori
-            else block.log.loc[self._datetime_index, "atdc"].astype(int)
-        )
-        fix_ext_dc = (
-            block.flows_apriori.loc[self._datetime_index, "p_ext_dc_chg"]
-            if block.apriori and self._enable_fixed_dispatch
-            else pd.Series(np.nan, index=self._datetime_index)
-        )
-        variable_costs_ext_dc = block.evaluators["ext_dc"].opt.spec_ep_operation[self._datetime_index]
-        builder.add_link(
-            name=make_pypsa_label(block, "ext-dc-inflow-link"),
-            bus0=bus_ext_dc,
-            bus1=bus_efu_name,
-            # billed energy is already dc in external dc charging
-            efficiency=1,
-            p_nom=block.pwr_ext_dc_max,
-        )
-        builder.add_generator(
-            name=make_pypsa_label(block, "ext-dc-gen"),
-            bus=bus_ext_dc,
-            p_nom=block.pwr_ext_dc_max,
-            p_set=fix_ext_dc,
-            p_max_pu=max_ext_dc,
-            marginal_cost=variable_costs_ext_dc,
         )
 
 

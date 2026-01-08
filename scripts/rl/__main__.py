@@ -1,7 +1,5 @@
-import functools
 import hashlib
 import logging
-import multiprocessing as mp
 import pickle
 from pathlib import Path
 
@@ -20,8 +18,6 @@ _LOGGER = logging.getLogger(__name__)
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
-np.random.seed(42)
-
 
 @app.command()
 def train_rl(
@@ -32,7 +28,9 @@ def train_rl(
     train_timesteps: int = 50_000,
     base_policy_path: Path | None = None,
     debug: bool = False,
+    seed: int = 42,
 ) -> None:
+    np.random.seed(seed)
     logger.configure_root_logger(debugmode=debug)
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
@@ -40,8 +38,7 @@ def train_rl(
     scenario_factory = simulation.ControlScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
 
-    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
-    agent_config.tensorboard_log = "/tmp/revol"
+    agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
 
     train_horizon = utils.TimeSettings.create_from_start_timestamp(
         start=scenario.times.sim.start,
@@ -92,10 +89,6 @@ def generate_trajectories(
     trajectories_configuration_id = hashlib.sha256(trajectories_configuration_str.encode()).hexdigest()[0:8]
     trajectories_file_name = f"{trajectories_configuration_str}-{trajectories_configuration_id}.pb"
     trajectories_save_path = output_folder / trajectories_file_name
-
-    if trajectories_save_path.exists():
-        print(f"Trajectories with this configuration already exist at {trajectories_save_path}")
-        return
 
     imitation_trajectory_computer_config = imitation_learning.ImitationTrajectoryComputerConfig(
         seed=seed,
@@ -159,13 +152,12 @@ def train_imitation_bc(
         duration=pd.Timedelta(duration),
     )
     env = agent.build_rl_environment(scenario, imitation_horizon)
-    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
+    agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
     base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
 
     with open(trajectories_path, "rb") as f:
         trajectories = pickle.load(f)
 
-    breakpoint()
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
 
@@ -184,7 +176,6 @@ def train_imitation_sqil(
     scenario_path: Path,
     trajectories_path: Path,
     output_folder: Path,
-    algorithm: agent.AgentAlgorithm,
     start: str = "01.01.2020",
     duration: str = "365d",
     seed: int = 42,
@@ -193,6 +184,8 @@ def train_imitation_sqil(
     debug: bool = False,
 ) -> None:
     np.random.seed(seed)
+
+    algorithm = agent.AgentAlgorithm.SAC
 
     logger.configure_root_logger(debugmode=debug)
     paths = scn.SimulationPaths.from_plain_paths(
@@ -206,6 +199,12 @@ def train_imitation_sqil(
         duration=pd.Timedelta(duration),
     )
 
+    with open(trajectories_path, "rb") as f:
+        trajectories = pickle.load(f)
+
+    trajectories_id = trajectories_path.stem.split("-")[-1]
+    print(f"Training SQIL policy: {seed=}; {train_timesteps=}; {n_proc=}; {len(trajectories)=}; {trajectories_id=}")
+
     # env = agent.build_rl_environment(scenario, train_horizon)
     env = make_vec_env(
         lambda: agent.build_rl_environment(scenario_factory.create_scenario, train_horizon),
@@ -213,14 +212,13 @@ def train_imitation_sqil(
         vec_env_cls=SubprocVecEnv,
     )
 
-    agent_config = agent.AgentConfig.default_for_algorithm(algorithm)
+    agent_config = agent.DEFAULT_SAC_AGENT_CONFIG
+    # For imitation learning the entropy should be reduced quite significantly.
+    agent_config.use_sde = False
+    agent_config.sde_sample_freq = None
+    agent_config.ent_coef = 0.1
+    agent_config.target_entropy = -2
     base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
-
-    with open(trajectories_path, "rb") as f:
-        trajectories = pickle.load(f)
-
-    trajectories_id = trajectories_path.stem.split("-")[-1]
-    print(f"Training SQIL policy: {seed=}; {train_timesteps=}; {n_proc=}; {len(trajectories)=}; {trajectories_id=}")
 
     imitation_learning.train_imitation_policy_sqil(trajectories, env, base_agent._sb3_agent, seed, train_timesteps)
 

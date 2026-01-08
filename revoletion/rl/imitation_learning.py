@@ -1,5 +1,4 @@
 import functools
-import hashlib
 import logging
 import multiprocessing
 from collections.abc import Sequence
@@ -31,7 +30,7 @@ from revoletion.rl import agent
 
 from . import _context as context
 from . import _features as features
-from . import _utils as rl_utils
+from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,10 +54,10 @@ class ImitationTrajectoryComputerConfig:
     envelope_power_unit_buffer: float = 0.1
     """The buffer allowed for vehicles with defined power envelope."""
 
-    envelope_max_charge_buffer: float = 0.9
+    envelope_max_charge_buffer: float = 0.8
     """Reduction of max charge power for vehicles with defined power envelope to smooth out charging."""
 
-    envelope_target_soc: float = 0.1
+    envelope_target_soc: float = 0.0
     """Increase the target SoC at the end of a episode for vehicles with defined power envelope to encourage buffered charging."""
 
     envelope_soc_padding: float = 0.2
@@ -118,12 +117,15 @@ class ImitationTrajectoryComputer:
 
         self.logger.debug("Collecting rollout buffer")
         for episode_idx in range(num_episodes):
-            trajectory = self._compute_episode_trajectory(scenario, rollout_horizon, episode_idx)
+            episode_horizon = rollout_horizon.cut(
+                episode_idx * self._config.episode_length, self._config.episode_length
+            )
+            trajectory = self._compute_episode_trajectory(scenario, episode_horizon)
             if trajectory is not None:
                 trajectories.append(trajectory)
 
         self.logger.debug(
-            f"Collected {len(trajectories)} trajectories for horizon {rollout_horizon.start} - {rollout_horizon.end}"
+            f"Collected {len(trajectories)} trajectories for rollout horizon {rollout_horizon.start} - {rollout_horizon.end}"
         )
         return trajectories
 
@@ -134,10 +136,19 @@ class ImitationTrajectoryComputer:
         sub_horizons = self._split_horizon(rollout_horizon, n_procs)
         worker_fn = functools.partial(self._compute_imitation_trajectories, scenario_or_factory)
 
-        with multiprocessing.Pool(processes=n_procs) as pool:
-            trajectories_nested = pool.map(worker_fn, sub_horizons)
+        with multiprocessing.Manager() as manager:
+            self._total = manager.Value(int, 0)
+            self._num_power_envelope = manager.Value(int, 0)
 
-        # Flatten nested list
+            with manager.Pool(processes=n_procs) as pool:
+                trajectories_nested = pool.map(worker_fn, sub_horizons)
+
+            total = self._total.get()
+            num_power_envelope = self._num_power_envelope.get()
+
+        self.logger.info(f"Real envelope split: {num_power_envelope / total:.2f} ({total=}; {num_power_envelope=})")
+
+        # Each worker returns a list of trajectories. These must be flattened.
         trajectories = [traj for sublist in trajectories_nested for traj in sublist]
 
         return trajectories
@@ -169,7 +180,7 @@ class ImitationTrajectoryComputer:
         return scenario_or_factory
 
     def _compute_episode_trajectory(
-        self, scenario: scn.Scenario, rollout_horizon: utils.TimeSettings, episode_idx: int
+        self, scenario: scn.Scenario, episode_horizon: utils.TimeSettings
     ) -> types.Trajectory | None:
         """
         Compute trajectory for a single episode.
@@ -182,9 +193,10 @@ class ImitationTrajectoryComputer:
         Returns:
             Computed trajectory or None if optimization failed
         """
-        episode_horizon = rollout_horizon.cut(episode_idx * self._config.episode_length, self._config.episode_length)
 
-        self.logger.debug(f"Processing episode {episode_idx} from {episode_horizon.start} - {episode_horizon.end}")
+        self.logger.debug(f"Processing episode from {episode_horizon.start} to {episode_horizon.end}")
+
+        self._apply_initial_socs(scenario, episode_horizon)
 
         optimization_result = self._solve_optimization(scenario, episode_horizon)
         if optimization_result is None:
@@ -193,6 +205,8 @@ class ImitationTrajectoryComputer:
         # Collect observations and actions
         ctx = context.Context(scenario, episode_horizon)
         observations, actions = self._collect_observations_and_actions(ctx, episode_horizon, optimization_result)
+
+        self.logger.debug(f"Collected trajectory for episode {episode_horizon.start}")
 
         return types.Trajectory(
             obs=np.array(observations),
@@ -234,10 +248,29 @@ class ImitationTrajectoryComputer:
 
         status, result = problem.solve()
         if status != optimization.OptimizationStatus.OPTIMAL:
-            self.logger.warning(f"Optimization for episode {episode_horizon.dti[0]} failed")
+            breakpoint()
+            self.logger.warning(f"Optimization for episode {episode_horizon.start} failed")
             return None
 
         return result
+
+    def _apply_initial_socs(self, scenario: scn.Scenario, episode_horizon: utils.TimeSettings) -> None:
+        # This is not really safe, since we are modifying a shared scenario.
+        # But since this should be only called for non-overlapping episodes we should be good.
+        # Otherwise we would need to create new scenarios for each episode which might
+        # result in a heavy performance overhead.
+        for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            block.states.loc[episode_horizon.start, "soc_min"] = np.clip(
+                block.states.loc[episode_horizon.start, "soc_min"]
+                + self._config.soc_min
+                + self._config.envelope_soc_padding,
+                0.0,
+                1.0,
+            )
+            initial_soc_min = block.states.loc[episode_horizon.start, "soc_min"]
+            soc_min = min(initial_soc_min + self._config.soc_min, 1.0)
+            initial_soc = soc_min + ((1.0 - soc_min) / 2)
+            block.states.loc[episode_horizon.start, "soc"] = initial_soc
 
     def _apply_power_envelope_constraints(
         self,
@@ -253,11 +286,15 @@ class ImitationTrajectoryComputer:
             episode_horizon: Time horizon for constraints
             problem: Optimization problem to constrain
         """
-        fleet_units = scenario.block_registry.get("ElectricFleetUnit", {}).values()
+        total = 0
+        num_power_envelope = 0
+        for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            total += 1
 
-        for block in fleet_units:
-            if not self._should_apply_envelope():
+            if not self._should_apply_power_envelope():
                 continue
+
+            num_power_envelope += 1
 
             power_envelope = self._compute_power_envelope(block, episode_horizon)
             for time_step in episode_horizon.dti:
@@ -267,8 +304,10 @@ class ImitationTrajectoryComputer:
                     time_step,
                     power_unit_buffer=self._config.envelope_power_unit_buffer,
                 )
+        self._total.set(self._total.get() + total)
+        self._num_power_envelope.set(self._num_power_envelope.get() + num_power_envelope)
 
-    def _should_apply_envelope(self) -> bool:
+    def _should_apply_power_envelope(self) -> bool:
         """Determine if envelope should be applied to this block (random sampling)."""
         return np.random.random() <= self._config.envelope_split
 
@@ -297,13 +336,12 @@ class ImitationTrajectoryComputer:
             block, episode_horizon, dsoc_step, target_soc=self._config.envelope_target_soc
         )
         # Apply some optional padding to the SoC envelope to encourage the agent to not fully discharge each vehicle.
-        padded_soc_envelope = np.clip(soc_envelope + self._config.envelope_soc_padding, 0.0, 1.0)
+        buffered_soc_envelope = np.clip(soc_envelope + self._config.envelope_soc_padding, 0.0, 1.0)
 
-        # Convert to power envelope
-        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, padded_soc_envelope)
+        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, buffered_soc_envelope)
 
-        # Normalize to unit power
-        return np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
+        target_power_unit = np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
+        return target_power_unit
 
     def _collect_observations_and_actions(
         self,
@@ -322,7 +360,7 @@ class ImitationTrajectoryComputer:
         Returns:
             Tuple of (observations_buffer, actions_buffer)
         """
-        feature_extractor = features.FeatureExtractor(
+        feature_extractor = features.EnvironmentFeatureExtractor(
             forecast_horizon=self._config.forecast_horizon, soc_min=self._config.soc_min
         )
 
@@ -428,7 +466,6 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
 
     Here it is used as part of SQIL, where it is used to train a DQN.
 
-    Supports both standard and dictionary observation spaces.
     """
 
     def __init__(
@@ -525,7 +562,7 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
                 next_obs=next_obs,
                 action=transition["acts"],
                 done=transition["dones"],
-                reward=np.array(1.0),
+                reward=np.array([1.0]),
                 infos=[{}],
             )
 
@@ -542,7 +579,7 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
             obs=obs,
             next_obs=next_obs,
             action=action,
-            reward=np.array(0.0),
+            reward=np.array([0.0]),
             done=done,
             infos=infos,
         )
@@ -584,4 +621,4 @@ def train_imitation_policy_sqil(
     )
     base_agent.replay_buffer = replay_buffer
 
-    base_agent.learn(total_timesteps=train_timesteps, callback=agent._TracingCallback())
+    base_agent.learn(total_timesteps=train_timesteps, callback=agent.TrainingCallback)

@@ -5,13 +5,14 @@ import pandas as pd
 from revoletion import optimization
 
 from . import _context as context
-from . import _utils as rl_utils
+from . import utils as rl_utils
 
 # Keys in the observation space for consistent access in custom agents.
 OBS_KEY_TIME_FEATURES = "time_of_day"
 OBS_KEY_EFUS_AVAILABLE = "efus_available"
 OBS_KEY_EFUS_SOC = "efus_soc"
 OBS_KEY_EFUS_REQUIRED_SOCS = "efus_required_socs"
+OBS_KEY_EFUS_REAL_POWER_UNIT = "efus_real_power_unit"
 OBS_KEY_RENEWABLES_POWER = "renewables_power"
 OBS_KEY_RENEWABLES_SCHEDULE = "renewables_schedule"
 OBS_KEY_FIXED_DEMANDS = "demands_schedule"
@@ -25,7 +26,7 @@ OBS_KEY_FLEETS_IN_POWER = "fleets_in_power"
 OBS_KEY_FLEETS_OUT_POWER = "fleets_out_power"
 
 
-class FeatureExtractor:
+class EnvironmentFeatureExtractor:
     def __init__(self, forecast_horizon: int, soc_min: float) -> None:
         self._forecast_horizon = forecast_horizon
         self._soc_min = soc_min
@@ -86,6 +87,7 @@ class FeatureExtractor:
         fleet_out_power_units = []
 
         cars_soc = []
+        cars_real_power_units = []
         cars_required_socs = []
         cars_available = []
 
@@ -107,12 +109,20 @@ class FeatureExtractor:
                     soc = electric_fleet_unit_block.states.loc[ctx.current_time_step, "soc"]
                     if np.isnan(soc):
                         soc = 0.0
+
+                    real_power_unit = 0.0
                 else:
                     stored_energy = optimization_result.get_stored_energy(
                         electric_fleet_unit_block, ctx.previous_time_step
                     )
                     soc = stored_energy / electric_fleet_unit_block.sizes["storage"].preexisting
+
+                    power_flow = optimization_result.get_power_flow(electric_fleet_unit_block, ctx.previous_time_step)
+                    out_power_frac = power_flow["out"] / electric_fleet_unit_block.pwr_dis_max
+                    in_power_frac = power_flow["in"] / electric_fleet_unit_block.pwr_chg_max
+                    real_power_unit = in_power_frac if in_power_frac > 0 else -out_power_frac
                 cars_soc.append(soc)
+                cars_real_power_units.append(real_power_unit)
 
                 horizon = ctx.horizon.cut(
                     ctx.step_idx, min(self._forecast_horizon, len(ctx.horizon) - ctx.step_idx - 1)
@@ -132,6 +142,7 @@ class FeatureExtractor:
         return {
             OBS_KEY_EFUS_SOC: np.array(cars_soc, dtype=np.float32),
             OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
+            OBS_KEY_EFUS_REAL_POWER_UNIT: np.array(cars_real_power_units, dtype=np.float32),
             OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
             OBS_KEY_FLEETS_IN_POWER: np.array(fleet_in_power_units, dtype=np.float32),
             OBS_KEY_FLEETS_OUT_POWER: np.array(fleet_out_power_units, dtype=np.float32),
@@ -265,6 +276,12 @@ class FeatureExtractor:
                 low=0.0,
                 high=1.0,
                 shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_horizon),
+                dtype=np.float32,
+            ),
+            OBS_KEY_EFUS_REAL_POWER_UNIT: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.electric_fleet_unit_blocks),),
                 dtype=np.float32,
             ),
             OBS_KEY_FLEETS_IN_POWER: gym.spaces.Box(

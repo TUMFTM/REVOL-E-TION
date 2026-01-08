@@ -13,7 +13,7 @@ from revoletion import scenario as scn
 
 from . import _context as context
 from . import _features as features
-from . import _utils as rl_utils
+from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_factor_dsoc: float = 500.0
-    """Weight for the penalty if the agent does not met the SoC requirements. In all those cases, the scenario will become infeasible in the future time steps and an infeasibility penalty will also be applied."""
+    penalty_factor_dsoc: float = 250.0
+    """Weight for the penalty if the agent does not met the SoC requirements."""
 
     reward_factor_dsoc: float = 1.0
     """Weight of the reward for meeting a SoC requirement."""
@@ -209,7 +209,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._logger = logger or logging.getLogger(__name__)
 
         self._ctx = context.Context(scenario=scenario, horizon=horizon)
-        self._feature_extractor = features.FeatureExtractor(
+        self._feature_extractor = features.EnvironmentFeatureExtractor(
             forecast_horizon=self._config.forecast_horizon, soc_min=self._config.soc_min
         )
 
@@ -597,7 +597,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
-        reward.grid_opex = self._compute_grid_opex(optimization_result) / len(self._ctx.electric_fleet_unit_blocks)
+        reward.grid_opex = self._compute_grid_opex(optimization_result)
         reward.gen_opex = self._compute_generator_opex(optimization_result)
 
         if self._config.reward_config.penalty_continous_dsoc:

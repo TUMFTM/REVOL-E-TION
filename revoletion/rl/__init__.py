@@ -1,5 +1,14 @@
-from ._utils import get_soc_envelope
-from .agent import AgentAlgorithm, AgentConfig, RevoletionAgent, evaluate_with_agent, load_agent, save_agent, train
+from .utils import get_soc_envelope
+from .agent import (
+    AgentAlgorithm,
+    AgentConfig,
+    RevoletionAgent,
+    evaluate_with_agent,
+    get_default_agent_config_for_algorithm,
+    load_agent,
+    save_agent,
+    train,
+)
 
 __all__ = [
     "AgentAlgorithm",
@@ -10,4 +19,5 @@ __all__ = [
     "load_agent",
     "save_agent",
     "get_soc_envelope",
+    "get_default_agent_config_for_algorithm",
 ]

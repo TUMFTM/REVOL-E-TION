@@ -3,57 +3,52 @@ import collections
 import enum
 import logging
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
-import torch
-import torch.nn as nn
 import typing_extensions
-from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
-from typing_extensions import Self
 
 from revoletion import optimization, utils
 from revoletion import scenario as scn
 
 from ._features import (
-    OBS_KEY_CONTROLLABLE_SOURCES_POWER,
     OBS_KEY_EFUS_AVAILABLE,
     OBS_KEY_EFUS_REQUIRED_SOCS,
     OBS_KEY_EFUS_SOC,
-    OBS_KEY_FIXED_DEMANDS,
-    OBS_KEY_FLEETS_IN_POWER,
-    OBS_KEY_FLEETS_OUT_POWER,
-    OBS_KEY_GRID_EXPORT_COSTS,
-    OBS_KEY_GRID_EXPORT_POWER,
-    OBS_KEY_GRID_IMPORT_COSTS,
-    OBS_KEY_GRID_IMPORT_POWER,
-    OBS_KEY_RENEWABLES_POWER,
-    OBS_KEY_RENEWABLES_SCHEDULE,
-    OBS_KEY_STATIONARY_BATTERIES_SOC,
-    OBS_KEY_TIME_FEATURES,
 )
+from ._structured_feature_extractor import StructuredFeatureExtractor
+from ._training_callback import TrainingCallback
 from .environment import (
     INFO_KEY_OPTIMIZATION_RESULT,
-    INFO_KEY_REWARD_COMPONENTS,
     INFO_KEY_STATUS,
     ActType,
     EnvironmentStepStatus,
     ObsType,
     RevoletionEnvironment,
     RevoletionEnvironmentConfig,
-    RewardComponents,
     RewardConfig,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
+    features_dim=256,
+    vehicle_embed_dim=64,
+    forecast_embed_dim=32,
+    use_attention=True,
+    num_attention_heads=4,
+)
+_DEFAULT_POLICY_KWARGS = dict(
+    features_extractor_class=StructuredFeatureExtractor,
+    features_extractor_kwargs=_DEFAULT_FEATURE_EXTRACTOR_KWARGS,
+)
 
 
 class AgentAlgorithm(enum.Enum):
@@ -89,44 +84,86 @@ class AgentConfig:
     gamma: float = 0.99
     seed: int = 42
     n_steps: int = 1
-    tensorboard_log: str | None = "/tmp/revol"
+    tensorboard_log: str | None = "/tmp/tb-revoletion-rl"
     gradient_steps: int | None = None
-    target_policy_noise: float | None = None
-    target_noise_clip: float | None = None
     train_freq: int | tuple[int, str] | None = None
     batch_size: int | None = None
+    stats_window_size: int | None = 100
+
+    def as_dict(self) -> dict[str, typing.Any]:
+        result = {}
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if value is not None:
+                result[field.name] = value
+
+        return result
+
+
+@dataclass
+class PPOAgentConfig(AgentConfig):
+    ent_coef: float | None = None
+    use_sde: bool | None = None
+    sde_sample_freq: int | None = None
+
+
+@dataclass
+class OffPolicyAgentConfig(AgentConfig):
+    target_policy_noise: float | None = None
+    target_noise_clip: float | None = None
     learning_starts: int | None = None
     buffer_size: int | None = None
 
-    @classmethod
-    def default_for_algorithm(cls, algorithm: AgentAlgorithm) -> Self:
-        match algorithm:
-            case AgentAlgorithm.PPO:
-                return cls(learning_rate=0.0003, gamma=0.99, n_steps=256, batch_size=64)
-            case AgentAlgorithm.TD3:
-                return cls(
-                    learning_rate=0.0001,
-                    gamma=0.99,
-                    target_policy_noise=0.2,
-                    target_noise_clip=0.5,
-                    batch_size=256,
-                    learning_starts=10_000,
-                    buffer_size=50_000,
-                )
-            case AgentAlgorithm.A2C:
-                return cls(learning_rate=0.0007, n_steps=5)
-            case AgentAlgorithm.SAC:
-                return cls(
-                    learning_rate=0.0003,
-                    gamma=0.99,
-                    batch_size=256,
-                    learning_starts=10_000,
-                    buffer_size=50_000,
-                )
-            case AgentAlgorithm.DDPG:
-                return cls(learning_rate=0.0001)
-            case _:
-                return cls()
+
+@dataclass
+class SACPolicyAgentConfig(OffPolicyAgentConfig):
+    use_sde: bool | None = None
+    sde_sample_freq: int | None = None
+    use_sde_at_warmup: bool = False
+    ent_coef: float | typing.Literal["auto"] | None = None
+    target_entropy: float | typing.Literal["auto"] | None = None
+
+
+DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
+    learning_rate=0.0003,  # sb3: 0.0003
+    gamma=0.99,  # sb3: 0.99
+    n_steps=256,  # sb3: 2028
+    batch_size=64,  # sb3: 64
+    use_sde=True,  # sb3: False
+    sde_sample_freq=4,  # sb3: None
+)
+DEFAULT_TD3_AGENT_CONFIG = OffPolicyAgentConfig(
+    learning_rate=0.0001,
+    gamma=0.99,
+    target_policy_noise=0.2,
+    target_noise_clip=0.5,
+    batch_size=256,
+    learning_starts=10_000,
+    buffer_size=50_000,
+)
+DEFAULT_SAC_AGENT_CONFIG = SACPolicyAgentConfig(
+    learning_rate=0.0003,
+    gamma=0.99,
+    batch_size=256,
+    learning_starts=1_000,
+    buffer_size=50_000,
+    use_sde=True,
+    sde_sample_freq=4,
+    ent_coef="auto",
+    target_entropy="auto",
+)
+
+
+def get_default_agent_config_for_algorithm(algorithm: AgentAlgorithm):
+    match algorithm:
+        case AgentAlgorithm.PPO:
+            return DEFAULT_PPO_AGENT_CONFIG
+        case AgentAlgorithm.TD3:
+            return DEFAULT_TD3_AGENT_CONFIG
+        case AgentAlgorithm.SAC:
+            return DEFAULT_SAC_AGENT_CONFIG
+        case _:
+            return AgentConfig()
 
 
 class RevoletionAgent(abc.ABC):
@@ -159,7 +196,7 @@ class RevoletionSB3Agent(RevoletionAgent):
     def learn(self, total_timesteps: int) -> None:
         return self._sb3_agent.learn(
             total_timesteps,
-            callback=_TracingCallback(),
+            callback=TrainingCallback(),
         )
 
     @typing_extensions.override
@@ -264,251 +301,6 @@ def load_agent(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Revol
     return agent
 
 
-_SCALAR_FEATURES = {
-    OBS_KEY_TIME_FEATURES,
-    OBS_KEY_FLEETS_IN_POWER,
-    OBS_KEY_FLEETS_OUT_POWER,
-    OBS_KEY_RENEWABLES_POWER,
-    OBS_KEY_STATIONARY_BATTERIES_SOC,
-    OBS_KEY_CONTROLLABLE_SOURCES_POWER,
-    OBS_KEY_FIXED_DEMANDS,
-}
-
-
-class StructuredEnergyExtractor(BaseFeaturesExtractor):
-    def __init__(
-        self,
-        observation_space: gym.spaces.Dict,
-        forecast_horizon: int = 16,
-        features_dim: int = 256,
-        vehicle_embed_dim: int = 64,
-        forecast_embed_dim: int = 32,
-        use_attention: bool = True,
-        num_attention_heads: int = 4,
-    ):
-        super().__init__(observation_space, features_dim)
-
-        self._observation_space = observation_space.spaces
-        self._forecast_horizon = forecast_horizon
-
-        self._use_attention = use_attention
-        self._vehicle_embed_dim = vehicle_embed_dim
-        self._forecast_embed_dim = forecast_embed_dim
-
-        # Each vehicle has: SoC (1) + availability forecast (H) + required SoC forecast (H)
-        vehicle_input_dim = 1 + 2 * self._forecast_horizon
-
-        self.vehicle_encoder = nn.Sequential(
-            nn.Linear(vehicle_input_dim, vehicle_embed_dim * 2),
-            nn.LayerNorm(vehicle_embed_dim * 2),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(vehicle_embed_dim * 2, vehicle_embed_dim),
-            nn.LayerNorm(vehicle_embed_dim),
-            nn.ReLU(),
-        )
-
-        # Attention-based pooling across vehicles
-        if use_attention:
-            self.vehicle_attention = nn.MultiheadAttention(
-                embed_dim=vehicle_embed_dim,
-                num_heads=num_attention_heads,
-                batch_first=True,
-                dropout=0.1,
-            )
-            # Learnable query token for pooling
-            self.vehicle_query = nn.Parameter(torch.randn(1, 1, vehicle_embed_dim))
-
-        vehicle_output_dim = vehicle_embed_dim
-
-        # ============================================
-        # 2. Renewable Generation Forecast Processing
-        # ============================================
-        if OBS_KEY_RENEWABLES_SCHEDULE in self._observation_space:
-            self.n_renewables = self._observation_space[OBS_KEY_RENEWABLES_SCHEDULE].shape[0]
-
-            # 1D CNN to extract temporal patterns from forecasts
-            self.renewable_encoder = nn.Sequential(
-                nn.Conv1d(
-                    in_channels=self.n_renewables,
-                    out_channels=forecast_embed_dim,
-                    kernel_size=3,
-                    padding=1,
-                ),
-                nn.ReLU(),
-                nn.Conv1d(
-                    in_channels=forecast_embed_dim,
-                    out_channels=forecast_embed_dim,
-                    kernel_size=3,
-                    padding=1,
-                ),
-                nn.ReLU(),
-                nn.AdaptiveAvgPool1d(1),  # Pool to single value per channel
-            )
-            renewable_output_dim = forecast_embed_dim
-        else:
-            renewable_output_dim = 0
-
-        # ============================================
-        # 3. Grid Features Processing
-        # ============================================
-        if OBS_KEY_GRID_IMPORT_COSTS in self._observation_space:
-            # import_costs, import_power, export_costs, export_power
-            grid_input_dim = self._observation_space[OBS_KEY_GRID_IMPORT_COSTS].shape[0] * 4
-            grid_output_dim = 32
-            self.grid_encoder = nn.Sequential(
-                nn.Linear(grid_input_dim, 64),
-                nn.ReLU(),
-                nn.Linear(64, grid_output_dim),
-                nn.ReLU(),
-            )
-        else:
-            grid_output_dim = 0
-
-        # ============================================
-        # 4. Scalar Features Processing
-        # ============================================
-        scalar_dim = 0
-
-        for scalar_feature in _SCALAR_FEATURES:
-            if scalar_feature not in self._observation_space:
-                continue
-            scalar_dim += self._observation_space[scalar_feature].shape[0]
-
-        if scalar_dim > 0:
-            scalar_output_dim = 64
-            self.scalar_encoder = nn.Sequential(
-                nn.Linear(scalar_dim, 128),
-                nn.ReLU(),
-                nn.Linear(128, scalar_output_dim),
-                nn.ReLU(),
-            )
-        else:
-            scalar_output_dim = 0
-
-        # ============================================
-        # 5. Fusion Layer
-        # ============================================
-        total_dim = vehicle_output_dim + renewable_output_dim + grid_output_dim + scalar_output_dim
-
-        self.fusion = nn.Sequential(
-            nn.Linear(total_dim, features_dim * 2),
-            nn.LayerNorm(features_dim * 2),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(features_dim * 2, features_dim),
-            nn.LayerNorm(features_dim),
-            nn.ReLU(),
-        )
-
-    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
-        """
-        Forward pass through the feature extractor.
-
-        Args:
-            observations: Dictionary of observations from the environment
-
-        Returns:
-            Encoded features of shape (batch_size, features_dim)
-        """
-        encoded_parts = []
-
-        # Concatenate per-vehicle features
-        vehicle_features = torch.cat(
-            [
-                observations[OBS_KEY_EFUS_SOC].unsqueeze(-1),  # (B, N, 1)
-                observations[OBS_KEY_EFUS_AVAILABLE],  # (B, N, H)
-                observations[OBS_KEY_EFUS_REQUIRED_SOCS],  # (B, N, H)
-            ],
-            dim=-1,
-        )  # (B, N, 1+2H)
-
-        # Encode each vehicle
-        B, N, F = vehicle_features.shape
-        vehicle_features_flat = vehicle_features.view(B * N, F)
-        vehicle_encoded = self.vehicle_encoder(vehicle_features_flat)
-        vehicle_encoded = vehicle_encoded.view(B, N, self._vehicle_embed_dim)
-
-        # Pool across vehicles
-        if self._use_attention:
-            # Use learnable query for attention pooling
-            query = self.vehicle_query.expand(B, -1, -1)  # (B, 1, D)
-            pooled_vehicle, _ = self.vehicle_attention(query, vehicle_encoded, vehicle_encoded)
-            pooled_vehicle = pooled_vehicle.squeeze(1)  # (B, D)
-        else:
-            # Simple mean pooling
-            pooled_vehicle = vehicle_encoded.mean(dim=1)  # (B, D)
-
-        encoded_parts.append(pooled_vehicle)
-
-        # ============================================
-        # 2. Process Renewable Forecasts
-        # ============================================
-        if OBS_KEY_RENEWABLES_SCHEDULE in observations:
-            renewable_forecast = observations[OBS_KEY_RENEWABLES_SCHEDULE]  # (B, N, H)
-            renewable_encoded = self.renewable_encoder(renewable_forecast)  # (B, D, 1)
-            renewable_encoded = renewable_encoded.squeeze(-1)  # (B, D)
-            encoded_parts.append(renewable_encoded)
-
-        # ============================================
-        # 3. Process Grid Features
-        # ============================================
-        if OBS_KEY_GRID_IMPORT_COSTS in observations:
-            grid_features = torch.cat(
-                [
-                    observations[OBS_KEY_GRID_IMPORT_COSTS],
-                    observations[OBS_KEY_GRID_IMPORT_POWER],
-                    observations[OBS_KEY_GRID_EXPORT_COSTS],
-                    observations[OBS_KEY_GRID_EXPORT_POWER],
-                ],
-                dim=-1,
-            )
-            grid_encoded = self.grid_encoder(grid_features)
-            encoded_parts.append(grid_encoded)
-
-        # ============================================
-        # 4. Process Scalar Features
-        # ============================================
-        scalar_features = []
-
-        if OBS_KEY_TIME_FEATURES in observations:
-            scalar_features.append(observations[OBS_KEY_TIME_FEATURES])
-        if OBS_KEY_FLEETS_IN_POWER in observations:
-            scalar_features.append(observations[OBS_KEY_FLEETS_IN_POWER])
-            scalar_features.append(observations[OBS_KEY_FLEETS_OUT_POWER])
-        if OBS_KEY_RENEWABLES_POWER in observations:
-            scalar_features.append(observations[OBS_KEY_RENEWABLES_POWER])
-        if OBS_KEY_STATIONARY_BATTERIES_SOC in observations:
-            scalar_features.append(observations[OBS_KEY_STATIONARY_BATTERIES_SOC])
-        if OBS_KEY_CONTROLLABLE_SOURCES_POWER in observations:
-            scalar_features.append(observations[OBS_KEY_CONTROLLABLE_SOURCES_POWER])
-        if OBS_KEY_FIXED_DEMANDS in observations:
-            scalar_features.append(observations[OBS_KEY_FIXED_DEMANDS])
-
-        if scalar_features:
-            scalar_cat = torch.cat(scalar_features, dim=-1)
-            scalar_encoded = self.scalar_encoder(scalar_cat)
-            encoded_parts.append(scalar_encoded)
-
-        combined = torch.cat(encoded_parts, dim=-1)
-        output = self.fusion(combined)
-
-        return output
-
-
-_DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
-    features_dim=256,
-    vehicle_embed_dim=64,
-    forecast_embed_dim=32,
-    use_attention=True,
-    num_attention_heads=4,
-)
-_DEFAULT_POLICY_KWARGS = dict(
-    features_extractor_class=StructuredEnergyExtractor,
-    features_extractor_kwargs=_DEFAULT_FEATURE_EXTRACTOR_KWARGS,
-)
-
-
 def train(
     algorithm: AgentAlgorithm,
     scenario_factory: _ScenarioFactoryT,
@@ -560,45 +352,20 @@ def create_trainable_agent(
     base_policy_path: Path | None = None,
 ) -> RevoletionSB3Agent:
     if config is None:
-        config = AgentConfig.default_for_algorithm(algorithm)
+        config = get_default_agent_config_for_algorithm(algorithm)
 
-    kwargs: dict[str, typing.Any] = {}
+    kwargs: dict[str, typing.Any] = config.as_dict()
     kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]
         action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=0.3 * np.ones(n_actions))
         kwargs["action_noise"] = action_noise
 
-    if algorithm in {AgentAlgorithm.SAC}:
-        kwargs["policy_kwargs"]["share_features_extractor"] = True
-        kwargs["use_sde"] = True
-        kwargs["sde_sample_freq"] = 4
-        kwargs["use_sde_at_warmup"] = True
-
-    if config.gradient_steps is not None:
-        kwargs["gradient_steps"] = config.gradient_steps
-
-    if config.train_freq is not None:
-        kwargs["train_freq"] = config.train_freq
-
-    if config.target_noise_clip is not None:
-        kwargs["target_noise_clip"] = config.target_noise_clip
-
-    if config.target_policy_noise is not None:
-        kwargs["target_policy_noise"] = config.target_policy_noise
-
-    if config.batch_size is not None:
-        kwargs["batch_size"] = config.batch_size
-
     sb3_type = get_sb3_type(algorithm)
     sb3_agent = sb3_type(
         "MultiInputPolicy",
         env=env,
-        learning_rate=config.learning_rate,
-        gamma=config.gamma,
-        seed=config.seed,
-        n_steps=config.n_steps,
-        tensorboard_log=config.tensorboard_log,
         verbose=1,
         **kwargs,
     )
@@ -695,100 +462,3 @@ class IdleAgent(RevoletionAgent):
 
         charge_pattern = np.zeros(num_cars)
         return charge_pattern * cars_available[:, 0]
-
-
-_BASE_TRACE_KEY = "revoletion"
-# _TRACE_KEY_DONE_COUNT = f"{_BASE_TRACE_KEY}/01_done_count"
-_TRACE_KEY_INFEASIBILITY_COUNT = f"{_BASE_TRACE_KEY}/02_infeasibility_count"
-# _TRACE_KEY_INFEASIBILITY_RATE = f"{_BASE_TRACE_KEY}/03_infeasibility_rate"
-# _TRACE_KEY_INFEASIBILITY = f"{_BASE_TRACE_KEY}/04_infeasibility_reward"
-_TRACE_KEY_REWARD = f"{_BASE_TRACE_KEY}/01_mean_step_reward"
-_TRACE_KEY_GRID_COST = f"{_BASE_TRACE_KEY}/02_grid_opex_reward"
-_TRACE_KEY_GEN_COST = f"{_BASE_TRACE_KEY}/03_gen_opex_reward"
-_TRACE_KEY_CHARGE_COST = f"{_BASE_TRACE_KEY}/04_charge_opex_reward"
-# _TRACE_KEY_EXT_CHARGE_COST = f"{_BASE_TRACE_KEY}/05_ext_charge_opex_reward"
-_TRACE_KEY_SOC_DIFF = f"{_BASE_TRACE_KEY}/06_soc_diff_reward"
-_TRACE_KEY_SOC_VIOLATIONS_COUNT = f"{_BASE_TRACE_KEY}/07_soc_violations_count"
-_TRACE_KEY_SOC_VIOLATIONS_RATE = f"{_BASE_TRACE_KEY}/08_soc_violations_rate"
-_TRACE_KEY_MEAN_SOC_VIOLATIONS = f"{_BASE_TRACE_KEY}/09_soc_violations_mean"
-_TRACE_KEY_POWER_DIFF = f"{_BASE_TRACE_KEY}/10_power_diff_reward"
-_TRACE_KEY_ATBASE_VIOLATION = f"{_BASE_TRACE_KEY}/11_atbase_violation_reward"
-
-
-_MOVING_AVERAGE_HORIZON = 500
-
-
-class _TracingCallback(BaseCallback):
-    def __init__(self, verbose=0):
-        super().__init__(verbose)
-
-        # self._done_count = 0
-        # self._infeasible_count = 0
-        self._soc_count = 0
-        self._soc_violation_count = 0
-
-        # self._status = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._reward = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._grid_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        # self._gen_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        # self._charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        # self._ext_charge_opex = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._soc_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._power_diff = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._infeasibility = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._soc_violation = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-        self._atbase_violation = collections.deque(maxlen=_MOVING_AVERAGE_HORIZON)
-
-    def _on_step(self) -> bool:
-        vec_infos = self.locals["infos"]
-        vec_dones = self.locals["dones"]
-        for infos, done in zip(vec_infos, vec_dones):
-            reward: RewardComponents = infos[INFO_KEY_REWARD_COMPONENTS]
-
-            self._reward.append(reward.total_reward)
-            self._grid_opex.append(reward.grid_opex_reward)
-            # self._gen_opex.append(reward.gen_opex_reward)
-            # self._charge_opex.append(reward.charge_opex_reward)
-            # self._ext_charge_opex.append(reward.ext_charge_opex_reward)
-            self._soc_diff.append(reward.soc_diff_reward)
-            self._power_diff.append(reward.power_diff_reward)
-            self._atbase_violation.append(reward.atbase_violation_reward)
-
-            self.logger.record(_TRACE_KEY_REWARD, sum(self._reward) / len(self._reward))
-            self.logger.record(_TRACE_KEY_GRID_COST, sum(self._grid_opex) / len(self._grid_opex))
-            # self.logger.record(_TRACE_KEY_GEN_COST, sum(self._gen_opex) / len(self._gen_opex))
-            # self.logger.record(_TRACE_KEY_CHARGE_COST, sum(self._charge_opex) / len(self._charge_opex))
-            # self.logger.record(_TRACE_KEY_EXT_CHARGE_COST, sum(self._ext_charge_opex) / len(self._ext_charge_opex))
-            self.logger.record(_TRACE_KEY_SOC_DIFF, sum(self._soc_diff) / len(self._soc_diff))
-            self.logger.record(_TRACE_KEY_POWER_DIFF, sum(self._power_diff) / len(self._power_diff))
-            self.logger.record(_TRACE_KEY_ATBASE_VIOLATION, sum(self._atbase_violation) / len(self._atbase_violation))
-
-            for soc_diff in reward.soc_diffs:
-                self._soc_count += 1
-                if soc_diff < 0.0:
-                    self._soc_violation.append(soc_diff)
-                    self.logger.record(
-                        _TRACE_KEY_MEAN_SOC_VIOLATIONS, sum(self._soc_violation) / len(self._soc_violation)
-                    )
-                    self._soc_violation_count += 1
-                    self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_COUNT, self._soc_violation_count)
-                self.logger.record(_TRACE_KEY_SOC_VIOLATIONS_RATE, self._soc_violation_count / self._soc_count)
-
-            if not done:
-                continue
-
-            # self._done_count += 1
-
-            if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
-                # self._status.append(1)
-                self._infeasible_count += 1
-                self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
-            #     self._infeasibility.append(reward.infeasibility_reward)
-            #     self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
-            # else:
-            #     self._status.append(0)
-
-            # self.logger.record(_TRACE_KEY_DONE_COUNT, self._done_count)
-            # self.logger.record(_TRACE_KEY_INFEASIBILITY_RATE, sum(self._status) / len(self._status))
-
-        return True
