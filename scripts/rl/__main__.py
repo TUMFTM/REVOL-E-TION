@@ -151,16 +151,18 @@ def train_imitation_bc(
         timestep=scenario.times.sim.timestep,
         duration=pd.Timedelta(duration),
     )
-    env = agent.build_rl_environment(scenario, imitation_horizon)
-    agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
-    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
 
     with open(trajectories_path, "rb") as f:
         trajectories = pickle.load(f)
 
+    breakpoint()
+
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
 
+    env = agent.build_rl_environment(scenario, imitation_horizon)
+    agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
+    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
     base_policy = base_agent._sb3_agent.policy
     imitation_learning.train_imitation_policy_bc(trajectories, env, base_policy, seed, n_epochs)
 

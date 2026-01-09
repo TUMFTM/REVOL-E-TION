@@ -44,10 +44,10 @@ class RewardConfig:
 
     penalty_scaling_infeasible: bool = False
 
-    penalty_factor_power_diff: float = 0.5
+    penalty_factor_power_diff: float = 1.0
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
-    penalty_factor_atbase_violation: float = 0.1
+    penalty_factor_atbase_violation: float = 1.0
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
     reward_factor_step: float = 0.0

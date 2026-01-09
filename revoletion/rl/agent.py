@@ -39,10 +39,7 @@ from .environment import (
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
-    features_dim=256,
-    vehicle_embed_dim=64,
-    forecast_embed_dim=32,
-    use_attention=True,
+    embed_dim=128,
     num_attention_heads=4,
 )
 _DEFAULT_POLICY_KWARGS = dict(
@@ -321,7 +318,7 @@ def train(
         env = make_vec_env(
             lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
         )
-    env = VecNormalize(env, training=True)
+    # env = VecNormalize(env, training=True)
 
     agent = create_trainable_agent(algorithm, env, config, base_policy_path)
 
