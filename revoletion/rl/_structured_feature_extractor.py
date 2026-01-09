@@ -74,27 +74,34 @@ class StructuredFeatureExtractor(BaseFeaturesExtractor):
 
         self.extractors = nn.ModuleDict(extractors)
 
-        self.vehicle_encoder = nn.Sequential(
-            nn.Linear(vehicle_dim, vehicle_dim * 2),
+        self.vehicle_proj0 = nn.Linear(vehicle_dim, embed_dim)
+
+        self.vehicle_encoder0 = nn.Sequential(
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, embed_dim * 2),
             nn.ReLU(),
-            nn.Linear(vehicle_dim * 2, embed_dim),
+            nn.LayerNorm(embed_dim * 2),
+            nn.Linear(embed_dim * 2, embed_dim),
             nn.ReLU(),
         )
 
+        self.vehicle_query = nn.Parameter(torch.randn(1, 1, embed_dim))
         self.vehicle_attention = nn.MultiheadAttention(
             embed_dim=embed_dim,
             num_heads=num_attention_heads,
             batch_first=True,
         )
 
+        self.fusion0 = nn.Sequential(
+            nn.LayerNorm(features_dim),
+            nn.Linear(features_dim, features_dim * 2),
+            nn.ReLU(),
+            nn.LayerNorm(features_dim * 2),
+            nn.Linear(features_dim * 2, features_dim),
+            nn.ReLU(),
+        )
+
     def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
-        encoded_parts = []
-
-        # Encode each key into one token
-        for key, extractor in self.extractors.items():
-            part = extractor(observations[key])
-            encoded_parts.append(part)
-
         vehicle_parts = []
         for key in _VEHICLE_FEATURES:
             part = observations[key]
@@ -104,10 +111,25 @@ class StructuredFeatureExtractor(BaseFeaturesExtractor):
                 vehicle_parts.append(part)
 
         vehicle_parts_tensor = torch.cat(vehicle_parts, dim=-1)
-        encoded_vehicle_parts = self.vehicle_encoder(vehicle_parts_tensor)
+        vehicle_parts_tensor = self.vehicle_proj0(vehicle_parts_tensor)
+        encoded_vehicle_parts = vehicle_parts_tensor + self.vehicle_encoder0(vehicle_parts_tensor)
 
-        vehicle_pooled = self.vehicle_attention(encoded_vehicle_parts, encoded_vehicle_parts, encoded_vehicle_parts)
+        batch_size = vehicle_parts_tensor.shape[0]
+        query = self.vehicle_query.expand(batch_size, -1, -1)
+        vehicle_pooled, _ = self.vehicle_attention(query, encoded_vehicle_parts, encoded_vehicle_parts)
+        vehicle_pooled = vehicle_pooled.squeeze(dim=1)
 
-        encoded_parts.append(vehicle_pooled)
+        global_parts = []
 
-        return torch.cat(encoded_parts, dim=1)
+        # Encode each key into one token
+        for key, extractor in self.extractors.items():
+            part = extractor(observations[key])
+            global_parts.append(part)
+
+        global_parts.append(vehicle_pooled)
+
+        encoded_parts_tensor = torch.cat(global_parts, dim=1)
+
+        encoded_parts_tensor = encoded_parts_tensor + self.fusion0(encoded_parts_tensor)
+
+        return encoded_parts_tensor

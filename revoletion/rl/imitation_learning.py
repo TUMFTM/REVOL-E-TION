@@ -260,16 +260,26 @@ class ImitationTrajectoryComputer:
         # Otherwise we would need to create new scenarios for each episode which might
         # result in a heavy performance overhead.
         for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            block.states.loc[episode_horizon.start, "soc_min"] = np.clip(
-                block.states.loc[episode_horizon.start, "soc_min"]
-                + self._config.soc_min
-                + self._config.envelope_soc_padding,
-                0.0,
-                1.0,
+            nom_capacity_wh = block.sizes["storage"].preexisting
+            eff_charge = block.eff["chg_int"]
+            max_charge_power_w = block.pwr_chg_max * eff_charge
+
+            buffered_max_charge_power_w = max_charge_power_w * self._config.envelope_max_charge_buffer
+
+            # Determine a smoothed out dsoc step that is used for the SoC envelope computation.
+            # This gives the optimizer a bit more freedom and reduces the number of infeasibilities.
+            dsoc_step = (buffered_max_charge_power_w * episode_horizon.timestep.hours) / nom_capacity_wh
+            soc_envelope = rl_utils.get_soc_envelope(
+                block, episode_horizon, dsoc_step, target_soc=self._config.envelope_target_soc
             )
+            # Apply some optional padding to the SoC envelope to encourage the agent to not fully discharge each vehicle.
+            buffered_soc_envelope = np.clip(
+                soc_envelope + self._config.soc_min + self._config.envelope_soc_padding, 0.0, 1.0
+            )
+
+            block.states.loc[episode_horizon.dti, "soc_min"] = buffered_soc_envelope
             initial_soc_min = block.states.loc[episode_horizon.start, "soc_min"]
-            soc_min = min(initial_soc_min + self._config.soc_min, 1.0)
-            initial_soc = soc_min + ((1.0 - soc_min) / 2)
+            initial_soc = initial_soc_min + ((1.0 - initial_soc_min) / 2)
             block.states.loc[episode_horizon.start, "soc"] = initial_soc
 
     def _apply_power_envelope_constraints(
@@ -323,22 +333,11 @@ class ImitationTrajectoryComputer:
             Array of target power unit charge values
         """
         # Extract block parameters
-        nom_capacity_wh = block.sizes["storage"].preexisting
         eff_charge = block.eff["chg_int"]
         max_charge_power_w = block.pwr_chg_max * eff_charge
-        buffered_max_charge_power_w = max_charge_power_w * self._config.envelope_max_charge_buffer
 
-        # Determine a smoothed out dsoc step that is used for the SoC envelope computation.
-        # This gives the optimizer a bit more freedom and reduces the number of infeasibilities.
-        dsoc_step = (buffered_max_charge_power_w * episode_horizon.timestep.hours) / nom_capacity_wh
-
-        soc_envelope = rl_utils.get_soc_envelope(
-            block, episode_horizon, dsoc_step, target_soc=self._config.envelope_target_soc
-        )
-        # Apply some optional padding to the SoC envelope to encourage the agent to not fully discharge each vehicle.
-        buffered_soc_envelope = np.clip(soc_envelope + self._config.envelope_soc_padding, 0.0, 1.0)
-
-        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, buffered_soc_envelope)
+        soc_envelope = block.states.loc[episode_horizon.dti, "soc_min"]
+        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, soc_envelope)
 
         target_power_unit = np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
         return target_power_unit
@@ -621,4 +620,4 @@ def train_imitation_policy_sqil(
     )
     base_agent.replay_buffer = replay_buffer
 
-    base_agent.learn(total_timesteps=train_timesteps, callback=agent.TrainingCallback)
+    base_agent.learn(total_timesteps=train_timesteps, callback=agent.TrainingCallback(verbose=1, stats_window_size=100))

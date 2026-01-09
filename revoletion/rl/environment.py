@@ -443,7 +443,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             adjusted_charge_power_fracs.update(adjustments)
 
         return adjusted_charge_power_fracs
-        # Calculate SoC deficits
 
     def _allocate_limited_charge_power(
         self,

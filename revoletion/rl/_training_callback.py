@@ -92,7 +92,7 @@ class TrainingCallback(BaseCallback):
             if infos[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
                 # self._status.append(1)
                 self._infeasible_count += 1
-                self.logger.record(_TRACE_KEY_INFEASIBILITY_COUNT, self._infeasible_count)
+                self.logger.record(self._trace_keys[_TRACE_KEY_INFEASIBILITY_COUNT], self._infeasible_count)
             #     self._infeasibility.append(reward.infeasibility_reward)
             #     self.logger.record(_TRACE_KEY_INFEASIBILITY, sum(self._infeasibility) / len(self._infeasibility))
             # else:

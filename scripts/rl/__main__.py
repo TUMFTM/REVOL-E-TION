@@ -155,8 +155,6 @@ def train_imitation_bc(
     with open(trajectories_path, "rb") as f:
         trajectories = pickle.load(f)
 
-    breakpoint()
-
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
 

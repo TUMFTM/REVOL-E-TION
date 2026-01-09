@@ -127,7 +127,7 @@ DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
     n_steps=256,  # sb3: 2028
     batch_size=64,  # sb3: 64
     use_sde=True,  # sb3: False
-    sde_sample_freq=4,  # sb3: None
+    sde_sample_freq=-1,  # sb3: None
 )
 DEFAULT_TD3_AGENT_CONFIG = OffPolicyAgentConfig(
     learning_rate=0.0001,
@@ -142,10 +142,10 @@ DEFAULT_SAC_AGENT_CONFIG = SACPolicyAgentConfig(
     learning_rate=0.0003,
     gamma=0.99,
     batch_size=256,
-    learning_starts=1_000,
+    learning_starts=None,
     buffer_size=50_000,
     use_sde=True,
-    sde_sample_freq=4,
+    sde_sample_freq=-1,
     ent_coef="auto",
     target_entropy="auto",
 )
@@ -352,7 +352,7 @@ def create_trainable_agent(
         config = get_default_agent_config_for_algorithm(algorithm)
 
     kwargs: dict[str, typing.Any] = config.as_dict()
-    kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+    # kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
 
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]
