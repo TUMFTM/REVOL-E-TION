@@ -39,8 +39,7 @@ from .environment import (
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
-    embed_dim=128,
-    num_attention_heads=4,
+    embed_dim=8,
 )
 _DEFAULT_POLICY_KWARGS = dict(
     features_extractor_class=StructuredFeatureExtractor,
@@ -258,7 +257,7 @@ def evaluate_with_agent(
             actions_map[efu].append(action)
 
     if info_dict[INFO_KEY_STATUS] == EnvironmentStepStatus.INFEASIBLE:
-        return total_reward, None
+        return total_reward, actions_map, None
 
     return total_reward, actions_map, info_dict.get(INFO_KEY_OPTIMIZATION_RESULT)
 
@@ -352,7 +351,7 @@ def create_trainable_agent(
         config = get_default_agent_config_for_algorithm(algorithm)
 
     kwargs: dict[str, typing.Any] = config.as_dict()
-    # kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+    kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
 
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]

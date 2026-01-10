@@ -13,6 +13,7 @@ from revoletion import scenario as scn
 
 from . import _context as context
 from . import _features as features
+from . import _forecast_provider as forecast_provider
 from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,8 +32,12 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_factor_dsoc: float = 250.0
+    penalty_base_dsoc: float = -5.0
+
+    penalty_factor_dsoc: float = 100.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
+
+    reward_base_dsoc: float = 1.0
 
     reward_factor_dsoc: float = 1.0
     """Weight of the reward for meeting a SoC requirement."""
@@ -44,8 +49,12 @@ class RewardConfig:
 
     penalty_scaling_infeasible: bool = False
 
+    penalty_base_power_diff: float = -0.5
+
     penalty_factor_power_diff: float = 1.0
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
+
+    penalty_base_atbase_violation: float = -1.0
 
     penalty_factor_atbase_violation: float = 1.0
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
@@ -86,7 +95,7 @@ class RewardComponents:
     ext_charge_opex: float = 0.0
     gen_opex: float = 0.0
     power_diffs: list[float] = field(default_factory=list)
-    atbase_violation: int = 0
+    atbase_violations: list[float] = field(default_factory=list)
     soc_diffs: list[float] = field(default_factory=list)
     infeasible: float = 0.0
     step: int = 0
@@ -114,13 +123,20 @@ class RewardComponents:
     @property
     def power_diff_reward(self) -> float:
         if len(self.power_diffs) == 0:
-            return 0
-        avg_power_diff = sum(self.power_diffs)
-        return -abs(avg_power_diff) * self.config.penalty_factor_power_diff
+            return 0.0
+
+        power_diff_sum = sum([abs(power_diff) for power_diff in self.power_diffs])
+        return self.config.penalty_base_power_diff + (-power_diff_sum * self.config.penalty_factor_power_diff)
 
     @property
     def atbase_violation_reward(self) -> float:
-        return -self.atbase_violation * self.config.penalty_factor_atbase_violation
+        if len(self.atbase_violations) == 0:
+            return 0.0
+
+        atbase_violations_sum = sum([abs(violation) for violation in self.atbase_violations])
+        return self.config.penalty_base_atbase_violation + (
+            -atbase_violations_sum * self.config.penalty_factor_atbase_violation
+        )
 
     @property
     def soc_diff_reward(self) -> float:
@@ -130,9 +146,9 @@ class RewardComponents:
         reward = 0.0
         for soc_diff in self.soc_diffs:
             if soc_diff < 0.0:
-                reward += (soc_diff - 1) * self.config.penalty_factor_dsoc
+                reward += self.config.penalty_base_dsoc + ((soc_diff - 1) * self.config.penalty_factor_dsoc)
             else:
-                reward += soc_diff * self.config.reward_factor_dsoc
+                reward += self.config.reward_base_dsoc + (soc_diff * self.config.reward_factor_dsoc)
 
         return reward
 
@@ -209,8 +225,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._logger = logger or logging.getLogger(__name__)
 
         self._ctx = context.Context(scenario=scenario, horizon=horizon)
+        limited_forecast_provider = forecast_provider.LimitedForecastProvider(
+            forecast_horizon=self._config.forecast_horizon
+        )
         self._feature_extractor = features.EnvironmentFeatureExtractor(
-            forecast_horizon=self._config.forecast_horizon, soc_min=self._config.soc_min
+            forecast_provider=limited_forecast_provider, soc_min=self._config.soc_min
         )
 
         self.action_space = gym.spaces.Box(
@@ -266,8 +285,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, self._ctx.horizon)
 
             initial_soc_min = soc_envelope[self._ctx.horizon.dti[0]]
-            soc_min = min(initial_soc_min + self._config.soc_min, 1.0)
-            initial_soc = soc_min + ((1.0 - soc_min) / 2)
+            buffered_initial_soc_min = min((initial_soc_min + self._config.soc_min) * 1.25, 1.0)
+
+            initial_soc = np.random.uniform(buffered_initial_soc_min, 1.0)
+
+            # initial_soc = soc_min + ((1.0 - soc_min) / 2)
             electric_fleet_unit_block.states.loc[self._ctx.horizon.dti[0], "soc"] = initial_soc
 
         opt_problem_config = optimization.OptimizationProblemConfig(
@@ -464,7 +486,8 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         for efu in efu_charging_requests.keys():
             current_soc = self._prev_obs[OBS_KEY_EFUS_SOC][self._ctx.get_efu_index(efu)]
             soc_envelope_horizon = self._ctx.horizon.cut(
-                self._ctx.step_idx, min(self._config.forecast_horizon, len(self._ctx.horizon) - self._ctx.step_idx - 1)
+                self._ctx.step_idx,
+                min(self._config.forecast_horizon, len(self._ctx.horizon) - self._ctx.step_idx - 1),
             )
             soc_envelope = rl_utils.get_soc_envelope(efu, soc_envelope_horizon)
             target_soc = soc_envelope[self.current_time_step]
@@ -531,13 +554,13 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self, block: blocks.ElectricFleetUnit, power_frac: float, reward: RewardComponents
     ) -> float:
         """Normalize the charge power to ensure it stays within the bounds of the energy system"""
+        power_frac = np.round(power_frac, self._config.power_precision)
         # If the EV is not present at the charger it cannot be charged.
         # However, the RL agent might still try to charge the EVs. To avoid an increased amount of infeasible scenarios,
         # the agent just receives a penalty and can continue.
         is_at_base = block.log.loc[self.current_time_step, "atbase"]
         if not is_at_base:
-            if np.round(power_frac, self._config.power_precision) != 0.0:
-                reward.atbase_violation += abs(power_frac)
+            reward.atbase_violations.append(power_frac)
             return 0.0
 
         timestep_h = self._ctx.horizon.timestep.hours

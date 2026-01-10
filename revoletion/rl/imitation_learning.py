@@ -30,6 +30,7 @@ from revoletion.rl import agent
 
 from . import _context as context
 from . import _features as features
+from . import _forecast_provider as forecast_provider
 from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -137,16 +138,16 @@ class ImitationTrajectoryComputer:
         worker_fn = functools.partial(self._compute_imitation_trajectories, scenario_or_factory)
 
         with multiprocessing.Manager() as manager:
-            self._total = manager.Value(int, 0)
-            self._num_power_envelope = manager.Value(int, 0)
+            # self._total = manager.Value(int, 0)
+            # self._num_power_envelope = manager.Value(int, 0)
 
             with manager.Pool(processes=n_procs) as pool:
                 trajectories_nested = pool.map(worker_fn, sub_horizons)
 
-            total = self._total.get()
-            num_power_envelope = self._num_power_envelope.get()
+            # total = self._total.get()
+            # num_power_envelope = self._num_power_envelope.get()
 
-        self.logger.info(f"Real envelope split: {num_power_envelope / total:.2f} ({total=}; {num_power_envelope=})")
+        # self.logger.info(f"Real envelope split: {num_power_envelope / total:.2f} ({total=}; {num_power_envelope=})")
 
         # Each worker returns a list of trajectories. These must be flattened.
         trajectories = [traj for sublist in trajectories_nested for traj in sublist]
@@ -248,7 +249,6 @@ class ImitationTrajectoryComputer:
 
         status, result = problem.solve()
         if status != optimization.OptimizationStatus.OPTIMAL:
-            breakpoint()
             self.logger.warning(f"Optimization for episode {episode_horizon.start} failed")
             return None
 
@@ -279,7 +279,10 @@ class ImitationTrajectoryComputer:
 
             block.states.loc[episode_horizon.dti, "soc_min"] = buffered_soc_envelope
             initial_soc_min = block.states.loc[episode_horizon.start, "soc_min"]
-            initial_soc = initial_soc_min + ((1.0 - initial_soc_min) / 2)
+            buffered_initial_soc_min = min(initial_soc_min * 1.1, 1.0)
+
+            initial_soc = np.random.uniform(buffered_initial_soc_min, 1.0)
+
             block.states.loc[episode_horizon.start, "soc"] = initial_soc
 
     def _apply_power_envelope_constraints(
@@ -308,14 +311,24 @@ class ImitationTrajectoryComputer:
 
             power_envelope = self._compute_power_envelope(block, episode_horizon)
             for time_step in episode_horizon.dti:
-                problem.set_input_power_unit(
-                    block,
-                    power_envelope[time_step],
-                    time_step,
-                    power_unit_buffer=self._config.envelope_power_unit_buffer,
-                )
-        self._total.set(self._total.get() + total)
-        self._num_power_envelope.set(self._num_power_envelope.get() + num_power_envelope)
+                target_power_unit = power_envelope[time_step]
+                if target_power_unit > 0.0:
+                    problem.set_input_power_unit(
+                        block,
+                        target_power_unit,
+                        time_step,
+                        power_unit_buffer=self._config.envelope_power_unit_buffer,
+                    )
+                else:
+                    problem.set_input_power_unit(
+                        block,
+                        0.0,
+                        time_step,
+                        power_unit_buffer=0.0,
+                    )
+
+        # self._total.set(self._total.get() + total)
+        # self._num_power_envelope.set(self._num_power_envelope.get() + num_power_envelope)
 
     def _should_apply_power_envelope(self) -> bool:
         """Determine if envelope should be applied to this block (random sampling)."""
@@ -359,8 +372,9 @@ class ImitationTrajectoryComputer:
         Returns:
             Tuple of (observations_buffer, actions_buffer)
         """
+        perfect_forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
         feature_extractor = features.EnvironmentFeatureExtractor(
-            forecast_horizon=self._config.forecast_horizon, soc_min=self._config.soc_min
+            perfect_forecast_provider, soc_min=self._config.soc_min
         )
 
         observations_buffer = []

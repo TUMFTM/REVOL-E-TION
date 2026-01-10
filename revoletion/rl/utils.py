@@ -10,7 +10,9 @@ def get_soc_envelope(
     dsoc_step: float | None = None,
     target_soc: float | None = None,
 ) -> pd.Series:
-    plugged = block.log.loc[horizon.dti, "atbase"]
+    dti = horizon.dti
+
+    plugged = block.log.loc[dti, "atbase"]
 
     nom_capacity_wh = block.sizes["storage"].preexisting
 
@@ -20,17 +22,17 @@ def get_soc_envelope(
     else:
         dsoc_step_max = dsoc_step
 
-    consumption = block.log.loc[horizon.dti, "consumption"] * horizon.timestep.hours
+    consumption = block.log.loc[dti, "consumption"] * horizon.timestep.hours
     # Need at least enough SoC to compensate standing loss.
     consumption += block.loss_rate_per_ts
 
     dsoc = consumption / nom_capacity_wh
 
-    soc_floor = pd.Series(0.0, index=horizon.dti, dtype=np.float64)
+    soc_floor = pd.Series(0.0, index=dti, dtype=np.float64)
 
     required_soc = target_soc or 0.0
 
-    for time_step in reversed(horizon.dti):
+    for time_step in reversed(dti):
         required_soc = min(required_soc + dsoc[time_step], 1.0)
 
         soc_floor[time_step] = required_soc

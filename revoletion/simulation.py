@@ -508,7 +508,8 @@ class ControlHorizon:
                 else:
                     real_actions_trace.append(action * efu.pwr_chg_max)
 
-            efu.states.loc[eval_horizon.dti, "target_power"] = np.array(real_actions_trace)
+            sub_horizon = eval_horizon.dti[0 : len(real_actions_trace)]
+            efu.states.loc[sub_horizon, "target_power"] = np.array(real_actions_trace)
 
         return optimization_result
 

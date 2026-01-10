@@ -5,6 +5,7 @@ import pandas as pd
 from revoletion import optimization
 
 from . import _context as context
+from . import _forecast_provider as forecast_provider
 from . import utils as rl_utils
 
 # Keys in the observation space for consistent access in custom agents.
@@ -28,8 +29,8 @@ OBS_KEY_FLEETS_OUT_POWER = "fleets_out_power"
 
 
 class EnvironmentFeatureExtractor:
-    def __init__(self, forecast_horizon: int, soc_min: float) -> None:
-        self._forecast_horizon = forecast_horizon
+    def __init__(self, forecast_provider: forecast_provider.ForecastProvider, soc_min: float) -> None:
+        self._forecast_provider = forecast_provider
         self._soc_min = soc_min
 
     def extract_all_features(
@@ -126,22 +127,15 @@ class EnvironmentFeatureExtractor:
                 cars_soc.append(soc)
                 cars_real_power_units.append(real_power_unit)
 
-                horizon = ctx.horizon.cut(
-                    ctx.step_idx, min(self._forecast_horizon, len(ctx.horizon) - ctx.step_idx - 1)
+                required_soc_forecast = self._forecast_provider.get_efu_required_soc_forecast(
+                    electric_fleet_unit_block, ctx.time, self._soc_min
                 )
-                soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, horizon) + self._soc_min
+                cars_required_socs.append(required_soc_forecast)
 
-                padded_soc_envelope = np.pad(
-                    soc_envelope.values,
-                    (0, self._forecast_horizon - len(soc_envelope.values)),
-                    constant_values=self._soc_min,
-                )
-                cars_required_socs.append(padded_soc_envelope)
-
-                soc_diff = soc - padded_soc_envelope[ctx.previous_time_step]
+                soc_diff = soc - required_soc_forecast[0]
                 cars_soc_diffs.append(soc_diff)
 
-                car_available = self._get_forecast(electric_fleet_unit_block.log["atbase"], ctx).astype(np.float32)
+                car_available = self._forecast_provider.get_efu_available_forecast(electric_fleet_unit_block, ctx.time)
                 cars_available.append(car_available)
 
         return {
@@ -162,10 +156,10 @@ class EnvironmentFeatureExtractor:
         grid_markets_export_cost = []
         grid_markets_export_power_unit = []
         for grid_market_block in ctx.grid_market_blocks:
-            import_cost = grid_market_block.evaluators["g2s"].opt.spec_ep_operation.loc[ctx.current_time_step]
+            import_cost = self._forecast_provider.get_grid_import_cost_forecast(grid_market_block, ctx.time)
             grid_markets_import_cost.append(import_cost)
 
-            export_cost = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.loc[ctx.current_time_step]
+            export_cost = self._forecast_provider.get_grid_export_cost_forecast(grid_market_block, ctx.time)
             grid_markets_export_cost.append(export_cost)
 
             if optimization_result is not None:
@@ -198,7 +192,9 @@ class EnvironmentFeatureExtractor:
         renewable_gens_power = []
         for renewable_source_block in ctx.renewable_source_blocks:
             max_renewable_gen = renewable_source_block.sizes["block"].preexisting
-            production_power_forecast = self._get_forecast(renewable_source_block.data["power_spec"], ctx)
+            production_power_forecast = self._forecast_provider.get_renewable_source_power_forecast(
+                renewable_source_block, ctx.time
+            )
             production_power_forecast_unit = production_power_forecast / max_renewable_gen
             clipped_production_power_unit_forecast = np.clip(production_power_forecast_unit, 0.0, 1.0)
             renewable_gens_schedule.append(clipped_production_power_unit_forecast)
@@ -256,12 +252,6 @@ class EnvironmentFeatureExtractor:
 
         return {OBS_KEY_STATIONARY_BATTERIES_SOC: np.array(socs, dtype=np.float32)}
 
-    def _get_forecast(self, time_series: pd.DataFrame, ctx: context.Context) -> np.ndarray:
-        forecast_horizon_dti = ctx.horizon.dti_extd[ctx.step_idx : ctx.step_idx + self._forecast_horizon]
-        forecast_values = time_series.loc[forecast_horizon_dti].values
-
-        return np.pad(forecast_values, (0, self._forecast_horizon - len(forecast_values)), constant_values=0.0)
-
     def get_observation_dict(self, ctx: context.Context) -> dict[str, gym.spaces.Box]:
         obs_dict = {
             # Time information like
@@ -277,14 +267,14 @@ class EnvironmentFeatureExtractor:
             OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_horizon),
+                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
                 dtype=np.float32,
             ),
             # A forecast for each vehicle, of its required SoC.
             OBS_KEY_EFUS_REQUIRED_SOCS: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_horizon),
+                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
                 dtype=np.float32,
             ),
             OBS_KEY_EFUS_REAL_POWER_UNIT: gym.spaces.Box(
@@ -308,7 +298,10 @@ class EnvironmentFeatureExtractor:
         }
         if ctx.has_grid_connection:
             obs_dict[OBS_KEY_GRID_IMPORT_COSTS] = gym.spaces.Box(
-                low=0.0, high=1.0, shape=(len(ctx.grid_market_blocks),), dtype=np.float32
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.grid_market_blocks), self._forecast_provider.forecast_horizon),
+                dtype=np.float32,
             )
 
             obs_dict[OBS_KEY_GRID_IMPORT_POWER] = gym.spaces.Box(
@@ -316,7 +309,10 @@ class EnvironmentFeatureExtractor:
             )
 
             obs_dict[OBS_KEY_GRID_EXPORT_COSTS] = gym.spaces.Box(
-                low=0.0, high=1.0, shape=(len(ctx.grid_market_blocks),), dtype=np.float32
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.grid_market_blocks), self._forecast_provider.forecast_horizon),
+                dtype=np.float32,
             )
 
             obs_dict[OBS_KEY_GRID_EXPORT_POWER] = gym.spaces.Box(
@@ -327,7 +323,7 @@ class EnvironmentFeatureExtractor:
             obs_dict[OBS_KEY_RENEWABLES_SCHEDULE] = gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(ctx.renewable_source_blocks), self._forecast_horizon),
+                shape=(len(ctx.renewable_source_blocks), self._forecast_provider.forecast_horizon),
                 dtype=np.float32,
             )
             obs_dict[OBS_KEY_RENEWABLES_POWER] = gym.spaces.Box(

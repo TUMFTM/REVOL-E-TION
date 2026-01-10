@@ -1,4 +1,3 @@
-from .utils import get_soc_envelope
 from .agent import (
     AgentAlgorithm,
     AgentConfig,
@@ -9,6 +8,7 @@ from .agent import (
     save_agent,
     train,
 )
+from .utils import get_soc_envelope
 
 __all__ = [
     "AgentAlgorithm",

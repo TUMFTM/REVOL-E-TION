@@ -6,10 +6,36 @@ from revoletion import blocks, utils
 from revoletion import scenario as scn
 
 
+class TimeContext:
+    def __init__(self, horizon: utils.TimeSettings) -> None:
+        self._step_idx = 0
+        self.horizon = horizon
+
+    @property
+    def step_idx(self) -> int:
+        return self._step_idx
+
+    @property
+    def current_time_step(self) -> pd.DatetimeIndex:
+        return self.horizon.dti_extd[self._step_idx]
+
+    @property
+    def previous_time_step(self) -> pd.DatetimeIndex:
+        return self.horizon.dti[max(self._step_idx - 1, 0)]
+
+    def reset(self, new_horizon: utils.TimeSettings | None = None) -> None:
+        self._step_idx = 0
+        if new_horizon is not None:
+            self.horizon = new_horizon
+
+    def step(self) -> None:
+        self._step_idx += 1
+
+
 class Context:
     def __init__(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None:
         self._block_registry = scenario.block_registry
-        self.horizon = horizon
+        self._time_ctx = TimeContext(horizon)
 
         self.electric_fleets = _collect_electric_fleets(scenario)
         self.electric_fleet_unit_blocks = [efu for efus in self.electric_fleets.values() for efu in efus]
@@ -37,26 +63,34 @@ class Context:
         self.fixed_demand_blocks = list(self._block_registry.get("FixedDemand", {}).values())
         self.has_fixed_demands = len(self.fixed_demand_blocks) > 0
 
-        self.step_idx = 0
-
     def get_efu_index(self, efu: blocks.ElectricFleetUnit) -> int:
         return self._efu_index[efu]
 
     @property
+    def time(self) -> TimeContext:
+        return self._time_ctx
+
+    @property
+    def horizon(self) -> utils.TimeSettings:
+        return self._time_ctx.horizon
+
+    @property
     def current_time_step(self) -> pd.DatetimeIndex:
-        return self.horizon.dti_extd[self.step_idx]
+        return self._time_ctx.current_time_step
 
     @property
     def previous_time_step(self) -> pd.DatetimeIndex:
-        return self.horizon.dti[max(self.step_idx - 1, 0)]
+        return self._time_ctx.previous_time_step
+
+    @property
+    def step_idx(self) -> int:
+        return self._time_ctx.step_idx
 
     def reset(self, new_horizon: utils.TimeSettings | None = None) -> None:
-        self.step_idx = 0
-        if new_horizon is not None:
-            self.horizon = new_horizon
+        self._time_ctx.reset(new_horizon)
 
     def step(self) -> None:
-        self.step_idx += 1
+        self._time_ctx.step()
 
 
 def _collect_electric_fleets(scenario: scn.Scenario) -> dict[blocks.Fleet, list[blocks.ElectricFleetUnit]]:
