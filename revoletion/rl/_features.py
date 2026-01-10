@@ -11,6 +11,7 @@ from . import utils as rl_utils
 OBS_KEY_TIME_FEATURES = "time_of_day"
 OBS_KEY_EFUS_AVAILABLE = "efus_available"
 OBS_KEY_EFUS_SOC = "efus_soc"
+OBS_KEY_EFUS_SOC_DIFF = "efus_soc_diff"
 OBS_KEY_EFUS_REQUIRED_SOCS = "efus_required_socs"
 OBS_KEY_EFUS_REAL_POWER_UNIT = "efus_real_power_unit"
 OBS_KEY_RENEWABLES_POWER = "renewables_power"
@@ -87,6 +88,7 @@ class EnvironmentFeatureExtractor:
         fleet_out_power_units = []
 
         cars_soc = []
+        cars_soc_diffs = []
         cars_real_power_units = []
         cars_required_socs = []
         cars_available = []
@@ -136,11 +138,15 @@ class EnvironmentFeatureExtractor:
                 )
                 cars_required_socs.append(padded_soc_envelope)
 
+                soc_diff = soc - padded_soc_envelope[ctx.previous_time_step]
+                cars_soc_diffs.append(soc_diff)
+
                 car_available = self._get_forecast(electric_fleet_unit_block.log["atbase"], ctx).astype(np.float32)
                 cars_available.append(car_available)
 
         return {
             OBS_KEY_EFUS_SOC: np.array(cars_soc, dtype=np.float32),
+            OBS_KEY_EFUS_SOC_DIFF: np.array(cars_soc_diffs, dtype=np.float32),
             OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
             OBS_KEY_EFUS_REAL_POWER_UNIT: np.array(cars_real_power_units, dtype=np.float32),
             OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
@@ -263,6 +269,9 @@ class EnvironmentFeatureExtractor:
             # The SoCs of the vehicles at the current time step.
             OBS_KEY_EFUS_SOC: gym.spaces.Box(
                 low=0.0, high=1.0, shape=(len(ctx.electric_fleet_unit_blocks),), dtype=np.float32
+            ),
+            OBS_KEY_EFUS_SOC_DIFF: gym.spaces.Box(
+                low=-1.0, high=1.0, shape=(len(ctx.electric_fleet_unit_blocks),), dtype=np.float32
             ),
             # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
             OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
