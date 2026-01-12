@@ -12,20 +12,29 @@ from . import utils as rl_utils
 OBS_KEY_TIME_FEATURES = "time_of_day"
 OBS_KEY_EFUS_AVAILABLE = "efus_available"
 OBS_KEY_EFUS_SOC = "efus_soc"
-OBS_KEY_EFUS_SOC_DIFF = "efus_soc_diff"
+OBS_KEY_EFUS_CURRENT_SOC_DIFF = "efus_soc_diff"
 OBS_KEY_EFUS_REQUIRED_SOCS = "efus_required_socs"
 OBS_KEY_EFUS_REAL_POWER_UNIT = "efus_real_power_unit"
+OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF = "efus_next_required_soc_diff"
+OBS_KEY_EFUS_AVAILABLE_NOW = "efus_avalable_now"
+OBS_KEY_EFUS_URGENCY = "efus_urgency"
+
+OBS_KEY_FLEETS_IN_POWER = "fleets_in_power"
+OBS_KEY_FLEETS_OUT_POWER = "fleets_out_power"
+
 OBS_KEY_RENEWABLES_POWER = "renewables_power"
 OBS_KEY_RENEWABLES_SCHEDULE = "renewables_schedule"
+
 OBS_KEY_FIXED_DEMANDS = "demands_schedule"
+
 OBS_KEY_GRID_IMPORT_COSTS = "grid_import_costs"
 OBS_KEY_GRID_IMPORT_POWER = "grid_import_power"
 OBS_KEY_GRID_EXPORT_COSTS = "grid_export_costs"
 OBS_KEY_GRID_EXPORT_POWER = "grid_export_power"
+
 OBS_KEY_STATIONARY_BATTERIES_SOC = "stationary_batteries_soc"
+
 OBS_KEY_CONTROLLABLE_SOURCES_POWER = "controllable_sources_power"
-OBS_KEY_FLEETS_IN_POWER = "fleets_in_power"
-OBS_KEY_FLEETS_OUT_POWER = "fleets_out_power"
 
 
 class EnvironmentFeatureExtractor:
@@ -88,11 +97,15 @@ class EnvironmentFeatureExtractor:
         fleet_in_power_units = []
         fleet_out_power_units = []
 
-        cars_soc = []
-        cars_soc_diffs = []
-        cars_real_power_units = []
-        cars_required_socs = []
-        cars_available = []
+        efus_soc = []
+        efus_current_soc_diff = []
+        efus_next_required_soc_diff = []
+        efus_urgency = []
+        efus_available_now = []
+
+        efus_real_power_unit = []
+        efus_required_soc = []
+        efus_available_forecast = []
 
         for fleet_block, electric_fleet_unit_blocks in ctx.electric_fleets.items():
             if optimization_result is not None:
@@ -124,26 +137,48 @@ class EnvironmentFeatureExtractor:
                     out_power_frac = power_flow["out"] / electric_fleet_unit_block.pwr_dis_max
                     in_power_frac = power_flow["in"] / electric_fleet_unit_block.pwr_chg_max
                     real_power_unit = in_power_frac if in_power_frac > 0 else -out_power_frac
-                cars_soc.append(soc)
-                cars_real_power_units.append(real_power_unit)
+                efus_soc.append(soc)
+                efus_real_power_unit.append(real_power_unit)
 
                 required_soc_forecast = self._forecast_provider.get_efu_required_soc_forecast(
                     electric_fleet_unit_block, ctx.time, self._soc_min
                 )
-                cars_required_socs.append(required_soc_forecast)
+                efus_required_soc.append(required_soc_forecast)
 
                 soc_diff = soc - required_soc_forecast[0]
-                cars_soc_diffs.append(soc_diff)
+                efus_current_soc_diff.append(soc_diff)
 
-                car_available = self._forecast_provider.get_efu_available_forecast(electric_fleet_unit_block, ctx.time)
-                cars_available.append(car_available)
+                efu_available_forecast = self._forecast_provider.get_efu_available_forecast(
+                    electric_fleet_unit_block, ctx.time
+                )
+                efus_available_forecast.append(efu_available_forecast)
+                efu_available_now = efu_available_forecast[0]
+                efus_available_now.append(efu_available_now)
+                if efu_available_now == 1.0:
+                    efu_unavailable_indices = np.where(efu_available_forecast == 0.0)[0]
+                    efu_next_departure_idx = (
+                        efu_unavailable_indices[0]
+                        if len(efu_unavailable_indices) > 0
+                        else len(efu_available_forecast) - 1
+                    )
+                    efu_urgency = 1.0 - (efu_next_departure_idx / (len(efu_available_forecast) - 1))
+                else:
+                    efu_next_departure_idx = -1
+                    efu_urgency = 0.0
+                efus_urgency.append(efu_urgency)
+
+                required_soc_diff = soc - required_soc_forecast[efu_next_departure_idx]
+                efus_next_required_soc_diff.append(required_soc_diff)
 
         return {
-            OBS_KEY_EFUS_SOC: np.array(cars_soc, dtype=np.float32),
-            OBS_KEY_EFUS_SOC_DIFF: np.array(cars_soc_diffs, dtype=np.float32),
-            OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
-            OBS_KEY_EFUS_REAL_POWER_UNIT: np.array(cars_real_power_units, dtype=np.float32),
-            OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
+            OBS_KEY_EFUS_SOC: np.array(efus_soc, dtype=np.float32),
+            OBS_KEY_EFUS_CURRENT_SOC_DIFF: np.array(efus_current_soc_diff, dtype=np.float32),
+            OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF: np.array(efus_next_required_soc_diff, dtype=np.float32),
+            OBS_KEY_EFUS_AVAILABLE_NOW: np.array(efus_available_now, dtype=np.float32),
+            OBS_KEY_EFUS_URGENCY: np.array(efus_urgency, dtype=np.float32),
+            # OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
+            OBS_KEY_EFUS_REAL_POWER_UNIT: np.array(efus_real_power_unit, dtype=np.float32),
+            # OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
             OBS_KEY_FLEETS_IN_POWER: np.array(fleet_in_power_units, dtype=np.float32),
             OBS_KEY_FLEETS_OUT_POWER: np.array(fleet_out_power_units, dtype=np.float32),
         }
@@ -260,25 +295,43 @@ class EnvironmentFeatureExtractor:
             OBS_KEY_EFUS_SOC: gym.spaces.Box(
                 low=0.0, high=1.0, shape=(len(ctx.electric_fleet_unit_blocks),), dtype=np.float32
             ),
-            OBS_KEY_EFUS_SOC_DIFF: gym.spaces.Box(
+            OBS_KEY_EFUS_CURRENT_SOC_DIFF: gym.spaces.Box(
                 low=-1.0, high=1.0, shape=(len(ctx.electric_fleet_unit_blocks),), dtype=np.float32
             ),
-            # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
-            OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
+            OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
-                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
+                shape=(len(ctx.electric_fleet_unit_blocks),),
+                dtype=np.float32,
+            ),
+            # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
+            # OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
+            #     low=0.0,
+            #     high=1.0,
+            #     shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
+            #     dtype=np.float32,
+            # ),
+            OBS_KEY_EFUS_AVAILABLE_NOW: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.electric_fleet_unit_blocks),),
+                dtype=np.float32,
+            ),
+            OBS_KEY_EFUS_URGENCY: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.electric_fleet_unit_blocks),),
                 dtype=np.float32,
             ),
             # A forecast for each vehicle, of its required SoC.
-            OBS_KEY_EFUS_REQUIRED_SOCS: gym.spaces.Box(
-                low=0.0,
-                high=1.0,
-                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
-                dtype=np.float32,
-            ),
+            # OBS_KEY_EFUS_REQUIRED_SOCS: gym.spaces.Box(
+            #     low=0.0,
+            #     high=1.0,
+            #     shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
+            #     dtype=np.float32,
+            # ),
             OBS_KEY_EFUS_REAL_POWER_UNIT: gym.spaces.Box(
-                low=0.0,
+                low=-1.0,
                 high=1.0,
                 shape=(len(ctx.electric_fleet_unit_blocks),),
                 dtype=np.float32,

@@ -351,7 +351,7 @@ def create_trainable_agent(
         config = get_default_agent_config_for_algorithm(algorithm)
 
     kwargs: dict[str, typing.Any] = config.as_dict()
-    kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+    # kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
 
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]

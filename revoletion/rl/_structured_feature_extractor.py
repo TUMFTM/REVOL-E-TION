@@ -8,11 +8,12 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from ._features import (
     OBS_KEY_CONTROLLABLE_SOURCES_POWER,
-    OBS_KEY_EFUS_AVAILABLE,
+    OBS_KEY_EFUS_AVAILABLE_NOW,
+    OBS_KEY_EFUS_CURRENT_SOC_DIFF,
+    OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF,
     OBS_KEY_EFUS_REAL_POWER_UNIT,
-    OBS_KEY_EFUS_REQUIRED_SOCS,
     OBS_KEY_EFUS_SOC,
-    OBS_KEY_EFUS_SOC_DIFF,
+    OBS_KEY_EFUS_URGENCY,
     OBS_KEY_FIXED_DEMANDS,
     OBS_KEY_FLEETS_IN_POWER,
     OBS_KEY_FLEETS_OUT_POWER,
@@ -35,9 +36,12 @@ _SCALAR_FEATURES = {
 
 _VEHICLE_FEATURES = [
     OBS_KEY_EFUS_SOC,
-    OBS_KEY_EFUS_SOC_DIFF,
-    OBS_KEY_EFUS_AVAILABLE,
-    OBS_KEY_EFUS_REQUIRED_SOCS,
+    OBS_KEY_EFUS_CURRENT_SOC_DIFF,
+    OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF,
+    OBS_KEY_EFUS_AVAILABLE_NOW,
+    OBS_KEY_EFUS_URGENCY,
+    # OBS_KEY_EFUS_AVAILABLE,
+    # OBS_KEY_EFUS_REQUIRED_SOCS,
     OBS_KEY_EFUS_REAL_POWER_UNIT,
 ]
 
@@ -112,6 +116,5 @@ class StructuredFeatureExtractor(BaseFeaturesExtractor):
             global_parts.append(part)
 
         encoded_parts_tensor = torch.cat(global_parts, dim=1)
-        breakpoint()
 
         return encoded_parts_tensor
