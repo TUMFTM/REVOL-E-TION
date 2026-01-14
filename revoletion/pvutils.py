@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import pathlib
+
 import pandas as pd
 import pvlib
 import requests
@@ -62,7 +63,7 @@ def get_pvgis_from_api(
     pvtechchoice: str = "crystSi",
     mountingplace: str = "free",
     save: pathlib.Path = None,
-    scenario: "revoletion.simulation.Scenario" = None,
+    scenario: "revoletion.simulation.Scenario" = None,  # noqa: F821 # type: ignore
 ):
     shift = calc_pvgis_shift(
         time_start=time_start,
@@ -137,7 +138,7 @@ def get_solcast_from_api(
     azimuth: float = None,
     tilt: float = None,
     save: pathlib.Path = False,
-    scenario: "revoletion.simulation.Scenario" = None,
+    scenario: "revoletion.simulation.Scenario" = None,  # type: ignore  # noqa: F821
 ):
     if time_end - time_start > pd.Timedelta(days=31):
         raise NotImplementedError("Solcast API only supports 31 days at a time")
