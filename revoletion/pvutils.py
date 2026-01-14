@@ -1,8 +1,51 @@
 #!/usr/bin/env python3
 
+import pathlib
 import pandas as pd
 import pvlib
 import requests
+
+
+def calc_pvgis_shift(
+    time_start: pd.Timestamp,
+    time_end: pd.Timestamp,
+    scenario=None,
+):
+    """
+    Calculate the necessary shift (integer) in years for a request to comply with PVGIS limitations.
+
+    :param time_start: Start time of the request (tz aware)
+    :type time_start: pd.Timestamp
+    :param time_end: End time of the request (tz aware)
+    :type time_end: pd.Timestamp
+    """
+
+    scn_startyear = time_start.tz_convert("utc").year
+    scn_endyear = time_end.tz_convert("utc").year
+
+    PVGIS_MAX_YEAR = 2023
+    PVGIS_MIN_YEAR = 2005
+
+    shift = 0
+
+    if (scn_endyear - scn_startyear) > (PVGIS_MAX_YEAR - PVGIS_MIN_YEAR):
+        raise ValueError("PVGIS API request exceeds maximum length of available data")
+    elif scn_endyear > PVGIS_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
+        shift = PVGIS_MAX_YEAR - scn_endyear
+        if scenario is not None:
+            scenario.logger.warning(
+                f"PVGIS API request exceeds available endtime - request shifted by "
+                f"{shift} year{'s' if abs(shift != 1) else ''}"
+            )
+    elif scn_startyear < PVGIS_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
+        shift = scn_startyear - PVGIS_MAX_YEAR
+        if scenario is not None:
+            scenario.logger.warning(
+                f"PVGIS API request exceeds available starttime - request shifted by "
+                f"{shift} year{'s' if abs(shift != 1) else ''}"
+            )
+
+    return shift
 
 
 def get_pvgis_from_api(
@@ -10,69 +53,48 @@ def get_pvgis_from_api(
     longitude: float,
     time_start: pd.Timestamp,
     time_end: pd.Timestamp,
-    shading: bool,
-    trackingtype: int,
-    scenario=None,
+    trackingtype: int = 0,
     azimuth: float = None,
     tilt: float = None,
     raddatabase: str = "PVGIS-SARAH3",
-    horizon=False,
-    horizon_custom=False,
+    use_horizon: bool = False,
+    horizon_custom: list = None,
     pvtechchoice: str = "crystSi",
+    mountingplace: str = "free",
+    save: pathlib.Path = None,
+    scenario: "revoletion.simulation.Scenario" = None,
 ):
-    scn_startyear = time_start.tz_convert("utc").year
-    scn_endyear = time_end.tz_convert("utc").year
-
-    PVGIS_MAX_YEAR = 2023
-    PVGIS_MIN_YEAR = 2005
-
-    req_shift_yrs = 0
-
-    if (scn_endyear - scn_startyear) > (PVGIS_MAX_YEAR - PVGIS_MIN_YEAR):
-        raise ValueError("PVGIS API request exceeds maximum length of available data")
-    elif scn_endyear > PVGIS_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-        req_shift_yrs = PVGIS_MAX_YEAR - scn_endyear
-        if scenario is not None:
-            scenario.logger.warning(
-                f"PVGIS API request exceeds available endtime - request shifted by "
-                f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
-            )
-    elif scn_startyear < PVGIS_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-        req_shift_yrs = scn_startyear - PVGIS_MAX_YEAR
-        if scenario is not None:
-            scenario.logger.warning(
-                f"PVGIS API request exceeds available starttime - request shifted by "
-                f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
-            )
-
-    req_startyear = scn_startyear + req_shift_yrs
-    req_endyear = scn_endyear + req_shift_yrs
+    shift = calc_pvgis_shift(
+        time_start=time_start,
+        time_end=time_end,
+        scenario=scenario,
+    )
 
     optimal_tilt = True if tilt is None else False
     optimal_angles = True if azimuth is None else False
+
     if optimal_angles and not optimal_tilt:
         raise ValueError("Optimal azimuth requires optimal tilt as well")
 
-    data, *_ = pvlib.iotools.get_pvgis_hourly(
+    data, _ = pvlib.iotools.get_pvgis_hourly(
         latitude=latitude,
         longitude=longitude,
-        start=req_startyear,
-        end=req_endyear,
+        start=time_start.tz_convert("utc").year + shift,
+        end=time_end.tz_convert("utc").year + shift,
         # PVGIS API is case-sensitive and REVOL-E-TION inputs are lowered -> revert
         raddatabase=raddatabase,
         components=True,  # output solar radiation components (beam, diffuse, and reflected)
         surface_tilt=tilt if tilt is not None else 0,  # has to be numeric
         surface_azimuth=azimuth if azimuth is not None else 0,  # has to be numeric
         outputformat="json",
-        usehorizon=horizon,
+        usehorizon=use_horizon,
         userhorizon=horizon_custom,
         pvcalculation=True,
-        peakpower=1,
-        # PVGIS API is case sensitive and all inputs are lowered -> revert
+        peakpower=1,  # for specific power
         pvtechchoice=pvtechchoice,
-        mountingplace=self.mountingplace,
+        mountingplace=mountingplace,
         loss=0,
-        trackingtype=self.trackingtype,
+        trackingtype=trackingtype,
         optimal_surface_tilt=optimal_tilt,
         optimalangles=optimal_angles,
         url="https://re.jrc.ec.europa.eu/api/v5_3/",
@@ -80,10 +102,27 @@ def get_pvgis_from_api(
         timeout=30,  # default value
     )
 
-    self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+    if save is not None:
+        data.to_csv(save, index=False)
 
-    self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
-    self.data.index = self.data.index - pd.DateOffset(years=req_shift_yrs)
+    return data
+
+
+def calc_specific_power_from_pvgis(
+    data: pd.DataFrame,
+    time_start: pd.Timestamp,
+    time_end: pd.Timestamp,
+):
+    shift = calc_pvgis_shift(
+        time_start=time_start,
+        time_end=time_end,
+    )
+
+    data.rename(columns={"wind_speed": "speed_wind", "P": "power_spec"}, inplace=True)
+    data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
+    data.index = data.index - pd.DateOffset(years=shift)
+
+    return data
 
 
 def get_solcast_from_api(
@@ -92,11 +131,12 @@ def get_solcast_from_api(
     longitude: float,
     time_start: pd.Timestamp,
     time_end: pd.Timestamp,
-    shading: bool,
-    trackingtype: int,
-    scenario=None,
+    use_horizon: bool = True,
+    trackingtype: int = 0,
     azimuth: float = None,
     tilt: float = None,
+    save: pathlib.Path = False,
+    scenario: "revoletion.simulation.Scenario" = None,
 ):
     if (api_key is None) and (scenario is not None):
         raise ValueError(f"Scenario {scenario.name}: no Solcast API key specified")
@@ -142,7 +182,7 @@ def get_solcast_from_api(
         array_type={0: "fixed", 1: "horizontal_single_axis"}[trackingtype],
         time_zone="utc",
         include_etadata=False,
-        terrain_shading=shading,
+        terrain_shading=use_horizon,
     )
 
     if tilt is not None:
@@ -164,7 +204,12 @@ def get_solcast_from_api(
             f"{response.json()['response_status']['message']}"
         )
 
-    return pd.json_normalize(response.json()["estimated_actuals"])
+    data = pd.json_normalize(response.json()["estimated_actuals"])
+
+    if save is not None:
+        data.to_csv(save, index=False)
+
+    return data
 
 
 def calc_specific_power_from_solcast(
@@ -172,8 +217,8 @@ def calc_specific_power_from_solcast(
     latitude: float,
     longitude: float,
     timezone: str,
-    azimuth: float,
-    tilt: float,
+    azimuth: float = None,
+    tilt: float = None,
 ) -> pd.DataFrame:
     """
     Calculate potential PV array power from Solcast data considering actual tilt and azimuth.
@@ -183,8 +228,8 @@ def calc_specific_power_from_solcast(
     latitude: location latitude in decimal degrees north of equator. South is negative
     longitude: loaction longitude in decimal degrees east of prime meridian
     timezone: location timezone in string format, e.g. "Europe/Berlin"
-    azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270)
-    tilt: panel tilt in degrees up from horizontal
+    azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270), default None is optimum
+    tilt: panel tilt in degrees up from horizontal, default None is optimum
 
     Algorithm and parameters (cSi panels) as per
     - Huld T., Friesen G., Skoczek A., Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for
@@ -198,6 +243,12 @@ def calc_specific_power_from_solcast(
     data.drop(columns=["period", "weather_type", "period_end"], inplace=True)  # string columns
     data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
     data = data.tz_convert(timezone)
+
+    if azimuth is None:
+        azimuth = 0 if latitude < 0 else 180
+
+    if tilt is None:
+        tilt = abs(latitude)
 
     solar_position = pvlib.location.Location(
         latitude=latitude,
@@ -239,11 +290,11 @@ def calc_specific_power_from_solcast(
         u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
     )
 
-    power_spec = pvlib.pvarray.huld(
+    data["power_spec"] = pvlib.pvarray.huld(
         effective_irradiance=gti_eff,
         temp_mod=temp_module,
         pdc0=1.0,  # for specific power
         cell_type="cSi",
     ).clip(lower=0)
 
-    return power_spec
+    return data

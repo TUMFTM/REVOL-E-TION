@@ -11,13 +11,12 @@ import numpy as np
 import oemof.solph as solph
 import pandas as pd
 import pvlib
-import requests
 import windpowerlib
 from typing_extensions import override
 
 from revoletion import battery as bat
 from revoletion import economics as eco
-from revoletion import mobility, utils
+from revoletion import mobility, pvutils, utils
 
 if TYPE_CHECKING:
     from revoletion import simulation
@@ -580,17 +579,22 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
+        path_input_file = (
+            self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
+            if "file" in self.data_source
+            else None
+        )
+
         if self.data_source == "pvgis api":
-            self.data = self.get_pvgis_from_api(
+            self.data = pvutils.get_pvgis_from_api(
                 latitude=self.scenario.location.latitude,
                 longitude=self.scenario.location.longitude,
-                time_start="",
-                time_end="",
-                shading="",
-                trackingtype="",
+                time_start=self.scenario.times.sim.start,
+                time_end=self.scenario.times.sim.end_extd,
+                trackingtype=0,
                 scenario=self.scenario,
                 raddatabase=self.raddatabase.upper(),
-                horizon=self.horizon,
+                use_horizon=True if self.horizon is not None else False,
                 horizon_custom=self.horizon,
                 pvtechchoice={
                     "crystsi": "crystSi",
@@ -598,29 +602,49 @@ class PVSource(RenewableSource):
                     "cdte": "CdTe",
                     "unknown": "Unknown",
                 }[self.pvtechchoice],
+                mountingplace=self.mountingplace,
+                save=False,
             )
 
         elif self.data_source == "solcast api":
-            self.data = self.get_solcast_from_api(
+            self.data = pvutils.get_solcast_from_api(
                 api_key=self.scenario.settings.key_solcast_api,
                 latitude=self.scenario.location.latitude,
                 longitude=self.scenario.location.longitude,
                 time_start=self.scenario.times.sim.start,
-                time_end=max(self.scenario.times.sim.dti_extd),
-                shading=self.horizon,
+                time_end=self.scenario.times.sim.end_extd,
+                use_horizon=self.horizon,
                 trackingtype=self.trackingtype,
+                save=self.scenario.paths.create_result_path(
+                    suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
+                )
+                if not self.scenario.settings.largescalemode
+                else None,
             )
 
-            # save solcast data as file
-            if not self.scenario.settings.largescalemode:
-                self.data.to_csv(
-                    self.scenario.paths.create_result_path(
-                        suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
-                    ),
-                    index=False,
-                )
+        elif self.data_source == "file":
+            self.data = utils.read_timeseries_csv(
+                path_input_file=path_input_file,
+                scenario=self.scenario,
+                multiheader=False,
+                resampling=False,
+            )
 
-            self.data["power_spec"] = self.calc_specific_power_from_solcast(
+        elif self.data_source == "pvgis file":
+            self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
+            if (self.scenario.location.latitude != meta["inputs"]["latitude"]) or (
+                self.scenario.location.longitude != meta["inputs"]["longitude"]
+            ):
+                self.scenario.logger.warning("PVGIS file location does not equal scenario location")
+
+        elif self.data_source == "solcast file":
+            self.data = pd.read_csv(path_input_file)
+
+        else:
+            raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified")
+
+        if "solcast" in self.data_source:
+            self.data = pvutils.calc_specific_power_from_solcast(
                 data=self.data,
                 latitude=self.scenario.location.latitude,
                 longitude=self.scenario.location.longitude,
@@ -629,64 +653,15 @@ class PVSource(RenewableSource):
                 tilt=self.tilt,
             )
 
-        elif "file" in self.data_source:
-            path_input_file = self.scenario.paths.input / utils.set_extension(
-                filename=self.filename, default_extension=".csv"
+        elif "pvgis" in self.data_source:
+            self.data = pvutils.calc_specific_power_from_pvgis(
+                data=self.data,
+                time_start=self.scenario.times.sim.start,
+                time_end=self.scenario.times.sim.end_extd,
             )
 
-            if self.data_source == "file":
-                self.data = utils.read_timeseries_csv(
-                    path_input_file=path_input_file,
-                    scenario=self.scenario,
-                    multiheader=False,
-                    resampling=False,
-                )
-
-            elif self.data_source == "pvgis file":
-                self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                if (self.scenario.location.latitude != meta["inputs"]["latitude"]) or (
-                    self.scenario.location.longitude != meta["inputs"]["longitude"]
-                ):
-                    self.scenario.logger.warning("PVGIS file location does not equal scenario location")
-                self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-                self.data.index = self.data.index.round("h")  # PVGIS does not necessarily give full hour time vals
-
-            elif self.data_source == "solcast file":
-                self.data = pd.read_csv(path_input_file)
-
-                if self.azimuth is None:
-                    azimuth = 0 if self.scenario.location.latitude < 0 else 180
-                else:
-                    azimuth = self.azimuth
-                if self.tilt is None:
-                    tilt = abs(self.scenario.location.latitude)
-                else:
-                    tilt = self.tilt
-
-                self.data["power_spec"] = self.calc_specific_power_from_solcast(
-                    data=self.data,
-                    latitude=self.scenario.location.latitude,
-                    longitude=self.scenario.location.longitude,
-                    timezone=self.scenario.location.timezone,
-                    azimuth=azimuth,
-                    tilt=tilt,
-                )
-
-            else:
-                raise ValueError(
-                    f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified"
-                )
-
-        # region resample, localize, and transform data
-        # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
-        if "power_spec" not in self.data.columns:
-            self.data["power_spec"] = self.data["P"] / 1e3
-        # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
         self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
-        # convert to local time
         self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
-
-        # only keep relevant columns and timestamps
         self.data = self.data.loc[self.scenario.times.sim.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
         # endregion
 

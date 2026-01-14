@@ -209,7 +209,10 @@ def set_extension(filename: Path | str, default_extension: str = ".csv") -> Path
     """
     Add a default extension to a filename if none is given. If the filename already has an extension, it is kept.
     """
-    return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
+    if filename is None:
+        return None
+    else:
+        return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
 
 
 UNKNOWN_VERSION = "unknown"

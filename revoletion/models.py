@@ -403,11 +403,11 @@ class PVSourceModel(RevoletionBaseModel):
     )
     horizon: bool = Field(
         title="Consideration of a horizon",
-        description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 150m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
+        description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 90m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
     )
     horizon_custom: list[float] | None = Field(
         title="User horizon",
-        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
+        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API'.",
         json_schema_extra={
             "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None'
         },
