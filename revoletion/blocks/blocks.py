@@ -580,190 +580,38 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
-        def calc_power_from_irradiation():
-            """
-            pre scenario (init) method
-            calculate PV potential output power from insolation and weather data
-            function is necessary for solcast input that does not contain power data
-            """
-
-            u0 = 26.9  # W/(˚C.m2) - cSi Free standing
-            u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-            mod_temp = self.data["temp_air"] + (self.data["gti"] / (u0 + (u1 * self.data["speed_wind"])))
-
-            # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
-            # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
-            # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
-            k1 = -0.017237
-            k2 = -0.040465
-            k3 = -0.004702
-            k4 = 0.000149
-            k5 = 0.000170
-            k6 = 0.000005
-            g = self.data["gti"] / 1000
-            t = mod_temp - 25
-            lng = np.zeros_like(g)
-            lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
-
-            # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
-            # Prog. Photovolt. Res. Appl.2008, 16, 307–315
-            eff_rel = 1 + (k1 * lng) + (k2 * (lng**2)) + (k3 * t) + (k4 * t * lng) + (k5 * t * (lng**2)) + (k6 * (t**2))
-            eff_rel = eff_rel.fillna(0)
-
-            # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-            self.data["P"] = np.maximum(0, eff_rel * self.data["gti"])
-
-        # region get data from PVGIS API
-        if self.data_source == "pvgis api":  # PVGIS API example selected
-            scn_startyear = self.scenario.times.sim.start.tz_convert("utc").year
-            scn_endyear = self.scenario.times.sim.end.tz_convert("utc").year
-
-            PVGIS_MAX_YEAR = 2023
-            PVGIS_MIN_YEAR = 2005
-
-            req_shift_yrs = 0
-
-            if (scn_endyear - scn_startyear) > (PVGIS_MAX_YEAR - PVGIS_MIN_YEAR):
-                raise ValueError("PVGIS API request exceeds maximum length of available data")
-            elif scn_endyear > PVGIS_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-                req_shift_yrs = PVGIS_MAX_YEAR - scn_endyear
-                self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available endtime - request shifted by "
-                    f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
-                )
-            elif scn_startyear < PVGIS_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-                req_shift_yrs = scn_startyear - PVGIS_MAX_YEAR
-                self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available starttime - request shifted by "
-                    f"{req_shift_yrs} year{'s' if abs(req_shift_yrs != 1) else ''}"
-                )
-
-            req_startyear = scn_startyear + req_shift_yrs
-            req_endyear = scn_endyear + req_shift_yrs
-
-            optimal_tilt = True if self.tilt == "optimal" else False
-            optimal_angles = True if self.azimuth == "optimal" else False
-            if optimal_angles and not optimal_tilt:
-                raise ValueError("Optimal azimuth requires optimal tilt as well")
-
-            self.data, *_ = pvlib.iotools.get_pvgis_hourly(
+        if self.data_source == "pvgis api":
+            self.data = self.get_pvgis_from_api(
                 latitude=self.scenario.location.latitude,
                 longitude=self.scenario.location.longitude,
-                start=req_startyear,
-                end=req_endyear,
-                # PVGIS API is case-sensitive and REVOL-E-TION inputs are lowered -> revert
+                time_start="",
+                time_end="",
+                shading="",
+                trackingtype="",
+                scenario=self.scenario,
                 raddatabase=self.raddatabase.upper(),
-                components=True,  # output solar radiation components (beam, diffuse, and reflected)
-                surface_tilt=self.tilt if self.tilt != "optimal" else 0,  # has to be numeric
-                surface_azimuth=self.azimuth if self.azimuth != "optimal" else 0,  # has to be numeric
-                outputformat="json",
-                usehorizon=self.horizon,
-                userhorizon=self.horizon_custom,
-                pvcalculation=True,
-                peakpower=1,
-                # PVGIS API is case sensitive and all inputs are lowered -> revert
+                horizon=self.horizon,
+                horizon_custom=self.horizon,
                 pvtechchoice={
                     "crystsi": "crystSi",
                     "cis": "CIS",
                     "cdte": "CdTe",
                     "unknown": "Unknown",
                 }[self.pvtechchoice],
-                mountingplace=self.mountingplace,
-                loss=0,
+            )
+
+        elif self.data_source == "solcast api":
+            self.data = self.get_solcast_from_api(
+                api_key=self.scenario.settings.key_solcast_api,
+                latitude=self.scenario.location.latitude,
+                longitude=self.scenario.location.longitude,
+                time_start=self.scenario.times.sim.start,
+                time_end=max(self.scenario.times.sim.dti_extd),
+                shading=self.horizon,
                 trackingtype=self.trackingtype,
-                optimal_surface_tilt=optimal_tilt,
-                optimalangles=optimal_angles,
-                url="https://re.jrc.ec.europa.eu/api/v5_3/",
-                map_variables=True,
-                timeout=30,  # default value
             )
 
-            # rename column wind_speed to speed_wind
-            self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-
-            self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
-            self.data.index = self.data.index - pd.DateOffset(years=req_shift_yrs)
-        # endregion
-
-        # region get data from Solcast API
-        elif self.data_source == "solcast api":  # solcast API example selected
-            # set api key as bearer token
-            if self.scenario.settings.key_solcast_api is None:
-                raise ValueError(
-                    f"Scenario {self.scenario.name} - Block {self.name}: No Solcast API key specified in run arguments"
-                )
-
-            latitude = self.scenario.location.latitude  # unmetered location for testing 41.89021
-            longitude = self.scenario.location.longitude  # unmetered location for testing 12.492231
-
-            # Avoid unintended use of metered coordinates
-            if latitude != 41.89021 or longitude != 12.492231:
-                raise ValueError("Remove this line if you want to proceed with metered coordinates!")
-
-            params = dict(
-                latitude=latitude,
-                longitude=longitude,
-                start=self.scenario.times.sim.start,
-                end=self.scenario.sim_extd_endtime,
-                period="PT5M",
-                output_parameters=[
-                    "air_temp",
-                    "albedo",
-                    "azimuth",
-                    "clearsky_dhi",
-                    "clearsky_dni",
-                    "clearsky_ghi",
-                    "clearsky_gti",
-                    "cloud_opacity",
-                    "dewpoint_temp",
-                    "dhi",
-                    "dni",
-                    "ghi",
-                    "gti",
-                    "precipitable_water",
-                    "precipitation_rate",
-                    "relative_humidity",
-                    "surface_pressure",
-                    "snow_depth",
-                    "snow_water_equivalent",
-                    "snow_soiling_rooftop",
-                    "snow_soiling_ground",
-                    "wind_direction_100m",
-                    "wind_direction_10m",
-                    "wind_speed_100m",
-                    "wind_speed_10m",
-                    "zenith",
-                ],
-                format="json",
-                array_type={0: "fixed", 1: "horizontal_single_axis"}[self.trackingtype],
-                time_zone="utc",
-                include_etadata=False,
-                terrain_shading=self.horizon,
-            )
-
-            # add parameters azimuth and tilt. If not specified, Solcast uses default/optimized values
-            if self.tilt != "optimal":
-                params["tilt"] = self.tilt
-            if self.azimuth != "optimal":
-                # Convert to Solcast convention: (-180, 180], north=0, east=-90, south=180, west=90
-                params["azimuth"] = x - 360 if (x := (-1 * self.azimuth) % 360) > 180 else x
-
-            # get data from Solcast API
-            response = requests.get(
-                url="https://api.solcast.com.au/data/historic/radiation_and_weather",
-                headers={"Authorization": f"Bearer {self.scenario.settings.key_solcast_api}"},
-                params=params,
-            )
-
-            if response.status_code != 200:
-                raise ValueError(
-                    f"Block {self.name} - "
-                    f"Solcast API returned {response.status_code} instead of 200: "
-                    f"{response.json()['response_status']['message']}"
-                )
-
-            self.data = pd.json_normalize(response.json()["estimated_actuals"])
-            # save solcast file
+            # save solcast data as file
             if not self.scenario.settings.largescalemode:
                 self.data.to_csv(
                     self.scenario.paths.create_result_path(
@@ -772,106 +620,57 @@ class PVSource(RenewableSource):
                     index=False,
                 )
 
-            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-            self.data["period_start"] = pd.to_datetime(self.data["period_end"]) - pd.to_timedelta(self.data["period"])
-            self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
-            self.data = self.data.tz_convert(self.scenario.location.timezone)
-            self.data.drop(columns=["period", "period_start", "period_end"], inplace=True)
-            # rename columns according to further processing steps
-            self.data.rename(
-                columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"},
-                inplace=True,
+            self.data["power_spec"] = self.calc_specific_power_from_solcast(
+                data=self.data,
+                latitude=self.scenario.location.latitude,
+                longitude=self.scenario.location.longitude,
+                timezone=self.scenario.location.timezone,
+                azimuth=self.azimuth,
+                tilt=self.tilt,
             )
-            # calculate specific pv power
-            calc_power_from_irradiation()
-        # endregion
 
         elif "file" in self.data_source:
-            # region get data from file
             path_input_file = self.scenario.paths.input / utils.set_extension(
                 filename=self.filename, default_extension=".csv"
             )
 
-            # region read input data from timeseries csv with specific power
             if self.data_source == "file":
-                try:
-                    self.data = utils.read_timeseries_csv(
-                        path_input_file=path_input_file,
-                        scenario=self.scenario,
-                        multiheader=False,
-                        resampling=False,
-                    )
-                except IndexError as exc:
-                    raise IndexError(f"Failed to load data for block {self.name}: {exc}")
-            # endregion
-            elif self.data_source in ["pvgis file", "solcast file"]:
-                # region get data from PVGIS file
-                if self.data_source == "pvgis file":
-                    self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                    self.scenario.location.latitude = meta["inputs"]["latitude"]
-                    self.scenario.location.longitude = meta["inputs"]["longitude"]
-                    # rename column wind_speed to speed_wind
-                    self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-                    self.data.index = self.data.index.round("h")  # PVGIS does not necessarily give full hour time vals
-                # endregion
+                self.data = utils.read_timeseries_csv(
+                    path_input_file=path_input_file,
+                    scenario=self.scenario,
+                    multiheader=False,
+                    resampling=False,
+                )
 
-                # region get data from Solcast file
-                elif self.data_source == "solcast file":
-                    # no lat/lon contained in solcast files
-                    self.data = pd.read_csv(path_input_file)
-                    self.data.rename(
-                        columns={
-                            "air_temp": "temp_air",
-                            "wind_speed_10m": "speed_wind",
-                        },
-                        inplace=True,
-                    )
-                    self.data["period_start"] = pd.to_datetime(self.data["period_end"], utc=True) - pd.to_timedelta(
-                        self.data["period"]
-                    )
-                    self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
-                    self.data = self.data.tz_convert(self.scenario.location.timezone)
+            elif self.data_source == "pvgis file":
+                self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
+                if (self.scenario.location.latitude != meta["inputs"]["latitude"]) or (
+                    self.scenario.location.longitude != meta["inputs"]["longitude"]
+                ):
+                    self.scenario.logger.warning("PVGIS file location does not equal scenario location")
+                self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+                self.data.index = self.data.index.round("h")  # PVGIS does not necessarily give full hour time vals
 
-                    # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
-                    if self.azimuth is not None or self.tilt is not None:
-                        if self.azimuth is None or self.azimuth == "optimal":
-                            azimuth = 0 if self.scenario.location.latitude < 0 else 180  # Solcast "optimum"
-                        else:
-                            azimuth = self.azimuth
+            elif self.data_source == "solcast file":
+                self.data = pd.read_csv(path_input_file)
 
-                        if self.tilt is None or self.tilt == "optimal":
-                            abs(self.scenario.location.latitude)  # Something close to Solcast "optimum"
-                        else:
-                            tilt = self.tilt
+                if self.azimuth is None:
+                    azimuth = 0 if self.scenario.location.latitude < 0 else 180
+                else:
+                    azimuth = self.azimuth
+                if self.tilt is None:
+                    tilt = abs(self.scenario.location.latitude)
+                else:
+                    tilt = self.tilt
 
-                        # calculate solar position for location (gets altitude from lookup table)
-                        solar_position = pvlib.location.Location(
-                            latitude=self.scenario.location.latitude,
-                            longitude=self.scenario.location.longitude,
-                        ).get_solarposition(times=self.data.index, method="nrel_numpy")
-                        solar_azimuth = solar_position["azimuth"]
-                        solar_zenith = solar_position["zenith"]
-
-                        # alternatively use solcast data, but this data is rounded to integers  # ToDo: benchmark
-                        # solar_azimuth = self.data['azimuth']
-                        # solar_zenith = self.data['zenith']
-
-                        self.data["gti"] = pvlib.irradiance.get_total_irradiance(
-                            surface_tilt=tilt,
-                            surface_azimuth=azimuth,
-                            solar_zenith=solar_zenith,
-                            solar_azimuth=solar_azimuth,
-                            dni=self.data["dni"],
-                            ghi=self.data["ghi"],
-                            dhi=self.data["dhi"],
-                            dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
-                            model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic' too
-                            albedo=self.data["albedo"],
-                        )["poa_global"]
-
-                    self.data = self.data[["temp_air", "speed_wind", "gti"]]
-                    calc_power_from_irradiation()
-                # endregion
+                self.data["power_spec"] = self.calc_specific_power_from_solcast(
+                    data=self.data,
+                    latitude=self.scenario.location.latitude,
+                    longitude=self.scenario.location.longitude,
+                    timezone=self.scenario.location.timezone,
+                    azimuth=azimuth,
+                    tilt=tilt,
+                )
 
             else:
                 raise ValueError(
