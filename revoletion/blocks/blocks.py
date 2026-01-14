@@ -591,17 +591,17 @@ class PVSource(RenewableSource):
                 longitude=self.scenario.location.longitude,
                 time_start=self.scenario.times.sim.start,
                 time_end=self.scenario.times.sim.end_extd,
-                trackingtype=0,
+                trackingtype=0,  # fixed PV array
                 scenario=self.scenario,
-                raddatabase=self.raddatabase.upper(),
-                use_horizon=True if self.horizon is not None else False,
-                horizon_custom=self.horizon,
+                raddatabase=self.raddatabase.upper(),  # revert minorization
+                use_horizon=self.horizon,
+                horizon_custom=self.horizon_custom,
                 pvtechchoice={
                     "crystsi": "crystSi",
                     "cis": "CIS",
                     "cdte": "CdTe",
                     "unknown": "Unknown",
-                }[self.pvtechchoice],
+                }[self.pvtechchoice],  # revert minorization
                 mountingplace=self.mountingplace,
                 save=False,
             )
@@ -619,7 +619,7 @@ class PVSource(RenewableSource):
                     suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
                 )
                 if not self.scenario.settings.largescalemode
-                else None,
+                else False,
             )
 
         elif self.data_source == "file":

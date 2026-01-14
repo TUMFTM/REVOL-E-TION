@@ -57,7 +57,7 @@ def get_pvgis_from_api(
     azimuth: float = None,
     tilt: float = None,
     raddatabase: str = "PVGIS-SARAH3",
-    use_horizon: bool = False,
+    use_horizon: bool = True,
     horizon_custom: list = None,
     pvtechchoice: str = "crystSi",
     mountingplace: str = "free",
@@ -102,7 +102,7 @@ def get_pvgis_from_api(
         timeout=30,  # default value
     )
 
-    if save is not None:
+    if save:
         data.to_csv(save, index=False)
 
     return data
@@ -118,7 +118,8 @@ def calc_specific_power_from_pvgis(
         time_end=time_end,
     )
 
-    data.rename(columns={"wind_speed": "speed_wind", "P": "power_spec"}, inplace=True)
+    data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+    data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
     data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
     data.index = data.index - pd.DateOffset(years=shift)
 
@@ -138,26 +139,24 @@ def get_solcast_from_api(
     save: pathlib.Path = False,
     scenario: "revoletion.simulation.Scenario" = None,
 ):
+    if time_end - time_start > pd.Timedelta(days=31):
+        raise NotImplementedError("Solcast API only supports 31 days at a time")
+
     if (api_key is None) and (scenario is not None):
         raise ValueError(f"Scenario {scenario.name}: no Solcast API key specified")
 
-    if (latitude != 41.89021) and (longitude != 12.492231) and (scenario is not None):
+    if (latitude != 41.8902) and (longitude != 12.4922) and (scenario is not None):
         scenario.logger.warning("metered Solcast location selected")
 
     params = dict(
         latitude=latitude,
         longitude=longitude,
-        start=time_start,
-        end=time_end,
+        start=time_start.isoformat(),
+        end=time_end.isoformat(),
         period="PT5M",
         output_parameters=[
             "air_temp",
             "albedo",
-            "azimuth",
-            "clearsky_dhi",
-            "clearsky_dni",
-            "clearsky_ghi",
-            "clearsky_gti",
             "cloud_opacity",
             "dewpoint_temp",
             "dhi",
@@ -181,7 +180,7 @@ def get_solcast_from_api(
         format="json",
         array_type={0: "fixed", 1: "horizontal_single_axis"}[trackingtype],
         time_zone="utc",
-        include_etadata=False,
+        include_metadata=False,
         terrain_shading=use_horizon,
     )
 
@@ -206,7 +205,7 @@ def get_solcast_from_api(
 
     data = pd.json_normalize(response.json()["estimated_actuals"])
 
-    if save is not None:
+    if save:  # catch false and None
         data.to_csv(save, index=False)
 
     return data
@@ -240,7 +239,7 @@ def calc_specific_power_from_solcast(
 
     data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
     data.index.name = "period_start"
-    data.drop(columns=["period", "weather_type", "period_end"], inplace=True)  # string columns
+    data.drop(columns=["period", "period_end"], inplace=True)  # string columns
     data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
     data = data.tz_convert(timezone)
 
