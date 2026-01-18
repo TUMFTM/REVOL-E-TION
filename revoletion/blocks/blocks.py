@@ -949,7 +949,7 @@ class GridConnection(ElectricBlock):
         self.peak_periods = pd.DataFrame()
         self.bus_activation = pd.DataFrame()
 
-        self.initialize_peakshaving()
+        self.initialize_peak_tracking()
 
         if not self.markets:
             raise ValueError(
@@ -969,7 +969,7 @@ class GridConnection(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
         self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
-    def initialize_peakshaving(self):
+    def initialize_peak_tracking(self):
         # Create functions to extract relevant property of datetimeindex for peakshaving intervals
         periods_func = {
             "day": lambda x: x.strftime("%Y-%m-%d"),

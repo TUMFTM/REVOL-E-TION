@@ -139,18 +139,19 @@ class DispatchEnvironment:
 
         self.env.run()
 
+        # go through ALL dispatchers once and transfer rex processes before further processing
         for dispatcher in self.dispatchers.values():
             if dispatcher.params.is_vehicle_fleet:
                 dispatcher.transfer_rex_processes()
 
-        for disp in self.dispatchers.values():
-            disp.generate_log(dti_output=self.scenario.times.sim.dti)
-            disp.calc_kpis()
+        for dispatcher in self.dispatchers.values():
+            dispatcher.generate_log(dti_output=self.scenario.times.sim.dti)
+            dispatcher.calc_kpis()
             if not self.scenario.settings.largescalemode:
                 path_log = self.scenario.paths.create_result_path(
-                    suffix=f"{self.scenario.name}_{disp.params.name}_log.csv"
+                    suffix=f"{self.scenario.name}_{dispatcher.params.name}_log.csv"
                 )
-                disp.save_data(path_log=path_log)
+                dispatcher.save_data(path_log=path_log)
 
         for fleet in self.fleets.values():
             fleet.log = fleet.dispatcher.log
@@ -343,6 +344,7 @@ class FleetDispatcher:
                 steps_rental=row["steps_rental"],
                 energy_req=row["energy_req"],
                 distance_req=row.get("distance", None),
+                subfleets=row.get("subfleets", None),
             )
             for pid, row in self.demand.requests.iterrows()
         }
@@ -445,6 +447,7 @@ class DispatchProcess:
     steps_patience: int
     processed: Optional[bool] = False
     distance_req: Optional[float] = None
+    subfleets: Optional[list] = None
     num_prim: Optional[int] = None
     steps_wait: Optional[int] = None
     time_dep: Optional[pd.Timestamp] = None
@@ -484,8 +487,14 @@ class DispatchProcess:
         yield env.timeout(self.step_req)
         self.steps_wait = 0
 
+        stores_prim = (
+            {name: store for name, store in self.dispatcher_prim.stores.items() if name in self.subfleets}
+            if self.subfleets is not None
+            else self.dispatcher_prim.stores
+        )
+
         while self.steps_wait <= self.steps_patience:
-            for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
+            for store_prim_name, store_prim in stores_prim.items():
                 sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
 
                 if not sfp_prim.units:

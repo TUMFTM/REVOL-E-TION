@@ -8,17 +8,10 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
-from functools import cached_property
 from pathlib import Path
 
-import geopy
-import geopy.geocoders
-import numpy as np
 import pandas as pd
-import pytz
-import timezonefinder
-from typing_extensions import Self
+import typing_extensions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,20 +33,53 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
     return value
 
 
-@dataclass
 class RunTime:
-    start: float = field(default_factory=time.perf_counter, repr=False)
-    end: float = field(default=np.nan, repr=False)
-    duration: float = field(default=np.nan)
+    """
+    Helper utility to measure the runtime of python code.
+
+
+    Usage as context manager:
+
+         with RunTime() as run_time:
+             do_stuff()
+         print(run_time)
+
+
+     Plain usage:
+
+         run_time = RunTime()
+         run_time.start()
+         do_stuff()
+         run_time.stop()
+         print(run_time)
+    """
+
+    begin: float = float("nan")
+    end: float = float("nan")
+    duration: float = float("nan")
+
+    def start(self) -> None:
+        self.begin = time.perf_counter()
 
     def stop(self) -> None:
         self.end = time.perf_counter()
-        self.duration = self.end - self.start
+        self.duration = self.end - self.begin
 
     @property
     def result_summary(self) -> pd.Series:
         # only export runtime duration -> start and end are not interpretable
         return pd.Series({"runtime_duration_s": round(self.duration, 2)})
+
+    @typing_extensions.override
+    def __str__(self) -> str:
+        return f"{self.duration:.2f}s"
+
+    def __enter__(self) -> typing_extensions.Self:
+        self.start()
+        return self
+
+    def __exit__(self, _type, _value, _traceback) -> None:
+        self.stop()
 
 
 @dataclass

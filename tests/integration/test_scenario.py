@@ -34,7 +34,7 @@ def test_process_example_scenarios(scenario_name: str):
                 name=scenario_name,
                 parameters=single_scenario_parameters,
                 logger=_LOGGER,
-                status_update=lambda status, queue: _LOGGER.info(status),
+                status_update=lambda status, queue: None,
             )
             worker.execute(plot=False)
 

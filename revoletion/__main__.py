@@ -39,9 +39,6 @@ def main():
     parser.add_argument("-in", "--input", type=str, default=None, help="Path to the input data directory")
     parser.add_argument("-out", "--output", type=str, default=None, help="Path to the results directory")
     parser.add_argument(
-        "-msc", "--multiscenario", type=filter_bool, default=True, help="Combine multiple scenarios in a single run."
-    )
-    parser.add_argument(
         "-rer",
         "--rerun",
         type=filter_bool,
@@ -91,7 +88,7 @@ def main():
     args = parser.parse_args()
 
     # check boolean arguments
-    for arg_name in ["multiscenario", "largescalemode", "debugmode", "rerun_infeasible"]:
+    for arg_name in ["largescalemode", "debugmode", "rerun_infeasible"]:
         arg = getattr(args, arg_name)
         if not isinstance(arg, bool):
             raise ValueError(f'Argument --{arg_name} must be a boolean value, got "{arg}" of type {type(arg).__name__}')
