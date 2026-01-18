@@ -389,54 +389,10 @@ class ControlSettings:
 _DEFAULT_TRAIN_TIMESTEPS = 10_000
 
 
-class ControlScenarioFactory:
-    def __init__(self, paths: scn.SimulationPaths) -> None:
-        self._paths = paths
-        self.scenario_name = self._paths.scenario.stem
-
-        scenario_parameters = utils.read_scenario_from_file(self._paths.scenario)
-
-        self._scenario_parameters = scenario_parameters[self.scenario_name]
-
-        self._location = utils.Location.create_from_lat_lon(
-            latitude=self._scenario_parameters.loc["scenario", "latitude"],
-            longitude=self._scenario_parameters.loc["scenario", "longitude"],
-            logger=_LOGGER,
-        )
-
-    def create_scenario(self) -> scn.Scenario:
-        scenario = scn.Scenario(
-            self._paths,
-            scn.ScenarioSettings(),
-            name=self.scenario_name,
-            parameters=self._scenario_parameters,
-            location=self._location,
-        )
-
-        full_horizon = utils.TimeSettings.create_from_start_timestamp(
-            start=scenario.times.sim.start,
-            timestep=scenario.timestep,
-            end=scenario.times.sim.start + scenario.len_ph + scenario.len_ch,
-        )
-
-        for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            soc_envelope = rl.get_soc_envelope(electric_fleet_unit_block, full_horizon)
-
-            electric_fleet_unit_block.states.loc[full_horizon.dti, "soc_min"] = soc_envelope
-
-            atbase = electric_fleet_unit_block.log.loc[full_horizon.dti, "atbase"]
-            ext_available = np.invert(atbase.astype(bool))
-
-            electric_fleet_unit_block.log.loc[full_horizon.dti, "atac"] = ext_available
-            electric_fleet_unit_block.log.loc[full_horizon.dti, "atdc"] = ext_available
-
-        return scenario
-
-
 class ControlHorizon:
     def __init__(
         self,
-        scenario_factory: ControlScenarioFactory,
+        scenario_factory: rl.ScenarioFactory,
         settings: ControlSettings | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -495,6 +451,9 @@ class ControlHorizon:
 
         if agent is None:
             agent = self._train_agent(scenario)
+
+        if hasattr(agent, "hyperparameters") and agent.hyperparameters is not None:
+            _ = (scenario.paths.output / "model").write_text(agent.hyperparameters.generate_hyperparameters_id())
 
         self._logger.info(f"Evaluating agent '{self._settings.agent_algorithm}'")
         reward, actions_map, optimization_result = rl.evaluate_with_agent(scenario, agent, eval_horizon)

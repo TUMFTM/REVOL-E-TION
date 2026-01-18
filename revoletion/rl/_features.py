@@ -1,19 +1,18 @@
 import gymnasium as gym
 import numpy as np
-import pandas as pd
 
 from revoletion import optimization
 
 from . import _context as context
 from . import _forecast_provider as forecast_provider
-from . import utils as rl_utils
+from . import _normalization as normalization
 
 # Keys in the observation space for consistent access in custom agents.
 OBS_KEY_TIME_FEATURES = "time_of_day"
-OBS_KEY_EFUS_AVAILABLE = "efus_available"
+OBS_KEY_EFUS_AVAILABILITY_FORECAST = "efus_availability_forecast"
 OBS_KEY_EFUS_SOC = "efus_soc"
 OBS_KEY_EFUS_CURRENT_SOC_DIFF = "efus_soc_diff"
-OBS_KEY_EFUS_REQUIRED_SOCS = "efus_required_socs"
+OBS_KEY_EFUS_REQUIRED_SOCS_FORECAST = "efus_required_socs"
 OBS_KEY_EFUS_REAL_POWER_UNIT = "efus_real_power_unit"
 OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF = "efus_next_required_soc_diff"
 OBS_KEY_EFUS_AVAILABLE_NOW = "efus_avalable_now"
@@ -38,9 +37,15 @@ OBS_KEY_CONTROLLABLE_SOURCES_POWER = "controllable_sources_power"
 
 
 class EnvironmentFeatureExtractor:
-    def __init__(self, forecast_provider: forecast_provider.ForecastProvider, soc_min: float) -> None:
+    def __init__(
+        self,
+        forecast_provider: forecast_provider.ForecastProvider,
+        soc_min: float,
+        normalization_provider: normalization.NormalizationProvider,
+    ) -> None:
         self._forecast_provider = forecast_provider
         self._soc_min = soc_min
+        self._normalization_provider = normalization_provider
 
     def extract_all_features(
         self,
@@ -176,11 +181,11 @@ class EnvironmentFeatureExtractor:
             OBS_KEY_EFUS_NEXT_REQUIRED_SOC_DIFF: np.array(efus_next_required_soc_diff, dtype=np.float32),
             OBS_KEY_EFUS_AVAILABLE_NOW: np.array(efus_available_now, dtype=np.float32),
             OBS_KEY_EFUS_URGENCY: np.array(efus_urgency, dtype=np.float32),
-            # OBS_KEY_EFUS_REQUIRED_SOCS: np.array(cars_required_socs, dtype=np.float32),
             OBS_KEY_EFUS_REAL_POWER_UNIT: np.array(efus_real_power_unit, dtype=np.float32),
-            # OBS_KEY_EFUS_AVAILABLE: np.array(cars_available, dtype=np.float32),
             OBS_KEY_FLEETS_IN_POWER: np.array(fleet_in_power_units, dtype=np.float32),
             OBS_KEY_FLEETS_OUT_POWER: np.array(fleet_out_power_units, dtype=np.float32),
+            OBS_KEY_EFUS_REQUIRED_SOCS_FORECAST: np.array(efus_required_soc, dtype=np.float32),
+            OBS_KEY_EFUS_AVAILABILITY_FORECAST: np.array(efus_available_forecast, dtype=np.float32),
         }
 
     def get_grid_markets_features(
@@ -192,23 +197,25 @@ class EnvironmentFeatureExtractor:
         grid_markets_export_power_unit = []
         for grid_market_block in ctx.grid_market_blocks:
             import_cost = self._forecast_provider.get_grid_import_cost_forecast(grid_market_block, ctx.time)
-            grid_markets_import_cost.append(import_cost)
+            normalized_import_cost = self._normalization_provider.normalize_input_opex(import_cost, grid_market_block)
+            grid_markets_import_cost.append(normalized_import_cost)
 
             export_cost = self._forecast_provider.get_grid_export_cost_forecast(grid_market_block, ctx.time)
-            grid_markets_export_cost.append(export_cost)
+            normalized_export_cost = self._normalization_provider.normalize_output_opex(export_cost, grid_market_block)
+            grid_markets_export_cost.append(normalized_export_cost)
 
             if optimization_result is not None:
                 power_flows = optimization_result.get_power_flow(grid_market_block, ctx.previous_time_step)
 
-                import_power_max = grid_market_block.pwr_g2s
-                import_power_unit = power_flows["in"] / import_power_max
-                clipped_import_power_unit = np.clip(import_power_unit, 0.0, 1.0)
-                grid_markets_import_power_unit.append(clipped_import_power_unit)
+                normalized_import_power_unit = self._normalization_provider.normalize_input_power(
+                    power_flows["in"], grid_market_block
+                )
+                grid_markets_import_power_unit.append(normalized_import_power_unit)
 
-                export_power_max = grid_market_block.pwr_s2g
-                export_power_unit = power_flows["out"] / export_power_max
-                clipped_export_power_unit = np.clip(export_power_unit, 0.0, 1.0)
-                grid_markets_export_power_unit.append(clipped_export_power_unit)
+                normalized_export_power_unit = self._normalization_provider.normalize_output_power(
+                    power_flows["out"], grid_market_block
+                )
+                grid_markets_export_power_unit.append(normalized_export_power_unit)
             else:
                 grid_markets_import_power_unit.append(0.0)
                 grid_markets_export_power_unit.append(0.0)
@@ -226,19 +233,20 @@ class EnvironmentFeatureExtractor:
         renewable_gens_schedule = []
         renewable_gens_power = []
         for renewable_source_block in ctx.renewable_source_blocks:
-            max_renewable_gen = renewable_source_block.sizes["block"].preexisting
             production_power_forecast = self._forecast_provider.get_renewable_source_power_forecast(
                 renewable_source_block, ctx.time
             )
-            production_power_forecast_unit = production_power_forecast / max_renewable_gen
-            clipped_production_power_unit_forecast = np.clip(production_power_forecast_unit, 0.0, 1.0)
-            renewable_gens_schedule.append(clipped_production_power_unit_forecast)
+            normalized_production_power_unit_forecast = self._normalization_provider.normalize_output_power(
+                production_power_forecast, renewable_source_block
+            )
+            renewable_gens_schedule.append(normalized_production_power_unit_forecast)
 
             if optimization_result is not None:
                 power_flow = optimization_result.get_power_flow(renewable_source_block, ctx.previous_time_step)
-                production_power_unit = power_flow["out"] / max_renewable_gen
-                clipped_production_power_unit = np.clip(production_power_unit, 0.0, 1.0)
-                renewable_gens_power.append(clipped_production_power_unit)
+                normalized_production_power_unit = self._normalization_provider.normalize_output_power(
+                    power_flow["out"], renewable_source_block
+                )
+                renewable_gens_power.append(normalized_production_power_unit)
             else:
                 renewable_gens_power.append(0.0)
 
@@ -250,8 +258,9 @@ class EnvironmentFeatureExtractor:
     def get_fixed_demands_features(self, ctx: context.Context) -> dict[str, np.ndarray]:
         demands_powers = []
         for demand_block in ctx.fixed_demand_blocks:
-            demand_load = demand_block.flows_apriori.loc["demand", ctx.current_time_step]
-            demands_powers.append(demand_load)
+            demand_load = demand_block.flows_apriori.demand.loc[ctx.previous_time_step]
+            normalized_demand_power_unit = self._normalization_provider.normalize_input_power(demand_load, demand_block)
+            demands_powers.append(normalized_demand_power_unit)
         return {OBS_KEY_FIXED_DEMANDS: np.array(demands_powers, dtype=np.float32)}
 
     def get_controllable_sources_features(
@@ -259,12 +268,12 @@ class EnvironmentFeatureExtractor:
     ) -> dict[str, np.ndarray]:
         power_units = []
         for controllable_source_block in ctx.controllable_source_blocks:
-            max_power_wh = controllable_source_block.sizes["block"].preexisting
             if optimization_result is not None:
                 power_flow = optimization_result.get_power_flow(controllable_source_block, ctx.previous_time_step)
-                power_unit = power_flow["out"] / max_power_wh
-                clipped_power_unit = np.clip(power_unit, 0.0, 1.0)
-                power_units.append(clipped_power_unit)
+                normalized_power_unit = self._normalization_provider.normalize_output_power(
+                    power_flow["out"], controllable_source_block
+                )
+                power_units.append(normalized_power_unit)
             else:
                 power_units.append(0.0)
 
@@ -275,15 +284,15 @@ class EnvironmentFeatureExtractor:
     ) -> dict[str, np.ndarray]:
         socs = []
         for stationary_battery_block in ctx.stationary_battery_blocks:
-            max_energy_wh = stationary_battery_block.sizes["storage"].preexisting
             if optimization_result is not None:
                 curr_energy_wh = optimization_result.get_stored_energy(stationary_battery_block, ctx.previous_time_step)
-                soc = curr_energy_wh / max_energy_wh
-                clipped_soc = np.clip(soc, 0.0, 1.0)
-                socs.append(clipped_soc)
+                soc = self._normalization_provider.normalize_stored_energy(curr_energy_wh, stationary_battery_block)
+                socs.append(soc)
+
             else:
-                # TODO: SoC is currently always initialized to 100%, which is not realistic.
-                socs.append(1.0)
+                fixed_soc = stationary_battery_block.states.loc[ctx.previous_time_step, "soc"]
+                soc = 1.0 if np.isnan(fixed_soc) else fixed_soc
+                socs.append(fixed_soc)
 
         return {OBS_KEY_STATIONARY_BATTERIES_SOC: np.array(socs, dtype=np.float32)}
 
@@ -305,12 +314,12 @@ class EnvironmentFeatureExtractor:
                 dtype=np.float32,
             ),
             # A forecast for each vehicle, if it is available for charging in the current and upcoming time steps.
-            # OBS_KEY_EFUS_AVAILABLE: gym.spaces.Box(
-            #     low=0.0,
-            #     high=1.0,
-            #     shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
-            #     dtype=np.float32,
-            # ),
+            OBS_KEY_EFUS_AVAILABILITY_FORECAST: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
+                dtype=np.float32,
+            ),
             OBS_KEY_EFUS_AVAILABLE_NOW: gym.spaces.Box(
                 low=0.0,
                 high=1.0,
@@ -324,12 +333,12 @@ class EnvironmentFeatureExtractor:
                 dtype=np.float32,
             ),
             # A forecast for each vehicle, of its required SoC.
-            # OBS_KEY_EFUS_REQUIRED_SOCS: gym.spaces.Box(
-            #     low=0.0,
-            #     high=1.0,
-            #     shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
-            #     dtype=np.float32,
-            # ),
+            OBS_KEY_EFUS_REQUIRED_SOCS_FORECAST: gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(len(ctx.electric_fleet_unit_blocks), self._forecast_provider.forecast_horizon),
+                dtype=np.float32,
+            ),
             OBS_KEY_EFUS_REAL_POWER_UNIT: gym.spaces.Box(
                 low=-1.0,
                 high=1.0,

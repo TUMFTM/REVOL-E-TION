@@ -27,10 +27,17 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from revoletion import optimization, utils
 from revoletion import scenario as scn
 from revoletion.rl import agent
+from revoletion.rl.scenario_factory import (
+    AtBaseHorizonInitializer,
+    HorizonInitializer,
+    InitialSocHorizonInitializer,
+    SocEnvelopeHorizonInitialzer,
+)
 
 from . import _context as context
 from . import _features as features
 from . import _forecast_provider as forecast_provider
+from . import _normalization as normalization
 from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,6 +88,17 @@ class ImitationTrajectoryComputer:
         """
         self._config = config or ImitationTrajectoryComputerConfig()
         self.logger = logger or logging.getLogger(__name__)
+        self._horizon_initializer = HorizonInitializer(
+            horizon_initializers=[
+                SocEnvelopeHorizonInitialzer(
+                    soc_min=self._config.soc_min + self._config.envelope_soc_padding,
+                    max_charge_power_frac=self._config.envelope_max_charge_buffer,
+                    envelope_target_soc=self._config.envelope_target_soc,
+                ),
+                InitialSocHorizonInitializer(),
+                AtBaseHorizonInitializer(),
+            ]
+        )
 
     def compute_trajectories(
         self, scenario_or_factory, rollout_horizon: utils.TimeSettings, n_procs: int = 1
@@ -197,7 +215,11 @@ class ImitationTrajectoryComputer:
 
         self.logger.debug(f"Processing episode from {episode_horizon.start} to {episode_horizon.end}")
 
-        self._apply_initial_socs(scenario, episode_horizon)
+        # This is not really safe, since we are modifying a shared scenario.
+        # But since this should be only called for non-overlapping episodes we should be good.
+        # Otherwise we would need to create new scenarios for each episode which might
+        # result in a heavy performance overhead.
+        self._horizon_initializer.initialize(scenario, episode_horizon)
 
         optimization_result = self._solve_optimization(scenario, episode_horizon)
         if optimization_result is None:
@@ -253,37 +275,6 @@ class ImitationTrajectoryComputer:
             return None
 
         return result
-
-    def _apply_initial_socs(self, scenario: scn.Scenario, episode_horizon: utils.TimeSettings) -> None:
-        # This is not really safe, since we are modifying a shared scenario.
-        # But since this should be only called for non-overlapping episodes we should be good.
-        # Otherwise we would need to create new scenarios for each episode which might
-        # result in a heavy performance overhead.
-        for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            nom_capacity_wh = block.sizes["storage"].preexisting
-            eff_charge = block.eff["chg_int"]
-            max_charge_power_w = block.pwr_chg_max * eff_charge
-
-            buffered_max_charge_power_w = max_charge_power_w * self._config.envelope_max_charge_buffer
-
-            # Determine a smoothed out dsoc step that is used for the SoC envelope computation.
-            # This gives the optimizer a bit more freedom and reduces the number of infeasibilities.
-            dsoc_step = (buffered_max_charge_power_w * episode_horizon.timestep.hours) / nom_capacity_wh
-            soc_envelope = rl_utils.get_soc_envelope(
-                block, episode_horizon, dsoc_step, target_soc=self._config.envelope_target_soc
-            )
-            # Apply some optional padding to the SoC envelope to encourage the agent to not fully discharge each vehicle.
-            buffered_soc_envelope = np.clip(
-                soc_envelope + self._config.soc_min + self._config.envelope_soc_padding, 0.0, 1.0
-            )
-
-            block.states.loc[episode_horizon.dti, "soc_min"] = buffered_soc_envelope
-            initial_soc_min = block.states.loc[episode_horizon.start, "soc_min"]
-            buffered_initial_soc_min = min(initial_soc_min * 1.1, 1.0)
-
-            initial_soc = np.random.uniform(buffered_initial_soc_min, 1.0)
-
-            block.states.loc[episode_horizon.start, "soc"] = initial_soc
 
     def _apply_power_envelope_constraints(
         self,
@@ -373,8 +364,11 @@ class ImitationTrajectoryComputer:
             Tuple of (observations_buffer, actions_buffer)
         """
         perfect_forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
+        limited_forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
+
+        normalization_provider = normalization.NormalizationProvider.from_ctx(ctx)
         feature_extractor = features.EnvironmentFeatureExtractor(
-            perfect_forecast_provider, soc_min=self._config.soc_min
+            limited_forecast_provider, soc_min=self._config.soc_min, normalization_provider=normalization_provider
         )
 
         observations_buffer = []

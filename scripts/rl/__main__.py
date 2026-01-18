@@ -9,7 +9,7 @@ import typer
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 
-from revoletion import logger, simulation, utils
+from revoletion import logger, rl, utils
 from revoletion import scenario as scn
 from revoletion.rl import agent, imitation_learning
 
@@ -29,13 +29,14 @@ def train_rl(
     base_policy_path: Path | None = None,
     debug: bool = False,
     seed: int = 42,
+    custom_feature_extractor: bool = True,
 ) -> None:
     np.random.seed(seed)
     logger.configure_root_logger(debugmode=debug)
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
     )
-    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario_factory = rl.ScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
 
     agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
@@ -54,10 +55,15 @@ def train_rl(
         config=agent_config,
         total_timesteps=train_timesteps,
         base_policy_path=base_policy_path,
+        custom_feature_extractor=custom_feature_extractor,
     )
 
+    hyperparameters_id = revoletion_agent.hyperparameters.generate_hyperparameters_id()
+
+    model_save_path: Path = output_folder / scenario.name / algorithm.value / hyperparameters_id
+    model_save_path.mkdir(exist_ok=True)
     print(f"Trained new agent with algorithm {algorithm.value}")
-    agent.save_agent(revoletion_agent, scenario.name, output_folder)
+    agent.save_agent(revoletion_agent, scenario.name, model_save_path)
 
 
 @app.command()
@@ -79,7 +85,7 @@ def generate_trajectories(
         scenario=scenario_path,
     )
 
-    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario_factory = rl.ScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
 
     normalized_start = start.replace(".", "_")
@@ -137,6 +143,7 @@ def train_imitation_bc(
     seed: int = 42,
     n_epochs: int = 10,
     debug: bool = False,
+    custom_feature_extractor: bool = True,
 ) -> None:
     np.random.seed(seed)
 
@@ -144,7 +151,7 @@ def train_imitation_bc(
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
     )
-    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario_factory = rl.ScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
     imitation_horizon = utils.TimeSettings.create_from_start_timestamp(
         start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),
@@ -160,11 +167,13 @@ def train_imitation_bc(
 
     env = agent.build_rl_environment(scenario, imitation_horizon)
     agent_config = agent.get_default_agent_config_for_algorithm(algorithm)
-    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
+    base_agent = agent.create_trainable_agent(
+        algorithm, env, agent_config, custom_feature_extractor=custom_feature_extractor
+    )
     base_policy = base_agent._sb3_agent.policy
     imitation_learning.train_imitation_policy_bc(trajectories, env, base_policy, seed, n_epochs)
 
-    policy_name = f"{scenario.name}-{algorithm.value}-bc-seed_{seed}-epochs_{n_epochs}-{trajectories_id}.zip"
+    policy_name = f"{scenario.name}-{algorithm.value}-bc-seed_{seed}-epochs_{n_epochs}-features_{'custom' if custom_feature_extractor else 'default'}-{trajectories_id}.zip"
     output_path = output_folder / policy_name
     base_policy.save(output_path)
 
@@ -191,7 +200,7 @@ def train_imitation_sqil(
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
     )
-    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario_factory = rl.ScenarioFactory(paths)
     scenario = scenario_factory.create_scenario()
     train_horizon = utils.TimeSettings.create_from_start_timestamp(
         start=pd.Timestamp(start, tz=scenario.times.sim.start.tz),

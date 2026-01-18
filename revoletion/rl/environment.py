@@ -10,10 +10,17 @@ from typing_extensions import override
 
 from revoletion import blocks, optimization, utils
 from revoletion import scenario as scn
+from revoletion.rl.scenario_factory import (
+    AtBaseHorizonInitializer,
+    HorizonInitializer,
+    InitialSocHorizonInitializer,
+    SocEnvelopeHorizonInitialzer,
+)
 
 from . import _context as context
 from . import _features as features
 from . import _forecast_provider as forecast_provider
+from . import _normalization as normalization
 from . import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = 1.0
+    penalty_factor_grid_opex: float = 10.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
     penalty_factor_charge_opex: float = 0.0
@@ -32,14 +39,14 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_base_dsoc: float = -5.0
+    penalty_base_dsoc: float = -0.5
 
-    penalty_factor_dsoc: float = 100.0
+    penalty_factor_dsoc: float = 1.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
 
-    reward_base_dsoc: float = 1.0
+    reward_base_dsoc: float = 0.1
 
-    reward_factor_dsoc: float = 1.0
+    reward_factor_dsoc: float = 0.0
     """Weight of the reward for meeting a SoC requirement."""
 
     penalty_continous_dsoc: bool = False
@@ -49,14 +56,14 @@ class RewardConfig:
 
     penalty_scaling_infeasible: bool = False
 
-    penalty_base_power_diff: float = -0.5
+    penalty_base_power_diff: float = -0.05
 
-    penalty_factor_power_diff: float = 1.0
+    penalty_factor_power_diff: float = -0.05
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
 
-    penalty_base_atbase_violation: float = -1.0
+    penalty_base_atbase_violation: float = -0.05
 
-    penalty_factor_atbase_violation: float = 1.0
+    penalty_factor_atbase_violation: float = -0.05
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
     reward_factor_step: float = 0.0
@@ -125,18 +132,26 @@ class RewardComponents:
         if len(self.power_diffs) == 0:
             return 0.0
 
+        num_power_diffs = len(self.power_diffs)
+        power_diffs_base_penalty = self.config.penalty_base_power_diff * num_power_diffs
+
         power_diff_sum = sum([abs(power_diff) for power_diff in self.power_diffs])
-        return self.config.penalty_base_power_diff + (-power_diff_sum * self.config.penalty_factor_power_diff)
+        scaled_power_diffs = power_diff_sum * self.config.penalty_factor_power_diff
+
+        return power_diffs_base_penalty + scaled_power_diffs
 
     @property
     def atbase_violation_reward(self) -> float:
         if len(self.atbase_violations) == 0:
             return 0.0
 
+        num_violations = len(self.atbase_violations)
+        atbase_violations_base_penalty = self.config.penalty_base_atbase_violation * num_violations
+
         atbase_violations_sum = sum([abs(violation) for violation in self.atbase_violations])
-        return self.config.penalty_base_atbase_violation + (
-            -atbase_violations_sum * self.config.penalty_factor_atbase_violation
-        )
+        scaled_atbase_violations = atbase_violations_sum * self.config.penalty_factor_atbase_violation
+
+        return atbase_violations_base_penalty + scaled_atbase_violations
 
     @property
     def soc_diff_reward(self) -> float:
@@ -146,7 +161,7 @@ class RewardComponents:
         reward = 0.0
         for soc_diff in self.soc_diffs:
             if soc_diff < 0.0:
-                reward += self.config.penalty_base_dsoc + ((soc_diff - 1) * self.config.penalty_factor_dsoc)
+                reward += self.config.penalty_base_dsoc + (soc_diff * self.config.penalty_factor_dsoc)
             else:
                 reward += self.config.reward_base_dsoc + (soc_diff * self.config.reward_factor_dsoc)
 
@@ -228,8 +243,19 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         limited_forecast_provider = forecast_provider.LimitedForecastProvider(
             forecast_horizon=self._config.forecast_horizon
         )
+        self._normalization_provider = normalization.NormalizationProvider.from_ctx(self._ctx)
         self._feature_extractor = features.EnvironmentFeatureExtractor(
-            forecast_provider=limited_forecast_provider, soc_min=self._config.soc_min
+            forecast_provider=limited_forecast_provider,
+            soc_min=self._config.soc_min,
+            normalization_provider=self._normalization_provider,
+        )
+
+        self._horizon_initializer = HorizonInitializer(
+            horizon_initializers=[
+                SocEnvelopeHorizonInitialzer(),
+                InitialSocHorizonInitializer(),
+                AtBaseHorizonInitializer(),
+            ]
         )
 
         self.action_space = gym.spaces.Box(
@@ -275,22 +301,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             start_idx = 0
             episode_length = self._config.episode_length
 
-        new_horizon = self._horizon.cut(start_idx, episode_length)
-        self._ctx.reset(new_horizon)
-
         self._step_idx = 0
         self._max_step_idx = episode_length
 
-        for electric_fleet_unit_block in self._ctx.electric_fleet_unit_blocks:
-            soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, self._ctx.horizon)
+        # Instead of creating a new scenario with the new horizon and associated constraints (e.g., SoC envelope), we reset and reinitialize.
+        new_horizon = self._horizon.cut(start_idx, episode_length)
+        self._ctx.reset(new_horizon)
 
-            initial_soc_min = soc_envelope[self._ctx.horizon.dti[0]]
-            buffered_initial_soc_min = min((initial_soc_min + self._config.soc_min) * 1.25, 1.0)
-
-            initial_soc = np.random.uniform(buffered_initial_soc_min, 1.0)
-
-            # initial_soc = soc_min + ((1.0 - soc_min) / 2)
-            electric_fleet_unit_block.states.loc[self._ctx.horizon.dti[0], "soc"] = initial_soc
+        self._horizon_initializer.initialize(self._scenario, new_horizon)
 
         opt_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self._scenario.cost_eps,
@@ -356,6 +374,11 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         reward.charge_opex += sum(abs(charge_power_frac) for charge_power_frac in normalized_charge_powers.values())
 
         for electric_fleet_unit, normalized_charge_power_frac in normalized_charge_powers.items():
+            original_power_frac = initial_charge_power_fracs[electric_fleet_unit]
+            power_frac_diff = abs(original_power_frac - normalized_charge_power_frac)
+            if power_frac_diff > 0.1:
+                reward.power_diffs.append(power_frac_diff)
+
             try:
                 # By default the input power is adjusted. This is necessary to ensure that actions around 0 do not lead to unintended infeasibilities.
                 # The charging power is always set to a power range. While this ensures that PyPSA
@@ -554,13 +577,14 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self, block: blocks.ElectricFleetUnit, power_frac: float, reward: RewardComponents
     ) -> float:
         """Normalize the charge power to ensure it stays within the bounds of the energy system"""
-        power_frac = np.round(power_frac, self._config.power_precision)
+        # power_frac = np.round(power_frac, self._config.power_precision)
         # If the EV is not present at the charger it cannot be charged.
         # However, the RL agent might still try to charge the EVs. To avoid an increased amount of infeasible scenarios,
         # the agent just receives a penalty and can continue.
         is_at_base = block.log.loc[self.current_time_step, "atbase"]
         if not is_at_base:
-            reward.atbase_violations.append(power_frac)
+            if abs(power_frac) >= 0.1:
+                reward.atbase_violations.append(power_frac)
             return 0.0
 
         timestep_h = self._ctx.horizon.timestep.hours
@@ -614,8 +638,6 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         normalized_power = np.clip(power_frac, lower_limit, upper_limit)
 
-        power_diff = np.round(abs(abs(power_frac) - abs(normalized_power)), 2)
-        reward.power_diffs.append(power_diff)
         return normalized_power
 
     def _compute_rewards(self, reward: RewardComponents, optimization_result: optimization.OptimizationResult):
@@ -675,11 +697,17 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         for grid_market_block in self._ctx.grid_market_blocks:
             power_flows = optimization_result.get_power_flow(grid_market_block, self.current_time_step)
 
-            grid_import_costs = grid_market_block.evaluators["g2s"].opt.spec_ep_operation[self.current_time_step]
-            grid_opex += power_flows["in"] * grid_import_costs
+            grid_import_costs_per_unit = grid_market_block.evaluators["g2s"].opt.spec_ep_operation[
+                self.current_time_step
+            ]
+            raw_grid_import_costs = power_flows["in"] * grid_import_costs_per_unit
+            grid_opex += self._normalization_provider.normalize_input_opex(raw_grid_import_costs, grid_market_block)
 
-            grid_export_profit = grid_market_block.evaluators["s2g"].opt.spec_ep_operation[self.current_time_step]
-            grid_opex += power_flows["out"] * grid_export_profit
+            grid_export_profit_per_unit = grid_market_block.evaluators["s2g"].opt.spec_ep_operation[
+                self.current_time_step
+            ]
+            raw_grid_export_profit = power_flows["out"] * grid_export_profit_per_unit
+            grid_opex += self._normalization_provider.normalize_output_opex(raw_grid_export_profit, grid_market_block)
         return grid_opex
 
     def _compute_generator_opex(self, optimization_result: optimization.OptimizationResult) -> float:
@@ -688,7 +716,10 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
             power_flows = optimization_result.get_power_flow(source_block, self.current_time_step)
             variable_costs = source_block.evaluators["block"].opt.spec_ep_operation[self.current_time_step]
 
-            gen_opex += power_flows["out"] * variable_costs
+            raw_opex = power_flows["out"] * variable_costs
+            normalized_opex = self._normalization_provider.normalize_output_opex(raw_opex, source_block)
+
+            gen_opex += normalized_opex
 
         return gen_opex
 

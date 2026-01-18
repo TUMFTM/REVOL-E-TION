@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import abc
 import collections
 import enum
+import hashlib
+import json
 import logging
+import shutil
 import typing
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import gymnasium as gym
@@ -19,8 +24,8 @@ from revoletion import optimization, utils
 from revoletion import scenario as scn
 
 from ._features import (
-    OBS_KEY_EFUS_AVAILABLE,
-    OBS_KEY_EFUS_REQUIRED_SOCS,
+    OBS_KEY_EFUS_AVAILABILITY_FORECAST,
+    OBS_KEY_EFUS_REQUIRED_SOCS_FORECAST,
     OBS_KEY_EFUS_SOC,
 )
 from ._structured_feature_extractor import StructuredFeatureExtractor
@@ -44,6 +49,7 @@ _DEFAULT_FEATURE_EXTRACTOR_KWARGS = dict(
 _DEFAULT_POLICY_KWARGS = dict(
     features_extractor_class=StructuredFeatureExtractor,
     features_extractor_kwargs=_DEFAULT_FEATURE_EXTRACTOR_KWARGS,
+    share_features_extractor=True,
 )
 
 
@@ -74,6 +80,32 @@ class AgentAlgorithm(enum.Enum):
         return self.value
 
 
+def _sanatize_for_json(_dict):
+    """Delete None values recursively from all of the dictionaries"""
+    for key, value in list(_dict.items()):
+        if isinstance(value, dict):
+            _sanatize_for_json(value)
+        elif value is None:
+            del _dict[key]
+        elif isinstance(value, enum.Enum):
+            _dict[key] = value.value
+        elif isinstance(value, list):
+            for v_i in value:
+                if isinstance(v_i, dict):
+                    _sanatize_for_json(v_i)
+
+    return _dict
+
+
+def dataclass_asdict(obj: object) -> dict[str, typing.Any]:
+    res = asdict(obj)
+    return _sanatize_for_json(res)
+
+
+def dataclass_asjson(obj: object) -> str:
+    return json.dumps(dataclass_asdict(obj))
+
+
 @dataclass
 class AgentConfig:
     learning_rate: float = 0.001
@@ -85,15 +117,6 @@ class AgentConfig:
     train_freq: int | tuple[int, str] | None = None
     batch_size: int | None = None
     stats_window_size: int | None = 100
-
-    def as_dict(self) -> dict[str, typing.Any]:
-        result = {}
-        for field in fields(self):
-            value = getattr(self, field.name)
-            if value is not None:
-                result[field.name] = value
-
-        return result
 
 
 @dataclass
@@ -126,7 +149,7 @@ DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
     n_steps=256,  # sb3: 2028
     batch_size=64,  # sb3: 64
     use_sde=True,  # sb3: False
-    sde_sample_freq=-1,  # sb3: None
+    sde_sample_freq=4,  # sb3: None
 )
 DEFAULT_TD3_AGENT_CONFIG = OffPolicyAgentConfig(
     learning_rate=0.0001,
@@ -162,6 +185,26 @@ def get_default_agent_config_for_algorithm(algorithm: AgentAlgorithm):
             return AgentConfig()
 
 
+@dataclass
+class Hyperparameters:
+    env_config: RevoletionEnvironmentConfig | None = None
+    agent_algorithm: AgentAlgorithm | None = None
+    agent_config: AgentConfig | None = None
+    custom_feature_extractor: bool = False
+    train_timesteps: int | None = None
+    base_policy: str | None = None
+
+    def generate_hyperparameters_id(self) -> str:
+        hyperparameters_str = dataclass_asjson(self)
+        hash = hashlib.sha256(hyperparameters_str.encode())
+        return hash.hexdigest()
+
+    def save(self, file_path: Path) -> None:
+        hyperparameters_str = dataclass_asjson(self)
+
+        file_path.write_text(hyperparameters_str)
+
+
 class RevoletionAgent(abc.ABC):
     def __init__(self, algorithm: AgentAlgorithm) -> None:
         self._algorithm = algorithm
@@ -182,14 +225,27 @@ class RevoletionAgent(abc.ABC):
 
 
 class RevoletionSB3Agent(RevoletionAgent):
-    def __init__(self, algorithm: AgentAlgorithm, sb3_agent) -> None:
+    def __init__(self, algorithm: AgentAlgorithm, sb3_agent, hyperparameters: Hyperparameters | None = None) -> None:
         super().__init__(algorithm)
         self._sb3_agent = sb3_agent
+        self.hyperparameters = hyperparameters
 
     def save(self, model_path: Path) -> None:
         self._sb3_agent.save(model_path)
 
+        if self.hyperparameters is not None:
+            hyperparameters_path = model_path.parent / "hyperparameters.json"
+            if not hyperparameters_path.exists():
+                self.hyperparameters.save(hyperparameters_path)
+
+            tensorboard_target_path = model_path.parent / "tensorboard"
+            if not tensorboard_target_path.exists():
+                tensorboard_log_dir = Path(self._sb3_agent._logger.dir)
+                shutil.copytree(tensorboard_log_dir, tensorboard_target_path)
+
     def learn(self, total_timesteps: int) -> None:
+        if self.hyperparameters:
+            self.hyperparameters.train_timesteps = total_timesteps
         return self._sb3_agent.learn(
             total_timesteps,
             callback=TrainingCallback(),
@@ -263,7 +319,7 @@ def evaluate_with_agent(
 
 
 def _get_path_for_algorithm(algorithm: AgentAlgorithm, name: str, models_path: Path) -> Path:
-    return (models_path / algorithm.value / f"{name}-{algorithm.value}").with_suffix(".zip")
+    return (models_path / f"{name}-{algorithm.value}").with_suffix(".zip")
 
 
 def save_agent(agent: RevoletionAgent, name: str, models_path: Path) -> None:
@@ -305,21 +361,30 @@ def train(
     n_proc: int | None = None,
     total_timesteps: int = 10000,
     base_policy_path: Path | None = None,
+    custom_feature_extractor: bool = False,
 ) -> RevoletionAgent:
     if not algorithm.needs_training():
         return _create_non_trainable_agent(algorithm)
+    env_config = RevoletionEnvironmentConfig(
+        reward_config=RewardConfig(),
+    )
 
     if n_proc is None or n_proc < 2:
         env = make_vec_env(
-            lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=1, vec_env_cls=DummyVecEnv
+            lambda: build_rl_environment(scenario_factory, train_horizon, env_config=env_config),
+            n_envs=1,
+            vec_env_cls=DummyVecEnv,
         )
     else:
         env = make_vec_env(
-            lambda: build_rl_environment(scenario_factory, train_horizon), n_envs=n_proc, vec_env_cls=SubprocVecEnv
+            lambda: build_rl_environment(scenario_factory, train_horizon, env_config=env_config),
+            n_envs=n_proc,
+            vec_env_cls=SubprocVecEnv,
         )
     # env = VecNormalize(env, training=True)
 
-    agent = create_trainable_agent(algorithm, env, config, base_policy_path)
+    agent = create_trainable_agent(algorithm, env, config, base_policy_path, custom_feature_extractor)
+    agent.hyperparameters.env_config = env_config
 
     _ = agent.learn(total_timesteps=total_timesteps)
     return agent
@@ -346,12 +411,14 @@ def create_trainable_agent(
     env: gym.Env[ObsType, ActType] | SubprocVecEnv,
     config: AgentConfig | None = None,
     base_policy_path: Path | None = None,
+    custom_feature_extractor: bool = False,
 ) -> RevoletionSB3Agent:
     if config is None:
         config = get_default_agent_config_for_algorithm(algorithm)
 
-    kwargs: dict[str, typing.Any] = config.as_dict()
-    # kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
+    kwargs: dict[str, typing.Any] = dataclass_asdict(config)
+    if custom_feature_extractor:
+        kwargs["policy_kwargs"] = _DEFAULT_POLICY_KWARGS.copy()
 
     if algorithm in {AgentAlgorithm.TD3, AgentAlgorithm.DDPG}:
         n_actions = env.action_space.shape[-1]
@@ -369,9 +436,17 @@ def create_trainable_agent(
     if base_policy_path is not None:
         sb3_agent.policy = type(sb3_agent.policy).load(str(base_policy_path))
 
+    hyperparameters = Hyperparameters(
+        agent_algorithm=algorithm,
+        agent_config=config,
+        custom_feature_extractor=True,
+        base_policy=str(base_policy_path.resolve()) if base_policy_path is not None else None,
+    )
+
     return RevoletionSB3Agent(
         algorithm,
         sb3_agent=sb3_agent,
+        hyperparameters=hyperparameters,
     )
 
 
@@ -394,7 +469,7 @@ def get_sb3_type(algorithm: AgentAlgorithm):
 class RandomChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
         num_cars = len(cars_available)
 
         charge_pattern = 2 * np.random.sample(num_cars) - 1
@@ -406,7 +481,7 @@ class FullChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
         actions = []
-        for cars_available in obs[OBS_KEY_EFUS_AVAILABLE]:
+        for cars_available in obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]:
             num_cars = len(cars_available)
 
             charge_pattern = np.ones(num_cars)
@@ -418,7 +493,7 @@ class FullChargingAgent(RevoletionAgent):
 class FullDischargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
         num_cars = len(cars_available)
 
         charge_pattern = np.ones(num_cars) * -1
@@ -428,9 +503,9 @@ class FullDischargingAgent(RevoletionAgent):
 class BasicChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
         cars_socs = obs[OBS_KEY_EFUS_SOC]
-        cars_target_socs = obs[OBS_KEY_EFUS_REQUIRED_SOCS]
+        cars_target_socs = obs[OBS_KEY_EFUS_REQUIRED_SOCS_FORECAST]
 
         num_cars = len(cars_available)
 
@@ -453,7 +528,7 @@ class BasicChargingAgent(RevoletionAgent):
 class IdleAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABLE]
+        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
         num_cars = len(cars_available)
 
         charge_pattern = np.zeros(num_cars)

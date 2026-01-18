@@ -9,6 +9,7 @@ from .agent import (
     train,
 )
 from .utils import get_soc_envelope
+from .scenario_factory import ScenarioFactory
 
 __all__ = [
     "AgentAlgorithm",
@@ -20,4 +21,5 @@ __all__ = [
     "save_agent",
     "get_soc_envelope",
     "get_default_agent_config_for_algorithm",
+    "ScenarioFactory",
 ]

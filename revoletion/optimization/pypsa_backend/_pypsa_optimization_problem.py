@@ -185,7 +185,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def get_stored_energy(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex
     ) -> optimization_problem.FloatOrTimeSeries:
-        if not isinstance(block, blocks.ElectricFleetUnit):
+        if not isinstance(block, blocks.ElectricFleetUnit) and not isinstance(block, blocks.StationaryBattery):
             raise ValueError(f"Cannot determine SoC for block {block.name} of type {type(block)}")
 
         pypsa_store_name = make_pypsa_label(block, "battery-store")

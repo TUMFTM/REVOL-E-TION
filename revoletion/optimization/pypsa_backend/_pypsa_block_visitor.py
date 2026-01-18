@@ -189,7 +189,6 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             p_nom_extendable=False,
         )
 
-        # Generator with negative sign to absorb (sell) energy.
         variable_cost_s2g = block.evaluators["s2g"].opt.spec_ep_operation[self._datetime_index]
         builder.add_generator(
             name=make_pypsa_label(block, "export-gen"),
@@ -320,20 +319,24 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             efficiency=block.eff["dis_int"],
         )
 
-        soc_initial_percent = block.states.loc[self._datetime_index, "soc"].median()
-        battery_capacity_w = block.sizes["storage"].preexisting
-        battery_energy_initial_w = battery_capacity_w * soc_initial_percent
+        battery_soc_initial_percent = block.states.loc[self._datetime_index[0], "soc"]
+        battery_capacity_wh = block.sizes["storage"].preexisting
+        battery_e_initial_wh = (
+            battery_capacity_wh
+            if np.isnan(battery_soc_initial_percent)
+            else battery_capacity_wh * battery_soc_initial_percent
+        )
         builder.add_store(
             name=make_pypsa_label(block, "battery-store"),
             bus=bus_battery,
             standing_loss=block.loss_rate_per_hour,
             # e_nom is set for use cases when investment is disabled and is ignored if investment is enabled.
             # For investment cases e_nom_min is used instead of p_nom.
-            e_nom=battery_capacity_w,
-            e_nom_min=battery_capacity_w,
+            e_nom=battery_capacity_wh,
+            e_nom_min=battery_capacity_wh,
             # The `Size` object converts a `None` maximum expansion to 0. If this is passed to PyPSA, it might break the optimization.
             e_nom_max=block.sizes["storage"].expansion_max if block.sizes["storage"].invest else None,
-            e_initial=battery_energy_initial_w,
+            e_initial=battery_e_initial_wh,
             e_nom_extendable=self._enable_investment and block.sizes["storage"].invest,
             capital_cost=block.evaluators["storage"].opt.spec_ep_invest,
         )
