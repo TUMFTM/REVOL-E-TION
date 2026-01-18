@@ -146,6 +146,10 @@ class TimeSettings:
     def dti_extd(self) -> pd.DatetimeIndex:
         return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both")
 
+    @cached_property
+    def end_extd(self) -> pd.Timestamp:
+        return max(self.dti_extd)
+
 
 @dataclass
 class SimulationTimes:
