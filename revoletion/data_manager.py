@@ -45,7 +45,7 @@ class PvInstallationInfo(pydantic.BaseModel):
 
 
 class DataProvider(abc.ABC):
-    """Base class for a provider which can load or retrive.
+    """Base class for a provider which can load or retrieve.
 
     Each provider has methods to load (`load_ts_data_from_file`) and request (`request_ts_data_from_api`) the raw provider data as well as remapping logic (`remap_raw_ts_data`).
     The remapping is done to transform the raw provider data to a consistent representation for REVOL-E-TION.
@@ -60,9 +60,6 @@ class DataProvider(abc.ABC):
     def remap_raw_ts_data(
         self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
     ) -> pd.DataFrame:
-        if "power_spec" not in raw_data.columns:
-            # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
-            raw_data["power_spec"] = raw_data["P"] / 1e3
 
         # resample to timestep, fill NaN values with previous ones (or next ones, if not available
         time_step = utils.Timestep.from_dti(dti)
@@ -296,14 +293,66 @@ class PvgisDataProvider(DataProvider):
     """Provider to request and load PVGIS data."""
 
     _API_NAME: str = "PVGIS"
+    _API_STARTYEAR: int = 2005
+    _API_ENDYEAR: int = 2023
+
+    @typing_extensions.override
+    def calc_api_request_shift(
+        self,
+        time_start: pd.Timestamp,
+        time_end: pd.Timestamp,
+        api_startyear: int = _API_STARTYEAR,
+        api_endyear: int = _API_ENDYEAR,
+    ) -> int:
+        """
+        Calculate the necessary shift (integer) in years for a request to comply with PVGIS limitations.
+
+        :param time_start: Start time of the request (tz aware)
+        :type time_start: pd.Timestamp
+        :param time_end: End time of the request (tz aware)
+        :type time_end: pd.Timestamp
+        """
+
+        startyear = time_start.tz_convert("utc").year
+        endyear = time_end.tz_convert("utc").year
+
+        shift = 0
+
+        if (endyear - startyear) > (api_endyear - api_startyear):
+            raise ValueError("API request exceeds maximum length of available data")
+        elif endyear > api_endyear:
+            shift = api_endyear - endyear
+            self._logger.warning(
+                f"API request exceeds available endtime - request shifted by "
+                f"{shift} year{'s' if abs(shift != 1) else ''}"
+            )
+        elif startyear < api_startyear:
+            shift = startyear - api_startyear
+            self._logger.warning(
+                f"API request exceeds available starttime - request shifted by "
+                f"{shift} year{'s' if abs(shift != 1) else ''}"
+            )
+
+        return shift
+
 
     @typing_extensions.override
     def remap_raw_ts_data(
-        self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
-    ) -> pd.DataFrame:
-        # rename column wind_speed to speed_wind
-        data = raw_data.rename(columns={"wind_speed": "speed_wind"})
+        self,
+        data: pd.DataFrame,
+        time_start: pd.Timestamp,
+        time_end: pd.Timestamp,
+    ):
+        shift = self.calc_api_request_shift(
+            time_start=time_start,
+            time_end=time_end,
+        )
+
+        data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+        data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
         data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
+        data.index = data.index - pd.DateOffset(years=shift)
+
         return super().remap_raw_ts_data(data, location, dti)
 
     @typing_extensions.override
@@ -425,10 +474,8 @@ class BasicFileProvider(DataProvider):
 class DataSource(enum.Enum):
     SOLCAST_API = "solcast api"
     PVGIS_API = "pvgis api"
-
     PVGIS_FILE = "pvgis file"
     SOLCAST_FILE = "solcast file"
-
     TIME_SERIES_FILE = "file"
 
     def is_file_source(self) -> bool:
@@ -479,34 +526,91 @@ class DataManager:
         return remapped_data
 
 
-def _calc_power_from_irradiation(gti: np.ndarray, temp_air: np.ndarray, speed_wind: np.ndarray) -> float:
+
+
+def calc_specific_power_from_irradiation(
+    data: pd.DataFrame,
+    latitude: float,
+    longitude: float,
+    timezone: str,
+    azimuth: float = None,
+    tilt: float = None,
+) -> pd.DataFrame:
     """
-    calculate PV potential output power from insolation and weather data
-    function is necessary for solcast input that does not contain power data
+    Calculate potential PV array power from Solcast data considering actual tilt and azimuth.
+
+    Parameters:
+    data: solcast data imported using import_solcast()
+    latitude: location latitude in decimal degrees north of equator. South is negative
+    longitude: loaction longitude in decimal degrees east of prime meridian
+    timezone: location timezone in string format, e.g. "Europe/Berlin"
+    azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270), default None is optimum
+    tilt: panel tilt in degrees up from horizontal, default None is optimum
+
+    Algorithm and parameters (cSi panels) as per
+    - Huld T., Friesen G., Skoczek A., Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for
+        crystalline silicon PV modules, Solar Energy Materials & Solar Cells, 2011 95, 3359-3369 (efficiency model)
+    - Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules. Prog. Photovolt. Res. Appl.2008,
+        16, 307–315 (temperature model)
     """
 
-    u0 = 26.9  # W/(˚C.m2) - cSi Free standing
-    u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-    mod_temp = temp_air + (gti / (u0 + (u1 * speed_wind)))
+    data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
+    data.index.name = "period_start"
+    data.drop(columns=["period", "period_end"], inplace=True)  # string columns
+    data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+    data = data.tz_convert(timezone)
 
-    # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
-    # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
-    # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
-    k1 = -0.017237
-    k2 = -0.040465
-    k3 = -0.004702
-    k4 = 0.000149
-    k5 = 0.000170
-    k6 = 0.000005
-    g = gti / 1000
-    t = mod_temp - 25
-    lng = np.zeros_like(g)
-    lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
+    if azimuth is None:
+        azimuth = 0 if latitude < 0 else 180
 
-    # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
-    # Prog. Photovolt. Res. Appl.2008, 16, 307–315
-    eff_rel = 1 + (k1 * lng) + (k2 * (lng**2)) + (k3 * t) + (k4 * t * lng) + (k5 * t * (lng**2)) + (k6 * (t**2))
-    eff_rel = eff_rel.fillna(0)
+    if tilt is None:
+        tilt = abs(latitude)
 
-    # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-    return np.maximum(0, eff_rel * gti)
+    solar_position = pvlib.location.Location(
+        latitude=latitude,
+        longitude=longitude,
+    ).get_solarposition(times=data.index, method="nrel_numpy")
+
+    # angle of incidence
+    aoi = pvlib.irradiance.aoi(
+        surface_tilt=tilt,
+        surface_azimuth=azimuth,
+        solar_zenith=solar_position["zenith"],
+        solar_azimuth=solar_position["azimuth"],
+    )
+
+    # incidence angle modifier
+    iam = pvlib.iam.martin_ruiz(aoi, a_r=0.16)
+
+    # global total irradiance
+    irradiance = pvlib.irradiance.get_total_irradiance(
+        surface_tilt=tilt,
+        surface_azimuth=azimuth,
+        solar_zenith=solar_position["zenith"],
+        solar_azimuth=solar_position["azimuth"],
+        dni=data["dni"],
+        ghi=data["ghi"],
+        dhi=data["dhi"],
+        dni_extra=pvlib.irradiance.get_extra_radiation(data.index),
+        model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
+        albedo=data["albedo"],
+    )
+
+    gti_eff = irradiance["poa_direct"] * iam + irradiance["poa_diffuse"]
+
+    temp_module = pvlib.temperature.faiman(
+        poa_global=gti_eff,
+        temp_air=data["temp_air"],
+        wind_speed=data["speed_wind"],
+        u0=26.9,  # W/(˚C.m2) - cSi Free standing as in PVGIS
+        u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
+    )
+
+    data["power_spec"] = pvlib.pvarray.huld(
+        effective_irradiance=gti_eff,
+        temp_mod=temp_module,
+        pdc0=1.0,  # for specific power
+        cell_type="cSi",
+    ).clip(lower=0)
+
+    return data

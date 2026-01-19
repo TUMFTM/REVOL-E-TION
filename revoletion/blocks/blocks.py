@@ -618,91 +618,91 @@ class PVSource(RenewableSource):
             else None
         )
 
-        if self.data_source == "pvgis api":
-            self.data = pvutils.get_pvgis_from_api(
-                latitude=self.scenario.location.latitude,
-                longitude=self.scenario.location.longitude,
-                time_start=self.scenario.times.sim.start,
-                time_end=self.scenario.times.sim.end_extd,
-                trackingtype=0,  # fixed PV array
-                scenario=self.scenario,
-                raddatabase=self.raddatabase.upper(),  # revert minorization
-                use_horizon=self.horizon,
-                horizon_custom=self.horizon_custom,
-                pvtechchoice={
-                    "crystsi": "crystSi",
-                    "cis": "CIS",
-                    "cdte": "CdTe",
-                    "unknown": "Unknown",
-                }[self.pvtechchoice],  # revert minorization
-                mountingplace=self.mountingplace,
-                save=False,
-            )
+        # if self.data_source == "pvgis api":
+        #     self.data = pvutils.get_pvgis_from_api(
+        #         latitude=self.scenario.location.latitude,
+        #         longitude=self.scenario.location.longitude,
+        #         time_start=self.scenario.times.sim.start,
+        #         time_end=self.scenario.times.sim.end_extd,
+        #         trackingtype=0,  # fixed PV array
+        #         scenario=self.scenario,
+        #         raddatabase=self.raddatabase.upper(),  # revert minorization
+        #         use_horizon=self.horizon,
+        #         horizon_custom=self.horizon_custom,
+        #         pvtechchoice={
+        #             "crystsi": "crystSi",
+        #             "cis": "CIS",
+        #             "cdte": "CdTe",
+        #             "unknown": "Unknown",
+        #         }[self.pvtechchoice],  # revert minorization
+        #         mountingplace=self.mountingplace,
+        #         save=False,
+        #     )
 
-        elif self.data_source == "solcast api":
-            self.data = pvutils.get_solcast_from_api(
-                api_key=self.scenario.settings.key_solcast_api,
-                latitude=self.scenario.location.latitude,
-                longitude=self.scenario.location.longitude,
-                time_start=self.scenario.times.sim.start,
-                time_end=self.scenario.times.sim.end_extd,
-                use_horizon=self.horizon,
-                trackingtype=self.trackingtype,
-                save=self.scenario.paths.create_result_path(
-                    suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
-                )
-                if not self.scenario.settings.largescalemode
-                else False,
-            )
+        # elif self.data_source == "solcast api":
+        #     self.data = pvutils.get_solcast_from_api(
+        #         api_key=self.scenario.settings.key_solcast_api,
+        #         latitude=self.scenario.location.latitude,
+        #         longitude=self.scenario.location.longitude,
+        #         time_start=self.scenario.times.sim.start,
+        #         time_end=self.scenario.times.sim.end_extd,
+        #         use_horizon=self.horizon,
+        #         trackingtype=self.trackingtype,
+        #         save=self.scenario.paths.create_result_path(
+        #             suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
+        #         )
+        #         if not self.scenario.settings.largescalemode
+        #         else False,
+        #     )
 
-        elif self.data_source == "file":
-            self.data = utils.read_timeseries_csv(
-                path_input_file=path_input_file,
-                scenario=self.scenario,
-                multiheader=False,
-                resampling=False,
-            )
+        # elif self.data_source == "file":
+        #     self.data = utils.read_timeseries_csv(
+        #         path_input_file=path_input_file,
+        #         scenario=self.scenario,
+        #         multiheader=False,
+        #         resampling=False,
+        #     )
 
-        elif self.data_source == "pvgis file":
-            self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-            if (self.scenario.location.latitude != meta["inputs"]["latitude"]) or (
-                self.scenario.location.longitude != meta["inputs"]["longitude"]
-            ):
-                self.scenario.logger.warning("PVGIS file location does not equal scenario location")
+        # elif self.data_source == "pvgis file":
+        #     self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
+        #     if (self.scenario.location.latitude != meta["inputs"]["latitude"]) or (
+        #         self.scenario.location.longitude != meta["inputs"]["longitude"]
+        #     ):
+        #         self.scenario.logger.warning("PVGIS file location does not equal scenario location")
 
-        elif self.data_source == "solcast file":
-            self.data = pd.read_csv(path_input_file)
+        # elif self.data_source == "solcast file":
+        #     self.data = pd.read_csv(path_input_file)
 
-        else:
-            raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified")
+        # else:
+        #     raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified")
 
-        if "solcast" in self.data_source:
-            self.data = pvutils.calc_specific_power_from_solcast(
-                data=self.data,
-                latitude=self.scenario.location.latitude,
-                longitude=self.scenario.location.longitude,
-                timezone=self.scenario.location.timezone,
-                azimuth=self.azimuth,
-                tilt=self.tilt,
-            )
+        # if "solcast" in self.data_source:
+        #     self.data = pvutils.calc_specific_power_from_solcast(
+        #         data=self.data,
+        #         latitude=self.scenario.location.latitude,
+        #         longitude=self.scenario.location.longitude,
+        #         timezone=self.scenario.location.timezone,
+        #         azimuth=self.azimuth,
+        #         tilt=self.tilt,
+        #     )
 
-        elif "pvgis" in self.data_source:
-            self.data = pvutils.calc_specific_power_from_pvgis(
-                data=self.data,
-                time_start=self.scenario.times.sim.start,
-                time_end=self.scenario.times.sim.end_extd,
-            )
+        # elif "pvgis" in self.data_source:
+        #     self.data = pvutils.calc_specific_power_from_pvgis(
+        #         data=self.data,
+        #         time_start=self.scenario.times.sim.start,
+        #         time_end=self.scenario.times.sim.end_extd,
+        #     )
 
-        self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
-        self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
-        self.data = self.data.loc[self.scenario.times.sim.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
-        # endregion
+        # self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
+        # self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
+        # self.data = self.data.loc[self.scenario.times.sim.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
+        # # endregion
 
-        if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
+        # if not self.scenario.settings.largescalemode:
+        #     self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
 
-        if getattr(self, "temp_scn", False):  # parameter only exists for instances specified in scenario.temp_air
-            self.scenario.temp_air = self.data["temp_air"]
+        # if getattr(self, "temp_scn", False):  # parameter only exists for instances specified in scenario.temp_air
+        #     self.scenario.temp_air = self.data["temp_air"]
 
 
 class WindSource(RenewableSource):
