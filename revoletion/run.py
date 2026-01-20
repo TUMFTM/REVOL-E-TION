@@ -151,7 +151,7 @@ class SimulationRun:
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
             shutil.copyfile(self.paths.scenario, target)
 
-    def execute(self, plot: bool = True):
+    def execute(self):
         if self.settings.n_processes > 1:
             with mp.Manager() as manager:
                 lock = manager.Lock()
@@ -175,7 +175,7 @@ class SimulationRun:
                             self.scenario_names,
                             itertools.repeat(status_queue),
                             itertools.repeat(lock),
-                            itertools.repeat(plot),
+                            itertools.repeat(self.settings.largescalemode),
                         ),
                     )
                 status_queue.put(None)
@@ -184,7 +184,7 @@ class SimulationRun:
                 log_thread.join()
         else:
             for scenario_name in self.scenario_names:
-                self.execute_scenario(name=scenario_name, plot=plot)
+                self.execute_scenario(name=scenario_name, largescalemode=self.settings.largescalemode)
 
         self.runtime.stop()
         self.logger.info(f"Total runtime for all scenarios: {self.runtime}")
@@ -261,7 +261,11 @@ class SimulationRun:
             file.unlink()
 
     def execute_scenario(
-        self, name: str, status_queue: mpq.Queue | None = None, lock: mps.Lock | None = None, plot: bool = True
+        self,
+        name: str,
+        status_queue: mpq.Queue | None = None,
+        lock: mps.Lock | None = None,
+        largescalemode: bool = False,
     ):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
@@ -281,7 +285,7 @@ class SimulationRun:
                 status_update=self.trigger_scenario_status_update,
                 status_queue=status_queue,
             )
-            worker.execute(plot=plot)
+            worker.execute()
         except Exception as e:
             self.trigger_scenario_status_update(
                 status_msg=_ScenarioStatusMessage(
@@ -357,7 +361,7 @@ class ScenarioWorker:
 
         self._status_update(status_msg, self._status_queue)
 
-    def execute(self, plot: bool = True) -> None:
+    def execute(self) -> None:
         self.update_scenario_status(_ScenarioStatus.STARTED)
 
         run_time = utils.RunTime()
@@ -419,8 +423,9 @@ class ScenarioWorker:
         run_time.stop()
         self._logger.info(f"Scenario finished - runtime {run_time.duration:.2f}s")
 
-        if plot:
+        if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
+
         scenario.save_result_summary([run_time.result_summary])
 
 
