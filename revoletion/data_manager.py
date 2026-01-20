@@ -1,5 +1,5 @@
 """
-Module which provides an interface to retrieve and manage PV data.
+Module providing an interface to retrieve and manage PV data.
 """
 
 import abc
@@ -27,7 +27,7 @@ class DataProviderApiError(DataProviderError):
         super().__init__(f"Failed to fetch timeseries data for location {location} from {api_name} API: {msg}")
 
 
-class PvInstallationInfo(pydantic.BaseModel):
+class PvArray(pydantic.BaseModel):
     """
     Holds relevant specification about the installation of a PV array.
 
@@ -47,7 +47,7 @@ class PvInstallationInfo(pydantic.BaseModel):
 class DataProvider(abc.ABC):
     """Base class for a provider which can load or retrieve.
 
-    Each provider has methods to load (`load_ts_data_from_file`) and request (`request_ts_data_from_api`) the raw provider data as well as remapping logic (`remap_raw_ts_data`).
+    Each provider has methods to load (`load_data_from_file`) and request (`request_data_from_api`) the raw provider data as well as remapping logic (`remap_data`).
     The remapping is done to transform the raw provider data to a consistent representation for REVOL-E-TION.
 
     A consumer is expected to explicitly request the remapping of the retrieved data. This enables caching of the raw data, e.g., for large scale mode.
@@ -57,36 +57,32 @@ class DataProvider(abc.ABC):
         self._logger = logger
 
     @abc.abstractmethod
-    def remap_raw_ts_data(
-        self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
-    ) -> pd.DataFrame:
-
-        # resample to timestep, fill NaN values with previous ones (or next ones, if not available
-        time_step = utils.Timestep.from_dti(dti)
-        data = raw_data.resample(time_step.td).mean().ffill().bfill()
-        # convert to local time
-        data.index = data.index.tz_convert(tz=location.timezone)
-
-        # only keep relevant columns and timestamps
-        data = data.loc[dti, ["power_spec", "speed_wind", "temp_air"]]
-        return data
-
-    @abc.abstractmethod
-    def request_ts_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvInstallationInfo
+    def request_data_from_api(
+        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, array: PvArray
     ) -> pd.DataFrame: ...
 
     @abc.abstractmethod
-    def load_ts_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, info: PvInstallationInfo | None = None
+    def load_data_from_file(
+        self, file: pathlib.Path, location: utils.Location, array: PvArray | None = None
     ) -> pd.DataFrame:
         """Read and load the timeseries data from a file."""
         ...
 
+    @abc.abstractmethod
+    def remap_data(self, raw: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
+        # resample to timestep
+        time_step = utils.Timestep.from_dti(dti)
+        data = raw.resample(time_step.td).mean().ffill().bfill()
+        # convert to local time
+        data.index = data.index.tz_convert(tz=location.timezone)
+        # slice data
+        data = data.loc[dti, ["power_spec", "speed_wind", "temp_air"]]
+        return data
+
 
 # Solcast offers free results for the following coordinates.
-_SOLCAST_UNMETERED_LATITUDE = 41.89021
-_SOLCAST_UNMETERED_LONGITUDE = 12.492231
+_SOLCAST_UNMETERED_LATITUDE = 41.8902
+_SOLCAST_UNMETERED_LONGITUDE = 12.4922
 _SOLCAST_DEFAULT_PERIOD = "PT5M"
 _SOLCAST_DEFAULT_OUTPUT_PARAMETERS = [
     "air_temp",
@@ -129,10 +125,8 @@ class SolcastDataProvider(DataProvider):
         self._solcast_api_key = solcast_api_key
 
     @typing_extensions.override
-    def remap_raw_ts_data(
-        self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
-    ) -> pd.DataFrame:
-        solcast_data = raw_data.rename(
+    def remap_data(self, raw: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
+        solcast_data = raw.rename(
             columns={
                 "air_temp": "temp_air",
                 "wind_speed_10m": "speed_wind",
@@ -149,11 +143,11 @@ class SolcastDataProvider(DataProvider):
         )
         solcast_data["P"] = power
 
-        return super().remap_raw_ts_data(solcast_data, location, dti)
+        return super().remap_data(solcast_data, location, dti)
 
     @typing_extensions.override
-    def request_ts_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvInstallationInfo
+    def request_data_from_api(
+        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvArray
     ) -> pd.DataFrame:
         # Cannot request timeseries data without an API key.
         if self._solcast_api_key is None:
@@ -222,8 +216,8 @@ class SolcastDataProvider(DataProvider):
         return data
 
     @typing_extensions.override
-    def load_ts_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, info: PvInstallationInfo | None = None
+    def load_data_from_file(
+        self, file: pathlib.Path, location: utils.Location, info: PvArray | None = None
     ) -> pd.DataFrame:
         if info is None:
             raise DataProviderError(
@@ -280,7 +274,6 @@ class SolcastDataProvider(DataProvider):
 _PVGIS_API_BASE_URL = "https://re.jrc.ec.europa.eu/api/v5_3/"
 _PVGIS_API_MAX_YEAR = 2023
 _PVGIS_API_MIN_YEAR = 2005
-_PVGIS_API_MAX_LENGTH = _PVGIS_API_MAX_YEAR - _PVGIS_API_MIN_YEAR
 _PVGIS_API_PV_TECH_MAPPING = {
     "crystsi": "crystSi",
     "cis": "CIS",
@@ -293,16 +286,14 @@ class PvgisDataProvider(DataProvider):
     """Provider to request and load PVGIS data."""
 
     _API_NAME: str = "PVGIS"
-    _API_STARTYEAR: int = 2005
-    _API_ENDYEAR: int = 2023
 
     @typing_extensions.override
     def calc_api_request_shift(
         self,
         time_start: pd.Timestamp,
         time_end: pd.Timestamp,
-        api_startyear: int = _API_STARTYEAR,
-        api_endyear: int = _API_ENDYEAR,
+        api_startyear: int = _PVGIS_API_MIN_YEAR,
+        api_endyear: int = _PVGIS_API_MAX_YEAR,
     ) -> int:
         """
         Calculate the necessary shift (integer) in years for a request to comply with PVGIS limitations.
@@ -335,11 +326,72 @@ class PvgisDataProvider(DataProvider):
 
         return shift
 
+    @typing_extensions.override
+    def request_data_from_api(
+        self, location: utils.Location, time_start: pd.Timestamp, time_end: pd.Timestamp, array: PvArray
+    ) -> pd.DataFrame:
+        shift = self.calc_api_request_shift(time_start=time_start, time_end=time_end)
+
+        optimal_tilt = True if array.tilt is None else False
+        optimal_angles = True if array.azimuth is None else False
+
+        if optimal_angles and not optimal_tilt:
+            raise DataProviderApiError(
+                location,
+                self._API_NAME,
+                "optimal azimuth requires optimal tilt",
+            )
+
+        if array.pv_tech not in _PVGIS_API_PV_TECH_MAPPING:
+            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {array.pv_tech}")
+        pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[array.pv_tech]
+
+        data, *_ = pvlib.iotools.get_pvgis_hourly(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            start=time_start.tz_convert("utc").year + shift,
+            end=time_end.tz_convert("utc").year + shift,
+            raddatabase=array.rad_database.upper(),  # PVGIS is case sensitive
+            components=True,
+            surface_tilt=array.tilt if array.tilt is not None else 0,  # numeric
+            surface_azimuth=array.azimuth if array.azimuth is not None else 0,  # numeric
+            outputformat="json",
+            usehorizon=True,
+            userhorizon=array.horizon_custom,
+            pvcalculation=True,
+            peakpower=1,  # for specific power
+            pvtechchoice=pv_tech_pvgis,
+            mountingplace=array.mounting_place,
+            loss=0,  # calculated in system
+            trackingtype=array.tracking_type,
+            optimal_surface_tilt=optimal_tilt,
+            optimalangles=optimal_angles,
+            url=_PVGIS_API_BASE_URL,
+            map_variables=True,
+            timeout=30,  # default
+        )
+
+        return data
 
     @typing_extensions.override
-    def remap_raw_ts_data(
+    def load_data_from_file(
+        self,
+        file: pathlib.Path,
+        location: utils.Location,
+    ) -> pd.DataFrame:
+        data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
+
+        if (location.latitude != meta["inputs"]["latitude"]) or (location.longitude != meta["inputs"]["longitude"]):
+            self._logger.warning("PV file location does not equal scenario location")
+
+        return data
+
+    @typing_extensions.override
+    def remap_data(
         self,
         data: pd.DataFrame,
+        location: utils.Location,
+        dti: pd.DatetimeIndex,
         time_start: pd.Timestamp,
         time_end: pd.Timestamp,
     ):
@@ -353,116 +405,23 @@ class PvgisDataProvider(DataProvider):
         data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
         data.index = data.index - pd.DateOffset(years=shift)
 
-        return super().remap_raw_ts_data(data, location, dti)
-
-    @typing_extensions.override
-    def request_ts_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvInstallationInfo
-    ) -> pd.DataFrame:
-        api_startyear = start.tz_convert("utc").year
-        api_endyear = end.tz_convert("utc").year
-        api_length = api_endyear - api_startyear
-        api_shift = pd.to_timedelta("0 days")
-
-        if api_length > _PVGIS_API_MAX_LENGTH:
-            raise ValueError("PVGIS API request exceeds maximum length of available data")
-        elif api_endyear > _PVGIS_API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-            api_shift = pd.to_datetime(f"{_PVGIS_API_MAX_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                f"{api_endyear}-01-01 00:00:00+00:00"
-            )
-            api_endyear = _PVGIS_API_MAX_YEAR
-            api_startyear = _PVGIS_API_MAX_YEAR - api_length
-            self._logger.warning(
-                f"PVGIS API request exceeds available endtime - data shifted by "
-                f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                f"end in {_PVGIS_API_MAX_YEAR}"
-            )
-        elif api_startyear < _PVGIS_API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-            api_shift = pd.to_datetime(f"{_PVGIS_API_MIN_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                f"{api_startyear}-01-01 00:00:00+00:00"
-            )
-            api_startyear = _PVGIS_API_MIN_YEAR
-            api_endyear = _PVGIS_API_MIN_YEAR + api_length
-
-            self._logger.warning(
-                f"PVGIS API request exceeds available starttime - data shifted by "
-                f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                f"start in {_PVGIS_API_MIN_YEAR}"
-            )
-
-        optimal_tilt = True if info.tilt == "optimal" else False
-        optimal_angles = True if info.azimuth == "optimal" else False
-        if optimal_angles and not optimal_tilt:
-            raise DataProviderApiError(
-                location,
-                self._API_NAME,
-                f"optimal azimuth requires optimal tilt as well (azimuth={info.azimuth}; tilt={info.tilt})",
-            )
-
-        if info.pv_tech not in _PVGIS_API_PV_TECH_MAPPING:
-            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {info.pv_tech}")
-        pv_tech_choice = _PVGIS_API_PV_TECH_MAPPING[info.pv_tech]
-
-        pvgis_data, *_ = pvlib.iotools.get_pvgis_hourly(
-            latitude=location.latitude,
-            longitude=location.longitude,
-            start=api_startyear,
-            end=api_endyear,
-            # PVGIS API is case sensitive and all inputs are lowered -> revert
-            raddatabase=info.rad_database.upper(),
-            components=True,  # output solar radiation components (beam, diffuse, and reflected)
-            surface_tilt=info.tilt if info.tilt != "optimal" else 0,  # has to be numeric
-            surface_azimuth=info.azimuth if info.azimuth != "optimal" else 0,  # has to be numeric
-            outputformat="json",
-            usehorizon=info.horizon,
-            userhorizon=info.horizon_custom,
-            pvcalculation=True,
-            peakpower=1,
-            # PVGIS API is case sensitive and all inputs are lowered -> revert
-            pvtechchoice=pv_tech_choice,
-            mountingplace=info.mounting_place,
-            loss=0,
-            trackingtype=info.tracking_type,
-            optimal_surface_tilt=optimal_tilt,
-            optimalangles=optimal_angles,
-            url=_PVGIS_API_BASE_URL,
-            map_variables=True,
-            timeout=30,  # default value
-        )
-
-        pvgis_data.index = pvgis_data.index - api_shift
-
-        return pvgis_data
-
-    @typing_extensions.override
-    def load_ts_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, info: PvInstallationInfo | None = None
-    ) -> pd.DataFrame:
-        data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
-
-        # The location reset was kept during refactoring.
-        # TODO: Why is it necessary to reset the location? Maybe replace it with validation instead.
-        location.latitude = meta["inputs"]["latitude"]
-        location.longitude = meta["inputs"]["longitude"]
-        return data
+        return super().remap_data(raw=data, location=location, dti=dti)
 
 
 class BasicFileProvider(DataProvider):
     @typing_extensions.override
-    def remap_raw_ts_data(
-        self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex
-    ) -> pd.DataFrame:
-        return super().remap_raw_ts_data(raw_data, location, dti)
+    def remap_data(self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
+        return super().remap_data(raw_data, location, dti)
 
     @typing_extensions.override
-    def request_ts_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvInstallationInfo
+    def request_data_from_api(
+        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvArray
     ) -> pd.DataFrame:
         raise NotImplementedError(f"Cannot request timeseries data for {type(self)}")
 
     @typing_extensions.override
-    def load_ts_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, info: PvInstallationInfo | None = None
+    def load_data_from_file(
+        self, file: pathlib.Path, location: utils.Location, info: PvArray | None = None
     ) -> pd.DataFrame:
         return utils.read_timeseries_csv(
             path_input_file=file,
@@ -502,7 +461,7 @@ class DataManager:
     def get_for_data_source(
         self,
         data_source: DataSource,
-        pv_installation_info: PvInstallationInfo,
+        pv_installation_info: PvArray,
         file_path: pathlib.Path | None,
         time_settings: utils.TimeSettings,
         **provider_kwargs,
@@ -513,19 +472,15 @@ class DataManager:
         if data_source.is_file_source():
             if file_path is None:
                 raise ValueError(f"Argument `file_path` must not be None for file data source {data_source}")
-            data = data_provider.load_ts_data_from_file(
-                file=file_path, location=self._location, info=pv_installation_info
-            )
+            data = data_provider.load_data_from_file(file=file_path, location=self._location, info=pv_installation_info)
         else:
-            data = data_provider.request_ts_data_from_api(
+            data = data_provider.request_data_from_api(
                 location=self._location, start=time_settings.start, end=time_settings.end, info=pv_installation_info
             )
 
-        remapped_data = data_provider.remap_raw_ts_data(raw_data=data, location=self._location, dti=time_settings.dti)
+        remapped_data = data_provider.remap_data(raw_data=data, location=self._location, dti=time_settings.dti)
 
         return remapped_data
-
-
 
 
 def calc_specific_power_from_irradiation(
