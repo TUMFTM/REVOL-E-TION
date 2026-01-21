@@ -63,8 +63,8 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff_block,0.95,0.95,0.95,0.95
-pv,azimuth,optimal,optimal,optimal,optimal
-pv,tilt,optimal,optimal,optimal,optimal
+pv,azimuth,None,None,None,None
+pv,tilt,None,None,None,None
 pv,trackingtype,0,0,0,0
 pv,horizon,False,False,False,False
 pv,horizon_custom,None,None,None,None

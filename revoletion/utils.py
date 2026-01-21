@@ -7,13 +7,12 @@ import logging
 import re
 import shutil
 import subprocess
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 import pytz
-import typing_extensions
+
+from . import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,195 +32,6 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
         value = pd.Timedelta(value, unit=unit)
 
     return value
-
-
-class RunTime:
-    """
-    Helper utility to measure the runtime of python code.
-
-
-    Usage as context manager:
-
-         with RunTime() as run_time:
-             do_stuff()
-         print(run_time)
-
-
-     Plain usage:
-
-         run_time = RunTime()
-         run_time.start()
-         do_stuff()
-         run_time.stop()
-         print(run_time)
-    """
-
-    begin: float = float("nan")
-    end: float = float("nan")
-    duration: float = float("nan")
-
-    def start(self) -> None:
-        self.begin = time.perf_counter()
-
-    def stop(self) -> None:
-        self.end = time.perf_counter()
-        self.duration = self.end - self.begin
-
-    @property
-    def result_summary(self) -> pd.Series:
-        # only export runtime duration -> start and end are not interpretable
-        return pd.Series({"runtime_duration_s": round(self.duration, 2)})
-
-    @typing_extensions.override
-    def __str__(self) -> str:
-        return f"{self.duration:.2f}s"
-
-    def __enter__(self) -> typing_extensions.Self:
-        self.start()
-        return self
-
-    def __exit__(self, _type, _value, _traceback) -> None:
-        self.stop()
-
-
-@dataclass
-class Location:
-    latitude: float
-    longitude: float
-    timezone: pytz.BaseTzInfo = field(default_factory=lambda: pytz.timezone("Europe/Berlin"))
-    country: str = "DE"
-    state: str = "BY"
-
-    @classmethod
-    def create_from_lat_lon(
-        cls, latitude: float, longitude: float, logger: logging.Logger, geocode: bool = True
-    ) -> Self:
-        tzfinder = timezonefinder.TimezoneFinder()
-        timezone_raw = tzfinder.certain_timezone_at(lat=latitude, lng=longitude)
-        if timezone_raw is None:
-            raise ValueError(f"Failed to determine timezone at {latitude}/{longitude}")
-
-        timezone = pytz.timezone(timezone_raw)
-
-        if geocode:
-            location = cls._reverse_geocode_location(latitude, longitude)
-        else:
-            location = None
-
-        if location is None:
-            location = cls(
-                latitude=latitude,
-                longitude=longitude,
-                timezone=timezone,
-            )
-            if geocode:
-                # Warning is only necessary if geocoding was requested.
-                logger.warning(
-                    f"Connection to Geocoder failed. "
-                    f"Using default country ({location.country}) and state ({location.state})."
-                )
-
-            return location
-
-        address = location.raw.get("address", {})
-
-        if "ISO3166-2-lvl4" in address:
-            country, state = address["ISO3166-2-lvl4"].split("-")
-        elif "ISO3166-2-lvl3" in address:
-            country, state = address["ISO3166-2-lvl3"].split("-")
-        else:
-            # fallback: try country_code + state name
-            country = address.get("country_code", "").upper()
-            state = address.get("state", "")
-
-        return cls(latitude=latitude, longitude=longitude, timezone=timezone, country=country, state=state)
-
-    @staticmethod
-    def _reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
-        geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
-        try:
-            return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-        except geopy.exc.GeocoderUnavailable:
-            return None
-
-
-@dataclass
-class Timestep:
-    td: pd.Timedelta
-
-    @property
-    def hours(self) -> float:
-        return self.td.total_seconds() / 3600
-
-    @classmethod
-    def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        """Retrive the time step size of a datetime index in units of hour.
-
-        This helper is needed since the `freq` attribue of a `pd.DatetimeIndex` might not always be populated.
-        """
-        if dti.freq is not None:
-            return cls(td=pd.Timedelta(dti.freq))
-
-        # Convert to a series where each row contains the dti entry and its time difference to its previous entry.
-        dti_diff_series = dti.to_series().diff().dropna()
-
-        # Convert the time differences to hours.
-        dti_diff_hours_series = dti_diff_series.dt.total_seconds() / 3600.0
-
-        # Use the max and min difference to determine whether the dti is regular, i.e., each dti entry
-        # is equally spaced apart.
-        max_hours_diff = dti_diff_hours_series.max()
-        min_hours_diff = dti_diff_hours_series.min()
-
-        if max_hours_diff != min_hours_diff:
-            raise RuntimeError(
-                f"Cannot determine interval of datetime index: irregular datetime index (max={max_hours_diff}; min={min_hours_diff})"
-            )
-
-        td = pd.Timedelta(value=min_hours_diff, unit="h")
-        return cls(td=td)
-
-    @classmethod
-    def from_str(cls, timestep_str: str) -> Self:
-        td = pd.to_timedelta(timestep_str)
-
-        return cls(td=td)
-
-
-@dataclass
-class TimeSettings:
-    start: pd.Timestamp
-    end: pd.Timestamp
-    duration: pd.Timedelta
-
-    _timestep: pd.Timedelta
-
-    @classmethod
-    def create_from_start_timestamp(
-        cls,
-        start: pd.Timestamp,
-        timestep: pd.Timedelta,
-        end: pd.Timestamp | None = None,
-        duration: pd.Timedelta | None = None,
-    ) -> Self:
-        if (end is None and duration is None) or (end is not None and duration is not None):
-            raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
-        elif duration is None:
-            duration = (end - start).floor(timestep)
-        elif end is None:
-            duration = duration.floor(timestep)
-        # always recalculate end to ensure consistency
-        end = start + duration
-
-        return cls(start=start, end=end, duration=duration, _timestep=timestep)
-
-    @cached_property
-    def dti(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left")
-
-    @cached_property
-    def dti_extd(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both")
 
 
 def infer_dtype(value):
@@ -340,7 +150,7 @@ def read_timeseries_csv(
     if resampling_dti is None:
         return df
 
-    timestep = Timestep.from_dti(resampling_dti)
+    timestep = time.Timestep.from_dti(resampling_dti)
 
     df_extd = df.reindex(extend_dti(dti=df.index, freq=timestep.td)).ffill()
 

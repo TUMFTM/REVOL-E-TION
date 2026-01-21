@@ -15,7 +15,7 @@ import pydantic
 import requests
 import typing_extensions
 
-from . import utils
+from . import location, time, utils
 
 _SOLCAST_API_BASE_URL = "https://api.solcast.com.au/data/historic/radiation_and_weather"
 _SOLCAST_UNMETERED_LATITUDE = 41.8902
@@ -62,7 +62,7 @@ class DataProviderError(utils.RevoletionError): ...
 
 
 class DataProviderApiError(DataProviderError):
-    def __init__(self, location: utils.Location, api_name: str, msg: str) -> None:
+    def __init__(self, location: location.Location, api_name: str, msg: str) -> None:
         super().__init__(f"Failed to fetch timeseries data for location {location} from {api_name} API: {msg}")
 
 
@@ -97,25 +97,25 @@ class DataProvider(abc.ABC):
 
     @abc.abstractmethod
     def request_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, array: PvArray
+        self, location: location.Location, start: pd.Timestamp, end: pd.Timestamp, array: PvArray
     ) -> pd.DataFrame: ...
 
     @abc.abstractmethod
     def load_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, array: PvArray | None = None
+        self, file: pathlib.Path, location: location.Location, array: PvArray | None = None
     ) -> pd.DataFrame:
         """Read and load the timeseries data from a file."""
         ...
 
     @abc.abstractmethod
-    def remap_data(self, raw: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
-        # resample to timestep
-        time_step = utils.Timestep.from_dti(dti)
-        data = raw.resample(time_step.td).mean().ffill().bfill()
+    def remap_data(
+        self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, **_
+    ) -> pd.DataFrame:
+        data = data.resample(timeframe.dti.freq).mean().ffill().bfill()
         # convert to local time
         data.index = data.index.tz_convert(tz=location.timezone)
         # slice data
-        data = data.loc[dti, ["power_spec", "speed_wind", "temp_air"]]
+        data = data.loc[timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
         return data
 
 
@@ -130,9 +130,9 @@ class SolcastDataProvider(DataProvider):
 
     @typing_extensions.override
     def request_data_from_api(
-        self, location: utils.Location, time_start: pd.Timestamp, time_end: pd.Timestamp, array: PvArray
+        self, location: location.Location, timeframe: time.TimeFrame, array: PvArray
     ) -> pd.DataFrame:
-        if time_end - time_start > pd.Timedelta(days=31):
+        if timeframe.start - timeframe.end > pd.Timedelta(days=31):
             raise DataProviderApiError(
                 location=location, api_name=self._API_NAME, msg="Solcast API only supports 31 days at a time"
             )
@@ -154,8 +154,8 @@ class SolcastDataProvider(DataProvider):
         params = dict(
             latitude=location.latitude,
             longitude=location.longitude,
-            start=time_start.isoformat(),
-            end=time_end.isoformat(),
+            start=timeframe.start.isoformat(),
+            end=timeframe.end.isoformat(),
             period=_SOLCAST_DEFAULT_PERIOD,
             output_parameters=_SOLCAST_DEFAULT_OUTPUT_PARAMETERS,
             format="json",
@@ -202,80 +202,102 @@ class SolcastDataProvider(DataProvider):
 
     @typing_extensions.override
     def load_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, array: PvArray | None = None
+        self,
+        file: pathlib.Path,
     ) -> pd.DataFrame:
-        if array is None:
-            raise DataProviderError(
-                f"Cannot load data for location {location} from Solcast file: required PV installation info is missing"
-            )
+        return pd.read_csv(file)
 
-        data = pd.read_csv(file)
+    @typing_extensions.override
+    def remap_data(
+        self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, array: PvArray
+    ) -> pd.DataFrame:
+        data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
+        data.index.name = "period_start"
+        data.drop(columns=["period", "period_end"], inplace=True)
+        data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+        data = data.tz_convert(location.timezone)
 
-        # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
-        if array.azimuth is None and array.tilt is None:
-            return data  # todo conflict None->optimal vs None->none specified
+        data = self._calc_specific_power(data=data, location=location, array=array)
 
-        if array.azimuth is None or array.azimuth == "optimal":
-            azimuth = 0 if location.latitude < 0 else 180  # Solcast "optimum"
+        return super().remap_data(data=data, location=location, timeframe=timeframe, array=array)
+
+    def calc_specific_power(data: pd.DataFrame, location: location.Location, array: PvArray) -> pd.DataFrame:
+        """
+        Calculate potential PV array power from Solcast data considering actual tilt and azimuth.
+
+        Parameters:
+        data: solcast data imported using import_solcast()
+        latitude: location latitude in decimal degrees north of equator. South is negative
+        longitude: loaction longitude in decimal degrees east of prime meridian
+        timezone: location timezone in string format, e.g. "Europe/Berlin"
+        azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270), default None is optimum
+        tilt: panel tilt in degrees up from horizontal, default None is optimum
+
+        Algorithm and parameters (cSi panels) as per
+        - Huld T., Friesen G., Skoczek A., Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for
+            crystalline silicon PV modules, Solar Energy Materials & Solar Cells, 2011 95, 3359-3369 (efficiency model)
+        - Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules. Prog. Photovolt. Res. Appl.2008,
+            16, 307–315 (temperature model)
+        """
+
+        if array.azimuth is None:
+            azimuth = 0 if location.latitude < 0 else 180
         else:
             azimuth = array.azimuth
 
-        if array.tilt is None or array.tilt == "optimal":
-            abs(location.latitude)  # Something close to Solcast "optimum"
+        if array.tilt is None:
+            tilt = abs(location.latitude)
         else:
             tilt = array.tilt
 
-        # calculate solar position for location (gets altitude from lookup table)
         solar_position = pvlib.location.Location(
             latitude=location.latitude,
             longitude=location.longitude,
         ).get_solarposition(times=data.index, method="nrel_numpy")
-        solar_azimuth = solar_position["azimuth"]
-        solar_zenith = solar_position["zenith"]
 
-        # alternatively use solcast data, but this data is rounded to integers  # ToDo: benchmark
-        # solar_azimuth = self.data['azimuth']
-        # solar_zenith = self.data['zenith']
-
-        extra_radiation = pvlib.irradiance.get_extra_radiation(data.index)
-        total_irradiance = pvlib.irradiance.get_total_irradiance(
+        # angle of incidence
+        angle_of_incidence = pvlib.irradiance.aoi(
             surface_tilt=tilt,
             surface_azimuth=azimuth,
-            solar_zenith=solar_zenith,
-            solar_azimuth=solar_azimuth,
+            solar_zenith=solar_position["zenith"],
+            solar_azimuth=solar_position["azimuth"],
+        )
+
+        # incidence angle modifier
+        iam = pvlib.iam.martin_ruiz(angle_of_incidence, a_r=0.16)
+
+        # global total irradiance
+        irradiance = pvlib.irradiance.get_total_irradiance(
+            surface_tilt=tilt,
+            surface_azimuth=azimuth,
+            solar_zenith=solar_position["zenith"],
+            solar_azimuth=solar_position["azimuth"],
             dni=data["dni"],
             ghi=data["ghi"],
             dhi=data["dhi"],
-            dni_extra=extra_radiation,
-            model="haydavies",
+            dni_extra=pvlib.irradiance.get_extra_radiation(data.index),
+            model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
             albedo=data["albedo"],
         )
-        gti = total_irradiance["poa_global"]
-        data["gti"] = gti
 
-        return data[["temp_air", "speed_wind", "gti"]]
+        gti_eff = irradiance["poa_direct"] * iam + irradiance["poa_diffuse"]
 
-    @typing_extensions.override
-    def remap_data(self, raw: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
-        solcast_data = raw.rename(
-            columns={
-                "air_temp": "temp_air",
-                "wind_speed_10m": "speed_wind",
-            },
+        temp_module = pvlib.temperature.faiman(
+            poa_global=gti_eff,
+            temp_air=data["temp_air"],
+            wind_speed=data["speed_wind"],
+            u0=26.9,  # W/(˚C.m2) - cSi Free standing as in PVGIS
+            u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
         )
 
-        period_timedelta = pd.to_timedelta(solcast_data["period"])
-        period_end = pd.to_datetime(solcast_data["period_end"], utc=True)
-        solcast_data["period_start"] = period_end - period_timedelta
-        solcast_data.set_index(pd.DatetimeIndex(solcast_data["period_start"]), inplace=True)
-        solcast_data = solcast_data.tz_convert(location.timezone)
+        data["power_spec"] = pvlib.pvarray.huld(
+            effective_irradiance=gti_eff,
+            temp_mod=temp_module,
+            pdc0=1.0,  # for specific power
+            cell_type="cSi",
+        ).clip(lower=0)
 
-        power = _calc_power_from_irradiation(
-            solcast_data["gti"].values, solcast_data["temp_air"].values, solcast_data["speed_wind"].values
-        )
-        solcast_data["P"] = power
-
-        return super().remap_data(solcast_data, location, dti)
+        return data
 
 
 class PvgisDataProvider(DataProvider):
@@ -286,8 +308,7 @@ class PvgisDataProvider(DataProvider):
     @typing_extensions.override
     def calc_api_request_shift(
         self,
-        time_start: pd.Timestamp,
-        time_end: pd.Timestamp,
+        timeframe: time.TimeFrame,
         api_startyear: int = _PVGIS_API_MIN_YEAR,
         api_endyear: int = _PVGIS_API_MAX_YEAR,
     ) -> int:
@@ -295,8 +316,8 @@ class PvgisDataProvider(DataProvider):
         Calculate the necessary shift (integer) in years for a request to comply with PVGIS limitations.
         """
 
-        startyear = time_start.tz_convert("utc").year
-        endyear = time_end.tz_convert("utc").year
+        startyear = timeframe.start.tz_convert("utc").year
+        endyear = timeframe.end.tz_convert("utc").year
 
         shift = 0
 
@@ -319,9 +340,9 @@ class PvgisDataProvider(DataProvider):
 
     @typing_extensions.override
     def request_data_from_api(
-        self, location: utils.Location, time_start: pd.Timestamp, time_end: pd.Timestamp, array: PvArray
+        self, location: location.Location, timeframe: time.TimeFrame, array: PvArray
     ) -> pd.DataFrame:
-        shift = self.calc_api_request_shift(time_start=time_start, time_end=time_end)
+        shift = self.calc_api_request_shift(timeframe=timeframe)
 
         optimal_tilt = True if array.tilt is None else False
         optimal_angles = True if array.azimuth is None else False
@@ -340,8 +361,8 @@ class PvgisDataProvider(DataProvider):
         data, *_ = pvlib.iotools.get_pvgis_hourly(
             latitude=location.latitude,
             longitude=location.longitude,
-            start=time_start.tz_convert("utc").year + shift,
-            end=time_end.tz_convert("utc").year + shift,
+            start=timeframe.start.tz_convert("utc").year + shift,
+            end=timeframe.end.tz_convert("utc").year + shift,
             raddatabase=array.rad_database.upper(),  # PVGIS is case sensitive
             components=True,
             surface_tilt=array.tilt if array.tilt is not None else 0,  # numeric
@@ -368,7 +389,7 @@ class PvgisDataProvider(DataProvider):
     def load_data_from_file(
         self,
         file: pathlib.Path,
-        location: utils.Location,
+        location: location.Location,
     ) -> pd.DataFrame:
         data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
 
@@ -378,42 +399,28 @@ class PvgisDataProvider(DataProvider):
         return data
 
     @typing_extensions.override
-    def remap_data(
-        self,
-        data: pd.DataFrame,
-        location: utils.Location,
-        dti: pd.DatetimeIndex,
-        time_start: pd.Timestamp,
-        time_end: pd.Timestamp,
-    ):
-        shift = self.calc_api_request_shift(
-            time_start=time_start,
-            time_end=time_end,
-        )
+    def remap_data(self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, **_):
+        shift = self.calc_api_request_shift(timeframe=timeframe)
 
         data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
         data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
         data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
         data.index = data.index - pd.DateOffset(years=shift)
 
-        return super().remap_data(raw=data, location=location, dti=dti)
+        return super().remap_data(data=data, location=location, timeframe=timeframe)
 
 
 class BasicFileProvider(DataProvider):
     @typing_extensions.override
-    def remap_data(self, raw_data: pd.DataFrame, location: utils.Location, dti: pd.DatetimeIndex) -> pd.DataFrame:
-        return super().remap_data(raw_data, location, dti)
+    def remap_data(self, data: pd.DataFrame, location: location.Location, timeframe=time.TimeFrame) -> pd.DataFrame:
+        return super().remap_data(data=data, location=location, timeframe=timeframe)
 
     @typing_extensions.override
-    def request_data_from_api(
-        self, location: utils.Location, start: pd.Timestamp, end: pd.Timestamp, info: PvArray
-    ) -> pd.DataFrame:
-        raise NotImplementedError(f"Cannot request timeseries data for {type(self)}")
+    def request_data_from_api(self, **_) -> None:
+        raise NotImplementedError(f"Cannot request timeseries data with {type(self)}")
 
     @typing_extensions.override
-    def load_data_from_file(
-        self, file: pathlib.Path, location: utils.Location, info: PvArray | None = None
-    ) -> pd.DataFrame:
+    def load_data_from_file(self, file: pathlib.Path, location: location.Location, **_) -> pd.DataFrame:
         return utils.read_timeseries_csv(
             path_input_file=file,
             timezone=location.timezone,
@@ -442,121 +449,31 @@ class DataSource(enum.Enum):
 
 
 class DataManager:
-    _location: utils.Location
+    _location: location.Location
     _logger: logging.Logger
 
-    def __init__(self, location: utils.Location, logger: logging.Logger | None = None) -> None:
+    def __init__(self, location: location.Location, logger: logging.Logger | None = None) -> None:
         self._location = location
         self._logger = logger
 
     def get_for_data_source(
         self,
         data_source: DataSource,
-        pv_installation_info: PvArray,
+        array: PvArray,
         file_path: pathlib.Path | None,
-        time_settings: utils.TimeSettings,
+        timeframe: time.TimeFrame,
         **provider_kwargs,
     ) -> pd.DataFrame:
         data_provider_type = data_source.get_data_provider()
-        data_provider = data_provider_type(self._logger, **provider_kwargs)
+        data_provider = data_provider_type(logger=self._logger, location=self._location, **provider_kwargs)
 
         if data_source.is_file_source():
             if file_path is None:
-                raise ValueError(f"Argument `file_path` must not be None for file data source {data_source}")
-            data = data_provider.load_data_from_file(file=file_path, location=self._location, info=pv_installation_info)
+                raise ValueError(f"Argument 'file_path' must not be None for file data source {data_source}")
+            data = data_provider.load_data_from_file(file=file_path, location=self._location, array=array)
         else:
-            data = data_provider.request_data_from_api(
-                location=self._location, start=time_settings.start, end=time_settings.end, info=pv_installation_info
-            )
+            data = data_provider.request_data_from_api(location=self._location, timeframe=timeframe, array=array)
 
-        remapped_data = data_provider.remap_data(raw_data=data, location=self._location, dti=time_settings.dti)
+        remapped_data = data_provider.remap_data(data=data, location=self._location, timeframe=timeframe, array=array)
 
         return remapped_data
-
-
-def calc_specific_power_from_irradiation(
-    data: pd.DataFrame,
-    latitude: float,
-    longitude: float,
-    timezone: str,
-    azimuth: float = None,
-    tilt: float = None,
-) -> pd.DataFrame:
-    """
-    Calculate potential PV array power from Solcast data considering actual tilt and azimuth.
-
-    Parameters:
-    data: solcast data imported using import_solcast()
-    latitude: location latitude in decimal degrees north of equator. South is negative
-    longitude: loaction longitude in decimal degrees east of prime meridian
-    timezone: location timezone in string format, e.g. "Europe/Berlin"
-    azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270), default None is optimum
-    tilt: panel tilt in degrees up from horizontal, default None is optimum
-
-    Algorithm and parameters (cSi panels) as per
-    - Huld T., Friesen G., Skoczek A., Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for
-        crystalline silicon PV modules, Solar Energy Materials & Solar Cells, 2011 95, 3359-3369 (efficiency model)
-    - Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules. Prog. Photovolt. Res. Appl.2008,
-        16, 307–315 (temperature model)
-    """
-
-    data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
-    data.index.name = "period_start"
-    data.drop(columns=["period", "period_end"], inplace=True)  # string columns
-    data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
-    data = data.tz_convert(timezone)
-
-    if azimuth is None:
-        azimuth = 0 if latitude < 0 else 180
-
-    if tilt is None:
-        tilt = abs(latitude)
-
-    solar_position = pvlib.location.Location(
-        latitude=latitude,
-        longitude=longitude,
-    ).get_solarposition(times=data.index, method="nrel_numpy")
-
-    # angle of incidence
-    aoi = pvlib.irradiance.aoi(
-        surface_tilt=tilt,
-        surface_azimuth=azimuth,
-        solar_zenith=solar_position["zenith"],
-        solar_azimuth=solar_position["azimuth"],
-    )
-
-    # incidence angle modifier
-    iam = pvlib.iam.martin_ruiz(aoi, a_r=0.16)
-
-    # global total irradiance
-    irradiance = pvlib.irradiance.get_total_irradiance(
-        surface_tilt=tilt,
-        surface_azimuth=azimuth,
-        solar_zenith=solar_position["zenith"],
-        solar_azimuth=solar_position["azimuth"],
-        dni=data["dni"],
-        ghi=data["ghi"],
-        dhi=data["dhi"],
-        dni_extra=pvlib.irradiance.get_extra_radiation(data.index),
-        model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
-        albedo=data["albedo"],
-    )
-
-    gti_eff = irradiance["poa_direct"] * iam + irradiance["poa_diffuse"]
-
-    temp_module = pvlib.temperature.faiman(
-        poa_global=gti_eff,
-        temp_air=data["temp_air"],
-        wind_speed=data["speed_wind"],
-        u0=26.9,  # W/(˚C.m2) - cSi Free standing as in PVGIS
-        u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
-    )
-
-    data["power_spec"] = pvlib.pvarray.huld(
-        effective_irradiance=gti_eff,
-        temp_mod=temp_module,
-        pdc0=1.0,  # for specific power
-        cell_type="cSi",
-    ).clip(lower=0)
-
-    return data
