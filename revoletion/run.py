@@ -66,8 +66,7 @@ class SimulationRun:
         self.paths = paths
         self.settings = settings or simulation.SimulationSettings()
 
-        self.runtime = utils.RunTime()
-        self.runtime.start()
+        self.runtime = utils.RunTimer()
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
@@ -364,7 +363,7 @@ class ScenarioWorker:
     def execute(self) -> None:
         self.update_scenario_status(_ScenarioStatus.STARTED)
 
-        run_time = utils.RunTime()
+        run_timer = utils.RunTimer()
 
         worker = mp.current_process()
         msg_parallel = (
@@ -420,13 +419,13 @@ class ScenarioWorker:
         finally:
             scenario.process_results()
 
-        run_time.stop()
-        self._logger.info(f"Scenario finished - runtime {run_time.duration:.2f}s")
+        run_timer.stop()
+        self._logger.info(f"Scenario finished - runtime {run_timer.duration:.2f} s")
 
         if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
 
-        scenario.save_result_summary([run_time.result_summary])
+        scenario.save_result_summary([run_timer.result_summary])
 
 
 def _worker_init(log_queue: mp.Queue, debugmode: bool) -> None:

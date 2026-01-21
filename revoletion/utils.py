@@ -33,7 +33,7 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
     return value
 
 
-class RunTime:
+class RunTimer:
     """
     Helper utility to measure the runtime of python code.
 
@@ -58,7 +58,7 @@ class RunTime:
     end: float = float("nan")
     duration: float = float("nan")
 
-    def start(self) -> None:
+    def __init__(self) -> None:
         self.begin = time.perf_counter()
 
     def stop(self) -> None:
@@ -72,7 +72,7 @@ class RunTime:
 
     @typing_extensions.override
     def __str__(self) -> str:
-        return f"{self.duration:.2f}s"
+        return f"{self.duration:.2f} s"
 
     def __enter__(self) -> typing_extensions.Self:
         self.start()
