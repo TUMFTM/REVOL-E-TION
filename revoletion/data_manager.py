@@ -106,11 +106,11 @@ class DataProvider(abc.ABC):
 
     @abc.abstractmethod
     def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
-        self.data = self.data.loc[
-            timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]
-        ]  # numeric data only for resampling
+        self.data = self.data[["power_spec", "speed_wind", "temp_air"]]  # numeric data only for resampling
         self.data.index = self.data.index.tz_convert(tz=self.location.timezone)  # convert to local time
-        return self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
+        self.data = self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
+        self.data = self.data.reindex(timeframe.dti_extd).interpolate(method="time")
+        return self.data
 
     def calc_specific_power(self) -> pd.DataFrame:
         """
@@ -324,41 +324,41 @@ class PvgisDataProvider(DataProvider):
         return shift
 
     @typing_extensions.override
-    def request_data_from_api(self, location: loc.Location, timeframe: time.TimeFrame, array: PvArray) -> pd.DataFrame:
+    def request_data_from_api(self, timeframe: time.TimeFrame) -> pd.DataFrame:
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
-        optimal_tilt = True if array.tilt is None else False
-        optimal_angles = True if array.azimuth is None else False
+        optimal_tilt = True if self.array.tilt is None else False
+        optimal_angles = True if self.array.azimuth is None else False
 
         if optimal_angles and not optimal_tilt:
             raise DataProviderApiError(
-                location,
+                self.location,
                 self._API_NAME,
                 "optimal azimuth requires optimal tilt",
             )
 
-        if array.type_cell not in _PVGIS_API_PV_TECH_MAPPING:
-            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {array.type_cell}")
-        pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[array.type_cell]
+        if self.array.type_cell not in _PVGIS_API_PV_TECH_MAPPING:
+            raise DataProviderApiError(self.location, self._API_NAME, f"unknown PV tech {self.array.type_cell}")
+        pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[self.array.type_cell]
 
         self.data, *_ = pvlib.iotools.get_pvgis_hourly(
-            latitude=location.latitude,
-            longitude=location.longitude,
+            latitude=self.location.latitude,
+            longitude=self.location.longitude,
             start=timeframe.start.tz_convert("utc").year + shift,
             end=timeframe.end.tz_convert("utc").year + shift,
-            raddatabase=array.rad_database.upper(),  # PVGIS is case sensitive
+            raddatabase=self.array.rad_database.upper(),  # PVGIS is case sensitive
             components=True,
-            surface_tilt=array.tilt if array.tilt is not None else 0,  # numeric
-            surface_azimuth=array.azimuth if array.azimuth is not None else 0,  # numeric
+            surface_tilt=self.array.tilt if self.array.tilt is not None else 0,  # numeric
+            surface_azimuth=self.array.azimuth if self.array.azimuth is not None else 0,  # numeric
             outputformat="json",
             usehorizon=True,
-            userhorizon=array.horizon_custom,
+            userhorizon=self.array.horizon_custom,
             pvcalculation=True,
             peakpower=1,  # for specific power
             pvtechchoice=pv_tech_pvgis,
-            mountingplace=array.mounting_place,
+            mountingplace=self.array.mounting_place,
             loss=0,  # calculated in system
-            trackingtype=array.tracking_type,
+            trackingtype=self.array.tracking_type,
             optimal_surface_tilt=optimal_tilt,
             optimalangles=optimal_angles,
             url=_PVGIS_API_BASE_URL,
@@ -367,26 +367,24 @@ class PvgisDataProvider(DataProvider):
         )
 
     @typing_extensions.override
-    def load_data_from_file(
-        self,
-        file: pathlib.Path,
-        location: loc.Location,
-    ) -> pd.DataFrame:
+    def load_data_from_file(self, file: pathlib.Path) -> pd.DataFrame:
         self.data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
 
-        if (location.latitude != meta["inputs"]["latitude"]) or (location.longitude != meta["inputs"]["longitude"]):
+        if (self.location.latitude != meta["inputs"]["latitude"]) or (
+            self.location.longitude != meta["inputs"]["longitude"]
+        ):
             self._logger.warning("PV file location does not equal scenario location")
 
     @typing_extensions.override
-    def remap_data(self, data: pd.DataFrame, location: loc.Location, timeframe: time.TimeFrame, **_):
+    def remap_data(self, timeframe: time.TimeFrame, **_):
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
-        data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-        data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
-        data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
-        data.index = data.index - pd.DateOffset(years=shift)
+        self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+        self.data["power_spec"] = self.data["P"] / 1e3  # convert 1kWp power to specific
+        self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
+        self.data.index = self.data.index - pd.DateOffset(years=shift)
 
-        return super().remap_data(data=data, location=location, timeframe=timeframe)
+        return super().remap_data(timeframe=timeframe)
 
 
 class BasicFileProvider(DataProvider):
