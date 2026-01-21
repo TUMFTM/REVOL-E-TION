@@ -294,7 +294,7 @@ class FixedDemandModel(RevoletionBaseModel):
         title="Load Profile",
         description="Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W",
         json_schema_extra={
-            "valid_values_or_format": "string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2'}"
+            "valid_values_or_format": "string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'}"
         },
     )
     consumption_yrl: float = Field(

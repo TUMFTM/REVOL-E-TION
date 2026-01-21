@@ -352,7 +352,7 @@ Undeferrable (i.e. inflexible) power demand such as households.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2'} |
+| `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'} |
 | `consumption_yrl` | Yearly consumption | float |  | Yearly consumption in Wh. Neglected if a filename is provided in load_profile. | [0, inf[ |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `crev_spec` | Specific customer revenue | float or str |  | Specific customer revenue for consumed energy in currency per Wh. Can be given as float or filename of a csv file containing a timeseries. | ]-inf, inf[ |
