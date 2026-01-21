@@ -114,9 +114,9 @@ class TimeFrame:
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
-        if (end is None and duration is None) or (end is not None and duration is not None):
+        if (end is None and pd.isna(duration)) or (end is not None and pd.notna(duration)):
             raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
-        elif duration is None:
+        elif pd.isna(duration):
             duration = (end - start).floor(timestep)
         elif end is None:
             duration = duration.floor(timestep)
