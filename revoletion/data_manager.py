@@ -106,11 +106,11 @@ class DataProvider(abc.ABC):
 
     @abc.abstractmethod
     def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
-        self.data = self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
-        # convert to local time
-        self.data.index = self.data.index.tz_convert(tz=self.location.timezone)
-        # slice data
-        return self.data.loc[timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
+        self.data = self.data.loc[
+            timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]
+        ]  # numeric data only for resampling
+        self.data.index = self.data.index.tz_convert(tz=self.location.timezone)  # convert to local time
+        return self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
 
     def calc_specific_power(self) -> pd.DataFrame:
         """
