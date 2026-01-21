@@ -16,7 +16,7 @@ repos:
   - repo: local
     hooks:
       - id: generate_scenario_schema
-        name: Generate the senario schema in the README
+        name: Generate the scenario schema in README
         entry: python scripts/generate_scenario_schema.py
         language: system
         pass_filenames: false

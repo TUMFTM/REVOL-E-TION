@@ -401,10 +401,6 @@ class PVSourceModel(RevoletionBaseModel):
         description="Type of sun tracking. 0=fixed, 1=single horizontal axis aligned north-south, 2=two-axis tracking, 3=vertical axis tracking, 4=single horizontal axis aligned east-west, 5=single inclined axis aligned north-south. For data_source 'Solcast API' only 0 and 1 are valid. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
         json_schema_extra={"valid_values_or_format": "0, 1, 2, 3, 4, 5"},
     )
-    horizon: bool = Field(
-        title="Consideration of a horizon",
-        description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 90m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
-    )
     horizon_custom: list[float] | None = Field(
         title="User horizon",
         description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API'.",

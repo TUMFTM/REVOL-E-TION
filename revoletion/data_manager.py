@@ -74,7 +74,6 @@ class PvArray(pydantic.BaseModel):
     """
 
     tracking_type: int
-    horizon: bool
     mounting_place: str
     pv_tech: str
     rad_database: str
