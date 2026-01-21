@@ -36,7 +36,7 @@ def test_process_example_scenarios(scenario_name: str):
                 logger=_LOGGER,
                 status_update=lambda status, queue: None,
             )
-            worker.execute(plot=False)
+            worker.execute()
 
             result_dir_entries = list(tempdir_path.iterdir())
             assert len(result_dir_entries) == 1, (
