@@ -408,14 +408,14 @@ class PVSourceModel(RevoletionBaseModel):
             "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None'
         },
     )
-    raddatabase: str | None = Field(
+    database: str | None = Field(
         title="Radiation database",
         description="Name of the radiation database for 'PVGIS-API'. Dependent on location and chosen simulation timeframe. 'PVGIS-SARAH' for Europe, Africa and Asia or 'PVGIS-NSRDB' for the Americas between 60°N and 20°S, 'PVGIS-ERA5' and 'PVGIS-COSMO' for Europe (including high-latitudes), and 'PVGIS-CMSAF' for Europe and Africa (will be deprecated).",
         json_schema_extra={
             "valid_values_or_format": "'PVGIS-SARAH2', 'PVGIS-SARAH3', 'PVGIS-NSRDB', 'PVGIS-ERA5', 'PVGIS-COSMO', 'PVGIS-CMSAF'"
         },
     )
-    pvtechchoice: str = Field(
+    type_cell: str = Field(
         "Unkown",
         title="PV technology",
         description="PV technology for 'PVGIS API'.",

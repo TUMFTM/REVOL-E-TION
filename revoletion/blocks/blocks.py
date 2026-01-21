@@ -577,18 +577,17 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
-        manager = data_manager.DataManager(self.scenario.location, self.scenario.logger)
-
         array = data_manager.PvArray(
-            tracking_type=self.trackingtype,
-            horizon=self.horizon,
-            mounting_place=self.mountingplace,
-            pv_tech=self.pvtechchoice,
-            rad_database=self.raddatabase,
-            tilt=self.tilt,
-            azimuth=self.azimuth,
-            horizon_custom=self.horizon_custom,
+            tracking_type=getattr(self, "trackingtype", 0),
+            mounting_place=getattr(self, "mountingplace", "free"),
+            type_cell=getattr(self, "type_cell", None),
+            rad_database=getattr(self, "database", None),
+            tilt=getattr(self, "tilt", None),
+            azimuth=getattr(self, "azimuth", None),
+            horizon_custom=getattr(self, "horizon_custom", None),
         )
+
+        manager = data_manager.DataManager(location=self.scenario.location, logger=self.scenario.logger, array=array)
 
         try:
             data_source = data_manager.DataSource(self.data_source)
@@ -603,12 +602,11 @@ class PVSource(RenewableSource):
             path_input_file = None
 
         try:
-            self.data = manager.get_for_data_source(
+            self.data = manager.get_data(
                 data_source,
-                array=array,
                 file_path=path_input_file,
                 timeframe=self.scenario.times.sim,
-                solcast_api_key=self.scenario.settings.key_solcast_api,
+                api_key=self.scenario.settings.key_solcast_api,
             )
         except data_manager.DataProviderError as e:
             raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e

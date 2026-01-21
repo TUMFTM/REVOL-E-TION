@@ -7,7 +7,6 @@ import enum
 import json
 import logging
 import pathlib
-import typing
 
 import pandas as pd
 import pvlib
@@ -15,7 +14,8 @@ import pydantic
 import requests
 import typing_extensions
 
-from . import location, time, utils
+from . import location as loc
+from . import time, utils
 
 _SOLCAST_API_BASE_URL = "https://api.solcast.com.au/data/historic/radiation_and_weather"
 _SOLCAST_UNMETERED_LATITUDE = 41.8902
@@ -62,7 +62,7 @@ class DataProviderError(utils.RevoletionError): ...
 
 
 class DataProviderApiError(DataProviderError):
-    def __init__(self, location: location.Location, api_name: str, msg: str) -> None:
+    def __init__(self, location: loc.Location, api_name: str, msg: str) -> None:
         super().__init__(f"Failed to fetch timeseries data for location {location} from {api_name} API: {msg}")
 
 
@@ -73,12 +73,12 @@ class PvArray(pydantic.BaseModel):
     Required by the different API implementations to determine the amount of generated power.
     """
 
-    tracking_type: int
-    mounting_place: str
-    pv_tech: str
-    rad_database: str
-    tilt: typing.Literal["optimal"] | float | None = None
-    azimuth: typing.Literal["optimal"] | float | None = None
+    tracking_type: int = 0
+    mounting_place: str = "free"
+    type_cell: str | None = None
+    rad_database: str | None = None
+    tilt: float | None = None
+    azimuth: float | None = None
     horizon_custom: list[float] | None = None
 
 
@@ -91,146 +91,30 @@ class DataProvider(abc.ABC):
     A consumer is expected to explicitly request the remapping of the retrieved data. This enables caching of the raw data, e.g., for large scale mode.
     """
 
-    def __init__(self, logger: logging.Logger, **_) -> None:
+    def __init__(self, logger: logging.Logger, location: loc.Location, array: PvArray, **_):
+        self.location = location
+        self.array = array
+        self.data = None
+
         self._logger = logger
 
     @abc.abstractmethod
-    def request_data_from_api(
-        self, location: location.Location, start: pd.Timestamp, end: pd.Timestamp, array: PvArray
-    ) -> pd.DataFrame: ...
+    def request_data_from_api(self, timeframe: time.TimeFrame): ...
 
     @abc.abstractmethod
-    def load_data_from_file(
-        self, file: pathlib.Path, location: location.Location, array: PvArray | None = None
-    ) -> pd.DataFrame:
-        """Read and load the timeseries data from a file."""
-        ...
+    def load_data_from_file(self, file: pathlib.Path): ...
 
     @abc.abstractmethod
-    def remap_data(
-        self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, **_
-    ) -> pd.DataFrame:
-        data = data.resample(timeframe.dti.freq).mean().ffill().bfill()
+    def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
+        self.data = self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
         # convert to local time
-        data.index = data.index.tz_convert(tz=location.timezone)
+        self.data.index = self.data.index.tz_convert(tz=self.location.timezone)
         # slice data
-        data = data.loc[timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
-        return data
+        return self.data.loc[timeframe.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
 
-
-class SolcastDataProvider(DataProvider):
-    """Provider to request and load Solcast data."""
-
-    _API_NAME = "Solcast"
-
-    def __init__(self, logger: logging.Logger, api_key: str | None = None) -> None:
-        super().__init__(logger)
-        self._api_key = api_key
-
-    @typing_extensions.override
-    def request_data_from_api(
-        self, location: location.Location, timeframe: time.TimeFrame, array: PvArray
-    ) -> pd.DataFrame:
-        if timeframe.start - timeframe.end > pd.Timedelta(days=31):
-            raise DataProviderApiError(
-                location=location, api_name=self._API_NAME, msg="Solcast API only supports 31 days at a time"
-            )
-
-        if self._api_key is None:
-            raise DataProviderApiError(location=location, api_name=self._API_NAME, msg="no Solcast API key specified")
-
-        if array.tracking_type not in _SOLCAST_TRACKING_TYPE_MAPPING:
-            raise DataProviderApiError(
-                location=location,
-                api_name=self._API_NAME,
-                msg=f"tracking type {array.tracking_type} cannot be mapped to valid Solcast array type",
-            )
-        array_type = _SOLCAST_TRACKING_TYPE_MAPPING[array.tracking_type]
-
-        if (location.latitude != _SOLCAST_UNMETERED_LATITUDE) and (location.longitude != _SOLCAST_UNMETERED_LONGITUDE):
-            self._logger.warning("metered Solcast location selected")
-
-        params = dict(
-            latitude=location.latitude,
-            longitude=location.longitude,
-            start=timeframe.start.isoformat(),
-            end=timeframe.end.isoformat(),
-            period=_SOLCAST_DEFAULT_PERIOD,
-            output_parameters=_SOLCAST_DEFAULT_OUTPUT_PARAMETERS,
-            format="json",
-            array_type=array_type,
-            time_zone="utc",
-            include_metadata=False,
-            terrain_shading=True,
-        )
-
-        if array.tilt is not None:
-            params["tilt"] = array.tilt
-        if array.azimuth is not None:
-            # convert to Solcast convention: north=0, east=-90, south=180, west=90
-            params["azimuth"] = x - 360 if (x := (-1 * array.azimuth) % 360) > 180 else x
-
-        response = requests.get(
-            url=_SOLCAST_API_BASE_URL,
-            headers={"Authorization": f"Bearer {self._solcast_api_key}"},
-            params=params,
-        )
-
-        if response.status_code != 200:
-            raise DataProviderApiError(
-                location=location,
-                api_name=self._API_NAME,
-                msg=f"Solcast API returned status {response.status_code}: {response.json()['response_status']['message']}",
-            )
-
-        try:
-            json_data = response.json()
-        except json.JSONDecodeError as e:
-            raise DataProviderApiError(
-                location=location,
-                api_name=self._API_NAME,
-                msg="response is not valid JSON",
-            ) from e
-
-        if "estimated_actuals" not in json_data:
-            raise DataProviderApiError(
-                location=location, api_name=self._API_NAME, msg="missing key 'estimated_actuals' in Solcast response"
-            )
-
-        return pd.json_normalize(json_data["estimated_actuals"])
-
-    @typing_extensions.override
-    def load_data_from_file(
-        self,
-        file: pathlib.Path,
-    ) -> pd.DataFrame:
-        return pd.read_csv(file)
-
-    @typing_extensions.override
-    def remap_data(
-        self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, array: PvArray
-    ) -> pd.DataFrame:
-        data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
-        data.index.name = "period_start"
-        data.drop(columns=["period", "period_end"], inplace=True)
-        data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
-        data = data.tz_convert(location.timezone)
-
-        data = self._calc_specific_power(data=data, location=location, array=array)
-
-        return super().remap_data(data=data, location=location, timeframe=timeframe, array=array)
-
-    def calc_specific_power(data: pd.DataFrame, location: location.Location, array: PvArray) -> pd.DataFrame:
+    def calc_specific_power(self) -> pd.DataFrame:
         """
-        Calculate potential PV array power from Solcast data considering actual tilt and azimuth.
-
-        Parameters:
-        data: solcast data imported using import_solcast()
-        latitude: location latitude in decimal degrees north of equator. South is negative
-        longitude: loaction longitude in decimal degrees east of prime meridian
-        timezone: location timezone in string format, e.g. "Europe/Berlin"
-        azimuth: panel azimuth in degrees east of north (i.e. north=0, east=90, south=180, west=270), default None is optimum
-        tilt: panel tilt in degrees up from horizontal, default None is optimum
+        Calculate potential PV array power from raw irradiation data considering actual tilt and azimuth.
 
         Algorithm and parameters (cSi panels) as per
         - Huld T., Friesen G., Skoczek A., Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for
@@ -239,20 +123,20 @@ class SolcastDataProvider(DataProvider):
             16, 307–315 (temperature model)
         """
 
-        if array.azimuth is None:
-            azimuth = 0 if location.latitude < 0 else 180
+        if self.array.azimuth is None:
+            azimuth = 0 if self.location.latitude < 0 else 180
         else:
-            azimuth = array.azimuth
+            azimuth = self.array.azimuth
 
-        if array.tilt is None:
-            tilt = abs(location.latitude)
+        if self.array.tilt is None:
+            tilt = abs(self.location.latitude)
         else:
-            tilt = array.tilt
+            tilt = self.array.tilt
 
         solar_position = pvlib.location.Location(
-            latitude=location.latitude,
-            longitude=location.longitude,
-        ).get_solarposition(times=data.index, method="nrel_numpy")
+            latitude=self.location.latitude,
+            longitude=self.location.longitude,
+        ).get_solarposition(times=self.data.index, method="nrel_numpy")
 
         # angle of incidence
         angle_of_incidence = pvlib.irradiance.aoi(
@@ -271,32 +155,134 @@ class SolcastDataProvider(DataProvider):
             surface_azimuth=azimuth,
             solar_zenith=solar_position["zenith"],
             solar_azimuth=solar_position["azimuth"],
-            dni=data["dni"],
-            ghi=data["ghi"],
-            dhi=data["dhi"],
-            dni_extra=pvlib.irradiance.get_extra_radiation(data.index),
+            dni=self.data["dni"],
+            ghi=self.data["ghi"],
+            dhi=self.data["dhi"],
+            dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
             model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
-            albedo=data["albedo"],
+            albedo=self.data["albedo"],
         )
 
         gti_eff = irradiance["poa_direct"] * iam + irradiance["poa_diffuse"]
 
         temp_module = pvlib.temperature.faiman(
             poa_global=gti_eff,
-            temp_air=data["temp_air"],
-            wind_speed=data["speed_wind"],
+            temp_air=self.data["temp_air"],
+            wind_speed=self.data["speed_wind"],
             u0=26.9,  # W/(˚C.m2) - cSi Free standing as in PVGIS
             u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
         )
 
-        data["power_spec"] = pvlib.pvarray.huld(
+        self.data["power_spec"] = pvlib.pvarray.huld(
             effective_irradiance=gti_eff,
             temp_mod=temp_module,
             pdc0=1.0,  # for specific power
-            cell_type="cSi",
+            cell_type="cSi",  # todo enable other cell types
         ).clip(lower=0)
 
-        return data
+
+class SolcastDataProvider(DataProvider):
+    """Provider to request and load Solcast data."""
+
+    _API_NAME = "Solcast"
+
+    def __init__(
+        self, logger: logging.Logger, location: loc.Location, array: PvArray, api_key: str | None = None
+    ) -> None:
+        super().__init__(logger=logger, location=location, array=array)
+        self._api_key = api_key
+
+    @typing_extensions.override
+    def request_data_from_api(self, timeframe: time.TimeFrame) -> pd.DataFrame:
+        if timeframe.start - timeframe.end > pd.Timedelta(days=31):
+            raise DataProviderApiError(
+                location=self.location, api_name=self._API_NAME, msg="Solcast API only supports 31 days at a time"
+            )
+
+        if self._api_key is None:
+            raise DataProviderApiError(
+                location=self.location, api_name=self._API_NAME, msg="no Solcast API key specified"
+            )
+
+        if self.array.tracking_type not in _SOLCAST_TRACKING_TYPE_MAPPING:
+            raise DataProviderApiError(
+                location=self.location,
+                api_name=self._API_NAME,
+                msg=f"tracking type {self.array.tracking_type} cannot be mapped to valid Solcast array type",
+            )
+        tracking_type = _SOLCAST_TRACKING_TYPE_MAPPING[self.array.tracking_type]
+
+        if (self.location.latitude != _SOLCAST_UNMETERED_LATITUDE) and (
+            self.location.longitude != _SOLCAST_UNMETERED_LONGITUDE
+        ):
+            self._logger.warning("metered Solcast location selected")
+
+        params = dict(
+            latitude=self.location.latitude,
+            longitude=self.location.longitude,
+            start=timeframe.start.isoformat(),
+            end=timeframe.end.isoformat(),
+            period=_SOLCAST_DEFAULT_PERIOD,
+            output_parameters=_SOLCAST_DEFAULT_OUTPUT_PARAMETERS,
+            format="json",
+            array_type=tracking_type,
+            time_zone="utc",
+            include_metadata=False,
+            terrain_shading=True,
+        )
+
+        if self.array.tilt is not None:
+            params["tilt"] = self.array.tilt
+        if self.array.azimuth is not None:
+            # convert to Solcast convention: north=0, east=-90, south=180, west=90
+            params["azimuth"] = x - 360 if (x := (-1 * self.array.azimuth) % 360) > 180 else x
+
+        response = requests.get(
+            url=_SOLCAST_API_BASE_URL,
+            headers={"Authorization": f"Bearer {self._solcast_api_key}"},
+            params=params,
+        )
+
+        if response.status_code != 200:
+            raise DataProviderApiError(
+                location=self.location,
+                api_name=self._API_NAME,
+                msg=f"Solcast API returned status {response.status_code}: {response.json()['response_status']['message']}",
+            )
+
+        try:
+            json_data = response.json()
+        except json.JSONDecodeError as e:
+            raise DataProviderApiError(
+                location=self.location,
+                api_name=self._API_NAME,
+                msg="response is not valid JSON",
+            ) from e
+
+        if "estimated_actuals" not in json_data:
+            raise DataProviderApiError(
+                location=self.location,
+                api_name=self._API_NAME,
+                msg="missing key 'estimated_actuals' in Solcast response",
+            )
+
+        self.data = pd.json_normalize(json_data["estimated_actuals"])
+
+    @typing_extensions.override
+    def load_data_from_file(self, file: pathlib.Path):
+        self.data = pd.read_csv(file)
+
+    @typing_extensions.override
+    def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
+        self.data.index = pd.to_datetime(self.data["period_end"]) - pd.to_timedelta(self.data["period"])
+        self.data.index.name = "period_start"
+        self.data.drop(columns=["period", "period_end"], inplace=True)
+        self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+        self.data = self.data.tz_convert(self.location.timezone)
+
+        self.calc_specific_power()
+
+        return super().remap_data(timeframe=timeframe)
 
 
 class PvgisDataProvider(DataProvider):
@@ -338,9 +324,7 @@ class PvgisDataProvider(DataProvider):
         return shift
 
     @typing_extensions.override
-    def request_data_from_api(
-        self, location: location.Location, timeframe: time.TimeFrame, array: PvArray
-    ) -> pd.DataFrame:
+    def request_data_from_api(self, location: loc.Location, timeframe: time.TimeFrame, array: PvArray) -> pd.DataFrame:
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
         optimal_tilt = True if array.tilt is None else False
@@ -353,11 +337,11 @@ class PvgisDataProvider(DataProvider):
                 "optimal azimuth requires optimal tilt",
             )
 
-        if array.pv_tech not in _PVGIS_API_PV_TECH_MAPPING:
-            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {array.pv_tech}")
-        pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[array.pv_tech]
+        if array.type_cell not in _PVGIS_API_PV_TECH_MAPPING:
+            raise DataProviderApiError(location, self._API_NAME, f"unknown PV tech {array.type_cell}")
+        pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[array.type_cell]
 
-        data, *_ = pvlib.iotools.get_pvgis_hourly(
+        self.data, *_ = pvlib.iotools.get_pvgis_hourly(
             latitude=location.latitude,
             longitude=location.longitude,
             start=timeframe.start.tz_convert("utc").year + shift,
@@ -382,23 +366,19 @@ class PvgisDataProvider(DataProvider):
             timeout=30,  # default
         )
 
-        return data
-
     @typing_extensions.override
     def load_data_from_file(
         self,
         file: pathlib.Path,
-        location: location.Location,
+        location: loc.Location,
     ) -> pd.DataFrame:
-        data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
+        self.data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
 
         if (location.latitude != meta["inputs"]["latitude"]) or (location.longitude != meta["inputs"]["longitude"]):
             self._logger.warning("PV file location does not equal scenario location")
 
-        return data
-
     @typing_extensions.override
-    def remap_data(self, data: pd.DataFrame, location: location.Location, timeframe: time.TimeFrame, **_):
+    def remap_data(self, data: pd.DataFrame, location: loc.Location, timeframe: time.TimeFrame, **_):
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
         data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
@@ -411,20 +391,20 @@ class PvgisDataProvider(DataProvider):
 
 class BasicFileProvider(DataProvider):
     @typing_extensions.override
-    def remap_data(self, data: pd.DataFrame, location: location.Location, timeframe=time.TimeFrame) -> pd.DataFrame:
-        return super().remap_data(data=data, location=location, timeframe=timeframe)
-
-    @typing_extensions.override
     def request_data_from_api(self, **_) -> None:
         raise NotImplementedError(f"Cannot request timeseries data with {type(self)}")
 
     @typing_extensions.override
-    def load_data_from_file(self, file: pathlib.Path, location: location.Location, **_) -> pd.DataFrame:
-        return utils.read_timeseries_csv(
+    def load_data_from_file(self, file: pathlib.Path, location: loc.Location, **_) -> pd.DataFrame:
+        self.data = utils.read_timeseries_csv(
             path_input_file=file,
             timezone=location.timezone,
             multiheader=False,
         )
+
+    @typing_extensions.override
+    def remap_data(self, data: pd.DataFrame, location: loc.Location, timeframe=time.TimeFrame) -> pd.DataFrame:
+        return super().remap_data(data=data, location=location, timeframe=timeframe)
 
 
 class DataSource(enum.Enum):
@@ -448,31 +428,34 @@ class DataSource(enum.Enum):
 
 
 class DataManager:
-    _location: location.Location
+    _location: loc.Location
     _logger: logging.Logger
 
-    def __init__(self, location: location.Location, logger: logging.Logger | None = None) -> None:
-        self._location = location
+    def __init__(self, location: loc.Location, array: PvArray, logger: logging.Logger | None = None) -> None:
+        self.location = location
+        self.array = array
+        self.data = None
+
+        self._provider = None
         self._logger = logger
 
-    def get_for_data_source(
+    def get_data(
         self,
         data_source: DataSource,
-        array: PvArray,
         file_path: pathlib.Path | None,
         timeframe: time.TimeFrame,
         **provider_kwargs,
     ) -> pd.DataFrame:
         data_provider_type = data_source.get_data_provider()
-        data_provider = data_provider_type(logger=self._logger, location=self._location, **provider_kwargs)
+        self._provider = data_provider_type(
+            logger=self._logger, location=self.location, array=self.array, **provider_kwargs
+        )
 
         if data_source.is_file_source():
             if file_path is None:
                 raise ValueError(f"Argument 'file_path' must not be None for file data source {data_source}")
-            data = data_provider.load_data_from_file(file=file_path, location=self._location, array=array)
+            self._provider.load_data_from_file(file=file_path)
         else:
-            data = data_provider.request_data_from_api(location=self._location, timeframe=timeframe, array=array)
+            self._provider.request_data_from_api(timeframe=timeframe)
 
-        remapped_data = data_provider.remap_data(data=data, location=self._location, timeframe=timeframe, array=array)
-
-        return remapped_data
+        return self._provider.remap_data(timeframe=timeframe)

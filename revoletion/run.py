@@ -363,7 +363,7 @@ class ScenarioWorker:
     def execute(self) -> None:
         self.update_scenario_status(_ScenarioStatus.STARTED)
 
-        run_time = time.RunTimer()
+        run_timer = time.RunTimer()
 
         worker = mp.current_process()
         msg_parallel = (
@@ -420,8 +420,8 @@ class ScenarioWorker:
         finally:
             scenario.process_results()
 
-        run_time.stop()
-        self._logger.info(f"Scenario finished - runtime {run_time}")
+        run_timer.stop()
+        self._logger.info(f"Scenario finished - runtime {run_timer}")
 
         if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
