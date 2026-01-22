@@ -54,7 +54,9 @@ class ScenarioModel(RevoletionBaseModel):
     timestep: str = Field(
         title="Time step",
         description="Time step used for the simulation",
-        json_schema_extra={"valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min or 1H."},
+        json_schema_extra={
+            "valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D."
+        },
     )
     sim_duration: int | str | None = Field(
         title="Project duration",

@@ -3,21 +3,18 @@ import pytest
 
 from revoletion import time
 
+TESTFREQS = [
+    ("90s", 0.025),
+    ("15min", 0.25),
+    ("12h", 12.0),
+    ("2D", 48.0),
+]
+
 
 class TestTimestep:
     @pytest.mark.parametrize(
         "timestep_str,expected_hours",
-        [
-            ("1H", 1.0),
-            ("2H", 2.0),
-            ("30T", 0.5),
-            ("30min", 0.5),
-            ("15T", 0.25),
-            ("1D", 24.0),
-            ("12H", 12.0),
-            ("45min", 0.75),
-            ("90S", 0.025),
-        ],
+        TESTFREQS,
     )
     def test_from_str_valid_inputs(self, timestep_str: str, expected_hours: float):
         """Test from_str with various valid pandas timedelta strings."""
@@ -34,14 +31,7 @@ class TestTimestep:
 
     @pytest.mark.parametrize(
         "freq,expected_hours",
-        [
-            ("1H", 1.0),
-            ("2H", 2.0),
-            ("30T", 0.5),
-            ("15T", 0.25),
-            ("1D", 24.0),
-            ("12H", 12.0),
-        ],
+        TESTFREQS,
     )
     def test_from_dti_with_freqstr(self, freq: str, expected_hours: float):
         """Test from_dti when DatetimeIndex has freqstr populated."""
@@ -54,13 +44,7 @@ class TestTimestep:
 
     @pytest.mark.parametrize(
         "freq,expected_hours",
-        [
-            ("1H", 1.0),
-            ("2H", 2.0),
-            ("30T", 0.5),
-            ("6H", 6.0),
-            ("1D", 24.0),
-        ],
+        TESTFREQS,
     )
     def test_from_dti_without_freq_regular(self, freq: str, expected_hours: float):
         """Test from_dti when DatetimeIndex lacks freqstr but is regular."""

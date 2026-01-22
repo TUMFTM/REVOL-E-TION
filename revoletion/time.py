@@ -65,37 +65,11 @@ class Timestep:
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        """Retrive the time step size of a datetime index in units of hour.
-
-        This helper is needed since the `freq` attribue of a `pd.DatetimeIndex` might not always be populated.
-        """
-        if dti.freq is not None:
-            return cls(td=pd.Timedelta(dti.freq))
-
-        # Convert to a series where each row contains the dti entry and its time difference to its previous entry.
-        dti_diff_series = dti.to_series().diff().dropna()
-
-        # Convert the time differences to hours.
-        dti_diff_hours_series = dti_diff_series.dt.total_seconds() / 3600.0
-
-        # Use the max and min difference to determine whether the dti is regular, i.e., each dti entry
-        # is equally spaced apart.
-        max_hours_diff = dti_diff_hours_series.max()
-        min_hours_diff = dti_diff_hours_series.min()
-
-        if max_hours_diff != min_hours_diff:
-            raise RuntimeError(
-                f"Cannot determine interval of datetime index: irregular datetime index (max={max_hours_diff}; min={min_hours_diff})"
-            )
-
-        td = pd.Timedelta(value=min_hours_diff, unit="h")
-        return cls(td=td)
+        return cls(td=pd.Timedelta(pd.infer_freq(dti)))
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
-        td = pd.to_timedelta(timestep_str)
-
-        return cls(td=td)
+        return cls(td=pd.Timedelta(timestep_str))
 
 
 @dataclass(frozen=True)
