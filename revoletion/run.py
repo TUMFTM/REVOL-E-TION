@@ -296,7 +296,7 @@ class SimulationRun:
             )
 
             self.logger.error(
-                msg=f"{str(e)} - continue on next scenario",  # todo is not written to log or stream
+                msg=f"{str(e)} - continue on next scenario",
                 exc_info=True,
             )
 
@@ -384,6 +384,10 @@ class ScenarioWorker:
         except Exception as e:
             self.update_scenario_status(
                 status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
+            )
+            self._logger.error(
+                msg=f"{str(e)} - continue on next scenario",
+                exc_info=True,
             )
             return
         finally:
