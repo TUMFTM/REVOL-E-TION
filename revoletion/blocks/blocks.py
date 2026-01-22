@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -18,6 +19,7 @@ from revoletion import data_manager, mobility, utils
 from revoletion import economics as eco
 
 if TYPE_CHECKING:
+    import datetime
     from revoletion import simulation
 
 
@@ -661,6 +663,8 @@ class WindSource(RenewableSource):
 
 
 class FixedDemand(SinkBlock):
+    _SLP_IDS = ["h0", "g0", "g1", "g2", "g3", "g4", "g5", "g6", "l0", "l1", "l2", "h25", "g25", "l25", "s25", "p25"]
+
     def init_evaluators(self):
         super().init_evaluators()
         self.evaluators["block"] = eco.EcoEvaluator(
@@ -682,87 +686,135 @@ class FixedDemand(SinkBlock):
 
         self.get_flows_apriori()
 
+    @staticmethod
+    def get_slp(
+        slp_id: str,
+        ts_start: pd.Timestamp,
+        ts_end: pd.Timestamp,
+        holiday_dates: list[datetime.date] = None,
+        path_data: Path = None,
+    ):
+        slp_id = slp_id.upper()
+        if slp_id not in [
+            "H0",
+            "G0",
+            "G1",
+            "G2",
+            "G3",
+            "G4",
+            "G5",
+            "G6",
+            "L0",
+            "L1",
+            "L2",
+            "L3",
+            "H25",
+            "G25",
+            "L25",
+            "S25",
+            "P25",
+        ]:
+            raise ValueError(f"SLP '{slp_id}' is not recognized.")
+
+        if not all(ts.tz for ts in [ts_start, ts_end]):
+            raise ValueError("Timestamps must be timezone-aware.")
+
+        if holiday_dates is None:
+            holiday_dates = []
+
+        if path_data is None:
+            # for standalone use: get revoletion data path
+            import importlib.resources as pkg_resources
+
+            try:
+                import revoletion
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(
+                    "revoletion not found. Please install revoletion or provide path_data argument."
+                )
+            path_data = pkg_resources.files(revoletion.data)
+
+        # read SLP data, do not set index here, as we need to convert time column first
+        data = pd.read_csv(
+            path_data / "slp_bdew.csv",
+            index_col=[],
+        )
+
+        # convert time column to time objects (only time without date)
+        data["time"] = pd.to_datetime(data["time"], format="%H:%M").dt.time
+
+        # set multi-index
+        data.set_index(["profile", "period", "day", "time"], inplace=True)
+
+        # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
+        freq_slp = "15min"
+        slp_dti = pd.DatetimeIndex(
+            pd.date_range(
+                start=ts_start.floor(freq_slp),
+                end=ts_end.ceil(freq_slp),
+                freq=freq_slp,
+            )
+        )
+
+        month = slp_dti.month
+        day = slp_dti.day
+
+        # vectorized period assignment
+        if slp_id in ["H25", "G25", "L25", "S25", "P25"]:
+            # Use month abbreviation for these profiles
+            period = pd.Series(slp_dti.strftime("%b"), index=slp_dti)
+        else:
+            # Use Winter/Summer/Transition logic
+
+            period = pd.Series(index=slp_dti, dtype="object")
+
+            # Winter: Nov 1 - Mar 20
+            period[((month >= 11) | (month <= 3)) & ~((month == 3) & (day > 20))] = "Winter"
+
+            # Summer: May 15 - Sep 14
+            period[((month > 5) | ((month == 5) & (day >= 15))) & ((month < 9) | ((month == 9) & (day <= 14)))] = (
+                "Summer"
+            )
+
+            # Transition: Mar 21 - May 14 and Sep 15 - Oct 31 (-> everything else)
+            period.fillna("Transition", inplace=True)
+
+        # vectorized daytype
+        dow = slp_dti.weekday
+        daytype = pd.Series("Workday", index=slp_dti)
+        # treat Christmas Eve and New Year's Eve as Saturdays, will be overwritten if they are Sundays
+        daytype[dow == 5 | ((month.isin([12])) & (day.isin([24, 31])))] = "Saturday"
+        # to use isin for holidays: remove timezone info and normalize to midnight
+        daytype[dow == 6 | slp_dti.tz_localize(None).normalize().isin(pd.to_datetime(holiday_dates))] = "Sunday"
+
+        lookup_index = pd.MultiIndex.from_arrays(
+            arrays=[[slp_id] * len(slp_dti), period.values, daytype.values, slp_dti.time],
+            names=data.index.names,
+        )
+
+        # use reindex to execute lookup
+        slp_timeseries = data.reindex(lookup_index).set_axis(slp_dti)
+
+        # for private households use dynamic correction as stated in VDEW manual
+        if slp_id in ["H0", "H25", "P25", "S25"]:
+            factor = np.polyval(p=[-3.92e-10, 3.2e-7, -7.02e-5, 2.1e-3, 1.24], x=slp_dti.dayofyear)
+            slp_timeseries = slp_timeseries.mul(factor, axis=0)
+
+        return slp_timeseries
+
     def get_flows_apriori(self):
         self.flows_apriori.index = (
             self.scenario.times.sim.dti
         )  # ToDo: Why needs this to be set explicitly? Should be done in init()
-        if self.load_profile in [
-            "h0",
-            "g0",
-            "g1",
-            "g2",
-            "g3",
-            "g4",
-            "g5",
-            "g6",
-            "l0",
-            "l1",
-            "l2",
-        ]:
 
-            def get_timeframe(date):
-                month = date.month
-                day = date.day
-                if ((month, day) >= (11, 1)) or ((month, day) <= (3, 20)):
-                    return "Winter"
-                elif (5, 15) <= (month, day) <= (9, 14):
-                    return "Summer"
-                else:  # Transition months
-                    return "Transition"
-
-            def get_daytype(date, holidays):
-                if date.date() in holidays or date.weekday() == 6:
-                    return "Sunday"
-                # Treat Christmas Eve and New Year's Eve as Saturdays if they are not Sundays
-                elif (date.weekday() == 5) or ((date.month, date.day) in [(12, 24), (12, 31)]):
-                    return "Saturday"
-                else:
-                    return "Workday"
-
-            # Read BDEW SLP profiles
-            slp = pd.read_csv(
-                self.scenario.paths.data_persist / "slp_bdew.csv",
-                skiprows=[0],
-                header=[0, 1, 2],
-                index_col=0,
+        if self.load_profile in self._SLP_IDS:
+            data = self.get_slp(
+                slp_id=self.load_profile,
+                ts_start=self.scenario.times.sim.start,
+                ts_end=self.scenario.times.sim.end,
+                holiday_dates=self.scenario.holiday_dates,
+                path_data=self.scenario.paths.data_persist,
             )
-
-            slp.index = pd.to_datetime(slp.index, format="%H:%M").time
-
-            # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
-            freq_slp = "15min"
-            dti_slp = pd.DatetimeIndex(
-                pd.date_range(
-                    start=self.scenario.times.sim.start.floor(freq_slp),
-                    end=self.scenario.times.sim.end.ceil(freq_slp),
-                    freq=freq_slp,
-                )
-            )
-
-            data = pd.Series(index=dti_slp, data=0, dtype="float64")
-
-            data = data.index.to_series().apply(
-                lambda x: slp.loc[
-                    x.time(),
-                    (
-                        self.load_profile.upper(),
-                        get_timeframe(x),
-                        get_daytype(x, self.scenario.holiday_dates),
-                    ),
-                ]
-            )
-
-            # apply dynamic correction for household profiles
-            if self.load_profile == "h0":
-                # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
-                num_day = data.index.dayofyear.astype("int64")
-                data = round(
-                    data
-                    * (
-                        -3.92e-10 * num_day**4 + 3.2e-7 * num_day**3 - 7.02e-5 * num_day**2 + 2.1e-3 * num_day**1 + 1.24
-                    ),
-                    ndigits=1,
-                )
 
             # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
             # this calculation leads to small deviations from the specified yearly consumption due to varying holidays and
@@ -771,8 +823,10 @@ class FixedDemand(SinkBlock):
 
             # resample to simulation time step
             self.flows_apriori["demand"] = data.resample(self.scenario.timestep.td).mean().ffill().bfill()
+
         elif self.load_profile in ["const", "constant"]:
             self.flows_apriori["demand"] = self.consumption_yrl / (365 * 24)
+
         elif isinstance(self.load_profile, str):  # load_profile is a file name
             load_profile_file = self.scenario.paths.input / utils.set_extension(
                 filename=self.load_profile, default_extension=".csv"

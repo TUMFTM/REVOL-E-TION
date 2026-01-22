@@ -296,7 +296,7 @@ class SimulationRun:
             )
 
             self.logger.error(
-                msg=f"{str(e)} - continue on next scenario",  # todo is not written to log or stream
+                msg=f"{str(e)} - continue on next scenario",
                 exc_info=True,
             )
 
@@ -385,7 +385,10 @@ class ScenarioWorker:
             self.update_scenario_status(
                 status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
             )
-            self._logger.error(f"Failed to initialize scenario {self._name}: {e}")
+            self._logger.error(
+                msg=f"{str(e)} - continue on next scenario",
+                exc_info=True,
+            )
             return
         finally:
             # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
