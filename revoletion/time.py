@@ -88,9 +88,9 @@ class TimeFrame:
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
-        if (end is None and pd.isna(duration)) or (end is not None and pd.notna(duration)):
+        if (end is None and duration is None) or (end is not None and duration is not None):
             raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
-        elif pd.isna(duration):
+        elif duration is None:
             duration = (end - start).floor(timestep)
         elif end is None:
             duration = duration.floor(timestep)
@@ -138,7 +138,7 @@ class SimulationTimes:
         if timestep_timedelta is None:
             raise ValueError(f"Failed to convert timestep '{timestep}' to pd.Timedelta")
 
-        sim_duration_timedelta = pd.Timedelta(sim_duration, unit="day")
+        sim_duration_timedelta = pd.Timedelta(sim_duration, unit="day") if sim_duration is not None else None
 
         sim = TimeFrame.create_from_start_timestamp(
             start=starttime_timestamp,
