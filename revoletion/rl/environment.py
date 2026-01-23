@@ -39,9 +39,9 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_base_dsoc: float = -0.5
+    penalty_base_dsoc: float = -5.0
 
-    penalty_factor_dsoc: float = 1.0
+    penalty_factor_dsoc: float = 10.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
 
     reward_base_dsoc: float = 0.1
@@ -52,14 +52,14 @@ class RewardConfig:
     penalty_continous_dsoc: bool = False
 
     penalty_factor_infeasible: float = 25.0
-    """Weight for the penatly if the energy system is determined to be infeasible and cannot be optimizated."""
+    """Weight for the penalty if the energy system is determined to be infeasible and cannot be optimized."""
 
     penalty_scaling_infeasible: bool = False
 
     penalty_base_power_diff: float = -0.05
 
     penalty_factor_power_diff: float = -0.05
-    """Weight for the penalty if the agent tries to charge with a power that would exceed the maximimal/minimum capacity of an EV."""
+    """Weight for the penalty if the agent tries to charge with a power that would exceed the maximal/minimum capacity of an EV."""
 
     penalty_base_atbase_violation: float = -0.05
 
@@ -252,7 +252,9 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         self._horizon_initializer = HorizonInitializer(
             horizon_initializers=[
-                SocEnvelopeHorizonInitialzer(),
+                SocEnvelopeHorizonInitialzer(
+                    soc_min=self._config.soc_min,
+                ),
                 InitialSocHorizonInitializer(),
                 AtBaseHorizonInitializer(),
             ]

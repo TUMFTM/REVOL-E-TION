@@ -7,7 +7,8 @@ import pypsa
 from typing_extensions import TypeAlias
 
 from revoletion import utils
-from ._utils import get_datetime_index_time_step_in_hours, normalize_dti_or_df
+
+from ._utils import normalize_dti_or_df
 
 _OptTimeSeriesArg: TypeAlias = float | pd.Series | pd.DataFrame | None
 
@@ -58,8 +59,13 @@ class PyPSANetworkBuilder:
         p_min_pu: _OptTimeSeriesArg = None,
         marginal_cost: _OptTimeSeriesArg = None,
         capital_cost: _OptTimeSeriesArg = None,
+        committable: bool | None = None,
+        status: _OptTimeSeriesArg = None,
     ) -> None:
         _LOGGER.debug(f"Adding link '{name}' from '{bus0}' to '{bus1}': {p_nom=}; {p_nom_extendable=}; {efficiency=}")
+
+        if committable and p_nom_extendable:
+            raise ValueError(f"Link '{name}' cannot be extendable and committable at the same time")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -78,6 +84,8 @@ class PyPSANetworkBuilder:
                 p_min_pu=self._normalize_optional_timeseries_input(p_min_pu),
                 marginal_cost=self._normalize_optional_timeseries_input(marginal_cost),
                 capital_cost=self._normalize_optional_timeseries_input(capital_cost),
+                committable=committable,
+                status=status,
             )
 
     def add_load(
@@ -111,8 +119,12 @@ class PyPSANetworkBuilder:
         capital_cost: _OptTimeSeriesArg = None,
         control: str | None = None,
         sign: float | None = None,
+        committable: bool | None = None,
     ) -> None:
         _LOGGER.debug(f"Adding generator '{name}' to '{bus}': {p_nom=}; {p_nom_extendable=}")
+
+        if committable and p_nom_extendable:
+            raise ValueError(f"Generator '{name}' cannot be extendable and committable at the same time")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -130,6 +142,7 @@ class PyPSANetworkBuilder:
                 capital_cost=self._normalize_optional_timeseries_input(capital_cost),
                 control=control,
                 sign=sign,
+                committable=committable,
             )
 
     def add_store(

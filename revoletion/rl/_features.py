@@ -127,7 +127,7 @@ class EnvironmentFeatureExtractor:
 
             for electric_fleet_unit_block in electric_fleet_unit_blocks:
                 if optimization_result is None:
-                    soc = electric_fleet_unit_block.states.loc[ctx.current_time_step, "soc"]
+                    soc = electric_fleet_unit_block.states.loc[ctx.previous_time_step, "soc"]
                     if np.isnan(soc):
                         soc = 0.0
 

@@ -35,9 +35,10 @@ def get_soc_envelope(
     for time_step in reversed(dti):
         required_soc = min(required_soc + dsoc[time_step], 1.0)
 
-        soc_floor[time_step] = required_soc
         if plugged[time_step]:
             required_soc = max(required_soc - dsoc_step_max, 0.0)
+
+        soc_floor[time_step] = required_soc
 
     return soc_floor
 

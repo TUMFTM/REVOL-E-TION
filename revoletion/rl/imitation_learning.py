@@ -258,6 +258,7 @@ class ImitationTrajectoryComputer:
             invest=False,
             enforce_soc_constraints=True,
             warmstart=False,
+            committment=True,
         )
 
         problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
@@ -296,6 +297,8 @@ class ImitationTrajectoryComputer:
             total += 1
 
             if not self._should_apply_power_envelope():
+                problem.set_minimum_output_power_unit(block, 0.1, episode_horizon.dti)
+                problem.set_minimum_input_power_unit(block, 0.1, episode_horizon.dti)
                 continue
 
             num_power_envelope += 1
@@ -375,14 +378,14 @@ class ImitationTrajectoryComputer:
         actions_buffer = []
 
         for time_step in episode_horizon.dti:
+            # Extract actions
+            action_vec = self._extract_actions(ctx, optimization_result, time_step)
+            actions_buffer.append(action_vec)
+
             # Extract observation
             obs_dict = feature_extractor.extract_all_features(ctx, optimization_result)
             obs = types.maybe_wrap_in_dictobs(obs_dict)
             observations_buffer.append(obs)
-
-            # Extract actions
-            action_vec = self._extract_actions(ctx, optimization_result, time_step)
-            actions_buffer.append(action_vec)
 
             ctx.step()
 

@@ -70,7 +70,8 @@ class InitialSocHorizonInitializer(HorizonInitializerInterface):
             electric_fleet_unit_block.states.loc[horizon.start, "soc"] = initial_soc
 
         for stationary_battery_blocks in scenario.block_registry.get("StationaryBattery", {}).values():
-            initial_soc = np.random.uniform(low=0.0, high=1.0)
+            initial_soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
+            initial_soc = np.random.uniform(low=initial_soc_min, high=1.0)
             stationary_battery_blocks.states.loc[horizon.start, "soc"] = initial_soc
 
 

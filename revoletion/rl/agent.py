@@ -146,7 +146,7 @@ class SACPolicyAgentConfig(OffPolicyAgentConfig):
 DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
     learning_rate=0.0003,  # sb3: 0.0003
     gamma=0.99,  # sb3: 0.99
-    n_steps=256,  # sb3: 2028
+    n_steps=1024,  # sb3: 2048
     batch_size=64,  # sb3: 64
     use_sde=True,  # sb3: False
     sde_sample_freq=4,  # sb3: None

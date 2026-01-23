@@ -83,6 +83,8 @@ class OptimizationProblemConfig:
 
     enforce_soc_constraints: bool = True
 
+    committment: bool = False
+
 
 class OptimizationProblem(abc.ABC):
     """

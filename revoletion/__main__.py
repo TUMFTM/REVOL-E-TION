@@ -247,7 +247,7 @@ def _control_cmd(args: argparse.Namespace) -> None:
         input=None if args.input is None else Path(args.input),
         output=None if args.output is None else Path(args.output),
     )
-    scenario_factory = simulation.ControlScenarioFactory(paths)
+    scenario_factory = rl.ScenarioFactory(paths)
 
     # Configure the level of the logger according to `debugmode` and setup handlers.
     configure_root_logger(debugmode=args.debugmode)

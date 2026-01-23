@@ -397,6 +397,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             enable_investment=config.invest,
             enable_fixed_dispatch=False,
             enforce_soc_min=config.enforce_soc_constraints,
+            enable_committment=config.committment,
         )
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
 
@@ -407,7 +408,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
     ) -> None:
         if not isinstance(block, blocks.ElectricFleetUnit):
-            raise ValueError(f"Cannot set output power unit for block {block.name} of type {type(block)}")
+            raise ValueError(f"Cannot set input power unit for block {block.name} of type {type(block)}")
 
         normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
 
@@ -433,11 +434,25 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         inflow_capacity = block.pwr_chg_max
 
+        # If the model is optimized using warmstart, the p_set constraints might already be populated.
+        # Since this would interfere with the new power unit limits they must be reset.
         p_max = p_max_pu * inflow_capacity
         p_min = p_min_pu * inflow_capacity
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = p_max
         self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_in] = p_min
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = 0.0
+
+    def set_minimum_input_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex
+    ) -> None:
+        if not isinstance(block, blocks.ElectricFleetUnit):
+            raise ValueError(f"Cannot set minimum input power unit for block {block.name} of type {type(block)}")
+
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
+        charger_in = make_pypsa_label(block, "inflow-link")
+        self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = power_unit
+        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
 
     @override
     def set_output_power_unit(
@@ -475,6 +490,18 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_out] = p_max
         self._model.constraints["Link-fix-p-lower"].rhs.loc[normalized_dti, charger_out] = p_min
         self._model.constraints["Link-fix-p-upper"].rhs.loc[normalized_dti, charger_in] = 0.0
+
+    def set_minimum_output_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex
+    ) -> None:
+        if not isinstance(block, blocks.ElectricFleetUnit):
+            raise ValueError(f"Cannot set minimum output power for block {block.name} of type {type(block)}")
+
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
+        charger_out = make_pypsa_label(block, "outflow-link")
+        self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = power_unit
+        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
 
     @override
     def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
@@ -530,6 +557,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             solver_options={
                 "output_flag": False,
             },
+            # TODO: added to speedup trajectory generation -> make configurable?
+            mip_rel_gap=0.01,
         )
 
         if self._warmstart_folder is not None:

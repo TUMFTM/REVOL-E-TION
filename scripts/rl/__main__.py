@@ -29,7 +29,7 @@ def train_rl(
     base_policy_path: Path | None = None,
     debug: bool = False,
     seed: int = 42,
-    custom_feature_extractor: bool = True,
+    custom_feature_extractor: bool = False,
 ) -> None:
     np.random.seed(seed)
     logger.configure_root_logger(debugmode=debug)
@@ -143,7 +143,7 @@ def train_imitation_bc(
     seed: int = 42,
     n_epochs: int = 10,
     debug: bool = False,
-    custom_feature_extractor: bool = True,
+    custom_feature_extractor: bool = False,
 ) -> None:
     np.random.seed(seed)
 
@@ -161,6 +161,8 @@ def train_imitation_bc(
 
     with open(trajectories_path, "rb") as f:
         trajectories = pickle.load(f)
+
+    breakpoint()
 
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
