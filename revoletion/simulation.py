@@ -397,52 +397,6 @@ class Scenario:
 
         self.logger.debug("Scenario initialization completed")
 
-        # todo adapt to new fleet structure
-        # # check example parameter configuration of rulebased charging for validity
-        # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
-        #                 (fleet.mode_scheduling in self.apriori_lvls)
-        #                 and fleet.mode_scheduling != 'uc'
-        #                 and not fleet.power_lim_static]:
-        #     if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-        #                          f'without static load management (lm_static) is not compatible'
-        #                          f' with size optimization')
-        #     if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryBattery)]:
-        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-        #                          f'without static load management (lm_static) is not implemented for systems with '
-        #                          f'stationary energy storage')
-        #     if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-        #         raise ValueError(f'All rulebased CommoditySystems with dynamic load management '
-        #                          f'have to follow the same strategy. Different strategies are not possible')
-        #     if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-        #         raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
-        #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
-        #                          f' be connected to the same bus')
-
-    @classmethod
-    def create_from_parameters(
-        cls,
-        paths: SimulationPaths,
-        settings: SimulationSettings,
-        name: str,
-        parameters: pd.Series,
-        logger: logging.Logger | None = None,
-    ) -> Self:
-        loc = location.Location.create_from_lat_lon(
-            latitude=parameters.loc["scenario", "latitude"],
-            longitude=parameters.loc["scenario", "longitude"],
-            logger=logger,
-        )
-
-        return cls(
-            paths=paths,
-            settings=settings,
-            name=name,
-            parameters=parameters,
-            location=loc,
-            logger=logger,
-        )
-
     @classmethod
     def create_from_file(cls, paths: SimulationPaths, settings: SimulationSettings) -> Self:
         """

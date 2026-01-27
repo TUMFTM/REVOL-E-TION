@@ -20,7 +20,7 @@ import pandas as pd
 from oemof import solph as solph
 
 from . import logger as logger_fcs
-from . import simulation, time, utils
+from . import location, simulation, time, utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -372,14 +372,28 @@ class ScenarioWorker:
         self._logger.info(f"Scenario initialization{msg_parallel}")
 
         if self._lock:
-            # During multiprocessing the construction of each scenario is delayed by 2 seconds.
-            # This is necessary, since otherwise the OSM API would rate limit us.
+            # avoid rate limiting by geocoding API
             _ = self._lock.acquire()
             pytime.sleep(2)
 
+        loc = location.Location.create_from_lat_lon(
+            latitude=self._parameters[("scenario", "latitude")],
+            longitude=self._parameters[("scenario", "longitude")],
+            logger=self._logger,
+            geocode=True,  # todo make optional
+        )
+
+        if self._lock:
+                self._lock.release()
+
         try:
-            scenario = simulation.Scenario.create_from_parameters(
-                self._paths, self._settings, self._name, self._parameters, self._logger
+            scenario = simulation.Scenario(
+                paths=self._paths,
+                settings=self._settings,
+                name=self._name,
+                parameters=self._parameters,
+                location=loc,
+                logger=self._logger
             )
         except Exception as e:
             self.update_scenario_status(
@@ -390,11 +404,7 @@ class ScenarioWorker:
                 exc_info=True,
             )
             return
-        finally:
-            # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
-            if self._lock:
-                self._lock.release()
-
+            
         self._logger.info("Scenario fully initialized")
         self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
 
