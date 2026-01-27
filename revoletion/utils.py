@@ -7,16 +7,17 @@ import logging
 import re
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import pandas as pd
-import typing_extensions
+import pytz
+
+from . import time
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str = None) -> pd.Timedelta | None:
+def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str | None = None) -> pd.Timedelta | None:
     if value is None:
         return None
 
@@ -31,55 +32,6 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
         value = pd.Timedelta(value, unit=unit)
 
     return value
-
-
-class RunTimer:
-    """
-    Helper utility to measure the runtime of python code.
-
-
-    Usage as context manager:
-
-         with RunTime() as run_time:
-             do_stuff()
-         print(run_time)
-
-
-     Plain usage:
-
-         run_time = RunTime()
-         run_time.start()
-         do_stuff()
-         run_time.stop()
-         print(run_time)
-    """
-
-    begin: float = float("nan")
-    end: float = float("nan")
-    duration: float = float("nan")
-
-    def __init__(self) -> None:
-        self.begin = time.perf_counter()
-
-    def stop(self) -> None:
-        self.end = time.perf_counter()
-        self.duration = self.end - self.begin
-
-    @property
-    def result_summary(self) -> pd.Series:
-        # only export runtime duration -> start and end are not interpretable
-        return pd.Series({"runtime_duration_s": round(self.duration, 2)})
-
-    @typing_extensions.override
-    def __str__(self) -> str:
-        return f"{self.duration:.2f} s"
-
-    def __enter__(self) -> typing_extensions.Self:
-        self.start()
-        return self
-
-    def __exit__(self, _type, _value, _traceback) -> None:
-        self.stop()
 
 
 def infer_dtype(value):
@@ -159,12 +111,20 @@ def import_module_from_path(module_name, file_path):
 
 
 def read_timeseries_csv(
-    path_input_file: str | Path, scenario: "simulation.Scenario", multiheader: bool = False, resampling: bool = True
-):
+    path_input_file: str | Path,
+    timezone: pytz.BaseTzInfo,
+    multiheader: bool = False,
+    resampling_dti: pd.DatetimeIndex | None = None,
+) -> pd.DataFrame:
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
 
-    :raises IndexError: If timeseries data does not cover simulation timeframe.
+    :param path_input_file: Path to the CSV file containing the timeseries data.
+    :param timezone: Timezone to which the timeseries data should be aligned to.
+    :param multiheader: Whether the timeseries data is stored in CSV file with multiple headers.
+    :param resampling_dti: If given, the timeseries data is resampled to the given datetimeindex.
+
+    :raises IndexError: If timeseries data does not cover `resampling_dti` timeframe.
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
@@ -186,30 +146,35 @@ def read_timeseries_csv(
         df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
 
     # parser in to_csv does not create datetimeindex
-    df = df.tz_convert(scenario.location.timezone)
-    if not resampling:
+    df = df.tz_convert(timezone)
+    if resampling_dti is None:
         return df
-    else:
-        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep.td)).ffill()
 
-        def resample_column(column):
-            if df_extd[column].dtype == bool:
-                return df_extd[column].resample(scenario.timestep.td).ffill().bfill()
-            else:
-                return df_extd[column].resample(scenario.timestep.td).mean().ffill().bfill()
+    timestep = time.Timestep.from_dti(resampling_dti)
 
-        df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+    df_extd = df.reindex(extend_dti(dti=df.index, freq=timestep.td)).ffill()
 
-        if not (scenario.times.sim.dti.isin(df.index).all()):
-            raise IndexError(f"Input timeseries data in {path_input_file} does not cover simulation timeframe")
-        return df.loc[scenario.times.sim.dti]
+    def resample_column(column):
+        if df_extd[column].dtype == bool:
+            return df_extd[column].resample(timestep.td).ffill().bfill()
+        else:
+            return df_extd[column].resample(timestep.td).mean().ffill().bfill()
+
+    df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+
+    if not (resampling_dti.isin(df.index).all()):
+        raise IndexError(f"Input timeseries data in {path_input_file} does not cover resampling timeframe")
+    return df.loc[resampling_dti]
 
 
 def set_extension(filename: Path | str, default_extension: str = ".csv") -> Path:
     """
     Add a default extension to a filename if none is given. If the filename already has an extension, it is kept.
     """
-    return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
+    if filename is None:
+        return None
+    else:
+        return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
 
 
 UNKNOWN_VERSION = "unknown"
@@ -288,3 +253,6 @@ def read_scenario_from_file(scenario_path: Path) -> pd.DataFrame:
 
     parameters = parameters.sort_index(sort_remaining=True).map(infer_dtype)
     return parameters
+
+
+class RevoletionError(Exception): ...

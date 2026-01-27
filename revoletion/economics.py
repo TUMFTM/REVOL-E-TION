@@ -105,9 +105,9 @@ class EcoTools:
             try:
                 df = utils.read_timeseries_csv(
                     path_input_file=scenario.paths.input / filename,
-                    scenario=scenario,
+                    timezone=scenario.location.timezone,
                     multiheader=False,
-                    resampling=True,
+                    resampling_dti=scenario.times.sim.dti,
                 )
             except IndexError as exc:
                 raise IndexError(f"Failed to load timeseries data for block {block.name}: {exc}")
