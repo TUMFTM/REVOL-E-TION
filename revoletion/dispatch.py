@@ -407,7 +407,7 @@ class FleetDispatcher:
                 self.log.loc[process.time_dep : time_end, (unit, "dist")] = dist_avg
                 self.log.loc[process.time_dep, (unit, "dsoc")] = process.dsoc_prim
 
-        self.log = self.log.loc[dti_output, :]
+        self.log = self.log.loc[dti_output, :].convert_dtypes()
         # endregion
 
     def calc_kpis(self):
