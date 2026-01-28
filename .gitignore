@@ -11,6 +11,8 @@ results/*
 
 images/auxil/*
 
+.gitlab-ci-local
+.gitlab-ci-local/*
 
 # VS Code
 .vscode/
