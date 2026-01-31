@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 import threading
-import time
+import time as pytime
 import traceback
 import typing
 from dataclasses import dataclass
@@ -20,7 +20,7 @@ import pandas as pd
 from oemof import solph as solph
 
 from . import logger as logger_fcs
-from . import simulation, utils
+from . import simulation, time, utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class SimulationRun:
         self.paths = paths
         self.settings = settings or simulation.SimulationSettings()
 
-        self.runtime = utils.RunTimer()
+        self.run_timer = time.RunTimer()
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
@@ -185,8 +185,8 @@ class SimulationRun:
             for scenario_name in self.scenario_names:
                 self.execute_scenario(name=scenario_name, largescalemode=self.settings.largescalemode)
 
-        self.runtime.stop()
-        self.logger.info(f"Total runtime for all scenarios: {self.runtime}")
+        self.run_timer.stop()
+        self.logger.info(f"Total runtime for all scenarios: {self.run_timer}")
 
         self.join_results()
 
@@ -232,7 +232,7 @@ class SimulationRun:
                             if isinstance(value, (int, float, bool, str))
                         }
                     ),
-                    self.runtime.result_summary,
+                    self.run_timer.result_summary,
                 ]
             )
             # apply MultiIndex
@@ -363,7 +363,7 @@ class ScenarioWorker:
     def execute(self) -> None:
         self.update_scenario_status(_ScenarioStatus.STARTED)
 
-        run_timer = utils.RunTimer()
+        run_timer = time.RunTimer()
 
         worker = mp.current_process()
         msg_parallel = (
@@ -375,7 +375,7 @@ class ScenarioWorker:
             # During multiprocessing the construction of each scenario is delayed by 2 seconds.
             # This is necessary, since otherwise the OSM API would rate limit us.
             _ = self._lock.acquire()
-            time.sleep(2)
+            pytime.sleep(2)
 
         try:
             scenario = simulation.Scenario.create_from_parameters(
@@ -424,7 +424,7 @@ class ScenarioWorker:
             scenario.process_results()
 
         run_timer.stop()
-        self._logger.info(f"Scenario finished - runtime {run_timer.duration:.2f} s")
+        self._logger.info(f"Scenario finished - runtime {run_timer}")
 
         if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
