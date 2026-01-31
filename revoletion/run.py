@@ -384,7 +384,7 @@ class ScenarioWorker:
         )
 
         if self._lock:
-                self._lock.release()
+            self._lock.release()
 
         try:
             scenario = simulation.Scenario(
@@ -393,7 +393,7 @@ class ScenarioWorker:
                 name=self._name,
                 parameters=self._parameters,
                 location=loc,
-                logger=self._logger
+                logger=self._logger,
             )
         except Exception as e:
             self.update_scenario_status(
@@ -404,7 +404,7 @@ class ScenarioWorker:
                 exc_info=True,
             )
             return
-            
+
         self._logger.info("Scenario fully initialized")
         self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
 
