@@ -32,6 +32,9 @@ core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
+dem,capex_preexisting_metering,True,True,True,True
+dem,capex_fix_metering,300,300,300,300
+dem,mntex_fix_metering,10,10,10,10
 dem,load_profile,dem_timeseries,dem_timeseries,dem_timeseries,dem_timeseries
 dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac

@@ -675,6 +675,14 @@ class FixedDemand(SinkBlock):
             crev_config=dict(spec=self.crev_spec),
         )
 
+        self.evaluators["metering"] = eco.EcoEvaluator(
+            name="metering",
+            scenario=self.scenario,
+            block=self,
+            capex_config=dict(consider_preexisting=self.capex_preexisting_metering, fix=self.capex_fix_metering),
+            mntex_config=dict(fix=self.mntex_fix_metering),
+        )
+
     def __init__(self, name: str, scenario):
         super().__init__(
             name=name,

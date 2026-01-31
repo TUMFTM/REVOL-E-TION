@@ -292,6 +292,20 @@ class FixedDemandModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
+    capex_preexisting_metering: bool = Field(
+        title="Consideration of preexisting metering capital expensditures",
+        description="Consider existing metering and operational capex in cost calculation.",
+    )
+    capex_fix_metering: float = Field(
+        ge=0.0,
+        title="Fixed capital expenditures for metering infrastructure",
+        description="Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand",
+    )
+    mntex_fix_metering: float = Field(
+        ge=0.0,
+        title="Fixed maintenance expenditures for metering infrastructure and operations",
+        description="Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand",
+    )
     load_profile: str = Field(
         title="Load Profile",
         description="Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W",

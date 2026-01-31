@@ -332,21 +332,21 @@ class FleetDispatcher:
 
         # create dataclass instances
         self.processes = {
-            pid: DispatchProcess(
-                pid=pid,
+            row.Index: DispatchProcess(
+                pid=row.Index,
                 dispatcher_prim=self,
                 status="unprocessed",
-                time_req=row["time_req"],
-                step_req=row["step_req"],
-                dtime_patience=row["dtime_patience"],
-                steps_patience=row["steps_patience"],
-                dtime_rental=row["dtime_rental"],
-                steps_rental=row["steps_rental"],
-                energy_req=row["energy_req"],
-                distance_req=row.get("distance", None),
-                subfleets=row.get("subfleets", None),
+                time_req=row.time_req,
+                step_req=row.step_req,
+                dtime_patience=row.dtime_patience,
+                steps_patience=row.steps_patience,
+                dtime_rental=row.dtime_rental,
+                steps_rental=row.steps_rental,
+                energy_req=row.energy_req,
+                distance_req=getattr(row, "distance", None),
+                subfleets=getattr(row, "subfleets", None),
             )
-            for pid, row in self.demand.requests.iterrows()
+            for row in self.demand.requests.itertuples()
         }
 
     def run_standalone(self, dti_output: pd.DatetimeIndex = None):
