@@ -133,7 +133,7 @@ class DataProvider(abc.ABC):
         solar_position = pvlib.location.Location(
             latitude=self.location.latitude,
             longitude=self.location.longitude,
-        ).get_solarposition(times=self.data.index, method="nrel_numpy")
+        ).get_solarposition(times=data.index, method="nrel_numpy")
 
         # angle of incidence
         angle_of_incidence = pvlib.irradiance.aoi(
@@ -155,7 +155,7 @@ class DataProvider(abc.ABC):
             dni=data["dni"],
             ghi=data["ghi"],
             dhi=data["dhi"],
-            dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
+            dni_extra=pvlib.irradiance.get_extra_radiation(data.index),
             model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
             albedo=data["albedo"],
         )
@@ -282,7 +282,7 @@ class SolcastDataProvider(DataProvider):
 
         data["power_spec"] = self.calc_specific_power(data=data)
 
-        data = super().remap_data(timeframe=timeframe)
+        data = super().remap_data(data=data, timeframe=timeframe)
 
         return data
 
@@ -377,7 +377,7 @@ class PvgisDataProvider(DataProvider):
             self.location.longitude != meta["inputs"]["longitude"]
         ):
             self._logger.warning("PV file location does not equal scenario location")
-        
+
         return data
 
     @typing_extensions.override
@@ -388,10 +388,11 @@ class PvgisDataProvider(DataProvider):
         data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
         data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
         data.index = data.index - pd.DateOffset(years=shift)
-        
-        data = super().remap_data(timeframe=timeframe)
+
+        data = super().remap_data(data=data, timeframe=timeframe)
 
         return data
+
 
 class BasicFileProvider(DataProvider):
     @typing_extensions.override
@@ -458,6 +459,6 @@ class DataManager:
         else:
             data = self._provider.request_data_from_api(timeframe=timeframe)
 
-        data = self._provider.remap_data(data= data, timeframe=timeframe)
+        data = self._provider.remap_data(data=data, timeframe=timeframe)
 
         return data
