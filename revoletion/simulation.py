@@ -398,6 +398,30 @@ class Scenario:
         self.logger.debug("Scenario initialization completed")
 
     @classmethod
+    def create_from_parameters(
+        cls,
+        paths: SimulationPaths,
+        settings: SimulationSettings,
+        name: str,
+        parameters: pd.Series,
+        logger: logging.Logger | None = None,
+    ) -> Self:
+        loc = location.Location.create_from_lat_lon(
+            latitude=parameters.loc["scenario", "latitude"],
+            longitude=parameters.loc["scenario", "longitude"],
+            logger=logger,
+        )
+
+        return cls(
+            paths=paths,
+            settings=settings,
+            name=name,
+            parameters=parameters,
+            location=loc,
+            logger=logger,
+        )
+
+    @classmethod
     def create_from_file(cls, paths: SimulationPaths, settings: SimulationSettings) -> Self:
         """
         Create a new scenario from a scenario file.
@@ -540,15 +564,15 @@ class Scenario:
         results_scenario = pd.concat(
             [
                 # get attributes of type int, float, bool and str for scenario.result_summary
-                pd.Series(
-                    {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))}
-                ),
+                pd.Series({
+                    key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))
+                }),
                 # get dict of blocks with class names
                 pd.Series(
                     index=["blocks"],
-                    data=str(
-                        {key: value.classname for key, value in self.block_registry.get("TopLevelBlock", {}).items()}
-                    ),
+                    data=str({
+                        key: value.classname for key, value in self.block_registry.get("TopLevelBlock", {}).items()
+                    }),
                 ),
                 # get energies dataframes results for scenario.result_summary
                 utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"),
