@@ -54,7 +54,9 @@ class ScenarioModel(RevoletionBaseModel):
     timestep: str = Field(
         title="Time step",
         description="Time step used for the simulation",
-        json_schema_extra={"valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min or 1H."},
+        json_schema_extra={
+            "valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D."
+        },
     )
     sim_duration: int | str | None = Field(
         title="Project duration",
@@ -386,40 +388,36 @@ class PVSourceModel(RevoletionBaseModel):
         ge=0,
         le=1,
     )
-    azimuth: float | str | None = Field(
+    azimuth: float | None = Field(
         title="Surface azimuth",
-        description="Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. 'optimal' -> 180 for northern hemisphere with trackingtype 0, else 0. For 'PVGIS API' 'optimal' is only valid in combination with tilt is set to 'optimal'. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None.",
-        json_schema_extra={"valid_values_or_format": "[0, 360[ or 'optimal' or None."},
+        description="Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. None is equal to energy yield optimum.",
+        json_schema_extra={"valid_values_or_format": "[0, 360[ or None."},
     )
-    tilt: float | str | None = Field(
+    tilt: float | None = Field(
         title="Surface tilt angle",
-        description="Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. If 'optimal' is chosen, the tilt angle is set to the specified latitude. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None.",
-        json_schema_extra={"valid_values_or_format": "[0, 90] or 'optimal' or None"},
+        description="Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. None sets the tilt angle to the specified location's latitude.",
+        json_schema_extra={"valid_values_or_format": "[0, 90] or None"},
     )
     trackingtype: int | None = Field(
         title="Tracking type",
         description="Type of sun tracking. 0=fixed, 1=single horizontal axis aligned north-south, 2=two-axis tracking, 3=vertical axis tracking, 4=single horizontal axis aligned east-west, 5=single inclined axis aligned north-south. For data_source 'Solcast API' only 0 and 1 are valid. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
         json_schema_extra={"valid_values_or_format": "0, 1, 2, 3, 4, 5"},
     )
-    horizon: bool = Field(
-        title="Consideration of a horizon",
-        description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 150m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
-    )
     horizon_custom: list[float] | None = Field(
         title="User horizon",
-        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
+        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API'.",
         json_schema_extra={
             "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None'
         },
     )
-    raddatabase: str | None = Field(
+    database: str | None = Field(
         title="Radiation database",
         description="Name of the radiation database for 'PVGIS-API'. Dependent on location and chosen simulation timeframe. 'PVGIS-SARAH' for Europe, Africa and Asia or 'PVGIS-NSRDB' for the Americas between 60°N and 20°S, 'PVGIS-ERA5' and 'PVGIS-COSMO' for Europe (including high-latitudes), and 'PVGIS-CMSAF' for Europe and Africa (will be deprecated).",
         json_schema_extra={
             "valid_values_or_format": "'PVGIS-SARAH2', 'PVGIS-SARAH3', 'PVGIS-NSRDB', 'PVGIS-ERA5', 'PVGIS-COSMO', 'PVGIS-CMSAF'"
         },
     )
-    pvtechchoice: str = Field(
+    type_cell: str = Field(
         "Unkown",
         title="PV technology",
         description="PV technology for 'PVGIS API'.",
