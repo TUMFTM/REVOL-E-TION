@@ -94,8 +94,6 @@ class DataProvider(abc.ABC):
     def __init__(self, logger: logging.Logger, location: loc.Location, array: PvArray, **_):
         self.location = location
         self.array = array
-        self.data = None
-
         self._logger = logger
 
     @abc.abstractmethod
@@ -104,15 +102,14 @@ class DataProvider(abc.ABC):
     @abc.abstractmethod
     def load_data_from_file(self, file: pathlib.Path): ...
 
-    @abc.abstractmethod
-    def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
-        self.data = self.data[["power_spec", "speed_wind", "temp_air"]]  # numeric data only for resampling
-        self.data.index = self.data.index.tz_convert(tz=self.location.timezone)  # convert to local time
-        self.data = self.data.resample(timeframe.dti.freq).mean().ffill().bfill()
-        self.data = self.data.reindex(timeframe.dti_extd).interpolate(method="time")
-        return self.data
+    def remap_data(self, data: pd.DataFrame, timeframe: time.TimeFrame) -> pd.DataFrame:
+        data = data[["power_spec", "speed_wind", "temp_air"]]  # numeric data only for resampling
+        data.index = data.index.tz_convert(tz=self.location.timezone)  # convert to local time
+        data = data.resample(timeframe.dti.freq).mean().ffill().bfill()
+        data = data.reindex(timeframe.dti_extd).interpolate(method="time")
+        return data
 
-    def calc_specific_power(self) -> pd.DataFrame:
+    def calc_specific_power(self, data: pd.DataFrame) -> pd.Series:
         """
         Calculate potential PV array power from raw irradiation data considering actual tilt and azimuth.
 
@@ -147,7 +144,7 @@ class DataProvider(abc.ABC):
         )
 
         # incidence angle modifier
-        iam = pvlib.iam.martin_ruiz(angle_of_incidence, a_r=0.16)
+        iam = pvlib.iam.martin_ruiz(angle_of_incidence, a_r=0.16)  # reflection coefficient for glass
 
         # global total irradiance
         irradiance = pvlib.irradiance.get_total_irradiance(
@@ -155,30 +152,32 @@ class DataProvider(abc.ABC):
             surface_azimuth=azimuth,
             solar_zenith=solar_position["zenith"],
             solar_azimuth=solar_position["azimuth"],
-            dni=self.data["dni"],
-            ghi=self.data["ghi"],
-            dhi=self.data["dhi"],
+            dni=data["dni"],
+            ghi=data["ghi"],
+            dhi=data["dhi"],
             dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
             model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic'
-            albedo=self.data["albedo"],
+            albedo=data["albedo"],
         )
 
         gti_eff = irradiance["poa_direct"] * iam + irradiance["poa_diffuse"]
 
         temp_module = pvlib.temperature.faiman(
             poa_global=gti_eff,
-            temp_air=self.data["temp_air"],
-            wind_speed=self.data["speed_wind"],
+            temp_air=data["temp_air"],
+            wind_speed=data["speed_wind"],
             u0=26.9,  # W/(˚C.m2) - cSi Free standing as in PVGIS
             u1=6.2,  # W.s/(˚C.m3) - cSi Free standing as in PVGIS
         )
 
-        self.data["power_spec"] = pvlib.pvarray.huld(
+        power_spec = pvlib.pvarray.huld(
             effective_irradiance=gti_eff,
             temp_mod=temp_module,
             pdc0=1.0,  # for specific power
             cell_type="cSi",  # todo enable other cell types
         ).clip(lower=0)
+
+        return power_spec
 
 
 class SolcastDataProvider(DataProvider):
@@ -239,7 +238,7 @@ class SolcastDataProvider(DataProvider):
 
         response = requests.get(
             url=_SOLCAST_API_BASE_URL,
-            headers={"Authorization": f"Bearer {self._solcast_api_key}"},
+            headers={"Authorization": f"Bearer {self._api_key}"},
             params=params,
         )
 
@@ -266,23 +265,26 @@ class SolcastDataProvider(DataProvider):
                 msg="missing key 'estimated_actuals' in Solcast response",
             )
 
-        self.data = pd.json_normalize(json_data["estimated_actuals"])
+        data = pd.json_normalize(json_data["estimated_actuals"])
+        return data
 
     @typing_extensions.override
-    def load_data_from_file(self, file: pathlib.Path):
-        self.data = pd.read_csv(file)
+    def load_data_from_file(self, file: pathlib.Path) -> pd.DataFrame:
+        return pd.read_csv(file)
 
     @typing_extensions.override
-    def remap_data(self, timeframe: time.TimeFrame) -> pd.DataFrame:
-        self.data.index = pd.to_datetime(self.data["period_end"]) - pd.to_timedelta(self.data["period"])
-        self.data.index.name = "period_start"
-        self.data.drop(columns=["period", "period_end"], inplace=True)
-        self.data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
-        self.data = self.data.tz_convert(self.location.timezone)
+    def remap_data(self, data: pd.DataFrame, timeframe: time.TimeFrame) -> pd.DataFrame:
+        data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
+        data.index.name = "period_start"
+        data.drop(columns=["period", "period_end"], inplace=True)
+        data.rename(columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"}, inplace=True)
+        data = data.tz_convert(self.location.timezone)
 
-        self.calc_specific_power()
+        data["power_spec"] = self.calc_specific_power(data=data)
 
-        return super().remap_data(timeframe=timeframe)
+        data = super().remap_data(timeframe=timeframe)
+
+        return data
 
 
 class PvgisDataProvider(DataProvider):
@@ -290,7 +292,6 @@ class PvgisDataProvider(DataProvider):
 
     _API_NAME: str = "PVGIS"
 
-    @typing_extensions.override
     def calc_api_request_shift(
         self,
         timeframe: time.TimeFrame,
@@ -341,7 +342,7 @@ class PvgisDataProvider(DataProvider):
             raise DataProviderApiError(self.location, self._API_NAME, f"unknown PV tech {self.array.type_cell}")
         pv_tech_pvgis = _PVGIS_API_PV_TECH_MAPPING[self.array.type_cell]
 
-        self.data, *_ = pvlib.iotools.get_pvgis_hourly(
+        data, *_ = pvlib.iotools.get_pvgis_hourly(
             latitude=self.location.latitude,
             longitude=self.location.longitude,
             start=timeframe.start.tz_convert("utc").year + shift,
@@ -366,26 +367,31 @@ class PvgisDataProvider(DataProvider):
             timeout=30,  # default
         )
 
+        return data
+
     @typing_extensions.override
     def load_data_from_file(self, file: pathlib.Path) -> pd.DataFrame:
-        self.data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
+        data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
 
         if (self.location.latitude != meta["inputs"]["latitude"]) or (
             self.location.longitude != meta["inputs"]["longitude"]
         ):
             self._logger.warning("PV file location does not equal scenario location")
+        
+        return data
 
     @typing_extensions.override
-    def remap_data(self, timeframe: time.TimeFrame, **_):
+    def remap_data(self, data: pd.DataFrame, timeframe: time.TimeFrame, **_) -> pd.DataFrame:
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
-        self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-        self.data["power_spec"] = self.data["P"] / 1e3  # convert 1kWp power to specific
-        self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
-        self.data.index = self.data.index - pd.DateOffset(years=shift)
+        data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
+        data["power_spec"] = data["P"] / 1e3  # convert 1kWp power to specific
+        data.index = data.index.round("h")  # PVGIS does not give time slots as full hours
+        data.index = data.index - pd.DateOffset(years=shift)
+        
+        data = super().remap_data(timeframe=timeframe)
 
-        return super().remap_data(timeframe=timeframe)
-
+        return data
 
 class BasicFileProvider(DataProvider):
     @typing_extensions.override
@@ -393,16 +399,13 @@ class BasicFileProvider(DataProvider):
         raise NotImplementedError(f"Cannot request timeseries data with {type(self)}")
 
     @typing_extensions.override
-    def load_data_from_file(self, file: pathlib.Path, location: loc.Location, **_) -> pd.DataFrame:
-        self.data = utils.read_timeseries_csv(
+    def load_data_from_file(self, file: pathlib.Path, **_) -> pd.DataFrame:
+        data = utils.read_timeseries_csv(
             path_input_file=file,
-            timezone=location.timezone,
+            timezone=self.location.timezone,
             multiheader=False,
         )
-
-    @typing_extensions.override
-    def remap_data(self, data: pd.DataFrame, location: loc.Location, timeframe=time.TimeFrame) -> pd.DataFrame:
-        return super().remap_data(data=data, location=location, timeframe=timeframe)
+        return data
 
 
 class DataSource(enum.Enum):
@@ -432,7 +435,6 @@ class DataManager:
     def __init__(self, location: loc.Location, array: PvArray, logger: logging.Logger | None = None) -> None:
         self.location = location
         self.array = array
-        self.data = None
 
         self._provider = None
         self._logger = logger
@@ -452,8 +454,10 @@ class DataManager:
         if data_source.is_file_source():
             if file_path is None:
                 raise ValueError(f"Argument 'file_path' must not be None for file data source {data_source}")
-            self._provider.load_data_from_file(file=file_path)
+            data = self._provider.load_data_from_file(file=file_path)
         else:
-            self._provider.request_data_from_api(timeframe=timeframe)
+            data = self._provider.request_data_from_api(timeframe=timeframe)
 
-        return self._provider.remap_data(timeframe=timeframe)
+        data = self._provider.remap_data(data= data, timeframe=timeframe)
+
+        return data
