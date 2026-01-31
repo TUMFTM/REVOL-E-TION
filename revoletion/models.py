@@ -402,12 +402,12 @@ class PVSourceModel(RevoletionBaseModel):
         ge=0,
         le=1,
     )
-    azimuth: float | str | None = Field(
+    azimuth: float | None = Field(
         title="Surface azimuth",
         description="Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. None is equal to energy yield optimum.",
         json_schema_extra={"valid_values_or_format": "[0, 360[ or None."},
     )
-    tilt: float | str | None = Field(
+    tilt: float | None = Field(
         title="Surface tilt angle",
         description="Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. None sets the tilt angle to the specified location's latitude.",
         json_schema_extra={"valid_values_or_format": "[0, 90] or None"},
