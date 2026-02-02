@@ -162,8 +162,6 @@ def train_imitation_bc(
     with open(trajectories_path, "rb") as f:
         trajectories = pickle.load(f)
 
-    breakpoint()
-
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training BC policy: {seed=}; {n_epochs=}; {len(trajectories)=}; {trajectories_id=}")
 
@@ -228,7 +226,7 @@ def train_imitation_sqil(
     agent_config.use_sde = False
     agent_config.sde_sample_freq = None
     agent_config.ent_coef = 0.1
-    agent_config.target_entropy = -2
+    agent_config.target_entropy = -1
     base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
 
     imitation_learning.train_imitation_policy_sqil(trajectories, env, base_agent._sb3_agent, seed, train_timesteps)

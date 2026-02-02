@@ -60,6 +60,7 @@ class AgentAlgorithm(enum.Enum):
     IDLE = "idle"
     BASIC = "basic"
     OPTIMAL = "optimal"
+    POWER_ENVELOPE = "power-envelope"
 
     PPO = "ppo"
     TD3 = "td3"

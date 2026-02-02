@@ -62,16 +62,19 @@ class AtBaseHorizonInitializer(HorizonInitializerInterface):
 
 
 class InitialSocHorizonInitializer(HorizonInitializerInterface):
+    def __init__(self, rng: np.random.Generator | None = None) -> None:
+        self._rng = rng or np.random.default_rng()
+
     def initialze_scenario_for_horizon(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None:
         for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
             initial_soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
 
-            initial_soc = np.random.uniform(initial_soc_min, 1.0)
+            initial_soc = self._rng.uniform(initial_soc_min, 1.0)
             electric_fleet_unit_block.states.loc[horizon.start, "soc"] = initial_soc
 
         for stationary_battery_blocks in scenario.block_registry.get("StationaryBattery", {}).values():
             initial_soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
-            initial_soc = np.random.uniform(low=initial_soc_min, high=1.0)
+            initial_soc = self._rng.uniform(low=initial_soc_min, high=1.0)
             stationary_battery_blocks.states.loc[horizon.start, "soc"] = initial_soc
 
 

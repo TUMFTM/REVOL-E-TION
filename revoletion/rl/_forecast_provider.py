@@ -93,9 +93,9 @@ class PerfectForesightForecastProvider(ForecastProvider):
 
 
 class LimitedForecastProvider(ForecastProvider):
-    def __init__(self, forecast_horizon: int) -> None:
+    def __init__(self, forecast_horizon: int, rng: np.random.Generator | None = None) -> None:
         super().__init__(forecast_horizon)
-        self._random = np.random.default_rng()
+        self._rng = rng or np.random.default_rng()
 
     @typing_extensions.override
     def get_renewable_source_power_forecast(
@@ -104,7 +104,8 @@ class LimitedForecastProvider(ForecastProvider):
         power_spec = pv_block.data["power_spec"]
         power_spec_forecast = self.get_forecast(power_spec, time_ctx)
 
-        return auto_regressiv_uncertainty(power_spec_forecast, self._forecast_horizon)
+        noisy_forecast = self.sqrt_uncertainty(power_spec_forecast, self._forecast_horizon)
+        return np.clip(noisy_forecast, 0.0, 1.0)
 
     @typing_extensions.override
     def get_grid_export_cost_forecast(
@@ -144,25 +145,23 @@ class LimitedForecastProvider(ForecastProvider):
         atbase = efu_block.log["atbase"]
         return self.get_forecast(atbase, time_ctx).astype(np.float32)
 
+    def sqrt_uncertainty(self, forecast, time_steps, base_std=0.05):
+        """
+        Uncertainty grows with square root of time horizon.
+        Models random walk behavior - common in forecasting.
+        """
+        std_schedule = base_std * np.sqrt(np.arange(1, time_steps + 1))
+        noise = self._rng.normal(0, 1, time_steps)
+        uncertainty = noise * std_schedule * (forecast + 1e-3)
+        return forecast + uncertainty
 
-def sqrt_uncertainty(forecast, time_steps, base_std=0.05):
-    """
-    Uncertainty grows with square root of time horizon.
-    Models random walk behavior - common in forecasting.
-    """
-    std_schedule = base_std * np.sqrt(np.arange(1, time_steps + 1))
-    noise = np.random.normal(0, 1, time_steps)
-    uncertainty = noise * std_schedule * forecast
-    return forecast + uncertainty
+    def auto_regressiv_uncertainty(self, forecast, time_steps, initial_std=0.02, final_std=0.20, ar_coef=0.7):
+        std_schedule = np.linspace(initial_std, final_std, time_steps)
+        noise = np.zeros(time_steps)
+        noise[0] = self._rng.normal(0, std_schedule[0])
 
+        for t in range(1, time_steps):
+            noise[t] = ar_coef * noise[t - 1] + np.random.normal(0, std_schedule[t] * np.sqrt(1 - ar_coef**2))
 
-def auto_regressiv_uncertainty(forecast, time_steps, initial_std=0.02, final_std=0.20, ar_coef=0.7):
-    std_schedule = np.linspace(initial_std, final_std, time_steps)
-    noise = np.zeros(time_steps)
-    noise[0] = np.random.normal(0, std_schedule[0])
-
-    for t in range(1, time_steps):
-        noise[t] = ar_coef * noise[t - 1] + np.random.normal(0, std_schedule[t] * np.sqrt(1 - ar_coef**2))
-
-    uncertainty = noise * forecast
-    return forecast + uncertainty
+        uncertainty = noise * (forecast + 1e-3)
+        return forecast + uncertainty

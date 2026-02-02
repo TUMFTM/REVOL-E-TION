@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+from revoletion.rl.scenario_factory import (
+    HorizonInitializer,
+    SocEnvelopeHorizonInitialzer,
+    InitialSocHorizonInitializer,
+    AtBaseHorizonInitializer,
+)
 
 import logging
 import types
@@ -267,6 +273,12 @@ class _OpexResultProcessor(blocks.BlockVisitor[None]):
         elif isinstance(block, blocks.SourceBlock):
             variable_costs = block.evaluators["block"].opt.spec_ep_operation[horizon.dti]
             opex += power_flows["out"] * variable_costs
+        elif isinstance(block, blocks.ElectricFleetUnit):
+            variable_costs_ext_ac = block.evaluators["ext_ac"].opt.spec_ep_operation[horizon.dti]
+            opex += power_flows["ext_ac"] * variable_costs_ext_ac
+
+            variable_costs_ext_dc = block.evaluators["ext_dc"].opt.spec_ep_operation[horizon.dti]
+            opex += power_flows["ext_dc"] * variable_costs_ext_dc
         else:
             return
 
@@ -506,13 +518,18 @@ class ControlHorizon:
             solver=optimization.Solver.HIGHS,
             invest=False,
         )
-        electric_fleet_unit_blocks = list(scenario.block_registry.get("ElectricFleetUnit", {}).values())
-        for electric_fleet_unit_block in electric_fleet_unit_blocks:
-            initial_soc_min = electric_fleet_unit_block.states.loc[eval_horizon.dti[0], "soc_min"]
-            soc_min = min(initial_soc_min + 0.05, 1.0)
-            initial_soc = soc_min + ((1.0 - soc_min) / 2)
-            electric_fleet_unit_block.states.loc[eval_horizon.dti[0], "soc"] = initial_soc
-            electric_fleet_unit_block.states.loc[eval_horizon.dti, "soc_min"] += 0.05
+
+        horizon_initializer = HorizonInitializer(
+            horizon_initializers=[
+                SocEnvelopeHorizonInitialzer(
+                    soc_min=0.05,
+                ),
+                InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
+                AtBaseHorizonInitializer(),
+            ]
+        )
+
+        horizon_initializer.initialize(scenario, eval_horizon)
 
         optimization_problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
             scenario,

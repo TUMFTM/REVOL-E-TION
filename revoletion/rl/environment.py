@@ -255,7 +255,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
                 SocEnvelopeHorizonInitialzer(
                     soc_min=self._config.soc_min,
                 ),
-                InitialSocHorizonInitializer(),
+                InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
                 AtBaseHorizonInitializer(),
             ]
         )
