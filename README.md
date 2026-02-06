@@ -109,9 +109,9 @@ After pulling new changes from the repository, the package has to be reinstalled
 
 This links the package to your local source code, so any changes (you make or pulled from the repository) are immediately reflected without reinstalling:
 ```bash
-pip install -e .
+pip install -e . --group dev --group tests
 ```
-Use the editable mode if you plan to modify the code during development.
+Use the editable mode if you plan to modify the code during development. The previous command also installs additional dependencies required for development and testing, which are not necessary for running the package but required for development.
 
 #### Step 4: MILP Solver
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
