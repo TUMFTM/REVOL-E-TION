@@ -122,6 +122,12 @@ If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi an
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
+> ⚠️ **Important** ⚠️
+>
+> **When using REVOL-E-TION, all input data such as timeseries and the scenario file should be stored in a separate directory and not within the package's source code.**  
+> **Do not store any custom files within the source code of the package.**
+> **This includes the example directory in particular.**
+
 ### 1. Running REVOL-E-TION as package
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
 1. Call to the main module: ```python -m revoletion <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
