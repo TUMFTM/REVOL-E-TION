@@ -423,16 +423,19 @@
 \draw[bus] (fleet_bus_top) to (fleet_bus_bottom);
 \node(fleet_dots) [busdots] at (fleet_bus_bottom) {$\vdots$};
 
-\node(efu_storage) [component, anchor=east] at ([xshift=-\compdist, yshift=-\buffer] efu_bus_top) {Battery storage \faBatteryHalf};
+\node(efu_storage) [component, anchor=east] at ([xshift=-\compdist, yshift=-\buffer] efu_bus_top) {\faBatteryHalf\ Battery storage};
 \draw[<->] (efu_bus_top|-efu_storage.east) to (efu_storage.east);
 
-\node(efu_cons) [component, anchor=north east] at ([yshift=-\buffer] efu_storage.south east) {Consumption $\blacktriangledown$};
+\node(efu_cons) [component, anchor=north east] at ([yshift=-\buffer] efu_storage.south east) {$\blacktriangledown$ Consumption};
 \draw[->] (efu_bus_top|-efu_cons.east) to (efu_cons.east);
 
-\coordinate(efu_bus_bottom) at ([yshift=-\buffer] efu_in.east-|efu_bus_top);
+\node(efu_ext) [component, anchor=north east] at ([yshift=-\buffer] efu_cons.south east) {$\blacktriangle$ External charging};
+\draw[->] (efu_ext.east) to (efu_bus_top|-efu_ext.east);
+
+\coordinate(efu_bus_bottom) at ([yshift=-\buffer] efu_ext.east-|efu_bus_top);
 \draw[bus] (efu_bus_top) to (efu_bus_bottom);
 
-\node(efu_box) [blockbox, fit=(efu_in) (efu_out) (efu_bus_bottom) (efu_bus_top) (efu_storage) (efu_cons)] {};
+\node(efu_box) [blockbox, fit=(efu_in) (efu_out) (efu_bus_bottom) (efu_bus_top) (efu_storage) (efu_cons) (efu_ext)] {};
 \node(efu_label) [blocklabel, anchor=east] at ([xshift=-\buffer] efu_box.north east) {ElectricFleetUnit};
 \node(efu_dots) [blockdots] at (efu_box.south) {$\vdots$};
 
@@ -450,8 +453,8 @@
 \node(cv_subfleet_box) [subblockbox, fit=(cv_box) (cv_label) (cv_dots)] {};
 \node(cv_subfleet_label) [subblocklabel, anchor=east] at ([xshift=-\buffer] cv_subfleet_box.north east) {Subfleet};
 
-\coordinate (subfleet_mid_x) at ($(cv_subfleet_box.north west)!0.5!(efu_subfleet_box.south west)$);
-\node (efu_subfleet_dots) [subblockdots] at (efu_subfleet_box.south -| subfleet_mid_x) {$\vdots$};
+\coordinate(subfleet_mid_x) at ($(cv_subfleet_box.north west)!0.5!(efu_subfleet_box.south west)$);
+\node(efu_subfleet_dots) [subblockdots] at (efu_subfleet_box.south -| subfleet_mid_x) {$\vdots$};
 \node(cv_subfleet_dots) [subblockdots] at (cv_subfleet_box.south) {$\vdots$};
 
 \node(fleet_box) [blockbox, fit= (efu_subfleet_box) (efu_subfleet_label) (cv_subfleet_box) (cv_subfleet_label) (fleet_in) (fleet_out) (cv_subfleet_dots)] {};
@@ -489,21 +492,21 @@
 % Ambient temperature arrow around the diagram
 \draw[->, input] ([yshift=0.5\buffer]pv_data.east) to ([yshift=0.5\buffer, xshift=\buffer]pv_data.east-|therm_box.east) to coordinate (therm_arrow) ([xshift=\buffer]therm_dem1_sink.east-|therm_box.east) to (therm_dem1_sink.east);
 
+% %Single scenario results
+\node(optimization) [result, anchor=north west, align=center] at ([yshift=-\buffer] logfile.west|-fleet_box.south) {Energy management (\& component sizing)\\linear optimization for lowest NPC};
+\node(evaluation) [result, anchor=east, align=center] at (optimization.east-|fleet_box.east) {Techno-economic\\KPI evaluation};
+
+\draw[result, ->] (optimization.east) -- (evaluation.west) node (tsresults) [resultarrowlabel, pos=0.45, rotate=90, align=center] {power\\flows};
+
 %Scenario
 \begin{pgfonlayer}{background}
 \foreach \i in {\scenariolayers,...,0} {
-    \node (scenario_box_\i) [scenariobox, fit=(pv_data)(dem_data)(fleet_box) (usecases) (therm_box) (therm_arrow), xshift=\i\buffer, yshift=\i\buffer] {};
+    \node (scenario_box_\i) [scenariobox, fit=(pv_data)(dem_data)(fleet_box) (usecases) (therm_box) (therm_arrow) (optimization), xshift=\i\buffer, yshift=\i\buffer] {};
 }
 \end{pgfonlayer}
 
 \node(scenario_label) [scenariolabel, anchor=west] at ([xshift=\buffer] scenario_box_0.north west) {Scenario};
 \node(scenario_dots) [scenariodots] at ([xshift=\buffer]scenario_box_\scenariolayers.north east) {$\iddots$};
-
-% %Single scenario results
-\node(optimization) [result, anchor=south west, align=center] at ([yshift=\buffer, xshift=\buffer] scenario_box_0.south west) {Energy management (\& component sizing)\\linear optimization for lowest NPC};
-\node(evaluation) [result, anchor=west, align=center] at ([xshift=\compdist + \buffer] optimization.east) {Techno-economic\\KPI evaluation};
-
-\draw[->] (optimization.east) -- (evaluation.west) node (tsresults) [resultarrowlabel, pos=0.5, rotate=90, align=center] {power\\flow};
 
 % \node(ssr_box) [resultbox, fit=(optimization) (evaluation) (tsresults)] {};
 % \node(ssr_label) [resultlabel, anchor=west] at ([xshift=\buffer] ssr_box.north west) {Single scenario results};
