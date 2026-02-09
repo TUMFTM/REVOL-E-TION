@@ -80,7 +80,7 @@ class EcoTools:
         rate_tax: float = 0.25,  # corporate tax rate
         rate_inflation: float = 0.02,  # expected inflation rate
         volatility_relative: float = 1,  # volatility of stock price relative to market
-    ) -> (float, float):
+    ) -> tuple[float, float]:
         """
         This function calculates the nominal (including inflation) weighted average cost of capital (WACC) using the
         Capital Asset Pricing Model (CAPM) for equity cost.
