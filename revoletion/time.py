@@ -84,7 +84,7 @@ class TimeFrame:
     def create_from_start_timestamp(
         cls,
         start: pd.Timestamp,
-        timestep: pd.Timedelta,
+        timestep: pd.Timedelta | str,
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
@@ -140,25 +140,25 @@ class SimulationTimes:
 
         sim_duration_timedelta = pd.Timedelta(sim_duration, unit="day") if sim_duration is not None else None
 
-        sim = TimeFrame.create_from_start_timestamp(
+        simulation = TimeFrame.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
-        eval = TimeFrame.create_from_start_timestamp(
+        evaluation = TimeFrame.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=sim_endtime_timestamp,
             duration=sim_duration_timedelta,
         )
-        prj = TimeFrame.create_from_start_timestamp(
+        project = TimeFrame.create_from_start_timestamp(
             start=starttime_timestamp,
             timestep=timestep_timedelta,
             end=starttime_timestamp + pd.DateOffset(years=prj_duration),
         )
 
-        return cls(sim=sim, eval=eval, prj=prj)
+        return cls(sim=simulation, eval=evaluation, prj=project)
 
     @staticmethod
     def _convert_time_str(time_str: str | None, timestep: str, timezone: pytz.BaseTzInfo) -> pd.Timestamp | None:
