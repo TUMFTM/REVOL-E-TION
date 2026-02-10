@@ -101,11 +101,11 @@ class TimeFrame:
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left")
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left", name="time")
 
     @cached_property
     def dti_extd(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both")
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both", name="time")
 
     @cached_property
     def end_extd(self) -> pd.Timestamp:
