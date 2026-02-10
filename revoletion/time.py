@@ -55,11 +55,11 @@ class RunTimer:
         self.stop()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Timestep:
     td: pd.Timedelta
 
-    @property
+    @cached_property
     def hours(self) -> float:
         return self.td.total_seconds() / 3600
 
@@ -112,7 +112,7 @@ class TimeFrame:
         return max(self.dti_extd)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SimulationTimes:
     sim: TimeFrame
     eval: TimeFrame
