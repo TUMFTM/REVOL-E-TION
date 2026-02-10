@@ -1,8 +1,13 @@
 from enum import Enum
+import numbers
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import pytz
+
+from revoletion.utils import read_timeseries_csv
 
 
 class OccursAt(Enum):
@@ -20,7 +25,7 @@ def discount(
     periods: int | npt.NDArray[np.integer],
     discount_rate: float,
     occurs_at: OccursAt,
-) -> float:
+) -> float | npt.NDArray:
     """
     calculate the present value of a future value in some periods at a discount rate per period
     """
@@ -48,13 +53,14 @@ def annuity(present_value: float, observation_horizon: int, discount_rate: float
     NPV) of a present value pv over an observation horizon at a discount rate per period. occurs_at denotes whether
     the expense or value occurs at the beginning (making the annuity an annuity due) or end of the period.
     """
+    if observation_horizon < 1:
+        raise ValueError(f"Observation horizon must be at least 1, got {observation_horizon}")
+
+    if discount_rate == 0:  # leads to division by zero
+        return present_value / observation_horizon
+
     q = 1 + discount_rate
-    try:
-        return present_value * discount_rate / ((1 - (q**-observation_horizon)) * (q**occurs_at.value))
-    except ZeroDivisionError:  # observation_horizon = 0
-        return (
-            present_value / observation_horizon
-        )  # ToDo: check this. Error cause leads to next error in except statement
+    return present_value * discount_rate / ((1 - (q**-observation_horizon)) * (q**occurs_at.value))
 
 
 def calc_wacc(
@@ -98,6 +104,40 @@ def calc_residual_value(
         return lifetime_remaining_frac * (1 - residual_at_ls) + residual_at_ls
     else:
         raise NotImplementedError(f"Depreciation method {depreciation} is not implemented")
+
+
+def transform_scalar_var(value: Path | float, dti: pd.DatetimeIndex) -> pd.Series:
+    """
+    Transform a value holding either the path to a csv file containing a timeseries or a scalar
+    to a pandas Series with the same DatetimeIndex as the simulation.
+    """
+    if isinstance(value, numbers.Number):  # value is given as scalar
+        return pd.Series(index=dti, data=np.full(len(dti), value, dtype=float), name="cost")
+
+    elif isinstance(value, Path):  # value contains filename
+        if not value.is_file():
+            raise FileNotFoundError(f"Timeseries file {value} not found.")
+
+        tz = pytz.timezone(str(dti.tz)) if dti.tz is not None else None
+
+        try:
+            df = read_timeseries_csv(
+                path_input_file=value,
+                timezone=tz,
+                multiheader=False,
+                resampling_dti=dti,
+            )
+
+            if df.shape[1] != 1:
+                print(f"Input data in {value} contains more than one column - only first column is used.")
+
+            return df.iloc[:, 0]  # return only first column
+
+        except IndexError as exc:
+            raise IndexError(f"Failed to load timeseries data from {value}.")
+
+    else:
+        raise ValueError(f"Value must be either a scalar or a Path object, got {type(value).__name__}")
 
 
 def calc_capex_factors(

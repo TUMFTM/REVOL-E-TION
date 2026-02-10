@@ -8,7 +8,7 @@ from .abstractclasses import CapexElement, EcoElement, YearlyElement, BlockEleme
 
 
 @dataclass
-class Aggregator(EcoElement, ABC):
+class BaseAggregator(EcoElement, ABC):
     """
     Base class for all Aggregators.
     The aggregation logic has to be defined in the _aggregate method, which is called by all properties.
@@ -39,7 +39,7 @@ class Aggregator(EcoElement, ABC):
 
 
 @dataclass
-class CrossLevelAggregator(Aggregator):
+class CrossLevelAggregator(BaseAggregator):
     """
     Base class for all Aggregators, to aggregate values aggregators or Evaluators from subblocks.
 
@@ -56,7 +56,7 @@ class CrossLevelAggregator(Aggregator):
 
 
 @dataclass
-class InLevelAggregator(Aggregator, ABC):
+class InLevelAggregator(BaseAggregator, ABC):
     """
     Base class for all Aggregators, which aggregate values from other aggregators on the same level.
     This is used for Totex (Capex + Mntex + Opex) and Value (Totex - Crev) aggregation.
@@ -176,7 +176,7 @@ class ValueAggregator(InLevelAggregator):
 
 
 @dataclass
-class AggregatorBlock(BlockElement):
+class Aggregator(BlockElement):
     """
     EcoBlock holds all economic components of a block.
     """

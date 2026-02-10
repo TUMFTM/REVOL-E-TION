@@ -135,16 +135,9 @@ class YearlyElement(EcoElement, ABC):
     ann : float
         Annuity value of the economic element.
 
-    sim : float
-        Sum of transactions during the simulation.
-
     yrl : float
         Sum of transactions during one year. Scaled from simulation results.
     """
-
-    @property
-    @abstractmethod
-    def sim(self) -> float: ...
 
     @property
     @abstractmethod
