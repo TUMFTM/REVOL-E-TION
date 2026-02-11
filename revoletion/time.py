@@ -55,21 +55,22 @@ class RunTimer:
         self.stop()
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Timestep:
     td: pd.Timedelta
+    hours: float
 
-    @cached_property
-    def hours(self) -> float:
-        return self.td.total_seconds() / 3600
+    @classmethod
+    def from_timedelta(cls, td: pd.Timedelta) -> Self:
+        return cls(td=td, hours=td.total_seconds() / 3600)
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        return cls(td=pd.Timedelta(pd.infer_freq(dti)))
+        return cls.from_timedelta(td=pd.Timedelta(pd.infer_freq(dti)))
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
-        return cls(td=pd.Timedelta(timestep_str))
+        return cls.from_timedelta(td=pd.Timedelta(timestep_str))
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,7 @@ class TimeFrame:
         # always recalculate end to ensure consistency
         end = start + duration
 
-        return cls(start=start, end=end, duration=duration, _timestep=timestep)
+        return cls(start=start, end=end, duration=duration, _timestep=pd.Timedelta(timestep))
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
