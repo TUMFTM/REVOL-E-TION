@@ -25,31 +25,54 @@ class EcoParams:
     Dataclass to store all parameters being valid for all evaluators needed for cost evaluation.
     """
 
-    project_duration: int
+    prj_duration_yrs: int
     discount_rate: float
     compensate_sim_prj: bool
-    eval2yr_ratio: float
+    eval_yr_rat: float
+    eval_prj_rat: float
     dti_sim: pd.DatetimeIndex
     dti_eval: pd.DatetimeIndex
-    timestep: float
+    timestep_hours: float
+
+    @classmethod
+    def from_simulation_times(
+        cls,
+        prj_duration_yrs: int,
+        discount_rate: float,
+        compensate_sim_prj: bool,
+        times: "SimulationTimes",
+        timestep: "Timestep",
+    ) -> Self:
+        return cls(
+            prj_duration_yrs=prj_duration_yrs,
+            discount_rate=discount_rate,
+            compensate_sim_prj=compensate_sim_prj,
+            eval_yr_rat=pd.Timedelta(days=365) / times.eval.duration,  # no leap years
+            eval_prj_rat=times.prj.duration / times.eval.duration,
+            dti_sim=times.sim.dti,
+            dti_eval=times.eval.dti,
+            timestep_hours=timestep.hours,
+        )
 
     @classmethod
     def from_parameters(
         cls,
-        project_duration: int,
+        prj_duration_yrs: int,
         discount_rate: float,
         compensate_sim_prj: bool,
         dti_sim: pd.DatetimeIndex,
         dti_eval: pd.DatetimeIndex,
     ) -> Self:
+        td_eval = dti_eval[-1] - dti_eval[0]
         return cls(
-            project_duration=project_duration,
+            prj_duration_yrs=prj_duration_yrs,
             discount_rate=discount_rate,
             compensate_sim_prj=compensate_sim_prj,
-            eval2yr_ratio=pd.Timedelta(days=365) / (dti_eval[-1] - dti_eval[0]),
+            eval_yr_rat=pd.Timedelta(days=365) / td_eval,  # no leap years
+            eval_prj_rat=((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]) / td_eval,
             dti_sim=dti_sim,
             dti_eval=dti_eval,
-            timestep=pd.Timedelta(dti_sim.inferred_freq).total_seconds() / 3600,
+            timestep_hours=pd.Timedelta(dti_sim.inferred_freq).total_seconds() / 3600,
         )
 
 
@@ -138,7 +161,7 @@ class CostEvaluator(EcoElement, ABC):
         self._eco = eco
         self._params = params
 
-        self._cashflow = np.zeros(self._eco.project_duration + 1, dtype=float)
+        self._cashflow = np.zeros(self._eco.prj_duration_yrs + 1, dtype=float)
 
     def __init_subclass__(cls):
         # cache the names of all cached properties in the subclass to invalidate them when any attribute is set
@@ -163,7 +186,7 @@ class CostEvaluator(EcoElement, ABC):
         return pd.Series(
             discount(
                 future_value=1,
-                periods=np.arange(self._eco.project_duration + 1),
+                periods=np.arange(self._eco.prj_duration_yrs + 1),
                 discount_rate=self._eco.discount_rate,
                 occurs_at=self._OCCURS_AT,
             )
@@ -181,7 +204,7 @@ class CostEvaluator(EcoElement, ABC):
     def ann(self) -> float:
         return annuity(
             present_value=self.dis,
-            observation_horizon=self._eco.project_duration,
+            observation_horizon=self._eco.prj_duration_yrs,
             discount_rate=self._eco.discount_rate,
             occurs_at=self._OCCURS_AT,
         )
@@ -206,7 +229,7 @@ class YearlyEvaluator(CostEvaluator, YearlyElement, ABC):
 
     @cached_property
     def cashflow(self) -> pd.Series:
-        cashflow = pd.Series(np.full(self._eco.project_duration + 1, self.yrl))
+        cashflow = pd.Series(np.full(self._eco.prj_duration_yrs + 1, self.yrl))
         cashflow.iloc[-1] = 0.0
         return cashflow
 
@@ -235,7 +258,7 @@ class FlowEvaluator(YearlyEvaluator, ABC):
     @cached_property
     def spec_ep(self):
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        factor_operation_ep = (1 / self._eco.eval2yr_ratio) if self._eco.compensate_sim_prj else 1
+        factor_operation_ep = (1 / self._eco.eval_yr_rat) if self._eco.compensate_sim_prj else 1
 
         return self._params.spec * factor_operation_ep
 
@@ -243,12 +266,12 @@ class FlowEvaluator(YearlyEvaluator, ABC):
     def eval(self) -> float:
         return (
             float(np.dot(self._params.spec[self._eco.dti_eval].to_numpy(), self.flow[self._eco.dti_eval].to_numpy()))
-            * self._eco.timestep
+            * self._eco.timestep_hours
         )
 
     @cached_property
     def yrl(self) -> float:
-        return self.eval * self._eco.eval2yr_ratio + self._params.fix
+        return self.eval * self._eco.eval_yr_rat + self._params.fix
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
@@ -308,7 +331,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         factor_annuity = (
             annuity(
                 present_value=1,
-                observation_horizon=self._eco.project_duration,
+                observation_horizon=self._eco.prj_duration_yrs,
                 discount_rate=self._eco.discount_rate,
                 occurs_at=self._OCCURS_AT,
             )
@@ -337,9 +360,9 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         return self.preexisting + self.expansion
 
     def calc_capex_cashflow(self, invest_first: int) -> pd.Series:
-        invest_periods = np.arange(invest_first, self._eco.project_duration, self._params.ls)
+        invest_periods = np.arange(invest_first, self._eco.prj_duration_yrs, self._params.ls)
 
-        capex = np.zeros(self._eco.project_duration + 1, dtype=float)
+        capex = np.zeros(self._eco.prj_duration_yrs + 1, dtype=float)
         capex[invest_periods] = 1
 
         if self._params.residual_at_ls > 0:
@@ -348,7 +371,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
 
         capex[-1] = -1 * calc_residual_value(
             lifetime_remaining_frac=calc_lifetime_remaining(
-                project_duration=self._eco.project_duration,
+                project_duration=self._eco.prj_duration_yrs,
                 ls=self._params.ls,
                 init_age=invest_first % self._params.ls,
             )
@@ -358,7 +381,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         )
 
         # apply capex cost change ratio
-        capex *= self._params.ccr ** np.arange(self._eco.project_duration + 1)
+        capex *= self._params.ccr ** np.arange(self._eco.prj_duration_yrs + 1)
 
         return pd.Series(capex)
 
@@ -413,7 +436,7 @@ class MntexEvaluator(YearlyEvaluator):
         factor_annuity = (
             annuity(
                 present_value=1,
-                observation_horizon=self._eco.project_duration,
+                observation_horizon=self._eco.prj_duration_yrs,
                 discount_rate=self._eco.discount_rate,
                 occurs_at=self._OCCURS_AT,
             )
@@ -421,7 +444,7 @@ class MntexEvaluator(YearlyEvaluator):
             else 1
         )
         factor_spec_ep = float(
-            np.dot(np.full(self._eco.project_duration + 1, self._params.spec), self.discount_factors.to_numpy())
+            np.dot(np.full(self._eco.prj_duration_yrs + 1, self._params.spec), self.discount_factors.to_numpy())
         )
 
         return factor_annuity * factor_spec_ep
@@ -502,7 +525,7 @@ class Evaluator(BlockElement):
         size_expansion: float = 0.0,
         flow: pd.Series = None,
     ) -> Self:
-        ls = eco.project_duration if ls is None else ls
+        ls = eco.prj_duration_yrs if ls is None else ls
 
         capex = CapexEvaluator.create_from_plain(
             name=f"{name}_capex",

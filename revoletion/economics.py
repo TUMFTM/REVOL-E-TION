@@ -273,11 +273,11 @@ class OptimizationConverter:
         self.factor_ep_invest: float = (
             EcoTools.annuity(
                 present_value=1,
-                observation_horizon=self.poi.scenario.prj_duration_yrs,
-                discount_rate=self.poi.scenario.wacc,
+                observation_horizon=self.poi.scenario.eco_params.prj_duration_yrs,
+                discount_rate=self.poi.scenario.eco_params.discount_rate,
                 occurs_at="beginning",
             )
-            if self.poi.scenario.compensate_sim_prj
+            if self.poi.scenario.eco_params.compensate_sim_prj
             else 1
         )
 
@@ -289,7 +289,7 @@ class OptimizationConverter:
 
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
         self.factor_ep_operation: float = (
-            (1 / self.poi.scenario.sim_yr_rat) if self.poi.scenario.compensate_sim_prj else 1
+            (1 / self.poi.scenario.eco_params.eval_yr_rat) if self.poi.scenario.eco_params.compensate_sim_prj else 1
         )
 
         # calculate specific present value of operation cost
@@ -311,7 +311,9 @@ class OptimizationConverter:
         # apply specific capex for replacement periods
         spec_prj_ep[
             EcoTools.reinvest_periods(
-                lifespan=self.poi.ls, observation_horizon=self.poi.scenario.prj_duration_yrs, include_init=True
+                lifespan=self.poi.ls,
+                observation_horizon=self.poi.scenario.eco_params.prj_duration_yrs,
+                include_init=True,
             )
         ] = self.poi.capex.spec
 
@@ -319,10 +321,12 @@ class OptimizationConverter:
         # salvage values occur at the end of the last year of the project duration but are modeled at the beginning of
         # the next year to use the same discount factor ('beginning') and avoid issues when a replacement occurs at the
         # beginning of the last project year
-        spec_prj_ep[self.poi.scenario.prj_duration_yrs] = (
+        spec_prj_ep[self.poi.scenario.eco_params.prj_duration_yrs] = (
             -1
             * self.poi.capex.spec
-            * EcoTools.calc_frac_remaining_ls(ls=self.poi.ls, project_duration=self.poi.scenario.prj_duration_yrs)
+            * EcoTools.calc_frac_remaining_ls(
+                ls=self.poi.ls, project_duration=self.poi.scenario.eco_params.prj_duration_yrs
+            )
         )
 
         # adjust specific capex by appropriate cost change ratio
@@ -338,8 +342,8 @@ class OptimizationConverter:
         return (
             EcoTools.acc_discount(
                 nominal_value=self.poi.mntex.spec,
-                observation_horizon=self.poi.scenario.prj_duration_yrs,
-                discount_rate=self.poi.scenario.wacc,
+                observation_horizon=self.poi.scenario.eco_params.prj_duration_yrs,
+                discount_rate=self.poi.scenario.eco_params.discount_rate,
                 occurs_at="beginning",
             )
             if self.poi.mntex
@@ -355,7 +359,7 @@ class PeakOptimizationConverter(OptimizationConverter):
         # calculate annuity due factor to compensate peak opex for difference between simulation and project time
         self.factor_ep_peak = (
             self.poi.block.n_peak_periods_yr / self.poi.block.peak_periods.shape[0]
-            if self.poi.scenario.compensate_sim_prj
+            if self.poi.scenario.eco_params.compensate_sim_prj
             else 1
         )
 
@@ -456,8 +460,8 @@ class CostEvaluator(CostAggregator):
     def ann(self) -> float:
         return EcoTools.annuity(
             present_value=self.dis,
-            observation_horizon=self.poi.scenario.prj_duration_yrs,
-            discount_rate=self.poi.scenario.wacc,
+            observation_horizon=self.poi.scenario.eco_params.prj_duration_yrs,
+            discount_rate=self.poi.scenario.eco_params.discount_rate,
             occurs_at=self.occurs_at,
         )
 
@@ -529,15 +533,17 @@ class CapexEvaluator(CapexAggregator, CostEvaluator):
         cashflows[0] += self.init
 
         for period in EcoTools.reinvest_periods(
-            lifespan=self.poi.ls, observation_horizon=self.poi.scenario.prj_duration_yrs, include_init=False
+            lifespan=self.poi.ls, observation_horizon=self.poi.scenario.eco_params.prj_duration_yrs, include_init=False
         ):
             cashflows[period] += self.replacement * (self.poi.ccr**period)
 
         # Subtract salvage value capex (negative capex)
-        cashflows[self.poi.scenario.prj_duration_yrs] -= (
+        cashflows[self.poi.scenario.eco_params.prj_duration_yrs] -= (
             self.replacement
-            * (self.poi.ccr**self.poi.scenario.prj_duration_yrs)
-            * EcoTools.calc_frac_remaining_ls(ls=self.poi.ls, project_duration=self.poi.scenario.prj_duration_yrs)
+            * (self.poi.ccr**self.poi.scenario.eco_params.prj_duration_yrs)
+            * EcoTools.calc_frac_remaining_ls(
+                ls=self.poi.ls, project_duration=self.poi.scenario.eco_params.prj_duration_yrs
+            )
         )
 
         return cashflows
@@ -584,7 +590,7 @@ class MntexEvaluator(MntexAggregator, CostEvaluator):
 
     @property
     def sim(self) -> float:
-        return self.yrl * self.poi.scenario.sim_yr_rat
+        return self.yrl * self.poi.scenario.eco_params.eval_yr_rat
 
     @MntexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
@@ -633,7 +639,7 @@ class OpexEvaluator(OpexAggregator, CostEvaluator):
 
     @property
     def yrl(self) -> float:
-        return self.sim / self.poi.scenario.sim_yr_rat
+        return self.sim / self.poi.scenario.eco_params.eval_yr_rat
 
     @OpexAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
@@ -715,7 +721,7 @@ class CrevEvaluator(CrevAggregator, CostEvaluator):
 
     @property
     def yrl(self) -> float:
-        return self.sim / self.poi.scenario.sim_yr_rat
+        return self.sim / self.poi.scenario.eco_params.eval_yr_rat
 
     @CrevAggregator.cashflows.getter  # Only override the getter as otherwise (@property) also the setter is overridden
     def cashflows(self) -> np.ndarray:
@@ -935,7 +941,7 @@ class EcoEvaluator(EcoPOI):
         opex_config_peak,
     ):
         if not self.ls:  # set default value for lifespan from scenario -> not possible in init definition
-            self.ls = self.scenario.prj_duration_yrs
+            self.ls = self.scenario.eco_params.prj_duration_yrs
 
         if self.size_name is not None:
             if self.size_name in self.block.sizes:

@@ -20,6 +20,7 @@ from typing_extensions import Self
 
 import revoletion.data
 
+from revoletion.eco import EcoParams
 from . import blocks, constraints, dispatch, location, scheduler, time, utils
 from . import economics as eco
 from . import logger as logger_fcs
@@ -226,7 +227,6 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        self.prj_duration_yrs = self.prj_duration
         self.times = time.SimulationTimes.create_from_plain(
             timestep=self.timestep,
             timezone=self.location.timezone,
@@ -237,15 +237,30 @@ class Scenario:
         )
         self.timestep = time.Timestep.from_str(self.timestep)
 
-        for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
+        # generate variables for calculations
+        self.eco_params = EcoParams.from_simulation_times(
+            prj_duration_yrs=self.prj_duration,
+            discount_rate=self.wacc,
+            compensate_sim_prj=self.compensate_sim_prj,
+            times=self.times,
+            timestep=self.timestep,
+        )
+
+        for param in [
+            "latitude",
+            "longitude",
+            "starttime",
+            "sim_endtime",
+            "sim_duration",
+            "prj_duration",
+            "wacc",
+            "compensate_sim_prj",
+        ]:
             if hasattr(self, param):
                 delattr(self, param)
 
-        # generate variables for calculations
-        self.sim_yr_rat = self.times.sim.duration / pd.Timedelta(days=365)  # no leap years
-        self.sim_prj_rat = self.times.sim.duration / self.times.prj.duration
-
         if self.strategy == "rh":
+            # ToDo:
             self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.td)
             self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.td)
         elif self.strategy in ["go"]:
@@ -326,14 +341,17 @@ class Scenario:
         # endregion
 
         # region initialize result variables
-        self.periods_prj = np.arange(0, self.prj_duration_yrs)
-        self.periods_prj_extd = np.arange(0, self.prj_duration_yrs + 1)  # add. year for salvage values
+        self.periods_prj = np.arange(0, self.eco_params.prj_duration_yrs)
+        self.periods_prj_extd = np.arange(0, self.eco_params.prj_duration_yrs + 1)  # add. year for salvage values
         self.discount_factors = pd.DataFrame(
             index=self.periods_prj_extd,
             columns=["beginning", "mid", "end"],
             data={
                 occ: eco.EcoTools.discount(
-                    future_value=1, periods=self.periods_prj_extd + 1, discount_rate=self.wacc, occurs_at=occ
+                    future_value=1,
+                    periods=self.periods_prj_extd + 1,
+                    discount_rate=self.eco_params.discount_rate,
+                    occurs_at=occ,
                 )
                 for occ in ["beginning", "mid", "end"]
             },
@@ -493,7 +511,9 @@ class Scenario:
         self.npc = self.aggregator.totex.dis
         self.npv = self.aggregator.value.dis
         self.irr = npf.irr(self.aggregator.value.cashflows)
-        self.mirr = npf.mirr(self.aggregator.value.cashflows, self.wacc, self.wacc)
+        self.mirr = npf.mirr(
+            self.aggregator.value.cashflows, self.eco_params.discount_rate, self.eco_params.discount_rate
+        )
 
         # print basic results
         self.logger.info(

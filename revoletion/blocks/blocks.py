@@ -268,8 +268,8 @@ class ElectricBlock(BaseBlock, ABC):
                     f'Block "{self.name}" - circular flow detected (flows name: {flow_name}) - check energy results'
                 )
 
-        self.energies["yrl"] = self.energies["sim"] / self.scenario.sim_yr_rat
-        self.energies["prj"] = self.energies["yrl"] * self.scenario.prj_duration_yrs
+        self.energies["yrl"] = self.energies["sim"] / self.scenario.eco_params.eval_yr_rat
+        self.energies["prj"] = self.energies["yrl"] * self.scenario.eco_params.prj_duration_yrs
         self.energies["dis"] = (
             self.energies["yrl"] * self.scenario.discount_factors.loc[self.scenario.periods_prj, "end"].sum()
         )
