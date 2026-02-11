@@ -72,11 +72,11 @@ class Timestep:
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        return cls.from_timedelta(td=pd.Timedelta(pd.infer_freq(dti)))
+        return cls(td=pd.Timedelta(pd.infer_freq(dti)))
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
-        return cls.from_timedelta(td=pd.Timedelta(timestep_str))
+        return cls(td=pd.Timedelta(timestep_str))
 
 
 @dataclass(frozen=True)
