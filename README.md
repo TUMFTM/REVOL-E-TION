@@ -70,7 +70,7 @@ Log files can be created using the integrated Discrete Event Simulation (DES), w
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):<br>
 
 <div style="text-align: center;">
-  <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
+  <img src="./images/structure.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
 </div>
 
 ## Installation
@@ -122,9 +122,15 @@ If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi an
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
+> ⚠️ **Important** ⚠️
+>
+> **When using REVOL-E-TION, all input data such as timeseries and the scenario file should be stored in a separate directory and not within the package's source code.**  
+> **Do not store any custom files within the source code of the package.**
+> **This includes the example directory in particular.**
+
 ### 1. Running REVOL-E-TION as package
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
-1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
+1. Call to the main module: ```python -m revoletion <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
 <details style="margin-bottom: 1em;">
@@ -170,7 +176,7 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 
 To run the provided example project, execute the following command in the terminal:
 ```bash
-python -m revoletion.main -scn example
+python -m revoletion -scn example
 ```
 
 ### 2. Running REVOL-E-TION in Python

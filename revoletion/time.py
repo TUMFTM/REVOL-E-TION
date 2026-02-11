@@ -58,11 +58,17 @@ class RunTimer:
 @dataclass(slots=True, frozen=True)
 class Timestep:
     td: pd.Timedelta
-    hours: float
+    _hours: float
 
-    @classmethod
-    def from_timedelta(cls, td: pd.Timedelta) -> Self:
-        return cls(td=td, hours=td.total_seconds() / 3600)
+    def __init__(self, td: pd.Timedelta):
+        # use custom init to enforce consistency between td and hours
+        # cached_property collides with slots=True -> store hours as a regular attribute
+        object.__setattr__(self, "td", td)
+        object.__setattr__(self, "_hours", td.total_seconds() / 3600)
+
+    @property
+    def hours(self) -> float:
+        return self._hours
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
