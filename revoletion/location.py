@@ -66,3 +66,5 @@ class Location:
             return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
         except geopy.exc.GeocoderUnavailable:
             return None
+        except geopy.exc.GeocoderServiceError:
+            return None
