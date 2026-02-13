@@ -91,7 +91,11 @@ class FleetDemand:
             timeframes = np.repeat(days["timeframe"].values, days[usecase].values)
             requests_uc = pd.DataFrame({"date": dates, "usecase": usecase, "timeframe": timeframes})
             requests_dfs.append(requests_uc)
-        self.requests = pd.concat(requests_dfs, ignore_index=True)
+        
+        if requests_dfs:
+            self.requests = pd.concat(requests_dfs, ignore_index=True)
+        else: # no requests
+            self.requests = pd.DataFrame(columns=["date", "usecase", "timeframe"])
         # endregion
 
         # region sample request times of day from usecase distribution
