@@ -4,13 +4,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol, Self
+from typing import Self
 
 import numpy as np
 import pandas as pd
+from numpy import typing as npt
 
-from .abstractclasses import EcoElement, CapexElement, YearlyElement, BlockElement
-from .size import Size
+from .abstractclasses import CalculableEcoElement, CapexElement, YearlyElement, PowerBasedElement, BlockElement
 from .utils import (
     OccursAt,
     annuity,
@@ -79,23 +79,38 @@ class EcoParams:
         )
 
     @cached_property
-    def _discount_factors(self) -> dict[OccursAt, pd.Series]:
+    def _discount_factors(self) -> dict[OccursAt, npt.NDArray]:
         periods = np.arange(self.prj_duration_yrs + 1)
         return {
-            occurs_at: pd.Series(
-                index=periods,
-                data=discount(
-                    future_value=1,
-                    periods=periods,
-                    discount_rate=self.discount_rate,
-                    occurs_at=occurs_at,
-                ),
+            occurs_at: discount(
+                future_value=1,
+                periods=periods,
+                discount_rate=self.discount_rate,
+                occurs_at=occurs_at,
             )
             for occurs_at in OccursAt
         }
 
-    def discount_factors(self, occurs_at: OccursAt) -> pd.Series:
+    def discount_factors(self, occurs_at: OccursAt) -> npt.NDArray:
         return self._discount_factors[occurs_at]
+
+    @cached_property
+    def _annuity_factors(self) -> dict[OccursAt, float]:
+        return {
+            occurs_at: annuity(
+                present_value=1,
+                observation_horizon=self.prj_duration_yrs,
+                discount_rate=self.discount_rate,
+                occurs_at=occurs_at,
+            )
+            for occurs_at in OccursAt
+        }
+
+    def annuity_factor(self, occurs_at: OccursAt) -> float:
+        return self._annuity_factors[occurs_at]
+
+    def annuity_factor_apriori(self, occurs_at: OccursAt) -> float:
+        return self.annuity_factor(occurs_at) if self.compensate_sim_prj else 1.0
 
 
 @dataclass(frozen=True)
@@ -121,6 +136,10 @@ class CapexParams(CostParams):
     age_preexisting: int
     ccr: float
     residual_at_ls: float
+
+    def __post_init__(self):
+        if self.consider_preexisting and self.age_preexisting != 0:
+            raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
 
 
 @dataclass(frozen=True)
@@ -166,7 +185,7 @@ class CrevParams(PowerBasedParams):
     pass
 
 
-class CostEvaluator(EcoElement, ABC):
+class CostEvaluator(CalculableEcoElement, ABC):
     """
     Base class for all Evaluators that evaluate costs, i.e. Capex, Mntex, Opex and Crev.
     """
@@ -179,64 +198,18 @@ class CostEvaluator(EcoElement, ABC):
         eco: EcoParams,
         params: CostParams,
     ):
-        self.name = name
-        self._eco = eco
-        self._params = params
+        super().__init__(name=name)
+        self.eco = eco
+        self.params = params
 
-        self._cashflow = np.zeros(self._eco.prj_duration_yrs + 1, dtype=float)
-
-    def __init_subclass__(cls):
-        # cache the names of all cached properties in the subclass to invalidate them when any attribute is set
-        super().__init_subclass__()
-        cls._cached_props = {name for name, obj in cls.__dict__.items() if isinstance(obj, cached_property)}
-
-    def __setattr__(self, name, value):
-        # flag to detect object initialization to avoid invalidating cached properties during initialization
-        initializing = name not in self.__dict__
-        super().__setattr__(name, value)
-
-        # don't invalidate while __init__ is running
-        if initializing:
-            return
-
-        self.invalidate_cache()
-
-    def invalidate_cache(self) -> None:
-        # invalidate all cached properties when any attribute is set
-        for prop in type(self)._cached_props:
-            self.__dict__.pop(prop, None)
-
-    @classmethod
     @abstractmethod
-    def create_from_plain(cls, *_) -> Self: ...
+    def _calc_spec_ep(self) -> float | pd.Series: ...
 
-    def calc_results(self, *_) -> None: ...
-
-    @cached_property
     def spec(self) -> float | pd.Series:
-        return self._params.spec
+        return self.params.spec
 
-    @cached_property
     def fix(self) -> float:
-        return self._params.fix
-
-    @cached_property
-    def cashflow_dis(self) -> pd.Series:
-        return self.cashflow * self._eco.discount_factors(self._OCCURS_AT)
-
-    @cached_property
-    def dis(self) -> float:
-        return sum(self.cashflow_dis)
-
-    @cached_property
-    def ann(self) -> float:
-        # ToDo: use cached discount factors here?
-        return annuity(
-            present_value=self.dis,
-            observation_horizon=self._eco.prj_duration_yrs,
-            discount_rate=self._eco.discount_rate,
-            occurs_at=self._OCCURS_AT,
-        )
+        return self.params.fix
 
 
 class YearlyEvaluator(CostEvaluator, YearlyElement, ABC):
@@ -252,18 +225,22 @@ class YearlyEvaluator(CostEvaluator, YearlyElement, ABC):
             params=params,
         )
 
-    @cached_property
     @abstractmethod
-    def yrl(self) -> float: ...
+    def _calc_yrl(self, *args, **kwargs) -> float: ...
 
-    @cached_property
-    def cashflow(self) -> pd.Series:
-        cashflow = pd.Series(np.full(self._eco.prj_duration_yrs + 1, self.yrl))
-        cashflow.iloc[-1] = 0.0
+    def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray:
+        cashflow = np.full(self.eco.prj_duration_yrs + 1, self.yrl)
+        cashflow[-1] = 0.0
         return cashflow
 
+    def evaluate(self, *args, **kwargs):
+        self._yrl = self._calc_yrl()
+        super().evaluate(*args, **kwargs)
 
-class PowerBasedEvaluator(YearlyEvaluator, ABC):
+
+class PowerBasedEvaluator(YearlyEvaluator, PowerBasedElement, ABC):
+    _OCCURS_AT = OccursAt.END
+
     def __init__(
         self,
         name: str,
@@ -276,36 +253,24 @@ class PowerBasedEvaluator(YearlyEvaluator, ABC):
             params=params,
         )
 
-        self._eval = None
-
-    @classmethod
-    def create_from_plain(cls, name: str, eco: EcoParams, spec: Path | float, fix: float, data_dir: Path) -> Self:
-        params = PowerBasedParams.create_from_plain(spec=spec, fix=fix, dti_sim=eco.dti_sim, data_dir=data_dir)
-        return cls(name=name, eco=eco, params=params)
-
-    def calc_results(self, flow: pd.Series) -> None:
-        self.invalidate_cache()
-        self._eval = (
-            float(np.dot(self._params.spec[self._eco.dti_eval].to_numpy(), flow[self._eco.dti_eval].to_numpy()))
-            * self._eco.timestep_hours
+    def _calc_eval(self, flow) -> float:
+        return (
+            np.dot(self.params.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            + self.params.fix
         )
 
-    @cached_property
-    def spec_ep(self):
+    def _calc_yrl(self) -> float:
+        return self.eval * self.eco.eval_yr_rat
+
+    def evaluate(self, flow: pd.Series, *args, **kwargs):
+        self._eval = self._calc_eval(flow=flow)
+        super().evaluate(*args, **kwargs)
+
+    def _calc_spec_ep(self) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        factor_operation_ep = (1 / self._eco.eval_yr_rat) if self._eco.compensate_sim_prj else 1
+        factor_operation_ep = (1 / self.eco.eval_yr_rat) if self.eco.compensate_sim_prj else 1
 
-        return self._params.spec * factor_operation_ep
-
-    @cached_property
-    def eval(self) -> float:
-        if self._eval is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._eval
-
-    @cached_property
-    def yrl(self) -> float:
-        return self.eval * self._eco.eval_yr_rat + self._params.fix
+        return self.params.spec * factor_operation_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
@@ -323,123 +288,75 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             params=params,
         )
 
-        self._cashflow = None
+    def _calc_cashflow_factors(self, invest_first: int) -> npt.NDArray:
+        invest_periods = np.arange(invest_first, self.eco.prj_duration_yrs, self.params.ls)
 
-    def __post_init__(self):
-        if self._params.consider_preexisting and self._params.age_preexisting != 0:
-            raise ValueError(
-                f"If consider_preexisting is True, init_age_years must be 0, got {self._params.age_preexisting}"
+        capex = np.zeros(self.eco.prj_duration_yrs + 1, dtype=float)
+        capex[invest_periods] = 1
+
+        if self.params.residual_at_ls > 0:
+            residual_periods = invest_periods[1:] if self.params.consider_preexisting else invest_periods
+            capex[residual_periods] -= self.params.residual_at_ls
+
+        capex[-1] = -1 * calc_residual_value(
+            lifetime_remaining_frac=calc_lifetime_remaining(
+                project_duration=self.eco.prj_duration_yrs,
+                ls=self.params.ls,
+                init_age=invest_first % self.params.ls,
             )
-
-    @classmethod
-    def create_from_plain(
-        cls,
-        name: str,
-        eco: EcoParams,
-        spec: float,
-        fix: float,
-        consider_preexisting: bool,
-        ls: int,
-        age_preexisting: int,
-        ccr: float,
-        residual_at_ls: float,
-    ) -> Self:
-        params = CapexParams(
-            spec=spec,
-            fix=fix,
-            consider_preexisting=consider_preexisting,
-            ls=ls,
-            age_preexisting=age_preexisting,
-            ccr=ccr,
-            residual_at_ls=residual_at_ls,
-        )
-        return cls(name=name, eco=eco, params=params)
-
-    def calc_results(self, size_preexisting: float, size_expansion: float) -> None:
-        self.invalidate_cache()
-        self._cashflow = self.cashflow_factor_preexisting * (
-            self._params.spec * size_preexisting + self._params.fix
-        ) + self.cashflow_factor_expansion * (self._params.spec * size_expansion + self._params.fix)
-
-    @cached_property
-    def spec_ep(self) -> float:
-        # ToDo: use cached discount values here?
-        factor_annuity = (
-            annuity(
-                present_value=1,
-                observation_horizon=self._eco.prj_duration_yrs,
-                discount_rate=self._eco.discount_rate,
-                occurs_at=self._OCCURS_AT,
-            )
-            if self._eco.compensate_sim_prj
-            else 1
-        )
-        factor_spec_ep = float(
-            np.dot(
-                self.cashflow_factor_expansion.to_numpy() * self._params.spec,
-                self._eco.discount_factors(self._OCCURS_AT).to_numpy(),
-            )
+            / float(self.params.ls),
+            depreciation=DEPRECIATION.LINEAR,
+            residual_at_ls=self.params.residual_at_ls,
         )
 
-        return factor_annuity * factor_spec_ep
+        # apply capex cost change ratio
+        capex *= self.params.ccr ** np.arange(self.eco.prj_duration_yrs + 1)
 
+        return capex
+
+    def _calc_cashflow_factor_preexisting(self) -> npt.NDArray:
+        invest_first = 0 if self.params.consider_preexisting else self.params.ls - self.params.age_preexisting
+        return self._calc_cashflow_factors(invest_first)
+
+    def _calc_cashflow_factor_expansion(self) -> npt.NDArray:
+        invest_first = 0
+        return self._calc_cashflow_factors(invest_first)
+
+    def _calc_cashflow_preexisting(self, size_preexisting: float) -> npt.NDArray:
+        return self._calc_cashflow_factor_preexisting() * (self.params.spec * size_preexisting + self.params.fix)
+
+    def _calc_cashflow_expansion(self, size_expansion: float) -> npt.NDArray:
+        return self._calc_cashflow_factor_expansion() * (self.params.spec * size_expansion + self.params.fix)
+
+    def _calc_cashflow(self, size_preexisting: float, size_expansion: float) -> npt.NDArray:
+        return self._calc_cashflow_preexisting(size_preexisting) + self._calc_cashflow_expansion(size_expansion)
+
+    def evaluate(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> None:
+        self._cashflow = self._calc_cashflow(size_preexisting=size_preexisting, size_expansion=size_expansion)
+        super().evaluate(*args, **kwargs)
+
+    def _calc_spec_ep(self) -> float:
+        return np.dot(
+            self._calc_cashflow_factor_expansion() * self.params.spec,
+            self.eco.discount_factors(self._OCCURS_AT),
+        ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
+
+    # ToDo: move this to methods
     @cached_property
     def preexisting(self) -> float:
         # ToDo: remove this
-        return (self.results.size_preexisting * self._params.spec + self._params.fix) * int(
-            self._params.consider_preexisting
+        return (self.results.size_preexisting * self.params.spec + self.params.fix) * int(
+            self.params.consider_preexisting
         )
 
     @cached_property
     def expansion(self) -> float:
         # Todo: remove this
-        return self.results.size_expansion * self._params.spec + self._params.fix
+        return self.results.size_expansion * self.params.spec + self.params.fix
 
     @cached_property
     def init(self) -> float:
         return self.preexisting + self.expansion
-
-    def calc_capex_cashflow(self, invest_first: int) -> pd.Series:
-        invest_periods = np.arange(invest_first, self._eco.prj_duration_yrs, self._params.ls)
-
-        capex = np.zeros(self._eco.prj_duration_yrs + 1, dtype=float)
-        capex[invest_periods] = 1
-
-        if self._params.residual_at_ls > 0:
-            residual_periods = invest_periods[1:] if self._params.consider_preexisting else invest_periods
-            capex[residual_periods] -= self._params.residual_at_ls
-
-        capex[-1] = -1 * calc_residual_value(
-            lifetime_remaining_frac=calc_lifetime_remaining(
-                project_duration=self._eco.prj_duration_yrs,
-                ls=self._params.ls,
-                init_age=invest_first % self._params.ls,
-            )
-            / float(self._params.ls),
-            depreciation=DEPRECIATION.LINEAR,
-            residual_at_ls=self._params.residual_at_ls,
-        )
-
-        # apply capex cost change ratio
-        capex *= self._params.ccr ** np.arange(self._eco.prj_duration_yrs + 1)
-
-        return pd.Series(capex)
-
-    @cached_property
-    def cashflow_factor_preexisting(self) -> pd.Series:
-        invest_first = 0 if self._params.consider_preexisting else self._params.ls - self._params.age_preexisting
-        return self.calc_capex_cashflow(invest_first)
-
-    @cached_property
-    def cashflow_factor_expansion(self) -> pd.Series:
-        invest_first = 0
-        return self.calc_capex_cashflow(invest_first)
-
-    @cached_property
-    def cashflow(self) -> pd.Series:
-        if self._cashflow is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._cashflow
 
 
 class MntexEvaluator(YearlyEvaluator):
@@ -457,44 +374,18 @@ class MntexEvaluator(YearlyEvaluator):
             params=params,
         )
 
-        self._yrl = None
+    def _calc_yrl(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> float:
+        return self.params.spec * (size_preexisting + size_expansion) + self.params.fix
 
-    @classmethod
-    def create_from_plain(cls, name: str, eco: EcoParams, spec: float, fix: float) -> Self:
-        params = MntexParams(spec=spec, fix=fix)
-        return cls(name=name, eco=eco, params=params)
+    def evaluate(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> None:
+        self._yrl = self._calc_yrl(size_preexisting=size_preexisting, size_expansion=size_expansion)
+        super().evaluate(*args, **kwargs)
 
-    def calc_results(self, size_preexisting: float, size_expansion: float) -> None:
-        self.invalidate_cache()
-        self._yrl = (size_preexisting + size_expansion) * self._params.spec + self._params.fix
-
-    @cached_property
-    def spec_ep(self) -> float:
-        # ToDo: use cached discount values here?
-        factor_annuity = (
-            annuity(
-                present_value=1,
-                observation_horizon=self._eco.prj_duration_yrs,
-                discount_rate=self._eco.discount_rate,
-                occurs_at=self._OCCURS_AT,
-            )
-            if self._eco.compensate_sim_prj
-            else 1
-        )
-        factor_spec_ep = float(
-            np.dot(
-                np.full(self._eco.prj_duration_yrs + 1, self._params.spec),
-                self._eco.discount_factors(self._OCCURS_AT).to_numpy(),
-            )
-        )
-
-        return factor_annuity * factor_spec_ep
-
-    @cached_property
-    def yrl(self) -> float:
-        if self._yrl is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._yrl
+    def _calc_spec_ep(self) -> float:
+        return np.dot(
+            np.full(self.eco.prj_duration_yrs + 1, self.params.spec),
+            self.eco.discount_factors(self._OCCURS_AT),
+        ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
 
 class OpexEvaluator(PowerBasedEvaluator):

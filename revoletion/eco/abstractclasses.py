@@ -1,165 +1,150 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
+
+from .utils import annuity, OccursAt
 
 
-class EcoElement(ABC):
+class BaseEcoElement(ABC):
     """
     Base class for all economic elements.
-
-    This abstract base class defines the common interface and derived values
-    that every economic element in the model must provide.
-
-    Attributes
-    ----------
-    name : str
-        Name of the economic element.
-
-    cashflow : np.ndarray
-        Cashflow of the economic element per period.
-
-    cashflow_dis : np.ndarray
-        Discounted cashflow per period.
-
-    prj : float
-        Project value (undiscounted sum of cashflows).
-
-    dis : float
-        Discounted project value.
-
-    ann : float
-        Annuity value of the economic element.
     """
 
-    name: str
+    def __init__(self, name: str):
+        self.name = name
+
+        self._cashflow: np.ndarray | None = None
+        self._cashflow_dis: np.ndarray | None = None
+
+        self._prj: float | None = None
+        self._dis: float | None = None
+        self._ann: float | None = None
+
+    def _require_calculated(self, attr_name) -> Any:
+        value = getattr(self, attr_name)
+        if value is None:
+            raise ValueError(f'Results need to be calculated before "{attr_name.strip("_")}" can be accessed.')
+        return value
 
     @property
+    def cashflow(self):
+        return self._require_calculated("_cashflow")
+
+    @property
+    def cashflow_dis(self):
+        return self._require_calculated("_cashflow_dis")
+
+    @property
+    def prj(self):
+        return self._require_calculated("_prj")
+
+    @property
+    def dis(self):
+        return self._require_calculated("_dis")
+
+    @property
+    def ann(self):
+        return self._require_calculated("_ann")
+
+
+class CalculableEcoElement(BaseEcoElement, ABC):
+    _OCCURS_AT = OccursAt.BEGIN
+    """
+    Base class for all economic elements that calculate their own results instead of just aggregate them.
+    """
+
+    def __init__(self, name: str, eco: EcoParams):
+        super().__init__(name)
+        self.eco = eco
+
     @abstractmethod
-    def cashflow(self) -> np.ndarray: ...
+    def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray: ...
 
-    @property
-    @abstractmethod
-    def cashflow_dis(self) -> np.ndarray: ...
+    def _calc_cashflow_dis(self) -> npt.NDArray:
+        return self.cashflow * self.eco.discount_factors(self._OCCURS_AT)
 
-    @property
-    def prj(self) -> float:
-        return self.cashflow.sum()
+    def _calc_prj(self) -> float:
+        return np.sum(self.cashflow)
 
-    @property
-    @abstractmethod
-    def dis(self) -> float: ...
+    def _calc_dis(self) -> float:
+        return np.sum(self.cashflow_dis)
 
-    @property
-    @abstractmethod
-    def ann(self) -> float: ...
+    def _calc_ann(self) -> float:
+        return self.dis * self.eco.annuity_factor(self._OCCURS_AT)
+
+    def evaluate(self, *args, **kwargs):
+        self._cashflow = self._calc_cashflow_dis()
+        self._prj = self._calc_prj()
+        self._dis = self._calc_dis()
+        self._ann = self._calc_ann()
 
 
-@dataclass
-class CapexElement(EcoElement, ABC):
+class CapexElement(BaseEcoElement, ABC):
     """
     Base class for all capex elements.
-
-    This abstract base class defines the common interface and properties
-    that every capex element in the model must provide in addition to the attributes defined in EcoElement.
-
-    Attributes
-    ----------
-        name : str
-        Name of the economic element.
-
-    cashflow : np.ndarray
-        Cashflow of the economic element per period.
-
-    cashflow_dis : np.ndarray
-        Discounted cashflow per period.
-
-    prj : float
-        Project value (undiscounted sum of cashflows).
-
-    dis : float
-        Discounted project value.
-
-    ann : float
-        Annuity value of the economic element.
-
-    preexisting : float
-        Capex of the preexisting installed component capacity.
-
-    expansion : float
-        Capex of the additional installed component capacity.
-
-    init : float
-        Capex of the initial installation (preexisting + expansion).
     """
 
-    @property
-    @abstractmethod
-    def preexisting(self) -> float: ...
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._preexisting: float | None = None
+        self._expansion: float | None = None
+        self._init: float | None = None
 
     @property
-    @abstractmethod
-    def expansion(self) -> float: ...
+    def preexisting(self) -> float:
+        return self._require_calculated("_preexisting")
 
     @property
-    @abstractmethod
-    def init(self) -> float: ...
+    def expansion(self) -> float:
+        return self._require_calculated("_expansion")
+
+    @property
+    def init(self) -> float:
+        return self._require_calculated("_init")
 
 
-@dataclass
-class YearlyElement(EcoElement, ABC):
+class YearlyElement(BaseEcoElement, ABC):
     """
     Base class for all elements with yearly occurring costs or revenues (Mntex, Opex, Crev).
-
-    This abstract base class defines the common interface and properties
-    that every yearly element in the model must provide in addition to the attributes defined in EcoElement.
-
-    Attributes
-    ----------
-    name : str
-    Name of the economic element.
-
-    cashflow : np.ndarray
-        Cashflow of the economic element per period.
-
-    cashflow_dis : np.ndarray
-        Discounted cashflow per period.
-
-    prj : float
-        Project value (undiscounted sum of cashflows).
-
-    dis : float
-        Discounted project value.
-
-    ann : float
-        Annuity value of the economic element.
-
-    yrl : float
-        Sum of transactions during one year. Scaled from simulation results.
     """
 
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._yrl: float | None = None
+
     @property
-    @abstractmethod
-    def yrl(self) -> float: ...
+    def yrl(self) -> float:
+        return self._require_calculated("_yrl")
 
 
-@dataclass
+class PowerBasedElement(YearlyElement, ABC):
+    """
+    Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
+    """
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._eval: float | None = None
+
+    @property
+    def eval(self) -> float:
+        return self._require_calculated("_eval")
+
+
 class BlockElement(ABC):
     """
     Base class for all block elements.
-
-    This abstract base class defines the common interface and properties
-    that every block element in the model must provide in addition to the attributes defined in EcoElement.
-
-    Attributes
-    ----------
-    name : str
-    Name of the economic element.
-
     """
 
-    name: str
-    capex: CapexElement
-    mntex: YearlyElement
-    opex: YearlyElement
-    crev: YearlyElement
+    def __init__(self, name: str):
+        self.name = name
+
+        self.capex: CapexElement | None = None
+        self.mntex: YearlyElement | None = None
+        self.opex: YearlyElement | None = None
+        self.crev: YearlyElement | None = None
