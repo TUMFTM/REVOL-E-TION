@@ -1,7 +1,7 @@
-block,key,icev,#bev_grid,#bev_mg,#bev_mg_rh
-scenario,starttime,1.7.2018,1.1.2018,1.1.2018,1.1.2018
+block,key,icev,bev_grid,bev_mg,bev_mg_rh
+scenario,starttime,1.1.2018,1.1.2018,1.1.2018,1.1.2018
 scenario,timestep,15min,15min,15min,15min
-scenario,sim_duration,5,5,5,5
+scenario,sim_duration,50,50,50,50
 scenario,sim_endtime,None,None,None,None
 scenario,prj_duration,25,25,25,25
 scenario,compensate_sim_prj,True,True,True,True
@@ -16,7 +16,7 @@ scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
-scenario,blocks,"{'dem': 'FixedDemand', 'pv': 'PVSource', 'gen': 'ControllableSource', 'vehicles': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
+scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
 core,size_preexisting_acdc,0,0,0,55000
 core,capex_preexisting_acdc,True,True,True,True
 core,size_max_acdc,None,None,None,None
@@ -27,7 +27,7 @@ core,size_max_dcac,equal,equal,equal,equal
 core,invest_dcac,equal,equal,equal,equal
 core,capex_spec,0.08,0.08,0.08,0.08
 core,mntex_spec,0.0024,0.0024,0.0024,0.0024
-core,opex_spec,grid_opex_g2s,0,0,0
+core,opex_spec,0,0,0,0
 core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
@@ -37,7 +37,7 @@ dem,capex_fix_metering,300,300,300,300
 dem,mntex_fix_metering,10,10,10,10
 dem,load_profile,dem_timeseries,dem_timeseries,dem_timeseries,dem_timeseries
 dem,consumption_yrl,10e6,10e6,10e6,10e6
-dem,system,dc,ac,ac,ac
+dem,system,ac,ac,ac,ac
 dem,crev_spec,3e-05,3e-05,3e-05,3e-05
 wind,size_preexisting_block,0,0,0,10000
 wind,capex_preexisting_block,True,True,True,True
@@ -53,7 +53,7 @@ wind,opex_spec,0,0,0,0
 wind,ls,20,20,20,20
 wind,ccr,1,1,1,1
 wind,eff_block,0.95,0.95,0.95,0.95
-pv,size_preexisting_block,0,0,0,30000
+pv,size_preexisting_block,1000,0,0,30000
 pv,capex_preexisting_block,True,True,True,True
 pv,size_max_block,None,None,None,None
 pv,invest_block,True,True,True,False
@@ -137,7 +137,7 @@ ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
 vehicles,system,ac,ac,ac,ac
-vehicles,subfleets,['bev'],"['bev', 'icev']","['bev', 'icev']","['bev', 'icev']"
+vehicles,subfleets,"['icev']","['bev', 'icev']","['bev', 'icev']","['bev', 'icev']"
 vehicles,data_source,usecases,usecases,usecases,usecases
 vehicles,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 vehicles,filename_mapper,mtf,mtf,mtf,mtf
@@ -166,7 +166,7 @@ bev,crev_spec_dist,0.2,0.2,0.2,0.2
 bev,opex_spec_ext_ac,49e-5,49e-5,49e-5,49e-5
 bev,opex_spec_ext_dc,79e-5,79e-5,79e-5,79e-5
 bev,capex_spec,0.3,0.3,0.3,0.3
-bev,rex,None,mb,mb,mb
+bev,rex,mb,mb,mb,mb
 bev,mode_scheduling,fcfs,fcfs,fcfs,fcfs
 bev,forecast_hours,None,None,None,None
 bev,aging,True,True,True,True
