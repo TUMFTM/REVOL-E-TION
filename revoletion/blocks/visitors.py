@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from typing_extensions import override
@@ -60,12 +61,12 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
 
     @override
     def visit_block(self, block: blocks.BaseBlock, plot_traces: PlotTraces) -> None:
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, plot_traces=plot_traces)
+
         if isinstance(block, blocks.NonElectricBlock):
             # Abort for non-electric blocks.
             return
-
-        for subblock in block.subblocks.values():
-            self.visit_block(subblock, plot_traces=plot_traces)
 
         # The system core block is special. It is an electric block, but does not employ the same
         # plotting logic. Therefore, only the custom plotting logic is executed and the execution
@@ -270,7 +271,7 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
             messages.extend(self.visit_block(subblock))
 
         for size in block.sizes.values():
-            if (msg := size.result_msg) != "":
+            if (msg := size.result_msg(name_block=block.name)) != "":
                 messages.append(msg)
 
         if isinstance(block, blocks.GridConnection):
@@ -282,7 +283,7 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
         return [
             f'{"Optimized peak" if block.peakshaving else "Peak"} power in component "{block.name}" for peak period '
             f'"{period}": {row["power"] / 1e3:.1f} kW '
-            f"- OPEX in simulation period: {block.evaluators[period].opex_peak.sim:.2f} {block.scenario.currency}"
+            f"- OPEX in simulation period: {block.pois[period].opex_peak.sim:.2f} {block.scenario.currency}"
             for period, row in block.peak_periods.iterrows()
             if row["start"] < block.scenario.times.eval.end
         ]
@@ -363,7 +364,7 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
             summary_list.append(size.result_summary)
 
         # get economic results
-        summary_list.append(block.aggregator.write_result_summary())
+        summary_list.append(block.aggregator.result_summary)
 
         if isinstance(block, blocks.ElectricBlock):
             summary_list.append(self.visit_electric_block(block))
@@ -377,7 +378,12 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
         return summary_df_list
 
     def visit_electric_block(self, block: blocks.ElectricBlock) -> pd.Series:
-        return utils.create_results_from_dataframe(df=block.energies, name_prefix="energy")
+        combined = {}
+
+        for energy in block.energies.values():
+            combined.update(energy.result_summary)
+
+        return pd.Series(combined)
 
     def visit_grid_connection(self, block: blocks.GridConnection) -> pd.Series:
         peak_power_results = {}
@@ -387,7 +393,7 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
                     {
                         f"{period}_peak_power": row["power"],
                         f"{period}_peak_period_fraction": row["period_fraction"],
-                        f"{period}_peak_opex_sim": block.evaluators[period].opex_peak.sim,
+                        f"{period}_peak_opex_sim": block.pois[period].opex_peak.sim,
                     }
                 )
         return pd.Series(peak_power_results)

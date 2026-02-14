@@ -7,7 +7,7 @@ import numpy.typing as npt
 import pandas as pd
 import pytz
 
-from revoletion.utils import read_timeseries_csv
+from revoletion.utils import read_timeseries_csv, set_extension
 
 
 class OccursAt(Enum):
@@ -106,7 +106,7 @@ def calc_residual_value(
         raise NotImplementedError(f"Depreciation method {depreciation} is not implemented")
 
 
-def transform_scalar_var(value: Path | float, dti: pd.DatetimeIndex) -> pd.Series:
+def transform_scalar_var(value: str | float, dti: pd.DatetimeIndex, data_dir: Path) -> pd.Series:
     """
     Transform a value holding either the path to a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
@@ -114,15 +114,16 @@ def transform_scalar_var(value: Path | float, dti: pd.DatetimeIndex) -> pd.Serie
     if isinstance(value, numbers.Number):  # value is given as scalar
         return pd.Series(index=dti, data=np.full(len(dti), value, dtype=float), name="cost")
 
-    elif isinstance(value, Path):  # value contains filename
-        if not value.is_file():
-            raise FileNotFoundError(f"Timeseries file {value} not found.")
+    elif isinstance(value, str):  # value contains filename
+        filepath = set_extension(filename=data_dir / value, default_extension=".csv")
+        if not filepath.is_file():
+            raise FileNotFoundError(f"Timeseries file {filepath} not found.")
 
         tz = pytz.timezone(str(dti.tz)) if dti.tz is not None else None
 
         try:
             df = read_timeseries_csv(
-                path_input_file=value,
+                path_input_file=filepath,
                 timezone=tz,
                 multiheader=False,
                 resampling_dti=dti,

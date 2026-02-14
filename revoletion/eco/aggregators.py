@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Self
 
 import numpy.typing as npt
+import pandas as pd
 
 from .abstractclasses import CapexElement, EcoElement, YearlyElement, BlockElement
 
@@ -75,10 +76,6 @@ class YearlyAggregator(CrossLevelAggregator, YearlyElement):
     elements: dict[str, YearlyElement] = field(default_factory=dict)
 
     @property
-    def sim(self) -> float:
-        return self._aggregate("sim")
-
-    @property
     def yrl(self) -> float:
         return self._aggregate("yrl")
 
@@ -129,7 +126,18 @@ class MntexAggregator(YearlyAggregator):
 
 
 @dataclass
-class OpexAggregator(YearlyAggregator):
+class PowerBasedAggregator(YearlyAggregator):
+    """
+    PowerBasedAggregator aggregates the values of all given PowerBasedElements.
+    """
+
+    @property
+    def eval(self) -> float:
+        return self._aggregate("eval")
+
+
+@dataclass
+class OpexAggregator(PowerBasedAggregator):
     """
     OpexAggregator aggregates the values of all given OpexElements.
     """
@@ -138,7 +146,7 @@ class OpexAggregator(YearlyAggregator):
 
 
 @dataclass
-class CrevAggregator(YearlyAggregator):
+class CrevAggregator(PowerBasedAggregator):
     """
     CrevAggregator aggregates the values of all given CrevElements.
     """
@@ -184,18 +192,18 @@ class Aggregator(BlockElement):
     name: str
 
     capex: CapexAggregator
-    mntex: YearlyAggregator
-    opex: YearlyAggregator
-    crev: YearlyAggregator
+    mntex: MntexAggregator
+    opex: OpexAggregator
+    crev: CrevAggregator
     totex: TotexAggregator
     value: ValueAggregator
 
     @classmethod
     def create(cls, name: str) -> Self:
         capex = CapexAggregator(name=name)
-        mntex = YearlyAggregator(name=name)
-        opex = YearlyAggregator(name=name)
-        crev = YearlyAggregator(name=name)
+        mntex = MntexAggregator(name=name)
+        opex = OpexAggregator(name=name)
+        crev = CrevAggregator(name=name)
         totex = TotexAggregator(name=name, capex=capex, mntex=mntex, opex=opex)
         value = ValueAggregator(name=name, totex=totex, crev=crev)
 
@@ -209,3 +217,35 @@ class Aggregator(BlockElement):
         self.mntex.elements[block.name] = block.mntex
         self.opex.elements[block.name] = block.opex
         self.crev.elements[block.name] = block.crev
+
+    @property
+    def result_summary(self) -> pd.Series:
+        # ToDo: add capex preexisting, expansion and init to result summary
+        # ToDo: make loop based?
+        return pd.Series(
+            {
+                "capex_prj": self.capex.prj,
+                "capex_dis": self.capex.dis,
+                "capex_ann": self.capex.ann,
+                "mntex_yrl": self.mntex.yrl,
+                "mntex_prj": self.mntex.prj,
+                "mntex_dis": self.mntex.dis,
+                "mntex_ann": self.mntex.ann,
+                "opex_eval": self.opex.eval,
+                "opex_yrl": self.opex.yrl,
+                "opex_prj": self.opex.prj,
+                "opex_dis": self.opex.dis,
+                "opex_ann": self.opex.ann,
+                "crev_eval": self.crev.eval,
+                "crev_yrl": self.crev.yrl,
+                "crev_prj": self.crev.prj,
+                "crev_dis": self.crev.dis,
+                "crev_ann": self.crev.ann,
+                "totex_prj": self.totex.prj,
+                "totex_dis": self.totex.dis,
+                "totex_ann": self.totex.ann,
+                "value_prj": self.value.prj,
+                "value_dis": self.value.dis,
+                "value_ann": self.value.ann,
+            }
+        )

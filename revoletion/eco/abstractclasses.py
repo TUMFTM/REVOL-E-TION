@@ -4,7 +4,6 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass
 class EcoElement(ABC):
     """
     Base class for all economic elements.

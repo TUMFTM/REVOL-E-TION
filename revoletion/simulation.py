@@ -20,9 +20,8 @@ from typing_extensions import Self
 
 import revoletion.data
 
-from revoletion.eco import EcoParams
+from revoletion import eco as eco
 from . import blocks, constraints, dispatch, location, scheduler, time, utils
-from . import economics as eco
 from . import logger as logger_fcs
 
 _LOGGER = logging.getLogger(__name__)
@@ -238,7 +237,7 @@ class Scenario:
         self.timestep = time.Timestep.from_str(self.timestep)
 
         # generate variables for calculations
-        self.eco_params = EcoParams.from_simulation_times(
+        self.eco_params = eco.EcoParams.from_simulation_times(
             prj_duration_yrs=self.prj_duration,
             discount_rate=self.wacc,
             compensate_sim_prj=self.compensate_sim_prj,
@@ -343,22 +342,8 @@ class Scenario:
         # region initialize result variables
         self.periods_prj = np.arange(0, self.eco_params.prj_duration_yrs)
         self.periods_prj_extd = np.arange(0, self.eco_params.prj_duration_yrs + 1)  # add. year for salvage values
-        self.discount_factors = pd.DataFrame(
-            index=self.periods_prj_extd,
-            columns=["beginning", "mid", "end"],
-            data={
-                occ: eco.EcoTools.discount(
-                    future_value=1,
-                    periods=self.periods_prj_extd + 1,
-                    discount_rate=self.eco_params.discount_rate,
-                    occurs_at=occ,
-                )
-                for occ in ["beginning", "mid", "end"]
-            },
-            dtype="float64",
-        )
 
-        self.aggregator = eco.EcoAggregator(name="scenario", scenario=self)
+        self.aggregator = eco.Aggregator.create(name="scenario")
         self.capex_preexisting_considered = 0
 
         self.block_registry = dict()
@@ -387,14 +372,12 @@ class Scenario:
             )
 
         self.objective_opt = None  # unused for rh strategy
-        self.energies = pd.DataFrame(
-            index=pd.MultiIndex.from_tuples(
-                tuples=[("renewable", "act"), ("sources", "pro"), ("sinks", "del")], names=["block", "key"]
-            ),
-            columns=["sim", "yrl", "prj", "dis"],
-            data=0,
-            dtype=float,
-        )
+
+        # ToDo: use default dict and override __missing__ method
+        self.energies = {
+            k: eco.EnergyAggregator(name=k, eco=self.eco_params)
+            for k in ["sources", "sinks", "renewable_actual", "renewable_pot", "renewable_curt"]
+        }
 
         self.e_eta = None
         self.renewable_share = None
@@ -470,7 +453,6 @@ class Scenario:
     def process_results(self) -> None:
         for block in self.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()
-        self.aggregator.aggregate()
 
         self.calc_meta_results()
 
@@ -484,35 +466,32 @@ class Scenario:
                 self.logger.info(msg)
 
     def calc_meta_results(self):
-        # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        if self.energies.loc[("sources", "pro"), "sim"] == 0:
+        for energy in self.energies.values():
+            energy.calc_results()
+        try:
+            self.e_eta = self.energies["sinks"].eval / self.energies["sources"].eval
+        except ZeroDivisionError:
             self.logger.warning("Core efficiency calculation: division by zero")
-        else:
-            self.e_eta = self.energies.loc[("sinks", "del"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
 
-        if self.energies.loc[("sources", "pro"), "sim"] == 0:
+        try:
+            self.renewable_share = self.energies["renewable_actual"].eval / self.energies["sources"].eval
+        except ZeroDivisionError:
             self.logger.warning("Renewable share calculation: division by zero")
-        else:
-            self.renewable_share = (
-                self.energies.loc[("renewable", "act"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
-            )
 
-        if self.energies.loc[("sinks", "del"), "sim"] == 0:
-            self.logger.warning("LCOE calculation: division by zero")
-        else:
-            self.lcoe_total = self.aggregator.totex.dis / self.energies.loc[("sinks", "del"), "dis"]
+        try:
+            self.lcoe_total = self.aggregator.totex.dis / self.energies["sinks"].dis
             self.lcoe_wocs = (
                 self.aggregator.totex.dis
-                -
-                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
-            ) / self.energies.loc[("sinks", "del"), "dis"]
+                - sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
+            ) / self.energies["sinks"].dis
+        except ZeroDivisionError:
+            self.logger.warning("LCOE calculation: division by zero")
 
         self.npc = self.aggregator.totex.dis
         self.npv = self.aggregator.value.dis
-        self.irr = npf.irr(self.aggregator.value.cashflows)
+        self.irr = npf.irr(self.aggregator.value.cashflow)
         self.mirr = npf.mirr(
-            self.aggregator.value.cashflows, self.eco_params.discount_rate, self.eco_params.discount_rate
+            self.aggregator.value.cashflow, self.eco_params.discount_rate, self.eco_params.discount_rate
         )
 
         # print basic results
@@ -595,9 +574,9 @@ class Scenario:
                     ),
                 ),
                 # get energies dataframes results for scenario.result_summary
-                utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"),
+                *[energy.result_summary for energy in self.energies.values()],
                 # get economic results for scenario.result_summary
-                self.aggregator.write_result_summary(),
+                self.aggregator.result_summary,
             ]
             + (extras if extras is not None else [])
         )
