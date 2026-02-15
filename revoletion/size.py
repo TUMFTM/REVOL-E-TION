@@ -96,11 +96,11 @@ class Size:
         return pd.Series(
             {
                 f"size_{self.name}_preexisting": self.preexisting,
+                f"size_{self.name}_expansion": self.expansion,
+                f"size_{self.name}_total": self.total,
                 f"size_{self.name}_invest": self.invest,
                 f"size_{self.name}_total_max": self.total_max,
                 f"size_{self.name}_expansion_max": self.expansion_max,
-                f"size_{self.name}_expansion": self.expansion,
-                f"size_{self.name}_total": self.total,
             }
         )
 

@@ -318,7 +318,7 @@ class SystemCore(ElectricBlock):
     def init_pois(self):
         super().init_pois()
 
-        self.pois["acdc"] = eco.Evaluator.create(
+        self.pois["acdc"] = eco.Evaluator.create_from_plain(
             name="acdc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -328,11 +328,11 @@ class SystemCore(ElectricBlock):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
-            size_name="acdc",
-            flow_name="acdc",
+            name_size="acdc",
+            name_flow="acdc",
         )
 
-        self.pois["dcac"] = eco.Evaluator.create(
+        self.pois["dcac"] = eco.Evaluator.create_from_plain(
             name="dcac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -342,8 +342,8 @@ class SystemCore(ElectricBlock):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
-            size_name="dcac",
-            flow_name="dcac",
+            name_size="dcac",
+            name_flow="dcac",
         )
 
         self.power_circles.append(("acdc", "dcac"))
@@ -462,7 +462,7 @@ class RenewableSource(SourceBlock, ABC):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.Evaluator.create_from_plain(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -472,22 +472,22 @@ class RenewableSource(SourceBlock, ABC):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
-            size_name="block",
-            flow_name="out",
+            name_size="block",
+            name_flow="out",
         )
 
-        self.pois["curt"] = eco.Evaluator.create(
+        self.pois["curt"] = eco.Evaluator.create_from_plain(
             name="curt",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            flow_name="curt",
+            name_flow="curt",
         )
 
-        self.pois["pot"] = eco.Evaluator.create(
+        self.pois["pot"] = eco.Evaluator.create_from_plain(
             name="pot",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            flow_name="pot",
+            name_flow="pot",
         )
 
     def __init__(self, name: str, scenario: "simulation.Scenario"):
@@ -681,7 +681,7 @@ class FixedDemand(SinkBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.Evaluator.create_from_plain(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -689,7 +689,7 @@ class FixedDemand(SinkBlock):
             capex_fix=self.capex_fix_metering,
             mntex_fix=self.mntex_fix_metering,
             crev_spec=self.crev_spec,
-            flow_name="in",
+            name_flow="in",
         )
 
     def __init__(self, name: str, scenario):
@@ -905,7 +905,7 @@ class FixedDemand(SinkBlock):
 class ControllableSource(SourceBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.Evaluator.create_from_plain(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -915,8 +915,8 @@ class ControllableSource(SourceBlock):
             capex_spec=self.capex_spec,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
-            size_name="block",
-            flow_name="out",
+            name_size="block",
+            name_flow="out",
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario):
@@ -976,7 +976,7 @@ class ControllableSource(SourceBlock):
 class GridConnection(ElectricBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create(
+        self.pois["g2s"] = eco.Evaluator.create_from_plain(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -985,11 +985,11 @@ class GridConnection(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
-            size_name="g2s",
-            flow_name="out",
+            name_size="g2s",
+            name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create(
+        self.pois["s2g"] = eco.Evaluator.create_from_plain(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -998,8 +998,8 @@ class GridConnection(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
-            size_name="s2g",
-            flow_name="in",
+            name_size="s2g",
+            name_flow="in",
         )
 
         self.power_circles.append(("in", "out"))
@@ -1296,22 +1296,22 @@ class GridConnection(ElectricBlock):
 class GridMarket(ElectricBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create(
+        self.pois["g2s"] = eco.Evaluator.create_from_plain(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_g2s,
-            size_name="g2s",
-            flow_name="out",
+            name_size="g2s",
+            name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create(
+        self.pois["s2g"] = eco.Evaluator.create_from_plain(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_s2g,
-            size_name="s2g",
-            flow_name="in",
+            name_size="s2g",
+            name_flow="in",
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario, params, parent):
@@ -1375,7 +1375,7 @@ class StorageBlock(ElectricBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["storage"] = eco.Evaluator.create(
+        self.pois["storage"] = eco.Evaluator.create_from_plain(
             name="storage",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1384,36 +1384,36 @@ class StorageBlock(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
-            size_name="storage",
+            name_size="storage",
         )
 
-        self.pois["in"] = eco.Evaluator.create(
+        self.pois["in"] = eco.Evaluator.create_from_plain(
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec,
-            flow_name="in",
+            name_flow="in",
         )
 
-        self.pois["out"] = eco.Evaluator.create(
+        self.pois["out"] = eco.Evaluator.create_from_plain(
             name="out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            flow_name="out",
+            name_flow="out",
         )
 
-        self.pois["bat_in"] = eco.Evaluator.create(
+        self.pois["bat_in"] = eco.Evaluator.create_from_plain(
             name="bat_in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            flow_name="bat_in",
+            name_flow="bat_in",
         )
 
-        self.pois["bat_out"] = eco.Evaluator.create(
+        self.pois["bat_out"] = eco.Evaluator.create_from_plain(
             name="bat_out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            flow_name="bat_out",
+            name_flow="bat_out",
         )
 
         self.power_circles.append(("in", "out"))
@@ -1652,20 +1652,20 @@ class StationaryBattery(StorageBlock):
 class Fleet(SinkBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["f2s"] = eco.Evaluator.create(
+        self.pois["f2s"] = eco.Evaluator.create_from_plain(
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_f2s,
-            flow_name="out",
+            name_flow="out",
         )
 
-        self.pois["s2f"] = eco.Evaluator.create(
+        self.pois["s2f"] = eco.Evaluator.create_from_plain(
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_s2f,
-            flow_name="in",
+            name_flow="in",
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario):
@@ -1874,7 +1874,7 @@ class SubFleet(NonElectricBlock):
 
 class FleetUnit:
     def init_pois(self):
-        self.pois["glider"] = eco.Evaluator.create(
+        self.pois["glider"] = eco.Evaluator.create_from_plain(
             name="glider",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1919,7 +1919,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         StorageBlock.init_pois(self)
         FleetUnit.init_pois(self)
 
-        self.pois["charger"] = eco.Evaluator.create(
+        self.pois["charger"] = eco.Evaluator.create_from_plain(
             name="charger",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1929,20 +1929,20 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             consider_preexisting=self.capex_preexisting_charger,
         )
 
-        self.pois["ext_ac"] = eco.Evaluator.create(
+        self.pois["ext_ac"] = eco.Evaluator.create_from_plain(
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_ext_ac,
-            flow_name="ext_ac",
+            name_flow="ext_ac",
         )
 
-        self.pois["ext_dc"] = eco.Evaluator.create(
+        self.pois["ext_dc"] = eco.Evaluator.create_from_plain(
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_ext_dc,
-            flow_name="ext_dc",
+            name_flow="ext_dc",
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):

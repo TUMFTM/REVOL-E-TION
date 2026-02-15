@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self, Type
 
 import numpy as np
 import pandas as pd
@@ -252,77 +252,162 @@ class Evaluator(BlockElement):
 
     capex: CapexEvaluator
     mntex: MntexEvaluator
-    opex: OpexEvaluator
-    crev: CrevEvaluator
+    opex: OpexEvaluator  # ToDo: replace by some sort of BaseEvaluator -> Grid, Vehicles
+    crev: CrevEvaluator  # ToDo: replace by some sort of BaseEvaluator -> Vehicles
+
+    CAPEX_EVALUATOR: ClassVar[Type[CapexEvaluator]] = CapexEvaluator
+    MNTEX_EVALUATOR: ClassVar[Type[MntexEvaluator]] = MntexEvaluator
+    OPEX_EVALUATOR: ClassVar[Type[OpexEvaluator]] = OpexEvaluator
+    CREV_EVALUATOR: ClassVar[Type[CrevEvaluator]] = CrevEvaluator
 
     @classmethod
     def create(
         cls,
         name: str,
         eco: EcoParams,
+        name_size: str,
+        name_flow: str,
+        params_capex: CapexParams,
+        params_mntex: MntexParams,
+        params_opex: OpexParams,
+        params_crev: CrevParams,
+    ) -> Self:
+        return cls(
+            name=name,
+            eco=eco,
+            name_size=name_size,
+            name_flow=name_flow,
+            capex=cls.CAPEX_EVALUATOR(name, eco, params_capex),
+            mntex=cls.MNTEX_EVALUATOR(name, eco, params_mntex),
+            opex=cls.OPEX_EVALUATOR(name, eco, params_opex),
+            crev=cls.CREV_EVALUATOR(name, eco, params_crev),
+        )
+
+    @classmethod
+    def _build_capex_params(
+        cls,
+        eco: EcoParams,
+        spec: float,
+        fix: float,
+        ccr: float,
+        consider_preexisting: bool,
+        ls: int | None,
+        age_preexisting: int,
+        residual_at_ls: float,
+    ) -> CapexParams:
+        return CapexParams.create_from_plain(
+            spec=spec,
+            fix=fix,
+            consider_preexisting=consider_preexisting,
+            ls=eco.prj_duration_yrs if ls is None else ls,
+            age_preexisting=age_preexisting,
+            ccr=ccr,
+            residual_at_ls=residual_at_ls,
+        )
+
+    @classmethod
+    def _build_mntex_params(
+        cls,
+        spec: float,
+        fix: float,
+    ) -> MntexParams:
+        return MntexParams.create_from_plain(spec=spec, fix=fix)
+
+    @classmethod
+    def _build_opex_params(
+        cls,
+        eco: EcoParams,
         data_dir: Path,
+        spec: float | Path,
+        fix: float,
+    ) -> OpexParams:
+        return OpexParams.create_from_plain(
+            spec=spec,
+            fix=fix,
+            dti_sim=eco.dti_sim,
+            data_dir=data_dir,
+        )
+
+    @classmethod
+    def _build_crev_params(
+        cls,
+        eco: EcoParams,
+        data_dir: Path,
+        spec: float | Path,
+        fix: float,
+    ) -> CrevParams:
+        return CrevParams.create_from_plain(
+            spec=spec,
+            fix=fix,
+            dti_sim=eco.dti_sim,
+            data_dir=data_dir,
+        )
+
+    @classmethod
+    def create_from_plain(
+        cls,
+        name: str,
+        eco: EcoParams,
+        data_dir: Path,
+        name_size: str = None,
+        name_flow: str = None,
+        # capex
         capex_spec: float = 0.0,
         capex_fix: float = 0.0,
         capex_ccr: float = 1.0,
         consider_preexisting: bool = True,
-        ls: int = None,
+        ls: int | None = None,
         age_preexisting: int = 0,
         capex_residual_at_ls: float = 0.0,
+        # mntex
         mntex_spec: float = 0.0,
         mntex_fix: float = 0.0,
+        # opex
         opex_spec: float | Path = 0.0,
         opex_fix: float = 0.0,
+        # crev
         crev_spec: float | Path = 0.0,
         crev_fix: float = 0.0,
-        size_name: str = None,
-        flow_name: str = None,
     ) -> Self:
-        params_capex = CapexParams(
+        params_capex = cls._build_capex_params(
+            eco=eco,
             spec=capex_spec,
             fix=capex_fix,
-            consider_preexisting=consider_preexisting,
-            ls=eco.prj_duration_yrs if ls is None else ls,
-            age_preexisting=age_preexisting,
             ccr=capex_ccr,
+            consider_preexisting=consider_preexisting,
+            ls=ls,
+            age_preexisting=age_preexisting,
             residual_at_ls=capex_residual_at_ls,
         )
 
-        params_mntex = MntexParams(
+        params_mntex = cls._build_mntex_params(
             spec=mntex_spec,
             fix=mntex_fix,
         )
 
-        params_opex = OpexParams.create_from_plain(
+        params_opex = cls._build_opex_params(
+            eco=eco,
+            data_dir=data_dir,
             spec=opex_spec,
             fix=opex_fix,
-            dti_sim=eco.dti_sim,
-            data_dir=data_dir,
         )
 
-        params_crev = CrevParams.create_from_plain(
+        params_crev = cls._build_crev_params(
+            eco=eco,
+            data_dir=data_dir,
             spec=crev_spec,
             fix=crev_fix,
-            dti_sim=eco.dti_sim,
-            data_dir=data_dir,
         )
 
-        capex = CapexEvaluator(name=name, eco=eco, params=params_capex)
-        mntex = MntexEvaluator(name=name, eco=eco, params=params_mntex)
-        opex = OpexEvaluator(name=name, eco=eco, params=params_opex)
-        crev = CrevEvaluator(name=name, eco=eco, params=params_crev)
-
-        size_name = size_name
-        flow_name = flow_name
-
-        return cls(
+        return cls.create(
             name=name,
             eco=eco,
-            name_size=size_name,
-            name_flow=flow_name,
-            capex=capex,
-            mntex=mntex,
-            opex=opex,
-            crev=crev,
+            name_size=name_size,
+            name_flow=name_flow,
+            params_capex=params_capex,
+            params_mntex=params_mntex,
+            params_opex=params_opex,
+            params_crev=params_crev,
         )
 
     @property

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -104,13 +105,17 @@ class EcoParams:
 
 
 @dataclass(frozen=True)
-class CostParams:
+class CostParams(ABC):
     """
     Base dataclass to store all evaluator-specific parameters needed for cost evaluation.
     """
 
     spec: float | pd.Series
     fix: float
+
+    @classmethod
+    @abstractmethod
+    def create_from_plain(cls, *args, **kwargs) -> Self: ...
 
 
 @dataclass(frozen=True)
@@ -131,6 +136,27 @@ class CapexParams(CostParams):
         if self.consider_preexisting and self.age_preexisting != 0:
             raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
 
+    @classmethod
+    def create_from_plain(
+        cls,
+        spec: float,
+        fix: float,
+        consider_preexisting: bool = False,
+        ls: int = 0,
+        age_preexisting: int = 0,
+        ccr: float = 1.0,
+        residual_at_ls: float = 0.0,
+    ) -> Self:
+        return cls(
+            spec=spec,
+            fix=fix,
+            consider_preexisting=consider_preexisting,
+            ls=ls,
+            age_preexisting=age_preexisting,
+            ccr=ccr,
+            residual_at_ls=residual_at_ls,
+        )
+
 
 @dataclass(frozen=True)
 class MntexParams(CostParams):
@@ -140,6 +166,10 @@ class MntexParams(CostParams):
 
     spec: float
     fix: float
+
+    @classmethod
+    def create_from_plain(cls, spec: float, fix: float) -> Self:
+        return cls(spec=spec, fix=fix)
 
 
 @dataclass(frozen=True)
