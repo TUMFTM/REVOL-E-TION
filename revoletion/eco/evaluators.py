@@ -46,7 +46,7 @@ class CostEvaluator(CalculableBaseElement, ABC):
         self.params = params
 
     @abstractmethod
-    def _calc_spec_ep(self) -> float | pd.Series: ...
+    def _calc_spec_ep(self, **kwargs) -> float | pd.Series: ...
 
     @property
     def spec_ep(self) -> float | pd.Series:
@@ -76,7 +76,7 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
             params=params,
         )
 
-    def _calc_eval(self, flow: pd.Series) -> float:
+    def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
         return (
             np.dot(self.params.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             + self.params.fix
@@ -85,7 +85,7 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
     def evaluate(self, flow: pd.Series, **kwargs):
         super().evaluate(flow=flow, **kwargs)
 
-    def _calc_spec_ep(self) -> pd.Series:
+    def _calc_spec_ep(self, **kwargs) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
         factor_operation_ep = (1 / self.eco.eval_yr_rat) if self.eco.compensate_sim_prj else 1
 
@@ -107,7 +107,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             params=params,
         )
 
-    def _calc_cashflow_factors(self, invest_first: int) -> npt.NDArray:
+    def _calc_cashflow_factors(self, invest_first: int, **kwargs) -> npt.NDArray:
         invest_periods = np.arange(invest_first, self.eco.prj_duration_yrs, self.params.ls)
 
         capex = np.zeros(self.eco.prj_duration_yrs + 1, dtype=float)
@@ -147,13 +147,13 @@ class CapexEvaluator(CostEvaluator, CapexElement):
     def _calc_cashflow_expansion(self, size_expansion: float) -> npt.NDArray:
         return self._calc_cashflow_factor_expansion() * (self.params.spec * size_expansion + self.params.fix)
 
-    def _calc_cashflow(self, size_preexisting: float, size_expansion: float) -> npt.NDArray:
+    def _calc_cashflow(self, size_preexisting: float, size_expansion: float, **kwargs) -> npt.NDArray:
         return self._calc_cashflow_preexisting(size_preexisting) + self._calc_cashflow_expansion(size_expansion)
 
     def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
-    def _calc_spec_ep(self) -> float:
+    def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
             self._calc_cashflow_factor_expansion() * self.params.spec,
             self.eco.discount_factors(self._OCCURS_AT),
@@ -192,13 +192,13 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
             params=params,
         )
 
-    def _calc_yrl(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> float:
+    def _calc_yrl(self, size_preexisting: float, size_expansion: float, **kwargs) -> float:
         return self.params.spec * (size_preexisting + size_expansion) + self.params.fix
 
     def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
-    def _calc_spec_ep(self) -> float:
+    def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
             np.full(self.eco.prj_duration_yrs + 1, self.params.spec),
             self.eco.discount_factors(self._OCCURS_AT),
@@ -237,7 +237,7 @@ class CrevEvaluator(PowerBasedEvaluator, CrevElement):
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class Evaluator(BlockElement):
     """
     EvaluatorBlock is a container for all Evaluators of a single component.
@@ -252,8 +252,8 @@ class Evaluator(BlockElement):
 
     capex: CapexEvaluator
     mntex: MntexEvaluator
-    opex: OpexEvaluator  # ToDo: replace by some sort of BaseEvaluator -> Grid, Vehicles
-    crev: CrevEvaluator  # ToDo: replace by some sort of BaseEvaluator -> Vehicles
+    opex: OpexEvaluator
+    crev: CrevEvaluator
 
     CAPEX_EVALUATOR: ClassVar[Type[CapexEvaluator]] = CapexEvaluator
     MNTEX_EVALUATOR: ClassVar[Type[MntexEvaluator]] = MntexEvaluator
@@ -320,6 +320,7 @@ class Evaluator(BlockElement):
         data_dir: Path,
         spec: float | Path,
         fix: float,
+        **kwargs,
     ) -> OpexParams:
         return OpexParams.create_from_plain(
             spec=spec,
@@ -335,6 +336,7 @@ class Evaluator(BlockElement):
         data_dir: Path,
         spec: float | Path,
         fix: float,
+        **kwargs,
     ) -> CrevParams:
         return CrevParams.create_from_plain(
             spec=spec,
@@ -428,6 +430,7 @@ class Evaluator(BlockElement):
         self,
         sizes: dict,
         flows: pd.DataFrame,
+        **kwargs,
     ) -> None:
         if self.name_size:
             size_preexisting = sizes[self.name_size].preexisting
@@ -441,7 +444,7 @@ class Evaluator(BlockElement):
         else:
             flow = pd.Series(0.0, index=self.eco.dti_eval, dtype=float)
 
-        self.capex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion)
-        self.mntex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion)
-        self.opex.evaluate(flow=flow)
-        self.crev.evaluate(flow=flow)
+        self.capex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
+        self.mntex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
+        self.opex.evaluate(flow=flow, **kwargs)
+        self.crev.evaluate(flow=flow, **kwargs)

@@ -146,6 +146,8 @@ class CapexParams(CostParams):
         age_preexisting: int = 0,
         ccr: float = 1.0,
         residual_at_ls: float = 0.0,
+        *args,
+        **kwargs,
     ) -> Self:
         return cls(
             spec=spec,
@@ -168,7 +170,13 @@ class MntexParams(CostParams):
     fix: float
 
     @classmethod
-    def create_from_plain(cls, spec: float, fix: float) -> Self:
+    def create_from_plain(
+        cls,
+        spec: float,
+        fix: float,
+        *args,
+        **kwargs,
+    ) -> Self:
         return cls(spec=spec, fix=fix)
 
 
@@ -182,7 +190,15 @@ class PowerBasedParams(CostParams):
     fix: float
 
     @classmethod
-    def create_from_plain(cls, spec: str | float | int, fix: float, dti_sim: pd.DatetimeIndex, data_dir: Path) -> Self:
+    def create_from_plain(
+        cls,
+        spec: str | float | int,
+        fix: float,
+        dti_sim: pd.DatetimeIndex,
+        data_dir: Path,
+        *args,
+        **kwargs,
+    ) -> Self:
         spec_series = transform_scalar_var(value=spec, dti=dti_sim, data_dir=data_dir)
         return cls(spec=spec_series, fix=fix)
 

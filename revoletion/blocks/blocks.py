@@ -1874,7 +1874,7 @@ class SubFleet(NonElectricBlock):
 
 class FleetUnit:
     def init_pois(self):
-        self.pois["glider"] = eco.Evaluator.create_from_plain(
+        self.pois["glider"] = eco.VehicleEvaluator.create_from_plain(
             name="glider",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1883,9 +1883,9 @@ class FleetUnit:
             capex_ccr=self.ccr,
             consider_preexisting=self.capex_preexisting_glider,
             mntex_fix=self.mntex_fix_glider,
-            # ToDo: add dist and time based opex and crev configs
-            # opex_config_fleetunit=dict(dist=self.opex_spec_dist),
-            # crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
+            opex_spec_dist=self.opex_spec_dist,
+            crev_spec_dist=self.crev_spec_dist,
+            crev_spec_time=self.crev_spec_time,
         )
 
     def __init__(self):
@@ -1908,6 +1908,18 @@ class FleetUnit:
         ]:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
+
+    def calc_results_economics(self):
+        # calculate economic results
+        for poi in self.pois.values():
+            poi.evaluate(
+                sizes=self.sizes,
+                flows=self.flows,
+                dist=self.log["dist"],
+                atbase=self.log["atbase"],
+            )
+
+        self.aggregator.aggregate()
 
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
@@ -1980,6 +1992,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def pre_scenario(self):
         StorageBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
+
+    def calc_results_economics(self):
+        FleetUnit.calc_results_economics(self=self)
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -2127,6 +2142,9 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
     def pre_scenario(self):
         NonElectricBlock.pre_scenario(self=self)
         FleetUnit.pre_scenario(self=self)
+
+    def calc_results_economics(self):
+        FleetUnit.calc_results_economics(self=self)
 
 
 class ElectricVehicle(ElectricFleetUnit):
