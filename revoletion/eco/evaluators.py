@@ -87,7 +87,7 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        factor_operation_ep = (1 / self.eco.eval_yr_rat) if self.eco.compensate_sim_prj else 1
+        factor_operation_ep = (1 / self.eco.sim_yr_rat) if self.eco.compensate_sim_prj else 1
 
         return self.params.spec * factor_operation_ep
 
