@@ -10,187 +10,30 @@ import numpy as np
 import pandas as pd
 from numpy import typing as npt
 
-from .abstractclasses import CalculableEcoElement, CapexElement, YearlyElement, PowerBasedElement, BlockElement
+from .abstractclasses import (
+    CalculableBaseElement,
+    CalculableYearlyElement,
+    CalculablePowerBasedElement,
+    CapexElement,
+    MntexElement,
+    OpexElement,
+    CrevElement,
+    BlockElement,
+)
+from .params import EcoParams, CostParams, CapexParams, MntexParams, PowerBasedParams, OpexParams, CrevParams
+
 from .utils import (
     OccursAt,
-    annuity,
-    discount,
-    transform_scalar_var,
     calc_residual_value,
     calc_lifetime_remaining,
     DEPRECIATION,
 )
 
 
-@dataclass(frozen=True)
-class EcoParams:
-    """
-    Dataclass to store all parameters being valid for all evaluators needed for cost evaluation.
-    """
-
-    prj_duration_yrs: int
-    discount_rate: float
-    compensate_sim_prj: bool
-    eval_yr_rat: float
-    eval_prj_rat: float
-    dti_sim: pd.DatetimeIndex
-    dti_eval: pd.DatetimeIndex
-    timestep_hours: float
-
-    @classmethod
-    def from_simulation_times(
-        cls,
-        prj_duration_yrs: int,
-        discount_rate: float,
-        compensate_sim_prj: bool,
-        times: "SimulationTimes",
-        timestep: "Timestep",
-    ) -> Self:
-        return cls(
-            prj_duration_yrs=prj_duration_yrs,
-            discount_rate=discount_rate,
-            compensate_sim_prj=compensate_sim_prj,
-            eval_yr_rat=pd.Timedelta(days=365) / times.eval.duration,  # no leap years
-            eval_prj_rat=times.prj.duration / times.eval.duration,
-            dti_sim=times.sim.dti,
-            dti_eval=times.eval.dti,
-            timestep_hours=timestep.hours,
-        )
-
-    @classmethod
-    def from_parameters(
-        cls,
-        prj_duration_yrs: int,
-        discount_rate: float,
-        compensate_sim_prj: bool,
-        dti_sim: pd.DatetimeIndex,
-        dti_eval: pd.DatetimeIndex,
-    ) -> Self:
-        td_eval = dti_eval[-1] - dti_eval[0]
-        return cls(
-            prj_duration_yrs=prj_duration_yrs,
-            discount_rate=discount_rate,
-            compensate_sim_prj=compensate_sim_prj,
-            eval_yr_rat=pd.Timedelta(days=365) / td_eval,  # no leap years
-            eval_prj_rat=((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]) / td_eval,
-            dti_sim=dti_sim,
-            dti_eval=dti_eval,
-            timestep_hours=pd.Timedelta(dti_sim.inferred_freq).total_seconds() / 3600,
-        )
-
-    @cached_property
-    def _discount_factors(self) -> dict[OccursAt, npt.NDArray]:
-        periods = np.arange(self.prj_duration_yrs + 1)
-        return {
-            occurs_at: discount(
-                future_value=1,
-                periods=periods,
-                discount_rate=self.discount_rate,
-                occurs_at=occurs_at,
-            )
-            for occurs_at in OccursAt
-        }
-
-    def discount_factors(self, occurs_at: OccursAt) -> npt.NDArray:
-        return self._discount_factors[occurs_at]
-
-    @cached_property
-    def _annuity_factors(self) -> dict[OccursAt, float]:
-        return {
-            occurs_at: annuity(
-                present_value=1,
-                observation_horizon=self.prj_duration_yrs,
-                discount_rate=self.discount_rate,
-                occurs_at=occurs_at,
-            )
-            for occurs_at in OccursAt
-        }
-
-    def annuity_factor(self, occurs_at: OccursAt) -> float:
-        return self._annuity_factors[occurs_at]
-
-    def annuity_factor_apriori(self, occurs_at: OccursAt) -> float:
-        return self.annuity_factor(occurs_at) if self.compensate_sim_prj else 1.0
-
-
-@dataclass(frozen=True)
-class CostParams:
-    """
-    Base dataclass to store all evaluator-specific parameters needed for cost evaluation.
-    """
-
-    spec: float | pd.Series
-    fix: float
-
-
-@dataclass(frozen=True)
-class CapexParams(CostParams):
-    """
-    Dataclass to store all parameters needed for cost evaluation of Capex.
-    """
-
-    spec: float
-    fix: float
-    consider_preexisting: bool
-    ls: int
-    age_preexisting: int
-    ccr: float
-    residual_at_ls: float
-
-    def __post_init__(self):
-        if self.consider_preexisting and self.age_preexisting != 0:
-            raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
-
-
-@dataclass(frozen=True)
-class MntexParams(CostParams):
-    """
-    Dataclass to store all parameters needed for cost evaluation of Mntex.
-    """
-
-    spec: float
-    fix: float
-
-
-@dataclass(frozen=True)
-class PowerBasedParams(CostParams):
-    """
-    Base dataclass to store all parameters needed for cost evaluation of flow-related costs (Opex and Crev).
-    """
-
-    spec: pd.Series
-    fix: float
-
-    @classmethod
-    def create_from_plain(cls, spec: str | float | int, fix: float, dti_sim: pd.DatetimeIndex, data_dir: Path) -> Self:
-        spec_series = transform_scalar_var(value=spec, dti=dti_sim, data_dir=data_dir)
-        return cls(spec=spec_series, fix=fix)
-
-
-@dataclass(frozen=True)
-class OpexParams(PowerBasedParams):
-    """
-    Dataclass to store all parameters needed for cost evaluation of Opex.
-    """
-
-    pass
-
-
-@dataclass(frozen=True)
-class CrevParams(PowerBasedParams):
-    """
-    Dataclass to store all parameters needed for cost evaluation of Crev.
-    """
-
-    pass
-
-
-class CostEvaluator(CalculableEcoElement, ABC):
+class CostEvaluator(CalculableBaseElement, ABC):
     """
     Base class for all Evaluators that evaluate costs, i.e. Capex, Mntex, Opex and Crev.
     """
-
-    _OCCURS_AT = OccursAt.BEGIN
 
     def __init__(
         self,
@@ -198,47 +41,27 @@ class CostEvaluator(CalculableEcoElement, ABC):
         eco: EcoParams,
         params: CostParams,
     ):
-        super().__init__(name=name)
+        super().__init__(name=name, eco=eco)
         self.eco = eco
         self.params = params
 
     @abstractmethod
     def _calc_spec_ep(self) -> float | pd.Series: ...
 
+    @property
+    def spec_ep(self) -> float | pd.Series:
+        return self._calc_spec_ep()
+
+    @property
     def spec(self) -> float | pd.Series:
         return self.params.spec
 
+    @property
     def fix(self) -> float:
         return self.params.fix
 
 
-class YearlyEvaluator(CostEvaluator, YearlyElement, ABC):
-    def __init__(
-        self,
-        name: str,
-        eco: EcoParams,
-        params: CostParams,
-    ):
-        super().__init__(
-            name=name,
-            eco=eco,
-            params=params,
-        )
-
-    @abstractmethod
-    def _calc_yrl(self, *args, **kwargs) -> float: ...
-
-    def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray:
-        cashflow = np.full(self.eco.prj_duration_yrs + 1, self.yrl)
-        cashflow[-1] = 0.0
-        return cashflow
-
-    def evaluate(self, *args, **kwargs):
-        self._yrl = self._calc_yrl()
-        super().evaluate(*args, **kwargs)
-
-
-class PowerBasedEvaluator(YearlyEvaluator, PowerBasedElement, ABC):
+class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
     _OCCURS_AT = OccursAt.END
 
     def __init__(
@@ -253,18 +76,14 @@ class PowerBasedEvaluator(YearlyEvaluator, PowerBasedElement, ABC):
             params=params,
         )
 
-    def _calc_eval(self, flow) -> float:
+    def _calc_eval(self, flow: pd.Series) -> float:
         return (
             np.dot(self.params.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             + self.params.fix
         )
 
-    def _calc_yrl(self) -> float:
-        return self.eval * self.eco.eval_yr_rat
-
-    def evaluate(self, flow: pd.Series, *args, **kwargs):
-        self._eval = self._calc_eval(flow=flow)
-        super().evaluate(*args, **kwargs)
+    def evaluate(self, flow: pd.Series, **kwargs):
+        super().evaluate(flow=flow, **kwargs)
 
     def _calc_spec_ep(self) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
@@ -331,9 +150,8 @@ class CapexEvaluator(CostEvaluator, CapexElement):
     def _calc_cashflow(self, size_preexisting: float, size_expansion: float) -> npt.NDArray:
         return self._calc_cashflow_preexisting(size_preexisting) + self._calc_cashflow_expansion(size_expansion)
 
-    def evaluate(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> None:
-        self._cashflow = self._calc_cashflow(size_preexisting=size_preexisting, size_expansion=size_expansion)
-        super().evaluate(*args, **kwargs)
+    def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
+        super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self) -> float:
         return np.dot(
@@ -341,17 +159,17 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             self.eco.discount_factors(self._OCCURS_AT),
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
-    # ToDo: move this to methods
+    # ToDo: fix these properties -> introduce methods to calculate preexisting and expansion
     @cached_property
     def preexisting(self) -> float:
-        # ToDo: remove this
+        return 0.0
         return (self.results.size_preexisting * self.params.spec + self.params.fix) * int(
             self.params.consider_preexisting
         )
 
     @cached_property
     def expansion(self) -> float:
-        # Todo: remove this
+        return 0.0
         return self.results.size_expansion * self.params.spec + self.params.fix
 
     @cached_property
@@ -359,7 +177,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         return self.preexisting + self.expansion
 
 
-class MntexEvaluator(YearlyEvaluator):
+class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
     _OCCURS_AT = OccursAt.BEGIN
 
     def __init__(
@@ -377,9 +195,8 @@ class MntexEvaluator(YearlyEvaluator):
     def _calc_yrl(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> float:
         return self.params.spec * (size_preexisting + size_expansion) + self.params.fix
 
-    def evaluate(self, size_preexisting: float, size_expansion: float, *args, **kwargs) -> None:
-        self._yrl = self._calc_yrl(size_preexisting=size_preexisting, size_expansion=size_expansion)
-        super().evaluate(*args, **kwargs)
+    def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
+        super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self) -> float:
         return np.dot(
@@ -388,7 +205,7 @@ class MntexEvaluator(YearlyEvaluator):
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
 
-class OpexEvaluator(PowerBasedEvaluator):
+class OpexEvaluator(PowerBasedEvaluator, OpexElement):
     _OCCURS_AT = OccursAt.END
 
     def __init__(
@@ -404,7 +221,7 @@ class OpexEvaluator(PowerBasedEvaluator):
         )
 
 
-class CrevEvaluator(PowerBasedEvaluator):
+class CrevEvaluator(PowerBasedEvaluator, CrevElement):
     _OCCURS_AT = OccursAt.END
 
     def __init__(
@@ -427,6 +244,8 @@ class Evaluator(BlockElement):
     """
 
     name: str
+
+    eco: EcoParams
 
     name_size: str
     name_flow: str
@@ -458,48 +277,46 @@ class Evaluator(BlockElement):
         size_name: str = None,
         flow_name: str = None,
     ) -> Self:
-        ls = eco.prj_duration_yrs if ls is None else ls
-
-        capex = CapexEvaluator.create_from_plain(
-            name=f"{name}_capex",
-            eco=eco,
+        params_capex = CapexParams(
             spec=capex_spec,
             fix=capex_fix,
-            ccr=capex_ccr,
-            ls=ls,
             consider_preexisting=consider_preexisting,
+            ls=eco.prj_duration_yrs if ls is None else ls,
             age_preexisting=age_preexisting,
+            ccr=capex_ccr,
             residual_at_ls=capex_residual_at_ls,
         )
 
-        mntex = MntexEvaluator.create_from_plain(
-            name=f"{name}_mntex",
-            eco=eco,
+        params_mntex = MntexParams(
             spec=mntex_spec,
             fix=mntex_fix,
         )
 
-        opex = OpexEvaluator.create_from_plain(
-            name=f"{name}_opex",
-            eco=eco,
+        params_opex = OpexParams.create_from_plain(
             spec=opex_spec,
             fix=opex_fix,
+            dti_sim=eco.dti_sim,
             data_dir=data_dir,
         )
 
-        crev = CrevEvaluator.create_from_plain(
-            name=f"{name}_crev",
-            eco=eco,
+        params_crev = CrevParams.create_from_plain(
             spec=crev_spec,
             fix=crev_fix,
+            dti_sim=eco.dti_sim,
             data_dir=data_dir,
         )
 
-        size_name = size_name if size_name else name
-        flow_name = flow_name if flow_name else name
+        capex = CapexEvaluator(name=name, eco=eco, params=params_capex)
+        mntex = MntexEvaluator(name=name, eco=eco, params=params_mntex)
+        opex = OpexEvaluator(name=name, eco=eco, params=params_opex)
+        crev = CrevEvaluator(name=name, eco=eco, params=params_crev)
+
+        size_name = size_name
+        flow_name = flow_name
 
         return cls(
             name=name,
+            eco=eco,
             name_size=size_name,
             name_flow=flow_name,
             capex=capex,
@@ -522,111 +339,24 @@ class Evaluator(BlockElement):
         """
         return self.opex.spec_ep + self.crev.spec_ep
 
-    def calc_results(
+    def evaluate(
         self,
-        sizes: dict = None,
-        flows: pd.DataFrame = None,
+        sizes: dict,
+        flows: pd.DataFrame,
     ) -> None:
-        # ToDo: check whether sizes and flows can be None or if this always is a dict or a DataFrame
-        if sizes is not None and self.name_size in sizes:
+        if self.name_size:
             size_preexisting = sizes[self.name_size].preexisting
             size_expansion = sizes[self.name_size].expansion
-            self.capex.calc_results(size_preexisting=size_preexisting, size_expansion=size_expansion)
-            self.mntex.calc_results(size_preexisting=size_preexisting, size_expansion=size_expansion)
+        else:
+            size_preexisting = 0.0
+            size_expansion = 0.0
 
-        if flows is not None and self.name_flow in flows.columns:
+        if self.name_flow:
             flow = flows[self.name_flow]
-            self.opex.calc_results(flow=flow)
-            self.crev.calc_results(flow=flow)
+        else:
+            flow = pd.Series(0.0, index=self.eco.dti_eval, dtype=float)
 
-
-class Energy:
-    _OCCURS_AT = OccursAt.END
-
-    def __init__(self, name: str, eco: EcoParams):
-        self.name = name
-        self._eco = eco
-
-        self._eval = None
-        self._yrl = None
-        self._prj = None
-        self._dis = None
-        self._ann = None
-
-    def _calc_derived_results(self) -> None:
-        self._yrl = self._eval * self._eco.eval_yr_rat
-        self._prj = self._yrl * self._eco.prj_duration_yrs
-        # ToDo: check these calculations
-        self._dis = self._prj * discount(
-            future_value=1,
-            periods=self._eco.prj_duration_yrs,
-            discount_rate=self._eco.discount_rate,
-            occurs_at=self._OCCURS_AT,
-        )
-        self._ann = annuity(
-            present_value=self._dis,
-            observation_horizon=self._eco.prj_duration_yrs,
-            discount_rate=self._eco.discount_rate,
-            occurs_at=self._OCCURS_AT,
-        )
-
-    @property
-    def result_summary(self) -> pd.Series:
-        return pd.Series(
-            data={
-                f"energy_{self.name}_eval": self.eval,
-                f"energy_{self.name}_yrl": self.yrl,
-                f"energy_{self.name}_prj": self.prj,
-                f"energy_{self.name}_dis": self.dis,
-                f"energy_{self.name}_ann": self.ann,
-            },
-            name=self.name,
-        )
-
-    @property
-    def eval(self) -> float:
-        if self._eval is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._eval
-
-    @property
-    def yrl(self) -> float:
-        if self._yrl is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._yrl
-
-    @property
-    def prj(self) -> float:
-        if self._prj is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._prj
-
-    @property
-    def dis(self) -> float:
-        if self._dis is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._dis
-
-    @property
-    def ann(self) -> float:
-        if self._ann is None:
-            raise ValueError("Results need to be calculated before they can be accessed.")
-        return self._ann
-
-
-class EnergyEvaluator(Energy):
-    def calc_results(self, flow: pd.Series) -> None:
-        self._eval = flow[self._eco.dti_eval].to_numpy().sum() * self._eco.timestep_hours
-        self._calc_derived_results()
-
-
-class EnergyAggregator(Energy):
-    def __init__(self, name: str, eco: EcoParams):
-        super().__init__(name=name, eco=eco)
-        self._eval = 0.0
-
-    def add_energy(self, evaluator: Energy) -> None:
-        self._eval += evaluator._eval
-
-    def calc_results(self) -> None:
-        self._calc_derived_results()
+        self.capex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion)
+        self.mntex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion)
+        self.opex.evaluate(flow=flow)
+        self.crev.evaluate(flow=flow)

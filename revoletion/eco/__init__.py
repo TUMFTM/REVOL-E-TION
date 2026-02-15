@@ -1,2 +1,3 @@
 from .aggregators import Aggregator
-from .evaluators import EcoParams, Evaluator, EnergyEvaluator, EnergyAggregator
+from .evaluators import Evaluator
+from .params import EcoParams

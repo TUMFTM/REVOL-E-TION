@@ -8,6 +8,7 @@ import warnings
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 import holidays
 import numpy as np
@@ -16,11 +17,11 @@ import oemof.solph as solph
 import pandas as pd
 import plotly.subplots
 import pyomo.environ as po
-from typing_extensions import Self
 
 import revoletion.data
 
-from revoletion import eco as eco
+from revoletion import eco
+from revoletion import energy
 from . import blocks, constraints, dispatch, location, scheduler, time, utils
 from . import logger as logger_fcs
 
@@ -237,7 +238,7 @@ class Scenario:
         self.timestep = time.Timestep.from_str(self.timestep)
 
         # generate variables for calculations
-        self.eco_params = eco.EcoParams.from_simulation_times(
+        self.eco_params = eco.params.EcoParams.from_simulation_times(
             prj_duration_yrs=self.prj_duration,
             discount_rate=self.wacc,
             compensate_sim_prj=self.compensate_sim_prj,
@@ -343,7 +344,7 @@ class Scenario:
         self.periods_prj = np.arange(0, self.eco_params.prj_duration_yrs)
         self.periods_prj_extd = np.arange(0, self.eco_params.prj_duration_yrs + 1)  # add. year for salvage values
 
-        self.aggregator = eco.Aggregator.create(name="scenario")
+        self.aggregator = eco.Aggregator(name="scenario")
         self.capex_preexisting_considered = 0
 
         self.block_registry = dict()
@@ -375,7 +376,7 @@ class Scenario:
 
         # ToDo: use default dict and override __missing__ method
         self.energies = {
-            k: eco.EnergyAggregator(name=k, eco=self.eco_params)
+            k: energy.EnergyAggregator(name=k, eco=self.eco_params)
             for k in ["sources", "sinks", "renewable_actual", "renewable_pot", "renewable_curt"]
         }
 
@@ -454,6 +455,11 @@ class Scenario:
         for block in self.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()
 
+        self.aggregator.aggregate()
+
+        for e in self.energies.values():
+            e.evaluate()
+
         self.calc_meta_results()
 
         if not self.settings.largescalemode:
@@ -466,26 +472,27 @@ class Scenario:
                 self.logger.info(msg)
 
     def calc_meta_results(self):
-        for energy in self.energies.values():
-            energy.calc_results()
-        try:
-            self.e_eta = self.energies["sinks"].eval / self.energies["sources"].eval
-        except ZeroDivisionError:
+        e_sources_eval = self.energies["sources"].eval
+        if e_sources_eval == 0:
             self.logger.warning("Core efficiency calculation: division by zero")
-
-        try:
-            self.renewable_share = self.energies["renewable_actual"].eval / self.energies["sources"].eval
-        except ZeroDivisionError:
+            self.e_eta = np.nan
             self.logger.warning("Renewable share calculation: division by zero")
+            self.renewable_share = np.nan
+        else:
+            self.e_eta = self.energies["sinks"].eval / e_sources_eval
+            self.renewable_share = self.energies["renewable_actual"].eval / e_sources_eval
 
-        try:
-            self.lcoe_total = self.aggregator.totex.dis / self.energies["sinks"].dis
+        e_sinks_dis = self.energies["sinks"].dis
+        if e_sinks_dis == 0:
+            self.logger.warning("LCOE calculation: division by zero")
+            self.lcoe_total = np.inf
+            self.lcoe_wocs = np.inf
+        else:
+            self.lcoe_total = self.aggregator.totex.dis / e_sinks_dis
             self.lcoe_wocs = (
                 self.aggregator.totex.dis
                 - sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
-            ) / self.energies["sinks"].dis
-        except ZeroDivisionError:
-            self.logger.warning("LCOE calculation: division by zero")
+            ) / e_sinks_dis
 
         self.npc = self.aggregator.totex.dis
         self.npv = self.aggregator.value.dis

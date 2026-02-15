@@ -17,6 +17,8 @@ from typing_extensions import override
 from revoletion import battery as bat
 from revoletion import data_manager, mobility, utils
 from revoletion import eco
+from revoletion import energy
+from revoletion import size
 
 
 if TYPE_CHECKING:
@@ -97,7 +99,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.expansion_equal = False
         self.params_preprocessing()
 
-        self.aggregator = eco.Aggregator.create(name=self.name)
+        self.aggregator = eco.Aggregator(name=self.name)
 
         self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd, dtype="float64")
         self.init_states()
@@ -110,7 +112,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
 
         # ToDo: find solution for size unit
         self.sizes = {
-            poi.name_size: eco.size.Size.create_from_block(name=poi.name_size, block=self, unit="kW")
+            poi.name_size: size.Size.create_from_block(name=poi.name_size, block=self, unit="kW")
             for poi in self.pois.values()
             if poi.name_size is not None
         }
@@ -123,7 +125,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         )
 
         self.energies = {
-            flow: eco.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self.flows.columns
+            flow: energy.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self.flows.columns
         }
 
         # region initialize data structures
@@ -189,13 +191,14 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.calc_results_economics()
 
     def calc_results_economics(self):
-        # ToDo: remove this part
         # calculate economic results
         for poi in self.pois.values():
-            poi.calc_results(
+            poi.evaluate(
                 sizes=self.sizes,
                 flows=self.flows,
             )
+
+        self.aggregator.aggregate()
 
 
 class NonElectricBlock(BaseBlock): ...
@@ -283,8 +286,8 @@ class ElectricBlock(BaseBlock, ABC):
         post scenario method
         process flows and calculate energies from flows
         """
-        for energy in self.energies.values():
-            energy.calc_results(self.flows.loc[self.scenario.times.eval.dti, energy.name])
+        for e in self.energies.values():
+            e.evaluate(self.flows.loc[self.scenario.times.eval.dti, e.name])
 
 
 class SourceBlock(ElectricBlock, ABC):
@@ -296,8 +299,6 @@ class SourceBlock(ElectricBlock, ABC):
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        # self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["total", :]
-        # ToDo: fix this
         self.scenario.energies["sources"].add_energy(self.energies["total"])
 
 
@@ -310,8 +311,6 @@ class SinkBlock(ElectricBlock, ABC):
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        # self.scenario.energies.loc[("sinks", "del"), :] -= self.energies.loc["total", :]
-        # ToDo: fix this
         self.scenario.energies["sinks"].add_energy(self.energies["total"])
 
 
@@ -329,6 +328,8 @@ class SystemCore(ElectricBlock):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
+            size_name="acdc",
+            flow_name="acdc",
         )
 
         self.pois["dcac"] = eco.Evaluator.create(
@@ -341,6 +342,8 @@ class SystemCore(ElectricBlock):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
+            size_name="dcac",
+            flow_name="dcac",
         )
 
         self.power_circles.append(("acdc", "dcac"))
@@ -469,6 +472,7 @@ class RenewableSource(SourceBlock, ABC):
             ls=self.ls,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
+            size_name="block",
             flow_name="out",
         )
 
@@ -569,16 +573,15 @@ class RenewableSource(SourceBlock, ABC):
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        # add curt and pot to scenario.energies
-        # self.scenario.energies.loc[("renewable", "act"), :] += self.energies.loc["out", :]
-        #
-        # # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        # if self.energies.loc["pot", "sim"] == 0:
-        #     self.scenario.logger.warning(f"Block {self.name}: Curtailment share calculation: division by zero")
-        # else:
-        #     self.share_curtailment = self.energies.loc["curt", "sim"] / self.energies.loc["pot", "sim"]
-        # ToDo: fix this
-        self.scenario.energies["renewable_actual"].add_energy(self.energies["total"])
+
+        e_pot = self.energies["pot"].eval == 0
+        if e_pot == 0:
+            self.share_curtailment = np.nan
+        else:
+            self.share_curtailment = self.energies["curt"].eval / e_pot
+
+        # aggregate results in scenario.energies
+        self.scenario.energies["renewable_actual"].add_energy(self.energies["out"])
         self.scenario.energies["renewable_pot"].add_energy(self.energies["pot"])
         self.scenario.energies["renewable_curt"].add_energy(self.energies["curt"])
 
@@ -912,6 +915,7 @@ class ControllableSource(SourceBlock):
             capex_spec=self.capex_spec,
             mntex_spec=self.mntex_spec,
             opex_spec=self.opex_spec,
+            size_name="block",
             flow_name="out",
         )
 
@@ -981,6 +985,7 @@ class GridConnection(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
+            size_name="g2s",
             flow_name="out",
         )
 
@@ -993,6 +998,7 @@ class GridConnection(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
+            size_name="s2g",
             flow_name="in",
         )
 
@@ -1283,9 +1289,6 @@ class GridConnection(ElectricBlock):
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        # self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["out", :]
-        # self.scenario.energies.loc[("sinks", "del"), :] += self.energies.loc["in", :]
-        # ToDo: fix this
         self.scenario.energies["sources"].add_energy(self.energies["out"])
         self.scenario.energies["sinks"].add_energy(self.energies["in"])
 
@@ -1298,6 +1301,7 @@ class GridMarket(ElectricBlock):
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_g2s,
+            size_name="g2s",
             flow_name="out",
         )
 
@@ -1306,10 +1310,11 @@ class GridMarket(ElectricBlock):
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             opex_spec=self.opex_spec_s2g,
+            size_name="s2g",
             flow_name="in",
         )
 
-    def __init__(self, name: str, scenario: simulation.PredictionHorizon, params, parent):
+    def __init__(self, name: str, scenario: simulation.Scenario, params, parent):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1379,6 +1384,7 @@ class StorageBlock(ElectricBlock):
             ls=self.ls,
             capex_ccr=self.ccr,
             mntex_spec=self.mntex_spec,
+            size_name="storage",
         )
 
         self.pois["in"] = eco.Evaluator.create(

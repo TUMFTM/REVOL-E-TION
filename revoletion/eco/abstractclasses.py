@@ -3,14 +3,25 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 
-from .utils import annuity, OccursAt
+from .params import EcoParams
+from .utils import OccursAt
 
 
-class BaseEcoElement(ABC):
+class BaseElement(ABC):
     """
     Base class for all economic elements.
     """
+
+    _TYPE: str
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if not hasattr(cls, "__abstractmethods__") and ABC not in cls.__bases__:
+            if not any("_TYPE" in B.__dict__ for B in cls.mro()):
+                raise TypeError(f"Concrete class {cls.__name__} must define '_TYPE'")
 
     def __init__(self, name: str):
         self.name = name
@@ -48,12 +59,155 @@ class BaseEcoElement(ABC):
     def ann(self):
         return self._require_calculated("_ann")
 
+    @property
+    def result_summary(self) -> pd.Series:
+        return pd.Series(
+            data={
+                f"{self._TYPE}_{self.name}_prj": self.prj,
+                f"{self._TYPE}_{self.name}_dis": self.dis,
+                f"{self._TYPE}_{self.name}_ann": self.ann,
+            },
+        )
 
-class CalculableEcoElement(BaseEcoElement, ABC):
-    _OCCURS_AT = OccursAt.BEGIN
+
+class YearlyElement(BaseElement, ABC):
+    """
+    Base class for all elements with yearly occurring costs or revenues (Mntex, Opex, Crev).
+    """
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._yrl: float | None = None
+
+    @property
+    def yrl(self) -> float:
+        return self._require_calculated("_yrl")
+
+    @property
+    def result_summary(self) -> pd.Series:
+        return pd.concat(
+            [
+                super().result_summary,
+                pd.Series(
+                    data={
+                        f"{self._TYPE}_{self.name}_yrl": self.yrl,
+                    },
+                ),
+            ],
+            axis=0,
+        )
+
+
+class PowerBasedElement(YearlyElement, ABC):
+    """
+    Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
+    """
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._eval: float | None = None
+
+    @property
+    def eval(self) -> float:
+        return self._require_calculated("_eval")
+
+    @property
+    def result_summary(self) -> pd.Series:
+        return pd.concat(
+            [
+                super().result_summary,
+                pd.Series(
+                    data={
+                        f"{self._TYPE}_{self.name}_eval": self.eval,
+                    },
+                ),
+            ],
+            axis=0,
+        )
+
+
+class CapexElement(BaseElement, ABC):
+    """
+    Base class for all capex elements.
+    """
+
+    _TYPE = "capex"
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+        self._preexisting: float | None = None
+        self._expansion: float | None = None
+        self._init: float | None = None
+
+    @property
+    def preexisting(self) -> float:
+        return self._require_calculated("_preexisting")
+
+    @property
+    def expansion(self) -> float:
+        return self._require_calculated("_expansion")
+
+    @property
+    def init(self) -> float:
+        return self._require_calculated("_init")
+
+    @property
+    def result_summary(self) -> pd.Series:
+        return pd.concat(
+            [
+                super().result_summary,
+                pd.Series(
+                    data={
+                        f"{self._TYPE}_{self.name}_preexisting": self.preexisting,
+                        f"{self._TYPE}_{self.name}_expansion": self.expansion,
+                        f"{self._TYPE}_{self.name}_init": self.init,
+                    },
+                ),
+            ],
+            axis=0,
+        )
+
+
+class MntexElement(YearlyElement, ABC):
+    """
+    Base class for all mntex elements.
+    """
+
+    _TYPE = "mntex"
+
+
+class OpexElement(PowerBasedElement, ABC):
+    """
+    Base class for all opex elements.
+    """
+
+    _TYPE = "opex"
+
+
+class CrevElement(PowerBasedElement, ABC):
+    """
+    Base class for all crev elements.
+    """
+
+    _TYPE = "crev"
+
+
+class CalculableBaseElement(BaseElement, ABC):
     """
     Base class for all economic elements that calculate their own results instead of just aggregate them.
     """
+
+    _OCCURS_AT: OccursAt
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if not hasattr(cls, "__abstractmethods__") and ABC not in cls.__bases__:
+            if not any("_OCCURS_AT" in B.__dict__ for B in cls.mro()):
+                raise TypeError(f"Concrete class {cls.__name__} must define '_OCCURS_AT'")
 
     def __init__(self, name: str, eco: EcoParams):
         super().__init__(name)
@@ -75,65 +229,51 @@ class CalculableEcoElement(BaseEcoElement, ABC):
         return self.dis * self.eco.annuity_factor(self._OCCURS_AT)
 
     def evaluate(self, *args, **kwargs):
-        self._cashflow = self._calc_cashflow_dis()
+        self._cashflow = self._calc_cashflow(*args, **kwargs)
+        self._cashflow_dis = self._calc_cashflow_dis()
         self._prj = self._calc_prj()
         self._dis = self._calc_dis()
         self._ann = self._calc_ann()
 
 
-class CapexElement(BaseEcoElement, ABC):
+class CalculableYearlyElement(CalculableBaseElement, YearlyElement, ABC):
     """
-    Base class for all capex elements.
-    """
-
-    def __init__(self, name: str):
-        super().__init__(name=name)
-
-        self._preexisting: float | None = None
-        self._expansion: float | None = None
-        self._init: float | None = None
-
-    @property
-    def preexisting(self) -> float:
-        return self._require_calculated("_preexisting")
-
-    @property
-    def expansion(self) -> float:
-        return self._require_calculated("_expansion")
-
-    @property
-    def init(self) -> float:
-        return self._require_calculated("_init")
-
-
-class YearlyElement(BaseEcoElement, ABC):
-    """
-    Base class for all elements with yearly occurring costs or revenues (Mntex, Opex, Crev).
+    Base class for all economic elements that calculate their own results and have yearly occurring costs or revenues (Mntex, Opex, Crev).
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, eco: EcoParams):
+        super().__init__(name=name, eco=eco)
 
-        self._yrl: float | None = None
+    @abstractmethod
+    def _calc_yrl(self, *args, **kwargs) -> float: ...
 
-    @property
-    def yrl(self) -> float:
-        return self._require_calculated("_yrl")
+    def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray:
+        cashflow = np.full(self.eco.prj_duration_yrs + 1, self.yrl)
+        cashflow[-1] = 0.0
+        return cashflow
+
+    def evaluate(self, *args, **kwargs):
+        self._yrl = self._calc_yrl(*args, **kwargs)
+        super().evaluate(*args, **kwargs)
 
 
-class PowerBasedElement(YearlyElement, ABC):
+class CalculablePowerBasedElement(CalculableYearlyElement, PowerBasedElement, ABC):
     """
-    Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
+    Base class for all economic elements that calculate their own results, have yearly occurring costs or revenues and scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, eco: EcoParams):
+        super().__init__(name=name, eco=eco)
 
-        self._eval: float | None = None
+    @abstractmethod
+    def _calc_eval(self, *args, **kwargs) -> float: ...
 
-    @property
-    def eval(self) -> float:
-        return self._require_calculated("_eval")
+    def _calc_yrl(self, *args, **kwargs) -> float:
+        return self.eval * self.eco.eval_yr_rat
+
+    def evaluate(self, *args, **kwargs):
+        self._eval = self._calc_eval(*args, **kwargs)
+        super().evaluate(*args, **kwargs)
 
 
 class BlockElement(ABC):
@@ -148,3 +288,15 @@ class BlockElement(ABC):
         self.mntex: YearlyElement | None = None
         self.opex: YearlyElement | None = None
         self.crev: YearlyElement | None = None
+
+    @property
+    def result_summary(self) -> pd.Series:
+        return pd.concat(
+            [
+                self.capex.result_summary if self.capex is not None else pd.Series(),
+                self.mntex.result_summary if self.mntex is not None else pd.Series(),
+                self.opex.result_summary if self.opex is not None else pd.Series(),
+                self.crev.result_summary if self.crev is not None else pd.Series(),
+            ],
+            axis=0,
+        )

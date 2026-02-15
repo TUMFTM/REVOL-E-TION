@@ -1,13 +1,21 @@
 from abc import ABC, abstractmethod
-from typing import Self
 
 import numpy.typing as npt
 import pandas as pd
 
-from .abstractclasses import BaseEcoElement, CapexElement, YearlyElement, BlockElement, PowerBasedElement
+from .abstractclasses import (
+    BaseElement,
+    YearlyElement,
+    PowerBasedElement,
+    CapexElement,
+    MntexElement,
+    OpexElement,
+    CrevElement,
+    BlockElement,
+)
 
 
-class BaseAggregator(BaseEcoElement, ABC):
+class BaseAggregator(BaseElement, ABC):
     """
     Base class for all Aggregators.
     """
@@ -70,7 +78,7 @@ class InLevelAggregator(BaseAggregator, ABC):
     pass
 
 
-class YearlyAggregator(CrossLevelAggregator, YearlyElement):
+class YearlyAggregator(CrossLevelAggregator, YearlyElement, ABC):
     """
     YearlyAggregator aggregates the values of all given YearlyElements.
     This is used for Mntex, Opex and Crev aggregation.
@@ -84,7 +92,7 @@ class YearlyAggregator(CrossLevelAggregator, YearlyElement):
         super().aggregate()
 
 
-class PowerBasedAggregator(YearlyAggregator, PowerBasedElement):
+class PowerBasedAggregator(YearlyAggregator, PowerBasedElement, ABC):
     """
     PowerBasedAggregator aggregates the values of all given PowerBasedElements.
     """
@@ -119,7 +127,7 @@ class CapexAggregator(CrossLevelAggregator, CapexElement):
         super().aggregate()
 
 
-class MntexAggregator(YearlyAggregator):
+class MntexAggregator(YearlyAggregator, MntexElement):
     """
     MntexAggregator aggregates the values of all given mntex elements (Evaluators and Aggregators).
     """
@@ -127,7 +135,7 @@ class MntexAggregator(YearlyAggregator):
     pass
 
 
-class OpexAggregator(PowerBasedAggregator):
+class OpexAggregator(PowerBasedAggregator, OpexElement):
     """
     OpexAggregator aggregates the values of all given opex elements (Evaluators and Aggregators).
     """
@@ -135,7 +143,7 @@ class OpexAggregator(PowerBasedAggregator):
     pass
 
 
-class CrevAggregator(PowerBasedAggregator):
+class CrevAggregator(PowerBasedAggregator, CrevElement):
     """
     CrevAggregator aggregates the values of all given crev elements (Evaluators and Aggregators).
     """
@@ -147,6 +155,8 @@ class TotexAggregator(InLevelAggregator):
     """
     TotexAggregator aggregates the values of Capex, Mntex and Opex aggregators on the same level to calculate the total costs.
     """
+
+    _TYPE = "totex"
 
     def __init__(self, name: str, capex: CapexAggregator, mntex: MntexAggregator, opex: OpexAggregator):
         super().__init__(name=name)
@@ -165,6 +175,8 @@ class ValueAggregator(InLevelAggregator):
     """
     ValueAggregator subtracts revenues (Crev) from costs (Totex) on the same level.
     """
+
+    _TYPE = "value"
 
     def __init__(self, name: str, totex: TotexAggregator, crev: CrevAggregator):
         super().__init__(name=name)
@@ -200,34 +212,26 @@ class Aggregator(BlockElement):
         self.opex.elements[block.name] = block.opex
         self.crev.elements[block.name] = block.crev
 
+    def aggregate(self) -> None:
+        """
+        Aggregate the values of all given elements and store them in the corresponding attributes.
+        This method has to be called after all elements have been added to the aggregator and results have been
+        calculated for all elements.
+        """
+        self.capex.aggregate()
+        self.mntex.aggregate()
+        self.opex.aggregate()
+        self.crev.aggregate()
+        self.totex.aggregate()
+        self.value.aggregate()
+
     @property
     def result_summary(self) -> pd.Series:
-        # ToDo: add capex preexisting, expansion and init to result summary
-        # ToDo: make loop based?
-        return pd.Series(
-            {
-                "capex_prj": self.capex.prj,
-                "capex_dis": self.capex.dis,
-                "capex_ann": self.capex.ann,
-                "mntex_yrl": self.mntex.yrl,
-                "mntex_prj": self.mntex.prj,
-                "mntex_dis": self.mntex.dis,
-                "mntex_ann": self.mntex.ann,
-                "opex_eval": self.opex.eval,
-                "opex_yrl": self.opex.yrl,
-                "opex_prj": self.opex.prj,
-                "opex_dis": self.opex.dis,
-                "opex_ann": self.opex.ann,
-                "crev_eval": self.crev.eval,
-                "crev_yrl": self.crev.yrl,
-                "crev_prj": self.crev.prj,
-                "crev_dis": self.crev.dis,
-                "crev_ann": self.crev.ann,
-                "totex_prj": self.totex.prj,
-                "totex_dis": self.totex.dis,
-                "totex_ann": self.totex.ann,
-                "value_prj": self.value.prj,
-                "value_dis": self.value.dis,
-                "value_ann": self.value.ann,
-            }
+        return pd.concat(
+            [
+                super().result_summary,
+                self.totex.result_summary,
+                self.value.result_summary,
+            ],
+            axis=0,
         )
