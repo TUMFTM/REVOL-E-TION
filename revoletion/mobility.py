@@ -79,6 +79,12 @@ class FleetDemand:
             for usecase, df in self.usecases.groupby(level="usecase")
         }
 
+        if not usecase_lambdas: # no usecases defined
+            self.requests = pd.DataFrame(
+                columns=["date", "usecase", "timeframe", "time_req", "energy_req", "dtime_active", "dtime_idle", "dtime_patience"]
+                )
+            return
+
         for usecase, lambdas in usecase_lambdas.items():
             lam_values = days["timeframe"].map(lambdas).fillna(0)
             days[f"{usecase}"] = np.random.poisson(lam=lam_values)
@@ -92,10 +98,7 @@ class FleetDemand:
             requests_uc = pd.DataFrame({"date": dates, "usecase": usecase, "timeframe": timeframes})
             requests_dfs.append(requests_uc)
         
-        if requests_dfs:
-            self.requests = pd.concat(requests_dfs, ignore_index=True)
-        else: # no requests
-            self.requests = pd.DataFrame(columns=["date", "usecase", "timeframe"])
+        self.requests = pd.concat(requests_dfs, ignore_index=True)
         # endregion
 
         # region sample request times of day from usecase distribution
