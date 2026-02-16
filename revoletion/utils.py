@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import ast
+from dataclasses import dataclass, field
 import importlib.metadata
 import importlib.util
 import logging
@@ -15,6 +16,32 @@ import pytz
 from . import time
 
 _LOGGER = logging.getLogger(__name__)
+
+
+from enum import Enum
+
+
+class PeakPeriodFreq(str, Enum):
+    DAY = "D"
+    WEEK = "W-MON"  # -> week starts on Monday. For labeling code uses ISO week which also starts on Monday.
+    MONTH = "M"
+    QUARTER = "Q"
+    YEAR = "Y"
+
+
+@dataclass
+class PeriodInfo:
+    label: str
+    max_power: float
+    time_fraction: float
+    freq: str
+    activation: pd.Series = field(repr=False)
+    start: pd.Timestamp
+    end: pd.Timestamp
+
+    def set_max_power(self, flow: pd.Series):
+        flow_max = flow.resample(self.freq).mean().ffill().max()
+        self.max_power = max(self.max_power, flow_max)
 
 
 def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str | None = None) -> pd.Timedelta | None:

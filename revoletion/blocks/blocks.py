@@ -190,12 +190,13 @@ class BaseBlock(BlockScenarioInterface, ABC):
         # calculate results
         self.calc_results_economics()
 
-    def calc_results_economics(self):
+    def calc_results_economics(self, **kwargs):
         # calculate economic results
         for poi in self.pois.values():
             poi.evaluate(
                 sizes=self.sizes,
                 flows=self.flows,
+                **kwargs,
             )
 
         self.aggregator.aggregate()
@@ -1016,10 +1017,40 @@ class GridConnection(ElectricBlock):
         self.inflows = dict()
         self.outflows = dict()
 
-        self.peak_periods = pd.DataFrame()
-        self.bus_activation = pd.DataFrame()
+        self.peak_period = utils.PeakPeriodFreq[self.peak_period.upper()]
+        self.peak_freq = "15min"  # ToDo: make this a parameter in the scenario file
+        self.peak_periods = self.get_peak_periods_dict()
 
-        self.initialize_peak_tracking()
+        # for the number of periods per year the definition of
+        n_peak_periods_yr = (
+            pd.date_range(
+                start=self.scenario.times.sim.start,
+                end=self.scenario.times.sim.start + pd.DateOffset(years=1),
+                freq=self.scenario.timestep.td,
+                inclusive="left",
+            )
+            .to_period(self.peak_period)
+            .nunique()
+        )
+
+        n_peak_periods_sim = len(self.peak_periods)
+
+        self.pois.update(
+            {
+                period: eco.PeakPowerEvaluator.create_from_plain(
+                    name=period,
+                    eco=self.scenario.eco_params,
+                    data_dir=self.scenario.paths.input,
+                    opex_spec=self.opex_spec_peak,
+                    opex_n_peak_periods_yr=n_peak_periods_yr,
+                    opex_n_peak_periods_sim=n_peak_periods_sim,
+                    name_flow=period,
+                )
+                for period in self.peak_periods.keys()
+            }
+        )
+
+        self.flows[list(self.peak_periods.keys())] = 0.0
 
         if not self.markets:
             raise ValueError(
@@ -1039,105 +1070,45 @@ class GridConnection(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
         self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
-    def initialize_peak_tracking(self):
-        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
-        periods_func = {
-            "day": lambda x: x.strftime("%Y-%m-%d"),
-            "week": lambda x: x.strftime("%Y-CW%W"),
-            "month": lambda x: x.strftime("%Y-%m"),
-            "quarter": lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-            "year": lambda x: x.strftime("%Y"),
-        }
+    def get_peak_periods_dict(self):
+        if self.peak_period == utils.PeakPeriodFreq.WEEK:
+            iso = self.scenario.times.sim.dti.isocalendar()
+            labels = iso["year"].astype(str) + "-CW" + iso["week"].astype(str).str.zfill(2)
+            starts = pd.DatetimeIndex(
+                pd.to_datetime(iso.apply(lambda r: pd.Timestamp.fromisocalendar(r.year, r.week, 1), axis=1))
+            )
+            ends = starts + pd.Timedelta(days=7)
+        else:
+            periods = self.scenario.times.sim.dti.to_period(self.peak_period)
+            labels = periods.astype(str)
+            starts = periods.start_time
+            ends = periods.end_time.ceil(self.scenario.timestep.td)
 
-        if self.peak_period not in periods_func.keys():
-            raise ValueError(f'Block {self.name}: parameter "peak_period" must be one of {periods_func.keys()}')
+        starts = starts.tz_localize(self.scenario.location.timezone)
+        ends = ends.tz_localize(self.scenario.location.timezone)
 
-        # Get dummies directly from the 'periods' data
-        self.bus_activation = pd.get_dummies(
-            self.scenario.times.sim.dti.to_series().map(periods_func[str(self.peak_period)])
-        ).astype(int)
+        period_dict = {}
+        for label in np.unique(labels):
+            mask = labels == label
+            ts = self.scenario.times.sim.dti[mask]
+            period_start = starts[mask][0]
+            period_end = ends[mask][0]
 
-        # Create a series to store peak power values
-        self.peak_periods = pd.DataFrame(
-            index=self.bus_activation.columns,
-            columns=["power"],
-            data=self.peak_power_init,  # cumulative variable
-            dtype="float64",
-        )
+            # fraction of period covered by dti_sim
+            activation = pd.Series(labels == label, index=self.scenario.times.sim.dti, dtype=float)
+            fraction = len(ts) / ((period_end - period_start) / self.scenario.timestep.td)
 
-        def process_period(period):
-            dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-            dti_period_sim = dti_period[dti_period.isin(self.scenario.times.sim.dti)]  # remove non-sim timestamps
-
-            # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
-            if len(dti_period_sim) == 0:
-                period_fraction = 0.0
-            else:
-                if period == "day":
-                    start = dti_period_sim.min().normalize()
-                    end = start + pd.DateOffset(days=1) - self.scenario.timestep.td
-                elif period == "week":
-                    start = dti_period_sim.min().normalize() - pd.Timedelta(days=dti_period_sim[0].weekday())
-                    end = start + pd.DateOffset(weeks=1) - self.scenario.timestep.td
-                elif period == "month":
-                    start = dti_period_sim.min().normalize().replace(day=1)
-                    end = start + pd.DateOffset(months=1) - self.scenario.timestep.td
-                elif period == "quarter":
-                    start = (
-                        dti_period_sim.min()
-                        .normalize()
-                        .replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
-                    )
-                    end = start + pd.DateOffset(months=3) - self.scenario.timestep.td
-                elif period == "year":
-                    start = dti_period_sim.min().normalize().replace(day=1, month=1)
-                    end = start + pd.DateOffset(years=1) - self.scenario.timestep.td
-                else:
-                    start = dti_period_sim.min()
-                    end = dti_period_sim.max()
-
-                period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep.td))
-
-            return pd.Series(
-                {
-                    "period_fraction": period_fraction,
-                    "start": dti_period.min(),
-                    "end": dti_period.max(),
-                }
+            period_dict[label] = utils.PeriodInfo(
+                label=label,
+                activation=activation,
+                max_power=self.peak_power_init,
+                time_fraction=float(fraction),
+                freq=self.peak_freq,
+                start=period_start,
+                end=period_end,
             )
 
-        # Apply the function to each period in peak_periods
-        self.peak_periods[["period_fraction", "start", "end"]] = self.peak_periods.index.to_series().apply(
-            process_period
-        )
-
-        self.n_peak_periods_yr = (
-            (
-                pd.date_range(
-                    start=self.scenario.times.sim.start,
-                    end=self.scenario.times.sim.start + pd.DateOffset(years=1),
-                    freq=self.scenario.timestep.td,
-                    inclusive="left",
-                )
-                .to_series()
-                .apply(periods_func[str(self.peak_period)])
-            )
-            .unique()
-            .size
-        )
-
-        # ToDo: implement PeakShaving in new eco structure
-        # self.pois.update(
-        #     {
-        #         period: eco.EcoEvaluator(
-        #             name=period,
-        #             block=self,
-        #             scenario=self.scenario,
-        #             opex_config_peak=dict(spec_peak=self.opex_spec_peak),
-        #         )
-        #         for period in self.peak_periods.index
-        #     }
-        # )
+        return period_dict
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -1184,14 +1155,16 @@ class GridConnection(ElectricBlock):
 
         self.components.update(self.inflows)
 
+        period_invest = list(self.peak_periods.keys())[0]
+
         self.outflows = {
-            f"{self.name}_outflow_{period}": solph.components.Converter(
+            f"{self.name}_outflow_{period.label}": solph.components.Converter(
                 # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
                 # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
                 inputs={
                     self.components["bus"]: solph.Flow(
                         nominal_capacity=solph.Investment(
-                            ep_costs=(self.pois["g2s"].spec_ep_invest if period == self.peak_periods.index[0] else 0),
+                            ep_costs=(self.pois["g2s"].spec_ep_invest if period == period_invest else 0),
                             existing=self.sizes["g2s"].preexisting,
                             maximum=self.sizes["g2s"].expansion_max,
                         )
@@ -1202,16 +1175,16 @@ class GridConnection(ElectricBlock):
                     self.bus_connected: solph.Flow(
                         nominal_capacity=(
                             solph.Investment(
-                                ep_costs=(self.pois[period].spec_ep_peak if self.peakshaving else 0),
-                                existing=self.peak_periods.loc[period, "power"],
+                                ep_costs=(self.pois[period.label].spec_ep_operation if self.peakshaving else 0),
+                                existing=period.max_power,
                             )
                         ),
-                        max=(self.bus_activation.loc[horizon.ph.dti, period]),
+                        max=(period.activation[horizon.ph.dti]),
                     )
                 },
                 conversion_factors={self.bus_connected: 1},
             )
-            for period in self.peak_periods.index
+            for period in self.peak_periods.values()
         }
 
         self.components.update(self.outflows)
@@ -1224,7 +1197,7 @@ class GridConnection(ElectricBlock):
         horizon.constraints.add_invest_costs(
             invest=(
                 self.components["bus"],
-                self.components[f"{self.name}_outflow_{self.peak_periods.index[0]}"],
+                self.components[f"{self.name}_outflow_{period_invest}"],
             ),
             capex_spec=self.pois["g2s"].capex.spec,
             invest_type="flow",
@@ -1255,37 +1228,32 @@ class GridConnection(ElectricBlock):
         self.sizes["g2s"].expansion = horizon.results[(self.components["bus"], list(self.outflows.values())[0])][
             "scalars"
         ]["invest"]
+
         self.sizes["s2g"].expansion = horizon.results[(list(self.inflows.values())[0], self.components["bus"])][
             "scalars"
         ]["invest"]
 
         self.flows.loc[horizon.ch.dti, "in"] = sum(
-            [
-                horizon.results[(inflow, self.components["bus"])]["sequences"]["flow"][horizon.ch.dti]
-                for inflow in self.inflows.values()
-            ]
+            horizon.results[(inflow, self.components["bus"])]["sequences"]["flow"][horizon.ch.dti]
+            for inflow in self.inflows.values()
         )
         self.flows.loc[horizon.ch.dti, "out"] = sum(
-            [
-                horizon.results[(self.components["bus"], outflow)]["sequences"]["flow"][horizon.ch.dti]
-                for outflow in self.outflows.values()
-            ]
+            horizon.results[(self.components["bus"], outflow)]["sequences"]["flow"][horizon.ch.dti]
+            for outflow in self.outflows.values()
         )
 
-        # ToDo: apply peak powers
-        # def get_peak_power(row):
-        #     peak_power = max(
-        #         row["power"],
-        #         horizon.results[
-        #             (
-        #                 self.outflows[f"{self.name}_outflow_{row.name}"],
-        #                 self.bus_connected,
-        #             )
-        #         ]["sequences"]["flow"][horizon.ch.dti].max(),
-        #     )
-        #     return peak_power
-        #
-        # self.peak_periods["power"] = self.peak_periods.apply(get_peak_power, axis=1)
+        for period in self.peak_periods.values():
+            period.set_max_power(
+                horizon.results[
+                    (
+                        self.outflows[f"{self.name}_outflow_{period.label}"],
+                        self.bus_connected,
+                    )
+                ]["sequences"]["flow"][horizon.ch.dti]
+            )
+
+    def calc_results_economics(self):
+        super().calc_results_economics(peak_periods=self.peak_periods)
 
     def calc_results_energies(self):
         super().calc_results_energies()
@@ -1910,6 +1878,8 @@ class FleetUnit:
                 self.log[col_name] = col_value
 
     def calc_results_economics(self):
+        # ToDo: use this -> requires FleetUnit to be child of BaseBlock
+        # super().calc_results_economics(dist=self.log["dist"], atbase=self.log["atbase"])
         # calculate economic results
         for poi in self.pois.values():
             poi.evaluate(

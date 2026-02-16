@@ -117,9 +117,6 @@ class CostParams(ABC):
     Base dataclass to store all evaluator-specific parameters needed for cost evaluation.
     """
 
-    spec: float | pd.Series
-    fix: float
-
     @classmethod
     @abstractmethod
     def create_from_plain(cls, *args, **kwargs) -> Self: ...
