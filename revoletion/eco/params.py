@@ -139,6 +139,10 @@ class CapexParams(CostParams):
     def __post_init__(self):
         if self.consider_preexisting and self.age_preexisting != 0:
             raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
+        if self.age_preexisting >= self.ls:
+            raise ValueError(
+                f"age_preexisting must be smaller than ls, got age_preexisting={self.age_preexisting} and ls={self.ls}"
+            )
 
     @classmethod
     def create_from_plain(

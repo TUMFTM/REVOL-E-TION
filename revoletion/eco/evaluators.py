@@ -107,6 +107,15 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             params=params,
         )
 
+    def _calc_preexisting(self, size_preexisting) -> float:
+        return (size_preexisting * self.params.spec + self.params.fix) * int(self.params.consider_preexisting)
+
+    def _calc_expansion(self, size_expansion) -> float:
+        return size_expansion * self.params.spec
+
+    def _calc_init(self) -> float:
+        return self.preexisting + self.expansion
+
     def _calc_cashflow_factors(self, invest_first: int, **kwargs) -> npt.NDArray:
         invest_periods = np.arange(invest_first, self.eco.prj_duration_yrs, self.params.ls)
 
@@ -145,12 +154,15 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         return self._calc_cashflow_factor_preexisting() * (self.params.spec * size_preexisting + self.params.fix)
 
     def _calc_cashflow_expansion(self, size_expansion: float) -> npt.NDArray:
-        return self._calc_cashflow_factor_expansion() * (self.params.spec * size_expansion + self.params.fix)
+        return self._calc_cashflow_factor_expansion() * (self.params.spec * size_expansion)
 
     def _calc_cashflow(self, size_preexisting: float, size_expansion: float, **kwargs) -> npt.NDArray:
         return self._calc_cashflow_preexisting(size_preexisting) + self._calc_cashflow_expansion(size_expansion)
 
     def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
+        self._preexisting = self._calc_preexisting(size_preexisting=size_preexisting)
+        self._expansion = self._calc_expansion(size_expansion=size_expansion)
+        self._init = self._calc_init()
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
@@ -159,22 +171,8 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             self.eco.discount_factors(self._OCCURS_AT),
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
-    # ToDo: fix these properties -> introduce methods to calculate preexisting and expansion
-    @cached_property
-    def preexisting(self) -> float:
-        return 0.0
-        return (self.results.size_preexisting * self.params.spec + self.params.fix) * int(
-            self.params.consider_preexisting
-        )
-
-    @cached_property
-    def expansion(self) -> float:
-        return 0.0
-        return self.results.size_expansion * self.params.spec + self.params.fix
-
-    @cached_property
-    def init(self) -> float:
-        return self.preexisting + self.expansion
+    def get_preexisting(self, size_preexisting: float) -> float:
+        return self._calc_preexisting(size_preexisting=size_preexisting)
 
 
 class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
@@ -448,3 +446,11 @@ class Evaluator(BlockElement):
         self.mntex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
         self.opex.evaluate(flow=flow, **kwargs)
         self.crev.evaluate(flow=flow, **kwargs)
+
+    def get_invest_preexisting(self, sizes: dict) -> float:
+        if self.name_size:
+            size_preexisting = sizes[self.name_size].preexisting
+        else:
+            size_preexisting = 0.0
+
+        return self.capex.get_preexisting(size_preexisting=size_preexisting)

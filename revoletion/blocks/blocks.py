@@ -110,7 +110,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
             self.aggregator.add_block(poi)
         self.parent.aggregator.add_block(self.aggregator)
 
-        # ToDo: find solution for size unit
+        # ToDo: find solution for size unit -> define sizes similar to pois -> avoid implicit usage of variable names
         self.sizes = {
             poi.name_size: size.Size.create_from_block(name=poi.name_size, block=self, unit="kW")
             for poi in self.pois.values()
@@ -127,6 +127,10 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.energies = {
             flow: energy.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self.flows.columns
         }
+
+        # accumulate invest costs caused by preexisting components in scenario
+        for poi in self.pois.values():
+            self.scenario.capex_preexisting_considered += poi.get_invest_preexisting(sizes=self.sizes)
 
         # region initialize data structures
         self.subblocks = dict()

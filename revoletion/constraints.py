@@ -32,7 +32,7 @@ class CustomConstraints:
         self.equal_invests.append(invests)
 
     def add_invest_costs(self, invest, capex_spec, invest_type):
-        # needs to be a custom solution, as peakshaving also uses investement objects but should not be considered
+        # needs to be a custom solution, as peakshaving also uses investment objects but should not be considered
         if invest_type == "flow":
             self.invest_costs[invest_type].append({"fi": invest[0], "fo": invest[1], "capex_spec": capex_spec})
         elif invest_type == "storage":
