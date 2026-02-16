@@ -185,7 +185,7 @@ class ValueAggregator(InLevelAggregator):
         self.crev = crev
 
     def _aggregate_attribute(self, property_name: str) -> float | npt.NDArray:
-        return getattr(self.totex, property_name) - getattr(self.crev, property_name)
+        return getattr(self.crev, property_name) - getattr(self.totex, property_name)
 
 
 class Aggregator(BlockElement):
