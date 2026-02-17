@@ -227,6 +227,9 @@ class Scenario:
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
         self.prj_duration_yrs = self.prj_duration
+
+        self.timestep = time.Timestep.from_str(self.timestep)
+
         self.times = time.SimulationTimes.create_from_plain(
             timestep=self.timestep,
             timezone=self.location.timezone,
@@ -235,7 +238,6 @@ class Scenario:
             sim_duration=self.sim_duration,
             prj_duration=self.prj_duration,
         )
-        self.timestep = time.Timestep.from_str(self.timestep)
 
         for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
             if hasattr(self, param):
@@ -246,8 +248,8 @@ class Scenario:
         self.sim_prj_rat = self.times.sim.duration / self.times.prj.duration
 
         if self.strategy == "rh":
-            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.td)
-            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.td)
+            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.freqstr)
+            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.freqstr)
         elif self.strategy in ["go"]:
             self.len_ph = self.times.sim.duration
             self.len_ch = self.times.sim.duration
@@ -265,7 +267,7 @@ class Scenario:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
             self.times.sim = time.TimeFrame.create_from_start_timestamp(
                 start=self.times.sim.start,
-                timestep=self.timestep.td,
+                timestep=self.timestep,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 
@@ -611,13 +613,13 @@ class PredictionHorizon:
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
         self.ph = time.TimeFrame.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
         self.ch = time.TimeFrame.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
 
