@@ -8,6 +8,28 @@ import typing_extensions
 from typing_extensions import Self
 
 
+def timedelta_to_freqstr(td: pd.Timedelta) -> str:
+    if td == pd.Timedelta(0):
+        return "0ns"
+
+    sign = "-" if td < pd.Timedelta(0) else ""
+    td = abs(td)
+    c = td.components
+
+    parts = [
+        (c.days, "d"),
+        (c.hours, "h"),
+        (c.minutes, "min"),
+        (c.seconds, "s"),
+        (c.milliseconds, "ms"),
+        (c.microseconds, "us"),
+        (c.nanoseconds, "ns"),
+    ]
+
+    freq = "".join(f"{value}{unit}" for value, unit in parts if value)
+    return sign + freq
+
+
 class RunTimer:
     """
     Helper to measure the runtime of scenarios or runs.
@@ -55,22 +77,17 @@ class RunTimer:
         self.stop()
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class Timestep:
     td: pd.Timedelta
 
-    def __init__(self, td: pd.Timedelta):
-        # use custom init to enforce consistency between td and hours
-        # cached_property collides with slots=True -> store hours as a regular attribute
-        object.__setattr__(self, "td", td)
-
-    @property
+    @cached_property
     def hours(self) -> float:
         return self.td.total_seconds() / 3600
-    
-    @property
-    def str(self) -> str:
-        return pd.tseries.frequencies.to_offset(self.td).freqstr
+
+    @cached_property
+    def freqstr(self) -> str:
+        return timedelta_to_freqstr(self.td)
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
