@@ -85,6 +85,8 @@ class DispatchTimer:
             return np.maximum(1, np.ceil((values - self.time_start) / self.step).astype(int))
         elif pd.api.types.is_timedelta64_dtype(values) or isinstance(values, pd.Timedelta):
             return np.maximum(1, np.ceil(values / self.step).astype(int))
+        elif values.empty:
+            return
         else:
             raise ValueError(f"Unsupported type {type(values)} for conversion to steps")
 
@@ -421,7 +423,11 @@ class FleetDispatcher:
         )
         time_total = self.time.time_end - self.time.time_start
         n_units = sum([store.capacity for store in self.stores.values()])
-        self.rate_use = time_active_total / time_total / n_units
+
+        try:
+            self.rate_use = time_active_total / time_total / n_units
+        except TypeError:
+            self.rate_use = 0.0
 
     def save_data(self, path_log: str = None):
         """

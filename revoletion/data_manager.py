@@ -75,8 +75,8 @@ class PvArray(pydantic.BaseModel):
 
     tracking_type: int = 0
     mounting_place: str = "free"
-    type_cell: str | None = None
-    rad_database: str | None = None
+    type_cell: str | None = "crystsi"
+    rad_database: str | None = "pvgis-sarah3"
     tilt: float | None = None
     azimuth: float | None = None
     horizon_custom: list[float] | None = None
