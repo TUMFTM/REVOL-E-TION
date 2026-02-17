@@ -50,16 +50,16 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     output handlers to console and the file `log_file`.
 
     Args:
-        log_file: File where the logs are writting to.
+        log_file: File where the logs are writing to.
         debugmode: Flag to control whether debugging is enabled. If True the log level is set to 'debug' else 'info'.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(_get_logger_level(debugmode))
 
     # Pad the level name column to the maximum level name length.
-    level_name_len = len("WARNING")
     # define log formatter
-    log_formatter = logging.Formatter(fmt=f"%(levelname)-{level_name_len + 2}s%(context_str)s%(message)s")
+    # WARNING and CRITICAL are the longest level name with 8 characters, add 2 spaces for separation from context string
+    log_formatter = logging.Formatter(fmt=f"%(levelname)-{8 + 2}s%(context_str)s%(message)s")
 
     # define root logger handler for console output
     log_stream_handler = logging.StreamHandler(sys.stdout)
@@ -87,7 +87,8 @@ def configure_process_logger_parallel(log_queue: mp.Queue, debugmode: bool):
     Ensures that all log messages are sent to the main process and not logged inside the worker process.
 
     Args:
-        log_queue: Queue to sent the log messages to.
+        log_queue: Queue to send the log messages to.
+        debugmode: Flag to control whether debugging is enabled. If True the log level is set to 'debug' else 'info'.
     """
     logger = logging.getLogger()
     # For multiprocessing environments using the `spawn` method, the root logger is not inherited
