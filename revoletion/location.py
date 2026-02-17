@@ -1,23 +1,52 @@
 import logging
 from dataclasses import dataclass, field
+from typing import Literal, Self
 
 import geopy
 import pytz
 import timezonefinder
-from typing_extensions import Self
+
+_LOGGER = logging.getLogger(__name__)
 
 
-def reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
+def get_timezone_from_lat_lon(
+    latitude: float,
+    longitude: float,
+    logger: logging.Logger | None = None,
+    errors: Literal["ignore", "raise"] = "raise",
+) -> pytz.BaseTzInfo | None:
+    logger = logger or _LOGGER
+
+    tzf = timezonefinder.TimezoneFinder()
+    timezone_raw = tzf.certain_timezone_at(lat=latitude, lng=longitude)
+    if timezone_raw is None:
+        msg = f"Failed to determine timezone at {latitude}/{longitude}"
+        if errors == "ignore":
+            logger.warning(msg)
+            return None
+        elif errors == "raise":
+            raise ValueError(msg)
+    return pytz.timezone(timezone_raw)
+
+
+def reverse_geocode_location(
+    latitude: float, longitude: float, logger: logging.Logger | None = None
+) -> None | geopy.Location:
+    logger = logger or _LOGGER
+
     geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
     try:
         return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-    except geopy.exc.GeocoderUnavailable:
-        return None
-    except geopy.exc.GeocoderServiceError:
+    except (geopy.exc.GeocoderUnavailable, geopy.exc.GeocoderServiceError):
+        logger.warning(f"Reverse geocoding failed for {latitude}/{longitude}.")
         return None
 
 
-def get_country_state_from_geolocation(geo_location: geopy.Location) -> tuple[str, str] | None:
+def get_country_state_from_geolocation(
+    geo_location: geopy.Location, logger: logging.Logger | None = None
+) -> tuple[str, str] | None:
+    logger = logger or _LOGGER
+
     address = geo_location.raw.get("address", {})
 
     if "ISO3166-2-lvl4" in address:
@@ -28,12 +57,13 @@ def get_country_state_from_geolocation(geo_location: geopy.Location) -> tuple[st
         country = address.get("country_code", None)
         state = address.get("state", None)
 
-        country = country.upper() if country else None
+    if country is None:
+        logger.warning(f"Failed to extract country/state from geolocation for {geo_location.address}.")
 
     return country, state
 
 
-@dataclass
+@dataclass(frozen=True)
 class Location:
     latitude: float
     longitude: float
@@ -46,27 +76,23 @@ class Location:
         cls,
         latitude: float,
         longitude: float,
-        logger: logging.Logger,
         country: str = None,
         state: str = None,
+        logger: logging.Logger | None = None,  # ToDo: can this method implicitly inherit a logger?
     ) -> Self:
-        tzf = timezonefinder.TimezoneFinder()
-        timezone_raw = tzf.certain_timezone_at(lat=latitude, lng=longitude)
-        if timezone_raw is None:
-            raise ValueError(f"Failed to determine timezone at {latitude}/{longitude}")
+        logger = logger or _LOGGER
 
-        timezone = pytz.timezone(timezone_raw)
+        timezone = get_timezone_from_lat_lon(latitude, longitude, logger=logger, errors="ignore")
+        if timezone is None:
+            # Default timezone cannot be accessed via cls.timezone as it is a field with default_factory.
+            timezone = cls.__dataclass_fields__["timezone"].default_factory()
+            logger.warning(f"Using default timezone ({timezone.zone})")
 
         if country is None:
             geo_location = reverse_geocode_location(latitude, longitude)
 
             if geo_location:
                 country, state = get_country_state_from_geolocation(geo_location)
-
-                if country is None:
-                    logger.warning(f"Failed to extract country/state from geolocation for {latitude}/{longitude}.")
-            else:
-                logger.warning(f"Reverse geocoding failed for {latitude}/{longitude}.")
 
         if isinstance(country, str):
             country = country.upper()
