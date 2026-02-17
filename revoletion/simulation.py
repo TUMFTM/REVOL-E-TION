@@ -415,6 +415,8 @@ class Scenario:
         loc = location.Location.create_from_lat_lon(
             latitude=parameters.loc["scenario", "latitude"],
             longitude=parameters.loc["scenario", "longitude"],
+            country=parameters.loc["scenario", "country"],
+            state=parameters.loc["scenario", "state"],
             logger=logger,
         )
 
