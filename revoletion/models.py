@@ -132,10 +132,24 @@ class ScenarioModel(RevoletionBaseModel):
         le=90,
     )
     longitude: float = Field(
-        title="Longitude ",
+        title="Longitude",
         description="Longitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84",
         ge=-90,
         le=90,
+    )
+    country: str | None = Field(
+        title="Country ",
+        description="Country of the location of the local energy system in ISO3166-1 alpha-2 format. If not given, REVOL-E-TION tries to infer the value from the provided coordinates.",
+        json_schema_extra={"valid_values_or_format": "'str', e.g. 'DE', 'US' or or None"},
+    )
+    state: str | None = Field(
+        title="State",
+        description="State of the country in ISO3166-2 format. If neither country nor state are given, REVOL-E-TION tries to infer the value from the provided coordinates. If country is given, but state is not, state will be neglected.",
+        json_schema_extra={"valid_values_or_format": "'str', e.g. 'EUR', 'USD' or None"},
+    )
+    consider_holidays: bool | None = Field(
+        title="Consider holidays",
+        description="Consider public holidays. This affects standard load profile generation and mobility sampling.",
     )
     temp_air: float | str | None = Field(
         title="Air temperature",

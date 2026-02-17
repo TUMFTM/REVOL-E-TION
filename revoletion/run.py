@@ -379,8 +379,9 @@ class ScenarioWorker:
         loc = location.Location.create_from_lat_lon(
             latitude=self._parameters[("scenario", "latitude")],
             longitude=self._parameters[("scenario", "longitude")],
+            country=self._parameters[("scenario", "country")],
+            state=self._parameters[("scenario", "state")],
             logger=self._logger,
-            geocode=True,  # todo make optional
         )
 
         if self._lock:

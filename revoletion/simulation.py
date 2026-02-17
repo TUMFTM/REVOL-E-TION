@@ -272,24 +272,28 @@ class Scenario:
             )
 
         # get holidays during simulation timeframe
-        years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
-        try:
-            self.holiday_dates = sorted(
-                getattr(holidays, self.location.country)(years=years, state=self.location.state)
-            )
-        except:  # not for all countries the states are available (e.g. France)
+        if self.consider_holidays:
+            # ToDo: extract function get_holidays(dti, country, state)
+            years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
             try:
-                self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
-                self.logger.warning(
-                    f"Holidays for state {self.location.state} not available. "
-                    f"Country-wide holidays for {self.location.country} are used instead."
+                self.holiday_dates = sorted(
+                    getattr(holidays, self.location.country)(years=years, state=self.location.state)
                 )
-            except AttributeError:  # not all countries worldwide are available
-                self.holiday_dates = []
-                self.logger.warning(
-                    f"Holidays for country {self.location.country} not available. "
-                    f"No public holidays are considered in this scenario."
-                )
+            except:  # not for all countries the states are available (e.g. France)
+                try:
+                    self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
+                    self.logger.warning(
+                        f"Holidays for state {self.location.state} not available. "
+                        f"Country-wide holidays for {self.location.country} are used instead."
+                    )
+                except AttributeError:  # not all countries worldwide are available
+                    self.holiday_dates = []
+                    self.logger.warning(
+                        f"Holidays for country {self.location.country} not available. "
+                        f"No public holidays are considered in this scenario."
+                    )
+        else:
+            self.holiday_dates = []
 
         # region set air temperature
         temp_air = pd.Series(index=self.times.sim.dti, dtype=float)

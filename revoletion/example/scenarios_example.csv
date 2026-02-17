@@ -14,6 +14,9 @@ scenario,wacc,0.09,0.09,0.09,0.09
 scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
+scenario,country,DE,DE,DE,DE
+scenario,state,BY,BY,BY,BY
+scenario,consider_holidays,True,True,True,True
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"

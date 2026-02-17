@@ -7,6 +7,32 @@ import timezonefinder
 from typing_extensions import Self
 
 
+def reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
+    geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
+    try:
+        return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
+    except geopy.exc.GeocoderUnavailable:
+        return None
+    except geopy.exc.GeocoderServiceError:
+        return None
+
+
+def get_country_state_from_geolocation(geo_location: geopy.Location) -> tuple[str, str] | None:
+    address = geo_location.raw.get("address", {})
+
+    if "ISO3166-2-lvl4" in address:
+        country, state = address["ISO3166-2-lvl4"].split("-")
+    elif "ISO3166-2-lvl3" in address:
+        country, state = address["ISO3166-2-lvl3"].split("-")
+    else:
+        country = address.get("country_code", None)
+        state = address.get("state", None)
+
+        country = country.upper() if country else None
+
+    return country, state
+
+
 @dataclass
 class Location:
     latitude: float
@@ -17,7 +43,12 @@ class Location:
 
     @classmethod
     def create_from_lat_lon(
-        cls, latitude: float, longitude: float, logger: logging.Logger, geocode: bool = True
+        cls,
+        latitude: float,
+        longitude: float,
+        logger: logging.Logger,
+        country: str = None,
+        state: str = None,
     ) -> Self:
         tzf = timezonefinder.TimezoneFinder()
         timezone_raw = tzf.certain_timezone_at(lat=latitude, lng=longitude)
@@ -26,45 +57,27 @@ class Location:
 
         timezone = pytz.timezone(timezone_raw)
 
-        if geocode:
-            location = cls._reverse_geocode_location(latitude, longitude)
-        else:
-            location = None
+        if country is None:
+            geo_location = reverse_geocode_location(latitude, longitude)
 
-        if location is None:
-            location = cls(
-                latitude=latitude,
-                longitude=longitude,
-                timezone=timezone,
-            )
-            if geocode:
-                # Warning is only necessary if geocoding was requested.
-                logger.warning(
-                    f"Connection to Geocoder failed. "
-                    f"Using default country ({location.country}) and state ({location.state})."
-                )
+            if geo_location:
+                country, state = get_country_state_from_geolocation(geo_location)
 
-            return location
+                if country is None:
+                    logger.warning(f"Failed to extract country/state from geolocation for {latitude}/{longitude}.")
+            else:
+                logger.warning(f"Reverse geocoding failed for {latitude}/{longitude}.")
 
-        address = location.raw.get("address", {})
+        if isinstance(country, str):
+            country = country.upper()
+        if isinstance(state, str):
+            state = state.upper()
 
-        if "ISO3166-2-lvl4" in address:
-            country, state = address["ISO3166-2-lvl4"].split("-")
-        elif "ISO3166-2-lvl3" in address:
-            country, state = address["ISO3166-2-lvl3"].split("-")
-        else:
-            # fallback: try country_code + state name
-            country = address.get("country_code", "").upper()
-            state = address.get("state", "")
+        if not country:
+            logger.warning(f"Using default country ({cls.country})")
+            country = cls.country
+            if not state:  # state is optional but set, if default country is used
+                logger.warning(f"Using default state ({cls.state})")
+                state = cls.state
 
         return cls(latitude=latitude, longitude=longitude, timezone=timezone, country=country, state=state)
-
-    @staticmethod
-    def _reverse_geocode_location(latitude: float, longitude: float) -> None | geopy.Location:
-        geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
-        try:
-            return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-        except geopy.exc.GeocoderUnavailable:
-            return None
-        except geopy.exc.GeocoderServiceError:
-            return None
