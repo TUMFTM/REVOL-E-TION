@@ -79,10 +79,19 @@ class FleetDemand:
             for usecase, df in self.usecases.groupby(level="usecase")
         }
 
-        if not usecase_lambdas: # no usecases defined
+        if not usecase_lambdas:  # no usecases defined
             self.requests = pd.DataFrame(
-                columns=["date", "usecase", "timeframe", "time_req", "energy_req", "dtime_active", "dtime_idle", "dtime_patience"]
-                )
+                columns=[
+                    "date",
+                    "usecase",
+                    "timeframe",
+                    "time_req",
+                    "energy_req",
+                    "dtime_active",
+                    "dtime_idle",
+                    "dtime_patience",
+                ]
+            )
             return
 
         for usecase, lambdas in usecase_lambdas.items():
@@ -97,7 +106,7 @@ class FleetDemand:
             timeframes = np.repeat(days["timeframe"].values, days[usecase].values)
             requests_uc = pd.DataFrame({"date": dates, "usecase": usecase, "timeframe": timeframes})
             requests_dfs.append(requests_uc)
-        
+
         self.requests = pd.concat(requests_dfs, ignore_index=True)
         # endregion
 
