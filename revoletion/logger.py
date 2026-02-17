@@ -14,6 +14,21 @@ class OptimizationSuccessfulFilter(logging.Filter):
         return not (record.name == "root" and record.msg == "Optimization successful...")
 
 
+class EmptyContextFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, "context_str"):
+            record.context_str = ""
+        return True
+
+
+class ContextPaddingFilter(logging.Filter):
+    max_length = 0
+
+    def filter(self, record):
+        record.context_str = f"{record.context_str:<{self.max_length}}"
+        return True
+
+
 def _get_logger_level(debugmode: bool):
     """
     Determine the logger level based on the settings.
@@ -44,18 +59,22 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     # Pad the level name column to the maximum level name length.
     level_name_len = len("WARNING")
     # define log formatter
-    log_formatter = logging.Formatter(fmt=f"%(levelname)-{level_name_len}s %(message)s")
+    log_formatter = logging.Formatter(fmt=f"%(levelname)-{level_name_len + 2}s%(context_str)s%(message)s")
 
     # define root logger handler for console output
     log_stream_handler = logging.StreamHandler(sys.stdout)
     log_stream_handler.setFormatter(log_formatter)
     log_stream_handler.addFilter(OptimizationSuccessfulFilter())
+    log_stream_handler.addFilter(EmptyContextFilter())
+    log_stream_handler.addFilter(ContextPaddingFilter())
     root_logger.addHandler(log_stream_handler)
 
     # define root logger handler for file output
     log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(log_formatter)
     log_file_handler.addFilter(OptimizationSuccessfulFilter())
+    log_file_handler.addFilter(EmptyContextFilter())
+    log_stream_handler.addFilter(ContextPaddingFilter())
     root_logger.addHandler(log_file_handler)
 
     _configure_third_party_loggers()
@@ -98,4 +117,6 @@ def read_mplogger_queue(queue: mp.Queue):
 class ContextLoggerAdapter(logging.LoggerAdapter[logging.Logger]):
     @override
     def process(self, msg, kwargs):
-        return f"{self.extra['context_str']} {msg}", kwargs
+        kwargs.setdefault("extra", {})
+        kwargs["extra"]["context_str"] = self.extra["context_str"]
+        return msg, kwargs
