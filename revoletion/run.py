@@ -127,6 +127,9 @@ class SimulationRun:
                 index=self.scenario_names, data={"status": "queued", "exception": None, "traceback": None}
             ).rename_axis("scenario")
             self.copy_scenario_file()
+
+        logger_fcs.LogFormatter.format_scenarioname.max_width = max(len(name) for name in self.scenario_names)
+
         self.scenario_num = len(self.scenario_names)
 
         if self.scenario_num == 0:
@@ -269,10 +272,7 @@ class SimulationRun:
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
 
-        max_scenario_name_len = max([len(scenario_name) for scenario_name in self.scenario_names])
-        scenario_logger = logger_fcs.ContextLoggerAdapter(
-            self.logger, {"context_str": f"{name:<{max_scenario_name_len}}"}
-        )
+        scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"scenarioname": name})
         try:
             worker = ScenarioWorker(
                 paths=self.paths,
@@ -379,8 +379,9 @@ class ScenarioWorker:
         loc = location.Location.create_from_lat_lon(
             latitude=self._parameters[("scenario", "latitude")],
             longitude=self._parameters[("scenario", "longitude")],
+            country=self._parameters[("scenario", "country")],
+            state=self._parameters[("scenario", "state")],
             logger=self._logger,
-            geocode=True,  # todo make optional
         )
 
         if self._lock:

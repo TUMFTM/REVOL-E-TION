@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from functools import cached_property
@@ -6,6 +8,58 @@ import pandas as pd
 import pytz
 import typing_extensions
 from typing_extensions import Self
+
+
+def timedelta_to_freqstr(td: pd.Timedelta) -> str:
+    if td == pd.Timedelta(0):
+        return "0ns"
+
+    sign = "-" if td < pd.Timedelta(0) else ""
+    td = abs(td)
+    c = td.components
+
+    parts = [
+        (c.days, "D"),
+        (c.hours, "h"),
+        (c.minutes, "min"),
+        (c.seconds, "s"),
+        (c.milliseconds, "ms"),
+        (c.microseconds, "us"),
+        (c.nanoseconds, "ns"),
+    ]
+
+    freq = "".join(f"{value}{unit}" for value, unit in parts if value)
+    return sign + freq
+
+
+def parse_datetime_str(time_str: str) -> pd.Timestamp:
+    for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return pd.to_datetime(time_str, format=fmt, errors="raise")
+        except ValueError:
+            continue
+    raise ValueError(f"Invalid date format: {time_str!r}")
+
+
+def ensure_timezone(ts: pd.Timestamp, timezone: pytz.BaseTzInfo | str) -> pd.Timestamp:
+    if ts.tz is None:
+        return ts.tz_localize(timezone, ambiguous="raise", nonexistent="raise")
+    return ts.tz_convert(timezone)
+
+
+def convert_to_timestamp(
+    time_in: str | pd.Timestamp | None,
+    timestep: Timestep,
+    timezone: pytz.BaseTzInfo | str,
+) -> pd.Timestamp | None:
+    if time_in is None:
+        return None
+
+    ts = time_in if isinstance(time_in, pd.Timestamp) else parse_datetime_str(time_in)
+
+    ts = ensure_timezone(ts, timezone)
+
+    return ts.floor(timestep.freqstr)
 
 
 class RunTimer:
@@ -55,20 +109,17 @@ class RunTimer:
         self.stop()
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class Timestep:
     td: pd.Timedelta
-    _hours: float
 
-    def __init__(self, td: pd.Timedelta):
-        # use custom init to enforce consistency between td and hours
-        # cached_property collides with slots=True -> store hours as a regular attribute
-        object.__setattr__(self, "td", td)
-        object.__setattr__(self, "_hours", td.total_seconds() / 3600)
-
-    @property
+    @cached_property
     def hours(self) -> float:
-        return self._hours
+        return self.td.total_seconds() / 3600
+
+    @cached_property
+    def freqstr(self) -> str:
+        return timedelta_to_freqstr(self.td)
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
@@ -85,34 +136,34 @@ class TimeFrame:
     end: pd.Timestamp
     duration: pd.Timedelta
 
-    _timestep: pd.Timedelta
+    _timestep_td: pd.Timedelta
 
     @classmethod
     def create_from_start_timestamp(
         cls,
         start: pd.Timestamp,
-        timestep: pd.Timedelta | str,
+        timestep: Timestep,
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
         if (end is None and duration is None) or (end is not None and duration is not None):
             raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
         elif duration is None:
-            duration = (end - start).floor(timestep)
+            duration = (end - start).floor(timestep.freqstr)
         elif end is None:
-            duration = duration.floor(timestep)
+            duration = duration.floor(timestep.freqstr)
         # always recalculate end to ensure consistency
         end = start + duration
 
-        return cls(start=start, end=end, duration=duration, _timestep=pd.Timedelta(timestep))
+        return cls(start=start, end=end, duration=duration, _timestep_td=timestep.td)
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="left", name="time")
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep_td, inclusive="left", name="time")
 
     @cached_property
     def dti_extd(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep, inclusive="both", name="time")
+        return pd.date_range(start=self.start, end=self.end, freq=self._timestep_td, inclusive="both", name="time")
 
     @cached_property
     def end_extd(self) -> pd.Timestamp:
@@ -128,39 +179,35 @@ class SimulationTimes:
     @classmethod
     def create_from_plain(
         cls,
-        timestep: str | pd.Timedelta | Timestep,
+        timestep: Timestep,
         timezone: pytz.BaseTzInfo | str,
         starttime: str | pd.Timestamp,
         sim_endtime: str | pd.Timestamp | None,
         sim_duration: float | int | None,
         prj_duration: int,
     ) -> Self:
-        timestep_td = pd.Timedelta(timestep) if not isinstance(timestep, Timestep) else timestep.td
-        if timestep_td is None:
-            raise ValueError(f"Failed to convert timestep '{timestep}' to pd.Timedelta")
-
-        starttime_ts = cls._convert_time_str(starttime, timestep_td, timezone)
+        starttime_ts = convert_to_timestamp(starttime, timestep, timezone)
         if starttime_ts is None:
             raise ValueError(f"Failed to convert starttime ({starttime}) to pd.Timestamp")
 
-        sim_endtime_ts = cls._convert_time_str(sim_endtime, timestep, timezone) if sim_endtime is not None else None
+        sim_endtime_ts = convert_to_timestamp(sim_endtime, timestep, timezone) if sim_endtime is not None else None
         sim_duration_td = pd.Timedelta(sim_duration, unit="day") if sim_duration is not None else None
 
         simulation = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
-            timestep=timestep_td,
+            timestep=timestep,
             end=sim_endtime_ts,
             duration=sim_duration_td,
         )
         evaluation = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
-            timestep=timestep_td,
+            timestep=timestep,
             end=sim_endtime_ts,
             duration=sim_duration_td,
         )
         project = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
-            timestep=timestep_td,
+            timestep=timestep,
             end=starttime_ts + pd.DateOffset(years=prj_duration),
         )
 
@@ -168,7 +215,7 @@ class SimulationTimes:
 
     @staticmethod
     def _convert_time_str(
-        time_in: str | pd.Timestamp | None, timestep: pd.Timedelta | str, timezone: pytz.BaseTzInfo | str
+        time_in: str | pd.Timestamp | None, timestep: Timestep, timezone: pytz.BaseTzInfo | str
     ) -> pd.Timestamp | None:
         if time_in is None:
             return None
@@ -179,7 +226,13 @@ class SimulationTimes:
             else:
                 return time_in.tz_convert(timezone)
 
-        # ToDo: reformat time
-        time_in = time_in if len(time_in) > 10 else time_in + " 00:00"
-        value = pd.to_datetime(time_in, format="%d.%m.%Y %H:%M").floor(timestep).tz_localize(timezone)
-        return value
+        def parse_input_datetime(time_str: str) -> pd.Timestamp:
+            for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):
+                try:
+                    return pd.to_datetime(time_str, format=fmt, errors="raise")
+                except ValueError:
+                    continue
+            raise ValueError(f"Invalid date format: {time_str!r}")
+
+        time_ts = parse_input_datetime(time_in)
+        return time_ts.floor(timestep.freqstr).tz_localize(timezone)

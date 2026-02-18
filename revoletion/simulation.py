@@ -196,7 +196,7 @@ class Scenario:
         self.parameters = parameters
 
         if logger is None:
-            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
         else:
             self.logger = logger
 
@@ -227,6 +227,8 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
+        self.timestep = time.Timestep.from_str(self.timestep)
+
         self.times = time.SimulationTimes.create_from_plain(
             timestep=self.timestep,
             timezone=self.location.timezone,
@@ -235,7 +237,6 @@ class Scenario:
             sim_duration=self.sim_duration,
             prj_duration=self.prj_duration,
         )
-        self.timestep = time.Timestep.from_str(self.timestep)
 
         # generate variables for calculations
         self.eco_params = eco.params.EcoParams.from_simulation_times(
@@ -261,8 +262,8 @@ class Scenario:
 
         if self.strategy == "rh":
             # ToDo:
-            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.td)
-            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.td)
+            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.freqstr)
+            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.freqstr)
         elif self.strategy in ["go"]:
             self.len_ph = self.times.sim.duration
             self.len_ch = self.times.sim.duration
@@ -280,29 +281,33 @@ class Scenario:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
             self.times.sim = time.TimeFrame.create_from_start_timestamp(
                 start=self.times.sim.start,
-                timestep=self.timestep.td,
+                timestep=self.timestep,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 
         # get holidays during simulation timeframe
-        years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
-        try:
-            self.holiday_dates = sorted(
-                getattr(holidays, self.location.country)(years=years, state=self.location.state)
-            )
-        except:  # not for all countries the states are available (e.g. France)
+        if self.consider_holidays:
+            # ToDo: extract function get_holidays(dti, country, state)
+            years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
             try:
-                self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
-                self.logger.warning(
-                    f"Holidays for state {self.location.state} not available. "
-                    f"Country-wide holidays for {self.location.country} are used instead."
+                self.holiday_dates = sorted(
+                    getattr(holidays, self.location.country)(years=years, state=self.location.state)
                 )
-            except AttributeError:  # not all countries worldwide are available
-                self.holiday_dates = []
-                self.logger.warning(
-                    f"Holidays for country {self.location.country} not available. "
-                    f"No public holidays are considered in this scenario."
-                )
+            except:  # not for all countries the states are available (e.g. France)
+                try:
+                    self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
+                    self.logger.warning(
+                        f"Holidays for state {self.location.state} not available. "
+                        f"Country-wide holidays for {self.location.country} are used instead."
+                    )
+                except AttributeError:  # not all countries worldwide are available
+                    self.holiday_dates = []
+                    self.logger.warning(
+                        f"Holidays for country {self.location.country} not available. "
+                        f"No public holidays are considered in this scenario."
+                    )
+        else:
+            self.holiday_dates = []
 
         # region set air temperature
         temp_air = pd.Series(index=self.times.sim.dti, dtype=float)
@@ -411,6 +416,8 @@ class Scenario:
         loc = location.Location.create_from_lat_lon(
             latitude=parameters.loc["scenario", "latitude"],
             longitude=parameters.loc["scenario", "longitude"],
+            country=parameters.loc["scenario", "country"],
+            state=parameters.loc["scenario", "state"],
             logger=logger,
         )
 
@@ -445,7 +452,7 @@ class Scenario:
         # convert DataFrame to Series
         parameters_series = parameters.iloc[:, 0]
 
-        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
 
         return cls.create_from_parameters(
             paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger
@@ -606,10 +613,10 @@ class PredictionHorizon:
         self.index = index
         self.scenario = scenario
 
-        # Setup the logger as a child of the scenario logger with some additional metadata
-        # about the index of the prediction horizon.
-        logging_ctx_str = f"Horizon {self.index + 1} of {self.scenario.nhorizons} -"
-        self._logger = logger_fcs.ContextLoggerAdapter(logger, {"context_str": logging_ctx_str})
+        # set up the logger as a child of the scenario logger with some additional horizon index metadata
+        self._logger = logger_fcs.ContextLoggerAdapter(
+            logger=logger, extra={"n_horizon": self.index + 1, "n_horizon_total": self.scenario.nhorizons}
+        )
 
         self._results = None
 
@@ -617,13 +624,13 @@ class PredictionHorizon:
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
         self.ph = time.TimeFrame.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
         self.ch = time.TimeFrame.create_from_start_timestamp(
             start=start,
-            timestep=self.scenario.timestep.td,
+            timestep=self.scenario.timestep,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
 

@@ -2,18 +2,7 @@
 
 import argparse
 import importlib.resources
-import warnings
 from pathlib import Path
-
-try:
-    import tkinter as tk
-    import tkinter.filedialog
-
-    TKINTER_AVAILABLE = True
-except ImportError:
-    TKINTER_AVAILABLE = False
-    warnings.warn("tkinter is not available in this environment. GUI file selection will be disabled.")
-
 
 import revoletion.example
 
@@ -97,8 +86,14 @@ def main():
     scenarios_example = False
     # Option 1: No scenario file argument passed -> select via GUI
     if args.scenario is None:
-        if not TKINTER_AVAILABLE:
-            raise FileNotFoundError("No scenario file provided and tkinter is unavailable.")
+        try:
+            import tkinter as tk
+            import tkinter.filedialog
+        except ImportError:
+            raise FileNotFoundError(
+                "No scenario file provided and tkinter is unavailable in this environment. "
+                "Please provide a scenario file path or run this script in an environment with tkinter installed."
+            )
 
         root = tk.Tk()
         root.withdraw()  # hide small tk-window
