@@ -195,7 +195,7 @@ class Scenario:
         self.parameters = parameters
 
         if logger is None:
-            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
         else:
             self.logger = logger
 
@@ -451,7 +451,7 @@ class Scenario:
         # convert DataFrame to Series
         parameters_series = parameters.iloc[:, 0]
 
-        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
 
         return cls.create_from_parameters(
             paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger
@@ -608,10 +608,10 @@ class PredictionHorizon:
         self.index = index
         self.scenario = scenario
 
-        # Setup the logger as a child of the scenario logger with some additional metadata
-        # about the index of the prediction horizon.
-        logging_ctx_str = f"Horizon {self.index + 1} of {self.scenario.nhorizons} -"
-        self._logger = logger_fcs.ContextLoggerAdapter(logger, {"context_str": logging_ctx_str})
+        # set up the logger as a child of the scenario logger with some additional horizon index metadata
+        self._logger = logger_fcs.ContextLoggerAdapter(
+            logger=logger, extra={"n_horizon": self.index + 1, "n_horizon_total": self.scenario.nhorizons}
+        )
 
         self._results = None
 

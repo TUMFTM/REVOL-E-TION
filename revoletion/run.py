@@ -128,7 +128,7 @@ class SimulationRun:
             ).rename_axis("scenario")
             self.copy_scenario_file()
 
-        logger_fcs.ContextPaddingFilter.max_length = max(len(name) for name in self.scenario_names) + 3
+        logger_fcs.LogFormatter.format_scenarioname.max_width = max(len(name) for name in self.scenario_names)
 
         self.scenario_num = len(self.scenario_names)
 
@@ -272,7 +272,7 @@ class SimulationRun:
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
 
-        scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"context_str": name})
+        scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"scenarioname": name})
         try:
             worker = ScenarioWorker(
                 paths=self.paths,
