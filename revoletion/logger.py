@@ -9,6 +9,8 @@ from pathlib import Path
 import datetime
 from typing_extensions import override
 
+from .log_context import log_context
+
 
 @dataclass
 class ColumnLayout:
@@ -62,6 +64,12 @@ class LogFormatter(logging.Formatter):
         return super().format(record)
 
 
+class ContextVarFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.context_str = log_context.get()
+        return True
+
+
 def _get_logger_level(debugmode: bool):
     """
     Determine the logger level based on the settings.
@@ -100,12 +108,14 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     log_stream_handler = logging.StreamHandler(sys.stdout)
     log_stream_handler.setFormatter(log_formatter_stdout)
     log_stream_handler.addFilter(OptimizationSuccessfulFilter())
+    log_stream_handler.addFilter(ContextVarFilter())
     root_logger.addHandler(log_stream_handler)
 
     # define root logger handler for file output
     log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(log_formatter_file)
     log_file_handler.addFilter(OptimizationSuccessfulFilter())
+    log_file_handler.addFilter(ContextVarFilter())
     root_logger.addHandler(log_file_handler)
 
     _configure_third_party_loggers()
@@ -133,6 +143,7 @@ def configure_process_logger_parallel(log_queue: mp.Queue, debugmode: bool):
     queue_handler = logging.handlers.QueueHandler(log_queue)
 
     logger.addHandler(queue_handler)
+    logger.addFilter(ContextVarFilter())
 
     _configure_third_party_loggers()
 

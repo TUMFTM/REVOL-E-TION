@@ -20,6 +20,7 @@ import pandas as pd
 from oemof import solph as solph
 
 from . import logger as logger_fcs
+from .log_context import log_context, log_context_manager
 from . import location, simulation, time, utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -272,33 +273,35 @@ class SimulationRun:
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
 
-        scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"scenarioname": name})
-        try:
-            worker = ScenarioWorker(
-                paths=self.paths,
-                settings=self.settings,
-                name=name,
-                parameters=self.scenario_data[name],
-                logger=scenario_logger,
-                lock=lock,
-                status_update=self.trigger_scenario_status_update,
-                status_queue=status_queue,
-            )
-            worker.execute()
-        except Exception as e:
-            self.trigger_scenario_status_update(
-                status_msg=_ScenarioStatusMessage(
-                    scenario_name=name,
-                    status=_ScenarioStatus.FAILED,
-                    extras={"exception": str(e), "traceback": traceback.format_exc()},
-                ),
-                queue=status_queue,
-            )
+        # scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"scenarioname": name})
 
-            self.logger.error(
-                msg=f"{str(e)} - continue on next scenario",
-                exc_info=True,
-            )
+        with log_context_manager(name):
+            try:
+                worker = ScenarioWorker(
+                    paths=self.paths,
+                    settings=self.settings,
+                    name=name,
+                    parameters=self.scenario_data[name],
+                    # logger=scenario_logger,
+                    lock=lock,
+                    status_update=self.trigger_scenario_status_update,
+                    status_queue=status_queue,
+                )
+                worker.execute()
+            except Exception as e:
+                self.trigger_scenario_status_update(
+                    status_msg=_ScenarioStatusMessage(
+                        scenario_name=name,
+                        status=_ScenarioStatus.FAILED,
+                        extras={"exception": str(e), "traceback": traceback.format_exc()},
+                    ),
+                    queue=status_queue,
+                )
+
+                self.logger.error(
+                    msg=f"{str(e)} - continue on next scenario",
+                    exc_info=True,
+                )
 
     def read_status_queue(self, queue: mpq.Queue):
         while True:
@@ -341,8 +344,8 @@ class ScenarioWorker:
         settings: simulation.SimulationSettings,
         name: str,
         parameters: pd.Series,
-        logger: logging.Logger,
         status_update: _StatusUpdateCallback,
+        logger: logging.Logger | None = None,
         status_queue: mpq.Queue | None = None,
         lock: mps.Lock | None = None,
     ) -> None:
@@ -350,7 +353,9 @@ class ScenarioWorker:
         self._settings = settings
         self._name = name
         self._parameters = parameters
-        self._logger = logger
+        self._logger = logging.getLogger(__name__)
+        self._status_update = status_update
+        self._status_queue = status_queue
         self._lock = lock
         self._status_update = status_update
         self._status_queue = status_queue

@@ -197,6 +197,7 @@ class Scenario:
         if logger is None:
             self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
         else:
+            logger.info("Logger was passed to scenario")
             self.logger = logger
 
         def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
