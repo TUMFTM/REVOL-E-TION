@@ -25,6 +25,9 @@ def test_correctly_convertes_raw_values():
         "truncate_ph": False,
         "latitude": 50.1,
         "longitude": "43.89",
+        "country": "DE",
+        "state": "BY",
+        "consider_holidays": "True",
         "temp_air": None,
         "cost_eps": "1e-3",
         "blocks": "{'foo': 'Foo'}",
@@ -34,6 +37,7 @@ def test_correctly_convertes_raw_values():
     assert isinstance(scenario_model.blocks, dict)
     assert isinstance(scenario_model.latitude, float)
     assert isinstance(scenario_model.longitude, float)
+    assert isinstance(scenario_model.consider_holidays, bool)
     assert scenario_model.strategy == "go"
     assert isinstance(scenario_model.compensate_sim_prj, bool)
     assert isinstance(scenario_model.cost_eps, float)
