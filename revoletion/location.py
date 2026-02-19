@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Self
 
 import geopy
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError, GeocoderUnavailable
 import pytz
 import timezonefinder
 
@@ -37,7 +38,7 @@ def reverse_geocode_location(
     geolocator = geopy.geocoders.Nominatim(user_agent="location_finder")
     try:
         return geolocator.reverse(query=(latitude, longitude), language="en", exactly_one=True)
-    except (geopy.exc.GeocoderUnavailable, geopy.exc.GeocoderServiceError):
+    except (GeocoderUnavailable, GeocoderServiceError, GeocoderTimedOut):
         logger.warning(f"Reverse geocoding failed for {latitude}/{longitude}.")
         return None
 
