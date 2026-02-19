@@ -74,7 +74,9 @@ class SimulationRun:
         self.version_solph = solph.__version__
         self.version_revoletion = utils.get_revoletion_python_package_version()
 
-        self.commit_hash = utils.get_current_project_git_commit_hash()
+        # ToDo: Decided whether to keep git commit hash or not.
+        #  git commit hash is not available if REVOL-E-TION is called from another git repository
+        # self.commit_hash = utils.get_current_project_git_commit_hash()
         # endregion
 
         # region read, copy and check scenario data
