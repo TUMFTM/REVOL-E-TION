@@ -23,7 +23,7 @@ class BaseElement(ABC):
             if not any("_TYPE" in B.__dict__ for B in cls.mro()):
                 raise TypeError(f"Concrete class {cls.__name__} must define '_TYPE'")
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, **kwargs):
         self.name = name
 
         self._cashflow: np.ndarray | None = None
@@ -75,8 +75,8 @@ class YearlyElement(BaseElement, ABC):
     Base class for all elements with yearly occurring costs or revenues (Mntex, Opex, Crev).
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self._yrl: float | None = None
 
@@ -104,8 +104,8 @@ class PowerBasedElement(YearlyElement, ABC):
     Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self._eval: float | None = None
 
@@ -135,8 +135,8 @@ class CapexElement(BaseElement, ABC):
 
     _TYPE = "capex"
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self._preexisting: float | None = None
         self._expansion: float | None = None
@@ -209,8 +209,8 @@ class CalculableBaseElement(BaseElement, ABC):
             if not any("_OCCURS_AT" in B.__dict__ for B in cls.mro()):
                 raise TypeError(f"Concrete class {cls.__name__} must define '_OCCURS_AT'")
 
-    def __init__(self, name: str, eco: EcoParams):
-        super().__init__(name)
+    def __init__(self, name: str, eco: EcoParams, **kwargs):
+        super().__init__(name, **kwargs)
         self.eco = eco
 
     @abstractmethod
@@ -241,8 +241,8 @@ class CalculableYearlyElement(CalculableBaseElement, YearlyElement, ABC):
     Base class for all economic elements that calculate their own results and have yearly occurring costs or revenues (Mntex, Opex, Crev).
     """
 
-    def __init__(self, name: str, eco: EcoParams):
-        super().__init__(name=name, eco=eco)
+    def __init__(self, name: str, eco: EcoParams, **kwargs):
+        super().__init__(name=name, eco=eco, **kwargs)
 
     @abstractmethod
     def _calc_yrl(self, *args, **kwargs) -> float: ...
@@ -262,8 +262,8 @@ class CalculablePowerBasedElement(CalculableYearlyElement, PowerBasedElement, AB
     Base class for all economic elements that calculate their own results, have yearly occurring costs or revenues and scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
     """
 
-    def __init__(self, name: str, eco: EcoParams):
-        super().__init__(name=name, eco=eco)
+    def __init__(self, name: str, eco: EcoParams, **kwargs):
+        super().__init__(name=name, eco=eco, **kwargs)
 
     @abstractmethod
     def _calc_eval(self, *args, **kwargs) -> float: ...
@@ -281,7 +281,7 @@ class BlockElement(ABC):
     Base class for all block elements.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, **kwargs):
         self.name = name
 
         self.capex: CapexElement | None = None

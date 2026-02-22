@@ -99,7 +99,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.expansion_equal = False
         self.params_preprocessing()
 
-        self.aggregator = eco.Aggregator(name=self.name)
+        self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
 
         self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd, dtype="float64")
         self.init_states()

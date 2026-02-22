@@ -17,11 +17,13 @@ class PeakPowerOpexEvaluator(OpexEvaluator):
         name: str,
         eco: EcoParams,
         params: PeakPowerOpexParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_spec_ep(self, **kwargs) -> float:

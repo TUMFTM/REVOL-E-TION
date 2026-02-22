@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from functools import cached_property
 from pathlib import Path
 from typing import ClassVar, Self, Type
 
@@ -40,8 +39,9 @@ class CostEvaluator(CalculableBaseElement, ABC):
         name: str,
         eco: EcoParams,
         params: CostParams,
+        **kwargs,
     ):
-        super().__init__(name=name, eco=eco)
+        super().__init__(name=name, eco=eco, **kwargs)
         self.eco = eco
         self.params = params
 
@@ -69,11 +69,13 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
         name: str,
         eco: EcoParams,
         params: PowerBasedParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
@@ -100,11 +102,13 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         name: str,
         eco: EcoParams,
         params: CapexParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_preexisting(self, size_preexisting) -> float:
@@ -183,11 +187,13 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         name: str,
         eco: EcoParams,
         params: MntexParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_yrl(self, size_preexisting: float, size_expansion: float, **kwargs) -> float:
@@ -211,11 +217,13 @@ class OpexEvaluator(PowerBasedEvaluator, OpexElement):
         name: str,
         eco: EcoParams,
         params: OpexParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
 
@@ -227,11 +235,13 @@ class CrevEvaluator(PowerBasedEvaluator, CrevElement):
         name: str,
         eco: EcoParams,
         params: CrevParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
 

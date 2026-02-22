@@ -349,7 +349,7 @@ class Scenario:
         self.periods_prj = np.arange(0, self.eco_params.prj_duration_yrs)
         self.periods_prj_extd = np.arange(0, self.eco_params.prj_duration_yrs + 1)  # add. year for salvage values
 
-        self.aggregator = eco.Aggregator(name="scenario")
+        self.aggregator = eco.Aggregator(name="scenario", prj_duration_yrs=self.eco_params.prj_duration_yrs)
         self.capex_preexisting_considered = 0
 
         self.block_registry = dict()

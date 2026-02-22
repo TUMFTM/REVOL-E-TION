@@ -18,11 +18,13 @@ class VehicleOpexEvaluator(OpexEvaluator):
         name: str,
         eco: EcoParams,
         params: VehicleOpexParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
@@ -49,11 +51,13 @@ class VehicleCrevEvaluator(CrevEvaluator):
         name: str,
         eco: EcoParams,
         params: VehicleCrevParams,
+        **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
             params=params,
+            **kwargs,
         )
 
     def _calc_eval(self, flow: pd.Series, **kwargs) -> float:

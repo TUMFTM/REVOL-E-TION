@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
@@ -20,26 +21,29 @@ class BaseAggregator(BaseElement, ABC):
     Base class for all Aggregators.
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, **kwargs)
 
     @abstractmethod
-    def _aggregate_attribute(self, property_name: str) -> float | npt.NDArray: ...
+    def _aggregate_scalar_attribute(self, property_name: str) -> float: ...
+
+    @abstractmethod
+    def _aggregate_vector_attribute(self, property_name: str) -> npt.NDArray: ...
 
     def _aggregate_cashflow(self) -> npt.NDArray:
-        return self._aggregate_attribute("cashflow")
+        return self._aggregate_vector_attribute("cashflow")
 
     def _aggregate_cashflow_dis(self) -> npt.NDArray:
-        return self._aggregate_attribute("cashflow_dis")
+        return self._aggregate_vector_attribute("cashflow_dis")
 
     def _aggregate_prj(self) -> float:
-        return self._aggregate_attribute("prj")
+        return self._aggregate_scalar_attribute("prj")
 
     def _aggregate_dis(self) -> float:
-        return self._aggregate_attribute("dis")
+        return self._aggregate_scalar_attribute("dis")
 
     def _aggregate_ann(self) -> float:
-        return self._aggregate_attribute("ann")
+        return self._aggregate_scalar_attribute("ann")
 
     def aggregate(self) -> None:
         """
@@ -60,13 +64,21 @@ class CrossLevelAggregator(BaseAggregator, ABC):
     These costs may occur in the same block (aggregate Evaluators) or in subblocks (aggregate other Aggregators).
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, prj_duration_yrs: int, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self.elements = {}
+        self._prj_duration_yrs = prj_duration_yrs
 
-    def _aggregate_attribute(self, property_name: str) -> float | npt.NDArray:
+    def _aggregate_scalar_attribute(self, property_name: str) -> float:
         return sum(getattr(poi, property_name) for poi in self.elements.values())
+
+    def _aggregate_vector_attribute(self, property_name: str) -> npt.NDArray:
+        values = [getattr(poi, property_name) for poi in self.elements.values()]
+        if not values:
+            # create empty array if there are no elements to aggregate
+            return np.zeros(self._prj_duration_yrs + 1)
+        return np.sum(values, axis=0)
 
 
 class InLevelAggregator(BaseAggregator, ABC):
@@ -84,11 +96,8 @@ class YearlyAggregator(CrossLevelAggregator, YearlyElement, ABC):
     This is used for Mntex, Opex and Crev aggregation.
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
-
     def aggregate(self):
-        self._yrl = self._aggregate_attribute("yrl")
+        self._yrl = self._aggregate_scalar_attribute("yrl")
         super().aggregate()
 
 
@@ -98,7 +107,7 @@ class PowerBasedAggregator(YearlyAggregator, PowerBasedElement, ABC):
     """
 
     def aggregate(self):
-        self._eval = self._aggregate_attribute("eval")
+        self._eval = self._aggregate_scalar_attribute("eval")
         super().aggregate()
 
 
@@ -108,17 +117,14 @@ class CapexAggregator(CrossLevelAggregator, CapexElement):
 
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
-
     def _aggregate_preexisting(self) -> float:
-        return self._aggregate_attribute("preexisting")
+        return self._aggregate_scalar_attribute("preexisting")
 
     def _aggregate_expansion(self) -> float:
-        return self._aggregate_attribute("expansion")
+        return self._aggregate_scalar_attribute("expansion")
 
     def _aggregate_init(self) -> float:
-        return self._aggregate_attribute("init")
+        return self._aggregate_scalar_attribute("init")
 
     def aggregate(self):
         self._preexisting = self._aggregate_preexisting()
@@ -158,14 +164,19 @@ class TotexAggregator(InLevelAggregator):
 
     _TYPE = "totex"
 
-    def __init__(self, name: str, capex: CapexAggregator, mntex: MntexAggregator, opex: OpexAggregator):
-        super().__init__(name=name)
+    def __init__(self, name: str, capex: CapexAggregator, mntex: MntexAggregator, opex: OpexAggregator, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self.capex = capex
         self.mntex = mntex
         self.opex = opex
 
-    def _aggregate_attribute(self, property_name: str) -> float | npt.NDArray:
+    def _aggregate_scalar_attribute(self, property_name: str) -> float:
+        return (
+            getattr(self.capex, property_name) + getattr(self.mntex, property_name) + getattr(self.opex, property_name)
+        )
+
+    def _aggregate_vector_attribute(self, property_name: str) -> npt.NDArray:
         return (
             getattr(self.capex, property_name) + getattr(self.mntex, property_name) + getattr(self.opex, property_name)
         )
@@ -178,13 +189,16 @@ class ValueAggregator(InLevelAggregator):
 
     _TYPE = "value"
 
-    def __init__(self, name: str, totex: TotexAggregator, crev: CrevAggregator):
-        super().__init__(name=name)
+    def __init__(self, name: str, totex: TotexAggregator, crev: CrevAggregator, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self.totex = totex
         self.crev = crev
 
-    def _aggregate_attribute(self, property_name: str) -> float | npt.NDArray:
+    def _aggregate_scalar_attribute(self, property_name: str) -> float:
+        return getattr(self.crev, property_name) - getattr(self.totex, property_name)
+
+    def _aggregate_vector_attribute(self, property_name: str) -> npt.NDArray:
         return getattr(self.crev, property_name) - getattr(self.totex, property_name)
 
 
@@ -193,13 +207,13 @@ class Aggregator(BlockElement):
     EcoBlock holds all economic components of a block.
     """
 
-    def __init__(self, name: str):
-        super().__init__(name=name)
+    def __init__(self, name: str, prj_duration_yrs: int, **kwargs):
+        super().__init__(name=name, **kwargs)
 
-        self.capex: CapexAggregator = CapexAggregator(name=name)
-        self.mntex: MntexAggregator = MntexAggregator(name=name)
-        self.opex: OpexAggregator = OpexAggregator(name=name)
-        self.crev: CrevAggregator = CrevAggregator(name=name)
+        self.capex: CapexAggregator = CapexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
+        self.mntex: MntexAggregator = MntexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
+        self.opex: OpexAggregator = OpexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
+        self.crev: CrevAggregator = CrevAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
         self.totex: TotexAggregator = TotexAggregator(name=name, capex=self.capex, mntex=self.mntex, opex=self.opex)
         self.value: ValueAggregator = ValueAggregator(name=name, totex=self.totex, crev=self.crev)
 
@@ -207,10 +221,10 @@ class Aggregator(BlockElement):
         """
         Add a new subblock to the current block.
         """
-        self.capex.elements[block.name] = block.capex
-        self.mntex.elements[block.name] = block.mntex
-        self.opex.elements[block.name] = block.opex
-        self.crev.elements[block.name] = block.crev
+        for attr in ("capex", "mntex", "opex", "crev"):
+            value = getattr(block, attr)
+            if value is not None:
+                getattr(self, attr).elements[block.name] = value
 
     def aggregate(self) -> None:
         """
