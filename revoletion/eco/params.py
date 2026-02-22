@@ -78,7 +78,7 @@ class EcoParams:
 
     @cached_property
     def _discount_factors(self) -> dict[OccursAt, npt.NDArray]:
-        periods = np.arange(self.prj_duration_yrs + 1)
+        periods = np.arange(1, self.prj_duration_yrs + 2)  # 1st year equals to "1"
         return {
             occurs_at: discount(
                 future_value=1,
