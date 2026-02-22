@@ -196,12 +196,12 @@ class Aggregator(BlockElement):
     def __init__(self, name: str):
         super().__init__(name=name)
 
-        self.capex = CapexAggregator(name=name)
-        self.mntex = MntexAggregator(name=name)
-        self.opex = OpexAggregator(name=name)
-        self.crev = CrevAggregator(name=name)
-        self.totex = TotexAggregator(name=name, capex=self.capex, mntex=self.mntex, opex=self.opex)
-        self.value = ValueAggregator(name=name, totex=self.totex, crev=self.crev)
+        self.capex: CapexAggregator = CapexAggregator(name=name)
+        self.mntex: MntexAggregator = MntexAggregator(name=name)
+        self.opex: OpexAggregator = OpexAggregator(name=name)
+        self.crev: CrevAggregator = CrevAggregator(name=name)
+        self.totex: TotexAggregator = TotexAggregator(name=name, capex=self.capex, mntex=self.mntex, opex=self.opex)
+        self.value: ValueAggregator = ValueAggregator(name=name, totex=self.totex, crev=self.crev)
 
     def add_block(self, block: BlockElement) -> None:
         """
