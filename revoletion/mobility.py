@@ -4,9 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import scipy as sp
 
-from . import utils
+from . import stochastics, utils
 
 
 # ToDo: FleetDemand currently does not need to  be a class as it's just a pd.DataFrame.
@@ -124,25 +123,18 @@ class FleetDemand(ABC):
             # always sample finer than timestep to avoid rounding errors
             timestep_hours = (pd.to_timedelta(self.dti.freq)).total_seconds() / 3600
 
-            weights = [
-                self.usecases.loc[group.name, ("time_req", "weight1")],
-                self.usecases.loc[group.name, ("time_req", "weight2")],
-            ]
-            means = [
-                self.usecases.loc[group.name, ("time_req", "mean1")],
-                self.usecases.loc[group.name, ("time_req", "mean2")],
-            ]
-            stds = [
-                self.usecases.loc[group.name, ("time_req", "std1")],
-                self.usecases.loc[group.name, ("time_req", "std2")],
-            ]
+            model = stochastics.DepartureDistribution.from_mean_std(
+                weight1=self.usecases.at[group.name, ("time_req", "weight1")],
+                weight2=self.usecases.at[group.name, ("time_req", "weight2")],
+                mean1=self.usecases.at[group.name, ("time_req", "mean1")],
+                mean2=self.usecases.at[group.name, ("time_req", "mean2")],
+                std1=self.usecases.at[group.name, ("time_req", "std1")],
+                std2=self.usecases.at[group.name, ("time_req", "std2")],
+            )
 
-            # Sample from GMM
-            component = np.random.choice(len(weights), size=len(group), p=weights)
-            time_samples = np.random.normal(loc=np.array(means)[component], scale=np.array(stds)[component])
-            # Round to timestep
-            time_samples = np.round(time_samples / timestep_hours) * timestep_hours
-            return pd.DataFrame(data=time_samples, index=group.index)
+            samples = model.sample(size=len(group))
+            time_samples = np.round(samples / timestep_hours) * timestep_hours  # Round to timestep
+            return pd.Series(data=time_samples, index=group.index)
 
         requests["hour"] = (
             requests.groupby(["usecase", "timeframe"])
@@ -169,14 +161,15 @@ class FleetDemand(ABC):
 
         # region sample idle time
         def sample_idle_uctf(group):
-            p0 = self.usecases.at[group.name, ("idle", "p0")]
-            a = self.usecases.at[group.name, ("idle", "a")]
-            c = self.usecases.at[group.name, ("idle", "c")]
-            scale = self.usecases.at[group.name, ("idle", "scale")]
+            distribution = stochastics.IdleDistribution(
+                p0=self.usecases.at[group.name, ("idle", "p0")],
+                a=self.usecases.at[group.name, ("idle", "a")],
+                c=self.usecases.at[group.name, ("idle", "c")],
+                scale=self.usecases.at[group.name, ("idle", "scale")],
+            )
+
             return pd.Series(
-                pd.to_timedelta(
-                    sp.stats.gengamma.rvs(a=a, c=c, scale=scale, size=len(group)) * (1 - p0) + p0, unit="hour"
-                ),
+                pd.to_timedelta(distribution.sample(size=len(group)), unit="hour"),
                 index=group.index,
             )
 
@@ -215,12 +208,12 @@ class BatteryFleetDemand(FleetDemand):
             groupby function
             sample energy requirements for one usecase and timeframe.
             """
+            distribution = stochastics.DistanceDistribution.from_mu_sigma(
+                mu=self.usecases.loc[group.name, ("energy", "mu")],
+                sigma=self.usecases.loc[group.name, ("energy", "sigma")],
+            )
             return pd.Series(
-                np.random.lognormal(
-                    mean=self.usecases.loc[group.name, ("energy", "mu")],
-                    sigma=self.usecases.loc[group.name, ("energy", "sigma")],
-                    size=len(group),
-                ),
+                distribution.sample(size=len(group)),
                 index=group.index,
             )
 
@@ -257,12 +250,11 @@ class VehicleFleetDemand(FleetDemand):
             groupby function
             sample distances for one usecase and timeframe from lognormal distribution
             """
+            distribution = stochastics.DistanceDistribution.from_mu_sigma(
+                mu=self.usecases.at[group.name, ("dist", "mu")], sigma=self.usecases.at[group.name, ("dist", "sigma")]
+            )
             return pd.Series(
-                np.random.lognormal(
-                    mean=self.usecases.loc[group.name, ("dist", "mu")],
-                    sigma=self.usecases.loc[group.name, ("dist", "sigma")],
-                    size=len(group),
-                ),
+                distribution.sample(size=len(group)),
                 index=group.index,
             )
 
