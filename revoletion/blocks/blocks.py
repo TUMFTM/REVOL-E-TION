@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 class BlockScenarioInterface(ABC):
     @abstractmethod
-    def pre_scenario(self) -> None:
+    def pre_scenario(self, **kwargs) -> None:
         """
         Trigger actions to be executed after all inits.
         """
@@ -144,12 +144,12 @@ class BaseBlock(BlockScenarioInterface, ABC):
             setattr(self, name_var2, getattr(self, name_var1))
 
     @override
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         trigger actions to be executed after all inits
         """
         for subblock in self.subblocks.values():
-            subblock.pre_scenario()
+            subblock.pre_scenario(**kwargs)
 
     @override
     def pre_horizon(self, horizon: simulation.PredictionHorizon):
@@ -1484,8 +1484,8 @@ class StorageBlock(ElectricBlock):
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
 
-    def pre_scenario(self):
-        super().pre_scenario()
+    def pre_scenario(self, **kwargs):
+        super().pre_scenario(**kwargs)
         self.aging_model = bat.BatteryPackModel(self)
 
     def define_oemof_components(
@@ -1877,12 +1877,12 @@ class SubFleet(NonElectricBlock):
                 f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"'
             )
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
-        super().pre_scenario()
+        super().pre_scenario(**kwargs)
 
 
-class FleetUnit:
+class FleetUnit(BaseBlock):
     def init_evaluators(self):
         self.evaluators["glider"] = eco.EcoEvaluator(
             name="glider",
@@ -1899,10 +1899,25 @@ class FleetUnit:
             crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
         )
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+        params: dict = None,
+        parent: BaseBlock | simulation.Scenario = None,
+        **kwargs,
+    ):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
+
         self.log = None
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         slice log file from subfleet
         """
@@ -1920,6 +1935,8 @@ class FleetUnit:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
 
+        super().pre_scenario(**kwargs)
+
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
@@ -1927,8 +1944,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
 
     def init_evaluators(self):
-        StorageBlock.init_evaluators(self)
-        FleetUnit.init_evaluators(self)
+        super().init_evaluators()
 
         self.evaluators["charger"] = eco.EcoEvaluator(
             name="charger",
@@ -1959,8 +1975,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         )
 
     def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
-        StorageBlock.__init__(
-            self=self,
+        super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=[
@@ -1976,8 +1991,6 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             **kwargs,
         )
 
-        FleetUnit.__init__(self=self, **kwargs)
-
         self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
         if any([size.invest for size in self.sizes.values()]) and self.mode_scheduling in self.scenario.apriori_lvls:
@@ -1990,10 +2003,6 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.system]
         self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.system]
         super().initialize_efficiencies()
-
-    def pre_scenario(self):
-        StorageBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -2103,14 +2112,14 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):
-    def init_evaluators(self):
-        NonElectricBlock.init_evaluators(self=self)
-        FleetUnit.init_evaluators(self=self)
-
     def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
-        NonElectricBlock.__init__(self=self, name=name, scenario=scenario, params=params, parent=parent, **kwargs)
-
-        FleetUnit.__init__(self=self, **kwargs)
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
 
         # delete parameters not needed for CombustionVehicles
         # ToDo: specify required parameters instead of obsolete ones
@@ -2137,10 +2146,6 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
         ]:
             if hasattr(self, param):
                 delattr(self, param)
-
-    def pre_scenario(self):
-        NonElectricBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
 
 
 class ElectricVehicle(ElectricFleetUnit):
