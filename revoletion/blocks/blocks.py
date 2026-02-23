@@ -6,7 +6,7 @@ import ast
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 import oemof.solph as solph
@@ -130,7 +130,9 @@ class BaseBlock(BlockScenarioInterface, ABC):
 
         # accumulate invest costs caused by preexisting components in scenario
         for poi in self.pois.values():
-            self.scenario.capex_preexisting_considered += poi.get_invest_preexisting(sizes=self.sizes)
+            size_obj = self.sizes.get(poi.name_size, None)
+            size_preexisting = size_obj.preexisting if size_obj else None
+            self.scenario.capex_preexisting_considered += poi.get_invest_preexisting(size_preexisting=size_preexisting)
 
         # region initialize data structures
         self.subblocks = dict()
@@ -194,14 +196,31 @@ class BaseBlock(BlockScenarioInterface, ABC):
         # calculate results
         self.calc_results_economics()
 
+    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+        size_obj = self.sizes.get(poi.name_size, None)
+        if size_obj:
+            size_preexisting = size_obj.preexisting
+            size_expansion = size_obj.expansion
+        else:
+            size_preexisting = None
+            size_expansion = None
+
+        flow_name = poi.name_flow
+        if flow_name:
+            flow = self.flows[flow_name].loc[self.scenario.times.eval.dti]
+        else:
+            flow = None
+
+        return {
+            "size_preexisting": size_preexisting,
+            "size_expansion": size_expansion,
+            "flow": flow,
+        }
+
     def calc_results_economics(self, **kwargs):
         # calculate economic results
         for poi in self.pois.values():
-            poi.evaluate(
-                sizes=self.sizes,
-                flows=self.flows,
-                **kwargs,
-            )
+            poi.evaluate(**self._build_poi_evaluation_kwargs(poi), **kwargs)
 
         self.aggregator.aggregate()
 
@@ -1256,6 +1275,16 @@ class GridConnection(ElectricBlock):
                 ]["sequences"]["flow"][horizon.ch.dti]
             )
 
+    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+        kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
+
+        peak_period = self.peak_periods.get(poi.name, None)
+        if peak_period is None:
+            kwargs_eval["power_peak"] = None
+        else:
+            kwargs_eval["power_peak"] = peak_period.max_power
+        return kwargs_eval
+
     def calc_results_economics(self):
         super().calc_results_economics(peak_periods=self.peak_periods)
 
@@ -1880,6 +1909,15 @@ class FleetUnit:
         ]:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
+
+    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+        kwargs_eval = {}
+        # ToDo: activate this after correct inheritance pattern is implemented (FleetUnit should be child of BaseBlock)
+        # kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
+
+        kwargs_eval["dist"] = self.log["dist"]
+        kwargs_eval["atbase"] = self.log["atbase"]
+        return kwargs_eval
 
     def calc_results_economics(self):
         # ToDo: use this -> requires FleetUnit to be child of BaseBlock

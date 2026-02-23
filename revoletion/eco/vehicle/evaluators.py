@@ -214,15 +214,17 @@ class VehicleEvaluator(Evaluator):
 
     def evaluate(
         self,
-        sizes: dict,
-        flows: pd.DataFrame,
+        size_preexisting: float | None = None,
+        size_expansion: float | None = None,
+        flow: pd.Series | None = None,
         **kwargs,
     ) -> None:
+        # ToDo: Explicitly add dist and atbase to the method signature
         dist = kwargs.get("dist", None)
         if dist is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'dist' argument")
+            raise ValueError("VehicleEvaluator requires a 'dist' argument")
         atbase = kwargs.get("atbase", None)
         if atbase is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'atbase' argument")
+            raise ValueError("VehicleEvaluator requires a 'atbase' argument")
 
-        super().evaluate(sizes, flows, **kwargs)
+        super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, flow=flow, **kwargs)

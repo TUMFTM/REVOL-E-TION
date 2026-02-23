@@ -33,8 +33,8 @@ class PeakPowerOpexEvaluator(OpexEvaluator):
             else 1
         )
 
-    def _calc_eval(self, power_peak: float, **kwargs) -> float:
-        return power_peak * self.params.spec
+    def _calc_eval(self, power_peak: float | None, **kwargs) -> float:
+        return power_peak * self.params.spec if power_peak is not None else 0.0
 
 
 @dataclass
@@ -133,16 +133,16 @@ class PeakPowerEvaluator(Evaluator):
 
     def evaluate(
         self,
-        sizes: dict,
-        flows: pd.DataFrame,
+        size_preexisting: float | None = None,
+        size_expansion: float | None = None,
+        flow: pd.Series | None = None,
         **kwargs,
     ) -> None:
-        peak_periods = kwargs.pop("peak_periods", None)
-        if peak_periods is None:
+        # ToDo: explicitly add argument power_peak
+        power_peak = kwargs.pop("power_peak", None)
+        if power_peak is None:
             raise ValueError("PeakPowerEvaluator requires a 'peak_periods' argument")
-        peak_period = peak_periods.get(self.name, None)
-        if peak_period is None:
-            raise ValueError(f"Period {self.name} not found in 'peak_periods'")
-        power_peak = peak_period.max_power
 
-        super().evaluate(sizes, flows, power_peak=power_peak, **kwargs)
+        super().evaluate(
+            size_preexisting=size_preexisting, size_expansion=size_expansion, flow=flow, power_peak=power_peak, **kwargs
+        )

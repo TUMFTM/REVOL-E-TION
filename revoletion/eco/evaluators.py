@@ -78,13 +78,15 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
             **kwargs,
         )
 
-    def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
-        return (
+    def _calc_eval(self, flow: pd.Series | None, **kwargs) -> float:
+        cost_flow = (
             np.dot(self.params.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
-            + self.params.fix
+            if flow is not None
+            else 0.0
         )
+        return cost_flow + self.params.fix
 
-    def evaluate(self, flow: pd.Series, **kwargs):
+    def evaluate(self, flow: pd.Series | None, **kwargs):
         super().evaluate(flow=flow, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
@@ -111,11 +113,12 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             **kwargs,
         )
 
-    def _calc_preexisting(self, size_preexisting) -> float:
-        return (size_preexisting * self.params.spec + self.params.fix) * int(self.params.consider_preexisting)
+    def _calc_preexisting(self, size_preexisting: float | None) -> float:
+        cost_size = size_preexisting * self.params.spec if size_preexisting else 0.0
+        return (cost_size + self.params.fix) * int(self.params.consider_preexisting)
 
-    def _calc_expansion(self, size_expansion) -> float:
-        return size_expansion * self.params.spec
+    def _calc_expansion(self, size_expansion: float | None) -> float:
+        return size_expansion * self.params.spec if size_expansion else 0.0
 
     def _calc_init(self) -> float:
         return self.preexisting + self.expansion
@@ -154,16 +157,18 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         invest_first = 0
         return self._calc_cashflow_factors(invest_first)
 
-    def _calc_cashflow_preexisting(self, size_preexisting: float) -> npt.NDArray:
-        return self._calc_cashflow_factor_preexisting() * (self.params.spec * size_preexisting + self.params.fix)
+    def _calc_cashflow_preexisting(self, size_preexisting: float | None) -> npt.NDArray:
+        cost_size = size_preexisting * self.params.spec if size_preexisting else 0.0
+        return self._calc_cashflow_factor_preexisting() * (cost_size + self.params.fix)
 
-    def _calc_cashflow_expansion(self, size_expansion: float) -> npt.NDArray:
-        return self._calc_cashflow_factor_expansion() * (self.params.spec * size_expansion)
+    def _calc_cashflow_expansion(self, size_expansion: float | None) -> npt.NDArray:
+        cost_size = size_expansion * self.params.spec if size_expansion else 0.0
+        return self._calc_cashflow_factor_expansion() * cost_size
 
-    def _calc_cashflow(self, size_preexisting: float, size_expansion: float, **kwargs) -> npt.NDArray:
+    def _calc_cashflow(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> npt.NDArray:
         return self._calc_cashflow_preexisting(size_preexisting) + self._calc_cashflow_expansion(size_expansion)
 
-    def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
+    def evaluate(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> None:
         self._preexisting = self._calc_preexisting(size_preexisting=size_preexisting)
         self._expansion = self._calc_expansion(size_expansion=size_expansion)
         self._init = self._calc_init()
@@ -175,7 +180,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             self.eco.discount_factors(self._OCCURS_AT),
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
-    def get_preexisting(self, size_preexisting: float) -> float:
+    def get_preexisting(self, size_preexisting: float | None) -> float:
         return self._calc_preexisting(size_preexisting=size_preexisting)
 
 
@@ -196,10 +201,12 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
             **kwargs,
         )
 
-    def _calc_yrl(self, size_preexisting: float, size_expansion: float, **kwargs) -> float:
+    def _calc_yrl(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> float:
+        size_preexisting = size_preexisting if size_preexisting else 0.0
+        size_expansion = size_expansion if size_expansion else 0.0
         return self.params.spec * (size_preexisting + size_expansion) + self.params.fix
 
-    def evaluate(self, size_preexisting: float, size_expansion: float, **kwargs) -> None:
+    def evaluate(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> None:
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
@@ -436,31 +443,19 @@ class Evaluator(BlockElement):
 
     def evaluate(
         self,
-        sizes: dict,
-        flows: pd.DataFrame,
+        size_preexisting: float | None = None,
+        size_expansion: float | None = None,
+        flow: pd.Series | None = None,
         **kwargs,
     ) -> None:
-        if self.name_size:
-            size_preexisting = sizes[self.name_size].preexisting
-            size_expansion = sizes[self.name_size].expansion
-        else:
-            size_preexisting = 0.0
-            size_expansion = 0.0
+        for attr in (self.capex, self.mntex, self.opex, self.crev):
+            if attr:
+                attr.evaluate(
+                    size_preexisting=size_preexisting,
+                    size_expansion=size_expansion,
+                    flow=flow,
+                    **kwargs,
+                )
 
-        if self.name_flow:
-            flow = flows[self.name_flow]
-        else:
-            flow = pd.Series(0.0, index=self.eco.dti_eval, dtype=float)
-
-        self.capex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
-        self.mntex.evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
-        self.opex.evaluate(flow=flow, **kwargs)
-        self.crev.evaluate(flow=flow, **kwargs)
-
-    def get_invest_preexisting(self, sizes: dict) -> float:
-        if self.name_size:
-            size_preexisting = sizes[self.name_size].preexisting
-        else:
-            size_preexisting = 0.0
-
+    def get_invest_preexisting(self, size_preexisting: float | None) -> float:
         return self.capex.get_preexisting(size_preexisting=size_preexisting)
