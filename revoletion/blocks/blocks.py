@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 class BlockScenarioInterface(ABC):
     @abstractmethod
-    def pre_scenario(self) -> None:
+    def pre_scenario(self, **kwargs) -> None:
         """
         Trigger actions to be executed after all inits.
         """
@@ -72,6 +72,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         scenario: simulation.Scenario,
         params: dict = None,
         parent: BaseBlock | simulation.Scenario = None,
+        **kwargs,
     ):
         """
         Initialize (Sub)Block object with attributes and data structures
@@ -143,12 +144,12 @@ class BaseBlock(BlockScenarioInterface, ABC):
             setattr(self, name_var2, getattr(self, name_var1))
 
     @override
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         trigger actions to be executed after all inits
         """
         for subblock in self.subblocks.values():
-            subblock.pre_scenario()
+            subblock.pre_scenario(**kwargs)
 
     @override
     def pre_horizon(self, horizon: simulation.PredictionHorizon):
@@ -186,10 +187,11 @@ class ElectricBlock(BaseBlock, ABC):
         flow_apriori_names: list = None,
         params: dict = None,
         parent: BaseBlock | simulation.Scenario = None,
+        **kwargs,
     ):
         self.flow_names = set()
 
-        super().__init__(name=name, scenario=scenario, params=params, parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params, parent=parent, **kwargs)
 
         # empty list not possible as default argument as it is mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
@@ -336,13 +338,14 @@ class SystemCore(ElectricBlock):
             opex_config=dict(spec=self.opex_spec),
         )
 
-    def __init__(self, name: str, scenario):
+    def __init__(self, name: str, scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
     def params_preprocessing(self):
@@ -479,13 +482,14 @@ class RenewableSource(SourceBlock, ABC):
             flow_name="pot",
         )
 
-    def __init__(self, name: str, scenario: "simulation.Scenario"):
+    def __init__(self, name: str, scenario: "simulation.Scenario", **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
         self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
@@ -683,13 +687,14 @@ class FixedDemand(SinkBlock):
             mntex_config=dict(fix=self.mntex_fix_metering),
         )
 
-    def __init__(self, name: str, scenario):
+    def __init__(self, name: str, scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=["demand"],
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
         self.get_flows_apriori()
@@ -910,13 +915,14 @@ class ControllableSource(SourceBlock):
             opex_config=dict(spec=self.opex_spec),
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario):
+    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             params=None,
             flow_apriori_names=None,
             parent=scenario,
+            **kwargs,
         )
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
@@ -993,13 +999,14 @@ class GridConnection(ElectricBlock):
             mntex_config=dict(spec=self.mntex_spec),
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario):
+    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
         self.inflows = dict()
@@ -1305,13 +1312,14 @@ class GridMarket(ElectricBlock):
             opex_config=dict(spec=self.opex_spec_s2g),
         )
 
-    def __init__(self, name: str, scenario: simulation.PredictionHorizon, params, parent):
+    def __init__(self, name: str, scenario: simulation.Scenario, params, parent, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=params,
             parent=parent,
+            **kwargs,
         )
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
@@ -1430,6 +1438,7 @@ class StorageBlock(ElectricBlock):
         flow_apriori_names: list = None,
         params: dict = None,
         parent: BaseBlock | simulation.Scenario = None,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -1437,6 +1446,7 @@ class StorageBlock(ElectricBlock):
             flow_apriori_names=flow_apriori_names,
             params=params,
             parent=parent,
+            **kwargs,
         )
 
         def calc_loss_rate_per_period(
@@ -1474,8 +1484,8 @@ class StorageBlock(ElectricBlock):
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
 
-    def pre_scenario(self):
-        super().pre_scenario()
+    def pre_scenario(self, **kwargs):
+        super().pre_scenario(**kwargs)
         self.aging_model = bat.BatteryPackModel(self)
 
     def define_oemof_components(
@@ -1608,6 +1618,7 @@ class StationaryBattery(StorageBlock):
         self,
         name: str,
         scenario: simulation.Scenario,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -1615,6 +1626,7 @@ class StationaryBattery(StorageBlock):
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
     def initialize_efficiencies(self):
@@ -1665,13 +1677,14 @@ class Fleet(SinkBlock):
             opex_config=dict(spec=self.opex_spec_s2f),
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario):
+    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
         self.demand = None
@@ -1835,12 +1848,12 @@ class Fleet(SinkBlock):
 
 
 class SubFleet(NonElectricBlock):
-    def __init__(self, name: str, scenario: simulation.Scenario, parent):
+    def __init__(self, name: str, scenario: simulation.Scenario, parent, **kwargs):
         # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
         params = scenario.parameters.loc[name]
         params_subfleet = {key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex"]}
 
-        super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent, **kwargs)
 
         self.demand = None
         self.log = None
@@ -1864,12 +1877,12 @@ class SubFleet(NonElectricBlock):
                 f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"'
             )
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
-        super().pre_scenario()
+        super().pre_scenario(**kwargs)
 
 
-class FleetUnit:
+class FleetUnit(BaseBlock):
     def init_evaluators(self):
         self.evaluators["glider"] = eco.EcoEvaluator(
             name="glider",
@@ -1886,10 +1899,25 @@ class FleetUnit:
             crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
         )
 
-    def __init__(self):
+    def __init__(
+        self,
+        name: str,
+        scenario: simulation.Scenario,
+        params: dict = None,
+        parent: BaseBlock | simulation.Scenario = None,
+        **kwargs,
+    ):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
+
         self.log = None
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         slice log file from subfleet
         """
@@ -1907,6 +1935,8 @@ class FleetUnit:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
 
+        super().pre_scenario(**kwargs)
+
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
@@ -1914,8 +1944,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
 
     def init_evaluators(self):
-        StorageBlock.init_evaluators(self)
-        FleetUnit.init_evaluators(self)
+        super().init_evaluators()
 
         self.evaluators["charger"] = eco.EcoEvaluator(
             name="charger",
@@ -1945,9 +1974,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             opex_config=dict(spec=self.opex_spec_ext_dc),
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
-        StorageBlock.__init__(
-            self=self,
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
+        super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=[
@@ -1960,9 +1988,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             ],
             params=params,
             parent=parent,
+            **kwargs,
         )
-
-        FleetUnit.__init__(self=self)
 
         self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
@@ -1976,10 +2003,6 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.system]
         self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.system]
         super().initialize_efficiencies()
-
-    def pre_scenario(self):
-        StorageBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
 
     def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None):
         """
@@ -2089,14 +2112,14 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):
-    def init_evaluators(self):
-        NonElectricBlock.init_evaluators(self=self)
-        FleetUnit.init_evaluators(self=self)
-
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
-        NonElectricBlock.__init__(self=self, name=name, scenario=scenario, params=params, parent=parent)
-
-        FleetUnit.__init__(self=self)
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
 
         # delete parameters not needed for CombustionVehicles
         # ToDo: specify required parameters instead of obsolete ones
@@ -2124,10 +2147,6 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
             if hasattr(self, param):
                 delattr(self, param)
 
-    def pre_scenario(self):
-        NonElectricBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
-
 
 class ElectricVehicle(ElectricFleetUnit):
     """
@@ -2138,7 +2157,7 @@ class ElectricVehicle(ElectricFleetUnit):
 
 
 class MobileBattery(ElectricFleetUnit):
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict):
+    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
         self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
         self.opex_spec_time = 0.0  # no distance based opex for mobile battery
-        super().__init__(name=name, scenario=scenario, parent=parent, params=params)
+        super().__init__(name=name, scenario=scenario, parent=parent, params=params, **kwargs)
