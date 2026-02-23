@@ -136,13 +136,13 @@ class PeakPowerEvaluator(Evaluator):
         size_preexisting: float | None = None,
         size_expansion: float | None = None,
         flow: pd.Series | None = None,
+        power_peak: float | None = None,
         **kwargs,
     ) -> None:
-        # ToDo: explicitly add argument power_peak
-        power_peak = kwargs.pop("power_peak", None)
-        if power_peak is None:
-            raise ValueError("PeakPowerEvaluator requires a 'peak_periods' argument")
-
         super().evaluate(
-            size_preexisting=size_preexisting, size_expansion=size_expansion, flow=flow, power_peak=power_peak, **kwargs
+            size_preexisting=size_preexisting,
+            size_expansion=size_expansion,
+            flow=flow,
+            power_peak=power_peak,
+            **kwargs,
         )
