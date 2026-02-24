@@ -27,21 +27,11 @@ class VehicleOpexEvaluator(OpexEvaluator):
             **kwargs,
         )
 
-    def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
-        dist = kwargs.pop("dist", None)
-        if dist is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'dist' argument")
-        return (
-            # energy based opex
-            super()._calc_eval(flow=flow, **kwargs)
-            # distance based opex
-            + np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())
-        )
+    def _calc_eval(self, flow: pd.Series | None, dist: pd.Series | None = None, **kwargs) -> float:
+        cost_dist = (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist else 0.0
+        return super()._calc_eval(flow=flow, **kwargs) + cost_dist
 
-    def evaluate(self, flow: pd.Series, **kwargs):
-        dist = kwargs.pop("dist", None)
-        if dist is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'dist' argument")
+    def evaluate(self, flow: pd.Series, dist: pd.Series | None = None, **kwargs):
         super().evaluate(flow=flow, dist=dist, **kwargs)
 
 
@@ -60,29 +50,18 @@ class VehicleCrevEvaluator(CrevEvaluator):
             **kwargs,
         )
 
-    def _calc_eval(self, flow: pd.Series, **kwargs) -> float:
-        dist = kwargs.pop("dist", None)
-        if dist is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'dist' argument")
-        atbase = kwargs.pop("atbase", None)
-        if atbase is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'atbase' argument")
-        return (
-            # energy based crev
-            super()._calc_eval(flow=flow, **kwargs)
-            # distance based crev
-            + np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())
-            # time based crev (only for non-atbase periods)
-            + np.dot(self.params.spec_time.to_numpy(), (~atbase[self.eco.dti_eval].astype(bool).to_numpy()).astype(int))
+    def _calc_eval(
+        self, flow: pd.Series | None, dist: pd.Series | None = None, atbase: pd.Series | None = None, **kwargs
+    ) -> float:
+        crev_dist = (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist else 0.0
+        crev_time = (
+            (np.dot(self.params.spec_time.to_numpy(), (~atbase[self.eco.dti_eval].astype(bool).to_numpy()).astype(int)))
+            if atbase is not None
+            else 0.0
         )
+        return super()._calc_eval(flow=flow, **kwargs) + crev_dist + crev_time
 
-    def evaluate(self, flow: pd.Series, **kwargs):
-        dist = kwargs.pop("dist", None)
-        if dist is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'dist' argument")
-        atbase = kwargs.pop("atbase", None)
-        if atbase is None:
-            raise ValueError("VehicleOpexEvaluator requires a 'atbase' argument")
+    def evaluate(self, flow: pd.Series, dist: pd.Series | None = None, atbase: pd.Series | None = None, **kwargs):
         super().evaluate(flow=flow, dist=dist, atbase=atbase, **kwargs)
 
 
