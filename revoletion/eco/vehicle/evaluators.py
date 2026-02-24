@@ -86,7 +86,7 @@ class VehicleEvaluator(Evaluator):
         spec_dist = kwargs.get("spec_dist", None)
         if spec_dist is None:
             raise ValueError("VehicleOpexParams requires a 'spec_dist' argument")
-        return VehicleOpexParams.create_from_plain(
+        return VehicleOpexParams.create(
             spec=spec,
             spec_dist=spec_dist,
             fix=fix,
@@ -109,7 +109,7 @@ class VehicleEvaluator(Evaluator):
         spec_time = kwargs.get("spec_time", None)
         if spec_time is None:
             raise ValueError("VehicleOpexParams requires a 'spec_time' argument")
-        return VehicleCrevParams.create_from_plain(
+        return VehicleCrevParams.create(
             spec=spec,
             fix=fix,
             spec_dist=spec_dist,

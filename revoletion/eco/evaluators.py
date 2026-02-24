@@ -310,7 +310,7 @@ class Evaluator(BlockElement):
         age_preexisting: int,
         residual_at_ls: float,
     ) -> CapexParams:
-        return CapexParams.create_from_plain(
+        return CapexParams.create(
             spec=spec,
             fix=fix,
             consider_preexisting=consider_preexisting,
@@ -326,7 +326,7 @@ class Evaluator(BlockElement):
         spec: float,
         fix: float,
     ) -> MntexParams:
-        return MntexParams.create_from_plain(spec=spec, fix=fix)
+        return MntexParams.create(spec=spec, fix=fix)
 
     @classmethod
     def _build_opex_params(
@@ -337,7 +337,7 @@ class Evaluator(BlockElement):
         fix: float,
         **kwargs,
     ) -> OpexParams:
-        return OpexParams.create_from_plain(
+        return OpexParams.create(
             spec=spec,
             fix=fix,
             dti_sim=eco.dti_sim,
@@ -353,7 +353,7 @@ class Evaluator(BlockElement):
         fix: float,
         **kwargs,
     ) -> CrevParams:
-        return CrevParams.create_from_plain(
+        return CrevParams.create(
             spec=spec,
             fix=fix,
             dti_sim=eco.dti_sim,

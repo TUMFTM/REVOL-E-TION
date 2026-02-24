@@ -119,7 +119,7 @@ class CostParams(ABC):
 
     @classmethod
     @abstractmethod
-    def create_from_plain(cls, *args, **kwargs) -> Self: ...
+    def create(cls, *args, **kwargs) -> Self: ...
 
 
 @dataclass(frozen=True)
@@ -145,7 +145,7 @@ class CapexParams(CostParams):
             )
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: float,
         fix: float,
@@ -178,7 +178,7 @@ class MntexParams(CostParams):
     fix: float
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: float,
         fix: float,
@@ -198,7 +198,7 @@ class PowerBasedParams(CostParams):
     fix: float
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: str | float | int,
         fix: float,

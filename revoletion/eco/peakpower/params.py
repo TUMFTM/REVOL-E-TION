@@ -11,7 +11,7 @@ class PeakPowerOpexParams(CostParams):
     n_peak_periods_sim: int
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: float | int,
         n_peak_periods_yr: int,

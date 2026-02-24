@@ -13,7 +13,7 @@ class VehicleOpexParams(OpexParams):
     spec_dist: pd.Series
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: str | float | int,
         fix: float,
@@ -36,7 +36,7 @@ class VehicleCrevParams(CrevParams):
     spec_time: pd.Series
 
     @classmethod
-    def create_from_plain(
+    def create(
         cls,
         spec: str | float | int,
         fix: float,

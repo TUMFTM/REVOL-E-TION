@@ -53,7 +53,7 @@ class PeakPowerEvaluator(Evaluator):
         n_peak_periods_sim: int,
         **kwargs,
     ) -> PeakPowerOpexParams:
-        return PeakPowerOpexParams.create_from_plain(
+        return PeakPowerOpexParams.create(
             spec=spec,
             n_peak_periods_yr=n_peak_periods_yr,
             n_peak_periods_sim=n_peak_periods_sim,
