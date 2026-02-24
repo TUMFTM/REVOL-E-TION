@@ -13,9 +13,9 @@ class PeakPowerOpexParams(CostParams):
     @classmethod
     def create(
         cls,
-        spec: float | int,
-        n_peak_periods_yr: int,
-        n_peak_periods_sim: int,
+        spec: float | int = 0.0,
+        n_peak_periods_yr: int = 1,
+        n_peak_periods_sim: int = 1,
         *args,
         **kwargs,
     ) -> Self:

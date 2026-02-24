@@ -15,10 +15,10 @@ class VehicleOpexParams(OpexParams):
     @classmethod
     def create(
         cls,
-        spec: str | float | int,
-        fix: float,
         dti_sim: pd.DatetimeIndex,
-        data_dir: Path,
+        spec: str | float | int = 0.0,
+        fix: float | int = 0.0,
+        data_dir: Path = None,
         *args,
         **kwargs,
     ) -> Self:
@@ -38,10 +38,10 @@ class VehicleCrevParams(CrevParams):
     @classmethod
     def create(
         cls,
-        spec: str | float | int,
-        fix: float,
         dti_sim: pd.DatetimeIndex,
-        data_dir: Path,
+        spec: str | float | int = 0.0,
+        fix: float | int = 0.0,
+        data_dir: Path = None,
         *args,
         **kwargs,
     ) -> Self:

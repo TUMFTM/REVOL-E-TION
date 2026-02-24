@@ -147,8 +147,8 @@ class CapexParams(CostParams):
     @classmethod
     def create(
         cls,
-        spec: float,
-        fix: float,
+        spec: float | int = 0.0,
+        fix: float | int = 0.0,
         consider_preexisting: bool = False,
         ls: int = 0,
         age_preexisting: int = 0,
@@ -180,8 +180,8 @@ class MntexParams(CostParams):
     @classmethod
     def create(
         cls,
-        spec: float,
-        fix: float,
+        spec: float | int = 0.0,
+        fix: float | int = 0.0,
         *args,
         **kwargs,
     ) -> Self:
@@ -200,10 +200,10 @@ class PowerBasedParams(CostParams):
     @classmethod
     def create(
         cls,
-        spec: str | float | int,
-        fix: float,
         dti_sim: pd.DatetimeIndex,
-        data_dir: Path,
+        spec: str | float | int = 0.0,
+        fix: float | int = 0.0,
+        data_dir: Path = None,
         *args,
         **kwargs,
     ) -> Self:
