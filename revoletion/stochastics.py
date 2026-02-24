@@ -48,11 +48,11 @@ class DistanceDistribution:
         return math.exp(self.mu + 0.5 * self.sigma**2)
 
     @property
-    def std(self):
-        return (math.sqrt((math.exp(self.sigma**2) - 1) * math.exp(2 * self.mu + self.sigma**2)),)
+    def std(self) -> float:
+        return math.sqrt((math.exp(self.sigma**2) - 1) * math.exp(2 * self.mu + self.sigma**2))
 
     @property
-    def variance(self):
+    def variance(self) -> float:
         return self.std**2
 
     def sample(self, size):
