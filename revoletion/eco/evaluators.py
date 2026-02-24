@@ -280,22 +280,22 @@ class Evaluator(BlockElement):
         cls,
         name: str,
         eco: EcoParams,
-        name_size: str,
-        name_flow: str,
-        params_capex: CapexParams,
-        params_mntex: MntexParams,
-        params_opex: OpexParams,
-        params_crev: CrevParams,
+        name_size: str | None = None,
+        name_flow: str | None = None,
+        params_capex: CapexParams | None = None,
+        params_mntex: MntexParams | None = None,
+        params_opex: OpexParams | None = None,
+        params_crev: CrevParams | None = None,
     ) -> Self:
         return cls(
             name=name,
             eco=eco,
             name_size=name_size,
             name_flow=name_flow,
-            capex=cls.CAPEX_EVALUATOR(name, eco, params_capex),
-            mntex=cls.MNTEX_EVALUATOR(name, eco, params_mntex),
-            opex=cls.OPEX_EVALUATOR(name, eco, params_opex),
-            crev=cls.CREV_EVALUATOR(name, eco, params_crev),
+            capex=cls.CAPEX_EVALUATOR(name, eco, params_capex) if params_capex else None,
+            mntex=cls.MNTEX_EVALUATOR(name, eco, params_mntex) if params_mntex else None,
+            opex=cls.OPEX_EVALUATOR(name, eco, params_opex) if params_opex else None,
+            crev=cls.CREV_EVALUATOR(name, eco, params_crev) if params_crev else None,
         )
 
     @classmethod
