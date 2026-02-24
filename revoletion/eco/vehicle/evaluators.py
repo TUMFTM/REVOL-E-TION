@@ -28,7 +28,9 @@ class VehicleOpexEvaluator(OpexEvaluator):
         )
 
     def _calc_eval(self, flow: pd.Series | None, dist: pd.Series | None = None, **kwargs) -> float:
-        cost_dist = (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist else 0.0
+        cost_dist = (
+            (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist is not None else 0.0
+        )
         return super()._calc_eval(flow=flow, **kwargs) + cost_dist
 
     def evaluate(self, flow: pd.Series, dist: pd.Series | None = None, **kwargs):
@@ -53,7 +55,9 @@ class VehicleCrevEvaluator(CrevEvaluator):
     def _calc_eval(
         self, flow: pd.Series | None, dist: pd.Series | None = None, atbase: pd.Series | None = None, **kwargs
     ) -> float:
-        crev_dist = (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist else 0.0
+        crev_dist = (
+            (np.dot(self.params.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy())) if dist is not None else 0.0
+        )
         crev_time = (
             (np.dot(self.params.spec_time.to_numpy(), (~atbase[self.eco.dti_eval].astype(bool).to_numpy()).astype(int)))
             if atbase is not None
