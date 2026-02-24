@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass
+from typing import Self
 
 import numpy as np
 import pandas as pd
@@ -13,18 +14,18 @@ class DistanceDistribution:
     sigma: float
 
     @classmethod
-    def from_mu_sigma(cls, mu: float, sigma: float) -> "DistanceDistribution":
+    def from_mu_sigma(cls, mu: float, sigma: float) -> Self:
         return cls(mu=mu, sigma=sigma)
 
     @classmethod
-    def from_mean_std(cls, mean: float, std: float) -> "DistanceDistribution":
+    def from_mean_std(cls, mean: float, std: float) -> Self:
         return cls(
             mu=math.log(mean**2 / math.sqrt(std**2 + mean**2)),
             sigma=math.sqrt(math.log(1 + std**2 / mean**2)),
         )
 
     @classmethod
-    def from_mean_mode(cls, mean: float, mode: float) -> "DistanceDistribution":
+    def from_mean_mode(cls, mean: float, mode: float) -> Self:
         if mode <= 0 or mean <= 0:
             raise ValueError("mode and mean must be > 0")
         if mean <= mode:
@@ -34,16 +35,16 @@ class DistanceDistribution:
         return cls(mu=math.log(mode) + sigma2, sigma=math.sqrt(sigma2))
 
     @classmethod
-    def from_data(cls, data):
+    def from_data(cls, data) -> Self:
         shape, _, scale = stats.lognorm.fit(data, floc=0)
         return cls.from_mu_sigma(mu=np.log(scale), sigma=shape)
 
     @property
-    def mode(self):
+    def mode(self) -> float:
         return math.exp(self.mu - self.sigma**2)
 
     @property
-    def mean(self):
+    def mean(self) -> float:
         return math.exp(self.mu + 0.5 * self.sigma**2)
 
     @property
@@ -77,7 +78,7 @@ class DepartureDistribution:
         mean2: float,
         std1: float,
         std2: float,
-    ) -> "DepartureDistribution":
+    ) -> Self:
         model = sk.mixture.GaussianMixture(n_components=2, covariance_type="full")
         model.weights_ = np.array([weight1, weight2])
         model.means_ = np.array([mean1, mean2]).reshape(-1, 1)
@@ -86,7 +87,7 @@ class DepartureDistribution:
         return cls(model=model)
 
     @classmethod
-    def from_data(cls, data: pd.Series) -> "DepartureDistribution":
+    def from_data(cls, data: pd.Series) -> Self:
         return cls(model=sk.mixture.GaussianMixture(n_components=2).fit(data.to_frame()))
 
     @property
@@ -121,11 +122,11 @@ class SpeedDistribution:
     std: float
 
     @classmethod
-    def from_mean_std(cls, mean: float, std: float) -> "SpeedDistribution":
+    def from_mean_std(cls, mean: float, std: float) -> Self:
         return cls(mean=mean, std=std)
 
     @classmethod
-    def from_data(cls, data: pd.Series) -> "SpeedDistribution":
+    def from_data(cls, data: pd.Series) -> Self:
         mean, std = stats.norm.fit(data)
         return cls(mean=mean, std=std)
 
@@ -147,13 +148,13 @@ class IdleDistribution:
     scale: float
 
     @classmethod
-    def from_data(cls, data: pd.Series) -> "IdleDistribution":
+    def from_data(cls, data: pd.Series) -> Self:
         p0 = (data == 0).mean()
         a, c, _, scale = stats.gengamma.fit(data.replace(to_replace=0, value=np.nan).dropna(), floc=0)
         return cls(p0=p0, a=a, c=c, scale=scale)
 
     @classmethod
-    def from_mode_std(cls, mode: float, std: float) -> "IdleDistribution":
+    def from_mode_std(cls, mode: float, std: float) -> Self:
         """
         This method assumes the idle time to be (a) nonzero and (b) exponentially decaying to fit a non-generalized gamma
         distribution (p0=0, c=1).
