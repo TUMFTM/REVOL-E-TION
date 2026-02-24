@@ -19,12 +19,10 @@ class VehicleOpexParams(OpexParams):
         spec: str | float | int = 0.0,
         fix: float | int = 0.0,
         data_dir: Path = None,
+        spec_dist: str | float | int = 0.0,
         *args,
         **kwargs,
     ) -> Self:
-        spec_dist = kwargs.get("spec_dist", None)
-        if spec_dist is None:
-            raise ValueError("VehicleOpexParams requires a 'spec_dist' argument")
         spec_series = transform_scalar_var(value=spec, dti=dti_sim, data_dir=data_dir)
         spec_dist_series = transform_scalar_var(value=spec_dist, dti=dti_sim, data_dir=data_dir)
         return cls(spec=spec_series, fix=fix, spec_dist=spec_dist_series)
@@ -42,15 +40,11 @@ class VehicleCrevParams(CrevParams):
         spec: str | float | int = 0.0,
         fix: float | int = 0.0,
         data_dir: Path = None,
+        spec_dist: str | float | int = 0.0,
+        spec_time: str | float | int = 0.0,
         *args,
         **kwargs,
     ) -> Self:
-        spec_dist = kwargs.get("spec_dist", None)
-        if spec_dist is None:
-            raise ValueError("VehicleOpexParams requires a 'spec_dist' argument")
-        spec_time = kwargs.get("spec_time", None)
-        if spec_time is None:
-            raise ValueError("VehicleOpexParams requires a 'spec_time' argument")
         spec_series = transform_scalar_var(value=spec, dti=dti_sim, data_dir=data_dir)
         spec_dist_series = transform_scalar_var(value=spec_dist, dti=dti_sim, data_dir=data_dir)
         spec_time_series = transform_scalar_var(value=spec_time, dti=dti_sim, data_dir=data_dir)
