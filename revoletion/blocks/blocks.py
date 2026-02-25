@@ -234,7 +234,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         return {
             "size_preexisting": size_preexisting,
             "size_expansion": size_expansion,
-            "flow": flow,
+            "power": flow,
         }
 
     def calc_results_economics(self, **kwargs):
