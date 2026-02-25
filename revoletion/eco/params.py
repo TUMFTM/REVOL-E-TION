@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from functools import cached_property
-from pathlib import Path
 from typing import Self
 
 import numpy as np
@@ -117,10 +116,6 @@ class CostParams(ABC):
     Base dataclass to store all evaluator-specific parameters needed for cost evaluation.
     """
 
-    @classmethod
-    @abstractmethod
-    def create(cls, *args, **kwargs) -> Self: ...
-
 
 @dataclass(frozen=True)
 class CapexParams(CostParams):
@@ -128,44 +123,13 @@ class CapexParams(CostParams):
     Dataclass to store all parameters needed for cost evaluation of Capex.
     """
 
-    spec: float
-    fix: float
-    consider_preexisting: bool
-    ls: int
-    age_preexisting: int
-    ccr: float
-    residual_at_ls: float
-
-    def __post_init__(self):
-        if self.consider_preexisting and self.age_preexisting != 0:
-            raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
-        if self.age_preexisting >= self.ls:
-            raise ValueError(
-                f"age_preexisting must be smaller than ls, got age_preexisting={self.age_preexisting} and ls={self.ls}"
-            )
-
-    @classmethod
-    def create(
-        cls,
-        spec: float | int = 0.0,
-        fix: float | int = 0.0,
-        consider_preexisting: bool = False,
-        ls: int = 0,
-        age_preexisting: int = 0,
-        ccr: float = 1.0,
-        residual_at_ls: float = 0.0,
-        *args,
-        **kwargs,
-    ) -> Self:
-        return cls(
-            spec=spec,
-            fix=fix,
-            consider_preexisting=consider_preexisting,
-            ls=ls,
-            age_preexisting=age_preexisting,
-            ccr=ccr,
-            residual_at_ls=residual_at_ls,
-        )
+    spec: float = 0.0
+    fix: float = 0.0
+    consider_preexisting: bool = True
+    ls: int = None
+    age_preexisting: int = 0
+    ccr: float = 1.0
+    residual_at_ls: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -174,18 +138,8 @@ class MntexParams(CostParams):
     Dataclass to store all parameters needed for cost evaluation of Mntex.
     """
 
-    spec: float
-    fix: float
-
-    @classmethod
-    def create(
-        cls,
-        spec: float | int = 0.0,
-        fix: float | int = 0.0,
-        *args,
-        **kwargs,
-    ) -> Self:
-        return cls(spec=spec, fix=fix)
+    spec: float = 0.0
+    fix: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -194,21 +148,8 @@ class PowerBasedParams(CostParams):
     Base dataclass to store all parameters needed for cost evaluation of flow-related costs (Opex and Crev).
     """
 
-    spec: pd.Series
-    fix: float
-
-    @classmethod
-    def create(
-        cls,
-        dti_sim: pd.DatetimeIndex,
-        spec: str | float | int = 0.0,
-        fix: float | int = 0.0,
-        data_dir: Path = None,
-        *args,
-        **kwargs,
-    ) -> Self:
-        spec_series = transform_scalar_var(value=spec, dti=dti_sim, data_dir=data_dir)
-        return cls(spec=spec_series, fix=fix)
+    spec: str | float | int = 0.0
+    fix: float = 0.0
 
 
 @dataclass(frozen=True)
