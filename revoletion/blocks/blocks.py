@@ -16,7 +16,7 @@ from typing_extensions import override
 
 from revoletion import battery as bat
 from revoletion import data_manager, mobility, utils
-from revoletion import eco
+from revoletion import economics as eco
 from revoletion import energy
 from revoletion import size
 

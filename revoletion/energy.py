@@ -2,9 +2,9 @@ from abc import ABC
 
 import pandas as pd
 
-from revoletion.eco import EcoParams
-from revoletion.eco.abstractclasses import CalculableTimeseriesElement, TimeseriesElement
-from revoletion.eco.utils import OccursAt
+from revoletion.economics import EcoParams
+from revoletion.economics.abstractclasses import CalculableTimeseriesElement, TimeseriesElement
+from revoletion.economics.utils import OccursAt
 
 
 class EnergyElement(TimeseriesElement, ABC):
