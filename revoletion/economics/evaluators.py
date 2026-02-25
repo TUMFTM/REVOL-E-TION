@@ -378,7 +378,7 @@ class CrevEvaluator(TimeseriesEvaluator, CrevElement):
 
 
 @dataclass
-class Evaluator(BlockElement):
+class POI(BlockElement):
     """
     EvaluatorBlock is a container for all Evaluators of a single component.
     """

@@ -216,7 +216,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         # calculate results
         self.calc_results_economics()
 
-    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         if poi.name_size is not None:
             size_obj = self.sizes[poi.name_size]
             size_preexisting = size_obj.preexisting
@@ -356,7 +356,7 @@ class SystemCore(ElectricBlock):
     def init_pois(self):
         super().init_pois()
 
-        self.pois["acdc"] = eco.Evaluator.create(
+        self.pois["acdc"] = eco.POI.create(
             name="acdc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -372,7 +372,7 @@ class SystemCore(ElectricBlock):
             name_flow="acdc",
         )
 
-        self.pois["dcac"] = eco.Evaluator.create(
+        self.pois["dcac"] = eco.POI.create(
             name="dcac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -508,7 +508,7 @@ class RenewableSource(SourceBlock, ABC):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.POI.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -524,14 +524,14 @@ class RenewableSource(SourceBlock, ABC):
             name_flow="out",
         )
 
-        self.pois["curt"] = eco.Evaluator.create(
+        self.pois["curt"] = eco.POI.create(
             name="curt",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="curt",
         )
 
-        self.pois["pot"] = eco.Evaluator.create(
+        self.pois["pot"] = eco.POI.create(
             name="pot",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -731,7 +731,7 @@ class FixedDemand(SinkBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.POI.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -961,7 +961,7 @@ class ControllableSource(SourceBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create(
+        self.pois["block"] = eco.POI.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1038,7 +1038,7 @@ class GridConnection(ElectricBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create(
+        self.pois["g2s"] = eco.POI.create(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1053,7 +1053,7 @@ class GridConnection(ElectricBlock):
             name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create(
+        self.pois["s2g"] = eco.POI.create(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1103,7 +1103,7 @@ class GridConnection(ElectricBlock):
 
         self.pois.update(
             {
-                period: eco.Evaluator.create(
+                period: eco.POI.create(
                     name=period,
                     eco=self.scenario.eco_params,
                     data_dir=self.scenario.paths.input,
@@ -1319,7 +1319,7 @@ class GridConnection(ElectricBlock):
                 ]["sequences"]["flow"][horizon.ch.dti]
             )
 
-    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
         peak_period = self.peak_periods.get(poi.name, None)
@@ -1344,7 +1344,7 @@ class GridMarket(ElectricBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create(
+        self.pois["g2s"] = eco.POI.create(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1353,7 +1353,7 @@ class GridMarket(ElectricBlock):
             name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create(
+        self.pois["s2g"] = eco.POI.create(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1436,7 +1436,7 @@ class StorageBlock(ElectricBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["storage"] = eco.Evaluator.create(
+        self.pois["storage"] = eco.POI.create(
             name="storage",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1450,7 +1450,7 @@ class StorageBlock(ElectricBlock):
             name_size="storage",
         )
 
-        self.pois["in"] = eco.Evaluator.create(
+        self.pois["in"] = eco.POI.create(
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1458,21 +1458,21 @@ class StorageBlock(ElectricBlock):
             name_flow="in",
         )
 
-        self.pois["out"] = eco.Evaluator.create(
+        self.pois["out"] = eco.POI.create(
             name="out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="out",
         )
 
-        self.pois["bat_in"] = eco.Evaluator.create(
+        self.pois["bat_in"] = eco.POI.create(
             name="bat_in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="bat_in",
         )
 
-        self.pois["bat_out"] = eco.Evaluator.create(
+        self.pois["bat_out"] = eco.POI.create(
             name="bat_out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1708,7 +1708,7 @@ class Fleet(SinkBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["f2s"] = eco.Evaluator.create(
+        self.pois["f2s"] = eco.POI.create(
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1716,7 +1716,7 @@ class Fleet(SinkBlock):
             name_flow="out",
         )
 
-        self.pois["s2f"] = eco.Evaluator.create(
+        self.pois["s2f"] = eco.POI.create(
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1931,7 +1931,7 @@ class SubFleet(NonElectricBlock):
 
 class FleetUnit(BaseBlock):
     def init_pois(self):
-        self.pois["glider"] = eco.Evaluator.create(
+        self.pois["glider"] = eco.POI.create(
             name="glider",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1984,7 +1984,7 @@ class FleetUnit(BaseBlock):
 
         super().pre_scenario(**kwargs)
 
-    def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
         kwargs_eval["dist"] = self.log["dist"]
@@ -2003,7 +2003,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def init_pois(self):
         super().init_pois()
 
-        self.pois["charger"] = eco.Evaluator.create(
+        self.pois["charger"] = eco.POI.create(
             name="charger",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -2015,7 +2015,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             ),
         )
 
-        self.pois["ext_ac"] = eco.Evaluator.create(
+        self.pois["ext_ac"] = eco.POI.create(
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -2023,7 +2023,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name_flow="ext_ac",
         )
 
-        self.pois["ext_dc"] = eco.Evaluator.create(
+        self.pois["ext_dc"] = eco.POI.create(
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
