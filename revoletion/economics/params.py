@@ -3,13 +3,16 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Self
+from typing import Self, TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from numpy import typing as npt
 
 from .utils import OccursAt, discount, annuity
+
+if TYPE_CHECKING:
+    from revoletion.time import SimulationTimes, Timestep
 
 
 @dataclass(frozen=True)
@@ -35,8 +38,8 @@ class EcoParams:
         prj_duration_yrs: int,
         discount_rate: float,
         compensate_sim_prj: bool,
-        times: "SimulationTimes",
-        timestep: "Timestep",
+        times: SimulationTimes,
+        timestep: Timestep,
     ) -> Self:
         return cls(
             prj_duration_yrs=prj_duration_yrs,
