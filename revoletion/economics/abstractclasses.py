@@ -71,12 +71,16 @@ class BaseElement(ABC):
         return self._require_calculated("_ann")
 
     @property
+    def _result_summary_prefix(self) -> str:
+        return f"{self._TYPE.value.label}_{self.name}_"
+
+    @property
     def result_summary(self) -> pd.Series:
         return pd.Series(
             data={
-                f"{self._TYPE.value.label}_{self.name}_prj": self.prj,
-                f"{self._TYPE.value.label}_{self.name}_dis": self.dis,
-                f"{self._TYPE.value.label}_{self.name}_ann": self.ann,
+                f"{self._result_summary_prefix}prj": self.prj,
+                f"{self._result_summary_prefix}dis": self.dis,
+                f"{self._result_summary_prefix}ann": self.ann,
             },
         )
 
@@ -102,7 +106,7 @@ class YearlyElement(BaseElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE.value.label}_{self.name}_yrl": self.yrl,
+                        f"{self._result_summary_prefix}yrl": self.yrl,
                     },
                 ),
             ],
@@ -131,7 +135,7 @@ class TimeseriesElement(YearlyElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE.value.label}_{self.name}_eval": self.eval,
+                        f"{self._result_summary_prefix}eval": self.eval,
                     },
                 ),
             ],
@@ -172,9 +176,9 @@ class CapexElement(BaseElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE.value.label}_{self.name}_preexisting": self.preexisting,
-                        f"{self._TYPE.value.label}_{self.name}_expansion": self.expansion,
-                        f"{self._TYPE.value.label}_{self.name}_init": self.init,
+                        f"{self._result_summary_prefix}preexisting": self.preexisting,
+                        f"{self._result_summary_prefix}expansion": self.expansion,
+                        f"{self._result_summary_prefix}init": self.init,
                     },
                 ),
             ],
