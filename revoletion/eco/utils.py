@@ -106,13 +106,18 @@ def calc_residual_value(
         raise NotImplementedError(f"Depreciation method {depreciation} is not implemented")
 
 
-def transform_scalar_var(value: str | float, dti: pd.DatetimeIndex, data_dir: Path) -> pd.Series:
+def transform_scalar_var(
+    value: str | float, dti: pd.DatetimeIndex, data_dir: Path, allow_scalar: bool = False
+) -> pd.Series | float:
     """
     Transform a value holding either the path to a csv file containing a timeseries or a scalar
     to a pandas Series with the same DatetimeIndex as the simulation.
     """
     if isinstance(value, numbers.Number):  # value is given as scalar
-        return pd.Series(index=dti, data=np.full(len(dti), value, dtype=float), name="cost")
+        if allow_scalar:
+            return value
+        else:
+            return pd.Series(index=dti, data=np.full(len(dti), value, dtype=float), name="cost")
 
     elif isinstance(value, str):  # value contains filename
         filepath = set_extension(filename=data_dir / value, default_extension=".csv")
@@ -134,7 +139,7 @@ def transform_scalar_var(value: str | float, dti: pd.DatetimeIndex, data_dir: Pa
 
             return df.iloc[:, 0]  # return only first column
 
-        except IndexError as exc:
+        except IndexError:
             raise IndexError(f"Failed to load timeseries data from {value}.")
 
     else:
