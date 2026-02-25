@@ -431,7 +431,7 @@ class POI(BlockElement):
         """
         Equivalent present specific costs for operation (cost per energy)
         """
-        return sum(component.spec_ep for component in (self.opex, self.crev) if component is not None)
+        return self.opex.spec_ep if self.opex is not None else 0.0
 
     @property
     def spec_ep_peak(self) -> float:
