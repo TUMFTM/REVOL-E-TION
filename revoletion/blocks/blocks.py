@@ -615,7 +615,7 @@ class RenewableSource(SourceBlock, ABC):
             self.share_curtailment = self.energies["curt"].eval / e_pot
 
         # aggregate results in scenario.energies
-        self.scenario.energies["renewable_actual"].add_energy(self.energies["out"])
+        self.scenario.energies["renewable_act"].add_energy(self.energies["out"])
         self.scenario.energies["renewable_pot"].add_energy(self.energies["pot"])
         self.scenario.energies["renewable_curt"].add_energy(self.energies["curt"])
 

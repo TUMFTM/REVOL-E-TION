@@ -382,7 +382,7 @@ class Scenario:
         # ToDo: use default dict and override __missing__ method
         self.energies = {
             k: energy.EnergyAggregator(name=k, eco=self.eco_params)
-            for k in ["sources", "sinks", "renewable_actual", "renewable_pot", "renewable_curt"]
+            for k in ["sources", "sinks", "renewable_act", "renewable_pot", "renewable_curt"]
         }
 
         self.e_eta = None
@@ -487,7 +487,7 @@ class Scenario:
             self.renewable_share = np.nan
         else:
             self.e_eta = self.energies["sinks"].eval / e_sources_eval
-            self.renewable_share = self.energies["renewable_actual"].eval / e_sources_eval
+            self.renewable_share = self.energies["renewable_act"].eval / e_sources_eval
 
         e_sinks_dis = self.energies["sinks"].dis
         if e_sinks_dis == 0:
