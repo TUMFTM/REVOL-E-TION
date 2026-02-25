@@ -93,14 +93,15 @@ class Size:
         """
         Create the result series for the summary file.
         """
+        prefix = f"size_{self.name}_"
         return pd.Series(
             {
-                f"size_{self.name}_preexisting": self.preexisting,
-                f"size_{self.name}_expansion": self.expansion,
-                f"size_{self.name}_total": self.total,
-                f"size_{self.name}_invest": self.invest,
-                f"size_{self.name}_total_max": self.total_max,
-                f"size_{self.name}_expansion_max": self.expansion_max,
+                f"{prefix}preexisting": self.preexisting,
+                f"{prefix}expansion": self.expansion,
+                f"{prefix}total": self.total,
+                f"{prefix}invest": self.invest,
+                f"{prefix}total_max": self.total_max,
+                f"{prefix}expansion_max": self.expansion_max,
             }
         )
 
