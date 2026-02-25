@@ -344,30 +344,34 @@ class SystemCore(ElectricBlock):
     def init_pois(self):
         super().init_pois()
 
-        self.pois["acdc"] = eco.Evaluator.create_from_plain(
+        self.pois["acdc"] = eco.Evaluator.create(
             name="acdc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_spec=self.capex_spec,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_acdc,
-            ls=self.ls,
-            mntex_spec=self.mntex_spec,
-            opex_spec=self.opex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_acdc,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec=self.opex_spec),
             name_size="acdc",
             name_flow="acdc",
         )
 
-        self.pois["dcac"] = eco.Evaluator.create_from_plain(
+        self.pois["dcac"] = eco.Evaluator.create(
             name="dcac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_spec=self.capex_spec,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_dcac,
-            ls=self.ls,
-            mntex_spec=self.mntex_spec,
-            opex_spec=self.opex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_dcac,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec=self.opex_spec),
             name_size="dcac",
             name_flow="dcac",
         )
@@ -489,28 +493,30 @@ class RenewableSource(SourceBlock, ABC):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create_from_plain(
+        self.pois["block"] = eco.Evaluator.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_spec=self.capex_spec,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_block,
-            ls=self.ls,
-            mntex_spec=self.mntex_spec,
-            opex_spec=self.opex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_block,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
 
-        self.pois["curt"] = eco.Evaluator.create_from_plain(
+        self.pois["curt"] = eco.Evaluator.create(
             name="curt",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="curt",
         )
 
-        self.pois["pot"] = eco.Evaluator.create_from_plain(
+        self.pois["pot"] = eco.Evaluator.create(
             name="pot",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -709,14 +715,16 @@ class FixedDemand(SinkBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create_from_plain(
+        self.pois["block"] = eco.Evaluator.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            consider_preexisting=self.capex_preexisting_metering,
-            capex_fix=self.capex_fix_metering,
-            mntex_fix=self.mntex_fix_metering,
-            crev_spec=self.crev_spec,
+            capex=eco.CapexParams(
+                fix=self.capex_fix_metering,
+                consider_preexisting=self.capex_preexisting_metering,
+            ),
+            mntex=eco.MntexParams(fix=self.mntex_fix_metering),
+            crev=eco.CrevParams(spec=self.crev_spec),
             name_flow="in",
         )
 
@@ -934,16 +942,18 @@ class FixedDemand(SinkBlock):
 class ControllableSource(SourceBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["block"] = eco.Evaluator.create_from_plain(
+        self.pois["block"] = eco.Evaluator.create(
             name="block",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_block,
-            capex_spec=self.capex_spec,
-            mntex_spec=self.mntex_spec,
-            opex_spec=self.opex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_block,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec=self.mntex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -1006,28 +1016,32 @@ class ControllableSource(SourceBlock):
 class GridConnection(ElectricBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create_from_plain(
+        self.pois["g2s"] = eco.Evaluator.create(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            consider_preexisting=self.capex_preexisting_g2s,
-            capex_spec=self.capex_spec,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            mntex_spec=self.mntex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_g2s,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
             name_size="g2s",
             name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create_from_plain(
+        self.pois["s2g"] = eco.Evaluator.create(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            consider_preexisting=self.capex_preexisting_s2g,
-            capex_spec=self.capex_spec,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            mntex_spec=self.mntex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_s2g,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
             name_size="s2g",
             name_flow="in",
         )
@@ -1304,11 +1318,11 @@ class GridConnection(ElectricBlock):
 class GridMarket(ElectricBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["g2s"] = eco.Evaluator.create_from_plain(
+        self.pois["g2s"] = eco.Evaluator.create(
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_g2s,
+            opex=eco.OpexParams(spec=self.opex_spec_g2s),
             name_size="g2s",
             name_flow="out",
         )
@@ -1317,7 +1331,7 @@ class GridMarket(ElectricBlock):
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_s2g,
+            params_opex=eco.OpexParams(spec=self.opex_spec_s2g),
             name_size="s2g",
             name_flow="in",
         )
@@ -1384,41 +1398,43 @@ class StorageBlock(ElectricBlock):
 
     def init_pois(self):
         super().init_pois()
-        self.pois["storage"] = eco.Evaluator.create_from_plain(
+        self.pois["storage"] = eco.Evaluator.create(
             name="storage",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_spec=self.capex_spec,
-            consider_preexisting=self.capex_preexisting_storage,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            mntex_spec=self.mntex_spec,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_storage,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
             name_size="storage",
         )
 
-        self.pois["in"] = eco.Evaluator.create_from_plain(
+        self.pois["in"] = eco.Evaluator.create(
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec,
+            opex=eco.OpexParams(spec=self.opex_spec),
             name_flow="in",
         )
 
-        self.pois["out"] = eco.Evaluator.create_from_plain(
+        self.pois["out"] = eco.Evaluator.create(
             name="out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="out",
         )
 
-        self.pois["bat_in"] = eco.Evaluator.create_from_plain(
+        self.pois["bat_in"] = eco.Evaluator.create(
             name="bat_in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
             name_flow="bat_in",
         )
 
-        self.pois["bat_out"] = eco.Evaluator.create_from_plain(
+        self.pois["bat_out"] = eco.Evaluator.create(
             name="bat_out",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1665,19 +1681,19 @@ class StationaryBattery(StorageBlock):
 class Fleet(SinkBlock):
     def init_pois(self):
         super().init_pois()
-        self.pois["f2s"] = eco.Evaluator.create_from_plain(
+        self.pois["f2s"] = eco.Evaluator.create(
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_f2s,
+            opex=eco.OpexParams(spec=self.opex_spec_f2s),
             name_flow="out",
         )
 
-        self.pois["s2f"] = eco.Evaluator.create_from_plain(
+        self.pois["s2f"] = eco.Evaluator.create(
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_s2f,
+            opex=eco.OpexParams(spec=self.opex_spec_s2f),
             name_flow="in",
         )
 
@@ -1888,18 +1904,19 @@ class SubFleet(NonElectricBlock):
 
 class FleetUnit(BaseBlock):
     def init_pois(self):
-        self.pois["glider"] = eco.VehicleEvaluator.create_from_plain(
+        self.pois["glider"] = eco.VehicleEvaluator.create(
             name="glider",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_fix=self.capex_fix_glider,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_glider,
-            mntex_fix=self.mntex_fix_glider,
-            opex_spec_dist=self.opex_spec_dist,
-            crev_spec_dist=self.crev_spec_dist,
-            crev_spec_time=self.crev_spec_time,
+            capex=eco.CapexParams(
+                fix=self.capex_fix_glider,
+                ls=self.ls,
+                ccr=self.ccr,
+                consider_preexisting=self.capex_preexisting_glider,
+            ),
+            mntex=eco.MntexParams(fix=self.mntex_fix_glider),
+            opex=eco.VehicleOpexParams(spec_dist=self.opex_spec_dist),
+            crev=eco.VehicleCrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
         )
 
     def __init__(
@@ -1956,29 +1973,31 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     def init_pois(self):
         super().init_pois()
 
-        self.pois["charger"] = eco.Evaluator.create_from_plain(
+        self.pois["charger"] = eco.Evaluator.create(
             name="charger",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            capex_fix=self.capex_fix_charger,
-            ls=self.ls,
-            capex_ccr=self.ccr,
-            consider_preexisting=self.capex_preexisting_charger,
+            capex=eco.CapexParams(
+                fix=self.capex_fix_charger,
+                ls=self.ls,
+                ccr=self.ccr,
+                consider_preexisting=self.capex_preexisting_charger,
+            ),
         )
 
-        self.pois["ext_ac"] = eco.Evaluator.create_from_plain(
+        self.pois["ext_ac"] = eco.Evaluator.create(
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_ext_ac,
+            opex=eco.OpexParams(spec=self.opex_spec_ext_ac),
             name_flow="ext_ac",
         )
 
-        self.pois["ext_dc"] = eco.Evaluator.create_from_plain(
+        self.pois["ext_dc"] = eco.Evaluator.create(
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex_spec=self.opex_spec_ext_dc,
+            opex=eco.OpexParams(spec=self.opex_spec_ext_dc),
             name_flow="ext_dc",
         )
 
