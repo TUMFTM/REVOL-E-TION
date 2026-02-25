@@ -198,8 +198,8 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.calc_results_economics()
 
     def _build_poi_evaluation_kwargs(self, poi: eco.Evaluator, **kwargs) -> dict[str, Any]:
-        size_obj = self.sizes.get(poi.name_size, None)
-        if size_obj:
+        if poi.name_size is not None:
+            size_obj = self.sizes[poi.name_size]
             size_preexisting = size_obj.preexisting
             size_expansion = size_obj.expansion
         else:
