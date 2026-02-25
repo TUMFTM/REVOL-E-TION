@@ -109,11 +109,12 @@ class Size:
         """
         Create a message string for result_messages.
         """
+        factor = 1e-3 if self.unit.lower().startswith("k") else 1.0
         return (
             f'Optimized size of component "{self.name}" in block "{name_block}": '
-            f"{self.total / 1e3:.1f} {self.unit} "
-            f"(existing: {self.preexisting:.1f} {self.unit} - "
-            f"expansion: {self.expansion:.1f} {self.unit})"
+            f"{self.total * factor:.1f} {self.unit} "
+            f"(existing: {self.preexisting * factor:.1f} {self.unit} - "
+            f"expansion: {self.expansion * factor:.1f} {self.unit})"
             if self.invest
             else ""
         )
