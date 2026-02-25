@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -6,7 +7,17 @@ import numpy.typing as npt
 import pandas as pd
 
 from .params import EcoParams
-from .utils import OccursAt
+from .utils import OccursAt, CostTypeDefinition
+
+
+class CostType(Enum):
+    CAPEX = CostTypeDefinition("capex", OccursAt.BEGIN)
+    MNTEX = CostTypeDefinition("mntex", OccursAt.BEGIN)
+    OPEX = CostTypeDefinition("opex", OccursAt.END)
+    CREV = CostTypeDefinition("crev", OccursAt.END)
+    TOTEX = CostTypeDefinition("totex", None)
+    VALUE = CostTypeDefinition("value", None)
+    ENERGY = CostTypeDefinition("energy", OccursAt.END)
 
 
 class BaseElement(ABC):
@@ -14,7 +25,7 @@ class BaseElement(ABC):
     Base class for all economic elements.
     """
 
-    _TYPE: str
+    _TYPE: CostType
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -63,9 +74,9 @@ class BaseElement(ABC):
     def result_summary(self) -> pd.Series:
         return pd.Series(
             data={
-                f"{self._TYPE}_{self.name}_prj": self.prj,
-                f"{self._TYPE}_{self.name}_dis": self.dis,
-                f"{self._TYPE}_{self.name}_ann": self.ann,
+                f"{self._TYPE.value.label}_{self.name}_prj": self.prj,
+                f"{self._TYPE.value.label}_{self.name}_dis": self.dis,
+                f"{self._TYPE.value.label}_{self.name}_ann": self.ann,
             },
         )
 
@@ -91,7 +102,7 @@ class YearlyElement(BaseElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE}_{self.name}_yrl": self.yrl,
+                        f"{self._TYPE.value.label}_{self.name}_yrl": self.yrl,
                     },
                 ),
             ],
@@ -120,7 +131,7 @@ class TimeseriesElement(YearlyElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE}_{self.name}_eval": self.eval,
+                        f"{self._TYPE.value.label}_{self.name}_eval": self.eval,
                     },
                 ),
             ],
@@ -133,7 +144,7 @@ class CapexElement(BaseElement, ABC):
     Base class for all capex elements.
     """
 
-    _TYPE = "capex"
+    _TYPE = CostType.CAPEX
 
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
@@ -161,9 +172,9 @@ class CapexElement(BaseElement, ABC):
                 super().result_summary,
                 pd.Series(
                     data={
-                        f"{self._TYPE}_{self.name}_preexisting": self.preexisting,
-                        f"{self._TYPE}_{self.name}_expansion": self.expansion,
-                        f"{self._TYPE}_{self.name}_init": self.init,
+                        f"{self._TYPE.value.label}_{self.name}_preexisting": self.preexisting,
+                        f"{self._TYPE.value.label}_{self.name}_expansion": self.expansion,
+                        f"{self._TYPE.value.label}_{self.name}_init": self.init,
                     },
                 ),
             ],
@@ -176,7 +187,7 @@ class MntexElement(YearlyElement, ABC):
     Base class for all mntex elements.
     """
 
-    _TYPE = "mntex"
+    _TYPE = CostType.MNTEX
 
 
 class OpexElement(TimeseriesElement, ABC):
@@ -184,7 +195,7 @@ class OpexElement(TimeseriesElement, ABC):
     Base class for all opex elements.
     """
 
-    _TYPE = "opex"
+    _TYPE = CostType.OPEX
 
 
 class CrevElement(TimeseriesElement, ABC):
@@ -192,22 +203,13 @@ class CrevElement(TimeseriesElement, ABC):
     Base class for all crev elements.
     """
 
-    _TYPE = "crev"
+    _TYPE = CostType.CREV
 
 
 class CalculableBaseElement(BaseElement, ABC):
     """
     Base class for all economic elements that calculate their own results instead of just aggregate them.
     """
-
-    _OCCURS_AT: OccursAt
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        if not hasattr(cls, "__abstractmethods__") and ABC not in cls.__bases__:
-            if not any("_OCCURS_AT" in B.__dict__ for B in cls.mro()):
-                raise TypeError(f"Concrete class {cls.__name__} must define '_OCCURS_AT'")
 
     def __init__(self, name: str, eco: EcoParams, **kwargs):
         super().__init__(name, **kwargs)
@@ -217,7 +219,7 @@ class CalculableBaseElement(BaseElement, ABC):
     def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray: ...
 
     def _calc_cashflow_dis(self) -> npt.NDArray:
-        return self.cashflow * self.eco.discount_factors(self._OCCURS_AT)
+        return self.cashflow * self.eco.discount_factors(self._TYPE.value.occurs_at)
 
     def _calc_prj(self) -> float:
         return np.sum(self.cashflow)
@@ -226,7 +228,7 @@ class CalculableBaseElement(BaseElement, ABC):
         return np.sum(self.cashflow_dis)
 
     def _calc_ann(self) -> float:
-        return self.dis * self.eco.annuity_factor(self._OCCURS_AT)
+        return self.dis * self.eco.annuity_factor(self._TYPE.value.occurs_at)
 
     def evaluate(self, *args, **kwargs):
         self._cashflow = self._calc_cashflow(*args, **kwargs)

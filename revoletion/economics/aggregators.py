@@ -13,6 +13,7 @@ from .abstractclasses import (
     OpexElement,
     CrevElement,
     BlockElement,
+    CostType,
 )
 
 
@@ -162,7 +163,7 @@ class TotexAggregator(InLevelAggregator):
     TotexAggregator aggregates the values of Capex, Mntex and Opex aggregators on the same level to calculate the total costs.
     """
 
-    _TYPE = "totex"
+    _TYPE = CostType.TOTEX
 
     def __init__(self, name: str, capex: CapexAggregator, mntex: MntexAggregator, opex: OpexAggregator, **kwargs):
         super().__init__(name=name, **kwargs)
@@ -187,7 +188,7 @@ class ValueAggregator(InLevelAggregator):
     ValueAggregator subtracts revenues (Crev) from costs (Totex) on the same level.
     """
 
-    _TYPE = "value"
+    _TYPE = CostType.VALUE
 
     def __init__(self, name: str, totex: TotexAggregator, crev: CrevAggregator, **kwargs):
         super().__init__(name=name, **kwargs)

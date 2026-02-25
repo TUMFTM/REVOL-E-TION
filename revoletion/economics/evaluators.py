@@ -31,7 +31,6 @@ from .params import (
 )
 
 from .utils import (
-    OccursAt,
     DEPRECIATION,
     calc_residual_value,
     calc_lifetime_remaining,
@@ -71,8 +70,6 @@ class CostEvaluator(CalculableBaseElement, ABC):
 
 
 class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
-    _OCCURS_AT = OccursAt.END
-
     def __init__(
         self,
         name: str,
@@ -152,8 +149,6 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
-    _OCCURS_AT = OccursAt.BEGIN  # ToDo: use cost type to map OccursAt object
-
     def __init__(
         self,
         name: str,
@@ -265,16 +260,14 @@ class CapexEvaluator(CostEvaluator, CapexElement):
     def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
             self._calc_cashflow_factor_expansion() * self.spec,
-            self.eco.discount_factors(self._OCCURS_AT),
-        ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
+            self.eco.discount_factors(self._TYPE.value.occurs_at),
+        ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
 
     def get_preexisting(self, size_preexisting: float | None) -> float:
         return self._calc_preexisting(size_preexisting=size_preexisting)
 
 
 class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
-    _OCCURS_AT = OccursAt.BEGIN
-
     def __init__(
         self,
         name: str,
@@ -307,8 +300,8 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
     def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
             np.full(self.eco.prj_duration_yrs + 1, self.spec),
-            self.eco.discount_factors(self._OCCURS_AT),
-        ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
+            self.eco.discount_factors(self._TYPE.value.occurs_at),
+        ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
 
 
 class OpexEvaluator(TimeseriesEvaluator, OpexElement):

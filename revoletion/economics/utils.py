@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 import numbers
 from pathlib import Path
@@ -14,6 +15,12 @@ class OccursAt(Enum):
     BEGIN = 1.0
     MID = 0.5
     END = 0.0
+
+
+@dataclass(frozen=True)
+class CostTypeDefinition:
+    label: str
+    occurs_at: OccursAt | None
 
 
 class DEPRECIATION(Enum):

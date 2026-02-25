@@ -3,13 +3,11 @@ from abc import ABC
 import pandas as pd
 
 from revoletion.economics import EcoParams
-from revoletion.economics.abstractclasses import CalculableTimeseriesElement, TimeseriesElement
-from revoletion.economics.utils import OccursAt
+from revoletion.economics.abstractclasses import CostType, CalculableTimeseriesElement, TimeseriesElement
 
 
 class EnergyElement(TimeseriesElement, ABC):
-    _TYPE = "energy"
-    _OCCURS_AT = OccursAt.END
+    _TYPE = CostType.ENERGY
 
 
 class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
