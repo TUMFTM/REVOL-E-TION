@@ -205,7 +205,7 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
     def get_legend_entry(self, block: blocks.BaseBlock) -> str:
         match block:
             case blocks.RenewableSource():
-                return f"{block.name} power (nom. {block.sizes['block'].total / 1e3:.1f} kW)"
+                return f"{block.name} power (nom. {block.sizes['block'].total / 1e3:.1f} kWp)"
             case blocks.FixedDemand():
                 return f"{block.name} power"
             case blocks.GridConnection():

@@ -61,12 +61,30 @@ class BaseBlock(BlockScenarioInterface, ABC):
     abstract class
     """
 
+    _SIZE_NAMES = []
+    _FLOW_NAMES = []
+    _STATE_NAMES = []
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        for attr in ("_FLOW_NAMES", "_STATE_NAMES", "_SIZE_NAMES"):
+            accumulated = []
+
+            # Merge from direct parents
+            for base in cls.__bases__:
+                if hasattr(base, attr):
+                    parent_value = getattr(base, attr)
+                    accumulated.extend(parent_value)
+
+            # Add own definition (if any)
+            own = cls.__dict__.get(attr, [])
+            accumulated.extend(own)
+
+            setattr(cls, attr, accumulated)
+
     def init_pois(self):
         # add a new POI to block.pois
-        pass
-
-    def init_states(self):
-        # add a new column to block.states
         pass
 
     def __init__(
@@ -100,33 +118,34 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.expansion_equal = False
         self.params_preprocessing()
 
-        self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
-
-        self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd, dtype="float64")
-        self.init_states()
-
-        self.pois = dict()
-        self.init_pois()
-        for poi in self.pois.values():
-            self.aggregator.add_block(poi)
-        self.parent.aggregator.add_block(self.aggregator)
-
-        # ToDo: find solution for size unit -> define sizes similar to pois -> avoid implicit usage of variable names
         self.sizes = {
-            poi.name_size: size.Size.create_from_block(name=poi.name_size, block=self, unit="kW")
-            for poi in self.pois.values()
-            if poi.name_size is not None
+            name: size.Size.create_from_block(name=name, block=self, unit=unit) for name, unit in self._SIZE_NAMES
         }
 
         self.flows = pd.DataFrame(
             index=self.scenario.times.sim.dti,
-            columns=["total"] + [poi.name_flow for poi in self.pois.values() if poi.name_flow is not None],
+            columns=self._FLOW_NAMES,
             data=0.0,
             dtype=float,
         )
 
+        self.states = pd.DataFrame(
+            index=self.scenario.times.sim.dti_extd,
+            columns=self._STATE_NAMES,
+            data=0.0,
+            dtype=float,
+        )
+
+        self.pois = {}
+        self.init_pois()
+
+        self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
+        for poi in self.pois.values():
+            self.aggregator.add_block(poi)
+        self.parent.aggregator.add_block(self.aggregator)
+
         self.energies = {
-            flow: energy.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self.flows.columns
+            flow: energy.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self._FLOW_NAMES
         }
 
         # accumulate invest costs caused by preexisting components in scenario
@@ -230,6 +249,8 @@ class NonElectricBlock(BaseBlock): ...
 
 
 class ElectricBlock(BaseBlock, ABC):
+    _FLOW_NAMES = ["total"]
+
     def __init__(
         self,
         name: str,
@@ -329,6 +350,9 @@ class SinkBlock(ElectricBlock, ABC):
 
 
 class SystemCore(ElectricBlock):
+    _SIZE_NAMES = [("acdc", "kW"), ("dcac", "kW")]
+    _FLOW_NAMES = ["acdc", "dcac"]
+
     def init_pois(self):
         super().init_pois()
 
@@ -478,6 +502,9 @@ class RenewableSource(SourceBlock, ABC):
     """
     abstract class
     """
+
+    _SIZE_NAMES = [("block", "kWp")]
+    _FLOW_NAMES = ["out", "curt", "pot"]
 
     def init_pois(self):
         super().init_pois()
@@ -699,6 +726,7 @@ class WindSource(RenewableSource):
 
 
 class FixedDemand(SinkBlock):
+    _FLOW_NAMES = ["in"]
     _SLP_IDS = ["h0", "g0", "g1", "g2", "g3", "g4", "g5", "g6", "l0", "l1", "l2", "h25", "g25", "l25", "s25", "p25"]
 
     def init_pois(self):
@@ -928,6 +956,9 @@ class FixedDemand(SinkBlock):
 
 
 class ControllableSource(SourceBlock):
+    _SIZE_NAMES = [("block", "kW")]
+    _FLOW_NAMES = ["out"]
+
     def init_pois(self):
         super().init_pois()
         self.pois["block"] = eco.Evaluator.create(
@@ -1002,6 +1033,9 @@ class ControllableSource(SourceBlock):
 
 
 class GridConnection(ElectricBlock):
+    _SIZE_NAMES = [("g2s", "kW"), ("s2g", "kW")]
+    _FLOW_NAMES = ["in", "out"]
+
     def init_pois(self):
         super().init_pois()
         self.pois["g2s"] = eco.Evaluator.create(
@@ -1305,6 +1339,9 @@ class GridConnection(ElectricBlock):
 
 
 class GridMarket(ElectricBlock):
+    _SIZE_NAMES = [("g2s", "kW"), ("s2g", "kW")]
+    _FLOW_NAMES = ["in", "out"]
+
     def init_pois(self):
         super().init_pois()
         self.pois["g2s"] = eco.Evaluator.create(
@@ -1385,6 +1422,18 @@ class StorageBlock(ElectricBlock):
     abstract class
     """
 
+    _SIZE_NAMES = [("storage", "kWh")]
+    _FLOW_NAMES = ["in", "out", "bat_in", "bat_out"]
+    _STATE_NAMES = [
+        "energy",
+        "soc",
+        "soh",
+        "q_loss_cal",
+        "q_loss_cyc",
+        "soc_min",
+        "soc_max",
+    ]
+
     def init_pois(self):
         super().init_pois()
         self.pois["storage"] = eco.Evaluator.create(
@@ -1432,19 +1481,6 @@ class StorageBlock(ElectricBlock):
 
         self.power_circles.append(("in", "out"))
         self.power_circles.append(("bat_in", "bat_out"))
-
-    def init_states(self):
-        super().init_states()
-        for state in [
-            "energy",
-            "soc",
-            "soh",
-            "q_loss_cal",
-            "q_loss_cyc",
-            "soc_min",
-            "soc_max",
-        ]:
-            self.states[state] = np.nan
 
     def __init__(
         self,
@@ -1668,6 +1704,8 @@ class StationaryBattery(StorageBlock):
 
 
 class Fleet(SinkBlock):
+    _FLOW_NAMES = ["in", "out"]
+
     def init_pois(self):
         super().init_pois()
         self.pois["f2s"] = eco.Evaluator.create(
@@ -1959,6 +1997,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
     """
     abstract class
     """
+
+    _FLOW_NAMES = ["ext_ac", "ext_dc"]
 
     def init_pois(self):
         super().init_pois()
