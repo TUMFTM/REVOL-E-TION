@@ -23,9 +23,10 @@ from .params import EcoParams, CostParams, CapexParams, MntexParams, PowerBasedP
 
 from .utils import (
     OccursAt,
+    DEPRECIATION,
     calc_residual_value,
     calc_lifetime_remaining,
-    DEPRECIATION,
+    transform_scalar_var,
 )
 
 
@@ -38,12 +39,19 @@ class CostEvaluator(CalculableBaseElement, ABC):
         self,
         name: str,
         eco: EcoParams,
-        params: CostParams,
         **kwargs,
     ):
         super().__init__(name=name, eco=eco, **kwargs)
         self.eco = eco
-        self.params = params
+
+    @classmethod
+    @abstractmethod
+    def _build_kwargs_from_params(cls, params: CostParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict: ...
+
+    @classmethod
+    def create_from_params(cls, name: str, eco: EcoParams, params: CostParams, data_dir: Path, **kwargs) -> Self:
+        kwargs = cls._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs)
+        return cls(name=name, eco=eco, **kwargs)
 
     @abstractmethod
     def _calc_spec_ep(self, **kwargs) -> float | pd.Series: ...
@@ -51,14 +59,6 @@ class CostEvaluator(CalculableBaseElement, ABC):
     @property
     def spec_ep(self) -> float | pd.Series:
         return self._calc_spec_ep()
-
-    @property
-    def spec(self) -> float | pd.Series:
-        return self.params.spec
-
-    @property
-    def fix(self) -> float:
-        return self.params.fix
 
 
 class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
@@ -68,23 +68,54 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
         self,
         name: str,
         eco: EcoParams,
-        params: PowerBasedParams,
+        spec: pd.Series | float,
+        fix: float,
         **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
-            params=params,
+            **kwargs,
+        )
+
+        self.spec = spec
+        self.fix = fix
+
+    @classmethod
+    def _build_kwargs_from_params(cls, params: PowerBasedParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+        return dict(
+            spec=transform_scalar_var(value=params.spec, dti=eco.dti_sim, data_dir=data_dir),
+            fix=params.fix,
             **kwargs,
         )
 
     def _calc_eval(self, flow: pd.Series | None, **kwargs) -> float:
         cost_flow = (
-            np.dot(self.params.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            np.dot(self.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             if flow is not None
             else 0.0
         )
-        return cost_flow + self.params.fix
+        return cost_flow + self.fix
+
+        # ToDo: check this out for reusability and avoid transforming a scalar to an array if not necessary
+        #  make sure to also fix the spec_ep calculation in this case -> can also be scalar for oemof input
+        if flow is None:
+            cost_flow = 0.0
+        else:
+            # Extract flow values as a NumPy array
+            flow_values = flow[self.eco.dti_eval].to_numpy()
+
+            # Handle spec being an array or a scalar
+            if isinstance(self.spec, npt.NDArray):
+                cost_flow = np.dot(self.spec.to_numpy(), flow_values)
+            else:
+                cost_flow = flow_values.sum() * self.spec
+
+            # Scale by timestep
+            cost_flow *= self.eco.timestep_hours
+
+        # Add fixed cost
+        return cost_flow + self.fix
 
     def evaluate(self, flow: pd.Series | None, **kwargs):
         super().evaluate(flow=flow, **kwargs)
@@ -93,7 +124,7 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
         factor_operation_ep = (1 / self.eco.sim_yr_rat) if self.eco.compensate_sim_prj else 1
 
-        return self.params.spec * factor_operation_ep
+        return self.spec * factor_operation_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
@@ -103,54 +134,87 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         self,
         name: str,
         eco: EcoParams,
-        params: CapexParams,
+        spec: float,
+        fix: float,
+        consider_preexisting: bool,
+        ls: int,
+        age_preexisting: int,
+        ccr: float,
+        residual_at_ls: float,
         **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
-            params=params,
+            **kwargs,
+        )
+
+        self.spec = spec
+        self.fix = fix
+        self.consider_preexisting = consider_preexisting
+        self.ls = ls
+        self.age_preexisting = age_preexisting
+        self.ccr = ccr
+        self.residual_at_ls = residual_at_ls
+
+        if self.consider_preexisting and self.age_preexisting != 0:
+            raise ValueError(f"If consider_preexisting is True, age_preexisting must be 0, got {self.age_preexisting}")
+        if self.age_preexisting >= self.ls:
+            raise ValueError(
+                f"age_preexisting must be smaller than ls, got age_preexisting={self.age_preexisting} and ls={self.ls}"
+            )
+
+    @classmethod
+    def _build_kwargs_from_params(cls, params: PowerBasedParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+        return dict(
+            spec=params.spec,
+            fix=params.fix,
+            consider_preexisting=params.consider_preexisting,
+            ls=params.ls if params.ls is not None else eco.prj_duration_yrs,
+            age_preexisting=params.age_preexisting,
+            ccr=params.ccr,
+            residual_at_ls=params.residual_at_ls,
             **kwargs,
         )
 
     def _calc_preexisting(self, size_preexisting: float | None) -> float:
-        cost_size = size_preexisting * self.params.spec if size_preexisting else 0.0
-        return (cost_size + self.params.fix) * int(self.params.consider_preexisting)
+        cost_size = size_preexisting * self.spec if size_preexisting else 0.0
+        return (cost_size + self.fix) * int(self.consider_preexisting)
 
     def _calc_expansion(self, size_expansion: float | None) -> float:
-        return size_expansion * self.params.spec if size_expansion else 0.0
+        return size_expansion * self.spec if size_expansion else 0.0
 
     def _calc_init(self) -> float:
         return self.preexisting + self.expansion
 
     def _calc_cashflow_factors(self, invest_first: int, **kwargs) -> npt.NDArray:
-        invest_periods = np.arange(invest_first, self.eco.prj_duration_yrs, self.params.ls)
+        invest_periods = np.arange(invest_first, self.eco.prj_duration_yrs, self.ls)
 
         capex = np.zeros(self.eco.prj_duration_yrs + 1, dtype=float)
         capex[invest_periods] = 1
 
-        if self.params.residual_at_ls > 0:
-            residual_periods = invest_periods[1:] if self.params.consider_preexisting else invest_periods
-            capex[residual_periods] -= self.params.residual_at_ls
+        if self.residual_at_ls > 0:
+            residual_periods = invest_periods[1:] if self.consider_preexisting else invest_periods
+            capex[residual_periods] -= self.residual_at_ls
 
         capex[-1] = -1 * calc_residual_value(
             lifetime_remaining_frac=calc_lifetime_remaining(
                 project_duration=self.eco.prj_duration_yrs,
-                ls=self.params.ls,
-                init_age=invest_first % self.params.ls,
+                ls=self.ls,
+                init_age=invest_first % self.ls,
             )
-            / float(self.params.ls),
+            / float(self.ls),
             depreciation=DEPRECIATION.LINEAR,
-            residual_at_ls=self.params.residual_at_ls,
+            residual_at_ls=self.residual_at_ls,
         )
 
         # apply capex cost change ratio
-        capex *= self.params.ccr ** np.arange(self.eco.prj_duration_yrs + 1)
+        capex *= self.ccr ** np.arange(self.eco.prj_duration_yrs + 1)
 
         return capex
 
     def _calc_cashflow_factor_preexisting(self) -> npt.NDArray:
-        invest_first = 0 if self.params.consider_preexisting else self.params.ls - self.params.age_preexisting
+        invest_first = 0 if self.consider_preexisting else self.ls - self.age_preexisting
         return self._calc_cashflow_factors(invest_first)
 
     def _calc_cashflow_factor_expansion(self) -> npt.NDArray:
@@ -158,11 +222,11 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         return self._calc_cashflow_factors(invest_first)
 
     def _calc_cashflow_preexisting(self, size_preexisting: float | None) -> npt.NDArray:
-        cost_size = size_preexisting * self.params.spec if size_preexisting else 0.0
-        return self._calc_cashflow_factor_preexisting() * (cost_size + self.params.fix)
+        cost_size = size_preexisting * self.spec if size_preexisting else 0.0
+        return self._calc_cashflow_factor_preexisting() * (cost_size + self.fix)
 
     def _calc_cashflow_expansion(self, size_expansion: float | None) -> npt.NDArray:
-        cost_size = size_expansion * self.params.spec if size_expansion else 0.0
+        cost_size = size_expansion * self.spec if size_expansion else 0.0
         return self._calc_cashflow_factor_expansion() * cost_size
 
     def _calc_cashflow(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> npt.NDArray:
@@ -176,7 +240,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
 
     def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
-            self._calc_cashflow_factor_expansion() * self.params.spec,
+            self._calc_cashflow_factor_expansion() * self.spec,
             self.eco.discount_factors(self._OCCURS_AT),
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
@@ -191,65 +255,44 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         self,
         name: str,
         eco: EcoParams,
-        params: MntexParams,
+        spec: float,
+        fix: float,
         **kwargs,
     ):
         super().__init__(
             name=name,
             eco=eco,
-            params=params,
             **kwargs,
         )
+
+        self.spec = spec
+        self.fix = fix
+
+    @classmethod
+    def _build_kwargs_from_params(cls, params: MntexParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+        return dict(spec=params.spec, fix=params.fix, **kwargs)
 
     def _calc_yrl(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> float:
         size_preexisting = size_preexisting if size_preexisting else 0.0
         size_expansion = size_expansion if size_expansion else 0.0
-        return self.params.spec * (size_preexisting + size_expansion) + self.params.fix
+        return self.spec * (size_preexisting + size_expansion) + self.fix
 
     def evaluate(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> None:
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
         return np.dot(
-            np.full(self.eco.prj_duration_yrs + 1, self.params.spec),
+            np.full(self.eco.prj_duration_yrs + 1, self.spec),
             self.eco.discount_factors(self._OCCURS_AT),
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
 
 class OpexEvaluator(PowerBasedEvaluator, OpexElement):
-    _OCCURS_AT = OccursAt.END
-
-    def __init__(
-        self,
-        name: str,
-        eco: EcoParams,
-        params: OpexParams,
-        **kwargs,
-    ):
-        super().__init__(
-            name=name,
-            eco=eco,
-            params=params,
-            **kwargs,
-        )
+    pass
 
 
 class CrevEvaluator(PowerBasedEvaluator, CrevElement):
-    _OCCURS_AT = OccursAt.END
-
-    def __init__(
-        self,
-        name: str,
-        eco: EcoParams,
-        params: CrevParams,
-        **kwargs,
-    ):
-        super().__init__(
-            name=name,
-            eco=eco,
-            params=params,
-            **kwargs,
-        )
+    pass
 
 
 @dataclass
@@ -280,151 +323,23 @@ class Evaluator(BlockElement):
         cls,
         name: str,
         eco: EcoParams,
+        data_dir: Path,
         name_size: str | None = None,
         name_flow: str | None = None,
-        params_capex: CapexParams | None = None,
-        params_mntex: MntexParams | None = None,
-        params_opex: OpexParams | None = None,
-        params_crev: CrevParams | None = None,
+        capex: CapexParams | None = None,
+        mntex: MntexParams | None = None,
+        opex: OpexParams | None = None,
+        crev: CrevParams | None = None,
     ) -> Self:
         return cls(
             name=name,
             eco=eco,
             name_size=name_size,
             name_flow=name_flow,
-            capex=cls.CAPEX_EVALUATOR(name, eco, params_capex) if params_capex else None,
-            mntex=cls.MNTEX_EVALUATOR(name, eco, params_mntex) if params_mntex else None,
-            opex=cls.OPEX_EVALUATOR(name, eco, params_opex) if params_opex else None,
-            crev=cls.CREV_EVALUATOR(name, eco, params_crev) if params_crev else None,
-        )
-
-    @classmethod
-    def _build_capex_params(
-        cls,
-        eco: EcoParams,
-        spec: float,
-        fix: float,
-        ccr: float,
-        consider_preexisting: bool,
-        ls: int | None,
-        age_preexisting: int,
-        residual_at_ls: float,
-    ) -> CapexParams:
-        return CapexParams.create(
-            spec=spec,
-            fix=fix,
-            consider_preexisting=consider_preexisting,
-            ls=eco.prj_duration_yrs if ls is None else ls,
-            age_preexisting=age_preexisting,
-            ccr=ccr,
-            residual_at_ls=residual_at_ls,
-        )
-
-    @classmethod
-    def _build_mntex_params(
-        cls,
-        spec: float,
-        fix: float,
-    ) -> MntexParams:
-        return MntexParams.create(spec=spec, fix=fix)
-
-    @classmethod
-    def _build_opex_params(
-        cls,
-        eco: EcoParams,
-        data_dir: Path,
-        spec: float | Path,
-        fix: float,
-        **kwargs,
-    ) -> OpexParams:
-        return OpexParams.create(
-            spec=spec,
-            fix=fix,
-            dti_sim=eco.dti_sim,
-            data_dir=data_dir,
-        )
-
-    @classmethod
-    def _build_crev_params(
-        cls,
-        eco: EcoParams,
-        data_dir: Path,
-        spec: float | Path,
-        fix: float,
-        **kwargs,
-    ) -> CrevParams:
-        return CrevParams.create(
-            spec=spec,
-            fix=fix,
-            dti_sim=eco.dti_sim,
-            data_dir=data_dir,
-        )
-
-    @classmethod
-    def create_from_plain(
-        cls,
-        name: str,
-        eco: EcoParams,
-        data_dir: Path,
-        name_size: str = None,
-        name_flow: str = None,
-        # capex
-        capex_spec: float = 0.0,
-        capex_fix: float = 0.0,
-        capex_ccr: float = 1.0,
-        consider_preexisting: bool = True,
-        ls: int | None = None,
-        age_preexisting: int = 0,
-        capex_residual_at_ls: float = 0.0,
-        # mntex
-        mntex_spec: float = 0.0,
-        mntex_fix: float = 0.0,
-        # opex
-        opex_spec: float | Path = 0.0,
-        opex_fix: float = 0.0,
-        # crev
-        crev_spec: float | Path = 0.0,
-        crev_fix: float = 0.0,
-    ) -> Self:
-        params_capex = cls._build_capex_params(
-            eco=eco,
-            spec=capex_spec,
-            fix=capex_fix,
-            ccr=capex_ccr,
-            consider_preexisting=consider_preexisting,
-            ls=ls,
-            age_preexisting=age_preexisting,
-            residual_at_ls=capex_residual_at_ls,
-        )
-
-        params_mntex = cls._build_mntex_params(
-            spec=mntex_spec,
-            fix=mntex_fix,
-        )
-
-        params_opex = cls._build_opex_params(
-            eco=eco,
-            data_dir=data_dir,
-            spec=opex_spec,
-            fix=opex_fix,
-        )
-
-        params_crev = cls._build_crev_params(
-            eco=eco,
-            data_dir=data_dir,
-            spec=crev_spec,
-            fix=crev_fix,
-        )
-
-        return cls.create(
-            name=name,
-            eco=eco,
-            name_size=name_size,
-            name_flow=name_flow,
-            params_capex=params_capex,
-            params_mntex=params_mntex,
-            params_opex=params_opex,
-            params_crev=params_crev,
+            capex=cls.CAPEX_EVALUATOR.create_from_params(name, eco, capex, data_dir) if capex else None,
+            mntex=cls.MNTEX_EVALUATOR.create_from_params(name, eco, mntex, data_dir) if mntex else None,
+            opex=cls.OPEX_EVALUATOR.create_from_params(name, eco, opex, data_dir) if opex else None,
+            crev=cls.CREV_EVALUATOR.create_from_params(name, eco, crev, data_dir) if crev else None,
         )
 
     @property
@@ -432,14 +347,14 @@ class Evaluator(BlockElement):
         """
         Equivalent present specific costs for investments (cost per size)
         """
-        return self.capex.spec_ep + self.mntex.spec_ep
+        return sum(component.spec_ep for component in (self.capex, self.mntex) if component is not None)
 
     @property
     def spec_ep_operation(self):
         """
         Equivalent present specific costs for operation (cost per energy)
         """
-        return self.opex.spec_ep + self.crev.spec_ep
+        return sum(component.spec_ep for component in (self.opex, self.crev) if component is not None)
 
     def evaluate(
         self,
@@ -458,4 +373,4 @@ class Evaluator(BlockElement):
                 )
 
     def get_invest_preexisting(self, size_preexisting: float | None) -> float:
-        return self.capex.get_preexisting(size_preexisting=size_preexisting)
+        return self.capex.get_preexisting(size_preexisting=size_preexisting) if self.capex is not None else 0.0
