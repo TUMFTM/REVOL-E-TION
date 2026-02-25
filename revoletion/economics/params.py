@@ -45,10 +45,10 @@ class EcoParams:
             prj_duration_yrs=prj_duration_yrs,
             discount_rate=discount_rate,
             compensate_sim_prj=compensate_sim_prj,
-            eval_yr_rat=pd.Timedelta(days=365) / times.eval.duration,  # no leap years
-            eval_prj_rat=times.prj.duration / times.eval.duration,
-            sim_yr_rat=pd.Timedelta(days=365) / times.sim.duration,  # no leap years
-            sim_prj_rat=times.prj.duration / times.sim.duration,
+            eval_yr_rat=times.eval.duration / pd.Timedelta(days=365),  # no leap years
+            eval_prj_rat=times.eval.duration / times.prj.duration,
+            sim_yr_rat=times.sim.duration / pd.Timedelta(days=365),  # no leap years
+            sim_prj_rat=times.sim.duration / times.prj.duration,
             dti_sim=times.sim.dti,
             dti_eval=times.eval.dti,
             timestep_hours=timestep.hours,
@@ -69,10 +69,10 @@ class EcoParams:
             prj_duration_yrs=prj_duration_yrs,
             discount_rate=discount_rate,
             compensate_sim_prj=compensate_sim_prj,
-            eval_yr_rat=pd.Timedelta(days=365) / td_eval,  # no leap years
-            eval_prj_rat=((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]) / td_eval,
-            sim_yr_rat=pd.Timedelta(days=365) / td_eval,  # no leap years
-            sim_prj_rat=((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]) / td_sim,
+            eval_yr_rat=td_eval / pd.Timedelta(days=365),  # no leap years
+            eval_prj_rat=td_eval / ((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]),
+            sim_yr_rat=td_eval / pd.Timedelta(days=365),  # no leap years
+            sim_prj_rat=td_sim / ((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]),
             dti_sim=dti_sim,
             dti_eval=dti_eval,
             timestep_hours=pd.Timedelta(dti_sim.inferred_freq).total_seconds() / 3600,

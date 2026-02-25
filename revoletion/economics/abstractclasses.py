@@ -275,7 +275,7 @@ class CalculableTimeseriesElement(CalculableYearlyElement, TimeseriesElement, AB
     def _calc_eval(self, *args, **kwargs) -> float: ...
 
     def _calc_yrl(self, *args, **kwargs) -> float:
-        return self.eval * self.eco.eval_yr_rat
+        return self.eval / self.eco.eval_yr_rat
 
     def evaluate(self, *args, **kwargs):
         self._eval = self._calc_eval(*args, **kwargs)
