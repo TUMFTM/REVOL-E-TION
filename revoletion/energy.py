@@ -11,14 +11,8 @@ class EnergyElement(TimeseriesElement, ABC):
 
 
 class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
-    def __init__(self, name: str, eco: EcoParams, **kwargs):
-        super().__init__(name=name, eco=eco, **kwargs)
-
     def _calc_eval(self, flow: pd.Series) -> float:
         return flow[self.eco.dti_eval].to_numpy().sum() * self.eco.timestep_hours
-
-    def evaluate(self, flow: pd.Series, **kwargs) -> None:
-        super().evaluate(flow=flow, **kwargs)
 
 
 class EnergyAggregator(CalculableTimeseriesElement, EnergyElement):
