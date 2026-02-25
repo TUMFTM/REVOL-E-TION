@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Self, Type
+from typing import Self
 
 import numpy as np
 import pandas as pd
@@ -19,6 +19,7 @@ from .abstractclasses import (
     CrevElement,
     BlockElement,
 )
+
 from .params import (
     EcoParams,
     CostParams,
@@ -188,7 +189,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             )
 
     @classmethod
-    def _build_kwargs_from_params(cls, params: TimeseriesParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+    def _build_kwargs_from_params(cls, params: CapexParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
         return dict(
             spec=params.spec,
             fix=params.fix,

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from numpy import typing as npt
 
-from .utils import OccursAt, discount, annuity, transform_scalar_var
+from .utils import OccursAt, discount, annuity
 
 
 @dataclass(frozen=True)
