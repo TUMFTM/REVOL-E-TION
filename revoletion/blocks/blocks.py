@@ -317,24 +317,12 @@ class ElectricBlock(BaseBlock, ABC):
 
 
 class SourceBlock(ElectricBlock, ABC):
-    @abstractmethod
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
-
-    @abstractmethod
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
-
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies["sources"].add_energy(self.energies["total"])
 
 
 class SinkBlock(ElectricBlock, ABC):
-    @abstractmethod
-    def define_oemof_components(self, horizon: simulation.PredictionHorizon, params: dict = None): ...
-
-    @abstractmethod
-    def get_horizon_results(self, horizon: simulation.PredictionHorizon): ...
-
     def calc_results_energies(self):
         super().calc_results_energies()
         self.scenario.energies["sinks"].add_energy(self.energies["total"])
