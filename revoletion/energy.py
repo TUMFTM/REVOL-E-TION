@@ -3,16 +3,16 @@ from abc import ABC
 import pandas as pd
 
 from revoletion.eco import EcoParams
-from revoletion.eco.abstractclasses import CalculablePowerBasedElement, PowerBasedElement
+from revoletion.eco.abstractclasses import CalculableTimeseriesElement, TimeseriesElement
 from revoletion.eco.utils import OccursAt
 
 
-class EnergyElement(PowerBasedElement, ABC):
+class EnergyElement(TimeseriesElement, ABC):
     _TYPE = "energy"
     _OCCURS_AT = OccursAt.END
 
 
-class EnergyEvaluator(CalculablePowerBasedElement, EnergyElement):
+class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
     def __init__(self, name: str, eco: EcoParams, **kwargs):
         super().__init__(name=name, eco=eco, **kwargs)
 
@@ -23,7 +23,7 @@ class EnergyEvaluator(CalculablePowerBasedElement, EnergyElement):
         super().evaluate(flow=flow, **kwargs)
 
 
-class EnergyAggregator(CalculablePowerBasedElement, EnergyElement):
+class EnergyAggregator(CalculableTimeseriesElement, EnergyElement):
     """
     This class is used to aggregate energies.
 

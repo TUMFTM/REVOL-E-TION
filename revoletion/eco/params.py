@@ -143,28 +143,32 @@ class MntexParams(CostParams):
 
 
 @dataclass(frozen=True)
-class PowerBasedParams(CostParams):
+class TimeseriesParams(CostParams):
     """
-    Base dataclass to store all parameters needed for cost evaluation of flow-related costs (Opex and Crev).
+    Base dataclass to store all parameters needed for cost evaluation of a power flow.
     """
 
-    spec: str | float | int = 0.0
+    spec_power: str | float | int = 0.0
+    spec_dist: str | float | int = 0.0
+    spec_time: str | float | int = 0.0
     fix: float = 0.0
 
 
 @dataclass(frozen=True)
-class OpexParams(PowerBasedParams):
+class OpexParams(TimeseriesParams):
     """
-    Dataclass to store all parameters needed for cost evaluation of Opex.
+    Dataclass to store all parameters needed for opex evaluation.
     """
 
-    pass
+    spec_peak: float | int = 0.0
+    n_peak_periods_yr: int = 1
+    n_peak_periods_sim: int = 1
 
 
 @dataclass(frozen=True)
-class CrevParams(PowerBasedParams):
+class CrevParams(TimeseriesParams):
     """
-    Dataclass to store all parameters needed for cost evaluation of Crev.
+    Dataclass to store all parameters needed for crev evaluation.
     """
 
     pass

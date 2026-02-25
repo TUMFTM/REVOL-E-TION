@@ -12,14 +12,22 @@ from numpy import typing as npt
 from .abstractclasses import (
     CalculableBaseElement,
     CalculableYearlyElement,
-    CalculablePowerBasedElement,
+    CalculableTimeseriesElement,
     CapexElement,
     MntexElement,
     OpexElement,
     CrevElement,
     BlockElement,
 )
-from .params import EcoParams, CostParams, CapexParams, MntexParams, PowerBasedParams, OpexParams, CrevParams
+from .params import (
+    EcoParams,
+    CostParams,
+    CapexParams,
+    MntexParams,
+    TimeseriesParams,
+    OpexParams,
+    CrevParams,
+)
 
 from .utils import (
     OccursAt,
@@ -61,14 +69,16 @@ class CostEvaluator(CalculableBaseElement, ABC):
         return self._calc_spec_ep()
 
 
-class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
+class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
     _OCCURS_AT = OccursAt.END
 
     def __init__(
         self,
         name: str,
         eco: EcoParams,
-        spec: pd.Series | float,
+        spec_power: pd.Series,
+        spec_dist: pd.Series,
+        spec_time: pd.Series,
         fix: float,
         **kwargs,
     ):
@@ -78,24 +88,37 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
             **kwargs,
         )
 
-        self.spec = spec
+        self.spec_power = spec_power
+        self.spec_dist = spec_dist
+        self.spec_time = spec_time
         self.fix = fix
 
     @classmethod
-    def _build_kwargs_from_params(cls, params: PowerBasedParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+    def _build_kwargs_from_params(cls, params: TimeseriesParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
         return dict(
-            spec=transform_scalar_var(value=params.spec, dti=eco.dti_sim, data_dir=data_dir),
+            spec_power=transform_scalar_var(value=params.spec_power, dti=eco.dti_sim, data_dir=data_dir),
+            spec_dist=transform_scalar_var(value=params.spec_dist, dti=eco.dti_sim, data_dir=data_dir),
+            spec_time=transform_scalar_var(value=params.spec_time, dti=eco.dti_sim, data_dir=data_dir),
             fix=params.fix,
             **kwargs,
         )
 
-    def _calc_eval(self, flow: pd.Series | None, **kwargs) -> float:
-        cost_flow = (
-            np.dot(self.spec.to_numpy(), flow[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
-            if flow is not None
+    def _calc_eval(self, power: pd.Series | None, dist: pd.Series | None, time: pd.Series | None, **kwargs) -> float:
+        cost_power = (
+            np.dot(self.spec_power.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            if power is not None
             else 0.0
         )
-        return cost_flow + self.fix
+
+        cost_dist = np.dot(self.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy()) if dist is not None else 0.0
+
+        cost_time = (
+            np.dot(self.spec_time.to_numpy(), time[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            if time is not None
+            else 0.0
+        )
+
+        return cost_power + cost_dist + cost_time + self.fix
 
         # ToDo: check this out for reusability and avoid transforming a scalar to an array if not necessary
         #  make sure to also fix the spec_ep calculation in this case -> can also be scalar for oemof input
@@ -117,18 +140,18 @@ class PowerBasedEvaluator(CostEvaluator, CalculablePowerBasedElement, ABC):
         # Add fixed cost
         return cost_flow + self.fix
 
-    def evaluate(self, flow: pd.Series | None, **kwargs):
-        super().evaluate(flow=flow, **kwargs)
+    def evaluate(self, power: pd.Series | None, dist: pd.Series | None = None, time: pd.Series | None = None, **kwargs):
+        super().evaluate(power=power, dist=dist, time=time, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
         factor_operation_ep = (1 / self.eco.sim_yr_rat) if self.eco.compensate_sim_prj else 1
 
-        return self.spec * factor_operation_ep
+        return self.spec_power * factor_operation_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
-    _OCCURS_AT = OccursAt.BEGIN
+    _OCCURS_AT = OccursAt.BEGIN  # ToDo: use cost type to map OccursAt object
 
     def __init__(
         self,
@@ -165,7 +188,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
             )
 
     @classmethod
-    def _build_kwargs_from_params(cls, params: PowerBasedParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+    def _build_kwargs_from_params(cls, params: TimeseriesParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
         return dict(
             spec=params.spec,
             fix=params.fix,
@@ -287,11 +310,76 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         ) * self.eco.annuity_factor_apriori(self._OCCURS_AT)
 
 
-class OpexEvaluator(PowerBasedEvaluator, OpexElement):
-    pass
+class OpexEvaluator(TimeseriesEvaluator, OpexElement):
+    def __init__(
+        self,
+        name: str,
+        eco: EcoParams,
+        spec_power: pd.Series,
+        spec_dist: pd.Series,
+        spec_time: pd.Series,
+        fix: float,
+        spec_peak: float,
+        n_peak_periods_yr: int,
+        n_peak_periods_sim: int,
+        **kwargs,
+    ):
+        super().__init__(
+            name=name,
+            eco=eco,
+            spec_power=spec_power,
+            spec_dist=spec_dist,
+            spec_time=spec_time,
+            fix=fix,
+            **kwargs,
+        )
+
+        self.spec_peak = spec_peak
+        self.n_peak_periods_yr = n_peak_periods_yr
+        self.n_peak_periods_sim = n_peak_periods_sim
+
+    @classmethod
+    def _build_kwargs_from_params(cls, params: OpexParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
+        return dict(
+            **super()._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs),
+            spec_peak=params.spec_peak,
+            n_peak_periods_yr=params.n_peak_periods_yr,
+            n_peak_periods_sim=params.n_peak_periods_sim,
+        )
+
+    def _calc_spec_ep_peak(self, **kwargs) -> float:
+        return self.spec_peak * self.n_peak_periods_yr / self.n_peak_periods_sim if self.eco.compensate_sim_prj else 1
+
+    @property
+    def spec_ep_peak(self) -> float:
+        return self._calc_spec_ep_peak()
+
+    def _calc_eval(
+        self,
+        power: pd.Series | None,
+        dist: pd.Series | None,
+        time: pd.Series | None,
+        power_peak: float | None = None,
+        **kwargs,
+    ) -> float:
+        cost = super()._calc_eval(power=power, dist=dist, time=time, **kwargs)
+
+        cost_peak = power_peak * self.spec_peak if power_peak is not None else 0.0
+
+        return cost + cost_peak
+
+    def evaluate(
+        self,
+        power: pd.Series | None,
+        dist: pd.Series | None = None,
+        time: pd.Series | None = None,
+        power_peak: float | None = None,
+        **kwargs,
+    ) -> None:
+        super().evaluate(power=power, dist=dist, time=time, power_peak=power_peak, **kwargs)
 
 
-class CrevEvaluator(PowerBasedEvaluator, CrevElement):
+class CrevEvaluator(TimeseriesEvaluator, CrevElement):
     pass
 
 
@@ -313,11 +401,6 @@ class Evaluator(BlockElement):
     opex: OpexEvaluator
     crev: CrevEvaluator
 
-    CAPEX_EVALUATOR: ClassVar[Type[CapexEvaluator]] = CapexEvaluator
-    MNTEX_EVALUATOR: ClassVar[Type[MntexEvaluator]] = MntexEvaluator
-    OPEX_EVALUATOR: ClassVar[Type[OpexEvaluator]] = OpexEvaluator
-    CREV_EVALUATOR: ClassVar[Type[CrevEvaluator]] = CrevEvaluator
-
     @classmethod
     def create(
         cls,
@@ -336,10 +419,10 @@ class Evaluator(BlockElement):
             eco=eco,
             name_size=name_size,
             name_flow=name_flow,
-            capex=cls.CAPEX_EVALUATOR.create_from_params(name, eco, capex, data_dir) if capex else None,
-            mntex=cls.MNTEX_EVALUATOR.create_from_params(name, eco, mntex, data_dir) if mntex else None,
-            opex=cls.OPEX_EVALUATOR.create_from_params(name, eco, opex, data_dir) if opex else None,
-            crev=cls.CREV_EVALUATOR.create_from_params(name, eco, crev, data_dir) if crev else None,
+            capex=CapexEvaluator.create_from_params(name, eco, capex, data_dir) if capex else None,
+            mntex=MntexEvaluator.create_from_params(name, eco, mntex, data_dir) if mntex else None,
+            opex=OpexEvaluator.create_from_params(name, eco, opex, data_dir) if opex else None,
+            crev=CrevEvaluator.create_from_params(name, eco, crev, data_dir) if crev else None,
         )
 
     @property
@@ -356,19 +439,35 @@ class Evaluator(BlockElement):
         """
         return sum(component.spec_ep for component in (self.opex, self.crev) if component is not None)
 
+    @property
+    def spec_ep_peak(self) -> float:
+        """
+        Equivalent present specific costs for peak power (cost per power)
+        """
+        return self.opex.spec_ep_peak if self.opex is not None else 0.0
+
     def evaluate(
         self,
         size_preexisting: float | None = None,
         size_expansion: float | None = None,
-        flow: pd.Series | None = None,
+        power: pd.Series | None = None,
+        dist: pd.Series | None = None,
+        time: pd.Series | None = None,
+        power_peak: float | None = None,
         **kwargs,
     ) -> None:
+        if time is not None:
+            time = time.astype(bool).astype(int)  # ensure that time is a binary indicator (1 > 0, else 0)
+
         for attr in (self.capex, self.mntex, self.opex, self.crev):
             if attr:
                 attr.evaluate(
                     size_preexisting=size_preexisting,
                     size_expansion=size_expansion,
-                    flow=flow,
+                    power=power,
+                    dist=dist,
+                    time=time,
+                    power_peak=power_peak,
                     **kwargs,
                 )
 

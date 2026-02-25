@@ -355,7 +355,7 @@ class SystemCore(ElectricBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec=self.opex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
             name_size="acdc",
             name_flow="acdc",
         )
@@ -371,7 +371,7 @@ class SystemCore(ElectricBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec=self.opex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
             name_size="dcac",
             name_flow="dcac",
         )
@@ -504,7 +504,7 @@ class RenewableSource(SourceBlock, ABC):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec=self.opex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -724,7 +724,7 @@ class FixedDemand(SinkBlock):
                 consider_preexisting=self.capex_preexisting_metering,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_metering),
-            crev=eco.CrevParams(spec=self.crev_spec),
+            crev=eco.CrevParams(spec_power=self.crev_spec),
             name_flow="in",
         )
 
@@ -953,7 +953,7 @@ class ControllableSource(SourceBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.mntex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -1081,14 +1081,15 @@ class GridConnection(ElectricBlock):
 
         self.pois.update(
             {
-                period: eco.PeakPowerEvaluator.create_from_plain(
+                period: eco.Evaluator.create(
                     name=period,
                     eco=self.scenario.eco_params,
                     data_dir=self.scenario.paths.input,
-                    opex_spec=self.opex_spec_peak,
-                    opex_n_peak_periods_yr=n_peak_periods_yr,
-                    opex_n_peak_periods_sim=n_peak_periods_sim,
-                    name_flow=period,
+                    opex=eco.OpexParams(
+                        spec_peak=self.opex_spec_peak,
+                        n_peak_periods_yr=n_peak_periods_yr,
+                        n_peak_periods_sim=n_peak_periods_sim,
+                    ),
                 )
                 for period in self.peak_periods.keys()
             }
@@ -1219,7 +1220,7 @@ class GridConnection(ElectricBlock):
                     self.bus_connected: solph.Flow(
                         nominal_capacity=(
                             solph.Investment(
-                                ep_costs=(self.pois[period.label].spec_ep_operation if self.peakshaving else 0),
+                                ep_costs=(self.pois[period.label].spec_ep_peak if self.peakshaving else 0),
                                 existing=period.max_power,
                             )
                         ),
@@ -1301,9 +1302,9 @@ class GridConnection(ElectricBlock):
 
         peak_period = self.peak_periods.get(poi.name, None)
         if peak_period is None:
-            kwargs_eval["power_peak"] = None
-        else:
-            kwargs_eval["power_peak"] = peak_period.max_power
+            return kwargs_eval
+
+        kwargs_eval["power_peak"] = peak_period.max_power
         return kwargs_eval
 
     def calc_results_economics(self):
@@ -1322,16 +1323,16 @@ class GridMarket(ElectricBlock):
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec_g2s),
+            opex=eco.OpexParams(spec_power=self.opex_spec_g2s),
             name_size="g2s",
             name_flow="out",
         )
 
-        self.pois["s2g"] = eco.Evaluator.create_from_plain(
+        self.pois["s2g"] = eco.Evaluator.create(
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            params_opex=eco.OpexParams(spec=self.opex_spec_s2g),
+            opex=eco.OpexParams(spec_power=self.opex_spec_s2g),
             name_size="s2g",
             name_flow="in",
         )
@@ -1416,7 +1417,7 @@ class StorageBlock(ElectricBlock):
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
             name_flow="in",
         )
 
@@ -1685,7 +1686,7 @@ class Fleet(SinkBlock):
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec_f2s),
+            opex=eco.OpexParams(spec_power=self.opex_spec_f2s),
             name_flow="out",
         )
 
@@ -1693,7 +1694,7 @@ class Fleet(SinkBlock):
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec_s2f),
+            opex=eco.OpexParams(spec_power=self.opex_spec_s2f),
             name_flow="in",
         )
 
@@ -1904,7 +1905,7 @@ class SubFleet(NonElectricBlock):
 
 class FleetUnit(BaseBlock):
     def init_pois(self):
-        self.pois["glider"] = eco.VehicleEvaluator.create(
+        self.pois["glider"] = eco.Evaluator.create(
             name="glider",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
@@ -1915,8 +1916,8 @@ class FleetUnit(BaseBlock):
                 consider_preexisting=self.capex_preexisting_glider,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_glider),
-            opex=eco.VehicleOpexParams(spec_dist=self.opex_spec_dist),
-            crev=eco.VehicleCrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
+            opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
+            crev=eco.CrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
         )
 
     def __init__(
@@ -1961,7 +1962,8 @@ class FleetUnit(BaseBlock):
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
         kwargs_eval["dist"] = self.log["dist"]
-        kwargs_eval["atbase"] = self.log["atbase"]
+        # convert to active time -> vehicle not at base
+        kwargs_eval["time"] = ~(self.log["atbase"].astype(bool))
         return kwargs_eval
 
 
@@ -1989,7 +1991,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec_ext_ac),
+            opex=eco.OpexParams(spec_power=self.opex_spec_ext_ac),
             name_flow="ext_ac",
         )
 
@@ -1997,7 +1999,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec=self.opex_spec_ext_dc),
+            opex=eco.OpexParams(spec_power=self.opex_spec_ext_dc),
             name_flow="ext_dc",
         )
 

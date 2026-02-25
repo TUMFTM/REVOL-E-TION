@@ -7,7 +7,7 @@ import pandas as pd
 from .abstractclasses import (
     BaseElement,
     YearlyElement,
-    PowerBasedElement,
+    TimeseriesElement,
     CapexElement,
     MntexElement,
     OpexElement,
@@ -101,7 +101,7 @@ class YearlyAggregator(CrossLevelAggregator, YearlyElement, ABC):
         super().aggregate()
 
 
-class PowerBasedAggregator(YearlyAggregator, PowerBasedElement, ABC):
+class TimeseriesAggregator(YearlyAggregator, TimeseriesElement, ABC):
     """
     PowerBasedAggregator aggregates the values of all given PowerBasedElements.
     """
@@ -141,7 +141,7 @@ class MntexAggregator(YearlyAggregator, MntexElement):
     pass
 
 
-class OpexAggregator(PowerBasedAggregator, OpexElement):
+class OpexAggregator(TimeseriesAggregator, OpexElement):
     """
     OpexAggregator aggregates the values of all given opex elements (Evaluators and Aggregators).
     """
@@ -149,7 +149,7 @@ class OpexAggregator(PowerBasedAggregator, OpexElement):
     pass
 
 
-class CrevAggregator(PowerBasedAggregator, CrevElement):
+class CrevAggregator(TimeseriesAggregator, CrevElement):
     """
     CrevAggregator aggregates the values of all given crev elements (Evaluators and Aggregators).
     """

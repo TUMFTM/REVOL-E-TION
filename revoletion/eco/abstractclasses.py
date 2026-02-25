@@ -99,7 +99,7 @@ class YearlyElement(BaseElement, ABC):
         )
 
 
-class PowerBasedElement(YearlyElement, ABC):
+class TimeseriesElement(YearlyElement, ABC):
     """
     Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
     """
@@ -179,7 +179,7 @@ class MntexElement(YearlyElement, ABC):
     _TYPE = "mntex"
 
 
-class OpexElement(PowerBasedElement, ABC):
+class OpexElement(TimeseriesElement, ABC):
     """
     Base class for all opex elements.
     """
@@ -187,7 +187,7 @@ class OpexElement(PowerBasedElement, ABC):
     _TYPE = "opex"
 
 
-class CrevElement(PowerBasedElement, ABC):
+class CrevElement(TimeseriesElement, ABC):
     """
     Base class for all crev elements.
     """
@@ -257,7 +257,7 @@ class CalculableYearlyElement(CalculableBaseElement, YearlyElement, ABC):
         super().evaluate(*args, **kwargs)
 
 
-class CalculablePowerBasedElement(CalculableYearlyElement, PowerBasedElement, ABC):
+class CalculableTimeseriesElement(CalculableYearlyElement, TimeseriesElement, ABC):
     """
     Base class for all economic elements that calculate their own results, have yearly occurring costs or revenues and scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
     """
