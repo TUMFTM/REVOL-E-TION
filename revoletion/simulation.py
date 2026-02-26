@@ -489,7 +489,7 @@ class Scenario:
             self.e_eta = self.energies["sinks"].eval / e_sources_eval
             self.renewable_share = self.energies["renewable_act"].eval / e_sources_eval
 
-        e_sinks_dis = self.energies["sinks"].dis
+        e_sinks_dis = -1 * self.energies["sinks"].dis
         if e_sinks_dis == 0:
             self.logger.warning("LCOE calculation: division by zero")
             self.lcoe_total = np.inf
