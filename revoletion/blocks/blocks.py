@@ -1095,6 +1095,7 @@ class GridConnection(ElectricBlock):
                 freq=self.scenario.timestep.td,
                 inclusive="left",
             )
+            .tz_localize(None)
             .to_period(self.peak_period)
             .nunique()
         )
@@ -1146,7 +1147,7 @@ class GridConnection(ElectricBlock):
             )
             ends = starts + pd.Timedelta(days=7)
         else:
-            periods = self.scenario.times.sim.dti.to_period(self.peak_period)
+            periods = self.scenario.times.sim.dti.tz_localize(None).to_period(self.peak_period)
             labels = periods.astype(str)
             starts = periods.start_time
             ends = periods.end_time.ceil(self.scenario.timestep.td)
