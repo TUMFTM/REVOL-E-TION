@@ -293,19 +293,19 @@ class Scenario:
                 self.holiday_dates = sorted(
                     getattr(holidays, self.location.country)(years=years, state=self.location.state)
                 )
-            except:  # not for all countries the states are available (e.g. France)
-                try:
-                    self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
-                    self.logger.warning(
-                        f"Holidays for state {self.location.state} not available. "
-                        f"Country-wide holidays for {self.location.country} are used instead."
-                    )
-                except AttributeError:  # not all countries worldwide are available
-                    self.holiday_dates = []
-                    self.logger.warning(
-                        f"Holidays for country {self.location.country} not available. "
-                        f"No public holidays are considered in this scenario."
-                    )
+            except NotImplementedError:  # not for all countries the states are available (e.g. France)
+                self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
+                self.logger.warning(
+                    f"Holidays for state {self.location.state} not available. "
+                    f"Country-wide holidays for {self.location.country} are used instead."
+                )
+            except AttributeError:  # not all countries worldwide are available
+                self.holiday_dates = []
+                self.logger.warning(
+                    f"Holidays for country {self.location.country} not available. "
+                    f"No public holidays are considered in this scenario."
+                )
+
         else:
             self.holiday_dates = []
 
