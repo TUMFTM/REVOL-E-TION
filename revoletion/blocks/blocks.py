@@ -1319,10 +1319,8 @@ class GridConnection(ElectricBlock):
             return kwargs_eval
 
         kwargs_eval["power_peak"] = peak_period.max_power
+        kwargs_eval["period_frac"] = peak_period.time_fraction
         return kwargs_eval
-
-    def calc_results_economics(self):
-        super().calc_results_economics(peak_periods=self.peak_periods)
 
     def calc_results_energies(self):
         super().calc_results_energies()
