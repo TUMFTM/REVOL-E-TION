@@ -2,6 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
+from enum import Enum
 import importlib.metadata
 import importlib.util
 import logging
@@ -18,10 +19,7 @@ from . import time
 _LOGGER = logging.getLogger(__name__)
 
 
-from enum import Enum
-
-
-class PeakPeriodFreq(str, Enum):
+class PeakPowerPeriodFreq(str, Enum):
     DAY = "D"
     WEEK = "W-MON"  # -> week starts on Monday. For labeling code uses ISO week which also starts on Monday.
     MONTH = "M"
@@ -30,7 +28,7 @@ class PeakPeriodFreq(str, Enum):
 
 
 @dataclass
-class PeriodInfo:
+class PeakPowerPeriodInfo:
     label: str
     max_power: float
     time_fraction: float

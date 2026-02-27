@@ -1083,7 +1083,7 @@ class GridConnection(ElectricBlock):
         self.inflows = dict()
         self.outflows = dict()
 
-        self.peak_period = utils.PeakPeriodFreq[self.peak_period.upper()]
+        self.peak_period = utils.PeakPowerPeriodFreq[self.peak_period.upper()]
         self.peak_freq = "15min"  # ToDo: make this a parameter in the scenario file
         self.peak_periods = self.get_peak_periods_dict()
 
@@ -1139,7 +1139,7 @@ class GridConnection(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
     def get_peak_periods_dict(self):
-        if self.peak_period == utils.PeakPeriodFreq.WEEK:
+        if self.peak_period == utils.PeakPowerPeriodFreq.WEEK:
             iso = self.scenario.times.sim.dti.isocalendar()
             labels = iso["year"].astype(str) + "-CW" + iso["week"].astype(str).str.zfill(2)
             starts = pd.DatetimeIndex(
@@ -1166,7 +1166,7 @@ class GridConnection(ElectricBlock):
             activation = pd.Series(labels == label, index=self.scenario.times.sim.dti, dtype=float)
             fraction = len(ts) / ((period_end - period_start) / self.scenario.timestep.td)
 
-            period_dict[label] = utils.PeriodInfo(
+            period_dict[label] = utils.PeakPowerPeriodInfo(
                 label=label,
                 activation=activation,
                 max_power=self.peak_power_init,
