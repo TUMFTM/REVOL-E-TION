@@ -963,7 +963,7 @@ class ControllableSource(SourceBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
