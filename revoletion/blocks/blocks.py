@@ -1093,21 +1093,22 @@ class GridConnection(ElectricBlock):
 
         n_peak_periods_sim = len(self.peak_periods)
 
-        self.pois.update(
-            {
-                period: eco.POI.create(
-                    name=period,
-                    eco=self.scenario.eco_params,
-                    data_dir=self.scenario.paths.input,
-                    opex=eco.OpexParams(
-                        spec_peak=self.opex_spec_peak,
-                        n_peak_periods_yr=n_peak_periods_yr,
-                        n_peak_periods_sim=n_peak_periods_sim,
-                    ),
-                )
-                for period in self.peak_periods.keys()
-            }
-        )
+        peak_period_pois = {
+            period: eco.POI.create(
+                name=period,
+                eco=self.scenario.eco_params,
+                data_dir=self.scenario.paths.input,
+                opex=eco.OpexParams(
+                    spec_peak=self.opex_spec_peak,
+                    n_peak_periods_yr=n_peak_periods_yr,
+                    n_peak_periods_sim=n_peak_periods_sim,
+                ),
+            )
+            for period in self.peak_periods.keys()
+        }
+        self.pois.update(peak_period_pois)
+        for poi in peak_period_pois.values():
+            self.aggregator.add_block(poi)
 
         self.flows[list(self.peak_periods.keys())] = 0.0
 
