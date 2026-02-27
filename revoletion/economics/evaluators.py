@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Self
 
 import numpy as np
-import pandas as pd
 import numpy.typing as npt
+import pandas as pd
 
 from .abstractclasses import (
     BlockElement,
@@ -100,24 +100,9 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         )
 
     def _calc_eval(self, power: pd.Series | None, dist: pd.Series | None, time: pd.Series | None, **kwargs) -> float:
-        cost_power = (
-            np.dot(self.spec_power.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
-            if power is not None
-            else 0.0
-        )
-
-        cost_dist = np.dot(self.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy()) if dist is not None else 0.0
-
-        cost_time = (
-            np.dot(self.spec_time.to_numpy(), time[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
-            if time is not None
-            else 0.0
-        )
-
-        return cost_power + cost_dist + cost_time + self.fix
-
         # ToDo: check this out for reusability and avoid transforming a scalar to an array if not necessary
         #  make sure to also fix the spec_ep calculation in this case -> can also be scalar for oemof input
+        """
         if flow is None:
             cost_flow = 0.0
         else:
@@ -135,6 +120,23 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
 
         # Add fixed cost
         return cost_flow + self.fix
+        """
+
+        cost_power = (
+            np.dot(self.spec_power.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            if power is not None
+            else 0.0
+        )
+
+        cost_dist = np.dot(self.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy()) if dist is not None else 0.0
+
+        cost_time = (
+            np.dot(self.spec_time.to_numpy(), time[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+            if time is not None
+            else 0.0
+        )
+
+        return cost_power + cost_dist + cost_time + self.fix
 
     def evaluate(self, power: pd.Series | None, dist: pd.Series | None = None, time: pd.Series | None = None, **kwargs):
         super().evaluate(power=power, dist=dist, time=time, **kwargs)

@@ -6,8 +6,8 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Self
 
 import numpy as np
-import pandas as pd
 import numpy.typing as npt
+import pandas as pd
 
 from .utils import OccursAt, annuity, discount
 

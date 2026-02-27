@@ -91,9 +91,9 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
 
     # Pad the level name column to the maximum level name length.
     # define log formatter
-    log_formatter_stdout = LogFormatter(fmt=f"%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s")
+    log_formatter_stdout = LogFormatter(fmt="%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s")
     log_formatter_file = LogFormatter(
-        fmt=f"%(_timestamp_str)s%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s"
+        fmt="%(_timestamp_str)s%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s"
     )
 
     # define root logger handler for console output

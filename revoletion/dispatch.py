@@ -8,7 +8,7 @@ import statistics
 # from packages
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple
 
 # packages
 import numpy as np
@@ -17,6 +17,9 @@ import simpy
 
 # from local packages
 from . import blocks
+
+if TYPE_CHECKING:
+    from . import simulation
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):
