@@ -57,10 +57,6 @@ class BlockScenarioInterface(ABC):
 
 
 class BaseBlock(BlockScenarioInterface, ABC):
-    """
-    abstract class
-    """
-
     _SIZE_NAMES = []
     _FLOW_NAMES = []
     _STATE_NAMES = []
@@ -68,18 +64,17 @@ class BaseBlock(BlockScenarioInterface, ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
+        # Merge the _FLOW_NAMES, _STATE_NAMES, and _SIZE_NAMES from all parent classes and own definition
         for attr in ("_FLOW_NAMES", "_STATE_NAMES", "_SIZE_NAMES"):
             accumulated = []
 
-            # Merge from direct parents
+            # Merge from direct parents only (as they already contain the merged lists of their parents)
             for base in cls.__bases__:
                 if hasattr(base, attr):
-                    parent_value = getattr(base, attr)
-                    accumulated.extend(parent_value)
+                    accumulated.extend(getattr(base, attr))
 
             # Add own definition (if any)
-            own = cls.__dict__.get(attr, [])
-            accumulated.extend(own)
+            accumulated.extend(cls.__dict__.get(attr, []))
 
             setattr(cls, attr, accumulated)
 
@@ -499,10 +494,6 @@ class SystemCore(ElectricBlock):
 
 
 class RenewableSource(SourceBlock, ABC):
-    """
-    abstract class
-    """
-
     _SIZE_NAMES = [("block", "kWp")]
     _FLOW_NAMES = ["out", "curt", "pot"]
 
@@ -1418,11 +1409,7 @@ class GridMarket(ElectricBlock):
         ]["sequences"]["flow"][horizon.ch.dti]
 
 
-class StorageBlock(ElectricBlock):
-    """
-    abstract class
-    """
-
+class StorageBlock(ElectricBlock, ABC):
     _SIZE_NAMES = [("storage", "kWh")]
     _FLOW_NAMES = ["in", "out", "bat_in", "bat_out"]
     _STATE_NAMES = [
@@ -1995,10 +1982,6 @@ class FleetUnit(BaseBlock):
 
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
-    """
-    abstract class
-    """
-
     _FLOW_NAMES = ["ext_ac", "ext_dc"]
 
     def init_pois(self):
