@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+import holidays
 import pandas as pd
 import pytz
 
@@ -67,6 +68,25 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
         value = pd.Timedelta(value, unit=unit)
 
     return value
+
+
+def get_holiday_dates(
+    dti: pd.DatetimeIndex, country: str, state: str | None, logger: logging.Logger
+) -> list[pd.Timestamp]:
+    years = range(min(dti).year, max(dti).year + 1)
+    try:
+        holiday_dates = sorted(getattr(holidays, country)(years=years, state=state))
+    except NotImplementedError:  # not for all countries the states are available (e.g. France)
+        holiday_dates = sorted(getattr(holidays, country)(years=years))
+        logger.warning(
+            f"Holidays for state {state} not available. Country-wide holidays for {country} are used instead."
+        )
+    except AttributeError:  # not all countries worldwide are available
+        holiday_dates = []
+        logger.warning(
+            f"Holidays for country {country} not available. No public holidays are considered in this scenario."
+        )
+    return holiday_dates
 
 
 def infer_dtype(value):
