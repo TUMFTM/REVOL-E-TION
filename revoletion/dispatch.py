@@ -422,7 +422,7 @@ class FleetDispatcher:
             [process.dtime_rental + process.dtime_chg_prim for process in self.processes.values()]
         )
         time_total = self.time.time_end - self.time.time_start
-        n_units = sum([store.capacity for store in self.stores.values()])
+        n_units = sum(store.capacity for store in self.stores.values())
 
         try:
             self.rate_use = time_active_total / time_total / n_units

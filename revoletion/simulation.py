@@ -498,7 +498,7 @@ class Scenario:
             self.lcoe_total = self.aggregator.totex.dis / e_sinks_dis
             self.lcoe_wocs = (
                 self.aggregator.totex.dis
-                - sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
+                - sum(fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values())
             ) / e_sinks_dis
 
         self.npc = self.aggregator.totex.dis
