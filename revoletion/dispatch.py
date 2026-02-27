@@ -541,8 +541,12 @@ class DispatchProcess:
                 self.dsoc_rex = getattr(sfp_rex, "dsoc_usable", 0) * self.utilization
 
                 if sfp_prim.is_electric:
-                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total
-                    self.energy_req_rex = self.dsoc_rex * getattr(sfp_rex, "energy_total", 0)
+                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total * np.sqrt(sfp_prim.eff_roundtrip)
+                    self.energy_req_rex = (
+                        self.dsoc_rex
+                        * getattr(sfp_rex, "energy_total", 0)
+                        * np.sqrt(getattr(sfp_rex, "eff_roundtrip", 0))
+                    )
                 else:
                     self.energy_req_prim = self.energy_req
                     self.energy_req_rex = 0
