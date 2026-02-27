@@ -2059,13 +2059,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
         # region calc minimum soc targets before usage and max soc for myopic optimization
         dsoc_ph = self.log.loc[horizon.ph.dti, "dsoc"]
-        if (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, ElectricVehicle):
+        # ensure long tours (> prediction horizon) have enough SOC to fulfil it
+        if (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc"):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
-                lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
-                upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
-            )
-        elif (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, MobileBattery):
-            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
                 lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
                 upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
             )
