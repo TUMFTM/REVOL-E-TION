@@ -298,9 +298,10 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
+        # neglect last year as it is just for residual value of capex
         return np.dot(
-            np.full(self.eco.prj_duration_yrs + 1, self.spec),
-            self.eco.discount_factors(self._TYPE.value.occurs_at),
+            np.full(self.eco.prj_duration_yrs, self.spec),
+            self.eco.discount_factors(self._TYPE.value.occurs_at)[: self.eco.prj_duration_yrs],
         ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
 
 
