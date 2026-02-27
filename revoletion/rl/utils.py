@@ -1,3 +1,4 @@
+from mpmath.functions.functions import re
 import numpy as np
 import pandas as pd
 
@@ -16,7 +17,7 @@ def get_soc_envelope(
 
     nom_capacity_wh = block.sizes["storage"].preexisting
 
-    max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"]
+    max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"] * np.sqrt(block.eff["storage_roundtrip"])
     if dsoc_step is None:
         dsoc_step_max = (max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
     else:
@@ -24,7 +25,7 @@ def get_soc_envelope(
 
     consumption = block.log.loc[dti, "consumption"] * horizon.timestep.hours
     # Need at least enough SoC to compensate standing loss.
-    consumption += block.loss_rate_per_ts
+    consumption += block.loss_rate_per_ts * nom_capacity_wh
 
     dsoc = consumption / nom_capacity_wh
 
@@ -61,26 +62,35 @@ def get_power_envelope(
     nom_capacity_wh = block.sizes["storage"].preexisting
     timestep_hours = horizon.timestep.hours
 
+    consumption = block.log.loc[horizon.dti, "consumption"] * horizon.timestep.hours
+    # Need at least enough SoC to compensate standing loss.
+    consumption += block.loss_rate_per_ts * nom_capacity_wh
+
+    dsoc = consumption / nom_capacity_wh
+
     # Calculate power required at each time step
     for i in range(len(horizon.dti) - 1):
-        current_time = horizon.dti[i]
-        next_time = horizon.dti[i + 1]
+        current_time_step = horizon.dti[i]
+        next_time_step = horizon.dti[i + 1]
+        current_soc -= dsoc[current_time_step]
 
-        if plugged[current_time]:
-            required_dsoc = max(soc_envelope[next_time] - current_soc, 0.0)
+        if plugged[current_time_step]:
+            required_dsoc = max(soc_envelope[next_time_step] - current_soc, 0.0)
+            current_soc += required_dsoc
 
             if required_dsoc > 0.0:
                 # Convert to power (W)
                 # Positive dsoc means SoC needs to increase (charging)
-                power_required = (required_dsoc * nom_capacity_wh) / timestep_hours / block.eff["chg_int"]
+                charge_dsoc = min(required_dsoc, 1.0)
+                power_required = (
+                    (charge_dsoc * nom_capacity_wh)
+                    / timestep_hours
+                    / block.eff["chg_int"]
+                    / np.sqrt(block.eff["storage_roundtrip"])
+                )
 
-                power_envelope[current_time] = max(power_required, 0.0)
-                current_soc += required_dsoc
-            else:
-                power_envelope[current_time] = 0.0
-        else:
-            current_soc = max(current_soc - (soc_envelope[current_time] - soc_envelope[next_time]), 0.0)
-            # Not plugged in, cannot charge
-            power_envelope[current_time] = 0.0
+                power_envelope[current_time_step] = power_required
+
+        print(current_time_step, current_soc, soc_envelope[current_time_step], power_envelope[current_time_step])
 
     return power_envelope

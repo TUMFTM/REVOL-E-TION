@@ -118,11 +118,11 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         bat_power = self._align_pypsa_values_to_dti(pypsa_bat_power, dti)
 
         if isinstance(bat_power, (pd.Series, pd.DatetimeIndex)):
-            bat_out = -bat_power.clip(upper=0)
-            bat_in = bat_power.clip(lower=0)
+            bat_in = -bat_power.clip(upper=0)
+            bat_out = bat_power.clip(lower=0)
         else:
-            bat_out = -np.clip(bat_power, a_max=0.0, a_min=-np.inf)
-            bat_in = np.clip(bat_power, a_min=0.0, a_max=np.inf)
+            bat_in = -np.clip(bat_power, a_max=0.0, a_min=-np.inf)
+            bat_out = np.clip(bat_power, a_min=0.0, a_max=np.inf)
 
         return {
             "out": self._get_pypsa_link_power_flow(block, dti, "outflow-link"),
@@ -504,10 +504,12 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
 
     @override
-    def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
+    def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
         dti = self._net.snapshots
 
         status = self._do_solve(dti)
+        if status != optimization_problem.OptimizationStatus.OPTIMAL:
+            return status, None
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
         return status, PypsaOptimizationResult(net=self._net)
@@ -515,7 +517,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     @override
     def solve_time_step(
         self, time_step: pd.DatetimeIndex
-    ) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult]:
+    ) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
         normalized_time_step = pypsa_utils.normalize_dti_or_df(time_step)
 
         # If we optimize only one time step, we assume rolling horizon optimization.
@@ -536,6 +538,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
                 ]
 
         status = self._do_solve(normalized_time_step)
+        if status != optimization_problem.OptimizationStatus.OPTIMAL:
+            return status, None
 
         # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
         # Therefore, the network is just wrapped inside the `PypsaOptimizationResult`.

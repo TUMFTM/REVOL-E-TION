@@ -75,6 +75,7 @@ class AgentAlgorithm(enum.Enum):
             AgentAlgorithm.FULL_DISCHARGE,
             AgentAlgorithm.BASIC,
             AgentAlgorithm.IDLE,
+            AgentAlgorithm.POWER_ENVELOPE,
         }
 
     def __str__(self) -> str:

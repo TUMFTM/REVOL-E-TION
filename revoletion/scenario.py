@@ -456,7 +456,9 @@ class Scenario:
     ) -> Self:
         latitude = parameters.loc["scenario", "latitude"]
         longitude = parameters.loc["scenario", "longitude"]
-        location = utils.Location.create_from_lat_lon(latitude=latitude, longitude=longitude, logger=logger)
+        location = utils.Location.create_from_lat_lon(
+            latitude=latitude, longitude=longitude, logger=logger, geocode=False
+        )
 
         return cls(
             paths=paths,
@@ -502,7 +504,9 @@ class Scenario:
         self.calc_meta_results()
 
         if not self.settings.largescalemode:
-            result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(self.block_registry)
+            result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(
+                self.block_registry, self.times.sim
+            )
             result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
             result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
 

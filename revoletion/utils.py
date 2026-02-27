@@ -298,10 +298,12 @@ def read_timeseries_csv(
             axis=1,
             level=0,
             key=lambda x: x.map(
-                lambda s: int(m.group(1))
-                # get the last continuous sequence of digits if possible
-                if (m := re.search(r"(\d+)(?!.*\d)", s))
-                else s
+                lambda s: (
+                    int(m.group(1))
+                    # get the last continuous sequence of digits if possible
+                    if (m := re.search(r"(\d+)(?!.*\d)", s))
+                    else s
+                )
             ),
             sort_remaining=True,
             inplace=True,

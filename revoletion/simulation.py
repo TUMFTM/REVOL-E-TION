@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-from revoletion.rl.scenario_factory import (
-    HorizonInitializer,
-    SocEnvelopeHorizonInitialzer,
-    InitialSocHorizonInitializer,
-    AtBaseHorizonInitializer,
-)
-
+from revoletion.scheduler import AprioriPowerScheduler
 import logging
 import types
 from dataclasses import dataclass
@@ -15,7 +9,15 @@ import numpy as np
 import pandas as pd
 from typing_extensions import override
 
+from revoletion.rl.scenario_factory import (
+    AtBaseHorizonInitializer,
+    HorizonInitializer,
+    InitialSocHorizonInitializer,
+    SocEnvelopeHorizonInitialzer,
+)
+
 from . import blocks, optimization, rl, utils
+from .rl import utils as rl_utils
 from . import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
@@ -425,6 +427,8 @@ class ControlHorizon:
 
         if self._settings.agent_algorithm == rl.AgentAlgorithm.OPTIMAL:
             optimization_result = self._evaluate_with_optimizer(scenario, eval_horizon)
+        elif self._settings.agent_algorithm == rl.AgentAlgorithm.POWER_ENVELOPE:
+            optimization_result = self._evaluate_with_power_envelope(scenario, eval_horizon)
         else:
             optimization_result = self._evaluate_with_agent(scenario, eval_horizon)
 
@@ -516,13 +520,16 @@ class ControlHorizon:
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=scenario.cost_eps,
             solver=optimization.Solver.HIGHS,
+            enforce_soc_constraints=True,
             invest=False,
+            committment=True,
         )
 
         horizon_initializer = HorizonInitializer(
             horizon_initializers=[
                 SocEnvelopeHorizonInitialzer(
                     soc_min=0.05,
+                    max_charge_power_frac=0.95,
                 ),
                 InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
                 AtBaseHorizonInitializer(),
@@ -537,6 +544,60 @@ class ControlHorizon:
             self._logger,
             optimization_problem_config,
         )
+        for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            optimization_problem.set_minimum_input_power_unit(block, 0.1, eval_horizon.dti)
+
+        _, optimization_result = optimization_problem.solve()
+        return optimization_result
+
+    def _evaluate_with_power_envelope(
+        self, scenario: scn.Scenario, eval_horizon: utils.TimeSettings
+    ) -> optimization.OptimizationResult | None:
+        optimization_problem_config = optimization.OptimizationProblemConfig(
+            cost_eps=scenario.cost_eps,
+            solver=optimization.Solver.HIGHS,
+            enforce_soc_constraints=True,
+            invest=False,
+            committment=False,
+        )
+
+        horizon_initializer = HorizonInitializer(
+            horizon_initializers=[
+                SocEnvelopeHorizonInitialzer(
+                    soc_min=0.05,
+                    max_charge_power_frac=0.95,
+                ),
+                InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
+                AtBaseHorizonInitializer(),
+            ]
+        )
+
+        horizon_initializer.initialize(scenario, eval_horizon)
+
+        scheduler = AprioriPowerScheduler(scenario)
+        scheduler.calc_ph_schedule(eval_horizon)
+
+        optimization_problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
+            scenario,
+            eval_horizon,
+            self._logger,
+            optimization_problem_config,
+        )
+
+        for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            eff_charge = block.eff["chg_int"]
+            max_charge_power_w = block.pwr_chg_max * eff_charge
+
+            soc_envelope = block.states.loc[eval_horizon.dti, "soc_min"]
+            power_envelope = rl_utils.get_power_envelope(block, eval_horizon, soc_envelope)
+
+            target_power_unit = np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
+            for time_step in eval_horizon.dti:
+                power_unit_buffer = 1e-2 if target_power_unit[time_step] > 0.0 else 0.0
+                optimization_problem.set_input_power_unit(
+                    block, target_power_unit[time_step], time_step, power_unit_buffer=power_unit_buffer
+                )
+            block.states.loc[eval_horizon.dti, "soc_min"] = 0.05
 
         _, optimization_result = optimization_problem.solve()
         return optimization_result

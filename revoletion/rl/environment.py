@@ -28,16 +28,16 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = 10.0
+    penalty_factor_grid_opex: float = -10.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
-    penalty_factor_charge_opex: float = 0.0
+    penalty_factor_charge_opex: float = -0.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_gen_opex: float = 1.0
+    penalty_factor_gen_opex: float = -1.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_ext_charge_opex: float = 0.0
+    penalty_factor_ext_charge_opex: float = -0.0
 
     penalty_base_dsoc: float = -5.0
 
@@ -110,21 +110,21 @@ class RewardComponents:
     @property
     def grid_opex_reward(self) -> float:
         if self.grid_opex > 0.0:
-            return -self.grid_opex * self.config.penalty_factor_grid_opex
+            return self.grid_opex * self.config.penalty_factor_grid_opex
         return self.grid_opex
 
     @property
     def charge_opex_reward(self) -> float:
-        return -self.charge_opex * self.config.penalty_factor_charge_opex
+        return self.charge_opex * self.config.penalty_factor_charge_opex
 
     @property
     def ext_charge_opex_reward(self) -> float:
-        return -self.ext_charge_opex * self.config.penalty_factor_ext_charge_opex
+        return self.ext_charge_opex * self.config.penalty_factor_ext_charge_opex
 
     @property
     def gen_opex_reward(self) -> float:
         if self.gen_opex > 0.0:
-            return -self.gen_opex * self.config.penalty_factor_gen_opex
+            return self.gen_opex * self.config.penalty_factor_gen_opex
         return self.gen_opex
 
     @property

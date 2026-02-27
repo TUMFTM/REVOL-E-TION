@@ -31,7 +31,8 @@ class SocEnvelopeHorizonInitialzer(HorizonInitializerInterface):
         for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
             nom_capacity_wh = electric_fleet_unit_block.sizes["storage"].preexisting
             eff_charge = electric_fleet_unit_block.eff["chg_int"]
-            max_charge_power_w = electric_fleet_unit_block.pwr_chg_max * eff_charge
+            eff_storage_roundtrip = np.sqrt(electric_fleet_unit_block.eff["storage_roundtrip"])
+            max_charge_power_w = electric_fleet_unit_block.pwr_chg_max * eff_charge * eff_storage_roundtrip
 
             buffered_max_charge_power_w = max_charge_power_w * self._max_charge_power_frac
 

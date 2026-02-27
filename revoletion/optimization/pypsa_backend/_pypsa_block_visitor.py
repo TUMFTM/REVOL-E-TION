@@ -335,7 +335,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         builder.add_store(
             name=make_pypsa_label(block, "battery-store"),
             bus=bus_battery,
-            standing_loss=block.loss_rate_per_hour,
+            standing_loss=block.loss_rate_per_ts,
             # e_nom is set for use cases when investment is disabled and is ignored if investment is enabled.
             # For investment cases e_nom_min is used instead of p_nom.
             e_nom=battery_capacity_wh,

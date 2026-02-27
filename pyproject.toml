@@ -31,7 +31,7 @@ dependencies = [
     "typing-extensions>=4.15.0",
     "windpowerlib",
     "pydantic",
-    "pypsa>=1.0.3",
+    "pypsa>=1.1.2",
     "polars[rtcompat]"
 ]
 
