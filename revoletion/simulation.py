@@ -261,7 +261,6 @@ class Scenario:
                 delattr(self, param)
 
         if self.strategy == "rh":
-            # ToDo:
             self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.freqstr)
             self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.freqstr)
         elif self.strategy in ["go"]:
