@@ -717,7 +717,7 @@ class PredictionHorizon:
         self.constraints.apply_constraints(model=model)
 
         if self.scenario.settings.debugmode and self.index == 1:
-            model.write(self.scenario.path.dump, io_options={"symbolic_solver_labels": True})
+            model.write(self.scenario.paths.dump, io_options={"symbolic_solver_labels": True})
 
         return model
 
