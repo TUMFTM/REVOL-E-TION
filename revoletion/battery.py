@@ -249,29 +249,30 @@ class BatteryPackModel:
         k_crate_q_cyc = 0.0971 + 0.063 * crate_hor
         k_crate_r_cyc = 0.0023 - 0.0018 * crate_hor
 
-        if (sum_depth := np.sum(cycles_hor["depth"])) > 0:  # actual cycling happened
-            # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
-            k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor["depth"]) / sum_depth
-            k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor["depth"]) / sum_depth
+        sum_depth = np.sum(cycles_hor["depth"])
+        if sum_depth <= 0:
+            # no cycling happened
+            return
 
-            # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
-            k_crate_q_cyc = k_crate_q_cyc.mean()
-            k_crate_r_cyc = k_crate_r_cyc.mean()
+        # actual cycling happened
+        # Aggregate DOD stress factors through DOD-weighted mean (converting them to scalar)
+        k_dod_q_cyc = np.sum(k_dod_q_cyc * cycles_hor["depth"]) / sum_depth
+        k_dod_r_cyc = np.sum(k_dod_r_cyc * cycles_hor["depth"]) / sum_depth
 
-            # Define previous aging state as equivalent FECs at current conditions
-            fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
+        # Aggregate C-rate stress factors through arithmetic mean (converting them to a scalar)
+        k_crate_q_cyc = k_crate_q_cyc.mean()
+        k_crate_r_cyc = k_crate_r_cyc.mean()
 
-            # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
-            self.q_loss_cyc[horizon.index + 1] = (
-                0.01 * (k_tuning * k_dod_q_cyc * k_crate_q_cyc) * (np.sqrt(fec_eq + fec_hor) - np.sqrt(fec_eq))
-            )
-            self.r_inc_cyc[horizon.index + 1] = (
-                0.01 * (k_tuning * k_dod_r_cyc * k_crate_r_cyc) * fec_hor
-            )  # linear, not fec_eq needed
-        else:  # technically not necessary to set values here as no aging happens, eases debugging
-            beta_cap = 0
-            beta_res = 0
-            q_eq = 0
+        # Define previous aging state as equivalent FECs at current conditions
+        fec_eq = 100 * np.sum(self.q_loss_cyc) / ((k_tuning * k_dod_q_cyc * k_crate_q_cyc) ** 2)
+
+        # Calculate cyclic aging within this horizon (0.01 converts percent to fraction)
+        self.q_loss_cyc[horizon.index + 1] = (
+            0.01 * (k_tuning * k_dod_q_cyc * k_crate_q_cyc) * (np.sqrt(fec_eq + fec_hor) - np.sqrt(fec_eq))
+        )
+        self.r_inc_cyc[horizon.index + 1] = (
+            0.01 * (k_tuning * k_dod_r_cyc * k_crate_r_cyc) * fec_hor
+        )  # linear, not fec_eq needed
 
     def calc_aging_schmalstieg(self, horizon, t_hor, cycles_hor, temp_hor_k, ocv_hor, q_tot_hor):
         # Schmalstieg aging model is not verified yet against aging data from original paper
@@ -311,22 +312,22 @@ class BatteryPackModel:
         beta_res = 2.153e-4 * (ocv_cycles_mean - 3.725) ** 2 - 1.521e-5 + 2.798e-4 * cycles_hor["depth"]
         beta_res = np.maximum(1.5e-5, beta_res)  # limitation as per text following Eq. (21) in paper
 
-        if (sum_depth := np.sum(cycles_hor["depth"])) > 0:  # actual cycling happened
-            # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
-            beta_cap = np.sum(beta_cap * cycles_hor["depth"]) / sum_depth
-            beta_res = np.sum(beta_res * cycles_hor["depth"]) / sum_depth
+        sum_depth = np.sum(cycles_hor["depth"])
+        if sum_depth <= 0:
+            # no cycling happened
+            return
 
-            # Define previous aging state as equivalent FECs at current conditions
-            q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
+        # actual cycling happened
+        # Aggregate cyclic stress factors through DOD-weighted mean (converting them to scalar)
+        beta_cap = np.sum(beta_cap * cycles_hor["depth"]) / sum_depth
+        beta_res = np.sum(beta_res * cycles_hor["depth"]) / sum_depth
 
-            # Calculate cyclic aging
-            self.q_loss_cyc[horizon.index + 1] = k_tuning * beta_cap * (np.sqrt(q_eq + q_tot_hor) - np.sqrt(q_eq))
-            self.r_inc_cyc[horizon.index + 1] = k_tuning * beta_res * q_tot_hor
+        # Define previous aging state as equivalent FECs at current conditions
+        q_eq = (sum(self.q_loss_cyc) / (k_tuning * beta_cap)) ** 2
 
-        else:  # technically not necessary to set values here as no aging happens, eases debugging
-            beta_cap = 0
-            beta_res = 0
-            q_eq = 0
+        # Calculate cyclic aging
+        self.q_loss_cyc[horizon.index + 1] = k_tuning * beta_cap * (np.sqrt(q_eq + q_tot_hor) - np.sqrt(q_eq))
+        self.r_inc_cyc[horizon.index + 1] = k_tuning * beta_res * q_tot_hor
 
     def get_pack_parameters(self):
         self.size = self.block.sizes["storage"].total
