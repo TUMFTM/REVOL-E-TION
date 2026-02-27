@@ -221,13 +221,7 @@ def train_imitation_sqil(
         vec_env_cls=SubprocVecEnv,
     )
 
-    agent_config = agent.DEFAULT_SAC_AGENT_CONFIG
-    # For imitation learning the entropy should be reduced quite significantly.
-    agent_config.use_sde = False
-    agent_config.sde_sample_freq = None
-    agent_config.ent_coef = 0.1
-    agent_config.target_entropy = -1
-    base_agent = agent.create_trainable_agent(algorithm, env, agent_config)
+    base_agent = agent.create_trainable_agent(algorithm, env)
 
     imitation_learning.train_imitation_policy_sqil(trajectories, env, base_agent._sb3_agent, seed, train_timesteps)
 

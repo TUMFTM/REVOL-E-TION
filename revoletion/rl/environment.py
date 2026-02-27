@@ -14,7 +14,7 @@ from revoletion.rl.scenario_factory import (
     AtBaseHorizonInitializer,
     HorizonInitializer,
     InitialSocHorizonInitializer,
-    SocEnvelopeHorizonInitialzer,
+    MinSocHorizonInitializer,
 )
 
 from . import _context as context
@@ -28,18 +28,18 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = -10.0
+    penalty_factor_grid_opex: float = 10.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
-    penalty_factor_charge_opex: float = -0.0
+    penalty_factor_charge_opex: float = 0.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_gen_opex: float = -1.0
+    penalty_factor_gen_opex: float = 1.0
     """Weight applied to the costs of charging/discharging the EVs."""
 
-    penalty_factor_ext_charge_opex: float = -0.0
+    penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_base_dsoc: float = -5.0
+    penalty_base_dsoc: float = -10.0
 
     penalty_factor_dsoc: float = 10.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
@@ -58,12 +58,12 @@ class RewardConfig:
 
     penalty_base_power_diff: float = -0.05
 
-    penalty_factor_power_diff: float = -0.05
+    penalty_factor_power_diff: float = 0.05
     """Weight for the penalty if the agent tries to charge with a power that would exceed the maximal/minimum capacity of an EV."""
 
     penalty_base_atbase_violation: float = -0.05
 
-    penalty_factor_atbase_violation: float = -0.05
+    penalty_factor_atbase_violation: float = 0.05
     """Weight for the penalty if the agent tries to charge an EV even though the EV is currently not available at the charger."""
 
     reward_factor_step: float = 0.0
@@ -110,22 +110,22 @@ class RewardComponents:
     @property
     def grid_opex_reward(self) -> float:
         if self.grid_opex > 0.0:
-            return self.grid_opex * self.config.penalty_factor_grid_opex
-        return self.grid_opex
+            return -self.grid_opex * self.config.penalty_factor_grid_opex
+        return -self.grid_opex
 
     @property
     def charge_opex_reward(self) -> float:
-        return self.charge_opex * self.config.penalty_factor_charge_opex
+        return -self.charge_opex * self.config.penalty_factor_charge_opex
 
     @property
     def ext_charge_opex_reward(self) -> float:
-        return self.ext_charge_opex * self.config.penalty_factor_ext_charge_opex
+        return -self.ext_charge_opex * self.config.penalty_factor_ext_charge_opex
 
     @property
     def gen_opex_reward(self) -> float:
         if self.gen_opex > 0.0:
-            return self.gen_opex * self.config.penalty_factor_gen_opex
-        return self.gen_opex
+            return -self.gen_opex * self.config.penalty_factor_gen_opex
+        return -self.gen_opex
 
     @property
     def power_diff_reward(self) -> float:
@@ -136,7 +136,7 @@ class RewardComponents:
         power_diffs_base_penalty = self.config.penalty_base_power_diff * num_power_diffs
 
         power_diff_sum = sum([abs(power_diff) for power_diff in self.power_diffs])
-        scaled_power_diffs = power_diff_sum * self.config.penalty_factor_power_diff
+        scaled_power_diffs = -power_diff_sum * self.config.penalty_factor_power_diff
 
         return power_diffs_base_penalty + scaled_power_diffs
 
@@ -149,7 +149,7 @@ class RewardComponents:
         atbase_violations_base_penalty = self.config.penalty_base_atbase_violation * num_violations
 
         atbase_violations_sum = sum([abs(violation) for violation in self.atbase_violations])
-        scaled_atbase_violations = atbase_violations_sum * self.config.penalty_factor_atbase_violation
+        scaled_atbase_violations = -atbase_violations_sum * self.config.penalty_factor_atbase_violation
 
         return atbase_violations_base_penalty + scaled_atbase_violations
 
@@ -252,7 +252,7 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
 
         self._horizon_initializer = HorizonInitializer(
             horizon_initializers=[
-                SocEnvelopeHorizonInitialzer(
+                MinSocHorizonInitializer(
                     soc_min=self._config.soc_min,
                 ),
                 InitialSocHorizonInitializer(rng=np.random.default_rng(42)),

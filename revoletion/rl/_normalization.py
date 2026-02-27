@@ -45,31 +45,32 @@ class NormalizationProvider:
             ].preexisting
             max_opex_per_unit = controllable_source_block.evaluators["block"].opt.spec_ep_invest.quantile(_QUANTILE)
             max_opex = controllable_source_block.sizes["block"].preexisting * max_opex_per_unit
-            normalization_constants_output_opex[controllable_source_block] = max_opex
+            normalization_constants_output_opex[controllable_source_block] = abs(max_opex)
 
         for grid_market_block in ctx.grid_market_blocks:
-            normalization_constants_input_power[grid_market_block] = grid_market_block.pwr_g2s
+            normalization_constants_input_power[grid_market_block] = abs(grid_market_block.pwr_g2s)
 
             max_import_costs_per_unit = grid_market_block.evaluators["g2s"].opt.spec_ep_operation.quantile(_QUANTILE)
             max_import_costs = grid_market_block.pwr_g2s * max_import_costs_per_unit
-            normalization_constants_input_opex[grid_market_block] = max_import_costs
+            normalization_constants_input_opex[grid_market_block] = abs(max_import_costs)
 
-            normalization_constants_output_power[grid_market_block] = grid_market_block.pwr_s2g
+            normalization_constants_output_power[grid_market_block] = abs(grid_market_block.pwr_s2g)
 
-            max_export_profit_per_unit = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.quantile(_QUANTILE)
+            max_export_profit_per_unit = grid_market_block.evaluators["s2g"].opt.spec_ep_operation.quantile(
+                1.0 - _QUANTILE
+            )
             max_export_profit = grid_market_block.pwr_s2g * max_export_profit_per_unit
-            normalization_constants_output_opex[grid_market_block] = max_export_profit
+            normalization_constants_output_opex[grid_market_block] = abs(max_export_profit)
 
         for renewable_source_block in ctx.renewable_source_blocks:
             max_pwr = renewable_source_block.sizes["block"].preexisting
             normalization_constants_output_power[renewable_source_block] = max_pwr
             max_cost_per_unit = renewable_source_block.evaluators["block"].opt.spec_ep_operation.quantile(_QUANTILE)
-            normalization_constants_output_opex[renewable_source_block] = max_cost_per_unit * max_pwr
+            normalization_constants_output_opex[renewable_source_block] = abs(max_cost_per_unit * max_pwr)
 
         for fixed_demand_block in ctx.fixed_demand_blocks:
-            normalization_constants_input_power[fixed_demand_block] = fixed_demand_block.flows_apriori[
-                "demand"
-            ].quantile(_QUANTILE)
+            max_fixed_demand = fixed_demand_block.flows_apriori["demand"].quantile(_QUANTILE)
+            normalization_constants_input_power[fixed_demand_block] = abs(max_fixed_demand)
 
         for stationary_battery_block in ctx.stationary_battery_blocks:
             max_energy_wh = stationary_battery_block.sizes["storage"].preexisting
@@ -121,7 +122,7 @@ class NormalizationProvider:
         normalization_constant = self._normalization_constants_output_opex[block]
         if normalization_constant == 0.0:
             return orig_opex
-        return orig_opex / abs(normalization_constant)
+        return orig_opex / normalization_constant
 
     def normalize_stored_energy(self, stored_energy: _V, block: blocks.BaseBlock) -> _V:
         if block not in self._normalization_constants_energy:

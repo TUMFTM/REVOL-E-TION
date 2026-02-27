@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from revoletion.scheduler import AprioriPowerScheduler
 import logging
 import types
 from dataclasses import dataclass
@@ -13,12 +12,12 @@ from revoletion.rl.scenario_factory import (
     AtBaseHorizonInitializer,
     HorizonInitializer,
     InitialSocHorizonInitializer,
-    SocEnvelopeHorizonInitialzer,
+    MinSocHorizonInitializer,
 )
 
 from . import blocks, optimization, rl, utils
-from .rl import utils as rl_utils
 from . import scenario as scn
+from .rl import utils as rl_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -527,9 +526,8 @@ class ControlHorizon:
 
         horizon_initializer = HorizonInitializer(
             horizon_initializers=[
-                SocEnvelopeHorizonInitialzer(
+                MinSocHorizonInitializer(
                     soc_min=0.05,
-                    max_charge_power_frac=0.95,
                 ),
                 InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
                 AtBaseHorizonInitializer(),
@@ -546,6 +544,7 @@ class ControlHorizon:
         )
         for block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
             optimization_problem.set_minimum_input_power_unit(block, 0.1, eval_horizon.dti)
+            optimization_problem.set_minimum_output_power_unit(block, 0.1, eval_horizon.dti)
 
         _, optimization_result = optimization_problem.solve()
         return optimization_result
@@ -558,14 +557,12 @@ class ControlHorizon:
             solver=optimization.Solver.HIGHS,
             enforce_soc_constraints=True,
             invest=False,
-            committment=False,
         )
 
         horizon_initializer = HorizonInitializer(
             horizon_initializers=[
-                SocEnvelopeHorizonInitialzer(
+                MinSocHorizonInitializer(
                     soc_min=0.05,
-                    max_charge_power_frac=0.95,
                 ),
                 InitialSocHorizonInitializer(rng=np.random.default_rng(42)),
                 AtBaseHorizonInitializer(),
@@ -573,9 +570,6 @@ class ControlHorizon:
         )
 
         horizon_initializer.initialize(scenario, eval_horizon)
-
-        scheduler = AprioriPowerScheduler(scenario)
-        scheduler.calc_ph_schedule(eval_horizon)
 
         optimization_problem = optimization.PypsaOptimizationProblem.from_revoletion_scenario(
             scenario,
@@ -588,16 +582,19 @@ class ControlHorizon:
             eff_charge = block.eff["chg_int"]
             max_charge_power_w = block.pwr_chg_max * eff_charge
 
-            soc_envelope = block.states.loc[eval_horizon.dti, "soc_min"]
-            power_envelope = rl_utils.get_power_envelope(block, eval_horizon, soc_envelope)
+            prev_soc_min = block.states.loc[eval_horizon.dti, "soc_min"]
+            soc_envelope = rl_utils.get_soc_envelope(block, eval_horizon)
+            buffered_soc_envelope = np.clip(soc_envelope + prev_soc_min, 0.0, 1.0)
+            power_envelope = rl_utils.get_power_envelope(block, eval_horizon, buffered_soc_envelope)
 
-            target_power_unit = np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
+            power_frac_envelope = np.clip((power_envelope / max_charge_power_w), 0.0, 1.0)
             for time_step in eval_horizon.dti:
-                power_unit_buffer = 1e-2 if target_power_unit[time_step] > 0.0 else 0.0
-                optimization_problem.set_input_power_unit(
-                    block, target_power_unit[time_step], time_step, power_unit_buffer=power_unit_buffer
-                )
-            block.states.loc[eval_horizon.dti, "soc_min"] = 0.05
+                target_power_unit = power_frac_envelope[time_step]
+                if target_power_unit > 0.0:
+                    optimization_problem.set_maximum_output_power_unit(block, power_unit=0.0, dti=time_step)
+                    optimization_problem.set_minimum_input_power_unit(block, target_power_unit, time_step)
+                else:
+                    optimization_problem.set_input_power_unit(block, power_unit=0.0, dti=time_step)
 
         _, optimization_result = optimization_problem.solve()
         return optimization_result

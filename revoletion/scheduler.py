@@ -313,9 +313,7 @@ class AprioriFleetUnit:
         ).astype("float64")
 
         # get current SOC
-        self.data_battery.loc[horizon.dti.min(), "soc"] = self.block.states.loc[
-            horizon.start, ["soc", "soc_min", "soc_max"]
-        ].median()
+        self.data_battery.loc[horizon.dti.min(), "soc"] = self.block.states.loc[horizon.start, "soc"]
 
         self.data_charging = self.data_charging.reindex(horizon.dti)
         self.data_charging[:] = 0

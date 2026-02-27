@@ -369,7 +369,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         self._net = net
 
         if self._config.warmstart:
-            self._model = self._net.optimize.create_model()
+            self._model = self._net.optimize.create_model(include_objective_constant=False)
             self._warmstart_folder = tempfile.TemporaryDirectory()
         else:
             self._model = None
@@ -450,6 +450,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         charger_in = make_pypsa_label(block, "inflow-link")
+
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_in] = power_unit
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_in] = np.nan
@@ -500,6 +501,18 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
         charger_out = make_pypsa_label(block, "outflow-link")
         self._net.c.links.dynamic.p_min_pu.loc[normalized_dti, charger_out] = power_unit
+        # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
+        self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
+
+    def set_maximum_output_power_unit(
+        self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex
+    ) -> None:
+        if not isinstance(block, blocks.ElectricFleetUnit):
+            raise ValueError(f"Cannot set maximum output power for block {block.name} of type {type(block)}")
+
+        normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
+        charger_out = make_pypsa_label(block, "outflow-link")
+        self._net.c.links.dynamic.p_max_pu.loc[normalized_dti, charger_out] = power_unit
         # Set the fixed flow to NaN to avoid any numerical issues with the solver and let PyPSA figure out the exact flow.
         self._net.c.links.dynamic.p_set.loc[normalized_dti, charger_out] = np.nan
 

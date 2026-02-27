@@ -1,4 +1,3 @@
-from mpmath.functions.functions import re
 import numpy as np
 import pandas as pd
 
@@ -8,7 +7,8 @@ from revoletion import blocks, utils
 def get_soc_envelope(
     block: blocks.ElectricFleetUnit,
     horizon: utils.TimeSettings,
-    dsoc_step: float | None = None,
+    dsoc_step_max: float | None = None,
+    dsoc_step_min: float | None = None,
     target_soc: float | None = None,
 ) -> pd.Series:
     dti = horizon.dti
@@ -18,10 +18,15 @@ def get_soc_envelope(
     nom_capacity_wh = block.sizes["storage"].preexisting
 
     max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"] * np.sqrt(block.eff["storage_roundtrip"])
-    if dsoc_step is None:
+    if dsoc_step_max is None:
         dsoc_step_max = (max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
     else:
-        dsoc_step_max = dsoc_step
+        dsoc_step_max = dsoc_step_max
+
+    if dsoc_step_min is None:
+        dsoc_step_min = (max_charge_power_w * 0.1 * horizon.timestep.hours) / nom_capacity_wh
+    else:
+        dsoc_step_min = dsoc_step_min
 
     consumption = block.log.loc[dti, "consumption"] * horizon.timestep.hours
     # Need at least enough SoC to compensate standing loss.
@@ -37,7 +42,8 @@ def get_soc_envelope(
         required_soc = min(required_soc + dsoc[time_step], 1.0)
 
         if plugged[time_step]:
-            required_soc = max(required_soc - dsoc_step_max, 0.0)
+            if required_soc > dsoc_step_min:
+                required_soc = max(required_soc - dsoc_step_max, 0.0)
 
         soc_floor[time_step] = required_soc
 
@@ -61,6 +67,8 @@ def get_power_envelope(
     current_soc = block.states.loc[horizon.start, "soc"]
     nom_capacity_wh = block.sizes["storage"].preexisting
     timestep_hours = horizon.timestep.hours
+    max_charge_power_w = block.pwr_chg_max * block.eff["chg_int"] * np.sqrt(block.eff["storage_roundtrip"])
+    dsoc_step_max = (max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
 
     consumption = block.log.loc[horizon.dti, "consumption"] * horizon.timestep.hours
     # Need at least enough SoC to compensate standing loss.
@@ -76,21 +84,16 @@ def get_power_envelope(
 
         if plugged[current_time_step]:
             required_dsoc = max(soc_envelope[next_time_step] - current_soc, 0.0)
-            current_soc += required_dsoc
+            charge_dsoc = min(required_dsoc, dsoc_step_max)
+            power_required = (
+                (charge_dsoc * nom_capacity_wh)
+                / timestep_hours
+                / block.eff["chg_int"]
+                / np.sqrt(block.eff["storage_roundtrip"])
+            )
 
-            if required_dsoc > 0.0:
-                # Convert to power (W)
-                # Positive dsoc means SoC needs to increase (charging)
-                charge_dsoc = min(required_dsoc, 1.0)
-                power_required = (
-                    (charge_dsoc * nom_capacity_wh)
-                    / timestep_hours
-                    / block.eff["chg_int"]
-                    / np.sqrt(block.eff["storage_roundtrip"])
-                )
-
+            if power_required > 0.0:
+                current_soc += required_dsoc
                 power_envelope[current_time_step] = power_required
-
-        print(current_time_step, current_soc, soc_envelope[current_time_step], power_envelope[current_time_step])
 
     return power_envelope

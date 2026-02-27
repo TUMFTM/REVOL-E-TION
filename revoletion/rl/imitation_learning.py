@@ -31,7 +31,7 @@ from revoletion.rl.scenario_factory import (
     AtBaseHorizonInitializer,
     HorizonInitializer,
     InitialSocHorizonInitializer,
-    SocEnvelopeHorizonInitialzer,
+    MinSocHorizonInitializer,
 )
 
 from . import _context as context
@@ -90,11 +90,12 @@ class ImitationTrajectoryComputer:
         self.logger = logger or logging.getLogger(__name__)
         self._horizon_initializer = HorizonInitializer(
             horizon_initializers=[
-                SocEnvelopeHorizonInitialzer(
-                    soc_min=self._config.soc_min + self._config.envelope_soc_padding,
-                    max_charge_power_frac=self._config.envelope_max_charge_buffer,
-                    envelope_target_soc=self._config.envelope_target_soc,
-                ),
+                MinSocHorizonInitializer(soc_min=self._config.soc_min),
+                # SocEnvelopeHorizonInitialzer(
+                #     soc_min=self._config.soc_min + self._config.envelope_soc_padding,
+                #     max_charge_power_frac=self._config.envelope_max_charge_buffer,
+                #     envelope_target_soc=self._config.envelope_target_soc,
+                # ),
                 InitialSocHorizonInitializer(),
                 AtBaseHorizonInitializer(),
             ]
@@ -307,12 +308,8 @@ class ImitationTrajectoryComputer:
             for time_step in episode_horizon.dti:
                 target_power_unit = power_envelope[time_step]
                 if target_power_unit > 0.0:
-                    problem.set_input_power_unit(
-                        block,
-                        target_power_unit,
-                        time_step,
-                        power_unit_buffer=self._config.envelope_power_unit_buffer,
-                    )
+                    problem.set_maximum_output_power_unit(block, power_unit=0.0, dti=time_step)
+                    problem.set_minimum_input_power_unit(block, target_power_unit, time_step)
                 else:
                     problem.set_input_power_unit(
                         block,
@@ -340,11 +337,19 @@ class ImitationTrajectoryComputer:
             Array of target power unit charge values
         """
         # Extract block parameters
+        nom_capacity_wh = block.sizes["storage"].preexisting
         eff_charge = block.eff["chg_int"]
         max_charge_power_w = block.pwr_chg_max * eff_charge
+        dsoc_step_max = (
+            max_charge_power_w * self._config.envelope_max_charge_buffer * episode_horizon.timestep.hours
+        ) / nom_capacity_wh
 
-        soc_envelope = block.states.loc[episode_horizon.dti, "soc_min"]
-        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, soc_envelope)
+        soc_envelope = rl_utils.get_soc_envelope(block, episode_horizon, dsoc_step_max=dsoc_step_max)
+
+        soc_min = block.states.loc[episode_horizon.dti, "soc_min"]
+        buffered_soc_envelope = soc_envelope + soc_min
+
+        power_envelope = rl_utils.get_power_envelope(block, episode_horizon, buffered_soc_envelope)
 
         target_power_unit = np.clip(power_envelope / max_charge_power_w, 0.0, 1.0)
         return target_power_unit
@@ -367,11 +372,11 @@ class ImitationTrajectoryComputer:
             Tuple of (observations_buffer, actions_buffer)
         """
         perfect_forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
-        limited_forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
+        # limited_forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
 
         normalization_provider = normalization.NormalizationProvider.from_ctx(ctx)
         feature_extractor = features.EnvironmentFeatureExtractor(
-            limited_forecast_provider, soc_min=self._config.soc_min, normalization_provider=normalization_provider
+            perfect_forecast_provider, soc_min=self._config.soc_min, normalization_provider=normalization_provider
         )
 
         observations_buffer = []

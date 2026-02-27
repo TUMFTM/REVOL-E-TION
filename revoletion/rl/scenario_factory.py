@@ -19,11 +19,24 @@ class HorizonInitializerInterface(abc.ABC):
     def initialze_scenario_for_horizon(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None: ...
 
 
-class SocEnvelopeHorizonInitialzer(HorizonInitializerInterface):
-    def __init__(
-        self, soc_min: float = 0.0, max_charge_power_frac: float = 1.0, envelope_target_soc: float = 0.0
-    ) -> None:
+class MinSocHorizonInitializer(HorizonInitializerInterface):
+    def __init__(self, soc_min: float = 0.0) -> None:
         self._soc_min = soc_min
+
+    def initialze_scenario_for_horizon(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None:
+        for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
+            prev_soc_min = electric_fleet_unit_block.states.loc[horizon.dti, "soc_min"]
+            new_soc_min = np.clip(prev_soc_min + self._soc_min, 0.0, 1.0)
+            electric_fleet_unit_block.states.loc[horizon.dti, "soc_min"] = new_soc_min
+
+        for stationary_battery_block in scenario.block_registry.get("StationaryBattery", {}).values():
+            prev_soc_min = electric_fleet_unit_block.states.loc[horizon.dti, "soc_min"]
+            new_soc_min = np.clip(prev_soc_min + self._soc_min, 0.0, 1.0)
+            stationary_battery_block.states.loc[horizon.dti, "soc_min"] = new_soc_min
+
+
+class SocEnvelopeHorizonInitialzer(HorizonInitializerInterface):
+    def __init__(self, max_charge_power_frac: float = 1.0, envelope_target_soc: float = 0.0) -> None:
         self._max_charge_power_frac = max_charge_power_frac
         self._envelope_target_soc = envelope_target_soc
 
@@ -35,21 +48,18 @@ class SocEnvelopeHorizonInitialzer(HorizonInitializerInterface):
             max_charge_power_w = electric_fleet_unit_block.pwr_chg_max * eff_charge * eff_storage_roundtrip
 
             buffered_max_charge_power_w = max_charge_power_w * self._max_charge_power_frac
-
             # Determine a smoothed out dsoc step that is used for the SoC envelope computation.
             # This gives the optimizer a bit more freedom and reduces the number of infeasibilities.
-            dsoc_step = (buffered_max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
+            dsoc_step_max = (buffered_max_charge_power_w * horizon.timestep.hours) / nom_capacity_wh
 
             soc_envelope = rl_utils.get_soc_envelope(
-                electric_fleet_unit_block, horizon, dsoc_step=dsoc_step, target_soc=self._envelope_target_soc
+                electric_fleet_unit_block, horizon, dsoc_step_max=dsoc_step_max, target_soc=self._envelope_target_soc
             )
+            soc_min = electric_fleet_unit_block.states.loc[horizon.dti, "soc_min"]
 
-            buffered_soc_envelope = np.clip(soc_envelope + self._soc_min, 0.0, 1.0)
+            buffered_soc_envelope = np.clip(soc_envelope + soc_min, 0.0, 1.0)
 
             electric_fleet_unit_block.states.loc[horizon.dti, "soc_min"] = buffered_soc_envelope
-
-        for stationary_battery_blocks in scenario.block_registry.get("StationaryBattery", {}).values():
-            stationary_battery_blocks.states.loc[horizon.dti, "soc_min"] = self._soc_min
 
 
 class AtBaseHorizonInitializer(HorizonInitializerInterface):
@@ -68,14 +78,18 @@ class InitialSocHorizonInitializer(HorizonInitializerInterface):
 
     def initialze_scenario_for_horizon(self, scenario: scn.Scenario, horizon: utils.TimeSettings) -> None:
         for electric_fleet_unit_block in scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            initial_soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
+            soc_envelope = rl_utils.get_soc_envelope(electric_fleet_unit_block, horizon)
+            soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
+            buffered_soc_envelope = np.clip(soc_envelope + soc_min, 0.0, 1.0)
+
+            initial_soc_min = buffered_soc_envelope.loc[horizon.start]
 
             initial_soc = self._rng.uniform(initial_soc_min, 1.0)
             electric_fleet_unit_block.states.loc[horizon.start, "soc"] = initial_soc
 
         for stationary_battery_blocks in scenario.block_registry.get("StationaryBattery", {}).values():
-            initial_soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
-            initial_soc = self._rng.uniform(low=initial_soc_min, high=1.0)
+            soc_min = electric_fleet_unit_block.states.loc[horizon.start, "soc_min"]
+            initial_soc = self._rng.uniform(low=soc_min, high=1.0)
             stationary_battery_blocks.states.loc[horizon.start, "soc"] = initial_soc
 
 
