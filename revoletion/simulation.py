@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-import holidays
 import numpy as np
 import numpy_financial as npf
 import oemof.solph as solph
@@ -286,25 +285,12 @@ class Scenario:
 
         # get holidays during simulation timeframe
         if self.consider_holidays:
-            # ToDo: extract function get_holidays(dti, country, state)
-            years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
-            try:
-                self.holiday_dates = sorted(
-                    getattr(holidays, self.location.country)(years=years, state=self.location.state)
-                )
-            except NotImplementedError:  # not for all countries the states are available (e.g. France)
-                self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
-                self.logger.warning(
-                    f"Holidays for state {self.location.state} not available. "
-                    f"Country-wide holidays for {self.location.country} are used instead."
-                )
-            except AttributeError:  # not all countries worldwide are available
-                self.holiday_dates = []
-                self.logger.warning(
-                    f"Holidays for country {self.location.country} not available. "
-                    f"No public holidays are considered in this scenario."
-                )
-
+            self.holiday_datas = utils.get_holiday_dates(
+                dti=self.times.eval.dti_extd,
+                country=self.location.country,
+                state=self.location.state,
+                logger=self.logger,
+            )
         else:
             self.holiday_dates = []
 
