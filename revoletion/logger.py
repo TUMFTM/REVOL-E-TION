@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-from dataclasses import dataclass
+import datetime
 import logging
 import multiprocessing as mp
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-import datetime
 from typing_extensions import override
 
 

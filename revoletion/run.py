@@ -19,8 +19,8 @@ from pathlib import Path
 import pandas as pd
 from oemof import solph as solph
 
-from . import logger as logger_fcs
 from . import location, simulation, time, utils
+from . import logger as logger_fcs
 
 _LOGGER = logging.getLogger(__name__)
 

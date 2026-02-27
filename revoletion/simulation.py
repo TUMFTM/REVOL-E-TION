@@ -19,9 +19,9 @@ import plotly.subplots
 import pyomo.environ as po
 
 import revoletion.data
-
 from revoletion import economics as eco
 from revoletion import energy
+
 from . import blocks, constraints, dispatch, location, scheduler, time, utils
 from . import logger as logger_fcs
 

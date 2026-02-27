@@ -3,7 +3,7 @@ from abc import ABC
 import pandas as pd
 
 from revoletion.economics import EcoParams
-from revoletion.economics.abstractclasses import CostType, CalculableTimeseriesElement, TimeseriesElement
+from revoletion.economics.abstractclasses import CalculableTimeseriesElement, CostType, TimeseriesElement
 
 
 class EnergyElement(TimeseriesElement, ABC):

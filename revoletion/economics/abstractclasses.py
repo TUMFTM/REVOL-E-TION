@@ -7,7 +7,7 @@ import numpy.typing as npt
 import pandas as pd
 
 from .params import EcoParams
-from .utils import OccursAt, CostTypeDefinition
+from .utils import CostTypeDefinition, OccursAt
 
 
 class CostType(Enum):

@@ -6,7 +6,7 @@ import ast
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import oemof.solph as solph
@@ -15,14 +15,12 @@ import windpowerlib
 from typing_extensions import override
 
 from revoletion import battery as bat
-from revoletion import data_manager, mobility, utils
+from revoletion import data_manager, energy, mobility, size, utils
 from revoletion import economics as eco
-from revoletion import energy
-from revoletion import size
-
 
 if TYPE_CHECKING:
     import datetime
+
     from revoletion import simulation
 
 

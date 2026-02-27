@@ -3,11 +3,11 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from functools import cached_property
+from typing import Self
 
 import pandas as pd
 import pytz
 import typing_extensions
-from typing_extensions import Self
 
 
 def timedelta_to_freqstr(td: pd.Timedelta) -> str:

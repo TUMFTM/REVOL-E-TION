@@ -7,33 +7,31 @@ from typing import Self
 
 import numpy as np
 import pandas as pd
-from numpy import typing as npt
+import numpy.typing as npt
 
 from .abstractclasses import (
+    BlockElement,
     CalculableBaseElement,
-    CalculableYearlyElement,
     CalculableTimeseriesElement,
+    CalculableYearlyElement,
     CapexElement,
+    CrevElement,
     MntexElement,
     OpexElement,
-    CrevElement,
-    BlockElement,
 )
-
 from .params import (
-    EcoParams,
-    CostParams,
     CapexParams,
-    MntexParams,
-    TimeseriesParams,
-    OpexParams,
+    CostParams,
     CrevParams,
+    EcoParams,
+    MntexParams,
+    OpexParams,
+    TimeseriesParams,
 )
-
 from .utils import (
     DEPRECIATION,
-    calc_residual_value,
     calc_lifetime_remaining,
+    calc_residual_value,
     transform_scalar_var,
 )
 

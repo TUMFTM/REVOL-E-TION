@@ -3,9 +3,9 @@ from dataclasses import dataclass, field
 from typing import Literal, Self
 
 import geopy
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError, GeocoderUnavailable
 import pytz
 import timezonefinder
+from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 
 _LOGGER = logging.getLogger(__name__)
 
