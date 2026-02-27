@@ -495,7 +495,7 @@ class Scenario:
                 self.aggregator.totex.dis
                 -
                 # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
+                sum(fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values())
             ) / self.energies.loc[("sinks", "del"), "dis"]
 
         self.npc = self.aggregator.totex.dis
