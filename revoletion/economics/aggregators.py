@@ -58,6 +58,9 @@ class BaseAggregator(BaseElement, ABC):
         self._dis = self._aggregate_dis()
         self._ann = self._aggregate_ann()
 
+    def get_cashflow(self, discounted: bool = False) -> npt.NDArray:
+        return self.cashflow_dis if discounted else self.cashflow
+
 
 class CrossLevelAggregator(BaseAggregator, ABC):
     """
@@ -211,6 +214,8 @@ class Aggregator(BlockElement):
     def __init__(self, name: str, prj_duration_yrs: int, **kwargs):
         super().__init__(name=name, **kwargs)
 
+        self._prj_duration_yrs = prj_duration_yrs
+
         self.capex: CapexAggregator = CapexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
         self.mntex: MntexAggregator = MntexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
         self.opex: OpexAggregator = OpexAggregator(name=name, prj_duration_yrs=prj_duration_yrs)
@@ -250,3 +255,23 @@ class Aggregator(BlockElement):
             ],
             axis=0,
         )
+
+    @property
+    def result_cashflow(self) -> pd.DataFrame:
+        aggregators = {
+            "capex": self.capex,
+            "mntex": self.mntex,
+            "opex": self.opex,
+            "crev": self.crev,
+            "totex": self.totex,
+            "value": self.value,
+        }
+
+        return pd.DataFrame.from_dict(
+            {
+                f"{name}{suffix}": agg.get_cashflow(discounted=(suffix == "_dis"))
+                for name, agg in aggregators.items()
+                for suffix in ["", "_dis"]
+            },
+            orient="index",
+        ).rename_axis("type")  # set "type" as index name

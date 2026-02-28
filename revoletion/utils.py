@@ -89,6 +89,23 @@ def get_holiday_dates(
     return holiday_dates
 
 
+def add_index_level(index: pd.Index, level_name: str, level_value) -> pd.MultiIndex:
+    """
+    Add a level to a pandas index. The new level will have the same value for all entries in the index.
+
+    :param index: The index to which the level should be added.
+    :param level_name: The name of the new level.
+    :param level_value: The value of the new level for all entries in the index.
+
+    :return: A new MultiIndex with the added level.
+    """
+
+    return pd.MultiIndex.from_tuples(
+        tuples=[(level_value, *(i if isinstance(i, tuple) else (i,))) for i in index],
+        names=[level_name] + list(index.names),
+    )
+
+
 def infer_dtype(value):
     """
     infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.

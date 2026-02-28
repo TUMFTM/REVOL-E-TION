@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from typing_extensions import override
 
+from revoletion import utils
+
 from . import blocks
 
 _BlockRegistryT = dict[str, Any]
@@ -394,3 +396,33 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
                     }
                 )
         return pd.Series(peak_power_results)
+
+
+class CashflowCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
+    def collect_cashflow(self, block_registry: _BlockRegistryT) -> list[pd.DataFrame]:
+        cashflow_df_list = []
+        for block in block_registry.get("TopLevelBlock", {}).values():
+            block_cashflow_df_list = self.visit_block(block)
+            cashflow_df_list.extend(block_cashflow_df_list)
+        return cashflow_df_list
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, **kwargs) -> list[pd.DataFrame]:
+        cashflow_df_list = []
+
+        # For each subblock the dataframe is just passed through.
+        # This is necessary, because the results for each block should be aggregated separately.
+        for subblock in block.subblocks.values():
+            cashflow_df_list.extend(self.visit_block(subblock))
+
+        cashflow_df = block.aggregator.result_cashflow
+
+        cashflow_df.index = utils.add_index_level(
+            index=cashflow_df.index,
+            level_name="block",
+            level_value=block.name,
+        )
+
+        cashflow_df_list.append(cashflow_df)
+
+        return cashflow_df_list
