@@ -1506,7 +1506,7 @@ class StorageBlock(ElectricBlock, ABC):
 
     def pre_scenario(self, **kwargs):
         super().pre_scenario(**kwargs)
-        self.aging_model = bat.BatteryPackModel(self)
+        self.aging_model = bat.BatteryPackModel.from_block(self)
 
     def define_oemof_components(
         self,
