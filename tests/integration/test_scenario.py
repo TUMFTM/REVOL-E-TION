@@ -13,7 +13,7 @@ _NPV_TOLERANCE = 0.1
 
 @pytest.mark.parametrize("scenario_name", ["icev"])
 def test_process_example_scenarios(scenario_name: str):
-    example_scenarios_path = Path(__file__).resolve().parents[2] / "examples" / "scenarios.csv"
+    example_scenarios_path = Path(__file__).resolve().parents[2] / "example" / "scenarios.csv"
     with tempfile.TemporaryDirectory() as tempdir_raw:
         tempdir_path = Path(tempdir_raw)
         simulation_paths = simulation.SimulationPaths.from_plain_paths(
