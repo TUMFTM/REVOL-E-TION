@@ -176,29 +176,13 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 
 To run the provided example project, execute the following command in the terminal:
 ```bash
-python -m revoletion -scn example
+cd PATH/TO/REVOL-E-TION_REPOSITORY/example/
+revoletion -scn scenarios.csv
 ```
 
 ### 2. Running REVOL-E-TION in Python
 REVOL-E-TION can also be used as a module in your own code.
-```python
-import revoletion
-
-# specify the simulation's settings (optional); arguments are the same the long form of command line arguments:
-# solver, n_processes, largescale, debugmode, rerun, rerun_infeasible, key_solcast_api
-settings = revoletion.SimulationSettings()
-
-# specify the relevant paths
-paths = revoletion.SimulationPaths(scenario='path/to/your/scenario.csv',  # this is the only required parameter
-                                   input='path/to/your/input/dir',  # same logic as --input argument
-                                   output='path/to/your/output/dir',  # same logic as --output argument
-                                   )
-
-# perform the optimization for all scenarios defined in the scenario file
-revoletion.SimulationRun(paths=paths,
-                         settings=settings,  # optional, defaults to SimulationSettings()
-                         )
-```
+An example notebook executing REVOL-E-TION from Python is provided in ```.revoletion/example/run_example.ipynb```.
 
 
 ## Common Problems & Troubleshooting

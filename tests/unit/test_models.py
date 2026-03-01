@@ -1,14 +1,12 @@
-import importlib.resources
+from pathlib import Path
 
-import revoletion.example
 from revoletion.models import ScenarioModel, validate_scenario_csv_file
 
 
 def test_example_scenario_is_valid():
-    example_scenarios_traversable = importlib.resources.files(revoletion.example).joinpath("scenarios_example.csv")
-    with importlib.resources.as_file(example_scenarios_traversable) as example_scenarios_path:
-        scenario_is_valid = validate_scenario_csv_file(example_scenarios_path)
-        assert scenario_is_valid
+    example_scenarios_path = Path(__file__).resolve().parents[2] / "examples" / "scenarios_example.csv"
+    scenario_is_valid = validate_scenario_csv_file(example_scenarios_path)
+    assert scenario_is_valid
 
 
 def test_correctly_convertes_raw_values():
