@@ -38,19 +38,19 @@ class PeakPowerPeriodInfo:
     start: pd.Timestamp
     end: pd.Timestamp
 
-    def set_max_power(self, flow: pd.Series):
+    def set_max_power(self, power_peak: float):
         # ToDo: adapt if energy system model setup changes
-        flow_max = (
-            flow
-            # flow slicing is not necessary as oemof model contains one flow per period
-            # .loc[self.start:self.end]
-            # REVOL-E-TION does not consider peak power frequencies other than the simulation timestep
-            # .resample(self.freq)
-            # .mean()
-            # .ffill()
-            .max()
-        )
-        self.max_power = max(self.max_power, flow_max)
+        # flow_max = (
+        #     flow
+        #     # flow slicing is not necessary as oemof model contains one flow per period
+        #     .loc[self.start:self.end]
+        #     # REVOL-E-TION does not consider peak power frequencies other than the simulation timestep
+        #     .resample(self.freq)
+        #     .mean()
+        #     .ffill()
+        #     .max()
+        # )
+        self.max_power = max(self.max_power, power_peak)
 
 
 def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str | None = None) -> pd.Timedelta | None:

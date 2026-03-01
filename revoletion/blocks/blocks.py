@@ -1285,14 +1285,14 @@ class GridConnection(ElectricBlock):
         )
 
         for period in self.peak_periods.values():
+            # use invest size to determine peak_power
             period.set_max_power(
-                horizon.results[
-                    (
-                        self.outflows[f"{self.name}_outflow_{period.label}"],
-                        self.bus_connected,
-                    )
-                ]["sequences"]["flow"][horizon.ch.dti]
+                power_peak=horizon.results[(self.outflows[f"{self.name}_outflow_{period.label}"], self.bus_connected)][
+                    "scalars"
+                ]["invest"]
             )
+            # alternative: use flow to determine peak power -> leads to inconsistencies for dti_sim != dti_eval
+            # horizon.results[(self.outflows[f"{self.name}_outflow_{period.label}"], self.bus_connected)]["sequences"]["flow"][horizon.ch.dti]
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
