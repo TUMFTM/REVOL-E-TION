@@ -662,13 +662,12 @@ class PVSource(RenewableSource):
                 timeframe=self.scenario.times.sim,
                 api_key=self.scenario.settings.key_solcast_api,
             )
+
+            if getattr(self, "temp_scn", False):
+                self.scenario.temp_air = self.data["temp_air"].copy()
+
         except data_manager.DataProviderError as e:
             raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
-        path_input_file = (
-            self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
-            if "file" in self.data_source
-            else None
-        )
 
 
 class WindSource(RenewableSource):
