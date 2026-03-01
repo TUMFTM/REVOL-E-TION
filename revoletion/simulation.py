@@ -295,7 +295,7 @@ class Scenario:
 
         # get holidays during simulation timeframe
         if self.consider_holidays:
-            self.holiday_datas = utils.get_holiday_dates(
+            self.holiday_dates = utils.get_holiday_dates(
                 dti=self.times.eval.dti_extd,
                 country=self.location.country,
                 state=self.location.state,
