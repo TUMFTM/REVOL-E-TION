@@ -10,7 +10,7 @@ import revoletion.example
 from revoletion import run, simulation, utils
 
 _LOGGER = logging.getLogger(__name__)
-_POWER_TOLERANCE = 0.1
+_NPV_TOLERANCE = 0.1
 
 
 @pytest.mark.parametrize("scenario_name", ["icev"])
@@ -48,10 +48,10 @@ def test_process_example_scenarios(scenario_name: str):
                 f"REVOL-E-TION result does not have the expected format: {specific_result_dir.absolute()} is not a directory"
             )
 
-            results_ts_files = list(specific_result_dir.rglob("*_results_ts.csv"))
-            assert len(results_ts_files) == 1
+            summary_files = list(specific_result_dir.rglob("*_summary_temp.pkl"))
+            assert len(summary_files) == 1
 
-            results_ts_file = results_ts_files[0]
+            summary_file = summary_files[0]
 
-            df = pd.read_csv(results_ts_file, header=[0, 1])
-            assert df["core"]["acdc"][1] == pytest.approx(600, rel=_POWER_TOLERANCE)
+            df = pd.read_pickle(summary_file)
+            assert df.at[("scenario", "npv"), "icev"] == pytest.approx(-315545, rel=_NPV_TOLERANCE)
