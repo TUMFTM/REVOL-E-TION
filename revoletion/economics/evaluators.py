@@ -30,6 +30,7 @@ from .params import (
 )
 from .utils import (
     Depreciation,
+    OccursAt,
     calc_lifetime_remaining,
     calc_residual_value,
     transform_scalar_var,
@@ -58,6 +59,14 @@ class CostEvaluator(CalculableBaseElement, ABC):
     def create_from_params(cls, name: str, eco: EcoParams, params: CostParams, data_dir: Path, **kwargs) -> Self:
         kwargs = cls._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs)
         return cls(name=name, eco=eco, **kwargs)
+
+    def _calc_ep_factor(self, cashflow_factors: npt.NDArray, **kwargs) -> float:
+        return (
+            np.dot(cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
+            * self.eco.annuity_factor_apriori(OccursAt.BEGIN)
+            if self.eco.compensate_sim_prj
+            else 1.0
+        )
 
     @abstractmethod
     def _calc_spec_ep(self, **kwargs) -> float | pd.Series: ...
@@ -142,14 +151,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         super().evaluate(power=power, dist=dist, time=time, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
-        # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        factor_ep = (
-            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
-            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
-            / self.eco.sim_yr_rat
-            if self.eco.compensate_sim_prj
-            else 1.0
-        )
+        factor_ep = self._calc_ep_factor(cashflow_factors=self.cashflow_factors / self.eco.sim_yr_rat)
 
         return self.spec_power * factor_ep
 
@@ -264,12 +266,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
-        factor_ep = (
-            np.dot(self._calc_cashflow_factor_expansion(), self.eco.discount_factors(self._TYPE.value.occurs_at))
-            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
-            if self.eco.compensate_sim_prj
-            else 1.0
-        )
+        factor_ep = self._calc_ep_factor(cashflow_factors=self._calc_cashflow_factor_expansion())
 
         return self.spec * factor_ep
 
@@ -308,12 +305,8 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
-        factor_ep = (
-            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
-            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
-            if self.eco.compensate_sim_prj
-            else 1.0
-        )
+        factor_ep = self._calc_ep_factor(cashflow_factors=self.cashflow_factors)
+
         return self.spec * factor_ep
 
 
@@ -358,23 +351,9 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         )
 
     def _calc_spec_ep_peak(self, **kwargs) -> float:
-        factor_ep = (
-            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
-            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
-            / self.eco.sim_yr_rat
-            if self.eco.compensate_sim_prj
-            else 1.0
-        )
+        factor_ep = self._calc_ep_factor(cashflow_factors=self.cashflow_factors / self.eco.sim_yr_rat)
 
-        return self.spec_power * self.frac_peak * factor_ep
-
-        factor_peak_ep = self.n_peak_periods_yr / self.n_peak_periods_sim if self.eco.compensate_sim_prj else 1.0
-        factor_peak_ep = self.frac_peak / self.eco.sim_yr_rat if self.eco.compensate_sim_prj else 1.0
-        return self.spec_peak * factor_peak_ep * self.eco.discount_factors(self._TYPE.value.occurs_at)[0]
-        # return np.dot(
-        #     np.full(self.eco.prj_duration_yrs, self.spec_peak * factor_peak_ep),
-        #     self.eco.discount_factors(self._TYPE.value.occurs_at)[: self.eco.prj_duration_yrs],
-        # ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+        return self.spec_peak * self.frac_peak * factor_ep
 
     @property
     def spec_ep_peak(self) -> float:
