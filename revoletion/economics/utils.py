@@ -23,7 +23,7 @@ class CostTypeDefinition:
     occurs_at: OccursAt | None
 
 
-class DEPRECIATION(Enum):
+class Depreciation(Enum):
     LINEAR = "linear"
 
 
@@ -100,14 +100,14 @@ def calc_lifetime_remaining(project_duration: int, ls: float, init_age: float) -
 
 def calc_residual_value(
     lifetime_remaining_frac: float | npt.NDArray,
-    depreciation: DEPRECIATION = DEPRECIATION.LINEAR,
+    depreciation: Depreciation = Depreciation.LINEAR,
     residual_at_ls: float = 0,
 ) -> float | npt.NDArray:
     """
     Calculate the residual value of a component based on the fraction of the remaining lifespan.
     A remaining lifespan fraction of 1 is considered as 0 as the component is not replaced anymore.
     """
-    if depreciation == DEPRECIATION.LINEAR:
+    if depreciation == Depreciation.LINEAR:
         return lifetime_remaining_frac * (1 - residual_at_ls) + residual_at_ls
     else:
         raise NotImplementedError(f"Depreciation method {depreciation} is not implemented")

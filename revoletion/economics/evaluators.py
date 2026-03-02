@@ -29,7 +29,7 @@ from .params import (
     TimeseriesParams,
 )
 from .utils import (
-    DEPRECIATION,
+    Depreciation,
     calc_lifetime_remaining,
     calc_residual_value,
     transform_scalar_var,
@@ -229,7 +229,7 @@ class CapexEvaluator(CostEvaluator, CapexElement):
                 init_age=invest_first % self.ls,
             )
             / float(self.ls),
-            depreciation=DEPRECIATION.LINEAR,
+            depreciation=Depreciation.LINEAR,
             residual_at_ls=self.residual_at_ls,
         )
 
