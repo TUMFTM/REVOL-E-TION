@@ -12,6 +12,7 @@ from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from revoletion import logger, rl, utils
 from revoletion import scenario as scn
 from revoletion.rl import agent, imitation_learning
+from revoletion.rl.environment import RevoletionEnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def train_imitation_bc(
 
     policy_name = f"{scenario.name}-{algorithm.value}-bc-seed_{seed}-epochs_{n_epochs}-features_{'custom' if custom_feature_extractor else 'default'}-{trajectories_id}.zip"
     output_path = output_folder / policy_name
-    base_policy.save(output_path)
+    base_agent._sb3_agent.save(output_path)
 
     print(f"BC policy was saved to {output_path}")
 
@@ -191,6 +192,7 @@ def train_imitation_sqil(
     train_timesteps: int = 20_000,
     n_proc: int = 4,
     debug: bool = False,
+    custom_feature_extractor: bool = False,
 ) -> None:
     np.random.seed(seed)
 
@@ -214,22 +216,21 @@ def train_imitation_sqil(
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training SQIL policy: {seed=}; {train_timesteps=}; {n_proc=}; {len(trajectories)=}; {trajectories_id=}")
 
+    env_config = RevoletionEnvironmentConfig(perfect_foresight=False)
     # env = agent.build_rl_environment(scenario, train_horizon)
     env = make_vec_env(
-        lambda: agent.build_rl_environment(scenario_factory.create_scenario, train_horizon),
+        lambda: agent.build_rl_environment(scenario_factory.create_scenario, train_horizon, env_config=env_config),
         n_envs=n_proc,
         vec_env_cls=SubprocVecEnv,
     )
 
-    base_agent = agent.create_trainable_agent(algorithm, env)
+    base_agent = agent.create_trainable_agent(algorithm, env, custom_feature_extractor=custom_feature_extractor)
 
     imitation_learning.train_imitation_policy_sqil(trajectories, env, base_agent._sb3_agent, seed, train_timesteps)
 
-    policy_name = (
-        f"{scenario.name}-{algorithm.value}-sqil-seed_{seed}-timesteps_{train_timesteps}-{trajectories_id}.zip"
-    )
+    policy_name = f"{scenario.name}-{algorithm.value}-sqil-seed_{seed}-timesteps_{train_timesteps}-features_{'custom' if custom_feature_extractor else 'default'}-{trajectories_id}.zip"
     output_path = output_folder / policy_name
-    base_agent._sb3_agent.policy.save(output_path)
+    base_agent._sb3_agent.save(output_path)
 
     print(f"SQIL policy was saved to {output_path}")
 

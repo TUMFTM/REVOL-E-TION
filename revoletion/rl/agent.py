@@ -15,6 +15,7 @@ import gymnasium as gym
 import numpy as np
 import stable_baselines3
 import typing_extensions
+from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
@@ -54,10 +55,7 @@ _DEFAULT_POLICY_KWARGS = dict(
 
 
 class AgentAlgorithm(enum.Enum):
-    RANDOM = "random"
     FULL_CHARGING = "full-charge"
-    FULL_DISCHARGE = "full-discharge"
-    IDLE = "idle"
     BASIC = "basic"
     OPTIMAL = "optimal"
     POWER_ENVELOPE = "power-envelope"
@@ -70,11 +68,8 @@ class AgentAlgorithm(enum.Enum):
 
     def needs_training(self) -> bool:
         return self not in {
-            AgentAlgorithm.RANDOM,
             AgentAlgorithm.FULL_CHARGING,
-            AgentAlgorithm.FULL_DISCHARGE,
             AgentAlgorithm.BASIC,
-            AgentAlgorithm.IDLE,
             AgentAlgorithm.POWER_ENVELOPE,
         }
 
@@ -148,27 +143,18 @@ class SACPolicyAgentConfig(OffPolicyAgentConfig):
 DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
     learning_rate=0.0003,  # sb3: 0.0003
     gamma=0.99,  # sb3: 0.99
-    n_steps=1024,  # sb3: 2048
-    batch_size=64,  # sb3: 64
+    n_steps=512,  # sb3: 2048
+    batch_size=128,  # sb3: 64
     use_sde=True,  # sb3: False
     sde_sample_freq=4,  # sb3: None
-)
-DEFAULT_TD3_AGENT_CONFIG = OffPolicyAgentConfig(
-    learning_rate=0.0001,
-    gamma=0.99,
-    target_policy_noise=0.2,
-    target_noise_clip=0.5,
-    batch_size=256,
-    learning_starts=10_000,
-    buffer_size=50_000,
 )
 DEFAULT_SAC_AGENT_CONFIG = SACPolicyAgentConfig(
     learning_rate=0.0003,
     gamma=0.99,
-    batch_size=256,
-    learning_starts=None,
+    batch_size=512,
+    learning_starts=1000,
     buffer_size=50_000,
-    use_sde=True,
+    use_sde=False,
     sde_sample_freq=-1,
     ent_coef="auto",
     target_entropy="auto",
@@ -179,8 +165,6 @@ def get_default_agent_config_for_algorithm(algorithm: AgentAlgorithm):
     match algorithm:
         case AgentAlgorithm.PPO:
             return DEFAULT_PPO_AGENT_CONFIG
-        case AgentAlgorithm.TD3:
-            return DEFAULT_TD3_AGENT_CONFIG
         case AgentAlgorithm.SAC:
             return DEFAULT_SAC_AGENT_CONFIG
         case _:
@@ -227,7 +211,9 @@ class RevoletionAgent(abc.ABC):
 
 
 class RevoletionSB3Agent(RevoletionAgent):
-    def __init__(self, algorithm: AgentAlgorithm, sb3_agent, hyperparameters: Hyperparameters | None = None) -> None:
+    def __init__(
+        self, algorithm: AgentAlgorithm, sb3_agent: BaseAlgorithm, hyperparameters: Hyperparameters | None = None
+    ) -> None:
         super().__init__(algorithm)
         self._sb3_agent = sb3_agent
         self.hyperparameters = hyperparameters
@@ -394,16 +380,10 @@ def train(
 
 def _create_non_trainable_agent(algorithm: AgentAlgorithm) -> RevoletionAgent:
     match algorithm:
-        case AgentAlgorithm.RANDOM:
-            return RandomChargingAgent(algorithm)
         case AgentAlgorithm.FULL_CHARGING:
             return FullChargingAgent(algorithm)
-        case AgentAlgorithm.FULL_DISCHARGE:
-            return FullDischargingAgent(algorithm)
         case AgentAlgorithm.BASIC:
             return BasicChargingAgent(algorithm)
-        case AgentAlgorithm.IDLE:
-            return IdleAgent(algorithm)
         case _:
             raise ValueError()
 
@@ -436,7 +416,7 @@ def create_trainable_agent(
     )
 
     if base_policy_path is not None:
-        sb3_agent.policy = type(sb3_agent.policy).load(str(base_policy_path))
+        sb3_agent.set_parameters(str(base_policy_path), exact_match=False)
 
     hyperparameters = Hyperparameters(
         agent_algorithm=algorithm,
@@ -468,17 +448,6 @@ def get_sb3_type(algorithm: AgentAlgorithm):
             raise ValueError(f"Unkown agent algorithm: {algorithm}")
 
 
-class RandomChargingAgent(RevoletionAgent):
-    @typing_extensions.override
-    def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
-        num_cars = len(cars_available)
-
-        charge_pattern = 2 * np.random.sample(num_cars) - 1
-        # Random charge pattern masked by car availability
-        return charge_pattern * cars_available[:, 0]
-
-
 class FullChargingAgent(RevoletionAgent):
     @typing_extensions.override
     def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
@@ -490,16 +459,6 @@ class FullChargingAgent(RevoletionAgent):
             action = charge_pattern * cars_available[:, 0]
             actions.append(action)
         return np.array(actions, dtype=np.float32)
-
-
-class FullDischargingAgent(RevoletionAgent):
-    @typing_extensions.override
-    def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
-        num_cars = len(cars_available)
-
-        charge_pattern = np.ones(num_cars) * -1
-        return charge_pattern * cars_available[:, 0]
 
 
 class BasicChargingAgent(RevoletionAgent):
@@ -525,13 +484,3 @@ class BasicChargingAgent(RevoletionAgent):
                 charge_pattern[i] = 1.0
 
         return charge_pattern
-
-
-class IdleAgent(RevoletionAgent):
-    @typing_extensions.override
-    def predict(self, obs: ObsType, deterministic: bool = False) -> ActType:
-        cars_available = obs[OBS_KEY_EFUS_AVAILABILITY_FORECAST]
-        num_cars = len(cars_available)
-
-        charge_pattern = np.zeros(num_cars)
-        return charge_pattern * cars_available[:, 0]

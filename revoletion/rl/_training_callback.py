@@ -42,7 +42,7 @@ _ENABLED_TRACES = [
 
 
 class TrainingCallback(BaseCallback):
-    def __init__(self, verbose=0, stats_window_size: int = 100):
+    def __init__(self, verbose=0, stats_window_size: int = 256):
         super().__init__(verbose)
 
         self._stats_window_size = stats_window_size

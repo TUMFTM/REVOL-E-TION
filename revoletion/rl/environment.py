@@ -28,7 +28,9 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RewardConfig:
-    penalty_factor_grid_opex: float = 10.0
+    penalty_factor_grid_opex: float = 2.0
+
+    reward_factor_grid_opex: float = 1.0
     """Factor applied to the costs of importing/exporting energy to the grid."""
 
     penalty_factor_charge_opex: float = 0.0
@@ -44,14 +46,14 @@ class RewardConfig:
     penalty_factor_dsoc: float = 10.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
 
-    reward_base_dsoc: float = 0.1
+    reward_base_dsoc: float = 1.0
 
-    reward_factor_dsoc: float = 0.0
+    reward_factor_dsoc: float = 1.0
     """Weight of the reward for meeting a SoC requirement."""
 
     penalty_continous_dsoc: bool = False
 
-    penalty_factor_infeasible: float = 25.0
+    penalty_factor_infeasible: float = 50.0
     """Weight for the penalty if the energy system is determined to be infeasible and cannot be optimized."""
 
     penalty_scaling_infeasible: bool = False
@@ -92,6 +94,8 @@ class RevoletionEnvironmentConfig:
 
     reward_config: RewardConfig = field(default_factory=lambda: RewardConfig())
 
+    perfect_foresight: bool = False
+
 
 @dataclass
 class RewardComponents:
@@ -109,9 +113,11 @@ class RewardComponents:
 
     @property
     def grid_opex_reward(self) -> float:
-        if self.grid_opex > 0.0:
-            return -self.grid_opex * self.config.penalty_factor_grid_opex
-        return -self.grid_opex
+        grid_opex_reward = -self.grid_opex
+        if grid_opex_reward < 0.0:
+            return grid_opex_reward * self.config.penalty_factor_grid_opex
+        else:
+            return grid_opex_reward * self.config.reward_factor_grid_opex
 
     @property
     def charge_opex_reward(self) -> float:
@@ -240,12 +246,17 @@ class RevoletionEnvironment(gym.Env[ObsType, ActType]):
         self._logger = logger or logging.getLogger(__name__)
 
         self._ctx = context.Context(scenario=scenario, horizon=horizon)
-        limited_forecast_provider = forecast_provider.LimitedForecastProvider(
-            forecast_horizon=self._config.forecast_horizon
-        )
+        if self._config.perfect_foresight:
+            _forecast_provider = forecast_provider.PerfectForesightForecastProvider(
+                forecast_horizon=self._config.forecast_horizon
+            )
+        else:
+            _forecast_provider = forecast_provider.LimitedForecastProvider(
+                forecast_horizon=self._config.forecast_horizon
+            )
         self._normalization_provider = normalization.NormalizationProvider.from_ctx(self._ctx)
         self._feature_extractor = features.EnvironmentFeatureExtractor(
-            forecast_provider=limited_forecast_provider,
+            forecast_provider=_forecast_provider,
             soc_min=self._config.soc_min,
             normalization_provider=self._normalization_provider,
         )

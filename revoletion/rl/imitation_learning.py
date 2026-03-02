@@ -91,11 +91,6 @@ class ImitationTrajectoryComputer:
         self._horizon_initializer = HorizonInitializer(
             horizon_initializers=[
                 MinSocHorizonInitializer(soc_min=self._config.soc_min),
-                # SocEnvelopeHorizonInitialzer(
-                #     soc_min=self._config.soc_min + self._config.envelope_soc_padding,
-                #     max_charge_power_frac=self._config.envelope_max_charge_buffer,
-                #     envelope_target_soc=self._config.envelope_target_soc,
-                # ),
                 InitialSocHorizonInitializer(),
                 AtBaseHorizonInitializer(),
             ]
@@ -282,7 +277,7 @@ class ImitationTrajectoryComputer:
         self,
         scenario: scn.Scenario,
         episode_horizon: utils.TimeSettings,
-        problem: optimization.OptimizationProblem,
+        problem: optimization.PypsaOptimizationProblem,
     ) -> None:
         """
         Apply power envelope constraints to electric fleet units.
@@ -347,7 +342,7 @@ class ImitationTrajectoryComputer:
         soc_envelope = rl_utils.get_soc_envelope(block, episode_horizon, dsoc_step_max=dsoc_step_max)
 
         soc_min = block.states.loc[episode_horizon.dti, "soc_min"]
-        buffered_soc_envelope = soc_envelope + soc_min
+        buffered_soc_envelope = np.clip(soc_envelope + soc_min, 0.0, 1.0)
 
         power_envelope = rl_utils.get_power_envelope(block, episode_horizon, buffered_soc_envelope)
 
@@ -371,12 +366,12 @@ class ImitationTrajectoryComputer:
         Returns:
             Tuple of (observations_buffer, actions_buffer)
         """
-        perfect_forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
-        # limited_forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
+        # _forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
+        _forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
 
         normalization_provider = normalization.NormalizationProvider.from_ctx(ctx)
         feature_extractor = features.EnvironmentFeatureExtractor(
-            perfect_forecast_provider, soc_min=self._config.soc_min, normalization_provider=normalization_provider
+            _forecast_provider, soc_min=self._config.soc_min, normalization_provider=normalization_provider
         )
 
         observations_buffer = []
@@ -468,6 +463,12 @@ def train_imitation_policy_gail(
     )
     env.seed(seed)
     gail_trainer.train(total_timesteps=train_timesteps)
+
+
+def split_proportion(batch_size: int, proportion: float):
+    learner_bs = int(batch_size * proportion)
+    expert_bs = batch_size - learner_bs
+    return learner_bs, expert_bs
 
 
 class SQILReplayBuffer(buffers.DictReplayBuffer):
@@ -600,7 +601,7 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
         )
 
     def sample(self, batch_size: int, env: vec_env.VecNormalize | None = None):
-        learner_bs, expert_bs = util.split_in_half(batch_size)
+        learner_bs, expert_bs = split_proportion(batch_size, 0.8)
 
         learner = super().sample(learner_bs, env)
         expert = self.expert_buffer.sample(expert_bs, env)
@@ -623,12 +624,12 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
 
 
 def train_imitation_policy_sqil(
-    trajectories: list[types.Trajectory], env, base_agent: BaseAlgorithm, seed: int = 42, train_timesteps: int = 20_000
+    trajectories: list[types.Trajectory], env, base_agent: BaseAlgorithm, seed: int = 42, train_timesteps: int = 10_000
 ) -> None:
     transitions = rollout.flatten_trajectories(trajectories)
 
     replay_buffer = SQILReplayBuffer(
-        buffer_size=50_000,
+        buffer_size=10_000,
         observation_space=env.observation_space,
         action_space=env.action_space,
         demonstrations=transitions,
@@ -636,4 +637,4 @@ def train_imitation_policy_sqil(
     )
     base_agent.replay_buffer = replay_buffer
 
-    base_agent.learn(total_timesteps=train_timesteps, callback=agent.TrainingCallback(verbose=1, stats_window_size=100))
+    base_agent.learn(total_timesteps=train_timesteps, callback=agent.TrainingCallback(verbose=1))
