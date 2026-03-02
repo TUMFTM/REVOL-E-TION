@@ -143,9 +143,15 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
         # calculate annuity due factor to compensate operation costs for difference between simulation and project time
-        factor_operation_ep = (1 / self.eco.sim_yr_rat) if self.eco.compensate_sim_prj else 1
+        factor_ep = (
+            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
+            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+            / self.eco.sim_yr_rat
+            if self.eco.compensate_sim_prj
+            else 1.0
+        )
 
-        return self.spec_power * factor_operation_ep
+        return self.spec_power * factor_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
@@ -258,10 +264,14 @@ class CapexEvaluator(CostEvaluator, CapexElement):
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
-        return np.dot(
-            self._calc_cashflow_factor_expansion() * self.spec,
-            self.eco.discount_factors(self._TYPE.value.occurs_at),
-        ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+        factor_ep = (
+            np.dot(self._calc_cashflow_factor_expansion(), self.eco.discount_factors(self._TYPE.value.occurs_at))
+            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+            if self.eco.compensate_sim_prj
+            else 1.0
+        )
+
+        return self.spec * factor_ep
 
     def get_preexisting(self, size_preexisting: float | None) -> float:
         return self._calc_preexisting(size_preexisting=size_preexisting)
@@ -298,11 +308,13 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> float:
-        # neglect last year as it is just for residual value of capex
-        return np.dot(
-            np.full(self.eco.prj_duration_yrs, self.spec),
-            self.eco.discount_factors(self._TYPE.value.occurs_at)[: self.eco.prj_duration_yrs],
-        ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+        factor_ep = (
+            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
+            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+            if self.eco.compensate_sim_prj
+            else 1.0
+        )
+        return self.spec * factor_ep
 
 
 class OpexEvaluator(TimeseriesEvaluator, OpexElement):
@@ -315,6 +327,7 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         spec_time: pd.Series,
         fix: float,
         spec_peak: float,
+        frac_peak: float,
         n_peak_periods_yr: int,
         n_peak_periods_sim: int,
         **kwargs,
@@ -330,6 +343,7 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         )
 
         self.spec_peak = spec_peak
+        self.frac_peak = frac_peak
         self.n_peak_periods_yr = n_peak_periods_yr
         self.n_peak_periods_sim = n_peak_periods_sim
 
@@ -338,12 +352,29 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         return dict(
             **super()._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs),
             spec_peak=params.spec_peak,
+            frac_peak=params.frac_peak,
             n_peak_periods_yr=params.n_peak_periods_yr,
             n_peak_periods_sim=params.n_peak_periods_sim,
         )
 
     def _calc_spec_ep_peak(self, **kwargs) -> float:
-        return self.spec_peak * self.n_peak_periods_yr / self.n_peak_periods_sim if self.eco.compensate_sim_prj else 1
+        factor_ep = (
+            np.dot(self.cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
+            * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
+            / self.eco.sim_yr_rat
+            if self.eco.compensate_sim_prj
+            else 1.0
+        )
+
+        return self.spec_power * self.frac_peak * factor_ep
+
+        factor_peak_ep = self.n_peak_periods_yr / self.n_peak_periods_sim if self.eco.compensate_sim_prj else 1.0
+        factor_peak_ep = self.frac_peak / self.eco.sim_yr_rat if self.eco.compensate_sim_prj else 1.0
+        return self.spec_peak * factor_peak_ep * self.eco.discount_factors(self._TYPE.value.occurs_at)[0]
+        # return np.dot(
+        #     np.full(self.eco.prj_duration_yrs, self.spec_peak * factor_peak_ep),
+        #     self.eco.discount_factors(self._TYPE.value.occurs_at)[: self.eco.prj_duration_yrs],
+        # ) * self.eco.annuity_factor_apriori(self._TYPE.value.occurs_at)
 
     @property
     def spec_ep_peak(self) -> float:

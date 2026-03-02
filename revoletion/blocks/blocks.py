@@ -1082,11 +1082,12 @@ class GridConnection(ElectricBlock):
                 data_dir=self.scenario.paths.input,
                 opex=eco.OpexParams(
                     spec_peak=self.opex_spec_peak,
+                    frac_peak=period_info.time_fraction,
                     n_peak_periods_yr=n_peak_periods_yr,
                     n_peak_periods_sim=n_peak_periods_sim,
                 ),
             )
-            for period in self.peak_periods.keys()
+            for period, period_info in self.peak_periods.items()
         }
         self.pois.update(peak_period_pois)
         for poi in peak_period_pois.values():

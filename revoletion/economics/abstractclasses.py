@@ -250,13 +250,20 @@ class CalculableYearlyElement(CalculableBaseElement, YearlyElement, ABC):
     def __init__(self, name: str, eco: EcoParams, **kwargs):
         super().__init__(name=name, eco=eco, **kwargs)
 
+        # neglect last year as it is just for residual value of capex
+        self._cashflow_factors = np.full(self.eco.prj_duration_yrs + 1, 1.0)
+        self._cashflow_factors[-1] = 0.0
+
+    @property
+    def cashflow_factors(self) -> npt.NDArray:
+        # access element using property to prevent any modifications to the cashflow factors after initialization
+        return self._cashflow_factors
+
     @abstractmethod
     def _calc_yrl(self, *args, **kwargs) -> float: ...
 
     def _calc_cashflow(self, *args, **kwargs) -> npt.NDArray:
-        cashflow = np.full(self.eco.prj_duration_yrs + 1, self.yrl)
-        cashflow[-1] = 0.0
-        return cashflow
+        return self.cashflow_factors * self.yrl
 
     def evaluate(self, *args, **kwargs):
         self._yrl = self._calc_yrl(*args, **kwargs)
