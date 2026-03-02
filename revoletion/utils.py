@@ -22,10 +22,11 @@ _LOGGER = logging.getLogger(__name__)
 
 class PeakPowerPeriodFreq(str, Enum):
     DAY = "D"
-    WEEK = "W-MON"  # -> week starts on Monday. For labeling code uses ISO week which also starts on Monday.
+    WEEK = "W-MON"  # -> week starts on Monday. For labeling code uses ISO week definition which also starts on Monday.
     MONTH = "M"
     QUARTER = "Q"
     YEAR = "Y"
+    SIM = "SIM"  # whole simulation period as one peak power period
 
 
 @dataclass

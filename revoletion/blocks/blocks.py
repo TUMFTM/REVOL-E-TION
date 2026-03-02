@@ -1061,17 +1061,18 @@ class GridConnection(ElectricBlock):
         self.peak_periods = self.get_peak_periods_dict()
 
         # for the number of periods per year the definition of
-        n_peak_periods_yr = (
-            pd.date_range(
-                start=self.scenario.times.sim.start,
-                end=self.scenario.times.sim.start + pd.DateOffset(years=1),
-                freq=self.scenario.timestep.td,
-                inclusive="left",
-            )
-            .tz_localize(None)
-            .to_period(self.peak_period)
-            .nunique()
-        )
+        # n_peak_periods_yr = (
+        #     pd.date_range(
+        #         start=self.scenario.times.sim.start,
+        #         end=self.scenario.times.sim.start + pd.DateOffset(years=1),
+        #         freq=self.scenario.timestep.td,
+        #         inclusive="left",
+        #     )
+        #     .tz_localize(None)
+        #     .to_period(self.peak_period)
+        #     .nunique()
+        # )
+        n_peak_periods_yr = 1
 
         n_peak_periods_sim = len(self.peak_periods)
 
@@ -1121,14 +1122,18 @@ class GridConnection(ElectricBlock):
                 pd.to_datetime(iso.apply(lambda r: pd.Timestamp.fromisocalendar(r.year, r.week, 1), axis=1))
             )
             ends = starts + pd.Timedelta(days=7)
+        elif self.peak_period == utils.PeakPowerPeriodFreq.SIM:
+            labels = pd.Series(index=self.scenario.times.sim.dti, data="sim")
+            starts = pd.DatetimeIndex(pd.Series(index=self.scenario.times.sim.dti, data=self.scenario.times.sim.start))
+            ends = pd.DatetimeIndex(pd.Series(index=self.scenario.times.sim.dti, data=self.scenario.times.sim.end))
         else:
             periods = self.scenario.times.sim.dti.tz_localize(None).to_period(self.peak_period)
             labels = periods.astype(str)
             starts = periods.start_time
             ends = periods.end_time.ceil(self.scenario.timestep.td)
 
-        starts = starts.tz_localize(self.scenario.location.timezone)
-        ends = ends.tz_localize(self.scenario.location.timezone)
+            starts = starts.tz_localize(self.scenario.location.timezone)
+            ends = ends.tz_localize(self.scenario.location.timezone)
 
         period_dict = {}
         for label in np.unique(labels):
