@@ -10,7 +10,8 @@
 .gitlab-ci-local/
 .gitlab-ci-local/*
 
-results/*
+example/results/*
+!example/results/.gitkeep
 
 images/auxil/*
 

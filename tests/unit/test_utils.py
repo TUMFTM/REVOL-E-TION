@@ -1,6 +1,5 @@
-import importlib.resources
+from pathlib import Path
 
-import revoletion.example
 from revoletion import utils
 
 
@@ -15,6 +14,6 @@ def test_get_revoletion_python_package_version():
 
 
 def test_read_scenario_from_file():
-    with importlib.resources.path(revoletion.example, "scenarios_example.csv") as example_scenarios_path:
-        scenario_parameters = utils.read_scenario_from_file(example_scenarios_path)
-        assert "icev" in scenario_parameters
+    example_scenarios_path = Path(__file__).resolve().parents[2] / "example" / "scenarios.csv"
+    scenario_parameters = utils.read_scenario_from_file(example_scenarios_path)
+    assert "icev" in scenario_parameters

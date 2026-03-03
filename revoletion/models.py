@@ -68,7 +68,7 @@ class ScenarioModel(RevoletionBaseModel):
     )
     sim_endtime: str | None = Field(
         title="Simulation end time",
-        description="End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None.",
+        description="End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. The timestep starting at the provided time is not part of the simulation. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None.",
         json_schema_extra={
             "valid_values_or_format": "'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None",
             "not_required_for": "`sim_duration` is given",

@@ -662,13 +662,12 @@ class PVSource(RenewableSource):
                 timeframe=self.scenario.times.sim,
                 api_key=self.scenario.settings.key_solcast_api,
             )
+
+            if getattr(self, "temp_scn", False):
+                self.scenario.temp_air = self.data["temp_air"].copy()
+
         except data_manager.DataProviderError as e:
             raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
-        path_input_file = (
-            self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
-            if "file" in self.data_source
-            else None
-        )
 
 
 class WindSource(RenewableSource):
@@ -750,8 +749,8 @@ class FixedDemand(SinkBlock):
         slp_id: str,
         ts_start: pd.Timestamp,
         ts_end: pd.Timestamp,
+        path_data_file: Path,
         holiday_dates: list[datetime.date] = None,
-        path_data: Path = None,
     ):
         slp_id = slp_id.upper()
         if slp_id not in [
@@ -781,23 +780,8 @@ class FixedDemand(SinkBlock):
         if holiday_dates is None:
             holiday_dates = []
 
-        if path_data is None:
-            # for standalone use: get revoletion data path
-            import importlib.resources as pkg_resources
-
-            try:
-                import revoletion
-            except ModuleNotFoundError:
-                raise ModuleNotFoundError(
-                    "revoletion not found. Please install revoletion or provide path_data argument."
-                )
-            path_data = pkg_resources.files(revoletion.data)
-
         # read SLP data, do not set index here, as we need to convert time column first
-        data = pd.read_csv(
-            path_data / "slp_bdew.csv",
-            index_col=[],
-        )
+        data = pd.read_csv(path_data_file, index_col=[])
 
         # convert time column to time objects (only time without date)
         data["time"] = pd.to_datetime(data["time"], format="%H:%M").dt.time
@@ -872,7 +856,7 @@ class FixedDemand(SinkBlock):
                 ts_start=self.scenario.times.sim.start,
                 ts_end=self.scenario.times.sim.end,
                 holiday_dates=self.scenario.holiday_dates,
-                path_data=self.scenario.paths.data_persist,
+                path_data_file=self.scenario.paths.data_persist / "slp_bdew.csv",
             )
 
             # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
@@ -1522,7 +1506,7 @@ class StorageBlock(ElectricBlock, ABC):
 
     def pre_scenario(self, **kwargs):
         super().pre_scenario(**kwargs)
-        self.aging_model = bat.BatteryPackModel(self)
+        self.aging_model = bat.BatteryPackModel.from_block(self)
 
     def define_oemof_components(
         self,

@@ -176,29 +176,13 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 
 To run the provided example project, execute the following command in the terminal:
 ```bash
-python -m revoletion -scn example
+cd PATH/TO/REVOL-E-TION_REPOSITORY/example/
+revoletion -scn scenarios.csv
 ```
 
 ### 2. Running REVOL-E-TION in Python
 REVOL-E-TION can also be used as a module in your own code.
-```python
-import revoletion
-
-# specify the simulation's settings (optional); arguments are the same the long form of command line arguments:
-# solver, n_processes, largescale, debugmode, rerun, rerun_infeasible, key_solcast_api
-settings = revoletion.SimulationSettings()
-
-# specify the relevant paths
-paths = revoletion.SimulationPaths(scenario='path/to/your/scenario.csv',  # this is the only required parameter
-                                   input='path/to/your/input/dir',  # same logic as --input argument
-                                   output='path/to/your/output/dir',  # same logic as --output argument
-                                   )
-
-# perform the optimization for all scenarios defined in the scenario file
-revoletion.SimulationRun(paths=paths,
-                         settings=settings,  # optional, defaults to SimulationSettings()
-                         )
-```
+An example notebook executing REVOL-E-TION from Python is provided in ```.revoletion/example/run_example.ipynb```.
 
 
 ## Common Problems & Troubleshooting
@@ -285,7 +269,7 @@ After a successful optimization it also contains the aggregated techno-economic 
 | `starttime` | Start Time | str |  | Start time of the project and the simulation in local time. If no time is given in addition to the date the project starts at 00:00 local time | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' |
 | `timestep` | Time step | str |  | Time step used for the simulation | Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D. |
 | `sim_duration` | Project duration | int or str or None | `sim_endtime` is given | Simulation duration. If given as integer the number is interpreted as number of days. Specifying a pandas.Timedelta() compliant string is also supported. The duration is rounded down to the specified timestep. | [1, inf[ or strings such as '1 day 12 hours 14 minutes' |
-| `sim_endtime` | Simulation end time | str or None | `sim_duration` is given | End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None. | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None |
+| `sim_endtime` | Simulation end time | str or None | `sim_duration` is given | End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. The timestep starting at the provided time is not part of the simulation. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None. | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None |
 | `prj_duration` | Project duration | int |  | Project duration in years to which the economic results of the simulation duration are extrapolated | [1, inf[ |
 | `compensate_sim_prj` | Specific Capex/Opex compensation trigger | bool |  | Trigger whether to optimize for sim duration (False) or project duration (True) | True, False |
 | `strategy` | Strategy | str |  | Optimization strategy | 'go' or 'rh' (global optimum, rolling horizon) |

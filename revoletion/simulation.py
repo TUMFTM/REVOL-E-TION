@@ -61,6 +61,8 @@ class SimulationPaths:
     data_persist: Path to the persistent data directory within the revoletion package
     summary_csv: Path to the summary CSV file
     summary_pkl: Path to the summary pickle file
+    cashflow_csv: Path to the cashflow CSV file
+    cashflow_pkl: Path to the cashflow pickle file
     status: Path to the status csv file
     dump: Path to the pyomo model
     log: Path to the log file
@@ -148,6 +150,14 @@ class SimulationPaths:
     @property
     def summary_pkl(self) -> Path:
         return self.create_result_path(suffix="summary.pkl")
+
+    @property
+    def cashflow_csv(self) -> Path:
+        return self.create_result_path(suffix="cashflow.csv")
+
+    @property
+    def cashflow_pkl(self) -> Path:
+        return self.create_result_path(suffix="cashflow.pkl")
 
     @property
     def status(self) -> Path:
@@ -285,7 +295,7 @@ class Scenario:
 
         # get holidays during simulation timeframe
         if self.consider_holidays:
-            self.holiday_datas = utils.get_holiday_dates(
+            self.holiday_dates = utils.get_holiday_dates(
                 dti=self.times.eval.dti_extd,
                 country=self.location.country,
                 state=self.location.state,
@@ -591,6 +601,25 @@ class Scenario:
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(result_summary, columns=[self.name]).to_pickle(self.paths.output / f"{self.name}_summary_temp.pkl")
+
+    def save_result_cashflow(self):
+        cashflows_scenario = self.aggregator.result_cashflow
+
+        cashflows_scenario.index = utils.add_index_level(
+            index=cashflows_scenario.index, level_name="block", level_value="scenario"
+        )
+
+        blocks_result_cashflows = blocks.CashflowCollectionBlockVisitor().collect_cashflow(self.block_registry)
+
+        result_cashflow = pd.concat([cashflows_scenario, *blocks_result_cashflows])
+
+        result_cashflow.index = utils.add_index_level(
+            index=result_cashflow.index,
+            level_name="scenario",
+            level_value=self.name,
+        )
+
+        result_cashflow.to_pickle(self.paths.output / f"{self.name}_cashflow_temp.pkl")
 
 
 class PredictionHorizon:

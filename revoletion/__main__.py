@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-import importlib.resources
 from pathlib import Path
-
-import revoletion.example
 
 from .logger import configure_root_logger
 from .run import SimulationRun
@@ -107,12 +104,7 @@ def main():
 
         if not path_scenario:
             raise FileNotFoundError("No scenario file selected")
-    # Option 2: Example file in example project in package directory (works from anywhere)
-    elif args.scenario == "example":
-        scenarios_example = True
-        with importlib.resources.as_file(importlib.resources.files(revoletion.example)) as example_dir:
-            path_scenario = example_dir / "scenarios_example.csv"
-    # Option 3: Full absolute or relative (to working directory) file path
+    # Option 2: Full absolute or relative (to working directory) file path
     else:
         path_scenario = Path(args.scenario)
     # endregion

@@ -193,6 +193,7 @@ class SimulationRun:
         self.run_timer.stop()
         self.logger.info(f"Total runtime for all scenarios: {self.run_timer}")
 
+        self.join_cashflows()
         self.join_results()
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
@@ -206,6 +207,27 @@ class SimulationRun:
         self.logger.error("".join(traceback.format_tb(exc_traceback)))
 
         self.logger.error(msg="Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+    def join_cashflows(self):
+        suffix = "_cashflow_temp.pkl"
+        filenames = [
+            file
+            for file in self.paths.output.iterdir()
+            if file.name.endswith(suffix)
+            and self.scenario_status.loc[file.name.removesuffix(suffix), "status"] == "successful"
+        ]
+
+        scenario_frames = [pd.read_pickle(file) for file in filenames]
+
+        if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
+            joined_df = pd.concat(scenario_frames, axis=0)
+            joined_df.to_csv(self.paths.cashflow_csv, index=True)
+            joined_df.to_pickle(self.paths.cashflow_pkl)
+            self.logger.info("Result cashflow file created")
+
+        # deletion loop at the end to avoid premature execution of results in case of error
+        for file in filenames:
+            file.unlink()
 
     def join_results(self):
         filenames = [
@@ -442,6 +464,7 @@ class ScenarioWorker:
         if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
 
+        scenario.save_result_cashflow()
         scenario.save_result_summary([run_timer.result_summary])
 
 

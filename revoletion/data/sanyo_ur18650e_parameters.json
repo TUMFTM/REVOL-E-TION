@@ -1,0 +1,12 @@
+{
+  "q_nom": 2.15,
+  "u_nom": 3.6,
+  "u_min": 3.0,
+  "u_max": 4.2,
+  "i_max_cont": 2.05,
+  "i_min_cont": -6.15,
+  "mass": 0.0445,
+  "volume": 0.0165,
+  "e_spec_grav_c2p": 0.59,
+  "e_spec_vol_c2p": 0.39
+}
