@@ -24,12 +24,20 @@ class FleetDemand(ABC):
         self.usecases = None  # remains unfilled if requests is read from file
         self.requests = pd.DataFrame()  # main DataFrame for requests
 
-        self.rng = np.random.default_rng()  # random number generator
-
     def from_usecases(
-        self, path_usecases: Path, path_timeframe_mapper: Path, key_timeframe_mapper: str, path_demand: Path = None
+        self,
+        path_usecases: Path,
+        path_timeframe_mapper: Path,
+        key_timeframe_mapper: str,
+        path_demand: Path = None,
+        subfleets: list = None,
     ):
         self.usecases = self.read_usecase_file(path_usecases=path_usecases)
+
+        if (subfleets is not None) and (("subfleets", "list") in self.usecases.columns):
+            pattern = "|".join(subfleets)
+            self.usecases = self.usecases[self.usecases[("subfleets", "list")].str.contains(pattern, na=False)]
+
         self.mapper_timeframe = self.get_timeframe_mapper(path_timeframe_mapper=path_timeframe_mapper)
         self.requests = self.sample(key_timeframe_mapper=key_timeframe_mapper)
 
@@ -134,14 +142,9 @@ class FleetDemand(ABC):
 
             samples = model.sample(size=len(group))
             time_samples = np.round(samples / timestep_hours) * timestep_hours  # Round to timestep
-            return pd.Series(data=time_samples, index=group.index)
+            return pd.DataFrame({"hour": time_samples}, index=group.index)
 
-        requests["hour"] = (
-            requests.groupby(["usecase", "timeframe"])
-            .apply(sample_time_uctf, include_groups=False)
-            .reset_index(level=[0, 1], drop=True)
-            .sort_index()
-        )
+        requests["hour"] = requests.groupby(["usecase", "timeframe"], group_keys=False).apply(sample_time_uctf)
 
         requests["time_req"] = requests["date"] + pd.to_timedelta(requests["hour"], unit="h")
         requests.drop(["date", "hour"], inplace=True, axis=1)

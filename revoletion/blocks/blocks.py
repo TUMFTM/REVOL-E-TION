@@ -1736,6 +1736,7 @@ class Fleet(SinkBlock):
                 path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
                 path_demand=path_demand,
                 key_timeframe_mapper=self.name,
+                subfleets=self.subfleets,
             )
 
         elif self.data_source == "demand":
