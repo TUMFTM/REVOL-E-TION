@@ -108,6 +108,10 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
             **kwargs,
         )
 
+    def _calc_yrl(self, **kwargs) -> float:
+        # fix opex/crev occur on a yearly basis
+        return self.fix + super()._calc_yrl(**kwargs)
+
     def _calc_eval(self, power: pd.Series | None, dist: pd.Series | None, time: pd.Series | None, **kwargs) -> float:
         # ToDo: check this out for reusability and avoid transforming a scalar to an array if not necessary
         #  make sure to also fix the spec_ep calculation in this case -> can also be scalar for oemof input
@@ -145,7 +149,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
             else 0.0
         )
 
-        return cost_power + cost_dist + cost_time + self.fix
+        return cost_power + cost_dist + cost_time
 
     def evaluate(self, power: pd.Series | None, dist: pd.Series | None = None, time: pd.Series | None = None, **kwargs):
         super().evaluate(power=power, dist=dist, time=time, **kwargs)
