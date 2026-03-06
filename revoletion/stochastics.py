@@ -242,3 +242,13 @@ class IdleDistribution:
         pos = ~neg
         out[pos] = self.p0 + (1 - self.p0) * stats.gengamma.cdf(x=x[pos], a=self.a, c=self.c, loc=0, scale=self.scale)
         return out
+
+
+@dataclass
+class EnergyDistribution:
+    alpha: float
+    beta: float
+    capacity: float
+
+    def sample(self, size: float):
+        return np.random.beta(a=self.alpha, b=self.beta, size=size) * self.capacity

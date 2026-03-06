@@ -233,9 +233,10 @@ class BatteryFleetDemand(FleetDemand):
             groupby function
             sample energy requirements for one usecase and timeframe.
             """
-            distribution = stochastics.DistanceDistribution.from_mu_sigma(
-                mu=self.usecases.loc[group.name, ("energy", "mu")],
-                sigma=self.usecases.loc[group.name, ("energy", "sigma")],
+            distribution = stochastics.EnergyDistribution(
+                alpha=self.usecases.at[group.name, ("energy", "alpha")],
+                beta=self.usecases.at[group.name, ("energy", "beta")],
+                capacity=self.usecases.at[group.name, ("energy", "capacity")],
             )
             return pd.Series(
                 distribution.sample(size=len(group)),
