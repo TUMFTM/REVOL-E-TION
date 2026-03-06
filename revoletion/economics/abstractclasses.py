@@ -72,7 +72,7 @@ class BaseElement(ABC):
 
     @property
     def _result_summary_prefix(self) -> str:
-        return f"{self._TYPE.value.label}_{self.name}_"
+        return f"{self._TYPE.value.label}_"
 
     @property
     def result_summary(self) -> pd.Series:
