@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -6,6 +7,17 @@ import numpy as np
 import pandas as pd
 
 from . import stochastics, utils
+
+
+def parse_entry(value):
+    if isinstance(value, list):
+        return value
+    if pd.isna(value):
+        return []
+    if isinstance(value, str):
+        parsed = ast.literal_eval(value)
+        if isinstance(parsed, list):
+            return parsed
 
 
 # ToDo: FleetDemand currently does not need to  be a class as it's just a pd.DataFrame.
@@ -35,8 +47,12 @@ class FleetDemand(ABC):
         self.usecases = self.read_usecase_file(path_usecases=path_usecases)
 
         if (subfleets is not None) and (("subfleets", "list") in self.usecases.columns):
-            pattern = "|".join(subfleets)
-            self.usecases = self.usecases[self.usecases[("subfleets", "list")].str.contains(pattern, na=False)]
+            subfleets_set = set(subfleets)
+            self.usecases = self.usecases[
+                self.usecases[("subfleets", "list")].apply(
+                    lambda usecase_subfleets: any(item in subfleets_set for item in usecase_subfleets)
+                )
+            ]
 
         self.mapper_timeframe = self.get_timeframe_mapper(path_timeframe_mapper=path_timeframe_mapper)
         self.requests = self.sample(key_timeframe_mapper=key_timeframe_mapper)
@@ -55,6 +71,9 @@ class FleetDemand(ABC):
         requests["dtime_idle"] = pd.to_timedelta(requests["dtime_idle"])
         requests["dtime_patience"] = pd.to_timedelta(requests["dtime_patience"])
 
+        if "subfleets" in requests.columns:
+            requests["subfleets"] = requests["subfleets"].apply(parse_entry)
+
         dti_filter = dti if dti is not None else self.dti
         self.requests = requests.loc[requests["time_req"].isin(dti_filter), :]
 
@@ -65,6 +84,9 @@ class FleetDemand(ABC):
         """
 
         usecases = pd.read_csv(path_usecases, header=[0, 1], index_col=[0, 1])
+
+        if ("subfleets", "list") in usecases.columns:
+            usecases[("subfleets", "list")] = usecases[("subfleets", "list")].apply(parse_entry)
 
         usecases.index.names = ["usecase", "timeframe"]
         usecases.columns.names = ["variable", "parameter"]
