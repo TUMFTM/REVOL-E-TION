@@ -2173,15 +2173,12 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
 
 
 class ElectricVehicle(ElectricFleetUnit):
-    """
-    dummy class to enable tracking
-    """
-
     pass
 
 
 class MobileBattery(ElectricFleetUnit):
     def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
-        self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
-        self.opex_spec_time = 0.0  # no distance based opex for mobile battery
+        # initialize for scenario files without these parameters
+        self.opex_spec_dist = 0.0
+        self.opex_spec_time = 0.0
         super().__init__(name=name, scenario=scenario, parent=parent, params=params, **kwargs)
