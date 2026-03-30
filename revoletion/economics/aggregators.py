@@ -17,7 +17,7 @@ from .abstractclasses import (
 )
 
 
-class BaseAggregator(BaseElement, ABC):
+class CostTypeAggregator(BaseElement, ABC):
     """
     Base class for all Aggregators.
     """
@@ -62,7 +62,7 @@ class BaseAggregator(BaseElement, ABC):
         return self.cashflow_dis if discounted else self.cashflow
 
 
-class CrossLevelAggregator(BaseAggregator, ABC):
+class CrossLevelAggregator(CostTypeAggregator, ABC):
     """
     Base class for all Aggregators, aggregating costs from the same type (Capex, Mntex, Opex, Crev).
     These costs may occur in the same block (aggregate Evaluators) or in subblocks (aggregate other Aggregators).
@@ -85,7 +85,7 @@ class CrossLevelAggregator(BaseAggregator, ABC):
         return np.sum(values, axis=0)
 
 
-class InLevelAggregator(BaseAggregator, ABC):
+class InLevelAggregator(CostTypeAggregator, ABC):
     """
     Base class for all Aggregators, which aggregate values from other aggregators on the same level.
     This is used for Totex (Capex + Mntex + Opex) and Value (Totex - Crev) aggregation.
