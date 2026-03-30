@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from typing_extensions import override
@@ -354,7 +355,11 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
         # get attributes of type int, float, bool and str for scenario.summary_list
         summary_list.append(
             pd.Series(
-                {key: value for key, value in block.__dict__.items() if isinstance(value, (int, float, bool, str))}
+                {
+                    key: value
+                    for key, value in block.__dict__.items()
+                    if isinstance(value, (int, float, bool, str, np.number))
+                }
             )
         )
 

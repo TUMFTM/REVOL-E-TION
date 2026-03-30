@@ -333,7 +333,7 @@ class AprioriFleetUnit:
         if self.block.log.loc[ts, "atdc"]:
             return 0.8
 
-        soc_target_low = min(0.8, self.block.states.loc[ts, "soc_max"])
+        soc_target_low = min(self.block.soc_target, self.block.states.loc[ts, "soc_max"])
         soc_target_high = min(1.0, self.block.states.loc[ts, "soc_max"])
 
         # check if there are any departures after current timestep within forecast period

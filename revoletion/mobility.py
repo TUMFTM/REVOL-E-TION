@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -6,6 +7,17 @@ import numpy as np
 import pandas as pd
 
 from . import stochastics, utils
+
+
+def parse_entry(value):
+    if isinstance(value, list):
+        return value
+    if pd.isna(value):
+        return []
+    if isinstance(value, str):
+        parsed = ast.literal_eval(value)
+        if isinstance(parsed, list):
+            return parsed
 
 
 # ToDo: FleetDemand currently does not need to  be a class as it's just a pd.DataFrame.
@@ -24,12 +36,24 @@ class FleetDemand(ABC):
         self.usecases = None  # remains unfilled if requests is read from file
         self.requests = pd.DataFrame()  # main DataFrame for requests
 
-        self.rng = np.random.default_rng()  # random number generator
-
     def from_usecases(
-        self, path_usecases: Path, path_timeframe_mapper: Path, key_timeframe_mapper: str, path_demand: Path = None
+        self,
+        path_usecases: Path,
+        path_timeframe_mapper: Path,
+        key_timeframe_mapper: str,
+        path_demand: Path = None,
+        subfleets: list = None,
     ):
         self.usecases = self.read_usecase_file(path_usecases=path_usecases)
+
+        if (subfleets is not None) and (("subfleets", "list") in self.usecases.columns):
+            subfleets_set = set(subfleets)
+            self.usecases = self.usecases[
+                self.usecases[("subfleets", "list")].apply(
+                    lambda usecase_subfleets: any(item in subfleets_set for item in usecase_subfleets)
+                )
+            ]
+
         self.mapper_timeframe = self.get_timeframe_mapper(path_timeframe_mapper=path_timeframe_mapper)
         self.requests = self.sample(key_timeframe_mapper=key_timeframe_mapper)
 
@@ -47,6 +71,9 @@ class FleetDemand(ABC):
         requests["dtime_idle"] = pd.to_timedelta(requests["dtime_idle"])
         requests["dtime_patience"] = pd.to_timedelta(requests["dtime_patience"])
 
+        if "subfleets" in requests.columns:
+            requests["subfleets"] = requests["subfleets"].apply(parse_entry)
+
         dti_filter = dti if dti is not None else self.dti
         self.requests = requests.loc[requests["time_req"].isin(dti_filter), :]
 
@@ -57,6 +84,9 @@ class FleetDemand(ABC):
         """
 
         usecases = pd.read_csv(path_usecases, header=[0, 1], index_col=[0, 1])
+
+        if ("subfleets", "list") in usecases.columns:
+            usecases[("subfleets", "list")] = usecases[("subfleets", "list")].apply(parse_entry)
 
         usecases.index.names = ["usecase", "timeframe"]
         usecases.columns.names = ["variable", "parameter"]
@@ -134,14 +164,9 @@ class FleetDemand(ABC):
 
             samples = model.sample(size=len(group))
             time_samples = np.round(samples / timestep_hours) * timestep_hours  # Round to timestep
-            return pd.Series(data=time_samples, index=group.index)
+            return pd.DataFrame({"hour": time_samples}, index=group.index)
 
-        requests["hour"] = (
-            requests.groupby(["usecase", "timeframe"])
-            .apply(sample_time_uctf, include_groups=False)
-            .reset_index(level=[0, 1], drop=True)
-            .sort_index()
-        )
+        requests["hour"] = requests.groupby(["usecase", "timeframe"], group_keys=False).apply(sample_time_uctf)
 
         requests["time_req"] = requests["date"] + pd.to_timedelta(requests["hour"], unit="h")
         requests.drop(["date", "hour"], inplace=True, axis=1)
@@ -208,9 +233,10 @@ class BatteryFleetDemand(FleetDemand):
             groupby function
             sample energy requirements for one usecase and timeframe.
             """
-            distribution = stochastics.DistanceDistribution.from_mu_sigma(
-                mu=self.usecases.loc[group.name, ("energy", "mu")],
-                sigma=self.usecases.loc[group.name, ("energy", "sigma")],
+            distribution = stochastics.EnergyDistribution(
+                alpha=self.usecases.at[group.name, ("energy", "alpha")],
+                beta=self.usecases.at[group.name, ("energy", "beta")],
+                capacity=self.usecases.at[group.name, ("energy", "capacity")],
             )
             return pd.Series(
                 distribution.sample(size=len(group)),

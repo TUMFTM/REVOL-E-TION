@@ -154,6 +154,20 @@ class IdleDistribution:
         return cls(p0=p0, a=a, c=c, scale=scale)
 
     @classmethod
+    def from_mean_std(cls, mean: float, std: float) -> Self:
+        """
+        This method assumes the idle time to be (a) nonzero and (b) exponentially decaying to fit a non-generalized gamma
+        distribution (p0=0, c=1).
+        """
+        if mean <= 0 or std <= 0:
+            raise ValueError("mean and std must be positive")
+
+        shape = (mean / std) ** 2
+        scale = (std**2) / mean
+
+        return cls(p0=0.0, a=shape, c=1.0, scale=scale)
+
+    @classmethod
     def from_mode_std(cls, mode: float, std: float) -> Self:
         """
         This method assumes the idle time to be (a) nonzero and (b) exponentially decaying to fit a non-generalized gamma
@@ -228,3 +242,13 @@ class IdleDistribution:
         pos = ~neg
         out[pos] = self.p0 + (1 - self.p0) * stats.gengamma.cdf(x=x[pos], a=self.a, c=self.c, loc=0, scale=self.scale)
         return out
+
+
+@dataclass
+class EnergyDistribution:
+    alpha: float
+    beta: float
+    capacity: float
+
+    def sample(self, size: float):
+        return np.random.beta(a=self.alpha, b=self.beta, size=size) * self.capacity

@@ -37,3 +37,7 @@ class EnergyAggregator(CalculableTimeseriesElement, EnergyElement):
 
     def add_energy(self, evaluator: EnergyEvaluator) -> None:
         self._eval += evaluator.eval
+
+    @property
+    def _result_summary_prefix(self) -> str:
+        return f"{self._TYPE.value.label}_{self.name}_"
