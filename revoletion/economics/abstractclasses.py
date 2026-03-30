@@ -11,6 +11,11 @@ from .utils import CostTypeDefinition, OccursAt
 
 
 class CostType(Enum):
+    """
+    Definition of all cost types.
+    Each cost type is associated with a CostTypeDefinition that defines its label and the occurrence of the costs occur within a period (begin, mid or end).
+    """
+
     CAPEX = CostTypeDefinition("capex", OccursAt.BEGIN)
     MNTEX = CostTypeDefinition("mntex", OccursAt.BEGIN)
     OPEX = CostTypeDefinition("opex", OccursAt.END)
@@ -23,13 +28,19 @@ class CostType(Enum):
 class BaseElement(ABC):
     """
     Base class for all economic elements.
+    It defines all common attributes and methods for the different cost types:
+    cashflow: npt.NDArray - nominal cashflow per year without discounting
+    cashflow_dis: npt.NDArray - discounted cashflow per year
+    prj: float - total costs over the project duration (sum of cashflow)
+    dis: float - total discounted costs over the project duration (sum of cashflow_dis)
+    ann: float - annuity of the discounted costs over the project duration
     """
 
-    _TYPE: CostType
+    _TYPE: CostType  # concrete subclasses need to define this class attribute to specify their cost type
 
     def __init_subclass__(cls, **kwargs):
+        # ensure that concrete subclasses define the _TYPE class attribute to specify their cost type
         super().__init_subclass__(**kwargs)
-
         if not hasattr(cls, "__abstractmethods__") and ABC not in cls.__bases__:
             if not any("_TYPE" in B.__dict__ for B in cls.mro()):
                 raise TypeError(f"Concrete class {cls.__name__} must define '_TYPE'")
@@ -45,6 +56,7 @@ class BaseElement(ABC):
         self._ann: float | None = None
 
     def _require_calculated(self, attr_name) -> Any:
+        # helper method to ensure that results have been calculated before accessing them via the properties
         value = getattr(self, attr_name)
         if value is None:
             raise ValueError(f'Results need to be calculated before "{attr_name.strip("_")}" can be accessed.')
@@ -72,10 +84,16 @@ class BaseElement(ABC):
 
     @property
     def _result_summary_prefix(self) -> str:
+        """
+        Define the prefix for the result summary
+        """
         return f"{self._TYPE.value.label}_{self.name}_"
 
     @property
     def result_summary(self) -> pd.Series:
+        """
+        Return a pandas Series containing the scalar cost or revenue results of the element
+        """
         return pd.Series(
             data={
                 f"{self._result_summary_prefix}prj": self.prj,
@@ -88,6 +106,7 @@ class BaseElement(ABC):
 class YearlyElement(BaseElement, ABC):
     """
     Base class for all elements with yearly occurring costs or revenues (Mntex, Opex, Crev).
+    Add yearly costs or revenues (yrl) as an additional result and extend the result summary by this value.
     """
 
     def __init__(self, name: str, **kwargs):
@@ -101,6 +120,9 @@ class YearlyElement(BaseElement, ABC):
 
     @property
     def result_summary(self) -> pd.Series:
+        """
+        Extend the result summary of the BaseElement by the yearly costs or revenues.
+        """
         return pd.concat(
             [
                 super().result_summary,
@@ -117,6 +139,7 @@ class YearlyElement(BaseElement, ABC):
 class TimeseriesElement(YearlyElement, ABC):
     """
     Base class for elements whose costs or revenues scale proportionally from the evaluation period to a one-year basis (Opex, Crev).
+    Add evaluation period costs or revenues (eval) as an additional result and extend the result summary by this value.
     """
 
     def __init__(self, name: str, **kwargs):
@@ -130,6 +153,9 @@ class TimeseriesElement(YearlyElement, ABC):
 
     @property
     def result_summary(self) -> pd.Series:
+        """
+        Extend the result summary of the YearlyElement by the evaluation period costs or revenues.
+        """
         return pd.concat(
             [
                 super().result_summary,
@@ -146,6 +172,8 @@ class TimeseriesElement(YearlyElement, ABC):
 class CapexElement(BaseElement, ABC):
     """
     Base class for all capex elements.
+    Defines the _TYPE class attribute.
+    Add preexisting, expansion and init costs as additional results and extend the result summary by these values.
     """
 
     _TYPE = CostType.CAPEX
@@ -189,6 +217,7 @@ class CapexElement(BaseElement, ABC):
 class MntexElement(YearlyElement, ABC):
     """
     Base class for all mntex elements.
+    Defines the _TYPE class attribute.
     """
 
     _TYPE = CostType.MNTEX
@@ -197,6 +226,7 @@ class MntexElement(YearlyElement, ABC):
 class OpexElement(TimeseriesElement, ABC):
     """
     Base class for all opex elements.
+    Defines the _TYPE class attribute.
     """
 
     _TYPE = CostType.OPEX
@@ -205,6 +235,7 @@ class OpexElement(TimeseriesElement, ABC):
 class CrevElement(TimeseriesElement, ABC):
     """
     Base class for all crev elements.
+    Defines the _TYPE class attribute.
     """
 
     _TYPE = CostType.CREV
@@ -266,6 +297,7 @@ class CalculableYearlyElement(CalculableBaseElement, YearlyElement, ABC):
         return self.cashflow_factors * self.yrl
 
     def evaluate(self, *args, **kwargs):
+        # calculate yearly costs or revenues -> used to calculate cashflow
         self._yrl = self._calc_yrl(*args, **kwargs)
         super().evaluate(*args, **kwargs)
 
@@ -285,13 +317,14 @@ class CalculableTimeseriesElement(CalculableYearlyElement, TimeseriesElement, AB
         return self.eval / self.eco.eval_yr_rat
 
     def evaluate(self, *args, **kwargs):
+        # calculate costs or revenues in evaluation timeframe -> used to calculate yearly costs
         self._eval = self._calc_eval(*args, **kwargs)
         super().evaluate(*args, **kwargs)
 
 
 class BlockElement(ABC):
     """
-    Base class for all block elements.
+    Base class for all block elements that aggregate multiple economic elements.
     """
 
     def __init__(self, name: str, **kwargs):

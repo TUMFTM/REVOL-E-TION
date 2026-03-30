@@ -57,10 +57,13 @@ class CostEvaluator(CalculableBaseElement, ABC):
 
     @classmethod
     def create_from_params(cls, name: str, eco: EcoParams, params: CostParams, data_dir: Path, **kwargs) -> Self:
+        # use _build_kwargs_from_params to easily add parameters for specific evaluators without changing this method
         kwargs = cls._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs)
         return cls(name=name, eco=eco, **kwargs)
 
     def _calc_ep_factor(self, cashflow_factors: npt.NDArray, **kwargs) -> float:
+        # calculate the factor which is multiplied with the specific costs to get the equivalent present specific costs used byy the optimization problem.
+        # this factor scales all specific costs to the same equivalent present specific costs occurring at the begin of the 1st project year.
         return (
             np.dot(cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
             * self.eco.annuity_factor_apriori(OccursAt.BEGIN)
@@ -73,10 +76,17 @@ class CostEvaluator(CalculableBaseElement, ABC):
 
     @property
     def spec_ep(self) -> float | pd.Series:
+        # return the equivalent present specific costs for optimization.
+        # for capex and mntex: component size specific costs
+        # for opex and crev: power flow specific costs.
         return self._calc_spec_ep()
 
 
 class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
+    """
+    Base class for all Evaluators that evaluate costs based on time series, i.e. Opex and Crev.
+    """
+
     def __init__(
         self,
         name: str,
@@ -135,14 +145,17 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         return cost_flow + self.fix
         """
 
+        # calculate costs related to the provided power flow
         cost_power = (
             np.dot(self.spec_power.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             if power is not None
             else 0.0
         )
 
+        # calculate costs related to the provided distances driven
         cost_dist = np.dot(self.spec_dist.to_numpy(), dist[self.eco.dti_eval].to_numpy()) if dist is not None else 0.0
 
+        # calculate costs related to the provided time of use
         cost_time = (
             np.dot(self.spec_time.to_numpy(), time[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             if time is not None
@@ -152,15 +165,20 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         return cost_power + cost_dist + cost_time
 
     def evaluate(self, power: pd.Series | None, dist: pd.Series | None = None, time: pd.Series | None = None, **kwargs):
+        # run evaluate method of super and pass dist and time as additional arguments to power
         super().evaluate(power=power, dist=dist, time=time, **kwargs)
 
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
+        # include linear scaling from simulation duration to year in cashflow_factors for correct spec_ep calculation
         factor_ep = self._calc_ep_factor(cashflow_factors=self.cashflow_factors / self.eco.sim_yr_rat)
-
         return self.spec_power * factor_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
+    """
+    Evaluator for capital expenditures.
+    """
+
     def __init__(
         self,
         name: str,

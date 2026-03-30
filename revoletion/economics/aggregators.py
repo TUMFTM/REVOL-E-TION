@@ -19,7 +19,7 @@ from .abstractclasses import (
 
 class CostTypeAggregator(BaseElement, ABC):
     """
-    Base class for all Aggregators.
+    Base class for all Aggregators aggregating a single cost type (Capex, Mntex, Opex, Crev) or value (Totex, Value).
     """
 
     def __init__(self, name: str, **kwargs):
@@ -171,6 +171,7 @@ class TotexAggregator(InLevelAggregator):
     def __init__(self, name: str, capex: CapexAggregator, mntex: MntexAggregator, opex: OpexAggregator, **kwargs):
         super().__init__(name=name, **kwargs)
 
+        # TotexAggregator aggregates all given costs (capex, mntex, opex)
         self.capex = capex
         self.mntex = mntex
         self.opex = opex
@@ -196,6 +197,7 @@ class ValueAggregator(InLevelAggregator):
     def __init__(self, name: str, totex: TotexAggregator, crev: CrevAggregator, **kwargs):
         super().__init__(name=name, **kwargs)
 
+        # ValueAggregator calculates the value by subtracting the revenues (crev) from the costs (totex)
         self.totex = totex
         self.crev = crev
 
@@ -226,6 +228,7 @@ class Aggregator(BlockElement):
     def add_block(self, block: BlockElement) -> None:
         """
         Add a new subblock to the current block.
+        Add every cost element (capex, mntex, opex, crev) in the given block to the corresponding CostTypeAggregator of the current block.
         """
         for attr in ("capex", "mntex", "opex", "crev"):
             value = getattr(block, attr)
