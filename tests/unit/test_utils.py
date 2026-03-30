@@ -3,11 +3,6 @@ from pathlib import Path
 from revoletion import utils
 
 
-def test_get_current_project_git_commit_hash():
-    commit_hash = utils.get_current_project_git_commit_hash()
-    assert commit_hash != utils.UNKNOWN_VERSION
-
-
 def test_get_revoletion_python_package_version():
     version = utils.get_revoletion_python_package_version()
     assert version != utils.UNKNOWN_VERSION

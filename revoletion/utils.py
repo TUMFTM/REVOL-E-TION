@@ -5,8 +5,6 @@ import importlib.metadata
 import importlib.util
 import logging
 import re
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -250,25 +248,6 @@ def set_extension(filename: Path | str, default_extension: str = ".csv") -> Path
 
 
 UNKNOWN_VERSION = "unknown"
-
-
-def get_current_project_git_commit_hash() -> str:
-    """
-    Retrieves the short git commit hash of the current repository.
-
-    Returns:
-        The first 6 characters of the current git commit hash if available, otherwise `UNKNOWN_VERSION`.
-    """
-    git_binary = shutil.which("git")
-    if git_binary is None:
-        # Some environments (e.g. docker, pip distribution) might not have git available.
-        return UNKNOWN_VERSION
-
-    try:
-        commit_hash = subprocess.check_output([git_binary, "rev-parse", "HEAD"]).strip().decode()[0:6]
-        return commit_hash
-    except subprocess.CalledProcessError:
-        return UNKNOWN_VERSION
 
 
 def get_revoletion_python_package_version() -> str:
