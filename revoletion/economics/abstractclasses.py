@@ -87,7 +87,7 @@ class BaseElement(ABC):
         """
         Define the prefix for the result summary
         """
-        return f"{self._TYPE.value.label}_{self.name}_"
+        return f"{self._TYPE.value.label}_"
 
     @property
     def result_summary(self) -> pd.Series:

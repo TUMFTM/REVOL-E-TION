@@ -573,7 +573,11 @@ class Scenario:
             [
                 # get attributes of type int, float, bool and str for scenario.result_summary
                 pd.Series(
-                    {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))}
+                    {
+                        key: value
+                        for key, value in self.__dict__.items()
+                        if isinstance(value, (int, float, bool, str, np.number))
+                    }
                 ),
                 # get dict of blocks with class names
                 pd.Series(

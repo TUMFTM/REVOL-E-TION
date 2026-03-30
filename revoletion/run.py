@@ -70,14 +70,8 @@ class SimulationRun:
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
-        # region get version information
         self.version_solph = solph.__version__
         self.version_revoletion = utils.get_revoletion_python_package_version()
-
-        # ToDo: Decided whether to keep git commit hash or not.
-        #  git commit hash is not available if REVOL-E-TION is called from another git repository
-        # self.commit_hash = utils.get_current_project_git_commit_hash()
-        # endregion
 
         # region read, copy and check scenario data
         self.scenario_data = utils.read_scenario_from_file(self.paths.scenario)

@@ -1742,6 +1742,7 @@ class Fleet(SinkBlock):
                 path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
                 path_demand=path_demand,
                 key_timeframe_mapper=self.name,
+                subfleets=self.subfleets,
             )
 
         elif self.data_source == "demand":
@@ -1959,6 +1960,11 @@ class FleetUnit(BaseBlock):
 
         super().pre_scenario(**kwargs)
 
+    def post_scenario(self):
+        self.utilization = self.log["atbase"].mean()
+        self.dist_eval = self.log["dist"].sum() if "dist" in self.log.columns else 0
+        super().post_scenario()
+
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
@@ -2049,13 +2055,9 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
         # region calc minimum soc targets before usage and max soc for myopic optimization
         dsoc_ph = self.log.loc[horizon.ph.dti, "dsoc"]
-        if (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, ElectricVehicle):
+        # ensure long tours (> prediction horizon) have enough SOC to fulfil it
+        if (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc"):
             soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + self.dsoc_buffer).clip(
-                lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
-                upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
-            )
-        elif (self.scenario.strategy == "rh") and (self.mode_scheduling == "oc") and isinstance(self, MobileBattery):
-            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=self.soc_target).clip(
                 lower=self.states.loc[horizon.ph.dti_extd, "soc_min"],
                 upper=self.states.loc[horizon.ph.dti_extd, "soc_max"],
             )
@@ -2177,15 +2179,12 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
 
 
 class ElectricVehicle(ElectricFleetUnit):
-    """
-    dummy class to enable tracking
-    """
-
     pass
 
 
 class MobileBattery(ElectricFleetUnit):
     def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
-        self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
-        self.opex_spec_time = 0.0  # no distance based opex for mobile battery
+        # initialize for scenario files without these parameters
+        self.opex_spec_dist = 0.0
+        self.opex_spec_time = 0.0
         super().__init__(name=name, scenario=scenario, parent=parent, params=params, **kwargs)
