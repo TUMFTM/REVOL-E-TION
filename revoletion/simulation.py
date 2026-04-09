@@ -290,6 +290,7 @@ class Scenario:
             self.times.sim = time.TimeFrame.create_from_start_timestamp(
                 start=self.times.sim.start,
                 timestep=self.timestep,
+                timezone=self.location.timezone,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 
@@ -643,12 +644,14 @@ class PredictionHorizon:
         self.ph = time.TimeFrame.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep,
+            timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
         self.ch = time.TimeFrame.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep,
+            timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
 

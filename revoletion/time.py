@@ -111,7 +111,11 @@ class RunTimer:
 
 @dataclass(frozen=True)
 class Timestep:
-    td: pd.Timedelta
+    _td: pd.Timedelta
+
+    @cached_property
+    def td(self) -> pd.Timedelta:
+        return self._td
 
     @cached_property
     def hours(self) -> float:
@@ -123,11 +127,15 @@ class Timestep:
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        return cls(td=pd.Timedelta(pd.infer_freq(dti)))
+        return cls(_td=pd.Timedelta(pd.infer_freq(dti)))
+
+    @classmethod
+    def from_td(cls, td: pd.Timedelta) -> Self:
+        return cls(_td=td)
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
-        return cls(td=pd.Timedelta(timestep_str))
+        return cls(_td=pd.Timedelta(timestep_str))
 
 
 @dataclass(frozen=True)
@@ -135,14 +143,15 @@ class TimeFrame:
     start: pd.Timestamp
     end: pd.Timestamp
     duration: pd.Timedelta
-
-    _timestep_td: pd.Timedelta
+    timestep: Timestep
+    timezone: zoneinfo.ZoneInfo
 
     @classmethod
     def create_from_start_timestamp(
         cls,
         start: pd.Timestamp,
         timestep: Timestep,
+        timezone: zoneinfo.ZoneInfo,
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
@@ -155,15 +164,18 @@ class TimeFrame:
         # always recalculate end to ensure consistency
         end = start + duration
 
-        return cls(start=start, end=end, duration=duration, _timestep_td=timestep.td)
+        start = ensure_timezone(ts=start, timezone=timezone)
+        end = ensure_timezone(ts=end, timezone=timezone)
+
+        return cls(start=start, end=end, duration=duration, timestep=timestep, timezone=timezone)
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep_td, inclusive="left", name="time")
+        return pd.date_range(start=self.start, end=self.end, freq=self.timestep.td, inclusive="left", name="time")
 
     @cached_property
     def dti_extd(self) -> pd.DatetimeIndex:
-        return pd.date_range(start=self.start, end=self.end, freq=self._timestep_td, inclusive="both", name="time")
+        return pd.date_range(start=self.start, end=self.end, freq=self.timestep.td, inclusive="both", name="time")
 
     @cached_property
     def end_extd(self) -> pd.Timestamp:
@@ -186,53 +198,35 @@ class SimulationTimes:
         sim_duration: float | int | None,
         prj_duration: int,
     ) -> Self:
+        # ensure timezone is a ZoneInfo object
+        timezone = zoneinfo.ZoneInfo(timezone) if not isinstance(timezone, zoneinfo.ZoneInfo) else timezone
+
         starttime_ts = convert_to_timestamp(starttime, timestep, timezone)
         if starttime_ts is None:
             raise ValueError(f"Failed to convert starttime ({starttime}) to pd.Timestamp")
 
-        sim_endtime_ts = convert_to_timestamp(sim_endtime, timestep, timezone) if sim_endtime is not None else None
+        sim_endtime_ts = convert_to_timestamp(sim_endtime, timestep, timezone)
         sim_duration_td = pd.Timedelta(sim_duration, unit="day") if sim_duration is not None else None
 
         simulation = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
             timestep=timestep,
+            timezone=timezone,
             end=sim_endtime_ts,
             duration=sim_duration_td,
         )
         evaluation = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
             timestep=timestep,
+            timezone=timezone,
             end=sim_endtime_ts,
             duration=sim_duration_td,
         )
         project = TimeFrame.create_from_start_timestamp(
             start=starttime_ts,
             timestep=timestep,
+            timezone=timezone,
             end=starttime_ts + pd.DateOffset(years=prj_duration),
         )
 
         return cls(sim=simulation, eval=evaluation, prj=project)
-
-    @staticmethod
-    def _convert_time_str(
-        time_in: str | pd.Timestamp | None, timestep: Timestep, timezone: zoneinfo.ZoneInfo | str
-    ) -> pd.Timestamp | None:
-        if time_in is None:
-            return None
-
-        if isinstance(time_in, pd.Timestamp):
-            if time_in.tz is None:
-                return time_in.tz_localize(timezone)
-            else:
-                return time_in.tz_convert(timezone)
-
-        def parse_input_datetime(time_str: str) -> pd.Timestamp:
-            for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):
-                try:
-                    return pd.to_datetime(time_str, format=fmt, errors="raise")
-                except ValueError:
-                    continue
-            raise ValueError(f"Invalid date format: {time_str!r}")
-
-        time_ts = parse_input_datetime(time_in)
-        return time_ts.floor(timestep.freqstr).tz_localize(timezone)
