@@ -23,7 +23,6 @@ dependencies = [
     "plotly",
     "psutil",
     "pvlib>=0.13.0",
-    "pytz",
     "rainflow",
     "scipy",
     "scikit-learn",
