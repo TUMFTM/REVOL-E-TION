@@ -1,9 +1,9 @@
 import logging
+import zoneinfo
 from dataclasses import dataclass, field
 from typing import Literal, Self
 
 import geopy
-import pytz
 import timezonefinder
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 
@@ -15,7 +15,7 @@ def get_timezone_from_lat_lon(
     longitude: float,
     logger: logging.Logger | None = None,
     errors: Literal["ignore", "raise"] = "raise",
-) -> pytz.BaseTzInfo | None:
+) -> zoneinfo.ZoneInfo | None:
     logger = logger or _LOGGER
 
     tzf = timezonefinder.TimezoneFinder()
@@ -27,7 +27,7 @@ def get_timezone_from_lat_lon(
             return None
         elif errors == "raise":
             raise ValueError(msg)
-    return pytz.timezone(timezone_raw)
+    return zoneinfo.ZoneInfo(timezone_raw)
 
 
 def reverse_geocode_location(
@@ -68,9 +68,9 @@ def get_country_state_from_geolocation(
 class Location:
     latitude: float
     longitude: float
-    timezone: pytz.BaseTzInfo = field(default_factory=lambda: pytz.timezone("Europe/Berlin"))
     country: str = "DE"
     state: str = "BY"
+    timezone: zoneinfo.ZoneInfo = field(default_factory=lambda: zoneinfo.ZoneInfo("Europe/Berlin"))
 
     @classmethod
     def create_from_lat_lon(

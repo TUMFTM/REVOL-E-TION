@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import time
+import zoneinfo
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Self
 
 import pandas as pd
-import pytz
 import typing_extensions
 
 
@@ -41,7 +41,7 @@ def parse_datetime_str(time_str: str) -> pd.Timestamp:
     raise ValueError(f"Invalid date format: {time_str!r}")
 
 
-def ensure_timezone(ts: pd.Timestamp, timezone: pytz.BaseTzInfo | str) -> pd.Timestamp:
+def ensure_timezone(ts: pd.Timestamp, timezone: zoneinfo.ZoneInfo | str) -> pd.Timestamp:
     if ts.tz is None:
         return ts.tz_localize(timezone, ambiguous="raise", nonexistent="raise")
     return ts.tz_convert(timezone)
@@ -50,7 +50,7 @@ def ensure_timezone(ts: pd.Timestamp, timezone: pytz.BaseTzInfo | str) -> pd.Tim
 def convert_to_timestamp(
     time_in: str | pd.Timestamp | None,
     timestep: Timestep,
-    timezone: pytz.BaseTzInfo | str,
+    timezone: zoneinfo.ZoneInfo | str,
 ) -> pd.Timestamp | None:
     if time_in is None:
         return None
@@ -180,7 +180,7 @@ class SimulationTimes:
     def create_from_plain(
         cls,
         timestep: Timestep,
-        timezone: pytz.BaseTzInfo | str,
+        timezone: zoneinfo.ZoneInfo | str,
         starttime: str | pd.Timestamp,
         sim_endtime: str | pd.Timestamp | None,
         sim_duration: float | int | None,
@@ -215,7 +215,7 @@ class SimulationTimes:
 
     @staticmethod
     def _convert_time_str(
-        time_in: str | pd.Timestamp | None, timestep: Timestep, timezone: pytz.BaseTzInfo | str
+        time_in: str | pd.Timestamp | None, timestep: Timestep, timezone: zoneinfo.ZoneInfo | str
     ) -> pd.Timestamp | None:
         if time_in is None:
             return None

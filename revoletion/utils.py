@@ -5,13 +5,13 @@ import importlib.metadata
 import importlib.util
 import logging
 import re
+import zoneinfo
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 import holidays
 import pandas as pd
-import pytz
 
 from . import time
 
@@ -183,7 +183,7 @@ def import_module_from_path(module_name, file_path):
 
 def read_timeseries_csv(
     path_input_file: str | Path,
-    timezone: pytz.BaseTzInfo,
+    timezone: zoneinfo.ZoneInfo,
     multiheader: bool = False,
     resampling_dti: pd.DatetimeIndex | None = None,
 ) -> pd.DataFrame:

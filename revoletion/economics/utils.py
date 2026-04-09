@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-import pytz
 
 from revoletion.utils import read_timeseries_csv, set_extension
 
@@ -131,12 +130,10 @@ def transform_scalar_var(
         if not filepath.is_file():
             raise FileNotFoundError(f"Timeseries file {filepath} not found.")
 
-        tz = pytz.timezone(str(dti.tz)) if dti.tz is not None else None
-
         try:
             df = read_timeseries_csv(
                 path_input_file=filepath,
-                timezone=tz,
+                timezone=dti.tz,
                 multiheader=False,
                 resampling_dti=dti,
             )
