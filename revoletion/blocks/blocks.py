@@ -1063,7 +1063,7 @@ class GridConnection(ElectricBlock):
         self.peak_periods, self.period_activation = peak_periods.get_peak_periods(
             timeframe=self.scenario.times.sim,
             peak_period=self.peak_period,
-            peak_period_start=peak_periods.PeakPowerPeriodStart.CALENDAR,
+            peak_period_start=self.peak_period_start,
             peak_power_init=self.peak_power_init,
         )
 

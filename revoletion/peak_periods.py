@@ -7,7 +7,7 @@ import pandas as pd
 from revoletion.time import TimeFrame
 
 
-class PeakPowerPeriodStart(str, Enum):
+class PeakPowerPeriodStart(Enum):
     CALENDAR = "CALENDAR"  # peak power periods start at calendar boundaries (e.g. month, year)
     SIMULATION = "SIMULATION"  # peak power periods start at simulation start
 
