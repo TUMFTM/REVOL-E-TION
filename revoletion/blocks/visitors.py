@@ -282,9 +282,9 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
     def visit_grid_connection(self, block: blocks.GridConnection) -> list[str]:
         return [
             f'{"Optimized peak" if block.peakshaving else "Peak"} power in component "{block.name}" for peak period '
-            f'"{period.label}": {period.max_power / 1e3:.1f} kW '
+            f'"{period.label}": {period.peak_power / 1e3:.1f} kW '
             f"- OPEX in simulation period: {block.pois[period.label].opex.eval:.2f} {block.scenario.currency}"
-            for period in block.peak_periods.values()
+            for period in block.peak_periods.itertuples(index=False)
             if period.start < block.scenario.times.eval.end
         ]
 
@@ -391,12 +391,12 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
 
     def visit_grid_connection(self, block: blocks.GridConnection) -> pd.Series:
         peak_power_results = {}
-        for period in block.peak_periods.values():
+        for period in block.peak_periods.itertuples(index=False):
             if period.start < block.scenario.times.eval.end:
                 peak_power_results.update(
                     {
-                        f"{period.label}_peak_power": period.max_power,
-                        f"{period.label}_peak_period_fraction": period.time_fraction,
+                        f"{period.label}_peak_power": period.peak_power,
+                        f"{period.label}_peak_period_fraction": period.fraction,
                         f"{period.label}_peak_opex_eval": block.pois[period.label].opex.eval,
                     }
                 )

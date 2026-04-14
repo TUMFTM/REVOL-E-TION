@@ -6,8 +6,6 @@ import importlib.util
 import logging
 import re
 import zoneinfo
-from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 
 import holidays
@@ -16,40 +14,6 @@ import pandas as pd
 from . import time
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class PeakPowerPeriodFreq(str, Enum):
-    DAY = "D"
-    WEEK = "W-MON"  # -> week starts on Monday. For labeling code uses ISO week definition which also starts on Monday.
-    MONTH = "M"
-    QUARTER = "Q"
-    YEAR = "Y"
-    SIM = "SIM"  # whole simulation period as one peak power period
-
-
-@dataclass
-class PeakPowerPeriodInfo:
-    label: str
-    max_power: float
-    time_fraction: float
-    freq: str
-    activation: pd.Series = field(repr=False)
-    start: pd.Timestamp
-    end: pd.Timestamp
-
-    def set_max_power(self, power_peak: float):
-        # ToDo: adapt if energy system model setup changes
-        # flow_max = (
-        #     flow
-        #     # flow slicing is not necessary as oemof model contains one flow per period
-        #     .loc[self.start:self.end]
-        #     # REVOL-E-TION does not consider peak power frequencies other than the simulation timestep
-        #     .resample(self.freq)
-        #     .mean()
-        #     .ffill()
-        #     .max()
-        # )
-        self.max_power = max(self.max_power, power_peak)
 
 
 def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str | None = None) -> pd.Timedelta | None:

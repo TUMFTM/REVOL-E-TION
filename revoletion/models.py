@@ -649,8 +649,12 @@ class GridConnectionModel(RevoletionBaseModel):
         title="Activation of peak shaving",
         description="Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here.",
     )
-    peak_period: Literal["day", "week", "month", "year", "quarter"] = Field(
+    peak_period: Literal["day", "week", "month", "quarter", "year"] = Field(
         title="Peak power cost period", description="Peak power cost period."
+    )
+    peak_period_start: Literal["calendar", "simulation"] = Field(
+        title="Peak power cost period start",
+        description="Start of the peak power periods. If 'calendar' is chosen, peak periods start at the beginning of the calendar period (e.g. at 01/01 for yearly peak periods). If 'simulation' is chosen, the first peak period starts at the simulation start time.",
     )
     peak_power_init: float = Field(
         title="Initial peak power",
