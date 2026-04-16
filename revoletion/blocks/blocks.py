@@ -1228,6 +1228,7 @@ class GridConnection(ElectricBlock):
                 nominal_capacity=solph.Investment(
                     ep_costs=self.pois[period_label].spec_ep_peak / self.peak_period_measurement.hours,
                 ),
+                # use max c-rate to force storage sizing also for measurement duration <= simulation timestep
                 invest_relation_output_capacity=1 / self.scenario.times.sim.timestep.hours,  # empty in single timestep
                 initial_storage_level=0.0,
                 max_storage_level=(self.peak_periods_soc_limit * activation),
@@ -1251,14 +1252,15 @@ class GridConnection(ElectricBlock):
         """
         post horizon method
         """
+        # get sizes
         self.sizes["g2s"].expansion = horizon.results[(self.components["bus"], self.components["outflow"])]["scalars"][
             "invest"
         ]
-
         self.sizes["s2g"].expansion = horizon.results[(self.components["inflow"], self.components["bus"])]["scalars"][
             "invest"
         ]
 
+        # get flows
         self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.components["inflow"], self.components["bus"])][
             "sequences"
         ]["flow"][horizon.ch.dti]
@@ -1266,10 +1268,12 @@ class GridConnection(ElectricBlock):
             "sequences"
         ]["flow"][horizon.ch.dti]
 
+        # get peak powers per peak interval
         self.peak_periods.update(
             {
                 "peak_power": {
                     period.label: max(
+                        # this leads to inconsistencies for dti_sim != dti_eval if peak power occurs after dti_eval
                         self.flows.loc[horizon.ch.dti, "out"][self.peak_periods_activation[period.label]]
                         .resample(self.peak_period_measurement.freqstr)
                         .mean()
