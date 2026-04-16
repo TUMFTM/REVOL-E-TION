@@ -1178,7 +1178,7 @@ class GridConnection(ElectricBlock):
                                 existing=period.peak_power,
                             )
                         ),
-                        max=(self.period_activation.loc[horizon.ph.dti, period.label].astype(float)),
+                        maximum=(self.period_activation.loc[horizon.ph.dti, period.label].astype(float)),
                     )
                 },
                 conversion_factors={self.bus_connected: 1},
@@ -1320,7 +1320,7 @@ class GridMarket(ElectricBlock):
             outputs={
                 self.parent.components["bus"]: solph.Flow(
                     nominal_capacity=self.pwr_g2s,
-                    max=1 if self.pwr_g2s else None,
+                    maximum=1 if self.pwr_g2s else None,
                     variable_costs=self.pois["g2s"].spec_ep_operation[horizon.ph.dti],
                 )
             }
@@ -1330,7 +1330,7 @@ class GridMarket(ElectricBlock):
             inputs={
                 self.parent.components["bus"]: solph.Flow(
                     nominal_capacity=self.pwr_s2g,
-                    max=1 if self.pwr_s2g else None,
+                    maximum=1 if self.pwr_s2g else None,
                     variable_costs=(self.pois["s2g"].spec_ep_operation[horizon.ph.dti]),
                 )
             }
@@ -1497,7 +1497,7 @@ class StorageBlock(ElectricBlock, ABC):
             inputs={
                 self.bus_connected: solph.Flow(
                     nominal_capacity=params["inflow_nominal_capacity"],
-                    max=params["inflow_max"],
+                    maximum=params["inflow_max"],
                     fix=params["inflow_fix"],
                 )
             },
@@ -1514,7 +1514,7 @@ class StorageBlock(ElectricBlock, ABC):
             outputs={
                 self.bus_connected: solph.Flow(
                     nominal_capacity=params["outflow_nominal_capacity"],
-                    max=params["outflow_max"],
+                    maximum=params["outflow_max"],
                     fix=params["outflow_fix"],
                     variable_costs=self.scenario.cost_eps
                     * 4,  # disincentivize waste loop with inflow (sum must be positive)
@@ -1525,9 +1525,17 @@ class StorageBlock(ElectricBlock, ABC):
 
         self.components["storage"] = solph.components.GenericStorage(
             inputs={
-                self.components["bus"]: solph.Flow(variable_costs=self.pois["in"].spec_ep_operation[horizon.ph.dti])
+                self.components["bus"]: solph.Flow(
+                    nominal_capacity=solph.Investment(),
+                    variable_costs=self.pois["in"].spec_ep_operation[horizon.ph.dti],
+                )
             },
-            outputs={self.components["bus"]: solph.Flow(variable_costs=self.scenario.cost_eps)},
+            outputs={
+                self.components["bus"]: solph.Flow(
+                    nominal_capacity=solph.Investment(),
+                    variable_costs=self.scenario.cost_eps,
+                )
+            },
             loss_rate=self.loss_rate_per_hour,
             balanced=params["storage_balanced"],
             initial_storage_level=self.states.loc[horizon.ph.start, ["soc", "soc_min", "soc_max"]].median(),
@@ -2048,7 +2056,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             outputs={
                 self.components["bus_ext_ac"]: solph.Flow(
                     nominal_capacity=self.pwr_ext_ac_max,
-                    max=None if self.apriori else self.log.loc[horizon.ph.dti, "atac"].astype(int),
+                    maximum=None if self.apriori else self.log.loc[horizon.ph.dti, "atac"].astype(int),
                     fix=self.flows_apriori.loc[horizon.ph.dti, "p_ext_ac_chg"] if self.apriori else None,
                     variable_costs=self.pois["ext_ac"].spec_ep_operation[horizon.ph.dti],
                 )
@@ -2067,7 +2075,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             outputs={
                 self.components["bus_ext_dc"]: solph.Flow(
                     nominal_capacity=self.pwr_ext_dc_max,
-                    max=None if self.apriori else self.log.loc[horizon.ph.dti, "atdc"].astype(int),
+                    maximum=None if self.apriori else self.log.loc[horizon.ph.dti, "atdc"].astype(int),
                     fix=self.flows_apriori.loc[horizon.ph.dti, "p_ext_dc_chg"] if self.apriori else None,
                     variable_costs=self.pois["ext_dc"].spec_ep_operation[horizon.ph.dti],
                 )
