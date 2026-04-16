@@ -260,7 +260,7 @@ class ElectricBlock(BaseBlock, ABC):
         # empty list not possible as default argument as it is mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
-        self.components = dict()
+        self.components = {}
         self.bus_connected = None
 
         # ToDo: (1) remove flow_apriori_names and use flow names instead
@@ -281,6 +281,9 @@ class ElectricBlock(BaseBlock, ABC):
                 delattr(self, key)
 
     def pre_horizon(self, horizon: simulation.PredictionHorizon):
+        # reset components
+        self.components = {}
+
         self.define_oemof_components(horizon=horizon)
         horizon.es.add(*self.components.values())
 
