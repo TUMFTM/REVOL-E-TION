@@ -1246,7 +1246,7 @@ class GridConnection(ElectricBlock):
             # use invest size to determine peak_power
             self.peak_periods.loc[period.label, "peak_power"] = max(
                 horizon.results[(self.outflows[f"{self.name}_outflow_{period.label}"], self.bus_connected)]["scalars"][
-                    "invest"
+                    "total"
                 ],
                 period.peak_power,
             )
