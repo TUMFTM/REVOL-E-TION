@@ -1266,17 +1266,20 @@ class GridConnection(ElectricBlock):
             "sequences"
         ]["flow"][horizon.ch.dti]
 
-        # ToDo: use comprehension to increase speed -> only write once instead of every iteration
-        for period in self.peak_periods.itertuples(index=False):
-            # use invest size to determine peak_power
-            self.peak_periods.loc[period.label, "peak_power"] = max(
-                # this approach may lead to inconsistencies for dti_sim != dti_eval if peak power occurs after dti_eval
-                self.flows.loc[horizon.ch.dti, "out"][self.peak_periods_activation[period.label]]
-                .resample(self.peak_period_measurement.freqstr)
-                .mean()
-                .max(),
-                period.peak_power,
-            )
+        self.peak_periods.update(
+            {
+                "peak_power": {
+                    period.label: max(
+                        self.flows.loc[horizon.ch.dti, "out"][self.peak_periods_activation[period.label]]
+                        .resample(self.peak_period_measurement.freqstr)
+                        .mean()
+                        .max(),
+                        period.peak_power,
+                    )
+                    for period in self.peak_periods.itertuples()
+                }
+            }
+        )
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
