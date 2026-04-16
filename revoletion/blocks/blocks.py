@@ -1218,28 +1218,35 @@ class GridConnection(ElectricBlock):
         self.components["peak_src"] = solph.components.Source(outputs={self.components["peak_bus_in"]: solph.Flow()})
         self.components["peak_snk"] = solph.components.Sink(inputs={self.components["peak_bus_out"]: solph.Flow()})
 
-        def create_storage(period_label: str):
-            activation = self.peak_periods_activation[period_label]
+        def create_storage(period):
+            activation = self.peak_periods_activation.loc[horizon.ph.dti_extd, period.label]
+            flush = self.peak_periods_storage_flush.loc[horizon.ph.dti]
+            soc_limit = self.peak_periods_soc_limit.loc[horizon.ph.dti_extd]
             return solph.components.GenericStorage(
                 inputs={self.components["peak_bus_in"]: solph.Flow()},
                 outputs={
                     self.components["peak_bus_out"]: solph.Flow(
-                        maximum=self.peak_periods_storage_flush * activation,
+                        maximum=flush * activation,
                         nominal_capacity=solph.Investment(),
                     )
                 },
                 nominal_capacity=solph.Investment(
-                    ep_costs=self.pois[period_label].spec_ep_peak / self.peak_period_measurement.hours,
+                    ep_costs=self.pois[period.label].spec_ep_peak / self.peak_period_measurement.hours,
+                    existing=period.peak_power,
                 ),
                 # use max c-rate to force storage sizing also for measurement duration <= simulation timestep
                 invest_relation_output_capacity=1 / self.scenario.times.sim.timestep.hours,  # empty in single timestep
                 initial_storage_level=0.0,
-                max_storage_level=(self.peak_periods_soc_limit * activation),
+                max_storage_level=(soc_limit * activation),
                 balanced=False,
             )
 
         self.peak_storages = {
-            f"peak_storage_{period}": create_storage(period_label=period) for period in self.peak_periods.index
+            period.label: create_storage(period=period)
+            for period in self.peak_periods[
+                # only consider intervals which are used in the horizon's simulation period
+                (self.peak_periods["start"] < horizon.ph.end) & (self.peak_periods["end"] > horizon.ph.start)
+            ].itertuples(index=False)
         }
 
         self.components.update(self.peak_storages)
@@ -1284,6 +1291,7 @@ class GridConnection(ElectricBlock):
                         period.peak_power,
                     )
                     for period in self.peak_periods.itertuples()
+                    if period.label in self.peak_storages.keys()
                 }
             }
         )
