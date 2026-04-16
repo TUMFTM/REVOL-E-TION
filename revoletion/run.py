@@ -131,7 +131,11 @@ class SimulationRun:
         if self.scenario_num == 0:
             raise ValueError("No executable scenarios found in scenario file")
 
-        self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
+        self.settings.n_processes = min(
+            self.scenario_num,
+            self.settings.n_processes,
+            *(x for x in [os.cpu_count()] if x is not None),  # filter out undetermined CPU count
+        )
         # endregion
 
         self.logger.info(f"{'Reading scenarios from:':<25} {self.paths.scenario}")
