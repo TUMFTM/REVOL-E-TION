@@ -656,7 +656,7 @@ class GridConnectionModel(RevoletionBaseModel):
         title="Peak power cost period start",
         description="Start of the peak power periods. If 'calendar' is chosen, peak periods start at the beginning of the calendar period (e.g. at 01/01 for yearly peak periods). If 'simulation' is chosen, the first peak period starts at the simulation start time.",
     )
-    peak_period_measurement: Literal["calendar", "simulation"] = Field(
+    peak_period_measurement: str = Field(
         title="Peak power measurement period",
         description="Measurement period for the peak power. To determine the peak power the mean power of this measurement period is used.",
         json_schema_extra={
