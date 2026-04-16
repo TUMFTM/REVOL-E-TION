@@ -231,7 +231,7 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
                 return (
                     f"{block.name} (dis-)charge power "
                     f"(max. {block.sizes['storage'].total * block.crate_chg * block.eff['chg'] / 1e3:.1f} kW charge / "
-                    f"{block.sizes['storage'].total * block.crate_dis * block.eff['dis'] / 1e3:.1f} kW discharge)"
+                    f"{block.sizes['storage'].total * block.crate_dis / block.eff['dis'] / 1e3:.1f} kW discharge)"
                 )
 
             case blocks.Fleet():
