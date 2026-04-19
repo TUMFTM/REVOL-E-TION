@@ -774,6 +774,10 @@ class StationaryBatteryModel(RevoletionBaseModel):
         title="Renewable energy sources only",
         description="If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter.",
     )
+    balanced: bool = Field(
+        title="Balanced Storage Content",
+        description="If activated, the storage's energy content at the start of the simulation has to be identical to the energy content at the end of the simulation. The parameter is neglected for Rolling Horizon optimization.",
+    )
     aging: bool = Field(
         title="Consideration of battery aging",
         description="Battery aging calculation after each horizon. Aging results are taken into account for the next horizon by limiting the available SOC range. Maximum power is not reduced.",

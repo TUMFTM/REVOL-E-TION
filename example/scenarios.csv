@@ -124,6 +124,7 @@ ess,size_max_storage,None,None,None,None
 ess,invest_storage,True,True,True,False
 ess,system,dc,dc,dc,dc
 ess,res_only,False,False,False,False
+ess,balanced,True,True,True,True
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
 ess,temp_battery,25,25,pv,pv
