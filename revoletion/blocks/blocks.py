@@ -15,7 +15,7 @@ import windpowerlib
 from typing_extensions import override
 
 from revoletion import battery as bat
-from revoletion import data_manager, energy, mobility, peak_periods, size, utils
+from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils
 from revoletion import economics as eco
 
 if TYPE_CHECKING:
@@ -1056,36 +1056,56 @@ class GridConnection(ElectricBlock):
             **kwargs,
         )
 
-        self.inflows = dict()
-        self.outflows = dict()
+        self.peak_storages = dict()
 
-        self.peak_period = peak_periods.PeakPowerPeriodFreq[self.peak_period.upper()]
-        self.peak_freq = "15min"  # ToDo: make this a parameter in the scenario file
-        self.peak_period_start = peak_periods.PeakPowerPeriodStart[self.peak_period_start.upper()]
+        peak_period = peak_periods.PeakPowerPeriodFreq[self.peak_period.upper()]
+        peak_period_start = peak_periods.PeakPowerPeriodStart[self.peak_period_start.upper()]
 
-        self.peak_periods, self.period_activation = peak_periods.get_peak_periods(
-            timeframe=self.scenario.times.sim,
-            peak_period=self.peak_period,
-            peak_period_start=self.peak_period_start,
+        self.peak_period_measurement = time.Timestep.from_str(self.peak_period_measurement)
+
+        timeframe = self.scenario.times.sim
+
+        self.peak_periods, self.peak_periods_activation = peak_periods.get_peak_periods(
+            timeframe=timeframe,
+            peak_period=peak_period,
+            peak_period_start=peak_period_start,
             peak_power_init=self.peak_power_init,
         )
 
-        n_peak_periods_yr = self.peak_period.value.periods_per_year
+        steps_per_period = int(self.peak_period_measurement.hours / timeframe.timestep.hours)
+        len_timeframe = len(timeframe.dti)
+        t = np.arange(len_timeframe)
+        t_extd = np.arange(len_timeframe + 1)
+
+        # SOC of virtual storage has to be 0 at the start of each new measurement period
+        self.peak_periods_soc_limit = pd.Series(
+            data=(t_extd % steps_per_period != 0).astype(int),
+            index=timeframe.dti_extd,
+        )
+
+        # outflow out of virtual storage for peak shaving is only allowed in the last timestep of a measurement period
+        # activate outflow for all periods, if there are not at least 2 timesteps per measurement period
+        self.peak_periods_storage_flush = pd.Series(
+            data=((t % steps_per_period == steps_per_period - 1).astype(int)) if steps_per_period >= 2 else 1.0,
+            index=timeframe.dti,
+        )
+
+        n_peak_periods_yr = peak_period.value.periods_per_year
         n_peak_periods_sim = self.peak_periods.shape[0]
 
         peak_period_pois = {
-            row.label: eco.POI.create(
-                name=row.label,
+            period.label: eco.POI.create(
+                name=period.label,
                 eco=self.scenario.eco_params,
                 data_dir=self.scenario.paths.input,
                 opex=eco.OpexParams(
                     spec_peak=self.opex_spec_peak,
-                    frac_peak=row.fraction,
+                    frac_peak=period.fraction,
                     n_peak_periods_yr=n_peak_periods_yr,
                     n_peak_periods_sim=n_peak_periods_sim,
                 ),
             )
-            for row in self.peak_periods.itertuples(index=False)
+            for period in self.peak_periods.itertuples(index=False)
         }
 
         self.pois.update(peak_period_pois)
@@ -1119,142 +1139,162 @@ class GridConnection(ElectricBlock):
 
         bus_connected          name_bus
           |                        |
-          |---name_inflow_1--x---->|
-          |<--name_outflow_1--x----|
-          |                        |---(GridMarket Instance)
-          |---name_inflow_2--x---->|
-          |<--name_outflow_2--x----|
+          |---name_inflow----x---->|---(GridMarket Instance)
+          |<--name_outflow----x----|          ...
+          |                        |
           |                        |---(GridMarket Instance)
 
-                     ...
 
-          |---name_inflow_n--x---->|
-          |<--name_outflow_n--x----|
+               peak_bus_in              peak_bus_out
+                    |                        |
+                    |--->storage_period_1--->|
+        peak_src--->|           ...          |--->peak_snk
+                    |                        |
+                    |--->storage_period_n--->|
+                    |                        |
         """
 
         self.bus_connected = self.scenario.block_registry.get("TopLevelBlock", {})["core"].components[self.system]
 
         self.components["bus"] = solph.Bus()
 
-        self.inflows = {
-            f"{self.name}_inflow_1": solph.components.Converter(
-                # Peakshaving not implemented for feed-in into grid
-                inputs={self.bus_connected: solph.Flow()},
-                # Size optimization
-                outputs={
-                    self.components["bus"]: solph.Flow(
-                        nominal_capacity=solph.Investment(
-                            ep_costs=self.pois["s2g"].spec_ep_invest,
-                            existing=self.sizes["s2g"].preexisting,
-                            maximum=self.sizes["s2g"].expansion_max,
-                        ),
-                        variable_costs=self.scenario.cost_eps,
+        self.components["inflow"] = solph.components.Converter(
+            inputs={self.bus_connected: solph.Flow()},
+            outputs={
+                self.components["bus"]: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.pois["s2g"].spec_ep_invest,
+                        existing=self.sizes["s2g"].preexisting,
+                        maximum=self.sizes["s2g"].expansion_max,
+                    ),
+                    variable_costs=self.scenario.cost_eps,
+                )
+            },
+            conversion_factors={self.components["bus"]: 1},
+        )
+
+        self.components["outflow"] = solph.components.Converter(
+            inputs={
+                self.components["bus"]: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=self.pois["g2s"].spec_ep_invest,
+                        existing=self.sizes["g2s"].preexisting,
+                        maximum=self.sizes["g2s"].expansion_max,
                     )
-                },
-                conversion_factors={self.components["bus"]: 1},
-            )
-        }
-
-        self.components.update(self.inflows)
-
-        period_invest = self.peak_periods.index[0]
-
-        self.outflows = {
-            f"{self.name}_outflow_{period.label}": solph.components.Converter(
-                # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
-                # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
-                inputs={
-                    self.components["bus"]: solph.Flow(
-                        nominal_capacity=solph.Investment(
-                            ep_costs=(self.pois["g2s"].spec_ep_invest if period == period_invest else 0),
-                            existing=self.sizes["g2s"].preexisting,
-                            maximum=self.sizes["g2s"].expansion_max,
-                        )
-                    )
-                },
-                # Peakshaving
-                outputs={
-                    self.bus_connected: solph.Flow(
-                        nominal_capacity=(
-                            solph.Investment(
-                                ep_costs=(self.pois[period.label].spec_ep_peak if self.peakshaving else 0),
-                                existing=period.peak_power,
-                            )
-                        ),
-                        maximum=(self.period_activation.loc[horizon.ph.dti, period.label].astype(float)),
-                    )
-                },
-                conversion_factors={self.bus_connected: 1},
-            )
-            for period in self.peak_periods.itertuples(index=False)
-        }
-
-        self.components.update(self.outflows)
+                )
+            },
+            outputs={self.bus_connected: solph.Flow()},
+            conversion_factors={self.bus_connected: 1},
+        )
 
         horizon.constraints.add_invest_costs(
-            invest=(self.components[f"{self.name}_inflow_1"], self.components["bus"]),
+            invest=(self.components["inflow"], self.components["bus"]),
             capex_spec=self.pois["s2g"].capex.spec,
             invest_type="flow",
         )
         horizon.constraints.add_invest_costs(
-            invest=(
-                self.components["bus"],
-                self.components[f"{self.name}_outflow_{period_invest}"],
-            ),
+            invest=(self.components["bus"], self.components["outflow"]),
             capex_spec=self.pois["g2s"].capex.spec,
             invest_type="flow",
         )
 
-        # The optimized sizes of the buses of all peakshaving intervals have to be the same as they technically
-        # represent the same grid connection
-        equal_investments = [{"in": self.components["bus"], "out": outflow} for outflow in self.outflows.values()]
-
-        # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
+        # add constraint to enforce same size for inflow and outflow
         if self.expansion_equal:
-            equal_investments.append(
-                {
-                    "in": self.components[f"{self.name}_inflow_1"],
-                    "out": self.components["bus"],
-                }
-            )  # currently only works without peakshaving for inflows
+            horizon.constraints.add_equal_invests(
+                [
+                    {"in": self.components["inflow"], "out": self.components["bus"]},
+                    {"in": self.components["bus"], "out": self.components["outflow"]},
+                ]
+            )
 
-        # add list of variables to the scenario constraints if list contains more than one element
-        # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
-        if len(equal_investments) > 1:
-            horizon.constraints.add_equal_invests(equal_investments)
+        if not self.peakshaving:
+            return
+
+        # peak shaving
+        # ToDo: limit possible timesteps: enforce period_measurement % scenario.timestep == 0 if period_measurement < scenario.timestep
+        self.components["peak_bus_in"] = solph.Bus()
+        self.components["peak_bus_out"] = solph.Bus()
+
+        self.components["peak_src"] = solph.components.Source(outputs={self.components["peak_bus_in"]: solph.Flow()})
+        self.components["peak_snk"] = solph.components.Sink(inputs={self.components["peak_bus_out"]: solph.Flow()})
+
+        def create_storage(period):
+            activation = self.peak_periods_activation.loc[horizon.ph.dti_extd, period.label]
+            flush = self.peak_periods_storage_flush.loc[horizon.ph.dti]
+            soc_limit = self.peak_periods_soc_limit.loc[horizon.ph.dti_extd]
+            return solph.components.GenericStorage(
+                inputs={self.components["peak_bus_in"]: solph.Flow()},
+                outputs={
+                    self.components["peak_bus_out"]: solph.Flow(
+                        maximum=flush * activation,
+                        nominal_capacity=solph.Investment(),
+                    )
+                },
+                nominal_capacity=solph.Investment(
+                    ep_costs=self.pois[period.label].spec_ep_peak / self.peak_period_measurement.hours,
+                    existing=period.peak_power,
+                ),
+                # use max c-rate to force storage sizing also for measurement duration <= simulation timestep
+                invest_relation_output_capacity=1 / self.scenario.times.sim.timestep.hours,  # empty in single timestep
+                initial_storage_level=0.0,
+                max_storage_level=(soc_limit * activation),
+                balanced=False,
+            )
+
+        self.peak_storages = {
+            period.label: create_storage(period=period)
+            for period in self.peak_periods[
+                # only consider intervals which are used in the horizon's simulation period
+                (self.peak_periods["start"] < horizon.ph.end) & (self.peak_periods["end"] > horizon.ph.start)
+            ].itertuples(index=False)
+        }
+
+        self.components.update(self.peak_storages)
+
+        horizon.constraints.add_equal_flows(
+            (
+                [(self.components["bus"], self.components["outflow"])],
+                [(self.components["peak_src"], self.components["peak_bus_in"])],
+            )
+        )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
         """
         post horizon method
         """
-        self.sizes["g2s"].expansion = horizon.results[(self.components["bus"], list(self.outflows.values())[0])][
-            "scalars"
-        ]["invest"]
+        # get sizes
+        self.sizes["g2s"].expansion = horizon.results[(self.components["bus"], self.components["outflow"])]["scalars"][
+            "invest"
+        ]
+        self.sizes["s2g"].expansion = horizon.results[(self.components["inflow"], self.components["bus"])]["scalars"][
+            "invest"
+        ]
 
-        self.sizes["s2g"].expansion = horizon.results[(list(self.inflows.values())[0], self.components["bus"])][
-            "scalars"
-        ]["invest"]
+        # get flows
+        self.flows.loc[horizon.ch.dti, "in"] = horizon.results[(self.components["inflow"], self.components["bus"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
+        self.flows.loc[horizon.ch.dti, "out"] = horizon.results[(self.components["bus"], self.components["outflow"])][
+            "sequences"
+        ]["flow"][horizon.ch.dti]
 
-        self.flows.loc[horizon.ch.dti, "in"] = sum(
-            horizon.results[(inflow, self.components["bus"])]["sequences"]["flow"][horizon.ch.dti]
-            for inflow in self.inflows.values()
+        # get peak powers per peak interval
+        self.peak_periods.update(
+            {
+                "peak_power": {
+                    period.label: max(
+                        # this leads to inconsistencies for dti_sim != dti_eval if peak power occurs after dti_eval
+                        self.flows.loc[horizon.ch.dti, "out"][self.peak_periods_activation[period.label]]
+                        .resample(self.peak_period_measurement.freqstr)
+                        .mean()
+                        .max(),
+                        period.peak_power,
+                    )
+                    for period in self.peak_periods.itertuples()
+                    if period.label in self.peak_storages.keys()
+                }
+            }
         )
-        self.flows.loc[horizon.ch.dti, "out"] = sum(
-            horizon.results[(self.components["bus"], outflow)]["sequences"]["flow"][horizon.ch.dti]
-            for outflow in self.outflows.values()
-        )
-
-        # ToDo: use comprehension to increase speed -> only write once instead of every iteration
-        for period in self.peak_periods.itertuples(index=False):
-            # use invest size to determine peak_power
-            self.peak_periods.loc[period.label, "peak_power"] = max(
-                horizon.results[(self.outflows[f"{self.name}_outflow_{period.label}"], self.bus_connected)]["scalars"][
-                    "total"
-                ],
-                period.peak_power,
-            )
-            # alternative: use flow to determine peak power -> leads to inconsistencies for dti_sim != dti_eval
-            # horizon.results[(self.outflows[f"{self.name}_outflow_{period.label}"], self.bus_connected)]["sequences"]["flow"][horizon.ch.dti]
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)

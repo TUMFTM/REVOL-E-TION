@@ -40,15 +40,15 @@ def get_peak_periods(
     if peak_period == PeakPowerPeriodFreq.SIM:
         return (
             pd.DataFrame(index=["sim"], data={"fraction": 1.0, "peak_power": peak_power_init}),
-            pd.DataFrame(index=timeframe.dti, data={"sim": 1.0}),
+            pd.DataFrame(index=timeframe.dti_extd, data={"sim": 1.0}),
         )
 
     if peak_period_start == PeakPowerPeriodStart.CALENDAR:
         # convert dti to periods
         periods = pd.Series(
-            index=timeframe.dti,
+            index=timeframe.dti_extd,
             # to_period() drops timezone with warning -> remove timezone before converting to period and add it back later
-            data=timeframe.dti.tz_localize(None).to_period(peak_period.value.period_str),
+            data=timeframe.dti_extd.tz_localize(None).to_period(peak_period.value.period_str),
             name="periods",
         )
 
@@ -70,14 +70,14 @@ def get_peak_periods(
 
     else:
         # build edges (few iterations → cheap)
-        edges = [timeframe.dti[0]]
-        while edges[-1] <= timeframe.dti[-1]:
+        edges = [timeframe.dti_extd[0]]
+        while edges[-1] <= timeframe.dti_extd[-1]:
             edges.append(edges[-1] + peak_period.value.duration_offset)
 
         edges = pd.to_datetime(edges)
 
         periods = pd.Series(
-            index=timeframe.dti, data=np.searchsorted(edges, timeframe.dti, side="right"), name="periods"
+            index=timeframe.dti_extd, data=np.searchsorted(edges, timeframe.dti_extd, side="right"), name="periods"
         )
 
         # aggregate
@@ -88,6 +88,9 @@ def get_peak_periods(
         agg["end"] = pd.to_datetime(edges[1:])
 
         agg["label"] = f"sim_{peak_period.name.lower()}_" + agg.index.astype(str).str.zfill(len(str(agg.index.max())))
+
+    # remove periods, which start in the last timestep. These periods are not covered in the simulation
+    agg = agg[agg["start"] <= timeframe.dti[-1]]
 
     # calculate the fraction of timesteps per period included in the simulation timeframe
     agg["fraction"] = (agg["count"] * timeframe.timestep.td) / (agg["end"] - agg["start"])

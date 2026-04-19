@@ -99,6 +99,7 @@ grid,system,ac,ac,ac,ac
 grid,peakshaving,True,True,True,True
 grid,peak_period,year,year,year,year
 grid,peak_period_start,calendar,calendar,calendar,calendar
+grid,peak_period_measurement,15min,15min,15min,15min
 grid,peak_power_init,0,0,0,0
 grid,opex_spec_peak,0.01,0.01,0.01,0.01
 grid,capex_spec,0.1,0.1,0.1,0.1

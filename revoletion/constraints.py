@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import pyomo.environ as po
+from oemof import solph
 
 
 class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
         self.equal_invests = []
+        self.equal_flows = []
         self.invest_costs = {"flow": [], "storage": []}
 
     def apply_constraints(self, model):
@@ -14,6 +16,9 @@ class CustomConstraints:
         model.CUSTOM_CONSTRAINTS = po.Block()
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
+
+        # Add peak shaving constraints
+        self.equate_flows(model)
 
         # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
         self.limit_pwr_gridmarket(model)
@@ -30,6 +35,10 @@ class CustomConstraints:
     def add_equal_invests(self, invests):
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
         self.equal_invests.append(invests)
+
+    def add_equal_flows(self, flows):
+        # Add a tuple of lists of flows represented as tuples containing the start and end node of a flow
+        self.equal_flows.append(flows)
 
     def add_invest_costs(self, invest, capex_spec, invest_type):
         # needs to be a custom solution, as peakshaving also uses investment objects but should not be considered
@@ -61,6 +70,10 @@ class CustomConstraints:
                         model.InvestmentFlowBlock.invest[var["in"], var["out"], 0] for var in [var_list[0], var_equal]
                     ],
                 )
+
+    def equate_flows(self, model):
+        for flows1, flows2 in self.equal_flows:
+            solph.constraints.equate_flows(model=model, flows1=flows1, flows2=flows2, factor1=1.0)
 
     def limit_pwr_gridmarket(self, model):
         # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
@@ -98,7 +111,7 @@ class CustomConstraints:
                 flows_markets=[
                     (market.components["src"], grid.components["bus"]) for market in grid.subblocks.values()
                 ],
-                flows_grid=[(grid.components["bus"], converter) for converter in grid.outflows.values()],
+                flows_grid=[(grid.components["bus"], grid.components["outflow"])],
             )
 
             _limit_flows(
@@ -108,7 +121,7 @@ class CustomConstraints:
                 flows_markets=[
                     (grid.components["bus"], market.components["snk"]) for market in grid.subblocks.values()
                 ],
-                flows_grid=[(converter, grid.components["bus"]) for converter in grid.inflows.values()],
+                flows_grid=[(grid.components["inflow"], grid.components["bus"])],
             )
 
     def renewables_only(self, model):
