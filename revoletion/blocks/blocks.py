@@ -1638,7 +1638,7 @@ class StationaryBattery(StorageBlock):
             "outflow_fix": None,
             "invest_relation_input_capacity": self.crate_chg,
             "invest_relation_output_capacity": self.crate_dis,
-            "storage_balanced": True if self.scenario.strategy == "go" else False,
+            "storage_balanced": self.balanced if self.scenario.strategy == "go" else False,
         }
         super().define_oemof_components(horizon, params)
 
