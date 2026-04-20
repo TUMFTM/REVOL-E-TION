@@ -30,7 +30,6 @@ from .params import (
 )
 from .utils import (
     Depreciation,
-    OccursAt,
     calc_lifetime_remaining,
     calc_residual_value,
     transform_scalar_var,
@@ -62,11 +61,10 @@ class CostEvaluator(CalculableBaseElement, ABC):
         return cls(name=name, eco=eco, **kwargs)
 
     def _calc_ep_factor(self, cashflow_factors: npt.NDArray, **kwargs) -> float:
-        # calculate the factor which is multiplied with the specific costs to get the equivalent present specific costs used byy the optimization problem.
-        # this factor scales all specific costs to the same equivalent present specific costs occurring at the begin of the 1st project year.
+        # calculate the factor which is multiplied with the specific costs to get the equivalent present specific costs used by the optimization problem.
+        # this factor scales all specific costs to their net present costs of the whole project duration.
         return (
             np.dot(cashflow_factors, self.eco.discount_factors(self._TYPE.value.occurs_at))
-            * self.eco.annuity_factor_apriori(OccursAt.BEGIN)
             if self.eco.compensate_sim_prj
             else 1.0
         )
