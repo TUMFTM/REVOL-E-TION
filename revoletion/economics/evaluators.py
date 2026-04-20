@@ -317,9 +317,14 @@ class MntexEvaluator(CostEvaluator, CalculableYearlyElement, MntexElement):
         return dict(spec=params.spec, fix=params.fix, **kwargs)
 
     def _calc_yrl(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> float:
-        size_preexisting = size_preexisting if size_preexisting else 0.0
-        size_expansion = size_expansion if size_expansion else 0.0
-        return self.spec * (size_preexisting + size_expansion) + self.fix
+        return (
+            self.spec
+            * (
+                (size_preexisting if size_preexisting is not None else 0.0)
+                + (size_expansion if size_expansion is not None else 0.0)
+            )
+            + self.fix
+        )
 
     def evaluate(self, size_preexisting: float | None, size_expansion: float | None, **kwargs) -> None:
         super().evaluate(size_preexisting=size_preexisting, size_expansion=size_expansion, **kwargs)
