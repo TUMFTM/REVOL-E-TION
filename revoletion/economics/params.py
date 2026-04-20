@@ -165,8 +165,6 @@ class OpexParams(TimeseriesParams):
 
     spec_peak: float | int = 0.0
     frac_peak: float | int = 1.0
-    n_peak_periods_yr: int = 1
-    n_peak_periods_sim: int = 1
 
 
 @dataclass(frozen=True)

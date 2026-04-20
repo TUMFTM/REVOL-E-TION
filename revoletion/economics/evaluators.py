@@ -346,8 +346,6 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         fix: float,
         spec_peak: float,
         frac_peak: float,
-        n_peak_periods_yr: int,
-        n_peak_periods_sim: int,
         **kwargs,
     ):
         super().__init__(
@@ -362,8 +360,6 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
 
         self.spec_peak = spec_peak
         self.frac_peak = frac_peak
-        self.n_peak_periods_yr = n_peak_periods_yr
-        self.n_peak_periods_sim = n_peak_periods_sim
 
     @classmethod
     def _build_kwargs_from_params(cls, params: OpexParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
@@ -371,8 +367,6 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
             **super()._build_kwargs_from_params(params=params, eco=eco, data_dir=data_dir, **kwargs),
             spec_peak=params.spec_peak,
             frac_peak=params.frac_peak,
-            n_peak_periods_yr=params.n_peak_periods_yr,
-            n_peak_periods_sim=params.n_peak_periods_sim,
         )
 
     def _calc_spec_ep_peak(self, **kwargs) -> float:

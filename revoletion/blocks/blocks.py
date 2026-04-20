@@ -1090,9 +1090,6 @@ class GridConnection(ElectricBlock):
             index=timeframe.dti,
         )
 
-        n_peak_periods_yr = peak_period.value.periods_per_year
-        n_peak_periods_sim = self.peak_periods.shape[0]
-
         peak_period_pois = {
             period.label: eco.POI.create(
                 name=period.label,
@@ -1101,8 +1098,6 @@ class GridConnection(ElectricBlock):
                 opex=eco.OpexParams(
                     spec_peak=self.opex_spec_peak,
                     frac_peak=period.fraction,
-                    n_peak_periods_yr=n_peak_periods_yr,
-                    n_peak_periods_sim=n_peak_periods_sim,
                 ),
             )
             for period in self.peak_periods.itertuples(index=False)
