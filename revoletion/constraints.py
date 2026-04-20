@@ -201,9 +201,9 @@ class CustomConstraints:
         """
 
         if flow is not None:
-            self._limited_invests["flow"].append({"fi": flow[0], "fo": flow[1], "capex_spec": capex_spec})
+            self._limited_invests["flow"].append({"element": flow, "capex_spec": capex_spec})
         if storage is not None:
-            self._limited_invests["storage"].append({"so": storage, "capex_spec": capex_spec})
+            self._limited_invests["storage"].append({"element": storage, "capex_spec": capex_spec})
 
     def _equate_flows(self, model: solph.Model):
         """
@@ -246,31 +246,34 @@ class CustomConstraints:
         # Approach: Add a constraint adding all initial investment costs and limiting the sum to the specified value
         model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS = po.Block()
 
-        def _limit_invests(m, block, name):
+        def _limit_invests(m, block, name, invest_max):
             def _limit_invest_rule(block):
                 expr = 0
 
                 # Add investment costs for all flow objects
                 expr += sum(
-                    m.InvestmentFlowBlock.invest[invest_flow["fi"], invest_flow["fo"], 0] * invest_flow["capex_spec"]
-                    for invest_flow in self._limited_invests["flow"]
+                    m.InvestmentFlowBlock.invest[*flow["element"], 0] * flow["capex_spec"]
+                    for flow in self._limited_invests["flow"]
                 )
 
                 # Add investment costs for all storage objects
                 expr += sum(
-                    m.GenericInvestmentStorageBlock.invest[invest_storage["so"], 0] * invest_storage["capex_spec"]
-                    for invest_storage in self._limited_invests["storage"]
+                    m.GenericInvestmentStorageBlock.invest[storage["element"], 0] * storage["capex_spec"]
+                    for storage in self._limited_invests["storage"]
                 )
 
-                expr += self.scenario.capex_preexisting_considered
-
-                return expr <= self.scenario.invest_max
+                return expr <= invest_max
 
             setattr(block, name, po.Constraint(rule=_limit_invest_rule))
 
         # Add additional user-specific constraints for investment cost limit
         if self.scenario.invest_max is not None:
-            _limit_invests(m=model, block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS, name="limit_invest_costs")
+            _limit_invests(
+                m=model,
+                block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
+                name="limit_invest_costs",
+                invest_max=self.scenario.invest_max - self.scenario.capex_preexisting_considered,
+            )
 
     def _limit_to_renewables(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
