@@ -1,33 +1,60 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass, field
+
 import pyomo.environ as po
 from oemof import solph
+
+
+@dataclass
+class EquateFlowParams:
+    """
+    Dataclass storing the arguments which are later passed to oemof.solph.constraints.equate_flows()
+    This ensures
+          sum(flows1) * factor1 = sum(flows2)
+    for all timesteps
+    """
+
+    flows1: list = field(default_factory=list)
+    flows2: list = field(default_factory=list)
+    factor1: float = 1.0
+    name: str | None = None
+
+    @property
+    def dict(self) -> dict:
+        if not self.flows1 or not self.flows2:
+            raise ValueError(f"None of flows1 and flows2 is allowed to be empty! Pass flows to {self.name}")
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+class FlowParamsDict(dict):
+    def __missing__(self, key):
+        name = "_".join(key) if isinstance(key, (tuple, list)) else key
+        value = EquateFlowParams(name=name)
+        self[key] = value
+        return value
 
 
 class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
+
+        self._equal_flows = FlowParamsDict()
         self.equal_invests = []
-        self.equal_flows = []
         self.invest_costs = {"flow": [], "storage": []}
 
     def apply_constraints(self, model):
         # Add pyomo block to model to store custom constraints
         model.CUSTOM_CONSTRAINTS = po.Block()
+
         # Apply additional constraints to equalize investment variables for bidirectional flows
         self.equate_invests(model)
 
-        # Add peak shaving constraints
+        # Apply constraints to enforce equal flows
         self.equate_flows(model)
-
-        # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
-        self.limit_pwr_gridmarket(model)
 
         # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
         self.renewables_only(model)
-
-        # Force all charged energy into the commodity's storage
-        self.external_charging_to_storage(model)
 
         # Limit initial investment costs
         self.limit_invest_costs(model)
@@ -36,9 +63,25 @@ class CustomConstraints:
         # Add a list of investment variables represented as dicts containing the start and end node of a flow
         self.equal_invests.append(invests)
 
-    def add_equal_flows(self, flows):
-        # Add a tuple of lists of flows represented as tuples containing the start and end node of a flow
-        self.equal_flows.append(flows)
+    def add_equal_flows(
+        self,
+        key: tuple[str, str],
+        flow1: tuple | None = None,
+        flow2: tuple | None = None,
+        flows1: list[tuple] | None = None,
+        flows2: list[tuple] | None = None,
+    ):
+        target_flows1 = self._equal_flows[key].flows1
+        target_flows2 = self._equal_flows[key].flows2
+
+        if flow1 is not None:
+            target_flows1.append(flow1)
+        if flow2 is not None:
+            target_flows2.append(flow2)
+        if flows1 is not None:
+            target_flows1.extend(flows1)
+        if flows2 is not None:
+            target_flows2.extend(flows2)
 
     def add_invest_costs(self, invest, capex_spec, invest_type):
         # needs to be a custom solution, as peakshaving also uses investment objects but should not be considered
@@ -72,57 +115,8 @@ class CustomConstraints:
                 )
 
     def equate_flows(self, model):
-        for flows1, flows2 in self.equal_flows:
-            solph.constraints.equate_flows(model=model, flows1=flows1, flows2=flows2, factor1=1.0)
-
-    def limit_pwr_gridmarket(self, model):
-        # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
-        #               GridConnection. This ensures that all power being bought or sold has to reach the local energy
-        #               system and avoids unlimited trading with energy on the different markets without any power
-        #               limitations. As this model focuses on modeling a local energy system, trading without any
-        #               physical power flow is not considered.
-        # Approach:     1.  For each direction (buy/sell = g2s/s2g) sum up all power flows of different GridMarkets
-        #                   connected to the same GridConnection.
-        #               2.  Constrain the sum of GridMarkets' power flows in each direction to not exceed the current
-        #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
-        #                   grid bus to the main bus to allow peakshaving.
-
-        model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET = po.Block()
-
-        def _limit_flows(m, block, name, flows_markets, flows_grid):
-            def _limit_flows_rule(block):
-                for p, ts in m.TIMEINDEX:
-                    pwr_market = sum(m.flow[fi, fo, ts] for fi, fo in flows_markets)
-                    pwr_grid = sum(m.flow[fi, fo, ts] for fi, fo in flows_grid)
-                    expr = pwr_market == pwr_grid
-
-                    if expr is not True:
-                        getattr(block, name).add((p, ts), expr)
-
-            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
-            setattr(block, name + "_build", po.BuildAction(rule=_limit_flows_rule))
-
-        # Apply constraints for every GridConnection
-        for grid in self.scenario.block_registry.get("GridConnection", {}).values():
-            _limit_flows(
-                m=model,
-                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                name=f"limit_{grid.name}_g2s_markets",
-                flows_markets=[
-                    (market.components["src"], grid.components["bus"]) for market in grid.subblocks.values()
-                ],
-                flows_grid=[(grid.components["bus"], grid.components["outflow"])],
-            )
-
-            _limit_flows(
-                m=model,
-                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                name=f"limit_{grid.name}_s2g_markets",
-                flows_markets=[
-                    (grid.components["bus"], market.components["snk"]) for market in grid.subblocks.values()
-                ],
-                flows_grid=[(grid.components["inflow"], grid.components["bus"])],
-            )
+        for v in self._equal_flows.values():
+            solph.constraints.equate_flows(model=model, **v.dict)
 
     def renewables_only(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
@@ -307,40 +301,6 @@ class CustomConstraints:
             ],
             eff_conv=[self.scenario.block_registry.get("TopLevelBlock", {})["core"].eff["acdc"], 1],
         )
-
-    def external_charging_to_storage(self, model):
-        # Goal:         Force all external charged power to flow into the commodity's storage.
-        #               This is necessary to ensure that the external charged power is not consumed without .
-        # Approach:     For each commodity ensure that the sum of all three charging powers is equal to the storage inflow
-
-        model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE = po.Block()
-
-        def _equal_flows(m, block, name, flows_charging, flows_storage):
-            def _equal_flows_rule(block):
-                for p, ts in m.TIMEINDEX:
-                    pwr_charging = sum(m.flow[fi, fo, ts] for fi, fo in flows_charging)
-                    pwr_storage = sum(m.flow[fi, fo, ts] for fi, fo in flows_storage)
-                    expr = pwr_charging == pwr_storage
-
-                    if expr is not True:
-                        getattr(block, name).add((p, ts), expr)
-
-            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
-            setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
-
-        # Apply constraints for every ElectricFleetUnit
-        for efu in self.scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            _equal_flows(
-                m=model,
-                block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
-                name=f"limit_{efu.name}_external_charging_to_storage",
-                flows_charging=[
-                    (efu.components["inflow"], efu.components["bus"]),
-                    (efu.components["conv_ext_ac"], efu.components["bus"]),
-                    (efu.components["conv_ext_dc"], efu.components["bus"]),
-                ],
-                flows_storage=[(efu.components["bus"], efu.components["storage"])],
-            )
 
     def limit_invest_costs(self, model):
         # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)

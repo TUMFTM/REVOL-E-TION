@@ -1202,6 +1202,20 @@ class GridConnection(ElectricBlock):
                 ]
             )
 
+        # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection.
+        # This ensures that all power being bought or sold has to reach the local energy system and avoids unlimited
+        # trading with energy on the different markets without any power limitations.
+        # As this model focuses on modeling a local energy system, trading without any physical power flow is not allowed.
+        horizon.constraints.add_equal_flows(
+            key=(self.name, "s2g"),
+            flow1=(self.components["inflow"], self.components["bus"]),
+        )
+
+        horizon.constraints.add_equal_flows(
+            key=(self.name, "g2s"),
+            flow1=(self.components["bus"], self.components["outflow"]),
+        )
+
         if not self.peakshaving:
             return
 
@@ -1247,10 +1261,9 @@ class GridConnection(ElectricBlock):
         self.components.update(self.peak_storages)
 
         horizon.constraints.add_equal_flows(
-            (
-                [(self.components["bus"], self.components["outflow"])],
-                [(self.components["peak_src"], self.components["peak_bus_in"])],
-            )
+            key=(self.name, "peakshaving"),
+            flow1=(self.components["bus"], self.components["outflow"]),
+            flow2=(self.components["peak_src"], self.components["peak_bus_in"]),
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
@@ -1371,6 +1384,17 @@ class GridMarket(ElectricBlock):
                     variable_costs=(self.pois["s2g"].spec_ep_operation[horizon.ph.dti]),
                 )
             }
+        )
+
+        # Disallow virtual arbitrage. GridMarket's power flows have to flow through the local energy system.
+        horizon.constraints.add_equal_flows(
+            key=(self.parent.name, "s2g"),
+            flow2=(self.parent.components["bus"], self.components["snk"]),
+        )
+
+        horizon.constraints.add_equal_flows(
+            key=(self.parent.name, "g2s"),
+            flow2=(self.components["src"], self.parent.components["bus"]),
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
@@ -2123,6 +2147,18 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             inputs={self.components["bus_ext_dc"]: solph.Flow()},
             outputs={self.components["bus"]: solph.Flow()},
             conversion_factors={self.components["bus"]: 1},  # billed energy is already dc in external dc charging
+        )
+
+        # Ensure that charged energy always flows into the storage and not directly to the ElectricFleetUnit's sink
+        # This may happen for on-route charging (simultaneous charging and driving)
+        horizon.constraints.add_equal_flows(
+            key=f"{self.name}_charging",
+            flow1=(self.components["bus"], self.components["storage"]),
+            flows2=[
+                (self.components["inflow"], self.components["bus"]),
+                (self.components["conv_ext_ac"], self.components["bus"]),
+                (self.components["conv_ext_dc"], self.components["bus"]),
+            ],
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
