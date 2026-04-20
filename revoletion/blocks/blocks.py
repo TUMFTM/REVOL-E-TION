@@ -448,16 +448,14 @@ class SystemCore(ElectricBlock):
             conversion_factors={self.components["ac"]: self.eff["dcac"]},
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["ac"], self.components["acdc"]),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["ac"], self.components["acdc"]),
             capex_spec=self.pois["acdc"].capex.spec,
-            invest_type="flow",
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["dc"], self.components["dcac"]),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["dc"], self.components["dcac"]),
             capex_spec=self.pois["dcac"].capex.spec,
-            invest_type="flow",
         )
 
         if self.expansion_equal:
@@ -588,10 +586,9 @@ class RenewableSource(SourceBlock, ABC):
             }
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["src"], self.components["bus"]),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["src"], self.components["bus"]),
             capex_spec=self.pois["block"].capex.spec,
-            invest_type="flow",
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
@@ -989,10 +986,9 @@ class ControllableSource(SourceBlock):
             }
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["src"], self.bus_connected),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["src"], self.bus_connected),
             capex_spec=self.pois["block"].capex.spec,
-            invest_type="flow",
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
@@ -1182,15 +1178,13 @@ class GridConnection(ElectricBlock):
             conversion_factors={self.bus_connected: 1},
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["inflow"], self.components["bus"]),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["inflow"], self.components["bus"]),
             capex_spec=self.pois["s2g"].capex.spec,
-            invest_type="flow",
         )
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["bus"], self.components["outflow"]),
+        horizon.constraints.add_invest_to_limitation(
+            flow=(self.components["bus"], self.components["outflow"]),
             capex_spec=self.pois["g2s"].capex.spec,
-            invest_type="flow",
         )
 
         if self.expansion_equal:
@@ -1614,10 +1608,9 @@ class StorageBlock(ElectricBlock, ABC):
             min_storage_level=self.states.loc[horizon.ph.dti_extd, "soc_min"],
         )
 
-        horizon.constraints.add_invest_costs(
-            invest=(self.components["storage"],),
+        horizon.constraints.add_invest_to_limitation(
+            storage=self.components["storage"],
             capex_spec=self.pois["storage"].capex.spec,
-            invest_type="storage",
         )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
