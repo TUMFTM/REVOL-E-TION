@@ -19,7 +19,7 @@ import simpy
 from . import blocks
 
 if TYPE_CHECKING:
-    from . import simulation
+    from . import scenario as scn
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):
@@ -110,7 +110,7 @@ class DispatchEnvironment:
     Interface between REVOl-E-TION scenario and the standalone FleetDispatchers
     """
 
-    def __init__(self, scenario: "simulation.Scenario"):
+    def __init__(self, scenario: "scn.Scenario"):
         self.scenario = scenario
 
         self.fleets = self.scenario.block_registry.get("DispatchFleet", {})
