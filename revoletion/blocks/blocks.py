@@ -17,6 +17,7 @@ from typing_extensions import override
 from revoletion import battery as bat
 from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils
 from revoletion import economics as eco
+from revoletion import scenario as scn
 
 if TYPE_CHECKING:
     import datetime
@@ -83,9 +84,9 @@ class BaseBlock(BlockScenarioInterface, ABC):
     def __init__(
         self,
         name: str,
-        scenario: simulation.Scenario,
+        scenario: scn.Scenario,
         params: dict = None,
-        parent: BaseBlock | simulation.Scenario = None,
+        parent: BaseBlock | scn.Scenario = None,
         **kwargs,
     ):
         """
@@ -247,10 +248,10 @@ class ElectricBlock(BaseBlock, ABC):
     def __init__(
         self,
         name: str,
-        scenario: simulation.Scenario,
+        scenario: scn.Scenario,
         flow_apriori_names: list = None,
         params: dict = None,
-        parent: BaseBlock | simulation.Scenario = None,
+        parent: BaseBlock | scn.Scenario = None,
         **kwargs,
     ):
         self.power_circles = []
@@ -528,7 +529,7 @@ class RenewableSource(SourceBlock, ABC):
             name_flow="pot",
         )
 
-    def __init__(self, name: str, scenario: "simulation.Scenario", **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -950,7 +951,7 @@ class ControllableSource(SourceBlock):
             name_flow="out",
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1042,7 +1043,7 @@ class GridConnection(ElectricBlock):
 
         self.power_circles.append(("in", "out"))
 
-    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1339,7 +1340,7 @@ class GridMarket(ElectricBlock):
             name_flow="in",
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario, params, parent, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, params, parent, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1469,10 +1470,10 @@ class StorageBlock(ElectricBlock, ABC):
     def __init__(
         self,
         name: str,
-        scenario: simulation.Scenario,
+        scenario: scn.Scenario,
         flow_apriori_names: list = None,
         params: dict = None,
-        parent: BaseBlock | simulation.Scenario = None,
+        parent: BaseBlock | scn.Scenario = None,
         **kwargs,
     ):
         super().__init__(
@@ -1653,7 +1654,7 @@ class StationaryBattery(StorageBlock):
     def __init__(
         self,
         name: str,
-        scenario: simulation.Scenario,
+        scenario: scn.Scenario,
         **kwargs,
     ):
         super().__init__(
@@ -1715,7 +1716,7 @@ class Fleet(SinkBlock):
             name_flow="in",
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -1887,7 +1888,7 @@ class Fleet(SinkBlock):
 
 
 class SubFleet(NonElectricBlock):
-    def __init__(self, name: str, scenario: simulation.Scenario, parent, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, parent, **kwargs):
         # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
         params = scenario.parameters.loc[name]
         params_subfleet = {key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex"]}
@@ -1941,9 +1942,9 @@ class FleetUnit(BaseBlock):
     def __init__(
         self,
         name: str,
-        scenario: simulation.Scenario,
+        scenario: scn.Scenario,
         params: dict = None,
-        parent: BaseBlock | simulation.Scenario = None,
+        parent: BaseBlock | scn.Scenario = None,
         **kwargs,
     ):
         super().__init__(
@@ -2024,7 +2025,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name_flow="ext_dc",
         )
 
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -2170,7 +2171,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
 
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
@@ -2211,7 +2212,7 @@ class ElectricVehicle(ElectricFleetUnit):
 
 
 class MobileBattery(ElectricFleetUnit):
-    def __init__(self, name: str, scenario: simulation.Scenario, parent: SubFleet, params: dict, **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
         # initialize for scenario files without these parameters
         self.opex_spec_dist = 0.0
         self.opex_spec_time = 0.0

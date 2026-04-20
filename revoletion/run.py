@@ -21,6 +21,7 @@ from oemof import solph as solph
 
 from . import location, simulation, time, utils
 from . import logger as logger_fcs
+from . import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,11 +61,11 @@ class _StatusUpdateCallback(typing.Protocol):
 class SimulationRun:
     def __init__(
         self,
-        paths: simulation.SimulationPaths,
-        settings: simulation.SimulationSettings | None = None,
+        paths: scn.SimulationPaths,
+        settings: scn.SimulationSettings | None = None,
     ):
         self.paths = paths
-        self.settings = settings or simulation.SimulationSettings()
+        self.settings = settings or scn.SimulationSettings()
 
         self.run_timer = time.RunTimer()
 
@@ -359,8 +360,8 @@ class ScenarioWorker:
 
     def __init__(
         self,
-        paths: simulation.SimulationPaths,
-        settings: simulation.SimulationSettings,
+        paths: scn.SimulationPaths,
+        settings: scn.SimulationSettings,
         name: str,
         parameters: pd.Series,
         logger: logging.Logger,
@@ -410,7 +411,7 @@ class ScenarioWorker:
             self._lock.release()
 
         try:
-            scenario = simulation.Scenario(
+            scenario = scn.Scenario(
                 paths=self._paths,
                 settings=self._settings,
                 name=self._name,
