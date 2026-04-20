@@ -419,13 +419,13 @@ class POI(BlockElement):
 
     eco: EcoParams
 
-    name_size: str
-    name_flow: str
+    name_size: str | None
+    name_flow: str | None
 
-    capex: CapexEvaluator
-    mntex: MntexEvaluator
-    opex: OpexEvaluator
-    crev: CrevEvaluator
+    capex: CapexEvaluator | None
+    mntex: MntexEvaluator | None
+    opex: OpexEvaluator | None
+    crev: CrevEvaluator | None
 
     @classmethod
     def create(
