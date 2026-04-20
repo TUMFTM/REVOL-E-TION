@@ -1300,7 +1300,6 @@ class GridConnection(ElectricBlock):
         row = self.peak_periods.loc[poi.name]
 
         kwargs_eval["power_peak"] = row["peak_power"]
-        kwargs_eval["period_frac"] = row["fraction"]
         return kwargs_eval
 
     def calc_results_energies(self):

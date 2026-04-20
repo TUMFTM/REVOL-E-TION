@@ -384,11 +384,10 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         dist: pd.Series | None,
         time: pd.Series | None,
         power_peak: float | None = None,
-        period_frac: float | None = None,
         **kwargs,
     ) -> float:
         cost = super()._calc_eval(power=power, dist=dist, time=time, **kwargs)
-        cost_peak = power_peak * self.spec_peak * period_frac if power_peak is not None else 0.0
+        cost_peak = power_peak * self.spec_peak * self.frac_peak if power_peak is not None else 0.0
 
         return cost + cost_peak
 
@@ -398,10 +397,9 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         dist: pd.Series | None = None,
         time: pd.Series | None = None,
         power_peak: float | None = None,
-        period_frac: float | None = None,
         **kwargs,
     ) -> None:
-        super().evaluate(power=power, dist=dist, time=time, power_peak=power_peak, period_frac=period_frac, **kwargs)
+        super().evaluate(power=power, dist=dist, time=time, power_peak=power_peak, **kwargs)
 
 
 class CrevEvaluator(TimeseriesEvaluator, CrevElement):
