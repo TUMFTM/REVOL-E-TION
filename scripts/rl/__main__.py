@@ -3,10 +3,10 @@ import logging
 import pickle
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import typer
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 from revoletion import logger, rl, utils
@@ -26,13 +26,13 @@ def train_rl(
     algorithm: agent.AgentAlgorithm,
     output_folder: Path,
     n_proc: int = 1,
-    train_timesteps: int = 50_000,
+    train_timesteps: int = 100_000,
     base_policy_path: Path | None = None,
     debug: bool = False,
     seed: int = 42,
     custom_feature_extractor: bool = False,
 ) -> None:
-    np.random.seed(seed)
+    set_random_seed(seed)
     logger.configure_root_logger(debugmode=debug)
     paths = scn.SimulationPaths.from_plain_paths(
         scenario=scenario_path,
@@ -79,7 +79,7 @@ def generate_trajectories(
     seed: int = 42,
     n_proc: int = 4,
 ) -> None:
-    np.random.seed(seed)
+    set_random_seed(seed)
     logger.configure_root_logger(debugmode=debug)
 
     paths = scn.SimulationPaths.from_plain_paths(
@@ -146,7 +146,7 @@ def train_imitation_bc(
     debug: bool = False,
     custom_feature_extractor: bool = False,
 ) -> None:
-    np.random.seed(seed)
+    set_random_seed(seed)
 
     logger.configure_root_logger(debugmode=debug)
     paths = scn.SimulationPaths.from_plain_paths(
@@ -194,7 +194,7 @@ def train_imitation_sqil(
     debug: bool = False,
     custom_feature_extractor: bool = False,
 ) -> None:
-    np.random.seed(seed)
+    set_random_seed(seed)
 
     algorithm = agent.AgentAlgorithm.SAC
 
@@ -216,8 +216,7 @@ def train_imitation_sqil(
     trajectories_id = trajectories_path.stem.split("-")[-1]
     print(f"Training SQIL policy: {seed=}; {train_timesteps=}; {n_proc=}; {len(trajectories)=}; {trajectories_id=}")
 
-    env_config = RevoletionEnvironmentConfig(perfect_foresight=False)
-    # env = agent.build_rl_environment(scenario, train_horizon)
+    env_config = RevoletionEnvironmentConfig(perfect_foresight=True)
     env = make_vec_env(
         lambda: agent.build_rl_environment(scenario_factory.create_scenario, train_horizon, env_config=env_config),
         n_envs=n_proc,

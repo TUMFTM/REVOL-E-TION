@@ -112,14 +112,18 @@ class LimitedForecastProvider(ForecastProvider):
         self, grid_market_block: blocks.GridMarket, time_ctx: context.TimeContext
     ) -> np.ndarray:
         export_cost = grid_market_block.evaluators["s2g"].opt.spec_ep_operation
-        return self.get_forecast(export_cost, time_ctx)
+        export_cost_forecast = self.get_forecast(export_cost, time_ctx)
+        noisy_forecast = self.sqrt_uncertainty(export_cost_forecast, self._forecast_horizon, base_std=5e-2, eps=-1e-6)
+        return noisy_forecast
 
     @typing_extensions.override
     def get_grid_import_cost_forecast(
         self, grid_market_block: blocks.GridMarket, time_ctx: context.TimeContext
     ) -> np.ndarray:
         import_cost = grid_market_block.evaluators["g2s"].opt.spec_ep_operation
-        return self.get_forecast(import_cost, time_ctx)
+        import_cost_forecast = self.get_forecast(import_cost, time_ctx)
+        noisy_forecast = self.sqrt_uncertainty(import_cost_forecast, self._forecast_horizon, base_std=5e-2, eps=1e-6)
+        return noisy_forecast
 
     @typing_extensions.override
     def get_efu_required_soc_forecast(
@@ -145,14 +149,14 @@ class LimitedForecastProvider(ForecastProvider):
         atbase = efu_block.log["atbase"]
         return self.get_forecast(atbase, time_ctx).astype(np.float32)
 
-    def sqrt_uncertainty(self, forecast, time_steps, base_std=0.05):
+    def sqrt_uncertainty(self, forecast, time_steps, base_std=0.05, eps: float = 1e-6):
         """
         Uncertainty grows with square root of time horizon.
         Models random walk behavior - common in forecasting.
         """
         std_schedule = base_std * np.sqrt(np.arange(1, time_steps + 1))
         noise = self._rng.normal(0, 1, time_steps)
-        uncertainty = noise * std_schedule * (forecast + 1e-3)
+        uncertainty = noise * std_schedule * (forecast + eps)
         return forecast + uncertainty
 
     def auto_regressiv_uncertainty(self, forecast, time_steps, initial_std=0.02, final_std=0.20, ar_coef=0.7):

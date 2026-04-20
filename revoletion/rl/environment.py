@@ -41,14 +41,14 @@ class RewardConfig:
 
     penalty_factor_ext_charge_opex: float = 0.0
 
-    penalty_base_dsoc: float = -10.0
+    penalty_base_dsoc: float = -5.0
 
     penalty_factor_dsoc: float = 10.0
     """Weight for the penalty if the agent does not met the SoC requirements."""
 
     reward_base_dsoc: float = 1.0
 
-    reward_factor_dsoc: float = 1.0
+    reward_factor_dsoc: float = 0.0
     """Weight of the reward for meeting a SoC requirement."""
 
     penalty_continous_dsoc: bool = False
@@ -85,7 +85,7 @@ class RevoletionEnvironmentConfig:
 
     power_precision: int = 1
 
-    power_unit_buffer: float = 1e-6
+    power_unit_buffer: float = 1e-3
     """Buffer in both direction applied to the charge/discharge power unit. Used to give the optimizer some room for numerical tie breaking."""
 
     soc_min: float = 0.05

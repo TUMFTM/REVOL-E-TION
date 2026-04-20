@@ -142,7 +142,7 @@ class SACPolicyAgentConfig(OffPolicyAgentConfig):
 
 DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
     learning_rate=0.0003,  # sb3: 0.0003
-    gamma=0.99,  # sb3: 0.99
+    gamma=0.998,  # sb3: 0.99
     n_steps=512,  # sb3: 2048
     batch_size=128,  # sb3: 64
     use_sde=True,  # sb3: False
@@ -150,7 +150,7 @@ DEFAULT_PPO_AGENT_CONFIG = PPOAgentConfig(
 )
 DEFAULT_SAC_AGENT_CONFIG = SACPolicyAgentConfig(
     learning_rate=0.0003,
-    gamma=0.99,
+    gamma=0.998,
     batch_size=512,
     learning_starts=1000,
     buffer_size=50_000,

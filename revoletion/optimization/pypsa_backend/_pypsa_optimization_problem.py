@@ -395,7 +395,6 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             horizon,
             config.cost_eps,
             enable_investment=config.invest,
-            enable_fixed_dispatch=False,
             enforce_soc_min=config.enforce_soc_constraints,
             enable_committment=config.committment,
         )

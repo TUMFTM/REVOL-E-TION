@@ -11,11 +11,8 @@ import torch as th
 from gymnasium import spaces
 from imitation.algorithms import base as algo_base
 from imitation.algorithms import bc
-from imitation.algorithms.adversarial.gail import GAIL
 from imitation.data import rollout, types
-from imitation.rewards.reward_nets import BasicRewardNet
 from imitation.util import util
-from imitation.util.networks import RunningNorm
 from stable_baselines3.common import (
     buffers,
     type_aliases,
@@ -366,8 +363,7 @@ class ImitationTrajectoryComputer:
         Returns:
             Tuple of (observations_buffer, actions_buffer)
         """
-        # _forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
-        _forecast_provider = forecast_provider.LimitedForecastProvider(self._config.forecast_horizon)
+        _forecast_provider = forecast_provider.PerfectForesightForecastProvider(self._config.forecast_horizon)
 
         normalization_provider = normalization.NormalizationProvider.from_ctx(ctx)
         feature_extractor = features.EnvironmentFeatureExtractor(
@@ -422,11 +418,12 @@ class ImitationTrajectoryComputer:
 
         # Sort by index and extract action values
         sorted_actions = sorted(unordered_actions, key=lambda x: x[0])
-        return np.array([action for _, action in sorted_actions])
+        actions = np.array([action for _, action in sorted_actions])
+        return actions
 
 
 def train_imitation_policy_bc(
-    trajectories: Sequence[types.Trajectory], env, base_policy: ActorCriticPolicy, seed: int = 42, n_epochs: int = 15
+    trajectories: Sequence[types.Trajectory], env, base_policy: ActorCriticPolicy, seed: int = 42, n_epochs: int = 10
 ) -> None:
     transitions = rollout.flatten_trajectories(trajectories)
 
@@ -440,29 +437,6 @@ def train_imitation_policy_bc(
         ent_weight=1e-2,
     )
     bc_trainer.train(n_epochs=n_epochs)
-
-
-def train_imitation_policy_gail(
-    trajectories: list[types.Trajectory], env, base_agent: BaseAlgorithm, seed: int = 42, train_timesteps: int = 20_000
-) -> None:
-    transitions = rollout.flatten_trajectories(trajectories)
-
-    reward_net = BasicRewardNet(
-        observation_space=env.observation_space,
-        action_space=env.action_space,
-        normalize_input_layer=RunningNorm,
-    )
-    gail_trainer = GAIL(
-        demonstrations=transitions,
-        demo_batch_size=1024,
-        gen_replay_buffer_capacity=512,
-        n_disc_updates_per_round=8,
-        venv=env,
-        gen_algo=base_agent,
-        reward_net=reward_net,
-    )
-    env.seed(seed)
-    gail_trainer.train(total_timesteps=train_timesteps)
 
 
 def split_proportion(batch_size: int, proportion: float):
@@ -601,7 +575,7 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
         )
 
     def sample(self, batch_size: int, env: vec_env.VecNormalize | None = None):
-        learner_bs, expert_bs = split_proportion(batch_size, 0.8)
+        learner_bs, expert_bs = split_proportion(batch_size, 0.5)
 
         learner = super().sample(learner_bs, env)
         expert = self.expert_buffer.sample(expert_bs, env)
@@ -613,23 +587,30 @@ class SQILReplayBuffer(buffers.DictReplayBuffer):
             k: th.cat([learner.next_observations[k], expert.next_observations[k]], dim=0)
             for k in learner.next_observations
         }
+        actions = th.cat([learner.actions, expert.actions], dim=0)
+        rewards = th.cat([learner.rewards, expert.rewards], dim=0)
+        dones = th.cat([learner.dones, expert.dones], dim=0)
 
         return type_aliases.DictReplayBufferSamples(
             observations=observations,
-            actions=th.cat([learner.actions, expert.actions], dim=0),
-            rewards=th.cat([learner.rewards, expert.rewards], dim=0),
-            dones=th.cat([learner.dones, expert.dones], dim=0),
+            actions=actions,
+            rewards=rewards,
+            dones=dones,
             next_observations=next_observations,
         )
 
 
 def train_imitation_policy_sqil(
-    trajectories: list[types.Trajectory], env, base_agent: BaseAlgorithm, seed: int = 42, train_timesteps: int = 10_000
+    trajectories: list[types.Trajectory],
+    env,
+    base_agent: BaseAlgorithm,
+    seed: int = 42,
+    train_timesteps: int = 20_000,
 ) -> None:
     transitions = rollout.flatten_trajectories(trajectories)
 
     replay_buffer = SQILReplayBuffer(
-        buffer_size=10_000,
+        buffer_size=50_000,
         observation_space=env.observation_space,
         action_space=env.action_space,
         demonstrations=transitions,

@@ -360,7 +360,7 @@ class EnvironmentFeatureExtractor:
         }
         if ctx.has_grid_connection:
             obs_dict[OBS_KEY_GRID_IMPORT_COSTS] = gym.spaces.Box(
-                low=0.0,
+                low=-1.0,
                 high=1.0,
                 shape=(len(ctx.grid_market_blocks), self._forecast_provider.forecast_horizon),
                 dtype=np.float32,
@@ -371,7 +371,7 @@ class EnvironmentFeatureExtractor:
             )
 
             obs_dict[OBS_KEY_GRID_EXPORT_COSTS] = gym.spaces.Box(
-                low=0.0,
+                low=-1.0,
                 high=1.0,
                 shape=(len(ctx.grid_market_blocks), self._forecast_provider.forecast_horizon),
                 dtype=np.float32,

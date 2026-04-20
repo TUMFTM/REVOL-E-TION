@@ -33,7 +33,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         horizon: utils.TimeSettings,
         cost_eps: float,
         enable_investment: bool = True,
-        enable_fixed_dispatch: bool = True,
+        enable_fixed_dispatch: bool = False,
         enforce_soc_min: bool = True,
         enable_committment: bool = False,
         fixed_committment: bool = False,
@@ -400,7 +400,9 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
 
         inflow_capacity = block.pwr_chg_max
         atbase = block.log.loc[self._datetime_index, "atbase"].astype(int)
-        inflow_max = pd.Series(1.0, index=self._datetime_index) if block.apriori else atbase
+        inflow_max = (
+            pd.Series(1.0, index=self._datetime_index) if self._enable_fixed_dispatch and block.apriori else atbase
+        )
         inflow_fix = (
             block.flows_apriori.loc[self._datetime_index, "p_int_chg"] * inflow_capacity
             if self._enable_fixed_dispatch and block.apriori
@@ -419,14 +421,16 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             p_set=inflow_fix,
             efficiency=block.eff["chg_int"],
             marginal_cost=inflow_variable_costs,
-            # Make the charging links comittable, to allow us to configure minimum charge powers.
+            # Make the charging links committable, to allow us to configure minimum charge powers.
             # E.g., If bev0 is charged, it must be charged with at least 10% of max charge power.
             committable=self._enable_committment,
-            status=atbase if self._fixed_committment else None,
+            # status=atbase if self._fixed_committment else None,
         )
 
         outflow_capacity = block.pwr_dis_max * block.eff["dis_int"]
-        outflow_max = pd.Series(1.0, index=self._datetime_index) if block.apriori else atbase
+        outflow_max = (
+            pd.Series(1.0, index=self._datetime_index) if self._enable_fixed_dispatch and block.apriori else atbase
+        )
         outflow_fix = (
             block.flows_apriori.loc[self._datetime_index, "p_int_dis"] * outflow_capacity
             if self._enable_fixed_dispatch and block.apriori
@@ -445,7 +449,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             efficiency=block.eff["dis_int"],
             marginal_cost=outflow_variable_costs,
             committable=self._enable_committment,
-            status=atbase if self._fixed_committment else None,
+            # status=atbase if self._fixed_committment else None,
         )
 
         # External AC/DC Charging
@@ -454,7 +458,9 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         builder.add_bus(bus_ext_ac)
         ext_ac_capacity = block.pwr_ext_ac_max * block.eff["chg_ac"]
         atac = block.log.loc[self._datetime_index, "atac"].astype(int)
-        max_ext_ac = pd.Series(1.0, index=self._datetime_index) if block.apriori else atac
+        max_ext_ac = (
+            pd.Series(1.0, index=self._datetime_index) if self._enable_fixed_dispatch and block.apriori else atac
+        )
         fix_ext_ac = (
             block.flows_apriori.loc[self._datetime_index, "p_ext_ac_chg"]
             if block.apriori and self._enable_fixed_dispatch
@@ -467,8 +473,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             bus1=bus_efu_name,
             efficiency=block.eff["chg_ac"],
             p_nom=ext_ac_capacity,
-            committable=self._enable_committment,
-            status=atac if self._fixed_committment else None,
+            # committable=self._enable_committment,
+            # status=atac if self._fixed_committment else None,
         )
         builder.add_generator(
             name=make_pypsa_label(block, "ext-ac-gen"),
@@ -483,7 +489,9 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
         builder.add_bus(bus_ext_dc)
         ext_dc_capacity = block.pwr_ext_dc_max
         atdc = block.log.loc[self._datetime_index, "atdc"].astype(int)
-        max_ext_dc = pd.Series(1.0, index=self._datetime_index) if block.apriori else atdc
+        max_ext_dc = (
+            pd.Series(1.0, index=self._datetime_index) if self._enable_fixed_dispatch and block.apriori else atdc
+        )
         fix_ext_dc = (
             block.flows_apriori.loc[self._datetime_index, "p_ext_dc_chg"]
             if block.apriori and self._enable_fixed_dispatch
@@ -497,8 +505,8 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             # billed energy is already dc in external dc charging
             efficiency=1,
             p_nom=ext_dc_capacity,
-            committable=self._enable_committment,
-            status=atdc if self._fixed_committment else None,
+            # committable=self._enable_committment,
+            # status=atdc if self._fixed_committment else None,
         )
         builder.add_generator(
             name=make_pypsa_label(block, "ext-dc-gen"),
@@ -535,7 +543,7 @@ class PyPSABlockVisitor(blocks.BlockVisitor[None]):
             marginal_cost=self._cost_eps,
         )
 
-        max_int_dis = outflow_capacity
+        max_int_dis = block.pwr_dis_max
         builder.add_link(
             name=make_pypsa_label(block, "battery-int-dis-link"),
             bus0=bus_battery_name,

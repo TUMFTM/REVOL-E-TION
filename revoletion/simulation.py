@@ -399,7 +399,7 @@ class ControlSettings:
     debugmode: bool = False
 
 
-_DEFAULT_TRAIN_TIMESTEPS = 10_000
+_DEFAULT_TRAIN_TIMESTEPS = 100_000
 
 
 class ControlHorizon:
