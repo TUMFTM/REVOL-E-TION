@@ -531,7 +531,7 @@ class RenewableSource(SourceBlock, ABC):
             name_flow="pot",
         )
 
-    def __init__(self, name: str, scenario: "scn.Scenario", **kwargs):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
