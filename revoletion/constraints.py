@@ -48,7 +48,7 @@ class _BaseParamsDict(dict):
     Dictionary, which auto-creates missing entries and uses the key to initialize the entries value (therefore no defaultdict is used).
     """
 
-    _factory = None  # to be defined by subclasses
+    _FACTORY = None  # to be defined by subclasses
 
     @staticmethod
     def _validate_key(key):
@@ -65,19 +65,19 @@ class _BaseParamsDict(dict):
     def __missing__(self, key: tuple[str, str]):
         self._validate_key(key)
 
-        if self._factory is None:
+        if self._FACTORY is None:
             raise NotImplementedError("Subclasses must define a _factory.")
-        value = self._factory(name="_".join(key))
+        value = self._FACTORY(name="_".join(key))
         self[key] = value
         return value
 
 
 class FlowParamsDict(_BaseParamsDict):
-    _factory = EquateFlowParams
+    _FACTORY = EquateFlowParams
 
 
 class InvestParamsDict(_BaseParamsDict):
-    _factory = EquateInvestParams
+    _FACTORY = EquateInvestParams
 
 
 class CustomConstraints:
