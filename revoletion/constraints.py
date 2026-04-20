@@ -35,12 +35,36 @@ class FlowParamsDict(dict):
         return value
 
 
+@dataclass
+class EquateInvestParams:
+    """
+    Dataclass storing the arguments which are later passed to oemof.solph.constraints.equate_variables()
+    This ensures
+          invests[0] = invests[1] = ... = invests[n]
+    """
+
+    invests: list = field(default_factory=list)
+    name: str | None = None
+
+    @property
+    def dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+class InvestParamsDict(dict):
+    def __missing__(self, key):
+        name = "_".join(key) if isinstance(key, (tuple, list)) else key
+        value = EquateInvestParams(name=name)
+        self[key] = value
+        return value
+
+
 class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
 
         self._equal_flows = FlowParamsDict()
-        self.equal_invests = []
+        self._equal_invests = InvestParamsDict()
         self.invest_costs = {"flow": [], "storage": []}
 
     def apply_constraints(self, model):
@@ -59,9 +83,19 @@ class CustomConstraints:
         # Limit initial investment costs
         self.limit_invest_costs(model)
 
-    def add_equal_invests(self, invests):
-        # Add a list of investment variables represented as dicts containing the start and end node of a flow
-        self.equal_invests.append(invests)
+    def add_equal_invests(self, key, invest: tuple | None = None, invests: list[tuple] | None = None):
+        """
+        Add one or multiple investment flows to an equal investment group.
+        An investment flow has to be given as tuple of the form (from_node, to_node).
+        key:        key of the investment group
+        invest:     add a single investment flow to the group
+        invests:    add a list of investment flows to the group
+        """
+        target = self._equal_invests[key].invests
+        if invest is not None:
+            target.append(invest)
+        if invests is not None:
+            target.extend(invests)
 
     def add_equal_flows(
         self,
@@ -91,27 +125,17 @@ class CustomConstraints:
             self.invest_costs[invest_type].append({"so": invest[0], "capex_spec": capex_spec})
 
     def equate_invests(self, model):
-        # Goal:     Several sizes (e.g. SystemCore's AC/DC and DC/AC converter, GridConnection sizes) can be forced to
-        #           have the same value despite being optimized by independent Investment objects
-        # Approach: Add a constraint to force a specified list of values to be equal
-        model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS = po.Block()
+        for v in self._equal_invests.values():
+            var1 = model.InvestmentFlowBlock.invest[*v.invests[0], 0]  # last 0 -> period ID
+            multiple = True if len(v.invests) > 2 else False
 
-        def _equate_invest_variables(m, block, name, variables):
-            def _equate_invest_variables_rule(block):
-                return variables[0] == variables[1]
-
-            setattr(block, name, po.Constraint(rule=_equate_invest_variables_rule))
-
-        # Add additional user-specific constraints for investment variables
-        for var_list in self.equal_invests:
-            for var_equal in var_list[1:]:
-                _equate_invest_variables(
-                    m=model,
-                    block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
-                    name="_equal_".join([f"{var['in']}_to_{var['out']}" for var in [var_list[0], var_equal]]),
-                    variables=[
-                        model.InvestmentFlowBlock.invest[var["in"], var["out"], 0] for var in [var_list[0], var_equal]
-                    ],
+            for invest_idx, invest_flow in enumerate(v.invests[1:]):
+                solph.constraints.equate_variables(
+                    model=model,
+                    var1=var1,
+                    var2=model.InvestmentFlowBlock.invest[*invest_flow, 0],
+                    factor1=1.0,  # has to be one due to multiple unordered investment flows
+                    name=f"{v.name}{f'_{invest_idx}' if multiple else ''}",
                 )
 
     def equate_flows(self, model):

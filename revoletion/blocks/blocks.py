@@ -461,12 +461,12 @@ class SystemCore(ElectricBlock):
         )
 
         if self.expansion_equal:
-            # add a tuple of tuples to the list of equal variables of the scenario
             horizon.constraints.add_equal_invests(
-                [
-                    {"in": self.components["dc"], "out": self.components["dcac"]},
-                    {"in": self.components["ac"], "out": self.components["acdc"]},
-                ]
+                key=f"{self.name}_invest",
+                invests=[
+                    (self.components["dc"], self.components["dcac"]),
+                    (self.components["ac"], self.components["acdc"]),
+                ],
             )
 
     def get_horizon_results(self, horizon: simulation.PredictionHorizon):
@@ -1193,13 +1193,13 @@ class GridConnection(ElectricBlock):
             invest_type="flow",
         )
 
-        # add constraint to enforce same size for inflow and outflow
         if self.expansion_equal:
             horizon.constraints.add_equal_invests(
-                [
-                    {"in": self.components["inflow"], "out": self.components["bus"]},
-                    {"in": self.components["bus"], "out": self.components["outflow"]},
-                ]
+                key=f"{self.name}_invest",
+                invests=[
+                    (self.components["inflow"], self.components["bus"]),
+                    (self.components["bus"], self.components["outflow"]),
+                ],
             )
 
         # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection.
