@@ -27,14 +27,6 @@ class EquateFlowParams:
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
-class FlowParamsDict(dict):
-    def __missing__(self, key):
-        name = "_".join(key) if isinstance(key, (tuple, list)) else key
-        value = EquateFlowParams(name=name)
-        self[key] = value
-        return value
-
-
 @dataclass
 class EquateInvestParams:
     """
@@ -51,12 +43,41 @@ class EquateInvestParams:
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
-class InvestParamsDict(dict):
-    def __missing__(self, key):
-        name = "_".join(key) if isinstance(key, (tuple, list)) else key
-        value = EquateInvestParams(name=name)
+class _BaseParamsDict(dict):
+    """
+    Dictionary, which auto-creates missing entries and uses the key to initialize the entries value (therefore no defaultdict is used).
+    """
+
+    _factory = None  # to be defined by subclasses
+
+    @staticmethod
+    def _validate_key(key):
+        """
+        ensure that all keys are a tuple of two strings
+        """
+        if not (isinstance(key, tuple) and len(key) == 2 and all(isinstance(k, str) for k in key)):
+            raise TypeError("Key must be a tuple of two strings, e.g. ('node1', 'node2')")
+
+    def __setitem__(self, key, value):
+        self._validate_key(key)
+        super().__setitem__(key, value)
+
+    def __missing__(self, key: tuple[str, str]):
+        self._validate_key(key)
+
+        if self._factory is None:
+            raise NotImplementedError("Subclasses must define a _factory.")
+        value = self._factory(name="_".join(key))
         self[key] = value
         return value
+
+
+class FlowParamsDict(_BaseParamsDict):
+    _factory = EquateFlowParams
+
+
+class InvestParamsDict(_BaseParamsDict):
+    _factory = EquateInvestParams
 
 
 class CustomConstraints:

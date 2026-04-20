@@ -462,7 +462,7 @@ class SystemCore(ElectricBlock):
 
         if self.expansion_equal:
             horizon.constraints.add_equal_invests(
-                key=f"{self.name}_invest",
+                key=(self.name, "invest"),
                 invests=[
                     (self.components["dc"], self.components["dcac"]),
                     (self.components["ac"], self.components["acdc"]),
@@ -1195,7 +1195,7 @@ class GridConnection(ElectricBlock):
 
         if self.expansion_equal:
             horizon.constraints.add_equal_invests(
-                key=f"{self.name}_invest",
+                key=(self.name, "invest"),
                 invests=[
                     (self.components["inflow"], self.components["bus"]),
                     (self.components["bus"], self.components["outflow"]),
@@ -2152,7 +2152,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         # Ensure that charged energy always flows into the storage and not directly to the ElectricFleetUnit's sink
         # This may happen for on-route charging (simultaneous charging and driving)
         horizon.constraints.add_equal_flows(
-            key=f"{self.name}_charging",
+            key=(self.name, "charging"),
             flow1=(self.components["bus"], self.components["storage"]),
             flows2=[
                 (self.components["inflow"], self.components["bus"]),
