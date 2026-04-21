@@ -1815,7 +1815,7 @@ class Fleet(SinkBlock):
                 f'Block "{self.name}": log file does not match specified timestep - Resampling'
             )
 
-            cols = df.columns  # save orignal column sorting to apply after resampling
+            cols = df.columns  # save original column sorting to apply after resampling
             cols_consumption = df.columns[df.columns.get_level_values(1) == "consumption"]
             cols_dist = df.columns[df.columns.get_level_values(1) == "dist"]
             cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
@@ -1909,10 +1909,7 @@ class SubFleet(NonElectricBlock):
         if params.get("mode_scheduling") in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault("SubFleetScheduling", {})[self.name] = self
 
-        if getattr(self, "invest", False) and self.data_source in [
-            "usecases",
-            "demand",
-        ]:
+        if getattr(self, "invest", False) and self.data_source in ["usecases", "demand"]:
             self.scenario.logger.Error(
                 f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"'
             )
