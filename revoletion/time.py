@@ -11,6 +11,14 @@ import pandas as pd
 import typing_extensions
 
 
+def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """
+    Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
+    """
+    # append() outperforms union() in terms of speed by approx. a factor of 10x
+    return dti.append(pd.DatetimeIndex([dti[-1] + (dti[-1] - dti[-2])]))
+
+
 def timedelta_to_freqstr(td: pd.Timedelta) -> str:
     if td == pd.Timedelta(0):
         return "0ns"

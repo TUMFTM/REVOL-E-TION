@@ -12,6 +12,7 @@ import holidays
 import pandas as pd
 
 from . import time
+from .time import extend_dti
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,14 +125,6 @@ def conv_nan2none(value):
     return value if pd.notna(value) else None
 
 
-def extend_dti(dti: pd.DatetimeIndex, freq: pd.DateOffset | pd.Timedelta | str) -> pd.DatetimeIndex:
-    """
-    Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
-    """
-    dti_ext = dti.union(dti.shift(periods=1, freq=freq)[-1:])
-    return dti_ext
-
-
 def import_module_from_path(module_name, file_path):
     """
     Import a Python module from a specific file path. Is used for timeframe mapper user input code.
@@ -187,7 +180,7 @@ def read_timeseries_csv(
 
     timestep = time.Timestep.from_dti(resampling_dti)
 
-    df_extd = df.reindex(extend_dti(dti=df.index, freq=timestep.td)).ffill()
+    df_extd = df.reindex(extend_dti(dti=df.index)).ffill()
 
     def resample_column(column):
         if df_extd[column].dtype == bool:
