@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 import zoneinfo
 from dataclasses import dataclass
@@ -135,6 +136,9 @@ class Timestep:
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
+        # Ensure that timestep_str starts with a digit
+        # This may not be the case if it originates from DatetimeIndex.inferred_freq (e.g. "h")
+        timestep_str = re.sub(r"^(?!\d)", "1", timestep_str)
         return cls(_td=pd.Timedelta(timestep_str))
 
 
