@@ -13,10 +13,69 @@ import typing_extensions
 
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
     """
-    Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
+    Extend a DatetimeIndex by one additional timestep.
+
+    The function infers the timestep from the difference between the last
+    two entries of the index and appends a new timestamp accordingly.
+    This is useful for ensuring that the final timestep of a simulation
+    timeframe is explicitly included.
+
+    Parameters
+    ----------
+    dti : pd.DatetimeIndex
+        A datetime index with at least two entries and a consistent frequency.
+
+    Returns
+    -------
+    pd.DatetimeIndex
+        A new DatetimeIndex with one additional timestamp appended at the end.
+
+    Notes
+    -----
+    This implementation uses `append()` instead of `union()` for performance
+    reasons, as it is significantly faster for this use case.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> idx = pd.date_range("2023-01-01", periods=3, freq="D")
+    >>> extend_dti(idx)
+    DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'], dtype='datetime64[us]', freq=None)
     """
-    # append() outperforms union() in terms of speed by approx. a factor of 10x
     return dti.append(pd.DatetimeIndex([dti[-1] + (dti[-1] - dti[-2])]))
+
+
+def convert_freqstr(freq: str) -> str:
+    """
+    Normalize a pandas frequency string so it is compatible with pd.Timedelta().
+
+    If the input frequency string does not start with a numeric value,
+    a leading "1" is inserted. This ensures that strings like "H", "D",
+    or "min" are converted to "1H", "1D", and "1min", which are valid
+    inputs for pd.Timedelta().
+
+    Parameters
+    ----------
+    freq : str
+        A frequency string, typically inferred from a pandas object
+        (e.g., via `pd.DatetimeIndex.inferred_freq`).
+
+    Returns
+    -------
+    str
+        A normalized frequency string that starts with a numeric value
+        and can be safely passed to pd.Timedelta().
+
+    Examples
+    --------
+    >>> convert_freqstr("h")
+    '1h'
+    >>> convert_freqstr("1h")
+    '1h'
+    >>> convert_freqstr("15min")
+    '15min'
+    """
+    return re.sub(r"^(?!\d)", "1", freq)
 
 
 def timedelta_to_freqstr(td: pd.Timedelta) -> str:
@@ -144,10 +203,7 @@ class Timestep:
 
     @classmethod
     def from_str(cls, timestep_str: str) -> Self:
-        # Ensure that timestep_str starts with a digit
-        # This may not be the case if it originates from DatetimeIndex.inferred_freq (e.g. "h")
-        timestep_str = re.sub(r"^(?!\d)", "1", timestep_str)
-        return cls(_td=pd.Timedelta(timestep_str))
+        return cls(_td=pd.Timedelta(convert_freqstr(timestep_str)))
 
 
 @dataclass(frozen=True)
