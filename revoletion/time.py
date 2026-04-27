@@ -84,7 +84,7 @@ def timedelta_to_freqstr(td: pd.Timedelta) -> str:
     Parameters
     ----------
     td : pandas.Timedelta
-        The timedelta object to convert.
+        A valid pandas Timedelta to convert. Must not be NaT.
 
     Returns
     -------
@@ -92,11 +92,17 @@ def timedelta_to_freqstr(td: pd.Timedelta) -> str:
         A string representation of the timedelta in frequency format.
         For example, "1D2h30min", "-5s", or "0ns" for a zero timedelta.
 
+    Raises
+    ------
+    TypeError
+        If ``td`` is not a valid pandas Timedelta or is NaT.
+
     Notes
     -----
     - The output omits any time units with a value of zero.
     - The smallest unit represented is nanoseconds.
     - A zero timedelta is explicitly represented as "0ns".
+    - NaT values are not accepted and will raise a TypeError.
 
     Examples
     --------
@@ -110,6 +116,9 @@ def timedelta_to_freqstr(td: pd.Timedelta) -> str:
     >>> timedelta_to_freqstr(pd.Timedelta(0))
     '0ns'
     """
+    if not isinstance(td, pd.Timedelta) or pd.isna(td):
+        raise TypeError("Expected a valid pandas Timedelta (not NaT)")
+
     if td == pd.Timedelta(0):
         return "0ns"
 
