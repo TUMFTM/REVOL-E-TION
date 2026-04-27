@@ -385,7 +385,7 @@ class Timestep:
 
     @classmethod
     def from_dti(cls, dti: pd.DatetimeIndex) -> Self:
-        return cls(_td=pd.Timedelta(pd.infer_freq(dti)))
+        return cls(_td=pd.Timedelta(convert_freqstr(dti.inferred_freq)))
 
     @classmethod
     def from_td(cls, td: pd.Timedelta) -> Self:
