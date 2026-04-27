@@ -61,6 +61,11 @@ def convert_freqstr(freq: str) -> str:
     str
         A normalized frequency string that starts with a numeric value and can be safely passed to pd.Timedelta().
 
+    Raises
+    ------
+    TypeError
+        If ``freq`` is not a string.
+
     Examples
     --------
     >>> convert_freqstr("h")
@@ -70,6 +75,11 @@ def convert_freqstr(freq: str) -> str:
     >>> convert_freqstr("15min")
     '15min'
     """
+    if not isinstance(freq, str):
+        raise TypeError(
+            f"convert_freqstr() expects argument freq to be of type string, "
+            f"got type {type(freq).__name__} ({freq}) instead."
+        )
     return re.sub(r"^(?!\d)", "1", freq)
 
 
@@ -144,8 +154,8 @@ def parse_datetime_str(time_str: str) -> pd.Timestamp:
     """
     Parse a datetime string into a pandas Timestamp.
 
-    The function attempts to parse the input string using a predefined set of date and datetime formats. It tries each
-    format in order and returns the first successfully parsed result.
+    The function attempts to parse the input string using a predefined set of date and datetime formats.
+    It tries each format in order and returns the first successfully parsed result.
     If none of the formats match, a ValueError is raised.
 
     Parameters
@@ -165,7 +175,7 @@ def parse_datetime_str(time_str: str) -> pd.Timestamp:
 
     Notes
     -----
-    Supported formats include:
+    Supported formats are:
     - "DD.MM.YYYY HH:MM"
     - "DD.MM.YYYY"
     - "YYYY-MM-DD HH:MM"
@@ -200,7 +210,7 @@ def convert_to_zoneinfo(timezone: zoneinfo.ZoneInfo | str) -> zoneinfo.ZoneInfo:
 
     Parameters
     ----------
-    timezone : str or zoneinfo.ZoneInfo
+    timezone : zoneinfo.ZoneInfo or str
         The timezone to convert. If a string is provided, it must be a valid IANA timezone name (e.g., "Europe/Berlin").
         If a ``ZoneInfo`` instance is provided, it is returned unchanged.
 
@@ -258,10 +268,9 @@ def ensure_timezone(ts: pd.Timestamp, timezone: zoneinfo.ZoneInfo | str) -> pd.T
 
     Raises
     ------
-    pytz.exceptions.AmbiguousTimeError
-        If the timestamp is ambiguous during localization (e.g., due to DST transitions) and cannot be resolved.
-    pytz.exceptions.NonExistentTimeError
-        If the timestamp does not exist in the target timezone (e.g., skipped during a daylight saving time transition).
+    ValueError
+        If the timestamp is ambiguous during localization or does not exist in the target timezone (e.g., due to DST
+        transitions) and therefore cannot be resolved.
 
     Notes
     -----
@@ -308,8 +317,7 @@ def convert_to_timestamp(
         The input time value. If a string, it must match one of the supported formats in ``parse_datetime_str``.
         If ``None``, the function returns ``None``.
     timestep : Timestep
-        An object defining the desired temporal resolution. It must provide a ``freqstr`` attribute compatible
-        with pandas frequency strings.
+        The target Timestep, defining the desired temporal resolution.
     timezone : zoneinfo.ZoneInfo or str
         The target timezone for the resulting timestamp.
 
@@ -321,11 +329,8 @@ def convert_to_timestamp(
     Raises
     ------
     ValueError
-        If ``time_in`` is a string that cannot be parsed into a valid datetime.
-    pytz.exceptions.AmbiguousTimeError
-        If timezone localization encounters an ambiguous time.
-    pytz.exceptions.NonExistentTimeError
-        If timezone localization encounters a non-existent time.
+        If ``time_in`` is a string that cannot be parsed into a valid datetime or if timezone localization encounters
+        an ambiguous or non-existent time.
 
     Notes
     -----
@@ -337,13 +342,11 @@ def convert_to_timestamp(
     --------
     >>> import pandas as pd
     >>> from zoneinfo import ZoneInfo
-    >>> class Timestep:
-    ...     freqstr = "1h"
-    ...
-    >>> convert_to_timestamp("2026-04-27 14:45", Timestep(), "UTC")
+    >>> step = Timestep.from_str("1h")
+    >>> convert_to_timestamp("2026-04-27 14:45", step, "UTC")
     Timestamp('2026-04-27 14:00:00+0000', tz='UTC')
 
-    >>> convert_to_timestamp(None, Timestep(), "UTC") is None
+    >>> convert_to_timestamp(None, step, "UTC") is None
     True
     """
     if time_in is None:
@@ -361,9 +364,8 @@ class RunTimer:
     Simple utility for measuring execution time.
 
     This class provides a lightweight timer based on ``time.perf_counter``.
-    It records the start time upon initialization and computes the elapsed
-    duration when ``stop`` is called. It also supports usage as a context
-    manager.
+    It records the start time upon initialization and computes the elapsed duration when ``stop`` is called.
+    It also supports usage as a context manager.
 
     Attributes
     ----------
@@ -377,8 +379,7 @@ class RunTimer:
     Notes
     -----
     - The timer starts automatically upon instantiation.
-    - The ``start`` and ``end`` values are not absolute timestamps and should
-      only be used to compute durations.
+    - The ``start`` and ``end`` values are not absolute timestamps and should only be used to compute durations.
     - Duration is expressed in seconds with sub-second precision.
 
     Examples
@@ -440,7 +441,7 @@ class RunTimer:
         """
         return f"{self.duration:.2f}s"
 
-    def __enter__(self) -> typing_extensions.Self:
+    def __enter__(self) -> Self:
         """
         Enter the runtime context and restart the timer.
 
@@ -465,8 +466,8 @@ class Timestep:
     Immutable representation of a time resolution based on ``pandas.Timedelta``.
 
     This class provides a convenient abstraction for working with time steps, exposing derived properties such as
-    the duration in hours and a pandas-compatible frequency string. Instances are immutable and cache computed
-    properties for efficiency.
+    the duration in hours and a pandas-compatible frequency string.
+    Instances are immutable and cache computed properties for efficiency.
 
     Parameters
     ----------
@@ -557,8 +558,7 @@ class Timestep:
         """
         Create a ``Timestep`` from a pandas DatetimeIndex.
 
-        The frequency is inferred from the index and converted into a
-        ``pandas.Timedelta``.
+        The frequency is inferred from the index and converted into a ``pandas.Timedelta``.
 
         Parameters
         ----------
@@ -582,7 +582,12 @@ class Timestep:
         >>> Timestep.from_dti(dti).freqstr
         '1h'
         """
-        return cls(_td=pd.Timedelta(convert_freqstr(dti.inferred_freq)))
+        freq = dti.inferred_freq
+
+        if freq is None:
+            raise ValueError("Frequency cannot be inferred from provided datetime index.")
+
+        return cls(_td=pd.Timedelta(convert_freqstr(freq)))
 
     @classmethod
     def from_td(cls, td: pd.Timedelta) -> Self:
@@ -612,8 +617,7 @@ class Timestep:
         """
         Create a ``Timestep`` from a frequency string.
 
-        The string is first normalized using ``convert_freqstr`` and then
-        converted into a ``pandas.Timedelta``.
+        The string is first normalized using ``convert_freqstr`` and then converted into a ``pandas.Timedelta``.
 
         Parameters
         ----------
@@ -643,8 +647,8 @@ class TimeFrame:
     """
     Immutable representation of a time interval with a fixed timestep.
 
-    This class encapsulates a time range defined by a start and end timestamp, a duration, and a resolution
-    (``Timestep``). It provides convenient access to derived datetime indices aligned to the specified timestep.
+    This class encapsulates a time range defined by start and end timestamp, duration, and resolution (``Timestep``).
+    It provides convenient access to derived datetime indices aligned to the specified timestep.
 
     Parameters
     ----------
@@ -671,17 +675,14 @@ class TimeFrame:
     Notes
     -----
     - The class is immutable (frozen dataclass).
-    - All timestamps are normalized to the specified timezone using
-      ``ensure_timezone``.
-    - The ``end`` timestamp is always recomputed from ``start + duration``
-      to ensure internal consistency.
+    - All timestamps are normalized to the specified timezone using ``ensure_timezone``.
+    - The ``end`` timestamp is always recomputed from ``start + duration`` to ensure internal consistency.
     - The ``duration`` is aligned (floored) to the timestep frequency.
 
     Methods
     -------
     create_from_start_timestamp(start, timestep, timezone, end=None, duration=None)
-        Construct a ``TimeFrame`` from a start timestamp and either an end
-        timestamp or a duration.
+        Construct a ``TimeFrame`` from a start timestamp and either an end timestamp or a duration.
 
     Examples
     --------
@@ -777,7 +778,6 @@ class TimeFrame:
             duration = (end - start).floor(timestep.freqstr)
         elif end is None:
             duration = duration.floor(timestep.freqstr)
-        # always recalculate end to ensure consistency
         end = start + duration
 
         start = ensure_timezone(ts=start, timezone=tz)
@@ -891,9 +891,8 @@ class SimulationTimes:
         """
         Create ``SimulationTimes`` from plain input values.
 
-        This method converts input values (strings, durations, timezone)
-        into properly aligned ``TimeFrame`` objects for simulation,
-        evaluation, and project horizons.
+        This method converts input values (strings, durations, timezone) into properly aligned ``TimeFrame``
+        objects for simulation, evaluation, and project horizons.
 
         Parameters
         ----------
@@ -918,19 +917,14 @@ class SimulationTimes:
         Raises
         ------
         ValueError
-            If the start time cannot be converted to a valid timestamp.
-        ValueError
-            If both or neither of ``sim_endtime`` and ``sim_duration`` are provided
-            (propagated from ``TimeFrame.create_from_start_timestamp``).
+            If the start time cannot be converted to a valid timestamp or both or neither of ``sim_endtime`` and
+             ``sim_duration`` are provided (propagated from ``TimeFrame.create_from_start_timestamp``).
 
         Notes
         -----
-        - ``starttime`` and ``sim_endtime`` are parsed using
-          ``convert_to_timestamp``.
-        - ``sim_duration`` is interpreted in days and converted to
-          ``pandas.Timedelta``.
-        - The project time frame always uses ``prj_duration`` in years
-          via ``pandas.DateOffset``.
+        - ``starttime`` and ``sim_endtime`` are parsed using ``convert_to_timestamp``.
+        - ``sim_duration`` is interpreted in days and converted to ``pandas.Timedelta``.
+        - The project time frame always uses ``prj_duration`` in years via ``pandas.DateOffset``.
 
         Examples
         --------
