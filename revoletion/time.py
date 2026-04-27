@@ -194,6 +194,48 @@ def parse_datetime_str(time_str: str) -> pd.Timestamp:
     raise ValueError(f"Invalid date format: {time_str!r}")
 
 
+def convert_to_zoneinfo(timezone: zoneinfo.ZoneInfo | str) -> zoneinfo.ZoneInfo:
+    """
+    Convert a timezone representation to a ``zoneinfo.ZoneInfo`` object.
+
+    Parameters
+    ----------
+    timezone : str or zoneinfo.ZoneInfo
+        The timezone to convert. If a string is provided, it must be a valid IANA timezone name (e.g., "Europe/Berlin").
+        If a ``ZoneInfo`` instance is provided, it is returned unchanged.
+
+    Returns
+    -------
+    zoneinfo.ZoneInfo
+        A ``ZoneInfo`` object corresponding to the given timezone.
+
+    Raises
+    ------
+    TypeError
+        If ``timezone`` is not a ``str`` or ``zoneinfo.ZoneInfo`` instance.
+    zoneinfo.ZoneInfoNotFoundError
+        If ``timezone`` is a string but not a valid IANA timezone name.
+
+    Examples
+    --------
+    >>> convert_to_zoneinfo("Europe/Berlin")
+    ZoneInfo(key='Europe/Berlin')
+
+    >>> tz = zoneinfo.ZoneInfo("UTC")
+    >>> convert_to_zoneinfo(tz) is tz
+    True
+    """
+    if isinstance(timezone, zoneinfo.ZoneInfo):
+        return timezone
+    elif isinstance(timezone, str):
+        return zoneinfo.ZoneInfo(timezone)
+    else:
+        raise TypeError(
+            f"convert_to_zoneinfo(): 'timezone' must be a str or ZoneInfo instance, "
+            f"got {type(timezone).__name__}: {timezone!r}"
+        )
+
+
 def ensure_timezone(ts: pd.Timestamp, timezone: zoneinfo.ZoneInfo | str) -> pd.Timestamp:
     """
     Ensure that a pandas Timestamp has the specified timezone.
@@ -240,9 +282,12 @@ def ensure_timezone(ts: pd.Timestamp, timezone: zoneinfo.ZoneInfo | str) -> pd.T
     >>> ensure_timezone(ts_aware, "Europe/Berlin")
     Timestamp('2026-04-27 14:00:00+0200', tz='Europe/Berlin')
     """
+
+    tz = convert_to_zoneinfo(timezone)
+
     if ts.tz is None:
-        return ts.tz_localize(timezone, ambiguous="raise", nonexistent="raise")
-    return ts.tz_convert(timezone)
+        return ts.tz_localize(tz, ambiguous="raise", nonexistent="raise")
+    return ts.tz_convert(tz)
 
 
 def convert_to_timestamp(
@@ -668,7 +713,7 @@ class TimeFrame:
         cls,
         start: pd.Timestamp,
         timestep: Timestep,
-        timezone: zoneinfo.ZoneInfo,
+        timezone: zoneinfo.ZoneInfo | str,
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
     ) -> Self:
@@ -685,7 +730,7 @@ class TimeFrame:
             The start timestamp.
         timestep : Timestep
             The timestep defining the resolution.
-        timezone : zoneinfo.ZoneInfo
+        timezone : zoneinfo.ZoneInfo or str
             The timezone to enforce on the timestamps.
         end : pandas.Timestamp, optional
             The end timestamp. Must not be provided together with ``duration``.
@@ -717,12 +762,15 @@ class TimeFrame:
         >>> tf = TimeFrame.create_from_start_timestamp(
         ...     start=ts,
         ...     timestep=timestep,
-        ...     timezone=ZoneInfo("UTC"),
+        ...     timezone="UTC",
         ...     end=pd.Timestamp("2026-01-01 03:30"),
         ... )
         >>> tf.duration
         Timedelta('0 days 03:00:00')
         """
+
+        tz = convert_to_zoneinfo(timezone)
+
         if (end is None and duration is None) or (end is not None and duration is not None):
             raise ValueError('Exactly one of the parameters "end" or "duration" must be provided.')
         elif duration is None:
@@ -732,10 +780,10 @@ class TimeFrame:
         # always recalculate end to ensure consistency
         end = start + duration
 
-        start = ensure_timezone(ts=start, timezone=timezone)
-        end = ensure_timezone(ts=end, timezone=timezone)
+        start = ensure_timezone(ts=start, timezone=tz)
+        end = ensure_timezone(ts=end, timezone=tz)
 
-        return cls(start=start, end=end, duration=duration, timestep=timestep, timezone=timezone)
+        return cls(start=start, end=end, duration=duration, timestep=timestep, timezone=tz)
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
@@ -899,14 +947,12 @@ class SimulationTimes:
         >>> sim_times.sim.duration
         Timedelta('2 days 00:00:00')
         """
-        # ensure timezone is a ZoneInfo object
-        timezone = zoneinfo.ZoneInfo(timezone) if not isinstance(timezone, zoneinfo.ZoneInfo) else timezone
 
-        starttime_ts = convert_to_timestamp(starttime, timestep, timezone)
+        starttime_ts = convert_to_timestamp(time_in=starttime, timestep=timestep, timezone=timezone)
         if starttime_ts is None:
             raise ValueError(f"Failed to convert starttime ({starttime}) to pd.Timestamp")
 
-        sim_endtime_ts = convert_to_timestamp(sim_endtime, timestep, timezone)
+        sim_endtime_ts = convert_to_timestamp(time_in=sim_endtime, timestep=timestep, timezone=timezone)
         sim_duration_td = pd.Timedelta(sim_duration, unit="day") if sim_duration is not None else None
 
         simulation = TimeFrame.create_from_start_timestamp(
