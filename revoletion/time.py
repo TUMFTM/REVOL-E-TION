@@ -361,6 +361,7 @@ class RunTimer:
 
     def __enter__(self) -> typing_extensions.Self:
         self.start()
+        self.start = time.perf_counter()
         return self
 
     def __exit__(self, _type, _value, _traceback) -> None:
