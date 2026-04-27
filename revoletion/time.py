@@ -41,7 +41,7 @@ def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
     >>> extend_dti(idx)
     DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'], dtype='datetime64[us]', freq=None)
     """
-    return dti.append(pd.DatetimeIndex([dti[-1] + (dti[-1] - dti[-2])]))
+    return pd.DatetimeIndex(dti.append(pd.DatetimeIndex([dti[-1] + (dti[-1] - dti[-2])])))
 
 
 def convert_freqstr(freq: str) -> str:
