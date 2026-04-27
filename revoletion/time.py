@@ -438,6 +438,7 @@ class TimeFrame:
     @cached_property
     def end_extd(self) -> pd.Timestamp:
         return max(self.dti_extd)
+        return self.dti_extd[-1]
 
 
 @dataclass
