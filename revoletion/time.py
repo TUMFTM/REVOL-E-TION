@@ -349,7 +349,7 @@ def convert_to_timestamp(
     if time_in is None:
         return None
 
-    ts = time_in if isinstance(time_in, pd.Timestamp) else parse_datetime_str(time_in)
+    ts = parse_datetime_str(time_in) if not isinstance(time_in, pd.Timestamp) else time_in
 
     ts = ensure_timezone(ts, timezone)
 
