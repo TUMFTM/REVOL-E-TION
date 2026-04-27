@@ -6,8 +6,7 @@ import multiprocessing as mp
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-from typing_extensions import override
+from typing import override
 
 
 @dataclass

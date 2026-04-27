@@ -6,13 +6,12 @@ import ast
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import numpy as np
 import oemof.solph as solph
 import pandas as pd
 import windpowerlib
-from typing_extensions import override
 
 from revoletion import battery as bat
 from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils

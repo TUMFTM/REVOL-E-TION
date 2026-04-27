@@ -7,12 +7,12 @@ import enum
 import json
 import logging
 import pathlib
+from typing import override
 
 import pandas as pd
 import pvlib
 import pydantic
 import requests
-import typing_extensions
 
 from . import location as loc
 from . import time, utils
@@ -191,7 +191,7 @@ class SolcastDataProvider(DataProvider):
         super().__init__(logger=logger, location=location, array=array)
         self._api_key = api_key
 
-    @typing_extensions.override
+    @override
     def request_data_from_api(self, timeframe: time.TimeFrame) -> pd.DataFrame:
         if timeframe.start - timeframe.end > pd.Timedelta(days=31):
             raise DataProviderApiError(
@@ -268,11 +268,11 @@ class SolcastDataProvider(DataProvider):
         data = pd.json_normalize(json_data["estimated_actuals"])
         return data
 
-    @typing_extensions.override
+    @override
     def load_data_from_file(self, file: pathlib.Path) -> pd.DataFrame:
         return pd.read_csv(file)
 
-    @typing_extensions.override
+    @override
     def remap_data(self, data: pd.DataFrame, timeframe: time.TimeFrame) -> pd.DataFrame:
         data.index = pd.to_datetime(data["period_end"]) - pd.to_timedelta(data["period"])
         data.index.name = "period_start"
@@ -324,7 +324,7 @@ class PvgisDataProvider(DataProvider):
 
         return shift
 
-    @typing_extensions.override
+    @override
     def request_data_from_api(self, timeframe: time.TimeFrame) -> pd.DataFrame:
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
@@ -369,7 +369,7 @@ class PvgisDataProvider(DataProvider):
 
         return data
 
-    @typing_extensions.override
+    @override
     def load_data_from_file(self, file: pathlib.Path) -> pd.DataFrame:
         data, meta = pvlib.iotools.read_pvgis_hourly(file, map_variables=True)
 
@@ -380,7 +380,7 @@ class PvgisDataProvider(DataProvider):
 
         return data
 
-    @typing_extensions.override
+    @override
     def remap_data(self, data: pd.DataFrame, timeframe: time.TimeFrame, **_) -> pd.DataFrame:
         shift = self.calc_api_request_shift(timeframe=timeframe)
 
@@ -395,11 +395,11 @@ class PvgisDataProvider(DataProvider):
 
 
 class BasicFileProvider(DataProvider):
-    @typing_extensions.override
+    @override
     def request_data_from_api(self, **_) -> None:
         raise NotImplementedError(f"Cannot request timeseries data with {type(self)}")
 
-    @typing_extensions.override
+    @override
     def load_data_from_file(self, file: pathlib.Path, **_) -> pd.DataFrame:
         data = utils.read_timeseries_csv(
             path_input_file=file,

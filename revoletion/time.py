@@ -5,10 +5,9 @@ import time
 import zoneinfo
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Self
+from typing import Self, override
 
 import pandas as pd
-import typing_extensions
 
 
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -429,7 +428,7 @@ class RunTimer:
         # only export runtime duration -> start and end are not interpretable
         return pd.Series({"runtime_duration_s": round(self.duration, 2)})
 
-    @typing_extensions.override
+    @override
     def __str__(self) -> str:
         """
         Return a string representation of the duration.
