@@ -8,9 +8,9 @@ import pandas as pd
 import pyomo.environ as po
 from typing_extensions import Self, override
 
-import revoletion.optimization.optimization_problem as optimization_problem
 from revoletion import blocks, time
 from revoletion import scenario as scn
+from revoletion.optimization import optimization_problem
 
 from ._oemof_block_visitor import OemofBlockVisitor, WrappedEnergySystem
 
