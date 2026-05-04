@@ -54,6 +54,7 @@ The full license text can be found in the LICENSE file in the root directory of 
 - P. Rosner and M. Lienkamp, "Unlocking the Joint Potential of Electric Mobility and Rural Electrification - A Concept for Improved Integration using Modular Batteries," 2022 IEEE PES/IAS PowerAfrica, Kigali, Rwanda, 2022, pp. 1-5, https://doi.org/10.1109/PowerAfrica53997.2022.9905305.
 - P. Rosner, B. Dietermann, M. Brödel and M. Lienkamp, "REVOL-E-TION: A Flexible and Scalable Model to Optimally Integrate Bidirectional EV Fleets in Local Energy Systems", Poster, 2024 Vehicle2Grid Conference, Münster, Germany, 2024, https://doi.org/10.13140/RG.2.2.19632.16648
 - P. Rosner, B. Dietermann (shared first authors), M. Brödel, A. Paper and M. Lienkamp, "REVOL-E-TION: A Flexible and Scalable Investment Optimization Toolbox for Local Energy Systems Incorporating Electric Vehicle Fleets", 2025, SoftwareX, https://doi.org/10.1016/j.softx.2025.102178
+- B. Dietermann, P. Rosner, N. Nachtigall and M. Lienkamp, "Enabling Residential Electric Car-Sharing Models Through Optimum Local Energy System Integration: A Concept", 2025, 5th International Conference on Electrical, Computer, Communications and Mechatronics Engineering (ICECCME), https://doi.org/10.1109/ICECCME64568.2025.11277639
 
 ## Description
 REVOL-E-TION is a scalable generator for (mixed integer) linear energy system models of local energy systems with or without electric vehicle fleets.
@@ -69,7 +70,7 @@ Log files can be created using the integrated Discrete Event Simulation (DES), w
 The following system diagram shows the basic structure including one example of each block class (blocks are indicated by dashed lines):<br>
 
 <div style="text-align: center;">
-  <img src="./images/structure_diagram.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
+  <img src="./images/structure.svg" alt="Structure Diagram" style="width: 100%; max-width: 100%; height: auto; background-color: white;">
 </div>
 
 ## Installation
@@ -86,7 +87,7 @@ git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 It is recommended to create and activate a clean virtual environment for the installation of REVOL-E-TION.
 This can be done using conda:
 ```bash
-conda create -n <name_of_virtual_environment> python=3.11
+conda create -n <name_of_virtual_environment> python=3.12
 conda activate <name_of_virtual_environment>
 ```
 or alternatively with the following command:
@@ -109,9 +110,9 @@ After pulling new changes from the repository, the package has to be reinstalled
 
 This links the package to your local source code, so any changes (you make or pulled from the repository) are immediately reflected without reinstalling:
 ```bash
-pip install -e .
+pip install -e . --group dev --group tests
 ```
-Use the editable mode if you plan to modify the code during development.
+Use the editable mode if you plan to modify the code during development. The previous command also installs additional dependencies required for development and testing, which are not necessary for running the package but required for development.
 
 #### Step 4: MILP Solver
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
@@ -121,9 +122,15 @@ If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi an
 To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
+> ⚠️ **Important** ⚠️
+>
+> **When using REVOL-E-TION, all input data such as timeseries and the scenario file should be stored in a separate directory and not within the package's source code.**  
+> **Do not store any custom files within the source code of the package.**
+> **This includes the example directory in particular.**
+
 ### 1. Running REVOL-E-TION as package
 REVOL-E-TION can be run using one of two terminal commands, given the correct virtual environment is activated:
-1. Call to the main module: ```python -m revoletion.main <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
+1. Call to the main module: ```python -m revoletion <arguments>``` (best for local execution on host machine, e.g. through a run configuration in PyCharm)
 2. Call to the entry point: ```revoletion <arguments>``` (best for remote execution on a server as it works irrespective of the current working directory as long as the correct environment is active)
 
 <details style="margin-bottom: 1em;">
@@ -146,7 +153,6 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 | Scenario file path (mandatory)  | -scn       | --scenario         | If not given, a GUI window opens to select the scenario file                 | File path to scenario file. If 'example' is provided, the example project included in REVOL-E-TION is executed and ```--input``` is neglected. If not provided, a graphical selection dialog opens automatically to select a file. | string with path (absolute or relative to current working directory) of scenario file or 'example'                                                    |
 | Input directory path            | -in        | --input            | Directory of the scenario file provided in ```--scenario```                  | Directory path to input data files.                                                                                                                                                                                                | string with directory path (absolute or relative to current working directory)                                                                        |
 | Output directory path           | -out       | --output           | Directory "results" in the current working directory (created automatically) | Directory path to save output data.                                                                                                                                                                                                | string with directory path (absolute or relative to current working directory)                                                                        |
-| Multiple scenario run           | -msc       | --multiscenario    | True                                                                         | Combine multiple scenarios in a single run. If set to False, this requires the scenario file to only contain one scenario.                                                                                                         | True, False                                                                                                                                           |
 | Rerun previous run              | -rer       | --rerun            | None                                                                         | Rerun scenarios of a previous run which were not completed successfully (due to unexpected termination of SimulationRun or non-deterministic infeasibilities). Specify a path or 'latest' to rerun latest run in output directory. | False, 'latest' or string with directory path (absolute or relative to output directory defined in ```--output```) containing results of previous run |
 | Solver                          | -slv       | --solver           | 'gurobi'                                                                     | Solver to be used for optimization.                                                                                                                                                                                                | string containing lowercase name of pyomo compatible solver to be used                                                                                |
 | Number of Processes             | -np        | --n_processes      | 1                                                                            | Number of parallel processed (i.e. cores) scenarios.                                                                                                                                                                               | integer, is limited to maximum thread count of CPU automatically                                                                                      |
@@ -170,40 +176,19 @@ To avoid memory limitations, it is advised to limit the number of parallel scena
 
 To run the provided example project, execute the following command in the terminal:
 ```bash
-python -m revoletion.main -scn example
+cd PATH/TO/REVOL-E-TION_REPOSITORY/example/
+revoletion -scn scenarios.csv
 ```
 
 ### 2. Running REVOL-E-TION in Python
 REVOL-E-TION can also be used as a module in your own code.
-```python
-import revoletion
-
-# specify the simulation's settings (optional); arguments are the same the long form of command line arguments:
-# solver, n_processes, largescale, debugmode, rerun, rerun_infeasible, key_solcast_api
-settings = revoletion.SimulationSettings()
-
-# specify the relevant paths
-paths = revoletion.SimulationPaths(scenario='path/to/your/scenario.csv',  # this is the only required parameter
-                                   input='path/to/your/input/dir',  # same logic as --input argument
-                                   output='path/to/your/output/dir',  # same logic as --output argument
-                                   )
-
-# run a single scenario in standalone mode (equals --multiscenario False)
-revoletion.Scenario(paths=paths,
-                    settings=settings,  # optional, defaults to SimulationSettings()
-                    )
-
-# run a scenario file with multiple scenarios (equals --multiscenario True)
-revoletion.SimulationRun(paths=paths,
-                         settings=settings,  # optional, defaults to SimulationSettings()
-                         )
-```
+An example notebook executing REVOL-E-TION from Python is provided in ```.revoletion/example/run_example.ipynb```.
 
 
 ## Common Problems & Troubleshooting
 | Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.11. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                  |
+| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.12. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                  |
 | Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). The python package gurobipy is NOT required to run REVOL-E-TION. |
 | ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                    |
 | ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                 |
@@ -282,9 +267,9 @@ After a successful optimization it also contains the aggregated techno-economic 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
 | `starttime` | Start Time | str |  | Start time of the project and the simulation in local time. If no time is given in addition to the date the project starts at 00:00 local time | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' |
-| `timestep` | Time step | str |  | Time step used for the simulation | Formats compatible with pd.to_timedelta() such as 15min or 1H. |
+| `timestep` | Time step | str |  | Time step used for the simulation | Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D. |
 | `sim_duration` | Project duration | int or str or None | `sim_endtime` is given | Simulation duration. If given as integer the number is interpreted as number of days. Specifying a pandas.Timedelta() compliant string is also supported. The duration is rounded down to the specified timestep. | [1, inf[ or strings such as '1 day 12 hours 14 minutes' |
-| `sim_endtime` | Simulation end time | str or None | `sim_duration` is given | End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None. | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None |
+| `sim_endtime` | Simulation end time | str or None | `sim_duration` is given | End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. The timestep starting at the provided time is not part of the simulation. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None. | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None |
 | `prj_duration` | Project duration | int |  | Project duration in years to which the economic results of the simulation duration are extrapolated | [1, inf[ |
 | `compensate_sim_prj` | Specific Capex/Opex compensation trigger | bool |  | Trigger whether to optimize for sim duration (False) or project duration (True) | True, False |
 | `strategy` | Strategy | str |  | Optimization strategy | 'go' or 'rh' (global optimum, rolling horizon) |
@@ -295,7 +280,10 @@ After a successful optimization it also contains the aggregated techno-economic 
 | `wacc` | Weighted average cost of capital | float or None |  | Weighted average cost of capital: discount rate for future expenses/revenues and energies per year. | [0, 1] |
 | `currency` | Currency | str |  | Currency used to display results of economic calculations. No influence of calculation itself, only used for displaying. | 'str', e.g. 'EUR', 'USD' |
 | `latitude` | Latitude | float |  | Latitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84 | [-90, 90] |
-| `longitude` | Longitude  | float |  | Longitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84 | [-90, 90] |
+| `longitude` | Longitude | float |  | Longitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84 | [-90, 90] |
+| `country` | Country  | str or None |  | Country of the location of the local energy system in ISO3166-1 alpha-2 format. If not given, REVOL-E-TION tries to infer the value from the provided coordinates. | 'str', e.g. 'DE', 'US' or or None |
+| `state` | State | str or None |  | State of the country in ISO3166-2 format. If neither country nor state are given, REVOL-E-TION tries to infer the value from the provided coordinates. If country is given, but state is not, state will be neglected. | 'str', e.g. 'EUR', 'USD' or None |
+| `consider_holidays` | Consider holidays | bool or None |  | Consider public holidays. This affects standard load profile generation and mobility sampling. | True, False or None |
 | `temp_air` | Air temperature | float or str or None |  | Air temperature. Can be given as string wih filename to csv file containing the columns 'time' (timezone aware timestamps) and 'temp_air' (temperature in °C), a float or int specifying a constant temperature in °C or the name of a PVSource. | string with filename or name of PVSource instance or ]-inf, inf[ |
 | `cost_eps` | Epsilon costs | float |  | Cost added to some flows in order to disincentivice circular flows | [0, inf[ |
 | `blocks` | Blocks | dict |  | All blocks present in the scenario except for the SystemCore, which is added automatically, in the format {block_name: class_name}. Non valid names are 'run', 'scenario' and 'core' (default name for block of class SystemCore). | "{'custom block name': 'class name of block'}" |
@@ -358,7 +346,10 @@ Undeferrable (i.e. inflexible) power demand such as households.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2'} |
+| `capex_preexisting_metering` | Consideration of preexisting metering capital expensditures | bool |  | Consider existing metering and operational capex in cost calculation. | True, False |
+| `capex_fix_metering` | Fixed capital expenditures for metering infrastructure | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
+| `mntex_fix_metering` | Fixed maintenance expenditures for metering infrastructure and operations | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
+| `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'} |
 | `consumption_yrl` | Yearly consumption | float |  | Yearly consumption in Wh. Neglected if a filename is provided in load_profile. | [0, inf[ |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `crev_spec` | Specific customer revenue | float or str |  | Specific customer revenue for consumed energy in currency per Wh. Can be given as float or filename of a csv file containing a timeseries. | ]-inf, inf[ |
@@ -397,13 +388,12 @@ Although the Solcast API requires an active subscription plan, there is a limite
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced | [1, inf[ |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan | [0, inf[ |
 | `eff_block` | Efficiency | float |  | Efficiency of the PV array, taking into account all losses occurring from insulation up to the point of feeding power into the bus to which the block is connected. | [0, 1] |
-| `azimuth` | Surface azimuth | float or str or None |  | Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. 'optimal' -> 180 for northern hemisphere with trackingtype 0, else 0. For 'PVGIS API' 'optimal' is only valid in combination with tilt is set to 'optimal'. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None. | [0, 360[ or 'optimal' or None. |
-| `tilt` | Surface tilt angle | float or str or None |  | Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. If 'optimal' is chosen, the tilt angle is set to the specified latitude. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None. | [0, 90] or 'optimal' or None |
+| `azimuth` | Surface azimuth | float or None |  | Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. None is equal to energy yield optimum. | [0, 360[ or None. |
+| `tilt` | Surface tilt angle | float or None |  | Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. None sets the tilt angle to the specified location's latitude. | [0, 90] or None |
 | `trackingtype` | Tracking type | int or None |  | Type of sun tracking. 0=fixed, 1=single horizontal axis aligned north-south, 2=two-axis tracking, 3=vertical axis tracking, 4=single horizontal axis aligned east-west, 5=single inclined axis aligned north-south. For data_source 'Solcast API' only 0 and 1 are valid. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'. | 0, 1, 2, 3, 4, 5 |
-| `horizon` | Consideration of a horizon | bool |  | Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 150m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API' | True, False |
-| `horizon_custom` | User horizon | list or None |  | Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'. | list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None |
-| `raddatabase` | Radiation database | str or None |  | Name of the radiation database for 'PVGIS-API'. Dependent on location and chosen simulation timeframe. 'PVGIS-SARAH' for Europe, Africa and Asia or 'PVGIS-NSRDB' for the Americas between 60°N and 20°S, 'PVGIS-ERA5' and 'PVGIS-COSMO' for Europe (including high-latitudes), and 'PVGIS-CMSAF' for Europe and Africa (will be deprecated). | 'PVGIS-SARAH2', 'PVGIS-SARAH3', 'PVGIS-NSRDB', 'PVGIS-ERA5', 'PVGIS-COSMO', 'PVGIS-CMSAF' |
-| `pvtechchoice` | PV technology | str |  | PV technology for 'PVGIS API'. | 'crystSi', 'CIS', 'CdTe', 'Unknown' |
+| `horizon_custom` | User horizon | list or None |  | Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API'. | list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None |
+| `database` | Radiation database | str or None |  | Name of the radiation database for 'PVGIS-API'. Dependent on location and chosen simulation timeframe. 'PVGIS-SARAH' for Europe, Africa and Asia or 'PVGIS-NSRDB' for the Americas between 60°N and 20°S, 'PVGIS-ERA5' and 'PVGIS-COSMO' for Europe (including high-latitudes), and 'PVGIS-CMSAF' for Europe and Africa (will be deprecated). | 'PVGIS-SARAH2', 'PVGIS-SARAH3', 'PVGIS-NSRDB', 'PVGIS-ERA5', 'PVGIS-COSMO', 'PVGIS-CMSAF' |
+| `type_cell` | PV technology | str |  | PV technology for 'PVGIS API'. | 'crystSi', 'CIS', 'CdTe', 'Unknown' |
 | `mountingplace` | Mounting place | str |  | Type of mounting for PV system for 'PVGIS API'. Options: free = free-standing, building = building-integrated. | 'free', 'building' |
 
 </details>
@@ -504,7 +494,9 @@ Physical grid connection. A GridConnection instance requires one or multiple Gri
 | `invest_s2g` | Investment into Site2Grid | bool or str |  | Enable additional investment into the maximum power from the local site to the grid. To ensure the same additional power for both directions set one invest variable to 'equal'. | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `peakshaving` | Activation of peak shaving | bool |  | Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here. | True, False |
-| `peak_period` | Peak power cost period | str |  | Peak power cost period. | 'day', 'week', 'month', 'year', 'quarter' |
+| `peak_period` | Peak power cost period | str |  | Peak power cost period. | 'day', 'week', 'month', 'quarter', 'year' |
+| `peak_period_start` | Peak power cost period start | str |  | Start of the peak power periods. If 'calendar' is chosen, peak periods start at the beginning of the calendar period (e.g. at 01/01 for yearly peak periods). If 'simulation' is chosen, the first peak period starts at the simulation start time. | 'calendar', 'simulation' |
+| `peak_period_measurement` | Peak power measurement period | str |  | Measurement period for the peak power. To determine the peak power the mean power of this measurement period is used. | Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D. |
 | `peak_power_init` | Initial peak power | float |  | Initial peak power per peak power period in W. Can be used in Rolling Horizon simulations to avoid overly reduced power consumption from the grid in first horizons of a peak period. | [0, inf[ |
 | `opex_spec_peak` | Specific operational expenditures for peak power | float |  | Specific operational expenditures for maximum power drawn from the public grid per timestep in cost in currency per peak power in W per peak power period specified in peak_period. Resulting costs are always considered in post-processing, but are only taken into account by the optimizer, if peakshaving is set to 'True'. | [0, inf[ |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed power (cumulative power of both directions) in W of the grid connection. | [0, inf[ |
@@ -568,6 +560,7 @@ Storage modelling is done linearly without SOC or temperature based limits of ch
 | `invest_storage` | Investment | bool |  | Enable additional investment into the storage capacity. | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `res_only` | Renewable energy sources only | bool |  | If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter. | True, False |
+| `balanced` | Balanced Storage Content | bool |  | If activated, the storage's energy content at the start of the simulation has to be identical to the energy content at the end of the simulation. The parameter is neglected for Rolling Horizon optimization. | True, False |
 | `aging` | Consideration of battery aging | bool |  | Battery aging calculation after each horizon. Aging results are taken into account for the next horizon by limiting the available SOC range. Maximum power is not reduced. | True, False |
 | `chemistry` | Cell Chemistry | str |  | Cell chemistry of the storage to select the correct aging model for aging calculation. | 'nmc', 'lfp' |
 | `temp_battery` | Battery temperature | float or str |  | Battery temperature used as stress factor in aging model. Can be set to a constant value, defined using the timeseries of a PVSource block as this contains a temperature timeseries, or set to None to inherit the temperature specified in temp_air of the Scenario. | string with name of block of class StationaryBattery or ]-inf, inf[ |

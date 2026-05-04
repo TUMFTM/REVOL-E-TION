@@ -4,31 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoletion"
-version = "1.5.1"
+version = "1.6.3"
 description = "Resilient Electric Vehicle Optimization model for Local Energy TransitION"
 authors = [
     { name = "Philipp Rosner", email = "philipp.rosner@tum.de" },
     { name = "Brian Dietermann", email = "brian.dietermann@tum.de"}
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "geopy",
+    "gurobipy",
     "holidays",
     "numpy",
     "numpy_financial",
-    "oemof.solph==0.6.0a3",
-    "pandas>=2.1",
+    "oemof.solph==0.6.3",
+    "pandas>=3.0",
     "plotly",
     "psutil",
     "pvlib>=0.13.0",
-    "pytz",
     "rainflow",
     "scipy",
+    "scikit-learn",
     "simpy",
     "timezonefinder",
     "tk",
-    "typing-extensions>=4.15.0",
     "windpowerlib",
     "pydantic",
     "pypsa>=1.1.2",
@@ -50,7 +50,10 @@ tests = [
     "pytest>=8.4.2",
 ]
 
-dev = ["pre-commit"]
+dev = [
+    "pre-commit",
+    "pymupdf",
+]
 
 [tool.uv.sources]
 imitation = { path = "../imitation" }
@@ -59,7 +62,7 @@ imitation = { path = "../imitation" }
 packages = ["revoletion"]
 
 [tool.setuptools.package-data]
-revoletion = ["data/*", "example/*"]
+revoletion = ["data/*"]
 
 [tool.ruff]
 line-length = 120

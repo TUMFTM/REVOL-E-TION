@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from . import blocks, utils
+from . import blocks, time
 
 
 def get_mode_scheduling(fleet_units: dict, block: blocks.BaseBlock) -> str | None:
@@ -22,7 +22,7 @@ class AprioriPowerScheduler:
 
         self.core = AprioriCore(block=self.scenario.block_registry.get("TopLevelBlock", {})["core"], scheduler=self)
 
-    def calc_ph_schedule(self, horizon: utils.TimeSettings) -> None:
+    def calc_ph_schedule(self, horizon: time.TimeFrame) -> None:
         self.core.init_ph(horizon=horizon)
 
         for ts in horizon.dti:
@@ -56,7 +56,7 @@ class AprioriCore:
         if self.mode_scheduling_dyn == "equal":
             raise ValueError('Fleet units with dynamic load management are not allowed to use scheduling mode "equal"')
 
-    def init_ph(self, horizon: utils.TimeSettings):
+    def init_ph(self, horizon: time.TimeFrame):
         # initialize power availability (system and converter) and fixed power consumption
         self.p_sys_avail = self.p_sys_avail.reindex(horizon.dti)
         self.p_sys_avail[:] = 0
@@ -84,7 +84,7 @@ class AprioriCore:
         for fleet in self.fleets.values():
             fleet.init_ph(horizon=horizon)
 
-    def simulate_ts(self, ts: pd.Timestamp, horizon: utils.TimeSettings) -> None:
+    def simulate_ts(self, ts: pd.Timestamp, horizon: time.TimeFrame) -> None:
         for fu in {**self.fu_uc, **self.fu_stat, **self.fu_dyn}.values():
             fu.calc_p_bat_chg_max(ts=ts)
 
@@ -215,7 +215,7 @@ class AprioriFleet:
         self.p_avail = pd.Series()
         self.p_fix = pd.Series()
 
-    def init_ph(self, horizon: utils.TimeSettings):
+    def init_ph(self, horizon: time.TimeFrame):
         # initialize power availability and fixed power consumption
         self.p_avail = self.p_avail.reindex(horizon.dti)
         self.p_avail[:] = np.inf if self.lm == "dyn" else self.block.pwr_lim_s2f
@@ -302,7 +302,7 @@ class AprioriFleetUnit:
         # initialize variable for charging during single parking process
         self.parking_charging = False
 
-    def init_ph(self, horizon: utils.TimeSettings):
+    def init_ph(self, horizon: time.TimeFrame):
         # apply new index to data
         self.data_battery = self.data_battery.reindex(horizon.dti)
         self.data_battery[:] = 0
@@ -313,7 +313,9 @@ class AprioriFleetUnit:
         ).astype("float64")
 
         # get current SOC
-        self.data_battery.loc[horizon.dti.min(), "soc"] = self.block.states.loc[horizon.start, "soc"]
+        self.data_battery.loc[horizon.dti.min(), "soc"] = self.block.states.loc[
+            horizon.start, ["soc", "soc_min", "soc_max"]
+        ].median()
 
         self.data_charging = self.data_charging.reindex(horizon.dti)
         self.data_charging[:] = 0
@@ -326,7 +328,7 @@ class AprioriFleetUnit:
         if self.block.log.loc[ts, "atdc"]:
             return 0.8
 
-        soc_target_low = min(0.8, self.block.states.loc[ts, "soc_max"])
+        soc_target_low = min(self.block.soc_target, self.block.states.loc[ts, "soc_max"])
         soc_target_high = min(1.0, self.block.states.loc[ts, "soc_max"])
 
         # check if there are any departures after current timestep within forecast period
@@ -421,7 +423,7 @@ class AprioriFleetUnit:
 
         return p_chg_atbase
 
-    def calc_p_chg_external(self, ts: pd.Timestamp, horizon: utils.TimeSettings):
+    def calc_p_chg_external(self, ts: pd.Timestamp, horizon: time.TimeFrame):
         """
         calculate charging power from external sources
         """
@@ -491,7 +493,7 @@ class AprioriFleetUnit:
 
         self.data_battery.loc[(ts + self.scenario.timestep.td), "soc"] = self.data_battery.loc[ts, "soc"] + soc_delta
 
-    def write_power_to_flows_apriori(self, horizon: utils.TimeSettings) -> None:
+    def write_power_to_flows_apriori(self, horizon: time.TimeFrame) -> None:
         self.block.flows_apriori.update(
             {
                 "p_int_chg": (self.data_charging["p_int"].clip(lower=0) / self.block.pwr_chg_max),

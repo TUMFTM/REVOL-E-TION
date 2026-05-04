@@ -8,7 +8,7 @@ import statistics
 # from packages
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple
 
 # packages
 import numpy as np
@@ -17,6 +17,9 @@ import simpy
 
 # from local packages
 from . import blocks
+
+if TYPE_CHECKING:
+    from . import scenario as scn
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):
@@ -85,6 +88,8 @@ class DispatchTimer:
             return np.maximum(1, np.ceil((values - self.time_start) / self.step).astype(int))
         elif pd.api.types.is_timedelta64_dtype(values) or isinstance(values, pd.Timedelta):
             return np.maximum(1, np.ceil(values / self.step).astype(int))
+        elif values.empty:
+            return
         else:
             raise ValueError(f"Unsupported type {type(values)} for conversion to steps")
 
@@ -105,7 +110,7 @@ class DispatchEnvironment:
     Interface between REVOl-E-TION scenario and the standalone FleetDispatchers
     """
 
-    def __init__(self, scenario: "simulation.Scenario"):
+    def __init__(self, scenario: "scn.Scenario"):
         self.scenario = scenario
 
         self.fleets = self.scenario.block_registry.get("DispatchFleet", {})
@@ -139,18 +144,19 @@ class DispatchEnvironment:
 
         self.env.run()
 
+        # go through ALL dispatchers once and transfer rex processes before further processing
         for dispatcher in self.dispatchers.values():
             if dispatcher.params.is_vehicle_fleet:
                 dispatcher.transfer_rex_processes()
 
-        for disp in self.dispatchers.values():
-            disp.generate_log(dti_output=self.scenario.times.sim.dti)
-            disp.calc_kpis()
+        for dispatcher in self.dispatchers.values():
+            dispatcher.generate_log(dti_output=self.scenario.times.sim.dti)
+            dispatcher.calc_kpis()
             if not self.scenario.settings.largescalemode:
                 path_log = self.scenario.paths.create_result_path(
-                    suffix=f"{self.scenario.name}_{disp.params.name}_log.csv"
+                    suffix=f"{self.scenario.name}_{dispatcher.params.name}_log.csv"
                 )
-                disp.save_data(path_log=path_log)
+                dispatcher.save_data(path_log=path_log)
 
         for fleet in self.fleets.values():
             fleet.log = fleet.dispatcher.log
@@ -331,20 +337,21 @@ class FleetDispatcher:
 
         # create dataclass instances
         self.processes = {
-            pid: DispatchProcess(
-                pid=pid,
+            row.Index: DispatchProcess(
+                pid=row.Index,
                 dispatcher_prim=self,
                 status="unprocessed",
-                time_req=row["time_req"],
-                step_req=row["step_req"],
-                dtime_patience=row["dtime_patience"],
-                steps_patience=row["steps_patience"],
-                dtime_rental=row["dtime_rental"],
-                steps_rental=row["steps_rental"],
-                energy_req=row["energy_req"],
-                distance_req=row.get("distance", None),
+                time_req=row.time_req,
+                step_req=row.step_req,
+                dtime_patience=row.dtime_patience,
+                steps_patience=row.steps_patience,
+                dtime_rental=row.dtime_rental,
+                steps_rental=row.steps_rental,
+                energy_req=row.energy_req,
+                distance_req=getattr(row, "distance", None),
+                subfleets=getattr(row, "subfleets", None),
             )
-            for pid, row in self.demand.requests.iterrows()
+            for row in self.demand.requests.itertuples()
         }
 
     def run_standalone(self, dti_output: pd.DatetimeIndex = None):
@@ -405,7 +412,7 @@ class FleetDispatcher:
                 self.log.loc[process.time_dep : time_end, (unit, "dist")] = dist_avg
                 self.log.loc[process.time_dep, (unit, "dsoc")] = process.dsoc_prim
 
-        self.log = self.log.loc[dti_output, :]
+        self.log = self.log.loc[dti_output, :].convert_dtypes()
         # endregion
 
     def calc_kpis(self):
@@ -418,8 +425,12 @@ class FleetDispatcher:
             [process.dtime_rental + process.dtime_chg_prim for process in self.processes.values()]
         )
         time_total = self.time.time_end - self.time.time_start
-        n_units = sum([store.capacity for store in self.stores.values()])
-        self.rate_use = time_active_total / time_total / n_units
+        n_units = sum(store.capacity for store in self.stores.values())
+
+        try:
+            self.rate_use = time_active_total / time_total / n_units
+        except TypeError:
+            self.rate_use = 0.0
 
     def save_data(self, path_log: str = None):
         """
@@ -445,6 +456,7 @@ class DispatchProcess:
     steps_patience: int
     processed: Optional[bool] = False
     distance_req: Optional[float] = None
+    subfleets: Optional[list] = None
     num_prim: Optional[int] = None
     steps_wait: Optional[int] = None
     time_dep: Optional[pd.Timestamp] = None
@@ -484,8 +496,14 @@ class DispatchProcess:
         yield env.timeout(self.step_req)
         self.steps_wait = 0
 
+        stores_prim = (
+            {name: store for name, store in self.dispatcher_prim.stores.items() if name in self.subfleets}
+            if self.subfleets is not None
+            else self.dispatcher_prim.stores
+        )
+
         while self.steps_wait <= self.steps_patience:
-            for store_prim_name, store_prim in self.dispatcher_prim.stores.items():
+            for store_prim_name, store_prim in stores_prim.items():
                 sfp_prim = self.dispatcher_prim.params.subfleet_params[store_prim_name]
 
                 if not sfp_prim.units:
@@ -523,8 +541,12 @@ class DispatchProcess:
                 self.dsoc_rex = getattr(sfp_rex, "dsoc_usable", 0) * self.utilization
 
                 if sfp_prim.is_electric:
-                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total
-                    self.energy_req_rex = self.dsoc_rex * getattr(sfp_rex, "energy_total", 0)
+                    self.energy_req_prim = self.dsoc_prim * sfp_prim.energy_total * np.sqrt(sfp_prim.eff_roundtrip)
+                    self.energy_req_rex = (
+                        self.dsoc_rex
+                        * getattr(sfp_rex, "energy_total", 0)
+                        * np.sqrt(getattr(sfp_rex, "eff_roundtrip", 0))
+                    )
                 else:
                     self.energy_req_prim = self.energy_req
                     self.energy_req_rex = 0

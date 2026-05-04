@@ -6,7 +6,7 @@ import pandas as pd
 import pypsa
 from typing_extensions import TypeAlias
 
-from revoletion import utils
+from revoletion import time
 
 from ._utils import normalize_dti_or_df
 
@@ -21,12 +21,12 @@ class PyPSANetworkBuilder:
     The builder handles the temporal alignment of the input data and ensures consistent construction of each PyPSA component.
     """
 
-    def __init__(self, horizon: utils.TimeSettings) -> None:
+    def __init__(self, horizon: time.TimeFrame) -> None:
         self._net = pypsa.Network()
 
         # PyPSA does not support snapshots with TZ information.
         datetime_index = normalize_dti_or_df(horizon.dti)
-        self._net.set_snapshots(datetime_index)  # type: ignore
+        self._net.set_snapshots(datetime_index)
 
         # PyPSA by default assumes a weighting of 1.0 corresponding to an timestep size of 1h.
         # However, REVOL-E-TION supports arbitrary timesteps, therefore PyPSA must be adjusted
@@ -62,7 +62,9 @@ class PyPSANetworkBuilder:
         committable: bool | None = None,
         status: _OptTimeSeriesArg = None,
     ) -> None:
-        _LOGGER.debug(f"Adding link '{name}' from '{bus0}' to '{bus1}': {p_nom=}; {p_nom_extendable=}; {efficiency=}")
+        _LOGGER.debug(
+            f"Adding link '{name}' from '{bus0}' to '{bus1}': {p_nom=}; {p_nom_extendable=}; {efficiency=}; {p_nom_min=}; {p_nom_max=}; {p_nom_extendable=}; {capital_cost=}"
+        )
 
         if committable and p_nom_extendable:
             raise ValueError(f"Link '{name}' cannot be extendable and committable at the same time")

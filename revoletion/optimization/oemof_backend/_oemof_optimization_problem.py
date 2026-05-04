@@ -8,9 +8,9 @@ import pandas as pd
 import pyomo.environ as po
 from typing_extensions import Self, override
 
-import revoletion.optimization.optimization_problem as optimization_problem
-from revoletion import blocks, utils
+from revoletion import blocks, time
 from revoletion import scenario as scn
+from revoletion.optimization import optimization_problem
 
 from ._oemof_block_visitor import OemofBlockVisitor, WrappedEnergySystem
 
@@ -70,19 +70,10 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
 
     @get_power_flow.register
     def _(self, block: blocks.GridConnection, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
-        grid_components = self._components.get_components(block)
-        bus_component = self._components.get_component(block, "bus")
-
-        flows = {}
-        for label, component in grid_components.items():
-            if label.startswith("inflow"):
-                inflow = self._raw_results[(component, bus_component)]["sequences"]["flow"][dti]
-                flows[label] = inflow
-            elif label.startswith("outflow"):
-                outflow = self._raw_results[(bus_component, component)]["sequences"]["flow"][dti]
-                flows[label] = outflow
-
-        return flows
+        return {
+            "in": self._get_flow_for_components(block, ("inflow", "bus"), dti),
+            "out": self._get_flow_for_components(block, ("bus", "outflow"), dti),
+        }
 
     @get_power_flow.register
     def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
@@ -103,8 +94,8 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
     @get_power_flow.register
     def _(self, block: blocks.Fleet, dti: pd.DatetimeIndex) -> dict[str, pd.Series]:
         return {
-            "in": self._get_flow_for_components(block, ("outflow", "bus-connected"), dti),
-            "out": self._get_flow_for_components(block, ("bus-connected", "inflow"), dti),
+            "out": self._get_flow_for_components(block, ("outflow", "bus-connected"), dti),
+            "in": self._get_flow_for_components(block, ("bus-connected", "inflow"), dti),
         }
 
     @get_power_flow.register
@@ -115,8 +106,8 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         power_flows = self._get_power_flow_storage(block, dti)
         power_flows.update(
             {
-                "ext_dc": self._get_flow_for_components(block, ("bus_ext_ac", "conv_ext_ac"), dti),
-                "ext_ac": self._get_flow_for_components(block, ("bus_ext_dc", "conv_ext_dc"), dti),
+                "ext_ac": self._get_flow_for_components(block, ("bus_ext_ac", "conv_ext_ac"), dti),
+                "ext_dc": self._get_flow_for_components(block, ("bus_ext_dc", "conv_ext_dc"), dti),
             }
         )
         return power_flows
@@ -144,11 +135,6 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
 
     @singledispatchmethod
     @override
-    def get_opex(self, block: blocks.ElectricBlock) -> float:
-        raise NotImplementedError("Operational expenditures are currently not implemented for oemof.")
-
-    @singledispatchmethod
-    @override
     def get_expansion(self, block: blocks.ElectricBlock) -> dict[str, float]:
         """
         Returns capital expenditures for a block.
@@ -165,10 +151,6 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         }
 
     @get_expansion.register
-    def _(self, block: blocks.StorageBlock) -> dict[str, float]:
-        return {"storage": self._get_expansion_for_components(block, ("storage", None))}
-
-    @get_expansion.register
     def _(self, block: blocks.RenewableSource) -> dict[str, float]:
         return {"block": self._get_expansion_for_components(block, ("src", "bus"))}
 
@@ -178,20 +160,10 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
 
     @get_expansion.register
     def _(self, block: blocks.GridConnection) -> dict[str, float]:
-        grid_components = self._components.get_components(block)
-
-        outflow_components = []
-        inflow_components = []
-        for label, component in grid_components.items():
-            if label.startswith("outflow"):
-                outflow_components.append(component)
-            elif label.startswith("inflow"):
-                inflow_components.append(component)
-
-        bus_component = self._components.get_component(block, "bus")
-        g2s = self._raw_results[(bus_component, outflow_components[0])]["scalars"]["invest"]
-        s2g = self._raw_results[(inflow_components[0], bus_component)]["scalars"]["invest"]
-        return {"g2s": g2s, "s2g": s2g}
+        return {
+            "g2s": self._get_expansion_for_components(block, ("bus", "outflow")),
+            "s2g": self._get_expansion_for_components(block, ("inflow", "bus")),
+        }
 
     @get_expansion.register
     def _(self, block: blocks.StorageBlock) -> dict[str, float]:
@@ -228,24 +200,16 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
     def from_revoletion_scenario(
         cls,
         scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
+        horizon: time.TimeFrame,
         logger: logging.Logger,
         config: optimization_problem.OptimizationProblemConfig | None = None,
     ) -> Self:
         if config is None:
             config = optimization_problem.OptimizationProblemConfig()
 
-        energy_system = OemofBlockVisitor.create_oemof_energy_system(scenario, horizon, config.cost_eps)
+        energy_system = OemofBlockVisitor.create_oemof_energy_system(scenario, horizon, config.cost_eps, logger)
 
         return cls(energy_system, scenario, logger, config)
-
-    @override
-    def set_input_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
-        raise NotImplementedError()
-
-    @override
-    def set_output_power_unit(self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex) -> None:
-        raise NotImplementedError()
 
     @override
     def solve(self) -> tuple[optimization_problem.OptimizationStatus, optimization_problem.OptimizationResult | None]:
@@ -298,7 +262,7 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
         if self._config.debug:
             model.write(self._scenario.paths.dump, format="lp", io_options={"symbolic_solver_labels": True})
 
-        return model  # type: ignore
+        return model
 
     def _get_optimization_status_from_optimization_results(self, results) -> optimization_problem.OptimizationStatus:
         if (results.solver.status == po.SolverStatus.ok) and (

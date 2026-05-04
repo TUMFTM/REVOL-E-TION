@@ -1,22 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-import importlib.resources
 import warnings
 from pathlib import Path
 
-try:
-    import tkinter as tk
-    import tkinter.filedialog
-
-    TKINTER_AVAILABLE = True
-except ImportError:
-    TKINTER_AVAILABLE = False
-    warnings.warn("tkinter is not available in this environment. GUI file selection will be disabled.")
-
 import numpy as np
-
-import revoletion.example
 
 from . import rl, simulation
 from .logger import configure_root_logger
@@ -174,7 +162,7 @@ def main():
 
 def _optimize_cmd(args: argparse.Namespace) -> None:
     # check boolean arguments
-    for arg_name in ["multiscenario", "largescalemode", "debugmode", "rerun_infeasible"]:
+    for arg_name in ["largescalemode", "debugmode", "rerun_infeasible"]:
         arg = getattr(args, arg_name)
         if not isinstance(arg, bool):
             raise ValueError(f'Argument --{arg_name} must be a boolean value, got "{arg}" of type {type(arg).__name__}')
@@ -192,8 +180,14 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
     scenarios_example = False
     # Option 1: No scenario file argument passed -> select via GUI
     if args.scenario is None:
-        if not TKINTER_AVAILABLE:
-            raise FileNotFoundError("No scenario file provided and tkinter is unavailable.")
+        try:
+            import tkinter as tk
+            import tkinter.filedialog
+        except ImportError:
+            raise FileNotFoundError(
+                "No scenario file provided and tkinter is unavailable in this environment. "
+                "Please provide a scenario file path or run this script in an environment with tkinter installed."
+            )
 
         root = tk.Tk()
         root.withdraw()  # hide small tk-window
@@ -207,12 +201,7 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
 
         if not path_scenario:
             raise FileNotFoundError("No scenario file selected")
-    # Option 2: Example file in example project in package directory (works from anywhere)
-    elif args.scenario == "example":
-        scenarios_example = True
-        with importlib.resources.as_file(importlib.resources.files(revoletion.example)) as example_dir:
-            path_scenario = example_dir / "scenarios_example.csv"
-    # Option 3: Full absolute or relative (to working directory) file path
+    # Option 2: Full absolute or relative (to working directory) file path
     else:
         path_scenario = Path(args.scenario)
     # endregion
@@ -238,7 +227,7 @@ def _optimize_cmd(args: argparse.Namespace) -> None:
     configure_root_logger(paths.log, args.debugmode)
 
     simulation_run = SimulationRun(paths=paths, settings=settings)
-    simulation_run.execute(plot=False)
+    simulation_run.execute()
 
 
 def _control_cmd(args: argparse.Namespace) -> None:
@@ -264,7 +253,7 @@ def _control_cmd(args: argparse.Namespace) -> None:
         scenario_factory,
         settings,
     )
-    control_horizon.execute(plot=False)
+    control_horizon.execute()
 
 
 if __name__ == "__main__":

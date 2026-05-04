@@ -28,6 +28,7 @@ __all__ = [
     "TimeseriesCollectionBlockVisitor",
     "MessageCollectionBlockVisitor",
     "SummaryCollectionBlockVisitor",
+    "CashflowCollectionBlockVisitor",
 ]
 
 from .blocks import (
@@ -56,6 +57,7 @@ from .blocks import (
 )
 from .visitors import (
     BlockVisitor,
+    CashflowCollectionBlockVisitor,
     MessageCollectionBlockVisitor,
     SummaryCollectionBlockVisitor,
     TimeseriesCollectionBlockVisitor,

@@ -14,6 +14,9 @@ scenario,wacc,0.09,0.09,0.09,0.09
 scenario,currency,USD,USD,USD,USD
 scenario,latitude,48.2652,48.2652,48.2652,48.2652
 scenario,longitude,11.6686,11.6686,11.6686,11.6686
+scenario,country,DE,DE,DE,DE
+scenario,state,BY,BY,BY,BY
+scenario,consider_holidays,True,True,True,True
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
@@ -32,6 +35,9 @@ core,ls,20,20,20,20
 core,ccr,1,1,1,1
 core,eff_dcac,0.95,0.95,0.95,0.95
 core,eff_acdc,0.95,0.95,0.95,0.95
+dem,capex_preexisting_metering,True,True,True,True
+dem,capex_fix_metering,300,300,300,300
+dem,mntex_fix_metering,10,10,10,10
 dem,load_profile,dem_timeseries,dem_timeseries,dem_timeseries,dem_timeseries
 dem,consumption_yrl,10e6,10e6,10e6,10e6
 dem,system,ac,ac,ac,ac
@@ -63,13 +69,12 @@ pv,opex_spec,0,0,0,0
 pv,ls,25,25,25,25
 pv,ccr,1,1,1,1
 pv,eff_block,0.95,0.95,0.95,0.95
-pv,azimuth,optimal,optimal,optimal,optimal
-pv,tilt,optimal,optimal,optimal,optimal
+pv,azimuth,None,None,None,None
+pv,tilt,None,None,None,None
 pv,trackingtype,0,0,0,0
-pv,horizon,False,False,False,False
 pv,horizon_custom,None,None,None,None
-pv,raddatabase,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
-pv,pvtechchoice,crystSi,crytSi,crystSi,crystSi
+pv,database,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3,PVGIS-SARAH3
+pv,type_cell,crystSi,crytSi,crystSi,crystSi
 pv,mountingplace,free,free,free,free
 gen,size_preexisting_block,15000,15000,15000,15000
 gen,capex_preexisting_block,True,True,True,True
@@ -93,6 +98,8 @@ grid,invest_s2g,equal,equal,equal,equal
 grid,system,ac,ac,ac,ac
 grid,peakshaving,True,True,True,True
 grid,peak_period,year,year,year,year
+grid,peak_period_start,calendar,calendar,calendar,calendar
+grid,peak_period_measurement,15min,15min,15min,15min
 grid,peak_power_init,0,0,0,0
 grid,opex_spec_peak,0.01,0.01,0.01,0.01
 grid,capex_spec,0.1,0.1,0.1,0.1
@@ -117,6 +124,7 @@ ess,size_max_storage,None,None,None,None
 ess,invest_storage,True,True,True,False
 ess,system,dc,dc,dc,dc
 ess,res_only,False,False,False,False
+ess,balanced,True,True,True,True
 ess,aging,True,True,True,True
 ess,chemistry,lfp,lfp,lfp,lfp
 ess,temp_battery,25,25,pv,pv

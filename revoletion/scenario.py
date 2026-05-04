@@ -1,3 +1,4 @@
+import importlib
 import importlib.resources
 import logging
 import math
@@ -5,79 +6,21 @@ import warnings
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
-import holidays
 import numpy as np
 import numpy_financial as npf
 import pandas as pd
 import plotly.subplots
-import pytz
-from typing_extensions import Self
 
 import revoletion.data
+from revoletion import economics as eco
+from revoletion import energy
 
-from . import blocks, dispatch, scheduler, utils
-from . import economics as eco
+from . import blocks, dispatch, location, scheduler, time, utils
 from . import logger as logger_fcs
 
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclass
-class SimulationTimes:
-    sim: utils.TimeSettings
-    eval: utils.TimeSettings
-    prj: utils.TimeSettings
-
-    @classmethod
-    def create_from_plain(
-        cls,
-        timestep: utils.Timestep,
-        timezone: pytz.BaseTzInfo,
-        starttime: str,
-        sim_endtime: str,
-        sim_duration: str,
-        prj_duration: str,
-    ) -> Self:
-        starttime_timestamp = cls._convert_time_str(starttime, timestep, timezone)
-        if starttime_timestamp is None:
-            raise ValueError(f"Failed to convert starttime ({starttime}) to pd.Timestamp")
-
-        sim_endtime_timestamp = cls._convert_time_str(sim_endtime, timestep, timezone)
-
-        sim_duration_timedelta = utils.convert2timedelta(sim_duration, unit="day")
-
-        sim = utils.TimeSettings.create_from_start_timestamp(
-            start=starttime_timestamp,
-            timestep=timestep,
-            end=sim_endtime_timestamp,
-            duration=sim_duration_timedelta,
-        )
-        eval = utils.TimeSettings.create_from_start_timestamp(
-            start=starttime_timestamp,
-            timestep=timestep,
-            end=sim_endtime_timestamp,
-            duration=sim_duration_timedelta,
-        )
-        prj = utils.TimeSettings.create_from_start_timestamp(
-            start=starttime_timestamp,
-            timestep=timestep,
-            end=starttime_timestamp + pd.DateOffset(years=prj_duration),
-        )
-
-        return cls(sim=sim, eval=eval, prj=prj)
-
-    @staticmethod
-    def _convert_time_str(
-        time_str: str | None, timestep: utils.Timestep, timezone: pytz.BaseTzInfo
-    ) -> pd.Timestamp | None:
-        if time_str is None:
-            return None
-
-        # ToDo: reformat time
-        time_str = time_str if len(time_str) > 10 else time_str + " 00:00"
-        value = pd.to_datetime(time_str, format="%d.%m.%Y %H:%M").floor(timestep.td).tz_localize(timezone)
-        return value
 
 
 @dataclass
@@ -92,6 +35,8 @@ class SimulationPaths:
     data_persist: Path to the persistent data directory within the revoletion package
     summary_csv: Path to the summary CSV file
     summary_pkl: Path to the summary pickle file
+    cashflow_csv: Path to the cashflow CSV file
+    cashflow_pkl: Path to the cashflow pickle file
     status: Path to the status csv file
     dump: Path to the pyomo model
     log: Path to the log file
@@ -181,6 +126,14 @@ class SimulationPaths:
         return self.create_result_path(suffix="summary.pkl")
 
     @property
+    def cashflow_csv(self) -> Path:
+        return self.create_result_path(suffix="cashflow.csv")
+
+    @property
+    def cashflow_pkl(self) -> Path:
+        return self.create_result_path(suffix="cashflow.pkl")
+
+    @property
     def status(self) -> Path:
         return self.create_result_path(suffix="status.csv")
 
@@ -206,7 +159,7 @@ class Scenario:
         settings: ScenarioSettings,
         name: str,  # will be set to the stem of the scenario filename for single scenario execution
         parameters: pd.Series,
-        location: utils.Location,
+        location: location.Location,
         logger: logging.Logger | None = None,
     ):
         self.paths = paths
@@ -222,7 +175,7 @@ class Scenario:
         self.parameters = parameters
 
         if logger is None:
-            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+            self.logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
         else:
             self.logger = logger
 
@@ -253,9 +206,9 @@ class Scenario:
 
         self.currency = self.currency.upper()  # all other parameters are .lower()-ed
 
-        self.prj_duration_yrs = self.prj_duration
-        self.timestep = utils.Timestep.from_str(self.timestep)
-        self.times = SimulationTimes.create_from_plain(
+        self.timestep = time.Timestep.from_str(self.timestep)
+
+        self.times = time.SimulationTimes.create_from_plain(
             timestep=self.timestep,
             timezone=self.location.timezone,
             starttime=self.starttime,
@@ -264,17 +217,31 @@ class Scenario:
             prj_duration=self.prj_duration,
         )
 
-        for param in ["latitude", "longitude", "starttime", "sim_endtime", "sim_duration", "prj_duration"]:
+        # generate variables for calculations
+        self.eco_params = eco.params.EcoParams.from_simulation_times(
+            prj_duration_yrs=self.prj_duration,
+            discount_rate=self.wacc,
+            compensate_sim_prj=self.compensate_sim_prj,
+            times=self.times,
+            timestep=self.timestep,
+        )
+
+        for param in [
+            "latitude",
+            "longitude",
+            "starttime",
+            "sim_endtime",
+            "sim_duration",
+            "prj_duration",
+            "wacc",
+            "compensate_sim_prj",
+        ]:
             if hasattr(self, param):
                 delattr(self, param)
 
-        # generate variables for calculations
-        self.sim_yr_rat = self.times.sim.duration / pd.Timedelta(days=365)  # no leap years
-        self.sim_prj_rat = self.times.sim.duration / self.times.prj.duration
-
         if self.strategy == "rh":
-            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.td)
-            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.td)
+            self.len_ph = utils.convert2timedelta(self.len_ph, unit="hour").floor(self.timestep.freqstr)
+            self.len_ch = utils.convert2timedelta(self.len_ch, unit="hour").floor(self.timestep.freqstr)
         elif self.strategy in ["go"]:
             self.len_ph = self.times.sim.duration
             self.len_ch = self.times.sim.duration
@@ -290,31 +257,23 @@ class Scenario:
         self.nhorizons = math.ceil(self.times.sim.duration / self.len_ch)  # number of timeslices to run
         if not self.truncate_ph:
             # if PH is not truncated, the end of the last PH may be later than the end of the evaluation period
-            self.times.sim = utils.TimeSettings.create_from_start_timestamp(
+            self.times.sim = time.TimeFrame.create_from_start_timestamp(
                 start=self.times.sim.start,
                 timestep=self.timestep,
+                timezone=self.location.timezone,
                 duration=(self.len_ch * (self.nhorizons - 1) + self.len_ph),
             )
 
         # get holidays during simulation timeframe
-        years = range(min(self.times.eval.dti_extd).year, max(self.times.eval.dti_extd).year + 1)
-        try:
-            self.holiday_dates = sorted(
-                getattr(holidays, self.location.country)(years=years, state=self.location.state)
+        if self.consider_holidays:
+            self.holiday_dates = utils.get_holiday_dates(
+                dti=self.times.eval.dti_extd,
+                country=self.location.country,
+                state=self.location.state,
+                logger=self.logger,
             )
-        except:  # not for all countries the states are available (e.g. France)
-            try:
-                self.holiday_dates = sorted(getattr(holidays, self.location.country)(years=years))
-                self.logger.warning(
-                    f"Holidays for state {self.location.state} not available. "
-                    f"Country-wide holidays for {self.location.country} are used instead."
-                )
-            except AttributeError:  # not all countries worldwide are available
-                self.holiday_dates = []
-                self.logger.warning(
-                    f"Holidays for country {self.location.country} not available. "
-                    f"No public holidays are considered in this scenario."
-                )
+        else:
+            self.holiday_dates = []
 
         # region set air temperature
         temp_air = pd.Series(index=self.times.sim.dti, dtype=float)
@@ -337,7 +296,8 @@ class Scenario:
                     path_input_file=(
                         self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")
                     ),
-                    scenario=self,
+                    timezone=self.location.timezone,
+                    resampling_dti=self.times.sim.dti,
                 ).iloc[:, 0]
             except IndexError as exc:
                 raise IndexError(f"Failed to load air temperature timeseries data: {exc}")
@@ -352,21 +312,10 @@ class Scenario:
         # endregion
 
         # region initialize result variables
-        self.periods_prj = np.arange(0, self.prj_duration_yrs)
-        self.periods_prj_extd = np.arange(0, self.prj_duration_yrs + 1)  # add. year for salvage values
-        self.discount_factors = pd.DataFrame(
-            index=self.periods_prj_extd,
-            columns=["beginning", "mid", "end"],
-            data={
-                occ: eco.EcoTools.discount(
-                    future_value=1, periods=self.periods_prj_extd + 1, discount_rate=self.wacc, occurs_at=occ
-                )
-                for occ in ["beginning", "mid", "end"]
-            },
-            dtype="float64",
-        )
+        self.periods_prj = np.arange(0, self.eco_params.prj_duration_yrs)
+        self.periods_prj_extd = np.arange(0, self.eco_params.prj_duration_yrs + 1)  # add. year for salvage values
 
-        self.aggregator = eco.EcoAggregator(name="scenario", scenario=self)
+        self.aggregator = eco.Aggregator(name="scenario", prj_duration_yrs=self.eco_params.prj_duration_yrs)
         self.capex_preexisting_considered = 0
 
         self.block_registry = dict()
@@ -395,14 +344,12 @@ class Scenario:
             )
 
         self.objective_opt = None  # unused for rh strategy
-        self.energies = pd.DataFrame(
-            index=pd.MultiIndex.from_tuples(
-                tuples=[("renewable", "act"), ("sources", "pro"), ("sinks", "del")], names=["block", "key"]
-            ),
-            columns=["sim", "yrl", "prj", "dis"],
-            data=0,
-            dtype=float,
-        )
+
+        # ToDo: use default dict and override __missing__ method
+        self.energies = {
+            k: energy.EnergyAggregator(name=k, eco=self.eco_params)
+            for k in ["sources", "sinks", "renewable_act", "renewable_pot", "renewable_curt"]
+        }
 
         self.e_eta = None
         self.renewable_share = None
@@ -423,28 +370,6 @@ class Scenario:
 
         self.logger.debug("Scenario initialization completed")
 
-        # todo adapt to new fleet structure
-        # # check example parameter configuration of rulebased charging for validity
-        # if fleet_unlim := [fleet for fleet in self.block_registry.get('Fleet', {}).values() if
-        #                 (fleet.mode_scheduling in self.apriori_lvls)
-        #                 and fleet.mode_scheduling != 'uc'
-        #                 and not fleet.power_lim_static]:
-        #     if [block for block in self.blocks.values() if getattr(block, 'invest', False)]:
-        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-        #                          f'without static load management (lm_static) is not compatible'
-        #                          f' with size optimization')
-        #     if [block for block in self.blocks.values() if isinstance(block, blocks.StationaryBattery)]:
-        #         raise ValueError(f'Rulebased charging except for uncoordinated charging (uc) '
-        #                          f'without static load management (lm_static) is not implemented for systems with '
-        #                          f'stationary energy storage')
-        #     if len(set([cs.mode_scheduling for cs in cs_unlim])) > 1:
-        #         raise ValueError(f'All rulebased CommoditySystems with dynamic load management '
-        #                          f'have to follow the same strategy. Different strategies are not possible')
-        #     if cs_unlim[0].mode_scheduling == 'equal' and len(set([cs.bus_connected for cs in cs_unlim])) > 1:
-        #         raise ValueError(f'If strategy "equal" is chosen for CommoditySystems with'
-        #                          f' dynamic load management, all CommoditySystems with dynamic load management have to'
-        #                          f' be connected to the same bus')
-
     @classmethod
     def create_from_parameters(
         cls,
@@ -454,10 +379,12 @@ class Scenario:
         parameters: pd.Series,
         logger: logging.Logger | None = None,
     ) -> Self:
-        latitude = parameters.loc["scenario", "latitude"]
-        longitude = parameters.loc["scenario", "longitude"]
-        location = utils.Location.create_from_lat_lon(
-            latitude=latitude, longitude=longitude, logger=logger, geocode=False
+        loc = location.Location.create_from_lat_lon(
+            latitude=parameters.loc["scenario", "latitude"],
+            longitude=parameters.loc["scenario", "longitude"],
+            country=parameters.loc["scenario", "country"],
+            state=parameters.loc["scenario", "state"],
+            logger=logger,
         )
 
         return cls(
@@ -465,7 +392,7 @@ class Scenario:
             settings=settings,
             name=name,
             parameters=parameters,
-            location=location,
+            location=loc,
             logger=logger,
         )
 
@@ -491,7 +418,7 @@ class Scenario:
         # convert DataFrame to Series
         parameters_series = parameters.iloc[:, 0]
 
-        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"context_str": name})
+        scenario_logger = logger_fcs.ContextLoggerAdapter(_LOGGER, {"scenarioname": name})
 
         return cls.create_from_parameters(
             paths=paths, settings=settings, name=name, parameters=parameters_series, logger=scenario_logger
@@ -500,12 +427,17 @@ class Scenario:
     def process_results(self) -> None:
         for block in self.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()
+
         self.aggregator.aggregate()
+
+        for e in self.energies.values():
+            e.evaluate()
+
         self.calc_meta_results()
 
         if not self.settings.largescalemode:
             result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(
-                self.block_registry, self.times.sim
+                self.block_registry, self.times.eval
             )
             result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
             result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
@@ -515,34 +447,34 @@ class Scenario:
                 self.logger.info(msg)
 
     def calc_meta_results(self):
-        # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        if self.energies.loc[("sources", "pro"), "sim"] == 0:
+        e_sources_eval = self.energies["sources"].eval
+        if e_sources_eval == 0:
             self.logger.warning("Core efficiency calculation: division by zero")
-        else:
-            self.e_eta = self.energies.loc[("sinks", "del"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
-
-        if self.energies.loc[("sources", "pro"), "sim"] == 0:
+            self.e_eta = np.nan
             self.logger.warning("Renewable share calculation: division by zero")
+            self.renewable_share = np.nan
         else:
-            self.renewable_share = (
-                self.energies.loc[("renewable", "act"), "sim"] / self.energies.loc[("sources", "pro"), "sim"]
-            )
+            self.e_eta = self.energies["sinks"].eval / e_sources_eval
+            self.renewable_share = self.energies["renewable_act"].eval / e_sources_eval
 
-        if self.energies.loc[("sinks", "del"), "sim"] == 0:
+        e_sinks_dis = -1 * self.energies["sinks"].dis
+        if e_sinks_dis == 0:
             self.logger.warning("LCOE calculation: division by zero")
+            self.lcoe_total = np.inf
+            self.lcoe_wocs = np.inf
         else:
-            self.lcoe_total = self.aggregator.totex.dis / self.energies.loc[("sinks", "del"), "dis"]
+            self.lcoe_total = self.aggregator.totex.dis / e_sinks_dis
             self.lcoe_wocs = (
                 self.aggregator.totex.dis
-                -
-                # ToDo: check whether calculation of totex['dis'] of fleets is correct
-                sum([fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values()])
-            ) / self.energies.loc[("sinks", "del"), "dis"]
+                - sum(fleet.aggregator.totex.dis for fleet in self.block_registry.get("Fleet", {}).values())
+            ) / e_sinks_dis
 
         self.npc = self.aggregator.totex.dis
         self.npv = self.aggregator.value.dis
-        self.irr = npf.irr(self.aggregator.value.cashflows)
-        self.mirr = npf.mirr(self.aggregator.value.cashflows, self.wacc, self.wacc)
+        self.irr = npf.irr(self.aggregator.value.cashflow)
+        self.mirr = npf.mirr(
+            self.aggregator.value.cashflow, self.eco_params.discount_rate, self.eco_params.discount_rate
+        )
 
         # print basic results
         self.logger.info(
@@ -614,7 +546,11 @@ class Scenario:
             [
                 # get attributes of type int, float, bool and str for scenario.result_summary
                 pd.Series(
-                    {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool, str))}
+                    {
+                        key: value
+                        for key, value in self.__dict__.items()
+                        if isinstance(value, (int, float, bool, str, np.number))
+                    }
                 ),
                 # get dict of blocks with class names
                 pd.Series(
@@ -624,9 +560,9 @@ class Scenario:
                     ),
                 ),
                 # get energies dataframes results for scenario.result_summary
-                utils.create_results_from_dataframe(df=self.energies, name_prefix="energy"),
+                *[energy.result_summary for energy in self.energies.values()],
                 # get economic results for scenario.result_summary
-                self.aggregator.write_result_summary(),
+                self.aggregator.result_summary,
             ]
             + (extras if extras is not None else [])
         )
@@ -642,3 +578,22 @@ class Scenario:
 
         # convert result_summary to DataFrame and save to temporary file
         pd.DataFrame(result_summary, columns=[self.name]).to_pickle(self.paths.output / f"{self.name}_summary_temp.pkl")
+
+    def save_result_cashflow(self):
+        cashflows_scenario = self.aggregator.result_cashflow
+
+        cashflows_scenario.index = utils.add_index_level(
+            index=cashflows_scenario.index, level_name="block", level_value="scenario"
+        )
+
+        blocks_result_cashflows = blocks.CashflowCollectionBlockVisitor().collect_cashflow(self.block_registry)
+
+        result_cashflow = pd.concat([cashflows_scenario, *blocks_result_cashflows])
+
+        result_cashflow.index = utils.add_index_level(
+            index=result_cashflow.index,
+            level_name="scenario",
+            level_value=self.name,
+        )
+
+        result_cashflow.to_pickle(self.paths.output / f"{self.name}_cashflow_temp.pkl")

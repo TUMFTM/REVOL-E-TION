@@ -7,7 +7,7 @@ from functools import singledispatchmethod
 import pandas as pd
 from typing_extensions import Self
 
-from revoletion import blocks, utils
+from revoletion import blocks, time
 from revoletion import scenario as scn
 
 
@@ -46,8 +46,8 @@ class OptimizationResult(abc.ABC):
     def get_stored_energy(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> FloatOrTimeSeries: ...
 
     @singledispatchmethod
-    @abc.abstractmethod
-    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> FloatOrTimeSeries: ...
+    def get_opex(self, block: blocks.BaseBlock, dti: pd.DatetimeIndex) -> FloatOrTimeSeries:
+        return 0.0
 
     @singledispatchmethod
     @abc.abstractmethod
@@ -80,10 +80,12 @@ class OptimizationProblemConfig:
     """Whether captial investments should be enabled in the optimization."""
 
     warmstart: bool = False
+    """Cache the optimization model and problem to reduce the time for repeated optimizations. Only supported by PyPSA."""
 
     enforce_soc_constraints: bool = True
 
-    committment: bool = False
+    commitment: bool = False
+    """Whether unit commitment should be enabled in the optimization. Only supported by PyPSA."""
 
 
 class OptimizationProblem(abc.ABC):
@@ -100,7 +102,7 @@ class OptimizationProblem(abc.ABC):
     def from_revoletion_scenario(
         cls,
         scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
+        horizon: time.TimeFrame,
         logger: logging.Logger,
         config: OptimizationProblemConfig | None = None,
     ) -> Self:
@@ -111,7 +113,6 @@ class OptimizationProblem(abc.ABC):
         """
         ...
 
-    @abc.abstractmethod
     def set_input_power_unit(
         self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
     ) -> None:
@@ -129,7 +130,6 @@ class OptimizationProblem(abc.ABC):
         """
         ...
 
-    @abc.abstractmethod
     def set_output_power_unit(
         self, block: blocks.ElectricBlock, power_unit: float, dti: pd.DatetimeIndex, power_unit_buffer: float = 0.0
     ) -> None:

@@ -1,4 +1,5 @@
 import collections
+import logging
 from typing import Any, Literal
 
 import numpy as np
@@ -7,7 +8,7 @@ import oemof.solph as solph
 from typing_extensions import override
 
 import revoletion.optimization.constraints as constraints
-from revoletion import blocks, utils
+from revoletion import blocks, time
 from revoletion import scenario as scn
 
 _CHARGE_INCENTIVE_MULTIPLIER = -3  # Prioritize storage over curtailment
@@ -109,14 +110,17 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     _CORE_AC_BUS_NAME = "ac"
     _CORE_DC_BUS_NAME = "dc"
 
-    def __init__(self, scenario: scn.Scenario, horizon: utils.TimeSettings, cost_eps: float) -> None:
+    def __init__(
+        self, scenario: scn.Scenario, horizon: time.TimeFrame, cost_eps: float, logger: logging.Logger
+    ) -> None:
         self._scenario = scenario
         self._horizon = horizon
         self._cost_eps = cost_eps
+        self._logger = logger
 
     @classmethod
     def create_oemof_energy_system(
-        cls, scenario: scn.Scenario, horizon: utils.TimeSettings, cost_eps: float
+        cls, scenario: scn.Scenario, horizon: time.TimeFrame, cost_eps: float, logger: logging.Logger
     ) -> WrappedEnergySystem:
         """
         Factory method that constructs a complete oemof energy system from a scenario.
@@ -128,7 +132,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         """
         es = solph.EnergySystem(timeindex=horizon.dti, infer_last_interval=True)
         wrapped_es = WrappedEnergySystem(es, scenario)
-        visitor = cls(scenario, horizon, cost_eps)
+        visitor = cls(scenario, horizon, cost_eps, logger)
 
         # Logically the root node of the block structure is the system core, since any node is
         # connected to either its AC or DC bus. The oemof components of the core are therefore
@@ -153,18 +157,22 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
 
         :raises RuntimeError: If an unsupported block type is encountered.
         """
-
+        # Try to determine the bus the block should be connected to.
         # If the block has a specified system (i.e., "AC" or "DC") but no given bus it should
         # be connected to the relevant core bus.
         # This is usually the case for all top level blocks.
-        if hasattr(block, "system") and bus_connected is None:
-            bus_connected = self._get_core_bus(block.system, es)
+        if bus_connected is None:
+            block_system = getattr(block, "system", None)
+            if block_system is None:
+                self._logger.debug(f"Block {block.name} skipped since no connected bus could be determined")
+                return
 
-        if bus_connected is not None:
-            # If a bus is given or was previously determined, it should be linked, so the result processing can later access it easily.
-            es.link(block, "bus-connected", bus_connected)
-            # Also add the bus to the legacy `bus_connected` attribute for the constraints handling.
-            block.bus_connected = bus_connected
+            bus_connected = self._get_core_bus(block_system, es)
+
+        # If a bus is given or was previously determined, it should be linked, so the result processing can later access it easily.
+        es.link(block, "bus-connected", bus_connected)
+        # Also add the bus to the legacy `bus_connected` attribute for the constraints handling.
+        block.bus_connected = bus_connected
 
         match block:
             case blocks.SystemCore():
@@ -193,9 +201,14 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
     def _get_core_bus(self, system: Literal["ac", "dc"], es: WrappedEnergySystem) -> solph.Bus:
         system_core_block = self._scenario.block_registry["TopLevelBlock"]["core"]
         if system == "ac":
-            return es.get_component(system_core_block, self._CORE_AC_BUS_NAME)
+            bus = es.get_component(system_core_block, self._CORE_AC_BUS_NAME)
         else:
-            return es.get_component(system_core_block, self._CORE_DC_BUS_NAME)
+            bus = es.get_component(system_core_block, self._CORE_DC_BUS_NAME)
+
+        if not isinstance(bus, solph.Bus):
+            raise RuntimeError(f"Unexpected oemof node type for {system} bus: {type(bus)}")
+
+        return bus
 
     def visit_system_core(self, block: blocks.SystemCore, es: WrappedEnergySystem) -> None:
         """
@@ -209,64 +222,63 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         |<---acdc-x-|
         """
         ac_bus = solph.Bus(label=self._CORE_AC_BUS_NAME)
+        es.add(block, self._CORE_AC_BUS_NAME, ac_bus)
+
         dc_bus = solph.Bus(label=self._CORE_DC_BUS_NAME)
+        es.add(block, self._CORE_DC_BUS_NAME, dc_bus)
 
         acdc_converter = solph.components.Converter(
-            label=f"{block.name}-acdc",
+            label=_label(block, "acdc"),
             inputs={
                 ac_bus: solph.Flow(
                     nominal_capacity=solph.Investment(
-                        ep_costs=block.evaluators["acdc"].opt.spec_ep_invest,
+                        ep_costs=block.pois["acdc"].spec_ep_invest,
                         existing=block.sizes["acdc"].preexisting,
                         maximum=block.sizes["acdc"].expansion_max,
                     ),
-                    variable_costs=block.evaluators["acdc"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["acdc"].spec_ep_operation[self._horizon.dti],
                 )
             },
             outputs={dc_bus: solph.Flow(variable_costs=self._cost_eps)},
             conversion_factors={dc_bus: block.eff["acdc"]},
         )
+        es.add(block, "acdc", acdc_converter)
 
         dcac_converter = solph.components.Converter(
-            label=f"{block.name}-dcac",
+            label=_label(block, "dcac"),
             inputs={
                 dc_bus: solph.Flow(
                     nominal_capacity=solph.Investment(
-                        ep_costs=block.evaluators["dcac"].opt.spec_ep_invest,
+                        ep_costs=block.pois["dcac"].spec_ep_invest,
                         existing=block.sizes["dcac"].preexisting,
                         maximum=block.sizes["dcac"].expansion_max,
                     ),
-                    variable_costs=block.evaluators["dcac"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["dcac"].spec_ep_operation[self._horizon.dti],
                 )
             },
             outputs={ac_bus: solph.Flow(variable_costs=self._cost_eps)},
             conversion_factors={ac_bus: block.eff["dcac"]},
         )
-
-        es.add(block, self._CORE_AC_BUS_NAME, ac_bus)
-        es.add(block, self._CORE_DC_BUS_NAME, dc_bus)
-        es.add(block, "acdc", acdc_converter)
         es.add(block, "dcac", dcac_converter)
 
-        es.constraints.add_invest_costs(
-            invest=(ac_bus, acdc_converter),
-            capex_spec=block.evaluators["acdc"].capex.spec,
-            invest_type="flow",
+        es.constraints.add_invest_to_limitation(
+            flow=(ac_bus, acdc_converter),
+            capex_spec=block.pois["acdc"].capex.spec,
         )
 
-        es.constraints.add_invest_costs(
-            invest=(dc_bus, dcac_converter),
-            capex_spec=block.evaluators["dcac"].capex.spec,
-            invest_type="flow",
+        es.constraints.add_invest_to_limitation(
+            flow=(dc_bus, dcac_converter),
+            capex_spec=block.pois["dcac"].capex.spec,
         )
 
         if block.expansion_equal:
             # add a tuple of tuples to the list of equal variables of the scenario
             es.constraints.add_equal_invests(
-                [
-                    {"in": dc_bus, "out": dcac_converter},
-                    {"in": ac_bus, "out": acdc_converter},
-                ]
+                key=(block.name, "invest"),
+                invests=[
+                    (dc_bus, dcac_converter),
+                    (ac_bus, acdc_converter),
+                ],
             )
 
     def visit_renewable_source(
@@ -282,7 +294,8 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
           |                   |-->name_exc
         """
 
-        bus_internal = solph.Bus(label=f"{block.name}-bus")
+        bus_internal = solph.Bus(label=_label(block, "bus"))
+        es.add(block, "bus", bus_internal)
 
         outflow_converter = solph.components.Converter(
             label=_label(block, "outflow"),
@@ -290,33 +303,33 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             outputs={bus_connected: solph.Flow()},
             conversion_factors={bus_connected: block.eff["block"]},
         )
+        es.add(block, "outflow", outflow_converter)
 
+        # Curtailment has to be disincentivized in the optimization to force optimizer to charge storage or commodities
+        # instead of curtailment. 2x cost_eps is required as SystemCore also has ccost_eps in charging direction.
+        # All other components such as converters and storages only have cost_eps in the output direction.
         exc = solph.components.Sink(label=_label(block, "exc"), inputs={bus_internal: solph.Flow()})
+        es.add(block, "exc", exc)
 
         src = solph.components.Source(
             label=_label(block, "src"),
             outputs={
                 bus_internal: solph.Flow(
                     nominal_capacity=solph.Investment(
-                        ep_costs=block.evaluators["block"].opt.spec_ep_invest,
+                        ep_costs=block.pois["block"].spec_ep_invest,
                         existing=block.sizes["block"].preexisting,
                         maximum=block.sizes["block"].expansion_max,
                     ),
                     fix=block.data.loc[self._horizon.dti, "power_spec"],
-                    variable_costs=block.evaluators["block"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["block"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
-
-        es.add(block, "bus", bus_internal)
-        es.add(block, "outflow", outflow_converter)
-        es.add(block, "exc", exc)
         es.add(block, "src", src)
 
-        es.constraints.add_invest_costs(
-            invest=(src, bus_internal),
-            capex_spec=block.evaluators["block"].capex.spec,
-            invest_type="flow",
+        es.constraints.add_invest_to_limitation(
+            flow=(src, bus_internal),
+            capex_spec=block.pois["block"].capex.spec,
         )
 
     def visit_fixed_demand(self, block: blocks.FixedDemand, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
@@ -358,19 +371,18 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             outputs={
                 bus_connected: solph.Flow(
                     nominal_capacity=solph.Investment(
-                        ep_costs=block.evaluators["block"].opt.spec_ep_invest,
+                        ep_costs=block.pois["block"].spec_ep_invest,
                         existing=block.sizes["block"].preexisting,
                         maximum=block.sizes["block"].expansion_max,
                     ),
-                    variable_costs=block.evaluators["block"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["block"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
         es.add(block, "src", src)
-        es.constraints.add_invest_costs(
-            invest=(src, bus_connected),
-            capex_spec=block.evaluators["block"].capex.spec,
-            invest_type="flow",
+        es.constraints.add_invest_to_limitation(
+            flow=(src, bus_connected),
+            capex_spec=block.pois["block"].capex.spec,
         )
 
     def visit_grid_connection(
@@ -383,32 +395,31 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
 
         bus_connected          name_bus
           |                        |
-          |---name_inflow_1--x---->|
-          |<--name_outflow_1--x----|
-          |                        |---(GridMarket Instance)
-          |---name_inflow_2--x---->|
-          |<--name_outflow_2--x----|
+          |---name_inflow----x---->|---(GridMarket Instance)
+          |<--name_outflow----x----|          ...
+          |                        |
           |                        |---(GridMarket Instance)
 
-                     ...
 
-          |---name_inflow_n--x---->|
-          |<--name_outflow_n--x----|
+               peak_bus_in              peak_bus_out
+                    |                        |
+                    |--->storage_period_1--->|
+        peak_src--->|           ...          |--->peak_snk
+                    |                        |
+                    |--->storage_period_n--->|
+                    |                        |
         """
 
         bus_internal = solph.Bus(label=_label(block, "bus"))
         es.add(block, "bus", bus_internal)
 
-        # Inflow (Grid -> System)
-        inflow_1 = solph.components.Converter(
-            label=_label(block, "inflow_1"),
-            # Peakshaving not implemented for feed-in into grid
+        inflow_converter = solph.components.Converter(
+            label=_label(block, "inflow"),
             inputs={bus_connected: solph.Flow()},
-            # Size optimization
             outputs={
                 bus_internal: solph.Flow(
                     nominal_capacity=solph.Investment(
-                        ep_costs=block.evaluators["s2g"].opt.spec_ep_invest,
+                        ep_costs=block.pois["s2g"].spec_ep_invest,
                         existing=block.sizes["s2g"].preexisting,
                         maximum=block.sizes["s2g"].expansion_max,
                     ),
@@ -417,83 +428,41 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             },
             conversion_factors={bus_internal: 1},
         )
-        es.add(block, "inflow_1", inflow_1)
-        # For compatibility with `CustomConstraints` the inflows must be saved on the block.
-        block.inflows = {f"{block.name}_inflow_1": inflow_1}
+        es.add(block, "inflow", inflow_converter)
 
-        # Outflows
-        outflows = {}
-        equal_investments = []
-
-        first_period = block.peak_periods.index[0]
-
-        for period in block.peak_periods.index:
-            assign_invest_costs = period == first_period
-            outflow = solph.components.Converter(
-                label=_label(block, f"outflow_{period}"),
-                # Size optimization: investment costs are assigned to first peakshaving interval only. The application of
-                # constraints ensures that the optimized grid connection sizes of all peakshaving intervals are equal
-                inputs={
-                    bus_internal: solph.Flow(
-                        nominal_capacity=solph.Investment(
-                            ep_costs=(block.evaluators["g2s"].opt.spec_ep_invest if assign_invest_costs else 0),
-                            existing=block.sizes["g2s"].preexisting,
-                            maximum=block.sizes["g2s"].expansion_max,
-                        )
+        outflow_converter = solph.components.Converter(
+            label=_label(block, "outflow"),
+            inputs={
+                bus_internal: solph.Flow(
+                    nominal_capacity=solph.Investment(
+                        ep_costs=block.pois["g2s"].spec_ep_invest,
+                        existing=block.sizes["g2s"].preexisting,
+                        maximum=block.sizes["g2s"].expansion_max,
                     )
-                },
-                # Peakshaving
-                outputs={
-                    bus_connected: solph.Flow(
-                        nominal_capacity=(
-                            solph.Investment(
-                                ep_costs=(block.evaluators[period].opt.spec_ep_peak if block.peakshaving else 0),
-                                existing=block.peak_periods.loc[period, "power"],
-                            )
-                        ),
-                        max=(block.bus_activation.loc[self._horizon.dti, period]),
-                    )
-                },
-                conversion_factors={bus_connected: 1},
-            )
-
-            es.add(block, f"outflow_{period}", outflow)
-            outflows[f"{block.name}_outflow_{period}"] = outflow
-
-            if assign_invest_costs:
-                es.constraints.add_invest_costs(
-                    invest=(
-                        bus_internal,
-                        outflow,
-                    ),
-                    capex_spec=block.evaluators["g2s"].capex.spec,
-                    invest_type="flow",
                 )
-
-            equal_investments.append({"in": bus_internal, "out": outflow})
-
-        # For compatibility with `CustomConstraints` the outflows must be saved on the block.
-        block.outflows = outflows
-
-        # If size of in- and outflow from and to the grid have to be the same size, add outflow investment(s)
-        if block.expansion_equal:
-            equal_investments.append(
-                {
-                    "in": inflow_1,
-                    "out": bus_internal,
-                }
-            )  # currently only works without peakshaving for inflows
-
-        # add list of variables to the scenario constraints if list contains more than one element
-        # lists with one element occur, if peakshaving is deactivated and grid sizes don't have to be equal
-        if len(equal_investments) > 1:
-            es.constraints.add_equal_invests(equal_investments)
-
-        es.constraints.add_invest_costs(
-            invest=(inflow_1, bus_internal),
-            capex_spec=block.evaluators["s2g"].capex.spec,
-            invest_type="flow",
+            },
+            outputs={bus_connected: solph.Flow()},
+            conversion_factors={bus_connected: 1},
         )
+
+        es.add(block, "outflow", outflow_converter)
+        es.constraints.add_invest_to_limitation(
+            flow=(inflow_converter, bus_internal),
+            capex_spec=block.pois["s2g"].capex.spec,
+        )
+        es.constraints.add_invest_to_limitation(
+            flow=(bus_internal, outflow_converter),
+            capex_spec=block.pois["g2s"].capex.spec,
+        )
+
+        if block.expansion_equal:
+            es.constraints.add_equal_invests(
+                key=(block.name, "invest"),
+                invests=[
+                    (inflow_converter, bus_internal),
+                    (bus_internal, outflow_converter),
+                ],
+            )
 
         for subblock in block.subblocks.values():
             if not isinstance(subblock, blocks.GridMarket):
@@ -502,6 +471,76 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                 )
 
             self.visit_block(subblock, es, bus_connected=bus_internal)
+
+        # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection.
+        # This ensures that all power being bought or sold has to reach the local energy system and avoids unlimited
+        # trading with energy on the different markets without any power limitations.
+        # As this model focuses on modeling a local energy system, trading without any physical power flow is not allowed.
+        es.constraints.add_equal_flows(
+            key=(block.name, "s2g"),
+            flow1=(inflow_converter, bus_internal),
+        )
+
+        es.constraints.add_equal_flows(
+            key=(block.name, "g2s"),
+            flow1=(bus_internal, outflow_converter),
+        )
+
+        if not block.peakshaving:
+            return
+
+        # peak shaving
+        # ToDo: limit possible timesteps: enforce period_measurement % scenario.timestep == 0 if period_measurement < scenario.timestep
+        peak_bus_in = solph.Bus(label=_label(block, "peak_bus_in"))
+        es.add(block, "peak_bus_in", peak_bus_in)
+
+        peak_bus_out = solph.Bus(label=_label(block, "peak_bus_out"))
+        es.add(block, "peak_bus_out", peak_bus_out)
+
+        peak_src = solph.components.Source(outputs={peak_bus_in: solph.Flow()})
+        es.add(block, "peak_src", peak_src)
+
+        peak_snk = solph.components.Sink(inputs={peak_bus_out: solph.Flow()})
+        es.add(block, "peak_snk", peak_snk)
+
+        def create_storage(period):
+            activation = block.peak_periods_activation.loc[self._horizon.dti_extd, period.label]
+            flush = block.peak_periods_storage_flush.loc[self._horizon.dti]
+            soc_limit = block.peak_periods_soc_limit.loc[self._horizon.dti_extd]
+            return solph.components.GenericStorage(
+                inputs={peak_bus_in: solph.Flow()},
+                outputs={
+                    peak_bus_out: solph.Flow(
+                        maximum=flush * activation,
+                        nominal_capacity=solph.Investment(),
+                    )
+                },
+                nominal_capacity=solph.Investment(
+                    ep_costs=block.pois[period.label].spec_ep_peak / block.peak_period_measurement.hours,
+                    existing=period.peak_power,
+                ),
+                # use max c-rate to force storage sizing also for measurement duration <= simulation timestep
+                invest_relation_output_capacity=1 / self._horizon.timestep.hours,  # empty in single timestep
+                initial_storage_level=0.0,
+                max_storage_level=(soc_limit * activation),
+                balanced=False,
+            )
+
+        block.peak_storages = {
+            period.label: create_storage(period=period)
+            for period in block.peak_periods[
+                # only consider intervals which are used in the horizon's simulation period
+                (block.peak_periods["start"] < self._horizon.end) & (block.peak_periods["end"] > self._horizon.start)
+            ].itertuples(index=False)
+        }
+        for peak_storage_label, peak_storage in block.peak_storages.items():
+            es.add(block, peak_storage_label, peak_storage)
+
+        es.constraints.add_equal_flows(
+            key=(block.name, "peakshaving"),
+            flow1=(bus_internal, outflow_converter),
+            flow2=(peak_src, peak_bus_in),
+        )
 
     def visit_grid_market(self, block: blocks.GridMarket, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
         """
@@ -519,10 +558,11 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                 bus_connected: solph.Flow(
                     nominal_capacity=block.pwr_g2s,
                     max=1 if block.pwr_g2s else None,
-                    variable_costs=block.evaluators["g2s"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["g2s"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
+        es.add(block, "src", src)
 
         snk = solph.components.Sink(
             label=_label(block, "snk"),
@@ -530,13 +570,22 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                 bus_connected: solph.Flow(
                     nominal_capacity=block.pwr_s2g,
                     max=1 if block.pwr_s2g else None,
-                    variable_costs=block.evaluators["s2g"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["s2g"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
-
-        es.add(block, "src", src)
         es.add(block, "snk", snk)
+
+        # Disallow virtual arbitrage. GridMarket's power flows have to flow through the local energy system.
+        es.constraints.add_equal_flows(
+            key=(block.parent.name, "s2g"),
+            flow2=(bus_connected, snk),
+        )
+
+        es.constraints.add_equal_flows(
+            key=(block.parent.name, "g2s"),
+            flow2=(src, bus_connected),
+        )
 
     def visit_stationary_battery(
         self, block: blocks.StationaryBattery, es: WrappedEnergySystem, bus_connected: solph.Bus
@@ -563,7 +612,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             "outflow_fix": None,
             "invest_relation_input_capacity": block.crate_chg,
             "invest_relation_output_capacity": block.crate_dis,
-            "storage_balanced": True if self._scenario.strategy == "go" else False,
+            "storage_balanced": block.balanced if self._scenario.strategy == "go" else False,
         }
         self._visit_storage_block(block, es, bus_connected, params)
 
@@ -582,26 +631,28 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
           |                     |   (CombustionVehicle Instance)
         """
 
-        bus = solph.Bus(label=_label(block, "bus"))
+        bus_internal = solph.Bus(label=_label(block, "bus"))
+        es.add(block, "bus", bus_internal)
 
-        inflow = solph.components.Converter(
+        inflow_converter = solph.components.Converter(
             label=_label(block, "inflow"),
             inputs={
                 bus_connected: solph.Flow(
-                    variable_costs=block.evaluators["s2f"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["s2f"].spec_ep_operation[self._horizon.dti],
                     nominal_capacity=block.pwr_lim_s2f,
                     # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
                 )
             },
-            outputs={bus: solph.Flow()},
-            conversion_factors={bus: 1},
+            outputs={bus_internal: solph.Flow()},
+            conversion_factors={bus_internal: 1},
         )
+        es.add(block, "inflow", inflow_converter)
 
-        outflow = solph.components.Converter(
+        outflow_converter = solph.components.Converter(
             label=_label(block, "outflow"),
             inputs={
-                bus: solph.Flow(
-                    variable_costs=block.evaluators["f2s"].opt.spec_ep_operation[self._horizon.dti],
+                bus_internal: solph.Flow(
+                    variable_costs=block.pois["f2s"].spec_ep_operation[self._horizon.dti],
                     nominal_capacity=block.pwr_lim_f2s,
                     # default value for max is 1; not explicitly set to ensure compatibility with nominal_capacity=None
                 )
@@ -609,9 +660,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             outputs={bus_connected: solph.Flow(variable_costs=self._cost_eps)},
             conversion_factors={block.bus_connected: 1},
         )
-        es.add(block, "bus", bus)
-        es.add(block, "inflow", inflow)
-        es.add(block, "outflow", outflow)
+        es.add(block, "outflow", outflow_converter)
 
         for subblock in block.subblocks.values():
             if not isinstance(subblock, blocks.SubFleet):
@@ -619,7 +668,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                     f"Expected each fleet subblock to be of type {type(blocks.SubFleet)} but got {type(subblock)}"
                 )
 
-            self.visit_block(subblock, es, bus_connected=bus)
+            self.visit_block(subblock, es, bus_connected=bus_internal)
 
     def visit_sub_fleet(self, block: blocks.SubFleet, es: WrappedEnergySystem, bus_connected: solph.Bus) -> None:
         for subblock in block.subblocks.values():
@@ -645,6 +694,18 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         :param es: The energy system to which the components of the block are added.
         :param bus_connected: The `Fleet` bus, the `ElectricFleetUnit` should be attached to.
         """
+        # region calc minimum soc targets before usage and max soc for myopic optimization
+        dsoc_ph = block.log.loc[self._horizon.dti, "dsoc"]
+        # ensure long tours (> prediction horizon) have enough SOC to fulfil it
+        if (block.scenario.strategy == "rh") and (block.mode_scheduling == "oc"):
+            soc_min_hor = dsoc_ph.mask(cond=dsoc_ph > 0, other=dsoc_ph + block.dsoc_buffer).clip(
+                lower=block.states.loc[self._horizon.dti_extd, "soc_min"],
+                upper=block.states.loc[self._horizon.dti_extd, "soc_max"],
+            )
+        else:  # a priori or global optimization
+            soc_min_hor = block.states.loc[self._horizon.dti_extd, "soc_min"]
+        block.states.update({"soc_min": soc_min_hor.astype("float64")})
+        # endregion
 
         params = {
             "inflow_nominal_capacity": block.pwr_chg_max,
@@ -663,8 +724,10 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             label=_label(block, "snk"),
             inputs={bus_internal: solph.Flow(nominal_capacity=1, fix=block.log.loc[self._horizon.dti, "consumption"])},
         )
+        es.add(block, "snk", snk)
 
         bus_ext_ac = solph.Bus(label=_label(block, "bus_ext_ac"))
+        es.add(block, "bus_ext_ac", bus_ext_ac)
 
         src_ext_ac = solph.components.Source(
             label=_label(block, "src_ext_ac"),
@@ -673,10 +736,11 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                     nominal_capacity=block.pwr_ext_ac_max,
                     max=None if block.apriori else block.log.loc[self._horizon.dti, "atac"].astype(int),
                     fix=block.flows_apriori.loc[self._horizon.dti, "p_ext_ac_chg"] if block.apriori else None,
-                    variable_costs=block.evaluators["ext_ac"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["ext_ac"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
+        es.add(block, "src_ext_ac", src_ext_ac)
 
         conv_ext_ac = solph.components.Converter(
             label=_label(block, "conv_ext_ac"),
@@ -684,8 +748,10 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             outputs={bus_internal: solph.Flow()},
             conversion_factors={bus_internal: block.eff["chg_ac"]},
         )
+        es.add(block, "conv_ext_ac", conv_ext_ac)
 
         bus_ext_dc = solph.Bus(label=_label(block, "bus_ext_dc"))
+        es.add(block, "bus_ext_dc", bus_ext_dc)
 
         src_ext_dc = solph.components.Source(
             label=_label(block, "src_ext_dc"),
@@ -694,10 +760,11 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
                     nominal_capacity=block.pwr_ext_dc_max,
                     max=None if block.apriori else block.log.loc[self._horizon.dti, "atdc"].astype(int),
                     fix=block.flows_apriori.loc[self._horizon.dti, "p_ext_dc_chg"] if block.apriori else None,
-                    variable_costs=block.evaluators["ext_dc"].opt.spec_ep_operation[self._horizon.dti],
+                    variable_costs=block.pois["ext_dc"].spec_ep_operation[self._horizon.dti],
                 )
             },
         )
+        es.add(block, "src_ext_dc", src_ext_dc)
 
         conv_ext_dc = solph.components.Converter(
             label=_label(block, "conv_ext_dc"),
@@ -705,18 +772,24 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             outputs={bus_internal: solph.Flow()},
             conversion_factors={bus_internal: 1},  # billed energy is already dc in external dc charging
         )
-
-        es.add(block, "snk", snk)
-
-        # External AC charging.
-        es.add(block, "bus_ext_ac", bus_ext_ac)
-        es.add(block, "src_ext_ac", src_ext_ac)
-        es.add(block, "conv_ext_ac", conv_ext_ac)
-
-        # External DC charging.
-        es.add(block, "bus_ext_dc", bus_ext_dc)
-        es.add(block, "src_ext_dc", src_ext_dc)
         es.add(block, "conv_ext_dc", conv_ext_dc)
+
+        # TODO: Since the constraint is applied for the EFU we need to somehow access
+        # the nodes of the storage block.
+        # Currently, this works with the labels, but maybe this can be solved cleaner.
+        storage = es.get_component(block, "storage")
+        inflow_converter = es.get_component(block, "inflow")
+        # Ensure that charged energy always flows into the storage and not directly to the ElectricFleetUnit's sink
+        # This may happen for on-route charging (simultaneous charging and driving)
+        es.constraints.add_equal_flows(
+            key=(block.name, "charging"),
+            flow1=(bus_internal, storage),
+            flows2=[
+                (inflow_converter, bus_internal),
+                (conv_ext_ac, bus_internal),
+                (conv_ext_dc, bus_internal),
+            ],
+        )
 
     def _visit_storage_block(
         self, block: blocks.StorageBlock, es: WrappedEnergySystem, bus_connected: solph.Bus, params: dict[str, Any]
@@ -733,6 +806,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
         """
 
         bus_internal = solph.Bus(label=_label(block, "bus"))
+        es.add(block, "bus", bus_internal)
 
         inflow = solph.components.Converter(
             label=_label(block, "inflow"),
@@ -751,6 +825,7 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             },
             conversion_factors={bus_internal: block.eff["chg_int"]},
         )
+        es.add(block, "inflow", inflow)
 
         outflow = solph.components.Converter(
             label=_label(block, "outflow"),
@@ -766,13 +841,19 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             },
             conversion_factors={bus_connected: block.eff["dis_int"]},
         )
+        es.add(block, "outflow", outflow)
 
         storage = solph.components.GenericStorage(
             label=_label(block, "storage"),
             inputs={
-                bus_internal: solph.Flow(variable_costs=block.evaluators["in"].opt.spec_ep_operation[self._horizon.dti])
+                bus_internal: solph.Flow(
+                    nominal_capacity=solph.Investment(),
+                    variable_costs=block.pois["in"].spec_ep_operation[self._horizon.dti],
+                ),
             },
-            outputs={bus_internal: solph.Flow(variable_costs=self._cost_eps)},
+            outputs={
+                bus_internal: solph.Flow(nominal_capacity=solph.Investment(), variable_costs=self._cost_eps),
+            },
             loss_rate=block.loss_rate_per_hour,
             balanced=params["storage_balanced"],
             initial_storage_level=block.states.loc[self._horizon.start, ["soc", "soc_min", "soc_max"]].median(),
@@ -782,23 +863,18 @@ class OemofBlockVisitor(blocks.BlockVisitor[None]):
             inflow_conversion_factor=np.sqrt(block.eff["storage_roundtrip"]),
             outflow_conversion_factor=np.sqrt(block.eff["storage_roundtrip"]),
             nominal_capacity=solph.Investment(
-                ep_costs=block.evaluators["storage"].opt.spec_ep_invest,
+                ep_costs=block.pois["storage"].spec_ep_invest,
                 existing=block.sizes["storage"].preexisting,
                 maximum=block.sizes["storage"].expansion_max,
             ),
             max_storage_level=block.states.loc[self._horizon.dti_extd, "soc_max"],
             min_storage_level=block.states.loc[self._horizon.dti_extd, "soc_min"],
         )
-
-        es.add(block, "bus", bus_internal)
-        es.add(block, "inflow", inflow)
-        es.add(block, "outflow", outflow)
         es.add(block, "storage", storage)
 
-        es.constraints.add_invest_costs(
-            invest=(storage,),
-            capex_spec=block.evaluators["storage"].capex.spec,
-            invest_type="storage",
+        es.constraints.add_invest_to_limitation(
+            storage=storage,
+            capex_spec=block.pois["storage"].capex.spec,
         )
 
         return bus_internal

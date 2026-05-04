@@ -54,7 +54,9 @@ class ScenarioModel(RevoletionBaseModel):
     timestep: str = Field(
         title="Time step",
         description="Time step used for the simulation",
-        json_schema_extra={"valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min or 1H."},
+        json_schema_extra={
+            "valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D."
+        },
     )
     sim_duration: int | str | None = Field(
         title="Project duration",
@@ -66,7 +68,7 @@ class ScenarioModel(RevoletionBaseModel):
     )
     sim_endtime: str | None = Field(
         title="Simulation end time",
-        description="End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None.",
+        description="End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. The timestep starting at the provided time is not part of the simulation. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None.",
         json_schema_extra={
             "valid_values_or_format": "'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None",
             "not_required_for": "`sim_duration` is given",
@@ -130,10 +132,24 @@ class ScenarioModel(RevoletionBaseModel):
         le=90,
     )
     longitude: float = Field(
-        title="Longitude ",
+        title="Longitude",
         description="Longitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84",
         ge=-90,
         le=90,
+    )
+    country: str | None = Field(
+        title="Country ",
+        description="Country of the location of the local energy system in ISO3166-1 alpha-2 format. If not given, REVOL-E-TION tries to infer the value from the provided coordinates.",
+        json_schema_extra={"valid_values_or_format": "'str', e.g. 'DE', 'US' or or None"},
+    )
+    state: str | None = Field(
+        title="State",
+        description="State of the country in ISO3166-2 format. If neither country nor state are given, REVOL-E-TION tries to infer the value from the provided coordinates. If country is given, but state is not, state will be neglected.",
+        json_schema_extra={"valid_values_or_format": "'str', e.g. 'EUR', 'USD' or None"},
+    )
+    consider_holidays: bool | None = Field(
+        title="Consider holidays",
+        description="Consider public holidays. This affects standard load profile generation and mobility sampling.",
     )
     temp_air: float | str | None = Field(
         title="Air temperature",
@@ -290,11 +306,25 @@ class FixedDemandModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
+    capex_preexisting_metering: bool = Field(
+        title="Consideration of preexisting metering capital expensditures",
+        description="Consider existing metering and operational capex in cost calculation.",
+    )
+    capex_fix_metering: float = Field(
+        ge=0.0,
+        title="Fixed capital expenditures for metering infrastructure",
+        description="Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand",
+    )
+    mntex_fix_metering: float = Field(
+        ge=0.0,
+        title="Fixed maintenance expenditures for metering infrastructure and operations",
+        description="Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand",
+    )
     load_profile: str = Field(
         title="Load Profile",
         description="Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W",
         json_schema_extra={
-            "valid_values_or_format": "string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2'}"
+            "valid_values_or_format": "string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'}"
         },
     )
     consumption_yrl: float = Field(
@@ -386,40 +416,36 @@ class PVSourceModel(RevoletionBaseModel):
         ge=0,
         le=1,
     )
-    azimuth: float | str | None = Field(
+    azimuth: float | None = Field(
         title="Surface azimuth",
-        description="Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. 'optimal' -> 180 for northern hemisphere with trackingtype 0, else 0. For 'PVGIS API' 'optimal' is only valid in combination with tilt is set to 'optimal'. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None.",
-        json_schema_extra={"valid_values_or_format": "[0, 360[ or 'optimal' or None."},
+        description="Clockwise from north (north=0, east=90, south=180, west=270). Ignored for tracking systems. Only considered if any API or 'Solcast file' is specified in data_source. None is equal to energy yield optimum.",
+        json_schema_extra={"valid_values_or_format": "[0, 360[ or None."},
     )
-    tilt: float | str | None = Field(
+    tilt: float | None = Field(
         title="Surface tilt angle",
-        description="Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. If 'optimal' is chosen, the tilt angle is set to the specified latitude. To preserve the original orientation of a 'Solcast File', set azimuth and tilt to None.",
-        json_schema_extra={"valid_values_or_format": "[0, 90] or 'optimal' or None"},
+        description="Tilt angle from horizontal plane. Ignored for two-axis tracking. Horizontal=0, Vertical=90. Only considered if any API or 'Solcast file' is specified in data_source. None sets the tilt angle to the specified location's latitude.",
+        json_schema_extra={"valid_values_or_format": "[0, 90] or None"},
     )
     trackingtype: int | None = Field(
         title="Tracking type",
         description="Type of sun tracking. 0=fixed, 1=single horizontal axis aligned north-south, 2=two-axis tracking, 3=vertical axis tracking, 4=single horizontal axis aligned east-west, 5=single inclined axis aligned north-south. For data_source 'Solcast API' only 0 and 1 are valid. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
         json_schema_extra={"valid_values_or_format": "0, 1, 2, 3, 4, 5"},
     )
-    horizon: bool = Field(
-        title="Consideration of a horizon",
-        description="Include effects of a precalculated horizon. Uses PVGIS built-in information for data_source set to 'PVGIS API' and surrounding terrain from a 150m-horizontal-resolution elevation model for 'Solcast API'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'",
-    )
     horizon_custom: list[float] | None = Field(
         title="User horizon",
-        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API' and 'Solcast API'.",
+        description="Optional user specified elevation of horizon in degrees for 'PVGIS API', at equally spaced angular positions starting clockwise from north. Only valid if horizon is True. Not possible in combination with activated azimuth or tilt set to 'optimal'. Ignored for any other data_source than 'PVGIS API'.",
         json_schema_extra={
             "valid_values_or_format": 'list of floats (has to be specified surrounded by " ") e.g. "[45, 30, 0, 0]" or None'
         },
     )
-    raddatabase: str | None = Field(
+    database: str | None = Field(
         title="Radiation database",
         description="Name of the radiation database for 'PVGIS-API'. Dependent on location and chosen simulation timeframe. 'PVGIS-SARAH' for Europe, Africa and Asia or 'PVGIS-NSRDB' for the Americas between 60°N and 20°S, 'PVGIS-ERA5' and 'PVGIS-COSMO' for Europe (including high-latitudes), and 'PVGIS-CMSAF' for Europe and Africa (will be deprecated).",
         json_schema_extra={
             "valid_values_or_format": "'PVGIS-SARAH2', 'PVGIS-SARAH3', 'PVGIS-NSRDB', 'PVGIS-ERA5', 'PVGIS-COSMO', 'PVGIS-CMSAF'"
         },
     )
-    pvtechchoice: str = Field(
+    type_cell: str = Field(
         "Unkown",
         title="PV technology",
         description="PV technology for 'PVGIS API'.",
@@ -623,8 +649,19 @@ class GridConnectionModel(RevoletionBaseModel):
         title="Activation of peak shaving",
         description="Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here.",
     )
-    peak_period: Literal["day", "week", "month", "year", "quarter"] = Field(
+    peak_period: Literal["day", "week", "month", "quarter", "year"] = Field(
         title="Peak power cost period", description="Peak power cost period."
+    )
+    peak_period_start: Literal["calendar", "simulation"] = Field(
+        title="Peak power cost period start",
+        description="Start of the peak power periods. If 'calendar' is chosen, peak periods start at the beginning of the calendar period (e.g. at 01/01 for yearly peak periods). If 'simulation' is chosen, the first peak period starts at the simulation start time.",
+    )
+    peak_period_measurement: str = Field(
+        title="Peak power measurement period",
+        description="Measurement period for the peak power. To determine the peak power the mean power of this measurement period is used.",
+        json_schema_extra={
+            "valid_values_or_format": "Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D."
+        },
     )
     peak_power_init: float = Field(
         title="Initial peak power",
@@ -736,6 +773,10 @@ class StationaryBatteryModel(RevoletionBaseModel):
     res_only: bool = Field(
         title="Renewable energy sources only",
         description="If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter.",
+    )
+    balanced: bool = Field(
+        title="Balanced Storage Content",
+        description="If activated, the storage's energy content at the start of the simulation has to be identical to the energy content at the end of the simulation. The parameter is neglected for Rolling Horizon optimization.",
     )
     aging: bool = Field(
         title="Consideration of battery aging",

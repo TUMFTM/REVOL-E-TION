@@ -1,24 +1,14 @@
-import importlib.resources
-import revoletion.example
-from revoletion.utils import (
-    UNKNOWN_VERSION,
-    get_current_project_git_commit_hash,
-    get_revoletion_python_package_version,
-    read_scenario_from_file,
-)
+from pathlib import Path
 
-
-def test_get_current_project_git_commit_hash():
-    commit_hash = get_current_project_git_commit_hash()
-    assert commit_hash != UNKNOWN_VERSION
+from revoletion import utils
 
 
 def test_get_revoletion_python_package_version():
-    version = get_revoletion_python_package_version()
-    assert version != UNKNOWN_VERSION
+    version = utils.get_revoletion_python_package_version()
+    assert version != utils.UNKNOWN_VERSION
 
 
 def test_read_scenario_from_file():
-    with importlib.resources.path(revoletion.example, "scenarios_example.csv") as example_scenarios_path:
-        scenario_parameters = read_scenario_from_file(example_scenarios_path)
-        assert "icev" in scenario_parameters
+    example_scenarios_path = Path(__file__).resolve().parents[2] / "example" / "scenarios.csv"
+    scenario_parameters = utils.read_scenario_from_file(example_scenarios_path)
+    assert "icev" in scenario_parameters

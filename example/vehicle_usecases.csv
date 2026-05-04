@@ -1,0 +1,6 @@
+,,demand,time_req,time_req,time_req,time_req,time_req,time_req,dist,dist,idle,idle,idle,idle,patience,consumption,speed,subfleets
+,,lambda,weight1,mean1,std1,weight2,mean2,std2,mu,sigma,p0,a,c,scale,value,value,value,list
+taxi,weekday,10,0.3,8,1.5,0.7,13,1.5,1.834,0.474,0.5,7.5,0.2,1.6e-5,1,250,28,"['bev', 'icev']"
+taxi,weekend,10,0.3,9,1.5,0.7,14,1.5,1.834,0.474,0.5,7.5,0.2,1.6e-5,1,300,28,"['bev', 'icev']"
+goods,weekday,3,0.8,6,1.5,0.2,15,1.5,1.834,0.474,0.5,7.5,0.2,1.6e-5,1,300,22,"['bev', 'icev']"
+goods,weekend,1,0.8,7,1.5,0.2,12,1.5,1.834,0.474,0.5,7.5,0.2,1.6e-5,1,300,22,"['bev', 'icev']"

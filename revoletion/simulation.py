@@ -8,23 +8,23 @@ import numpy as np
 import pandas as pd
 from typing_extensions import override
 
-from revoletion.rl.scenario_factory import (
+from . import blocks, optimization, rl, time, utils
+from . import logger as logger_fcs
+from . import scenario as scn
+from .rl import utils as rl_utils
+from .rl.scenario_factory import (
     AtBaseHorizonInitializer,
     HorizonInitializer,
     InitialSocHorizonInitializer,
     MinSocHorizonInitializer,
 )
 
-from . import blocks, optimization, rl, utils
-from . import scenario as scn
-from .rl import utils as rl_utils
-
 _LOGGER = logging.getLogger(__name__)
 
 
 class OptimizationError(Exception):
     def __init__(
-        self, msg: str, optimization_horizon_idx: int | None = None, optimization_horizon_num: int | None = None
+        self, msg: str, prediction_horizon_idx: int | None = None, prediction_horizon_num: int | None = None
     ) -> None:
         """
         Create a new OptimizationError.
@@ -35,8 +35,8 @@ class OptimizationError(Exception):
 
         :returns: The new OptimizationError.
         """
-        self.optimization_horizon_idx = optimization_horizon_idx
-        self.optimization_horizon_num = optimization_horizon_num
+        self.optimization_horizon_idx = prediction_horizon_idx
+        self.optimization_horizon_num = prediction_horizon_num
 
         if self.optimization_horizon_idx is not None and self.optimization_horizon_num is not None:
             msg = f"Horizon {self.optimization_horizon_idx} of {self.optimization_horizon_num} - {msg}"
@@ -53,7 +53,7 @@ class _ExpansionResultProcessor(blocks.BlockVisitor[None]):
         cls,
         optimization_result: optimization.OptimizationResult,
         scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
+        horizon: time.TimeFrame,
     ) -> None:
         """
         Collect the optimization results and write them back to each individual block.
@@ -67,7 +67,7 @@ class _ExpansionResultProcessor(blocks.BlockVisitor[None]):
             visitor.visit_block(block, horizon=horizon)
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame) -> None:
         # Always traverse to children even for NonElectricBlock. This is necessary, since
         # SubFleet is a NonElectricBlock, but it might have electric subblocks.
         for subblock in block.subblocks.values():
@@ -93,7 +93,7 @@ class _BatteryHealthResultProcessor(blocks.BlockVisitor[None]):
         cls,
         optimization_result: optimization.OptimizationResult,
         scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
+        horizon: time.TimeFrame,
         horizon_index: int,
     ) -> None:
         """
@@ -111,7 +111,7 @@ class _BatteryHealthResultProcessor(blocks.BlockVisitor[None]):
             visitor.visit_block(block, horizon=horizon, horizon_index=horizon_index)
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame, horizon_index: int) -> None:
         # Always traverse to children even for NonElectricBlock. This is necessary, since
         # SubFleet is a NonElectricBlock, but it might have electric subblocks.
         for subblock in block.subblocks.values():
@@ -124,7 +124,11 @@ class _BatteryHealthResultProcessor(blocks.BlockVisitor[None]):
 
         self.visit_storage_block(block, horizon, horizon_index)
 
-    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings, horizon_index: int) -> None:
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: time.TimeFrame, horizon_index: int) -> None:
+        stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti_extd)
+        block.states.loc[horizon.dti_extd, "energy"] = stored_energy
+        block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
+
         if not block.aging:
             block.states.loc[horizon.end, "soh"] = block.states.loc[horizon.start, "soh"]
             return
@@ -166,7 +170,7 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
             visitor.visit_block(block, horizon=horizon)
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame) -> None:
         # Always traverse to children even for NonElectricBlock. This is necessary, since
         # SubFleet is a NonElectricBlock, but it might have electric subblocks.
         for subblock in block.subblocks.values():
@@ -188,31 +192,31 @@ class _PowerFlowResultProcessor(blocks.BlockVisitor[None]):
         if isinstance(block, blocks.StorageBlock):
             self.visit_storage_block(block, horizon)
 
-    def visit_grid_connection(self, block: blocks.GridConnection, horizon: utils.TimeSettings) -> None:
+    def visit_grid_connection(self, block: blocks.GridConnection, horizon: time.TimeFrame) -> None:
         """
         Collect the results for a `GridConnection`.
 
         Aggregates the individual results for each peak-period.
         """
-        power_flows = self._optimization_result.get_power_flow(block, horizon.dti)
+        # get peak powers per peak interval
+        block.peak_periods.update(
+            {
+                "peak_power": {
+                    period.label: max(
+                        # this leads to inconsistencies for dti_sim != dti_eval if peak power occurs after dti_eval
+                        block.flows.loc[horizon.dti, "out"][block.peak_periods_activation[period.label]]
+                        .resample(block.peak_period_measurement.freqstr)
+                        .mean()
+                        .max(),
+                        period.peak_power,
+                    )
+                    for period in block.peak_periods.itertuples()
+                    if period.label in block.peak_storages.keys()
+                }
+            }
+        )
 
-        outflows = {flow_name: flow for flow_name, flow in power_flows.items() if flow_name.startswith("out")}
-        outflow = sum(outflows.values())
-        inflow = sum(flow for flow_name, flow in power_flows.items() if flow_name.startswith("in"))
-
-        block.flows.loc[horizon.dti, "out"] = outflow
-        block.flows.loc[horizon.dti, "in"] = inflow
-
-        def get_peak_power(row):
-            outflow_name = f"outflow_{row.name}"
-            if outflow_name not in outflows:
-                return row["power"]
-            peak_power = max(row["power"], outflows[outflow_name].max())
-            return peak_power
-
-        block.peak_periods["power"] = block.peak_periods.apply(get_peak_power, axis=1)
-
-    def visit_storage_block(self, block: blocks.StorageBlock, horizon: utils.TimeSettings) -> None:
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: time.TimeFrame) -> None:
         # TODO: dti or dti_extd??
         stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti)
         block.states.loc[horizon.dti_extd, "energy"] = stored_energy
@@ -250,7 +254,7 @@ class _OpexResultProcessor(blocks.BlockVisitor[None]):
             visitor.visit_block(block, horizon=horizon)
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> None:
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame) -> None:
         # Always traverse to children even for NonElectricBlock. This is necessary, since
         # SubFleet is a NonElectricBlock, but it might have electric subblocks.
         for subblock in block.subblocks.values():
@@ -266,19 +270,19 @@ class _OpexResultProcessor(blocks.BlockVisitor[None]):
 
         # `GridConnection` needs some special power flow extraction to handle peak-periods.
         if isinstance(block, blocks.GridMarket):
-            grid_import_costs = block.evaluators["g2s"].opt.spec_ep_operation[horizon.dti]
+            grid_import_costs = block.pois["g2s"].spec_ep_operation[horizon.dti]
             opex += power_flows["in"] * grid_import_costs
 
-            grid_export_profit = block.evaluators["s2g"].opt.spec_ep_operation[horizon.dti]
+            grid_export_profit = block.pois["s2g"].spec_ep_operation[horizon.dti]
             opex += power_flows["out"] * grid_export_profit
         elif isinstance(block, blocks.SourceBlock):
-            variable_costs = block.evaluators["block"].opt.spec_ep_operation[horizon.dti]
+            variable_costs = block.pois["block"].spec_ep_operation[horizon.dti]
             opex += power_flows["out"] * variable_costs
         elif isinstance(block, blocks.ElectricFleetUnit):
-            variable_costs_ext_ac = block.evaluators["ext_ac"].opt.spec_ep_operation[horizon.dti]
+            variable_costs_ext_ac = block.pois["ext_ac"].spec_ep_operation[horizon.dti]
             opex += power_flows["ext_ac"] * variable_costs_ext_ac
 
-            variable_costs_ext_dc = block.evaluators["ext_dc"].opt.spec_ep_operation[horizon.dti]
+            variable_costs_ext_dc = block.pois["ext_dc"].spec_ep_operation[horizon.dti]
             opex += power_flows["ext_dc"] * variable_costs_ext_dc
         else:
             return
@@ -290,8 +294,8 @@ class _OpexResultProcessor(blocks.BlockVisitor[None]):
 class SimulationSettings:
     solver: optimization.Solver = optimization.Solver.GUROBI
     backend: optimization.OptimizationBackend = optimization.OptimizationBackend.OEMOF
-    n_processes: int = 1
     largescalemode: bool = False
+    n_processes: int = 1
     debugmode: bool = False
     rerun_infeasible: bool = True
     key_solcast_api: str | None = None
@@ -303,24 +307,31 @@ class OptimizationHorizon:
 
     _logger: logging.Logger
 
+
+class PredictionHorizon:
     def __init__(self, index: int, scenario: scn.Scenario, settings: SimulationSettings, logger: logging.Logger):
         self.index = index
         self.scenario = scenario
         self._settings = settings
 
-        self._logger = logger
+        # set up the logger as a child of the scenario logger with some additional horizon index metadata
+        self._logger = logger_fcs.ContextLoggerAdapter(
+            logger=logger, extra={"n_horizon": self.index + 1, "n_horizon_total": self.scenario.nhorizons}
+        )
 
         # region time and data generation and slicing
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
-        self.ph = utils.TimeSettings.create_from_start_timestamp(
+        self.ph = time.TimeFrame.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep,
+            timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
         )
 
-        self.ch = utils.TimeSettings.create_from_start_timestamp(
+        self.ch = time.TimeFrame.create_from_start_timestamp(
             start=start,
             timestep=self.scenario.timestep,
+            timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
         )
 
@@ -340,7 +351,7 @@ class OptimizationHorizon:
         """
         Perform the concrete optimization across an optimization horizon.
         """
-
+        self._logger.info("Building optimization problem")
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
             debug=self._settings.debugmode,
@@ -356,20 +367,28 @@ class OptimizationHorizon:
             config=optimization_problem_config,
         )
 
+        self._logger.info(f"Optimization problem built; starting optimization with {self._settings.solver}")
         status, optimization_result = optimization_problem.solve()
 
-        if status != optimization.OptimizationStatus.OPTIMAL:
+        if status == optimization.OptimizationStatus.INFEASIBLE_OR_UNBOUNDED:
+            raise OptimizationError(
+                "Scenario failed: Infeasible or Unbounded (To solve this error try to "
+                "set investment limits for blocks or for the scenario)",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
+            )
+        elif status != optimization.OptimizationStatus.OPTIMAL:
             raise OptimizationError(
                 f"Scenario failed: {status}. Enable debug mode for more information.",
-                optimization_horizon_idx=self.index,
-                optimization_horizon_num=self.scenario.nhorizons,
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
             )
 
         if optimization_result is None:
             raise OptimizationError(
                 "Optimization failed: No optimization result, even though the solver signaled an optimal result. This is a bug.",
-                optimization_horizon_idx=self.index,
-                optimization_horizon_num=self.scenario.nhorizons,
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
             )
 
         if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)

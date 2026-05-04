@@ -2,7 +2,7 @@ import enum
 import logging
 
 from revoletion import scenario as scn
-from revoletion import utils
+from revoletion import time
 
 from . import optimization_problem
 from .oemof_backend import VALID_OEMOF_SOLVERS, OemofOptimizationProblem
@@ -19,14 +19,16 @@ class OptimizationBackend(enum.Enum):
     def is_compatible_solver(self, solver: optimization_problem.Solver) -> bool:
         if self == OptimizationBackend.OEMOF:
             return solver in VALID_OEMOF_SOLVERS
-        else:
+        if self == OptimizationBackend.PYPSA:
             return solver in VALID_PYPSA_SOLVERS
+        else:
+            raise ValueError()
 
 
 def create_optimization_problem(
     backend: OptimizationBackend,
     scenario: scn.Scenario,
-    horizon: utils.TimeSettings,
+    horizon: time.TimeFrame,
     logger: logging.Logger,
     config: optimization_problem.OptimizationProblemConfig | None = None,
 ) -> optimization_problem.OptimizationProblem:

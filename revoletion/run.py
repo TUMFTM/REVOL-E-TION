@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 import threading
-import time
+import time as pytime
 import traceback
 import typing
 from dataclasses import dataclass
@@ -19,9 +19,9 @@ from pathlib import Path
 import pandas as pd
 from oemof import solph as solph
 
+from . import location, simulation, time, utils
 from . import logger as logger_fcs
 from . import scenario as scn
-from . import simulation, utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,16 +67,12 @@ class SimulationRun:
         self.paths = paths
         self.settings = settings or simulation.SimulationSettings()
 
-        self.runtime = utils.RunTime()
+        self.run_timer = time.RunTimer()
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
-        # region get version information
         self.version_solph = solph.__version__
         self.version_revoletion = utils.get_revoletion_python_package_version()
-
-        self.commit_hash = utils.get_current_project_git_commit_hash()
-        # endregion
 
         # region read, copy and check scenario data
         self.scenario_data = utils.read_scenario_from_file(self.paths.scenario)
@@ -128,12 +124,19 @@ class SimulationRun:
                 index=self.scenario_names, data={"status": "queued", "exception": None, "traceback": None}
             ).rename_axis("scenario")
             self.copy_scenario_file()
+
+        logger_fcs.LogFormatter.format_scenarioname.max_width = max(len(name) for name in self.scenario_names)
+
         self.scenario_num = len(self.scenario_names)
 
         if self.scenario_num == 0:
             raise ValueError("No executable scenarios found in scenario file")
 
-        self.settings.n_processes = min(self.settings.n_processes, os.cpu_count(), self.scenario_num)
+        self.settings.n_processes = min(
+            self.scenario_num,
+            self.settings.n_processes,
+            *(x for x in [os.cpu_count()] if x is not None),  # filter out undetermined CPU count
+        )
         # endregion
 
         self.logger.info(f"{'Reading scenarios from:':<25} {self.paths.scenario}")
@@ -151,7 +154,7 @@ class SimulationRun:
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
             shutil.copyfile(self.paths.scenario, target)
 
-    def execute(self, plot: bool = True):
+    def execute(self):
         if self.settings.n_processes > 1:
             with mp.Manager() as manager:
                 lock = manager.Lock()
@@ -175,7 +178,7 @@ class SimulationRun:
                             self.scenario_names,
                             itertools.repeat(status_queue),
                             itertools.repeat(lock),
-                            itertools.repeat(plot),
+                            itertools.repeat(self.settings.largescalemode),
                         ),
                     )
                 status_queue.put(None)
@@ -184,11 +187,12 @@ class SimulationRun:
                 log_thread.join()
         else:
             for scenario_name in self.scenario_names:
-                self.execute_scenario(name=scenario_name, plot=plot)
+                self.execute_scenario(name=scenario_name, largescalemode=self.settings.largescalemode)
 
-        self.runtime.stop()
-        self.logger.info(f"Total runtime for all scenarios: {self.runtime.duration:.2f} s")
+        self.run_timer.stop()
+        self.logger.info(f"Total runtime for all scenarios: {self.run_timer}")
 
+        self.join_cashflows()
         self.join_results()
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
@@ -202,6 +206,27 @@ class SimulationRun:
         self.logger.error("".join(traceback.format_tb(exc_traceback)))
 
         self.logger.error(msg="Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+    def join_cashflows(self):
+        suffix = "_cashflow_temp.pkl"
+        filenames = [
+            file
+            for file in self.paths.output.iterdir()
+            if file.name.endswith(suffix)
+            and self.scenario_status.loc[file.name.removesuffix(suffix), "status"] == "successful"
+        ]
+
+        scenario_frames = [pd.read_pickle(file) for file in filenames]
+
+        if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
+            joined_df = pd.concat(scenario_frames, axis=0)
+            joined_df.to_csv(self.paths.cashflow_csv, index=True)
+            joined_df.to_pickle(self.paths.cashflow_pkl)
+            self.logger.info("Result cashflow file created")
+
+        # deletion loop at the end to avoid premature execution of results in case of error
+        for file in filenames:
+            file.unlink()
 
     def join_results(self):
         filenames = [
@@ -233,7 +258,7 @@ class SimulationRun:
                             if isinstance(value, (int, float, bool, str))
                         }
                     ),
-                    self.runtime.result_summary,
+                    self.run_timer.result_summary,
                 ]
             )
             # apply MultiIndex
@@ -261,15 +286,16 @@ class SimulationRun:
             file.unlink()
 
     def execute_scenario(
-        self, name: str, status_queue: mpq.Queue | None = None, lock: mps.Lock | None = None, plot: bool = True
+        self,
+        name: str,
+        status_queue: mpq.Queue | None = None,
+        lock: mps.Lock | None = None,
+        largescalemode: bool = False,
     ):
         # this method is necessary as running Scenario() directly from the starmap fails as Scenario object contains
         # objects which cannot be pickled.
 
-        max_scenario_name_len = max([len(scenario_name) for scenario_name in self.scenario_names])
-        scenario_logger = logger_fcs.ContextLoggerAdapter(
-            self.logger, {"context_str": f"{name:<{max_scenario_name_len}}"}
-        )
+        scenario_logger = logger_fcs.ContextLoggerAdapter(self.logger, {"scenarioname": name})
         try:
             worker = OptimizationWorker(
                 paths=self.paths,
@@ -281,7 +307,7 @@ class SimulationRun:
                 status_update=self.trigger_scenario_status_update,
                 status_queue=status_queue,
             )
-            worker.execute(plot=plot)
+            worker.execute()
         except Exception as e:
             self.trigger_scenario_status_update(
                 status_msg=_ScenarioStatusMessage(
@@ -293,7 +319,7 @@ class SimulationRun:
             )
 
             self.logger.error(
-                msg=f"{str(e)} - continue on next scenario",  # todo is not written to log or stream
+                msg=f"{str(e)} - continue on next scenario",
                 exc_info=True,
             )
 
@@ -357,10 +383,10 @@ class OptimizationWorker:
 
         self._status_update(status_msg, self._status_queue)
 
-    def execute(self, plot: bool = True) -> None:
+    def execute(self) -> None:
         self.update_scenario_status(_ScenarioStatus.STARTED)
 
-        run_time = utils.RunTime()
+        run_timer = time.RunTimer()
 
         worker = mp.current_process()
         msg_parallel = (
@@ -369,37 +395,59 @@ class OptimizationWorker:
         self._logger.info(f"Scenario initialization{msg_parallel}")
 
         if self._lock:
-            # During multiprocessing the construction of each scenario is delayed by 2 seconds.
-            # This is necessary, since otherwise the OSM API would rate limit us.
+            # avoid rate limiting by geocoding API
             _ = self._lock.acquire()
-            time.sleep(2)
+            pytime.sleep(2)
+
+        loc = location.Location.create_from_lat_lon(
+            latitude=self._parameters[("scenario", "latitude")],
+            longitude=self._parameters[("scenario", "longitude")],
+            country=self._parameters[("scenario", "country")],
+            state=self._parameters[("scenario", "state")],
+            logger=self._logger,
+        )
+
+        if self._lock:
+            self._lock.release()
+
+        scenario_settings = scn.ScenarioSettings(
+            largescalemode=self._settings.largescalemode,
+            key_solcast_api=self._settings.key_solcast_api,
+        )
 
         scenario_settings = scn.ScenarioSettings(
             largescalemode=self._settings.largescalemode,
             key_solcast_api=self._settings.key_solcast_api,
         )
         try:
-            scenario = scn.Scenario.create_from_parameters(
-                self._paths, scenario_settings, self._name, self._parameters, self._logger
+            scenario = scn.Scenario(
+                paths=self._paths,
+                settings=scenario_settings,
+                name=self._name,
+                parameters=self._parameters,
+                location=loc,
+                logger=self._logger,
             )
-        finally:
-            # After the scenario has been constructed, the lock can be released so other scenarios can be constructed.
-            if self._lock:
-                self._lock.release()
+        except Exception as e:
+            self.update_scenario_status(
+                status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
+            )
+            self._logger.error(
+                msg=f"{str(e)} - continue on next scenario",
+                exc_info=True,
+            )
+            return
 
         self._logger.info("Scenario fully initialized")
         self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
 
-        n_horizons = scenario.nhorizons
         try:
-            for horizon_index in range(n_horizons):
-                logging_ctx_str = f"Horizon {horizon_index + 1} of {n_horizons} -"
-                logger = logger_fcs.ContextLoggerAdapter(self._logger, {"context_str": logging_ctx_str})
-                optimization_horizon = simulation.OptimizationHorizon(
-                    index=horizon_index, scenario=scenario, settings=self._settings, logger=logger
+            for horizon_index in range(scenario.nhorizons):
+                prediction_horizon = simulation.PredictionHorizon(
+                    index=horizon_index, scenario=scenario, settings=self._settings, logger=scenario.logger
                 )
 
-                optimization_horizon.execute()
+                prediction_horizon.execute()
 
                 self.update_scenario_status(status=_ScenarioStatus.COMPLETED_HORIZON)
             self.update_scenario_status(status=_ScenarioStatus.SUCCESSFUL)
@@ -419,12 +467,14 @@ class OptimizationWorker:
         finally:
             scenario.process_results()
 
-        run_time.stop()
-        self._logger.info(f"Scenario finished - runtime {run_time.duration:.2f}s")
+        run_timer.stop()
+        self._logger.info(f"Scenario finished - runtime {run_timer}")
 
-        if plot:
+        if not self._settings.largescalemode:
             scenario.generate_and_save_plot()
-        scenario.save_result_summary([run_time.result_summary])
+
+        scenario.save_result_cashflow()
+        scenario.save_result_summary([run_timer.result_summary])
 
 
 def _worker_init(log_queue: mp.Queue, debugmode: bool) -> None:

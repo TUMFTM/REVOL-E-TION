@@ -5,25 +5,27 @@ import importlib.metadata
 import importlib.util
 import logging
 import re
-import shutil
-import subprocess
-import time
+import zoneinfo
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
 import geopy
 import geopy.geocoders
+import holidays
 import pandas as pd
 import pytz
 import timezonefinder
 import typing_extensions
 from typing_extensions import Self
 
+from . import time
+from .time import extend_dti
+
 _LOGGER = logging.getLogger(__name__)
 
 
-def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str = None) -> pd.Timedelta | None:
+def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str | None = None) -> pd.Timedelta | None:
     if value is None:
         return None
 
@@ -40,42 +42,40 @@ def convert2timedelta(value: pd.Timedelta | str | float | int | None, unit: str 
     return value
 
 
-class RunTime:
+def get_holiday_dates(
+    dti: pd.DatetimeIndex, country: str, state: str | None, logger: logging.Logger
+) -> list[pd.Timestamp]:
+    years = range(min(dti).year, max(dti).year + 1)
+    try:
+        holiday_dates = sorted(getattr(holidays, country)(years=years, state=state))
+    except NotImplementedError:  # not for all countries the states are available (e.g. France)
+        holiday_dates = sorted(getattr(holidays, country)(years=years))
+        logger.warning(
+            f"Holidays for state {state} not available. Country-wide holidays for {country} are used instead."
+        )
+    except AttributeError:  # not all countries worldwide are available
+        holiday_dates = []
+        logger.warning(
+            f"Holidays for country {country} not available. No public holidays are considered in this scenario."
+        )
+    return holiday_dates
+
+
+def add_index_level(index: pd.Index, level_name: str, level_value) -> pd.MultiIndex:
     """
-    Helper utility to measure the runtime of python code.
+    Add a level to a pandas index. The new level will have the same value for all entries in the index.
 
+    :param index: The index to which the level should be added.
+    :param level_name: The name of the new level.
+    :param level_value: The value of the new level for all entries in the index.
 
-    Usage as context manager:
-
-         with RunTime() as run_time:
-             do_stuff()
-         print(run_time)
-
-
-     Plain usage:
-
-         run_time = RunTime()
-         run_time.start()
-         do_stuff()
-         run_time.stop()
-         print(run_time)
+    :return: A new MultiIndex with the added level.
     """
 
-    begin: float = float("nan")
-    end: float = float("nan")
-    duration: float = float("nan")
-
-    def start(self) -> None:
-        self.begin = time.perf_counter()
-
-    def stop(self) -> None:
-        self.end = time.perf_counter()
-        self.duration = self.end - self.begin
-
-    @property
-    def result_summary(self) -> pd.Series:
-        # only export runtime duration -> start and end are not interpretable
-        return pd.Series({"runtime_duration_s": round(self.duration, 2)})
+    return pd.MultiIndex.from_tuples(
+        tuples=[(level_value, *(i if isinstance(i, tuple) else (i,))) for i in index],
+        names=[level_name] + list(index.names),
+    )
 
     @typing_extensions.override
     def __str__(self) -> str:
@@ -262,14 +262,6 @@ def conv_nan2none(value):
     return value if pd.notna(value) else None
 
 
-def extend_dti(dti: pd.DatetimeIndex, freq: pd.DateOffset | pd.Timedelta | str) -> pd.DatetimeIndex:
-    """
-    Extend a datetime index by one timestep to include the last timestep of the simulation timeframe.
-    """
-    dti_ext = dti.union(dti.shift(periods=1, freq=freq)[-1:])
-    return dti_ext
-
-
 def import_module_from_path(module_name, file_path):
     """
     Import a Python module from a specific file path. Is used for timeframe mapper user input code.
@@ -284,12 +276,20 @@ def import_module_from_path(module_name, file_path):
 
 
 def read_timeseries_csv(
-    path_input_file: str | Path, scenario: "scn.Scenario", multiheader: bool = False, resampling: bool = True
-):
+    path_input_file: str | Path,
+    timezone: zoneinfo.ZoneInfo,
+    multiheader: bool = False,
+    resampling_dti: pd.DatetimeIndex | None = None,
+) -> pd.DataFrame:
     """
     Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
 
-    :raises IndexError: If timeseries data does not cover simulation timeframe.
+    :param path_input_file: Path to the CSV file containing the timeseries data.
+    :param timezone: Timezone to which the timeseries data should be aligned to.
+    :param multiheader: Whether the timeseries data is stored in CSV file with multiple headers.
+    :param resampling_dti: If given, the timeseries data is resampled to the given datetimeindex.
+
+    :raises IndexError: If timeseries data does not cover `resampling_dti` timeframe.
     """
     if multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
@@ -313,52 +313,38 @@ def read_timeseries_csv(
         df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
 
     # parser in to_csv does not create datetimeindex
-    df = df.tz_convert(scenario.location.timezone)
-    if not resampling:
+    df = df.tz_convert(timezone)
+    if resampling_dti is None:
         return df
-    else:
-        df_extd = df.reindex(extend_dti(dti=df.index, freq=scenario.timestep.td)).ffill()
 
-        def resample_column(column):
-            if df_extd[column].dtype == bool:
-                return df_extd[column].resample(scenario.timestep.td).ffill().bfill()
-            else:
-                return df_extd[column].resample(scenario.timestep.td).mean().ffill().bfill()
+    timestep = time.Timestep.from_dti(resampling_dti)
 
-        df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+    df_extd = df.reindex(extend_dti(dti=df.index)).ffill()
 
-        if not (scenario.times.sim.dti.isin(df.index).all()):
-            raise IndexError(f"Input timeseries data in {path_input_file} does not cover simulation timeframe")
-        return df.loc[scenario.times.sim.dti]
+    def resample_column(column):
+        if df_extd[column].dtype == bool:
+            return df_extd[column].resample(timestep.td).ffill().bfill()
+        else:
+            return df_extd[column].resample(timestep.td).mean().ffill().bfill()
+
+    df = pd.DataFrame({col: resample_column(col) for col in df_extd.columns})[:-1]
+
+    if not (resampling_dti.isin(df.index).all()):
+        raise IndexError(f"Input timeseries data in {path_input_file} does not cover resampling timeframe")
+    return df.loc[resampling_dti]
 
 
 def set_extension(filename: Path | str, default_extension: str = ".csv") -> Path:
     """
     Add a default extension to a filename if none is given. If the filename already has an extension, it is kept.
     """
-    return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
+    if filename is None:
+        return None
+    else:
+        return path.with_suffix(default_extension) if not (path := Path(filename)).suffix else path
 
 
 UNKNOWN_VERSION = "unknown"
-
-
-def get_current_project_git_commit_hash() -> str:
-    """
-    Retrieves the short git commit hash of the current repository.
-
-    Returns:
-        The first 6 characters of the current git commit hash if available, otherwise `UNKNOWN_VERSION`.
-    """
-    git_binary = shutil.which("git")
-    if git_binary is None:
-        # Some environments (e.g. docker, pip distribution) might not have git available.
-        return UNKNOWN_VERSION
-
-    try:
-        commit_hash = subprocess.check_output([git_binary, "rev-parse", "HEAD"]).strip().decode()[0:6]
-        return commit_hash
-    except subprocess.CalledProcessError:
-        return UNKNOWN_VERSION
 
 
 def get_revoletion_python_package_version() -> str:
@@ -415,3 +401,6 @@ def read_scenario_from_file(scenario_path: Path) -> pd.DataFrame:
 
     parameters = parameters.sort_index(sort_remaining=True).map(infer_dtype)
     return parameters
+
+
+class RevoletionError(Exception): ...

@@ -1,0 +1,515 @@
+\documentclass[margin=5pt]{standalone}
+
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{circuitikz}
+\usepackage{fontawesome}
+\usepackage{amssymb}
+\usepackage[weather]{ifsym}
+\usepackage{mathdots}
+\usepackage{helvet}
+
+\renewcommand{\familydefault}{\sfdefault}
+
+%pgfplots package
+\pgfplotsset{
+    width=7cm,
+    compat=newest,
+    every axis/.append style={
+        tick label style={font=\footnotesize},
+        label style={font=\footnotesize},
+        tick label style={font=\footnotesize},
+        legend style={font=\footnotesize,draw=none},
+        every node near coord/.append style={font=\footnotesize},
+        every node/.style={font=\footnotesize}
+        }
+    }
+\usepgfplotslibrary{statistics, groupplots}
+\usetikzlibrary{spy, decorations.pathreplacing, calligraphy, arrows.meta,positioning, fit}
+\pgfdeclarelayer{foreground}
+\pgfdeclarelayer{background}
+\pgfsetlayers{background,main,foreground}
+
+%colors in CMYK for printing
+\definecolor{tum_p300}			{cmyk}	{1,0.43,0,0}%primary blue
+\definecolor{tum_p301_100}		{cmyk}	{1,0.54,0.04,0.19}%secondary blue
+\definecolor{tum_p301_80}		{cmyk}	{0.8,0.432,0.032,0.152}%
+\definecolor{tum_p301_50}		{cmyk}	{0.5,0.27,0.02,0.095}%
+\definecolor{tum_p301_20}		{cmyk}	{0.2,0.108,0.008,0.038}%
+\definecolor{tum_p540_100}		{cmyk}	{1,0.57,0.12,0.70}%tertiary blue
+\definecolor{tum_p540_80}		{cmyk}	{0.8,0.456,0.096,0.56}%
+\definecolor{tum_p540_50}		{cmyk}	{0.5,0.285,0.06,0.35}%
+\definecolor{tum_p540_20}		{cmyk}	{0.2,0.114,0.024,0.14}%
+\definecolor{tum_black}			{cmyk}	{0,0,0,1}%black/white
+\definecolor{tum_grey_80}		{cmyk}	{0,0,0,0.8}%
+\definecolor{tum_grey_50}		{cmyk}	{0,0,0,0.5}%
+\definecolor{tum_grey_20}		{cmyk}	{0,0,0,0.2}%
+\definecolor{tum_white}			{cmyk}	{0,0,0,0}%
+\definecolor{tum_p542}			{cmyk}	{0.65,0.19,0.01,0.04}%tertiary colors
+\definecolor{tum_p283}			{cmyk}	{0.42,0.09,0,0}%
+\definecolor{tum_ivory}			{cmyk}	{0.03,0.04,0.14,0.08}%
+\definecolor{tum_orange}		{cmyk}	{0,0.65,0.95,0}%
+\definecolor{tum_green}			{cmyk}	{0.35,0,1,0.2}%
+
+\begin{document}
+
+
+\begin{circuitikz}
+
+\newlength{\busdist}
+\setlength{\busdist}{1.5cm}
+
+\newlength{\compdist}
+\setlength{\compdist}{0.5\busdist}
+
+\newlength{\singlecompdist}
+\setlength{\singlecompdist}{0.333\busdist}
+
+\newlength{\buffer}
+\setlength{\buffer}{0.2cm}
+
+\def\scenariolayers{4}
+
+\tikzset{
+    >={latex},
+    scenariobox/.style={
+        draw,
+        thick,
+        inner sep=\buffer,
+        color=tum_p300,
+        fill=white
+    },
+    blockbox/.style={
+        scenariobox,
+        dashed,
+        color=tum_orange,
+        fill=none
+    },
+    subblockbox/.style={
+        blockbox,
+        color=tum_grey_50
+    },
+    resultbox/.style={
+        scenariobox,
+        color=tum_p540_80,
+        fill=none
+    },
+    blocklabel/.style={
+        font=\scriptsize\ttfamily,
+        text=tum_orange,
+        fill=tum_white,
+        inner sep=0pt
+    },
+    subblocklabel/.style={
+        blocklabel,
+        text=tum_grey_50
+    },
+    scenariolabel/.style={
+        blocklabel,
+        xshift=-2pt,
+        inner sep=2pt,
+        text=tum_p300
+    },
+    arrowlabel/.style={
+        xshift=0.2cm,
+        blocklabel,
+        text=tum_black,
+        font=\scriptsize
+    },
+    resultlabel/.style={
+        blocklabel,
+        font=\scriptsize,
+        text=tum_p540_80,
+    },
+    resultarrowlabel/.style={
+        resultlabel,
+        text=tum_p540_50
+    },
+    bus/.style={
+        draw,
+        color=tum_p300,
+        ultra thick
+    },
+    buslabel/.style={
+        anchor=south,
+        font=\scriptsize\ttfamily,
+        text=tum_p300,
+        anchor=south
+    },
+    component/.style={
+        draw,
+        text=tum_black,
+        color=tum_black,
+        inner sep=2pt,
+        font=\scriptsize
+    },
+    input/.style={
+        font=\scriptsize,
+        draw,
+        text=tum_grey_50,
+        color=tum_grey_50
+    },
+    result/.style={
+        font=\scriptsize,
+        draw,
+        text=tum_p540_80,
+        color=tum_p540_80
+    },
+    acac/.style={
+        sacacshape,
+        scale=0.5
+    },
+    dcac/.style={
+        sdcacshape,
+        scale=0.5
+    },
+    acdc/.style={
+        sdcacshape,
+        scale=0.5
+    },
+    dcdc/.style={
+        sdcdcshape,
+        scale=0.5
+    },
+    xcac/.style={
+        twoportsplitshape,
+        scale=0.5,
+        t2=\LARGE{$\sim$}
+    },
+    dcxc/.style={
+        twoportsplitshape,
+        scale=0.5,
+        t1=\LARGE{$=$}
+    },
+    acxc/.style={
+        twoportsplitshape,
+        scale=0.5,
+        t1=\LARGE{$\sim$}
+    },
+    xcdc/.style={
+        twoportsplitshape,
+        scale=0.5,
+        t2=\LARGE{$=$}
+    },
+    busdots/.style={
+        yshift=0.2cm,
+        anchor=north,
+        text=tum_p300
+    },
+    blockdots/.style={
+        busdots,
+        text=tum_orange
+    },
+    subblockdots/.style={
+        busdots,
+        text=tum_grey_50
+    },
+    scenariodots/.style={
+        anchor=south,
+        text=tum_p300
+    },
+    arrowdots/.style={
+        busdots,
+        yshift=-0.2cm,
+        text=tum_black
+    }
+}
+
+%SystemCore
+\coordinate(core_dc_top) at (-\compdist,0);
+\node[buslabel] at (core_dc_top) {DC bus};
+
+\coordinate(core_ac_top) at (\compdist,0);
+\node[buslabel] at (core_ac_top) {AC bus};
+
+\node(core_label) [blocklabel, anchor=south] at (0,-\compdist) {SystemCore};
+
+\node(core_dcac) [dcac, anchor=north] at ([yshift=-\buffer] core_label.south) {};
+\draw[->] (core_dc_top|-core_dcac) to (core_dcac.west);
+\draw[->] (core_dcac.east) to (core_ac_top|-core_dcac);
+
+\node(core_acdc) [acdc, anchor=north] at ([yshift=-\buffer] core_dcac.south) {};
+\draw[->] (core_ac_top|-core_acdc) to (core_acdc.east);
+\draw[->] (core_acdc.west) to (core_dc_top|-core_acdc);
+
+%PVSource
+\coordinate (pv_bus_top) at ([xshift=-\busdist, yshift=-\buffer] core_dc_top);
+
+\node(pv_array) [component, anchor=east] at ([yshift=-\buffer, xshift=-\compdist] pv_bus_top) {$\blacktriangle$ PV array};
+\draw[->] (pv_array.east) to (pv_bus_top|-pv_array.east);
+
+\node(pv_curtailment) [component, anchor=north east] at ([yshift=-\buffer] pv_array.south east) {$\blacktriangledown$ Curtailment};
+\draw[->] (pv_bus_top|-pv_curtailment.east) to (pv_curtailment.east);
+
+\coordinate(pv_bus_bottom) at ([yshift=-\buffer, xshift=\compdist] pv_curtailment.east);
+\draw[bus] (pv_bus_top) to (pv_bus_bottom);
+
+\coordinate(pv_bus_mid) at ($(pv_bus_top)!0.5!(pv_bus_bottom)$);
+\node(pv_dcdc) [dcdc] at ([xshift=\compdist] pv_bus_mid) {};
+\draw[->] (pv_bus_mid|-pv_dcdc) to (pv_dcdc.west);
+\draw[->] (pv_dcdc.east) to (core_dc_top|-pv_dcdc);
+
+\node(pv_box) [blockbox, fit=(pv_array) (pv_curtailment) (pv_dcdc) (pv_bus_top) (pv_bus_bottom)] {};
+\node[blocklabel, anchor=east] at ([xshift=-\buffer] pv_box.north east) {PVSource};
+
+%StationaryBattery
+\coordinate(ess_bus_top) at ([yshift=-\compdist] pv_bus_bottom);
+
+\node(ess_out)[dcdc] at ([yshift=-\buffer, xshift=\compdist] ess_bus_top) {};
+\draw[->] (ess_out.east) to (core_dc_top|-ess_out.east);
+\draw[->] (ess_bus_top|-ess_out.west) to (ess_out.west);
+
+\node(ess_in)[dcdc, anchor=north] at ([yshift=-\buffer] ess_out.south) {};
+\draw[->] (core_dc_top|-ess_in.east) to (ess_in.east);
+\draw[->] (ess_in.west) to (ess_bus_top|-ess_in.west);
+
+\coordinate(ess_bus_bottom) at ([yshift=-\buffer, xshift=-\compdist] ess_in);
+\draw[bus] (ess_bus_top) to (ess_bus_bottom);
+
+\coordinate(ess_bus_mid) at ($(ess_bus_top)!0.5!(ess_bus_bottom)$);
+\node(ess_storage) [component, align=right, anchor=east] at ([xshift=-\compdist] ess_bus_mid) {\faBatteryHalf\ Battery\\storage};
+\draw[<->] (ess_storage.east) to (ess_bus_top|-ess_storage.east);
+
+\node(ess_box) [blockbox, fit=(ess_storage) (ess_bus_top) (ess_bus_bottom) (ess_in) (ess_out)] {};
+\node[blocklabel, anchor=east] at ([xshift=-\buffer] ess_box.north east) {StationaryBattery};
+
+% Core: bottom of DC bus
+\coordinate(core_dc_bottom) at ([yshift=-\buffer] ess_in.east-|core_dc_top);
+\draw[bus] (core_dc_top) to (core_dc_bottom);
+
+%WindSource
+\coordinate (wind_bus_top) at ([xshift=\busdist, yshift=-\buffer] core_ac_top);
+
+\node(wind_turbine) [component, anchor=west] at ([yshift=-\buffer, xshift=\compdist] wind_bus_top) {Wind turbine $\blacktriangle$};
+\draw[->] (wind_turbine.west) to (wind_bus_top|-wind_turbine.west);
+
+\node(wind_curtailment) [component, anchor=north west] at ([yshift=-\buffer] wind_turbine.south west) {Curtailment $\blacktriangledown$};
+\draw[->] (wind_bus_top|-wind_curtailment.west) to (wind_curtailment.west);
+
+\coordinate(wind_bus_bottom) at ([yshift=-\buffer, xshift=-\compdist] wind_curtailment.west);
+\draw[bus] (wind_bus_top) to (wind_bus_bottom);
+
+\coordinate(wind_bus_mid) at ($(wind_bus_top)!0.5!(wind_bus_bottom)$);
+\node(wind_acac) [acac] at ([xshift=-\compdist] wind_bus_mid) {};
+\draw[->] (wind_bus_mid|-wind_acac) to (wind_acac.east);
+\draw[->] (wind_acac.west) to (core_ac_top|-wind_acac);
+
+\node(wind_box) [blockbox, fit=(wind_turbine) (wind_curtailment) (wind_acac) (wind_bus_top) (wind_bus_bottom)] {};
+\node[blocklabel, anchor=west] at ([xshift=\buffer] wind_box.north west) {WindSource};
+
+%GridConnection
+\coordinate(grid_bus_top) at ([yshift=-\compdist - \buffer] wind_bus_bottom);
+
+\draw[->] ([yshift=-\buffer]grid_bus_top) -- ([yshift=-\buffer]grid_bus_top-|core_ac_top) node (peak1_mid) [pos=0.5] {};
+\node(peak1_label) [arrowlabel] at (peak1_mid) {period 1};
+\node(peak_dots) [arrowdots] at (peak1_mid) {$\vdots$};
+
+\draw[->] ([yshift=-\buffer]peak_dots.south-|grid_bus_top) -- ([yshift=-\buffer]peak_dots.south-|core_ac_top) node (peakn_mid) [pos=0.5] {};
+\node(peakn_label) [arrowlabel] at (peakn_mid) {period n};
+
+\draw[->] ([yshift=-2\buffer]peakn_mid-|core_ac_top) -- ([yshift=-2\buffer]peakn_mid-|grid_bus_top) node (grid_in) [pos=0.5] {};
+
+\coordinate(grid_bus_bottom) at ([yshift=-\buffer]grid_in-|grid_bus_top);
+\draw[bus] (grid_bus_top) to (grid_bus_bottom);
+
+\node(market_buy) [component, anchor=west] at ([yshift=-\buffer, xshift=\compdist] grid_bus_top) {Buy $\blacktriangle$};
+\draw[->] (market_buy.west) to (market_buy.west-|grid_bus_top);
+
+\node(market_sell) [component, anchor=north west] at ([yshift=-\buffer] market_buy.south west) {Sell $\blacktriangledown$};
+\draw[->] (market_sell.west-|grid_bus_top) to (market_sell.west);
+
+\node(market_label_phantom) [blocklabel, opacity=0, anchor=west] at (market_buy.west) {GridMarket};
+\node(market_box) [blockbox, fit= (market_buy) (market_sell) (market_label_phantom)] {};
+\node(market_label) [blocklabel, anchor=west] at ([xshift=\buffer] market_box.north west) {GridMarket};
+\node(market_dots) [blockdots] at (market_box.south) {$\vdots$};
+
+\node(grid_box) [blockbox, fit= (market_box) (market_label) (peakn_label) (peak1_label) (grid_bus_bottom)] {};
+\node(grid_label) [blocklabel, anchor=west] at ([xshift=\buffer] grid_box.north west) {GridConnection};
+
+\node(grid_pricing) [input, anchor=west, align=center] at ([xshift=\buffer, yshift=-0.5\buffer]grid_box.east|-market_buy.south east) {Historical dynamic\\pricing data \faMoney};
+
+\draw[->, input] ([yshift=0.5\buffer]grid_pricing.west) to ([yshift=0.5\buffer, xshift=\buffer]grid_pricing.west-|market_buy.east) to ([xshift=\buffer]market_buy.east) to (market_buy.east);
+\draw[->, input] ([yshift=-0.5\buffer]grid_pricing.west) to ([yshift=-0.5\buffer, xshift=\buffer]grid_pricing.west-|market_sell.east) to ([xshift=\buffer]market_sell.east) to (market_sell.east);
+
+%ControllableSource
+\node(gen_source) [component, anchor=north west] at ([yshift=-\compdist, xshift=\singlecompdist] core_ac_top|-grid_bus_bottom) {Fossil fuel generator $\blacktriangle$};
+\draw[->] (gen_source.west) to (gen_source.west-|core_ac_top);
+\node(gen_label_phantom) [blocklabel, opacity=0, anchor=west] at (gen_source.west)
+  {ControllableSource};
+
+\node(gen_box) [blockbox, fit=(gen_source) (gen_label_phantom)] {};
+\node[blocklabel, anchor=west] at ([xshift=\buffer] gen_box.north west) {ControllableSource};
+
+%FixedDemand
+\node(dem_sink) [component, anchor=north west] at ([yshift=-\compdist] gen_source.south west) {Inflexible demand $\blacktriangledown$};
+\draw[->] (dem_sink.west-|core_ac_top) to (dem_sink.west);
+
+\node(dem_box) [blockbox, fit=(dem_sink)] {};
+\node[blocklabel, anchor=west] at ([xshift=\buffer] dem_box.north west) {FixedDemand};
+
+\node(dem_data)[input, anchor=west, align=center] at ([xshift=2\buffer] dem_sink.east) {SLP or consumption data \faLightbulbO};
+\draw[->, input] (dem_data.west) to (dem_sink.east);
+
+%HeatingSystem
+% Due to the thermal bus(es) being as detached from the connected (AC) bus as they are, the ThermalDemand is defined differently to the other blocks (bus top not being the defining coordinate).
+
+\node(heat_pump) [component, acxc, anchor=north west, align=center] at ([yshift=-\compdist -2\buffer, xshift=\buffer] dem_sink.south west) {};
+\node(heat_pump_label_phantom) [blocklabel, opacity=0, anchor=west] at (heat_pump.west) {HeatPump};
+\node(heat_pump_box) [blockbox, fit=(heat_pump) (heat_pump_label_phantom)] {};
+\node(heat_pump_label) [blocklabel, anchor=west] at ([xshift=\buffer]heat_pump_box.north west) {HeatPump};
+\draw[->] (heat_pump.west-|core_ac_top) to (heat_pump.west);
+
+\node(chp_unit) [component, anchor=north west, align=center] at ([yshift=-\compdist] heat_pump.south west) {$\blacktriangle$ CHP\\source};
+\node(chp_unit_label_phantom) [blocklabel, opacity=0, anchor=west] at (chp_unit.west) {CHPUnit};
+\node(chp_unit_box) [blockbox, fit=(chp_unit) (chp_unit)] {};
+\node(chp_unit_label) [blocklabel, anchor=west] at ([xshift=\buffer]chp_unit_box.north west) {CHPUnit};
+\draw[->] (chp_unit.west) to (chp_unit.west-|core_ac_top);
+
+\node(fossil_heater) [component, anchor=north west] at ([yshift=-\compdist] chp_unit.south west) {$\blacktriangle$ Burner};
+\node(fossil_heater_label_phantom) [blocklabel, opacity=0, anchor=west] at (fossil_heater.west) {Furnace};
+\node(fossil_heater_box) [blockbox, fit=(fossil_heater) (fossil_heater_label_phantom)] {};
+\node(fossil_heater_label) [blocklabel, anchor=west] at ([xshift=\buffer]fossil_heater_box.north west) {Furnace};
+
+\coordinate(therm_dem1_bus_top) at ([xshift=3\buffer, yshift=2\buffer] chp_unit.east-|fossil_heater_box.east);
+
+\draw[->] (heat_pump.east) to ([xshift=\buffer]heat_pump.east-|heat_pump_box.east) to ([xshift=\buffer, yshift=-\buffer]therm_dem1_bus_top-|heat_pump_box.east) to ([yshift=-\buffer]therm_dem1_bus_top);
+\draw[->] (chp_unit.east) to ([yshift=-2\buffer]therm_dem1_bus_top);
+\draw[->] (fossil_heater.east) to ([xshift=\buffer]fossil_heater.east-|fossil_heater_box.east) to ([xshift=\buffer, yshift=-3\buffer]therm_dem1_bus_top-|fossil_heater_box.east) to ([yshift=-3\buffer]therm_dem1_bus_top);
+
+\coordinate(therm_dem1_bus_bottom) at ([yshift=-4\buffer] therm_dem1_bus_top);
+\draw[bus] (therm_dem1_bus_top) to (therm_dem1_bus_bottom);
+
+\node(therm_dem1_storage) [component, anchor=west, align=center] at ([xshift=\singlecompdist, yshift=-2\buffer] therm_dem1_bus_top) {Thermal\\capacity \faBatteryHalf};
+\draw[->] (therm_dem1_bus_top|-therm_dem1_storage.west) to (therm_dem1_storage.west);
+
+\node(therm_dem1_sink) [component, anchor=west, align=center] at ([xshift=\singlecompdist] therm_dem1_storage.east) {Thermal\\losses $\blacktriangledown$};
+\draw[->] (therm_dem1_storage.east) to (therm_dem1_sink.west);
+
+\node(therm_dem1_box) [blockbox, fit=(therm_dem1_bus_top) (therm_dem1_bus_bottom) (therm_dem1_storage) (therm_dem1_sink)] {};
+\node(therm_dem1_label) [blocklabel, anchor=west] at ([xshift=\buffer]therm_dem1_box.north west) {ThermalDemand};
+\node(therm_dem1_dots) [blockdots] at (therm_dem1_box.south) {$\vdots$};
+
+\node(therm_box) [blockbox, fit=(therm_dem1_box) (therm_dem1_label) (heat_pump_box) (heat_pump_label) (fossil_heater_box) (fossil_heater_label)] {};
+\node(therm_label) [blocklabel, anchor=west] at ([xshift=\buffer]therm_box.north west) {HeatingSystem};
+
+\node(therm_hidebox) [fill=tum_white, opacity=0.6, fit=(therm_box) (therm_label)] {};  %todo remove once implemented
+
+% Core: bottom of AC bus
+\coordinate(core_ac_bottom) at([yshift=-\buffer] chp_unit.west-|core_ac_top);
+\draw[bus] (core_ac_top) to (core_ac_bottom);
+
+%Fleet
+\coordinate(fleet_bus_top) at ([yshift=-\busdist] core_dc_bottom);
+
+\node(fleet_out)[xcac] at ([yshift=-\buffer, xshift=\compdist] fleet_bus_top) {};
+\draw[->] (fleet_bus_top|-fleet_out.west) to (fleet_out.west);
+\draw[->] (fleet_out.east) to (core_ac_top|-fleet_out.east);
+
+\node(fleet_in)[xcac, anchor=north] at ([yshift=-\buffer] fleet_out.south) {};
+\draw[->] (fleet_in.east-|core_ac_top) to (fleet_in.east);
+\draw[->] (fleet_in.west) to (fleet_bus_top|-fleet_in.west);
+
+\coordinate(efu_bus_top) at ([xshift=-\busdist-\buffer] fleet_bus_top);
+
+\node(efu_out)[dcxc] at ([yshift=-\buffer, xshift=-\compdist-\buffer] fleet_bus_top) {};
+\draw[->] (efu_bus_top|-efu_out.west) to (efu_out.west);
+\draw[->] (efu_out.east) to (fleet_bus_top|-efu_out.east);
+
+\node(efu_in)[dcxc, anchor=north] at ([yshift=-\buffer] efu_out.south) {};
+\draw[->] (fleet_bus_top|-efu_in.west) to (efu_in.east);
+\draw[->] (efu_in.west) to (efu_bus_top|-efu_in.west);
+
+\coordinate(fleet_bus_bottom) at ([yshift=-\buffer] efu_in.east-|fleet_bus_top);
+\draw[bus] (fleet_bus_top) to (fleet_bus_bottom);
+\node(fleet_dots) [busdots] at (fleet_bus_bottom) {$\vdots$};
+
+\node(efu_storage) [component, anchor=east] at ([xshift=-\compdist, yshift=-\buffer] efu_bus_top) {\faBatteryHalf\ Battery storage};
+\draw[<->] (efu_bus_top|-efu_storage.east) to (efu_storage.east);
+
+\node(efu_cons) [component, anchor=north east] at ([yshift=-\buffer] efu_storage.south east) {$\blacktriangledown$ Consumption};
+\draw[->] (efu_bus_top|-efu_cons.east) to (efu_cons.east);
+
+\node(efu_ext) [component, anchor=north east] at ([yshift=-\buffer] efu_cons.south east) {$\blacktriangle$ External charging};
+\draw[->] (efu_ext.east) to (efu_bus_top|-efu_ext.east);
+
+\coordinate(efu_bus_bottom) at ([yshift=-\buffer] efu_ext.east-|efu_bus_top);
+\draw[bus] (efu_bus_top) to (efu_bus_bottom);
+
+\node(efu_box) [blockbox, fit=(efu_in) (efu_out) (efu_bus_bottom) (efu_bus_top) (efu_storage) (efu_cons) (efu_ext)] {};
+\node(efu_label) [blocklabel, anchor=east] at ([xshift=-\buffer] efu_box.north east) {ElectricFleetUnit};
+\node(efu_dots) [blockdots] at (efu_box.south) {$\vdots$};
+
+\node(efu_subfleet_box) [subblockbox, fit=(efu_box) (efu_label) (efu_dots)] {};
+\node(efu_subfleet_label) [subblocklabel, anchor=east] at ([xshift=-\buffer] efu_subfleet_box.north east) {Subfleet};
+
+\node(cv)[component, anchor=north east] at ([yshift=-\compdist] efu_in.east|-efu_subfleet_box.south) {ICEV \faFire};
+\node(cv_label_phantom) [blocklabel, opacity=0, anchor=east] at (cv.east)
+  {CombustionVehicle};
+
+\node(cv_box) [blockbox, fit=(cv) (cv_label_phantom)] {};
+\node(cv_label) [blocklabel, anchor=west] at ([xshift=\buffer] cv_box.north west) {CombustionVehicle};
+\node(cv_dots) [blockdots] at (cv_box.south) {$\vdots$};
+
+\node(cv_subfleet_box) [subblockbox, fit=(cv_box) (cv_label) (cv_dots)] {};
+\node(cv_subfleet_label) [subblocklabel, anchor=east] at ([xshift=-\buffer] cv_subfleet_box.north east) {Subfleet};
+
+\coordinate(subfleet_mid_x) at ($(cv_subfleet_box.north west)!0.5!(efu_subfleet_box.south west)$);
+\node(efu_subfleet_dots) [subblockdots] at (efu_subfleet_box.south -| subfleet_mid_x) {$\vdots$};
+\node(cv_subfleet_dots) [subblockdots] at (cv_subfleet_box.south) {$\vdots$};
+
+\node(fleet_box) [blockbox, fit= (efu_subfleet_box) (efu_subfleet_label) (cv_subfleet_box) (cv_subfleet_label) (fleet_in) (fleet_out) (cv_subfleet_dots)] {};
+\node(fleet_label) [blocklabel, anchor=east] at ([xshift=-\buffer] fleet_box.north east) {Fleet};
+
+%Fleet Inputs
+\node(scheduler) [input, dotted, rotate=90, anchor=south east] at ([xshift=-\buffer] fleet_box.north west) {Charge scheduler (runtime) \faPlug};
+\draw[->, input] (scheduler.south|-efu_storage.west) to (efu_storage.west);
+
+\node(logfile) [input, anchor=south east, align=center] at ([xshift=-\buffer, yshift=\buffer] ess_box.west|-fleet_box.north) {Logfile \faIndent\\location \& consumption};
+\draw[->, input] (scheduler.east|-logfile.south) to (scheduler.east);
+\draw[->, input] ([xshift=-\buffer]scheduler.north|-logfile.south) to ([xshift=-\buffer]cv.west-|scheduler.north) to (cv.west);
+
+\node(dispatcher) [input, anchor=south west] at ([yshift=\buffer] logfile.north west) {DES dispatcher \faRandom};
+\draw[->, input] (scheduler.east|-dispatcher.south) to (scheduler.east|-logfile.north);
+
+\node(sampler)[input, anchor=south west] at ([yshift=\buffer] dispatcher.north west) {Demand sampler \faList};
+\draw[->, input] (scheduler.east|-sampler.south) to (scheduler.east|-dispatcher.north);
+
+\node(usecases)[input, anchor=south west] at ([yshift=\buffer] sampler.north west) {Use cases \faCar\,\faBatteryHalf};
+\draw[->, input] (scheduler.east|-usecases.south) to (scheduler.east|-sampler.north);
+
+% PV / Wind Inputs
+% need to be defined after fleet to align to usecases
+\node(pv_models)[input, anchor=south west, align=center] at ([yshift=\buffer] usecases.north west) {Faiman\,/\,Huld\\PV power model};
+\draw[->, input] (pv_models.east) to ([xshift=-\buffer]pv_models.east-|pv_box.west) to ([xshift=-\buffer]pv_array.west-|pv_box.west) to (pv_array.west);
+
+\node(pv_data)[input, anchor=south west, align=center] at ([yshift=\buffer] pv_models.north west) {PVGIS / Solcast historical insolation, temperature \& wind speed data \faSunO};
+\draw[->, input] (pv_data.south-|pv_models.north) to (pv_models.north);
+
+\node(wind_model) [input, anchor=west, align=center] at ([xshift=\buffer]wind_box.east|-wind_turbine.east) {Logistic \faSignal\\power model};
+\draw[->, input] ([yshift=-0.5\buffer]pv_data.east) to ([yshift=-0.5\buffer]pv_data.east-|wind_model.north) to (wind_model.north);
+\draw[->, input] (wind_model.west) to (wind_turbine.east);
+
+% Ambient temperature arrow around the diagram
+\draw[->, input] ([yshift=0.5\buffer]pv_data.east) to ([yshift=0.5\buffer, xshift=\buffer]pv_data.east-|therm_box.east) to coordinate (therm_arrow) ([xshift=\buffer]therm_dem1_sink.east-|therm_box.east) to (therm_dem1_sink.east);
+
+% %Single scenario results
+\node(optimization) [result, anchor=north west, align=center] at ([yshift=-\buffer] logfile.west|-fleet_box.south) {Energy management (\& component sizing)\\linear optimization for lowest NPC};
+\node(evaluation) [result, anchor=east, align=center] at (optimization.east-|fleet_box.east) {Techno-economic\\KPI evaluation};
+
+\draw[result, ->] (optimization.east) -- (evaluation.west) node (tsresults) [resultarrowlabel, pos=0.45, rotate=90, align=center] {power\\flows};
+
+%Scenario
+\begin{pgfonlayer}{background}
+\foreach \i in {\scenariolayers,...,0} {
+    \node (scenario_box_\i) [scenariobox, fit=(pv_data)(dem_data)(fleet_box) (usecases) (therm_box) (therm_arrow) (optimization), xshift=\i\buffer, yshift=\i\buffer] {};
+}
+\end{pgfonlayer}
+
+\node(scenario_label) [scenariolabel, anchor=west] at ([xshift=\buffer] scenario_box_0.north west) {Scenario};
+\node(scenario_dots) [scenariodots] at ([xshift=\buffer]scenario_box_\scenariolayers.north east) {$\iddots$};
+
+% \node(ssr_box) [resultbox, fit=(optimization) (evaluation) (tsresults)] {};
+% \node(ssr_label) [resultlabel, anchor=west] at ([xshift=\buffer] ssr_box.north west) {Single scenario results};
+
+\end{circuitikz}
+\end{document}

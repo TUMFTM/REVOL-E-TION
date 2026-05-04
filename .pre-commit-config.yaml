@@ -12,11 +12,13 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.11
     hooks:
-    - id: ruff-format
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
   - repo: local
     hooks:
       - id: generate_scenario_schema
-        name: Generate the senario schema in the README
+        name: Generate the scenario schema in README
         entry: python scripts/generate_scenario_schema.py
         language: system
         pass_filenames: false

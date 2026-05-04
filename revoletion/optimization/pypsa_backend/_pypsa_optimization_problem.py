@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 from functools import singledispatchmethod
+from typing import Any
 
 import linopy.constants
 import numpy as np
@@ -12,7 +13,7 @@ import pypsa
 from typing_extensions import Self, override
 
 import revoletion.optimization.optimization_problem as optimization_problem
-from revoletion import blocks, utils
+from revoletion import blocks, time
 from revoletion import scenario as scn
 
 from . import _utils as pypsa_utils
@@ -54,7 +55,6 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _(
         self, block: blocks.RenewableSource, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        # `out` is the
         out = self._get_pypsa_link_power_flow(block, dti, "outflow-link")
 
         # `pot` is the potential available power from the generator, which might not be fully utilized.
@@ -71,45 +71,26 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _(
         self, block: blocks.ControllableSource, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        return {"out": self._get_pypsa_power_flow_generator(block, dti, "gen")}
+        return {"out": self._get_pypsa_generator_power_flow(block, dti, "gen")}
 
     @get_power_flow.register
     def _(
         self, block: blocks.GridConnection, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        flows: dict[str, pd.Series] = {}
-
-        flows["inflow_1"] = self._get_pypsa_link_power_flow(block, dti, "inflow-link")
-
-        # This fakes the peak shaving API of oemof to make the API compatible.
-        # TODO: implement the peak shaving behavior for PyPSA.
-        for period in block.peak_periods.index:
-            start = block.peak_periods.loc[period]["start"]
-            if start > dti[-1]:
-                continue
-
-            end = block.peak_periods.loc[period]["end"]
-            if end < dti[0]:
-                continue
-
-            period_dti = dti[(dti >= start) & (dti <= end)]
-            if len(period_dti) == 0:
-                continue
-
-            label = f"outflow_{period}"
-            flows[label] = self._get_pypsa_link_power_flow(block, period_dti, "outflow-link")
-
-        return flows
+        return {
+            "in": self._get_pypsa_link_power_flow(block, dti, "inflow-link"),
+            "out": self._get_pypsa_link_power_flow(block, dti, "outflow-link"),
+        }
 
     @get_power_flow.register
     def _(self, block: blocks.GridMarket, dti: pd.DatetimeIndex) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         return {
-            "out": self._get_pypsa_power_flow_generator(block, dti, "export-gen"),
-            "in": self._get_pypsa_power_flow_generator(block, dti, "import-gen"),
+            "out": self._get_pypsa_generator_power_flow(block, dti, "export-gen"),
+            "in": self._get_pypsa_generator_power_flow(block, dti, "import-gen"),
         }
 
     @get_power_flow.register
-    def _get_power_flow_storage(
+    def _get_power_flow_storage_block(
         self, block: blocks.StorageBlock, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
         normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
@@ -142,7 +123,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _(
         self, block: blocks.ElectricFleetUnit, dti: pd.DatetimeIndex
     ) -> dict[str, optimization_problem.FloatOrTimeSeries]:
-        power_flows = self._get_power_flow_storage(block, dti)
+        power_flows = self._get_power_flow_storage_block(block, dti)
         power_flows.update(
             {
                 "ext_dc": self._get_pypsa_link_power_flow(block, dti, "ext-dc-inflow-link"),
@@ -163,7 +144,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
         return self._align_pypsa_values_to_dti(pypsa_power_flow, dti)
 
-    def _get_pypsa_power_flow_generator(
+    def _get_pypsa_generator_power_flow(
         self, block: blocks.BaseBlock, dti: pd.DatetimeIndex, label: str
     ) -> optimization_problem.FloatOrTimeSeries:
         """
@@ -177,6 +158,13 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
     def _align_pypsa_values_to_dti(
         self, pypsa_values: optimization_problem.FloatOrTimeSeries, dti: pd.DatetimeIndex
     ) -> optimization_problem.FloatOrTimeSeries:
+        """Aligns the UTC normalized timeseries data to the input timezone.
+
+        Since PyPSA can only handle UTC timeseries data, all timeseries data
+        is normalized to UTC timezone during the construction of the PyPSA energy system.
+        However, since the consumers expect to receive the results in the original timezone,
+        the PyPSA results must be realigned with the input timezone.
+        """
         if isinstance(pypsa_values, float):
             return pypsa_values
         return pypsa_utils.denormalize_dti_or_df(pypsa_values, dti.tz)
@@ -189,9 +177,36 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
             raise ValueError(f"Cannot determine SoC for block {block.name} of type {type(block)}")
 
         pypsa_store_name = make_pypsa_label(block, "battery-store")
+
         normalized_dti = pypsa_utils.normalize_dti_or_df(dti)
-        pypsa_store_e = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
-        return self._align_pypsa_values_to_dti(pypsa_store_e, dti)
+        normalized_pypsa_dti = self._net.snapshots
+        if len(normalized_dti) > len(normalized_pypsa_dti):
+            # Extended DTI passed (oemof-style, n+1 points).
+            # PyPSA's e is end-of-interval, so we reconstruct the n+1 series by
+            # prepending e_initial as the first (start-of-horizon) value.
+            pypsa_store_e = self._net.stores_t.e[pypsa_store_name]  # length n, end-of-interval
+
+            e_initial = self._net.stores.at[pypsa_store_name, "e_initial"]  # scalar, start-of-horizon
+            # e_initial is stored as a fraction of e_nom in PyPSA
+            e_nom = self._net.stores.at[pypsa_store_name, "e_nom"]
+            e_initial_mwh = e_initial * e_nom
+
+            # Build the n+1 series: [e_initial, e[t0], e[t1], ..., e[tN-1]]
+            extended_e = pd.concat(
+                [
+                    pd.Series([e_initial_mwh], index=[normalized_pypsa_dti[0]]),  # placeholder index, will be reindexed
+                    pypsa_store_e,
+                ]
+            )
+            extended_e.index = normalized_dti  # align to the extended oemof-style dti
+
+            stored_energy = self._align_pypsa_values_to_dti(extended_e, dti)
+        else:
+            # Standard DTI: just return end-of-interval SoC aligned to snapshots
+            pypsa_store_e = self._net.stores_t.e.loc[normalized_dti, pypsa_store_name]
+            stored_energy = self._align_pypsa_values_to_dti(pypsa_store_e, dti)
+
+        return stored_energy
 
     @singledispatchmethod
     @override
@@ -354,6 +369,7 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
 
 VALID_PYPSA_SOLVERS = {
     optimization_problem.Solver.CBC,
+    optimization_problem.Solver.GUROBI,
     optimization_problem.Solver.HIGHS,
 }
 
@@ -384,7 +400,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
     def from_revoletion_scenario(
         cls,
         scenario: scn.Scenario,
-        horizon: utils.TimeSettings,
+        horizon: time.TimeFrame,
         logger: logging.Logger,
         config: optimization_problem.OptimizationProblemConfig | None = None,
     ) -> Self:
@@ -393,10 +409,11 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
 
         visitor = PyPSABlockVisitor(
             horizon,
+            logger,
             config.cost_eps,
             enable_investment=config.invest,
             enforce_soc_min=config.enforce_soc_constraints,
-            enable_committment=config.committment,
+            enable_commitment=config.commitment,
         )
         pypsa_network = visitor.create_pypsa_network(scenario.block_registry)
 
@@ -523,7 +540,8 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         if status != optimization_problem.OptimizationStatus.OPTIMAL:
             return status, None
 
-        # PyPSA does not provide separate results like OMEOF, and instead the results are directly saved inside the network.
+        # PyPSA does not provide separate results like OMEOF.
+        # Instead, the results are directly saved inside the network.
         return status, PypsaOptimizationResult(net=self._net)
 
     @override
@@ -562,7 +580,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
         # This should reduce the I/O interactions and significantly speed up optimizations for large scenarios.
         io_api = "direct" if self._config.solver == optimization_problem.Solver.HIGHS else None
 
-        optimize_kwargs = dict(
+        optimize_kwargs: dict[str, Any] = dict(
             # By default, PyPSA and linopy would print status information about the optimization problem to the console.
             # This is quite spammy and therefore it is only enabled for debug mode.
             log_to_console=self._config.debug,
@@ -573,9 +591,13 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             solver_options={
                 "output_flag": False,
             },
-            # TODO: added to speedup trajectory generation -> make configurable?
-            mip_rel_gap=0.01,
         )
+
+        if self._config.commitment:
+            # When unit commitment is enabled, the optimization problem is transformed into a
+            # Mixed-Integer problem which can be more costly to optimize.
+            # We can improve performance by allowing 'less' optimal results.
+            optimize_kwargs["mip_rel_gap"] = 0.01
 
         if self._warmstart_folder is not None:
             warmstart_file = f"{self._warmstart_folder.name}/basis.lp"

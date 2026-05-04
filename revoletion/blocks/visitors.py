@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, override
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from typing_extensions import override
 
-from revoletion import utils
+from revoletion import time, utils
 
 from . import blocks
 
@@ -60,12 +60,12 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
 
     @override
     def visit_block(self, block: blocks.BaseBlock, plot_traces: PlotTraces) -> None:
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, plot_traces=plot_traces)
+
         if isinstance(block, blocks.NonElectricBlock):
             # Abort for non-electric blocks.
             return
-
-        for subblock in block.subblocks.values():
-            self.visit_block(subblock, plot_traces=plot_traces)
 
         # The system core block is special. It is an electric block, but does not employ the same
         # plotting logic. Therefore, only the custom plotting logic is executed and the execution
@@ -204,7 +204,7 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
     def get_legend_entry(self, block: blocks.BaseBlock) -> str:
         match block:
             case blocks.RenewableSource():
-                return f"{block.name} power (nom. {block.sizes['block'].total / 1e3:.1f} kW)"
+                return f"{block.name} power (nom. {block.sizes['block'].total / 1e3:.1f} kWp)"
             case blocks.FixedDemand():
                 return f"{block.name} power"
             case blocks.GridConnection():
@@ -230,7 +230,7 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
                 return (
                     f"{block.name} (dis-)charge power "
                     f"(max. {block.sizes['storage'].total * block.crate_chg * block.eff['chg'] / 1e3:.1f} kW charge / "
-                    f"{block.sizes['storage'].total * block.crate_dis * block.eff['dis'] / 1e3:.1f} kW discharge)"
+                    f"{block.sizes['storage'].total * block.crate_dis / block.eff['dis'] / 1e3:.1f} kW discharge)"
                 )
 
             case blocks.Fleet():
@@ -270,7 +270,7 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
             messages.extend(self.visit_block(subblock))
 
         for size in block.sizes.values():
-            if (msg := size.result_msg) != "":
+            if (msg := size.result_msg(name_block=block.name)) != "":
                 messages.append(msg)
 
         if isinstance(block, blocks.GridConnection):
@@ -281,22 +281,22 @@ class MessageCollectionBlockVisitor(BlockVisitor[list[str]]):
     def visit_grid_connection(self, block: blocks.GridConnection) -> list[str]:
         return [
             f'{"Optimized peak" if block.peakshaving else "Peak"} power in component "{block.name}" for peak period '
-            f'"{period}": {row["power"] / 1e3:.1f} kW '
-            f"- OPEX in simulation period: {block.evaluators[period].opex_peak.sim:.2f} {block.scenario.currency}"
-            for period, row in block.peak_periods.iterrows()
-            if row["start"] < block.scenario.times.eval.end
+            f'"{period.label}": {period.peak_power / 1e3:.1f} kW '
+            f"- OPEX in simulation period: {block.pois[period.label].opex.eval:.2f} {block.scenario.currency}"
+            for period in block.peak_periods.itertuples(index=False)
+            if period.start < block.scenario.times.eval.end
         ]
 
 
 class TimeseriesCollectionBlockVisitor(BlockVisitor[list[pd.Series]]):
-    def collect_timeseries(self, block_registry: _BlockRegistryT, horizon: utils.TimeSettings) -> list[pd.Series]:
+    def collect_timeseries(self, block_registry: _BlockRegistryT, horizon: time.TimeFrame) -> list[pd.Series]:
         timeseries = []
         for block in block_registry.get("TopLevelBlock", {}).values():
             timeseries.extend(self.visit_block(block, horizon))
         return timeseries
 
     @override
-    def visit_block(self, block: blocks.BaseBlock, horizon: utils.TimeSettings) -> list[pd.Series]:
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame) -> list[pd.Series]:
         timeseries = []
         for subblock in block.subblocks.values():
             timeseries.extend(self.visit_block(subblock, horizon))
@@ -306,7 +306,7 @@ class TimeseriesCollectionBlockVisitor(BlockVisitor[list[pd.Series]]):
 
         return timeseries
 
-    def visit_electric_block(self, block: blocks.ElectricBlock, horizon: utils.TimeSettings) -> list[pd.Series]:
+    def visit_electric_block(self, block: blocks.ElectricBlock, horizon: time.TimeFrame) -> list[pd.Series]:
         timeseries = []
         reindexed_flows = block.flows.copy()
         reindexed_flows.columns = pd.MultiIndex.from_tuples(
@@ -354,7 +354,11 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
         # get attributes of type int, float, bool and str for scenario.summary_list
         summary_list.append(
             pd.Series(
-                {key: value for key, value in block.__dict__.items() if isinstance(value, (int, float, bool, str))}
+                {
+                    key: value
+                    for key, value in block.__dict__.items()
+                    if isinstance(value, (int, float, bool, str, np.number))
+                }
             )
         )
 
@@ -363,7 +367,7 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
             summary_list.append(size.result_summary)
 
         # get economic results
-        summary_list.append(block.aggregator.write_result_summary())
+        summary_list.append(block.aggregator.result_summary)
 
         if isinstance(block, blocks.ElectricBlock):
             summary_list.append(self.visit_electric_block(block))
@@ -377,17 +381,52 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
         return summary_df_list
 
     def visit_electric_block(self, block: blocks.ElectricBlock) -> pd.Series:
-        return utils.create_results_from_dataframe(df=block.energies, name_prefix="energy")
+        combined = {}
+
+        for energy in block.energies.values():
+            combined.update(energy.result_summary)
+
+        return pd.Series(combined)
 
     def visit_grid_connection(self, block: blocks.GridConnection) -> pd.Series:
         peak_power_results = {}
-        for period, row in block.peak_periods.iterrows():
-            if row["start"] < block.scenario.times.eval.end:
+        for period in block.peak_periods.itertuples(index=False):
+            if period.start < block.scenario.times.eval.end:
                 peak_power_results.update(
                     {
-                        f"{period}_peak_power": row["power"],
-                        f"{period}_peak_period_fraction": row["period_fraction"],
-                        f"{period}_peak_opex_sim": block.evaluators[period].opex_peak.sim,
+                        f"{period.label}_peak_power": period.peak_power,
+                        f"{period.label}_peak_period_fraction": period.fraction,
+                        f"{period.label}_peak_opex_eval": block.pois[period.label].opex.eval,
                     }
                 )
         return pd.Series(peak_power_results)
+
+
+class CashflowCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
+    def collect_cashflow(self, block_registry: _BlockRegistryT) -> list[pd.DataFrame]:
+        cashflow_df_list = []
+        for block in block_registry.get("TopLevelBlock", {}).values():
+            block_cashflow_df_list = self.visit_block(block)
+            cashflow_df_list.extend(block_cashflow_df_list)
+        return cashflow_df_list
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, **kwargs) -> list[pd.DataFrame]:
+        cashflow_df_list = []
+
+        # For each subblock the dataframe is just passed through.
+        # This is necessary, because the results for each block should be aggregated separately.
+        for subblock in block.subblocks.values():
+            cashflow_df_list.extend(self.visit_block(subblock))
+
+        cashflow_df = block.aggregator.result_cashflow
+
+        cashflow_df.index = utils.add_index_level(
+            index=cashflow_df.index,
+            level_name="block",
+            level_value=block.name,
+        )
+
+        cashflow_df_list.append(cashflow_df)
+
+        return cashflow_df_list

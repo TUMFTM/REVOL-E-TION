@@ -7,10 +7,16 @@
 .revoletion.egg-info/
 .revoletion.egg-info/*
 
-results/*
+.gitlab-ci-local/
+.gitlab-ci-local/*
+
+example/results/*
+!example/results/.gitkeep
 
 images/auxil/*
 
+.gitlab-ci-local
+.gitlab-ci-local/*
 
 # VS Code
 .vscode/

@@ -5,26 +5,27 @@ from __future__ import annotations
 import ast
 import re
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, override
 
 import numpy as np
 import pandas as pd
-import pvlib
-import requests
 import windpowerlib
-from typing_extensions import override
 
 from revoletion import battery as bat
+from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils
 from revoletion import economics as eco
-from revoletion import mobility, utils
+from revoletion import scenario as scn
 
 if TYPE_CHECKING:
+    import datetime
+
     from revoletion import scenario as scn
 
 
 class BlockScenarioInterface(ABC):
     @abstractmethod
-    def pre_scenario(self) -> None:
+    def pre_scenario(self, **kwargs) -> None:
         """
         Trigger actions to be executed after all inits.
         """
@@ -39,16 +40,29 @@ class BlockScenarioInterface(ABC):
 
 
 class BaseBlock(BlockScenarioInterface, ABC):
-    """
-    abstract class
-    """
+    _SIZE_NAMES = []
+    _FLOW_NAMES = []
+    _STATE_NAMES = []
 
-    def init_evaluators(self):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Merge the _FLOW_NAMES, _STATE_NAMES, and _SIZE_NAMES from all parent classes and own definition
+        for attr in ("_FLOW_NAMES", "_STATE_NAMES", "_SIZE_NAMES"):
+            accumulated = []
+
+            # Merge from direct parents only (as they already contain the merged lists of their parents)
+            for base in cls.__bases__:
+                if hasattr(base, attr):
+                    accumulated.extend(getattr(base, attr))
+
+            # Add own definition (if any)
+            accumulated.extend(cls.__dict__.get(attr, []))
+
+            setattr(cls, attr, accumulated)
+
+    def init_pois(self):
         # add a new POI to block.pois
-        pass
-
-    def init_states(self):
-        # add a new column to block.states
         pass
 
     def __init__(
@@ -57,6 +71,7 @@ class BaseBlock(BlockScenarioInterface, ABC):
         scenario: scn.Scenario,
         params: dict = None,
         parent: BaseBlock | scn.Scenario = None,
+        **kwargs,
     ):
         """
         Initialize (Sub)Block object with attributes and data structures
@@ -81,15 +96,41 @@ class BaseBlock(BlockScenarioInterface, ABC):
         self.expansion_equal = False
         self.params_preprocessing()
 
-        self.aggregator = eco.EcoAggregator(name=self.name, scenario=self.scenario, block=self)
+        self.sizes = {
+            name: size.Size.create_from_block(name=name, block=self, unit=unit) for name, unit in self._SIZE_NAMES
+        }
 
-        self.states = pd.DataFrame(index=self.scenario.times.sim.dti_extd, dtype="float64")
-        self.init_states()
+        self.flows = pd.DataFrame(
+            index=self.scenario.times.sim.dti,
+            columns=self._FLOW_NAMES,
+            data=0.0,
+            dtype=float,
+        )
 
-        self.sizes = dict()  # entries are created by EcoEvaluator
+        self.states = pd.DataFrame(
+            index=self.scenario.times.sim.dti_extd,
+            columns=self._STATE_NAMES,
+            data=0.0,
+            dtype=float,
+        )
 
-        self.evaluators = dict()
-        self.init_evaluators()
+        self.pois = {}
+        self.init_pois()
+
+        self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
+        for poi in self.pois.values():
+            self.aggregator.add_block(poi)
+        self.parent.aggregator.add_block(self.aggregator)
+
+        self.energies = {
+            flow: energy.EnergyEvaluator(name=flow, eco=self.scenario.eco_params) for flow in self._FLOW_NAMES
+        }
+
+        # accumulate invest costs caused by preexisting components in scenario
+        for poi in self.pois.values():
+            size_obj = self.sizes.get(poi.name_size, None)
+            size_preexisting = size_obj.preexisting if size_obj else None
+            self.scenario.capex_preexisting_considered += poi.get_invest_preexisting(size_preexisting=size_preexisting)
 
         # region initialize data structures
         self.subblocks = dict()
@@ -128,12 +169,12 @@ class BaseBlock(BlockScenarioInterface, ABC):
             setattr(self, name_var2, getattr(self, name_var1))
 
     @override
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         trigger actions to be executed after all inits
         """
         for subblock in self.subblocks.values():
-            subblock.pre_scenario()
+            subblock.pre_scenario(**kwargs)
 
     @override
     def post_scenario(self):
@@ -143,10 +184,32 @@ class BaseBlock(BlockScenarioInterface, ABC):
         # calculate results
         self.calc_results_economics()
 
-    def calc_results_economics(self):
-        # calculate economic results and write one level up
-        for evaluator in self.evaluators.values():
-            evaluator.aggregate()
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
+        if poi.name_size is not None:
+            size_obj = self.sizes[poi.name_size]
+            size_preexisting = size_obj.preexisting
+            size_expansion = size_obj.expansion
+        else:
+            size_preexisting = None
+            size_expansion = None
+
+        flow_name = poi.name_flow
+        if flow_name:
+            flow = self.flows[flow_name].loc[self.scenario.times.eval.dti]
+        else:
+            flow = None
+
+        return {
+            "size_preexisting": size_preexisting,
+            "size_expansion": size_expansion,
+            "power": flow,
+        }
+
+    def calc_results_economics(self, **kwargs):
+        # calculate economic results
+        for poi in self.pois.values():
+            poi.evaluate(**self._build_poi_evaluation_kwargs(poi), **kwargs)
+
         self.aggregator.aggregate()
 
 
@@ -154,6 +217,8 @@ class NonElectricBlock(BaseBlock): ...
 
 
 class ElectricBlock(BaseBlock, ABC):
+    _FLOW_NAMES = ["total"]
+
     def __init__(
         self,
         name: str,
@@ -161,15 +226,16 @@ class ElectricBlock(BaseBlock, ABC):
         flow_apriori_names: list = None,
         params: dict = None,
         parent: BaseBlock | scn.Scenario = None,
+        **kwargs,
     ):
-        self.flow_names = set()
+        self.power_circles = []
 
-        super().__init__(name=name, scenario=scenario, params=params, parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params, parent=parent, **kwargs)
 
         # empty list not possible as default argument as it is mutable
         flow_apriori_names = flow_apriori_names if flow_apriori_names is not None else []
 
-        self.components = dict()
+        self.components = {}
         self.bus_connected = None
 
         # ToDo: (1) remove flow_apriori_names and use flow names instead
@@ -178,20 +244,6 @@ class ElectricBlock(BaseBlock, ABC):
             index=self.scenario.times.sim.dti,
             columns=flow_apriori_names,
             dtype="float64",
-        )
-
-        self.flows = pd.DataFrame(
-            index=self.scenario.times.sim.dti,
-            columns=(["total"] + list(self.flow_names)),
-            data=0.0,
-            dtype="float64",
-        )
-
-        self.energies = pd.DataFrame(
-            index=(["total"] + list(self.flow_names)),
-            columns=["sim", "yrl", "prj", "dis"],
-            data=0.0,  # cumulative property
-            dtype=float,
         )
 
         self.eff = dict()
@@ -213,82 +265,90 @@ class ElectricBlock(BaseBlock, ABC):
         # total flow calculation is duplicated in StorageBlock
         self.flows["total"] = self.flows.get(key="out", default=0) - self.flows.get(key="in", default=0)
 
+        # detect circular flows
+        for power_circle in self.power_circles:
+            self.detect_circular_flows(flow1=power_circle[0], flow2=power_circle[1])
+
+    def detect_circular_flows(self, flow1: str, flow2: str):
+        col1 = self.flows[flow1].to_numpy()
+        col2 = self.flows[flow2].to_numpy()
+        circular = np.minimum(col1, col2)
+        if np.any(circular):
+            self.flows[f"circular_{flow1}_{flow2}"] = circular
+            self.scenario.logger.warning(
+                f'Block "{self.name}" - circular flow for flows {flow1} and {flow2} - check energy results'
+            )
+
     def calc_results_energies(self):
         """
         post scenario method
         process flows and calculate energies from flows
         """
-        for flow_name, flow in self.flows.items():
-            energy = flow[self.scenario.times.eval.dti].sum() * self.scenario.timestep.hours
-            self.energies.loc[flow_name, "sim"] = energy
-            if ("circular" in flow_name) and (energy != 0):
-                self.scenario.logger.warning(
-                    f'Block "{self.name}" - circular flow detected (flows name: {flow_name}) - check energy results'
-                )
-
-        self.energies["yrl"] = self.energies["sim"] / self.scenario.sim_yr_rat
-        self.energies["prj"] = self.energies["yrl"] * self.scenario.prj_duration_yrs
-        self.energies["dis"] = (
-            self.energies["yrl"] * self.scenario.discount_factors.loc[self.scenario.periods_prj, "end"].sum()
-        )
+        for e in self.energies.values():
+            e.evaluate(self.flows.loc[self.scenario.times.eval.dti, e.name])
 
 
 class SourceBlock(ElectricBlock, ABC):
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["total", :]
+        self.scenario.energies["sources"].add_energy(self.energies["total"])
 
 
 class SinkBlock(ElectricBlock, ABC):
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[("sinks", "del"), :] -= self.energies.loc["total", :]
+        self.scenario.energies["sinks"].add_energy(self.energies["total"])
 
 
 class SystemCore(ElectricBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["acdc"] = eco.EcoEvaluator(
+    _SIZE_NAMES = [("acdc", "kW"), ("dcac", "kW")]
+    _FLOW_NAMES = ["acdc", "dcac"]
+
+    def init_pois(self):
+        super().init_pois()
+
+        self.pois["acdc"] = eco.POI.create(
             name="acdc",
-            scenario=self.scenario,
-            block=self,
-            size_name="acdc",
-            size_unit="kW",
-            flow_name="acdc",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
                 consider_preexisting=self.capex_preexisting_acdc,
-                spec=self.capex_spec,
+                ls=self.ls,
+                ccr=self.ccr,
             ),
-            mntex_config=dict(spec=self.mntex_spec),
-            opex_config=dict(spec=self.opex_spec),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
+            name_size="acdc",
+            name_flow="acdc",
         )
 
-        self.evaluators["dcac"] = eco.EcoEvaluator(
+        self.pois["dcac"] = eco.POI.create(
             name="dcac",
-            scenario=self.scenario,
-            block=self,
-            size_name="dcac",
-            size_unit="kW",
-            flow_name="dcac",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(
-                consider_preexisting=self.capex_preexisting_dcac,
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
                 spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_dcac,
+                ls=self.ls,
+                ccr=self.ccr,
             ),
-            mntex_config=dict(spec=self.mntex_spec),
-            opex_config=dict(spec=self.opex_spec),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
+            name_size="dcac",
+            name_flow="dcac",
         )
 
-    def __init__(self, name: str, scenario):
+        self.power_circles.append(("acdc", "dcac"))
+
+    def __init__(self, name: str, scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
     def params_preprocessing(self):
@@ -303,53 +363,53 @@ class SystemCore(ElectricBlock):
         post scenario method
         """
         super().calc_results_flows()
-        self.flows["circular_dcac_acdc"] = self.flows[["dcac", "acdc"]].min(axis=1)
 
 
 class RenewableSource(SourceBlock, ABC):
-    """
-    abstract class
-    """
+    _SIZE_NAMES = [("block", "kWp")]
+    _FLOW_NAMES = ["out", "curt", "pot"]
 
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["block"] = eco.EcoEvaluator(
+    def init_pois(self):
+        super().init_pois()
+        self.pois["block"] = eco.POI.create(
             name="block",
-            scenario=self.scenario,
-            block=self,
-            size_name="block",
-            size_unit="kW",
-            flow_name="out",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_block, spec=self.capex_spec),
-            mntex_config=dict(spec=self.mntex_spec),
-            opex_config=dict(spec=self.opex_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_block,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
+            name_size="block",
+            name_flow="out",
         )
 
-        self.evaluators["curt"] = eco.EcoEvaluator(
+        self.pois["curt"] = eco.POI.create(
             name="curt",
-            scenario=self.scenario,
-            block=self,
-            flow_name="curt",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            name_flow="curt",
         )
 
-        self.evaluators["pot"] = eco.EcoEvaluator(
+        self.pois["pot"] = eco.POI.create(
             name="pot",
-            scenario=self.scenario,
-            block=self,
-            flow_name="pot",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            name_flow="pot",
         )
 
-    def __init__(self, name: str, scenario):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
-
         self.data = None  # todo move to a priori flows (except for wind speed and ambient temp)
         self.get_ts_data()
 
@@ -360,14 +420,17 @@ class RenewableSource(SourceBlock, ABC):
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        # add curt and pot to scenario.energies
-        self.scenario.energies.loc[("renewable", "act"), :] += self.energies.loc["out", :]
 
-        # pandas creates a RuntimeWarning at division by 0 -> try/except does not work
-        if self.energies.loc["pot", "sim"] == 0:
-            self.scenario.logger.warning(f"Block {self.name}: Curtailment share calculation: division by zero")
+        e_pot = self.energies["pot"].eval == 0
+        if e_pot == 0:
+            self.share_curtailment = np.nan
         else:
-            self.share_curtailment = self.energies.loc["curt", "sim"] / self.energies.loc["pot", "sim"]
+            self.share_curtailment = self.energies["curt"].eval / e_pot
+
+        # aggregate results in scenario.energies
+        self.scenario.energies["renewable_act"].add_energy(self.energies["out"])
+        self.scenario.energies["renewable_pot"].add_energy(self.energies["pot"])
+        self.scenario.energies["renewable_curt"].add_energy(self.energies["curt"])
 
 
 class PVSource(RenewableSource):
@@ -377,337 +440,48 @@ class PVSource(RenewableSource):
         Get potential power profile from API or file, each either from Solcast or PVGIS
         """
 
-        def calc_power_from_irradiation():
-            """
-            pre scenario (init) method
-            calculate PV potential output power from insolation and weather data
-            function is necessary for solcast input that does not contain power data
-            """
+        array = data_manager.PvArray(
+            tracking_type=getattr(self, "trackingtype", 0),
+            mounting_place=getattr(self, "mountingplace", "free"),
+            type_cell=getattr(self, "type_cell", None),
+            rad_database=getattr(self, "database", None),
+            tilt=getattr(self, "tilt", None),
+            azimuth=getattr(self, "azimuth", None),
+            horizon_custom=getattr(self, "horizon_custom", None),
+        )
 
-            u0 = 26.9  # W/(˚C.m2) - cSi Free standing
-            u1 = 6.2  # W.s/(˚C.m3) - cSi Free standing
-            mod_temp = self.data["temp_air"] + (self.data["gti"] / (u0 + (u1 * self.data["speed_wind"])))
+        manager = data_manager.DataManager(location=self.scenario.location, logger=self.scenario.logger, array=array)
 
-            # PVGIS temperature and irradiance coefficients for cSi panels as per Huld T., Friesen G., Skoczek A.,
-            # Kenny R.P., Sample T., Field M., Dunlop E.D. A power-rating model for crystalline silicon PV modules
-            # Solar Energy Materials & Solar Cells. 2011 95, 3359-3369.
-            k1 = -0.017237
-            k2 = -0.040465
-            k3 = -0.004702
-            k4 = 0.000149
-            k5 = 0.000170
-            k6 = 0.000005
-            g = self.data["gti"] / 1000
-            t = mod_temp - 25
-            lng = np.zeros_like(g)
-            lng[g != 0] = np.log(g[g != 0])  # ln(g) ignoring zeros
+        try:
+            data_source = data_manager.DataSource(self.data_source)
+        except ValueError as e:
+            raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
 
-            # Faiman, D. Assessing the outdoor operating temperature of photovoltaic modules.
-            # Prog. Photovolt. Res. Appl.2008, 16, 307–315
-            eff_rel = 1 + (k1 * lng) + (k2 * (lng**2)) + (k3 * t) + (k4 * t * lng) + (k5 * t * (lng**2)) + (k6 * (t**2))
-            eff_rel = eff_rel.fillna(0)
-
-            # calculate power of a 1kWp array, limited to 0 (negative values fail calculation)
-            self.data["P"] = np.maximum(0, eff_rel * self.data["gti"])
-
-        # region get data from PVGIS API
-        if self.data_source == "pvgis api":  # PVGIS API example selected
-            api_startyear = self.scenario.times.sim.start.tz_convert("utc").year
-            api_endyear = self.scenario.times.sim.end.tz_convert("utc").year
-            api_length = api_endyear - api_startyear
-            api_shift = pd.to_timedelta("0 days")
-
-            API_MAX_YEAR = 2023
-            API_MIN_YEAR = 2005
-            API_MAX_LENGTH = API_MAX_YEAR - API_MIN_YEAR
-
-            if api_length > API_MAX_LENGTH:
-                raise ValueError("PVGIS API request exceeds maximum length of available data")
-            elif api_endyear > API_MAX_YEAR:  # PVGIS-SARAH3 only has data up to 2023
-                api_shift = pd.to_datetime(f"{API_MAX_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                    f"{api_endyear}-01-01 00:00:00+00:00"
-                )
-                api_endyear = API_MAX_YEAR
-                api_startyear = API_MAX_YEAR - api_length
-                self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available endtime - data shifted by "
-                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                    f"end in {API_MAX_YEAR}"
-                )
-            elif api_startyear < API_MIN_YEAR:  # PVGIS-SARAH3 only has data from 2005
-                api_shift = pd.to_datetime(f"{API_MIN_YEAR}-01-01 00:00:00+00:00") - pd.to_datetime(
-                    f"{api_startyear}-01-01 00:00:00+00:00"
-                )
-                api_startyear = API_MIN_YEAR
-                api_endyear = API_MIN_YEAR + api_length
-                self.scenario.logger.warning(
-                    f"PVGIS API request exceeds available starttime - data shifted by "
-                    f"{abs(api_shift)} year{'s' if abs(api_shift) == 1 else ''} to "
-                    f"start in {API_MIN_YEAR}"
-                )
-            # Todo leap years can result in data shifting not landing at the same point in time
-
-            optimal_tilt = True if self.tilt == "optimal" else False
-            optimal_angles = True if self.azimuth == "optimal" else False
-            if optimal_angles and not optimal_tilt:
-                raise ValueError("Optimal azimuth requires optimal tilt as well")
-
-            self.data, *_ = pvlib.iotools.get_pvgis_hourly(
-                latitude=self.scenario.location.latitude,
-                longitude=self.scenario.location.longitude,
-                start=api_startyear,
-                end=api_endyear,
-                # PVGIS API is case sensitive and all inputs are lowered -> revert
-                raddatabase=self.raddatabase.upper(),
-                components=True,  # output solar radiation components (beam, diffuse, and reflected)
-                surface_tilt=self.tilt if self.tilt != "optimal" else 0,  # has to be numeric
-                surface_azimuth=self.azimuth if self.azimuth != "optimal" else 0,  # has to be numeric
-                outputformat="json",
-                usehorizon=self.horizon,
-                userhorizon=self.horizon_custom,
-                pvcalculation=True,
-                peakpower=1,
-                # PVGIS API is case sensitive and all inputs are lowered -> revert
-                pvtechchoice={
-                    "crystsi": "crystSi",
-                    "cis": "CIS",
-                    "cdte": "CdTe",
-                    "unknown": "Unknown",
-                }[self.pvtechchoice],
-                mountingplace=self.mountingplace,
-                loss=0,
-                trackingtype=self.trackingtype,
-                optimal_surface_tilt=optimal_tilt,
-                optimalangles=optimal_angles,
-                url="https://re.jrc.ec.europa.eu/api/v5_3/",
-                map_variables=True,
-                timeout=30,  # default value
-            )
-
-            # rename column wind_speed to speed_wind
-            self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-
-            self.data.index = self.data.index.round("h")  # PVGIS does not give time slots as full hours
-            self.data.index = self.data.index - api_shift
-        # endregion
-
-        # region get data from Solcast API
-        elif self.data_source == "solcast api":  # solcast API example selected
-            # set api key as bearer token
-            if self.scenario.settings.key_solcast_api is None:
-                raise ValueError(
-                    f"Scenario {self.scenario.name} - Block {self.name}: No Solcast API key specified in run arguments"
-                )
-
-            latitude = self.scenario.location.latitude  # unmetered location for testing 41.89021
-            longitude = self.scenario.location.longitude  # unmetered location for testing 12.492231
-
-            # Avoid unintended use of metered coordinates
-            if latitude != 41.89021 or longitude != 12.492231:
-                raise ValueError("Remove this line if you want to proceed with metered coordinates!")
-
-            params = dict(
-                latitude=latitude,
-                longitude=longitude,
-                start=self.scenario.times.sim.start,
-                end=self.scenario.sim_extd_endtime,
-                period="PT5M",
-                output_parameters=[
-                    "air_temp",
-                    "albedo",
-                    "azimuth",
-                    "clearsky_dhi",
-                    "clearsky_dni",
-                    "clearsky_ghi",
-                    "clearsky_gti",
-                    "cloud_opacity",
-                    "dewpoint_temp",
-                    "dhi",
-                    "dni",
-                    "ghi",
-                    "gti",
-                    "precipitable_water",
-                    "precipitation_rate",
-                    "relative_humidity",
-                    "surface_pressure",
-                    "snow_depth",
-                    "snow_water_equivalent",
-                    "snow_soiling_rooftop",
-                    "snow_soiling_ground",
-                    "wind_direction_100m",
-                    "wind_direction_10m",
-                    "wind_speed_100m",
-                    "wind_speed_10m",
-                    "zenith",
-                ],
-                format="json",
-                array_type={0: "fixed", 1: "horizontal_single_axis"}[self.trackingtype],
-                time_zone="utc",
-                include_etadata=False,
-                terrain_shading=self.horizon,
-            )
-
-            # add parameters azimuth and tilt. If not specified, Solcast uses default/optimized values
-            if self.tilt != "optimal":
-                params["tilt"] = self.tilt
-            if self.azimuth != "optimal":
-                # Convert to Solcast convention: (-180, 180], north=0, east=-90, south=180, west=90
-                params["azimuth"] = x - 360 if (x := (-1 * self.azimuth) % 360) > 180 else x
-
-            # get data from Solcast API
-            response = requests.get(
-                url="https://api.solcast.com.au/data/historic/radiation_and_weather",
-                headers={"Authorization": f"Bearer {self.scenario.settings.key_solcast_api}"},
-                params=params,
-            )
-
-            if response.status_code != 200:
-                raise ValueError(
-                    f"Block {self.name} - "
-                    f"Solcast API returned {response.status_code} instead of 200: "
-                    f"{response.json()['response_status']['message']}"
-                )
-
-            self.data = pd.json_normalize(response.json()["estimated_actuals"])
-            # save solcast file
-            if not self.scenario.settings.largescalemode:
-                self.data.to_csv(
-                    self.scenario.paths.create_result_path(
-                        suffix=f"{self.scenario.name}_{self.name}_log_solcast_raw.csv"
-                    ),
-                    index=False,
-                )
-
-            # calculate period_start as only period_end is given, set as index and remove unnecessary columns
-            self.data["period_start"] = pd.to_datetime(self.data["period_end"]) - pd.to_timedelta(self.data["period"])
-            self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
-            self.data = self.data.tz_convert(self.scenario.location.timezone)
-            self.data.drop(columns=["period", "period_start", "period_end"], inplace=True)
-            # rename columns according to further processing steps
-            self.data.rename(
-                columns={"air_temp": "temp_air", "wind_speed_10m": "speed_wind"},
-                inplace=True,
-            )
-            # calculate specific pv power
-            calc_power_from_irradiation()
-        # endregion
-
-        elif "file" in self.data_source:
-            # region get data from file
+        if self.filename is not None:
             path_input_file = self.scenario.paths.input / utils.set_extension(
                 filename=self.filename, default_extension=".csv"
             )
+        else:
+            path_input_file = None
 
-            # region read input data from timeseries csv with specific power
-            if self.data_source == "file":
-                try:
-                    self.data = utils.read_timeseries_csv(
-                        path_input_file=path_input_file,
-                        scenario=self.scenario,
-                        multiheader=False,
-                        resampling=False,
-                    )
-                except IndexError as exc:
-                    raise IndexError(f"Failed to load data for block {self.name}: {exc}")
-            # endregion
-            elif self.data_source in ["pvgis file", "solcast file"]:
-                # region get data from PVGIS file
-                if self.data_source == "pvgis file":
-                    self.data, meta = pvlib.iotools.read_pvgis_hourly(path_input_file, map_variables=True)
-                    self.scenario.location.latitude = meta["inputs"]["latitude"]
-                    self.scenario.location.longitude = meta["inputs"]["longitude"]
-                    # rename column wind_speed to speed_wind
-                    self.data.rename(columns={"wind_speed": "speed_wind"}, inplace=True)
-                    self.data.index = self.data.index.round("h")  # PVGIS does not necessarily give full hour time vals
-                # endregion
+        try:
+            self.data = manager.get_data(
+                data_source,
+                file_path=path_input_file,
+                timeframe=self.scenario.times.sim,
+                api_key=self.scenario.settings.key_solcast_api,
+            )
 
-                # region get data from Solcast file
-                elif self.data_source == "solcast file":
-                    # no lat/lon contained in solcast files
-                    self.data = pd.read_csv(path_input_file)
-                    self.data.rename(
-                        columns={
-                            "air_temp": "temp_air",
-                            "wind_speed_10m": "speed_wind",
-                        },
-                        inplace=True,
-                    )
-                    self.data["period_start"] = pd.to_datetime(self.data["period_end"], utc=True) - pd.to_timedelta(
-                        self.data["period"]
-                    )
-                    self.data.set_index(pd.DatetimeIndex(self.data["period_start"]), inplace=True)
-                    self.data = self.data.tz_convert(self.scenario.location.timezone)
+            if getattr(self, "temp_scn", False):
+                self.scenario.temp_air = self.data["temp_air"].copy()
 
-                    # if at least one of azimuth or tilt are specified, recalculate irradiation for new pose
-                    if self.azimuth is not None or self.tilt is not None:
-                        if self.azimuth is None or self.azimuth == "optimal":
-                            azimuth = 0 if self.scenario.location.latitude < 0 else 180  # Solcast "optimum"
-                        else:
-                            azimuth = self.azimuth
-
-                        if self.tilt is None or self.tilt == "optimal":
-                            abs(self.scenario.location.latitude)  # Something close to Solcast "optimum"
-                        else:
-                            tilt = self.tilt
-
-                        # calculate solar position for location (gets altitude from lookup table)
-                        solar_position = pvlib.location.Location(
-                            latitude=self.scenario.location.latitude,
-                            longitude=self.scenario.location.longitude,
-                        ).get_solarposition(times=self.data.index, method="nrel_numpy")
-                        solar_azimuth = solar_position["azimuth"]
-                        solar_zenith = solar_position["zenith"]
-
-                        # alternatively use solcast data, but this data is rounded to integers  # ToDo: benchmark
-                        # solar_azimuth = self.data['azimuth']
-                        # solar_zenith = self.data['zenith']
-
-                        self.data["gti"] = pvlib.irradiance.get_total_irradiance(
-                            surface_tilt=tilt,
-                            surface_azimuth=azimuth,
-                            solar_zenith=solar_zenith,
-                            solar_azimuth=solar_azimuth,
-                            dni=self.data["dni"],
-                            ghi=self.data["ghi"],
-                            dhi=self.data["dhi"],
-                            dni_extra=pvlib.irradiance.get_extra_radiation(self.data.index),
-                            model="haydavies",  # 'haydavies', 'reindl', 'klucher', or 'isotropic' too
-                            albedo=self.data["albedo"],
-                        )["poa_global"]
-
-                    self.data = self.data[["temp_air", "speed_wind", "gti"]]
-                    calc_power_from_irradiation()
-                # endregion
-
-            else:
-                raise ValueError(
-                    f"Scenario {self.scenario.name} - Block {self.name}: No usable PV data input specified"
-                )
-
-        # region resample, localize, and transform data
-        # data is in W for a 1kWp PV array -> convert to specific power (if not already done e.g. for timeseries file)
-        if "power_spec" not in self.data.columns:
-            self.data["power_spec"] = self.data["P"] / 1e3
-        # resample to timestep, fill NaN values with previous ones (or next ones, if not available)
-        self.data = self.data.resample(self.scenario.timestep.td).mean().ffill().bfill()
-        # convert to local time
-        self.data.index = self.data.index.tz_convert(tz=self.scenario.location.timezone)
-
-        # only keep relevant columns and timestamps
-        self.data = self.data.loc[self.scenario.times.sim.dti_extd, ["power_spec", "speed_wind", "temp_air"]]
-        # endregion
-
-        if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
-
-        if getattr(self, "temp_scn", False):  # parameter only exists for instances specified in scenario.temp_air
-            self.scenario.temp_air = self.data["temp_air"]
+        except data_manager.DataProviderError as e:
+            raise RuntimeError(f"Failed to retrieve timeseries data for block {self.name}") from e
 
 
 class WindSource(RenewableSource):
     def get_ts_data(self):
-        """
-        pre scenario (init) method
+        """pre scenario (init) method
         get potential power profile from PVSource block or file
         """
         if self.data_source in self.scenario.block_registry.get("TopLevelBlock", {}).keys():
@@ -736,7 +510,8 @@ class WindSource(RenewableSource):
                         self.scenario.paths.input
                         / utils.set_extension(filename=self.filename, default_extension=".csv")
                     ),
-                    scenario=self.scenario,
+                    timezone=self.scenario.location.timezone,
+                    resampling_dti=self.scenario.times.sim.dti,
                 )
             except IndexError as exc:
                 raise IndexError(f"Failed to load timeseries data for block {self.name}: {exc}")
@@ -748,108 +523,150 @@ class WindSource(RenewableSource):
 
 
 class FixedDemand(SinkBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["block"] = eco.EcoEvaluator(
+    _FLOW_NAMES = ["in"]
+    _SLP_IDS = ["h0", "g0", "g1", "g2", "g3", "g4", "g5", "g6", "l0", "l1", "l2", "h25", "g25", "l25", "s25", "p25"]
+
+    def init_pois(self):
+        super().init_pois()
+        self.pois["block"] = eco.POI.create(
             name="block",
-            scenario=self.scenario,
-            block=self,
-            flow_name="in",
-            crev_config=dict(spec=self.crev_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                fix=self.capex_fix_metering,
+                consider_preexisting=self.capex_preexisting_metering,
+            ),
+            mntex=eco.MntexParams(fix=self.mntex_fix_metering),
+            crev=eco.CrevParams(spec_power=self.crev_spec),
+            name_flow="in",
         )
 
-    def __init__(self, name: str, scenario):
+    def __init__(self, name: str, scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=["demand"],
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
         self.get_flows_apriori()
+
+    @staticmethod
+    def get_slp(
+        slp_id: str,
+        ts_start: pd.Timestamp,
+        ts_end: pd.Timestamp,
+        path_data_file: Path,
+        holiday_dates: list[datetime.date] = None,
+    ):
+        slp_id = slp_id.upper()
+        if slp_id not in [
+            "H0",
+            "G0",
+            "G1",
+            "G2",
+            "G3",
+            "G4",
+            "G5",
+            "G6",
+            "L0",
+            "L1",
+            "L2",
+            "L3",
+            "H25",
+            "G25",
+            "L25",
+            "S25",
+            "P25",
+        ]:
+            raise ValueError(f"SLP '{slp_id}' is not recognized.")
+
+        if not all(ts.tz for ts in [ts_start, ts_end]):
+            raise ValueError("Timestamps must be timezone-aware.")
+
+        if holiday_dates is None:
+            holiday_dates = []
+
+        # read SLP data, do not set index here, as we need to convert time column first
+        data = pd.read_csv(path_data_file, index_col=[])
+
+        # convert time column to time objects (only time without date)
+        data["time"] = pd.to_datetime(data["time"], format="%H:%M").dt.time
+
+        # set multi-index
+        data.set_index(["profile", "period", "day", "time"], inplace=True)
+
+        # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
+        freq_slp = "15min"
+        slp_dti = pd.DatetimeIndex(
+            pd.date_range(
+                start=ts_start.floor(freq_slp),
+                end=ts_end.ceil(freq_slp),
+                freq=freq_slp,
+            )
+        )
+
+        month = slp_dti.month
+        day = slp_dti.day
+
+        # vectorized period assignment
+        if slp_id in ["H25", "G25", "L25", "S25", "P25"]:
+            # Use month abbreviation for these profiles
+            period = pd.Series(slp_dti.strftime("%b"), index=slp_dti)
+        else:
+            # Use Winter/Summer/Transition logic
+
+            period = pd.Series(index=slp_dti, dtype="object")
+
+            # Winter: Nov 1 - Mar 20
+            period[((month >= 11) | (month <= 3)) & ~((month == 3) & (day > 20))] = "Winter"
+
+            # Summer: May 15 - Sep 14
+            period[((month > 5) | ((month == 5) & (day >= 15))) & ((month < 9) | ((month == 9) & (day <= 14)))] = (
+                "Summer"
+            )
+
+            # Transition: Mar 21 - May 14 and Sep 15 - Oct 31 (-> everything else)
+            period.fillna("Transition", inplace=True)
+
+        # vectorized daytype
+        dow = slp_dti.weekday
+        daytype = pd.Series("Workday", index=slp_dti)
+        # treat Christmas Eve and New Year's Eve as Saturdays, will be overwritten if they are Sundays
+        daytype[dow == 5 | ((month.isin([12])) & (day.isin([24, 31])))] = "Saturday"
+        # to use isin for holidays: remove timezone info and normalize to midnight
+        daytype[dow == 6 | slp_dti.tz_localize(None).normalize().isin(pd.to_datetime(holiday_dates))] = "Sunday"
+
+        lookup_index = pd.MultiIndex.from_arrays(
+            arrays=[[slp_id] * len(slp_dti), period.values, daytype.values, slp_dti.time],
+            names=data.index.names,
+        )
+
+        # use reindex to execute lookup
+        slp_timeseries = data.reindex(lookup_index).set_axis(slp_dti)
+
+        # for private households use dynamic correction as stated in VDEW manual
+        if slp_id in ["H0", "H25", "P25", "S25"]:
+            factor = np.polyval(p=[-3.92e-10, 3.2e-7, -7.02e-5, 2.1e-3, 1.24], x=slp_dti.dayofyear)
+            slp_timeseries = slp_timeseries.mul(factor, axis=0)
+
+        return slp_timeseries
 
     def get_flows_apriori(self):
         self.flows_apriori.index = (
             self.scenario.times.sim.dti
         )  # ToDo: Why needs this to be set explicitly? Should be done in init()
-        if self.load_profile in [
-            "h0",
-            "g0",
-            "g1",
-            "g2",
-            "g3",
-            "g4",
-            "g5",
-            "g6",
-            "l0",
-            "l1",
-            "l2",
-        ]:
 
-            def get_timeframe(date):
-                month = date.month
-                day = date.day
-                if ((month, day) >= (11, 1)) or ((month, day) <= (3, 20)):
-                    return "Winter"
-                elif (5, 15) <= (month, day) <= (9, 14):
-                    return "Summer"
-                else:  # Transition months
-                    return "Transition"
-
-            def get_daytype(date, holidays):
-                if date.date() in holidays or date.weekday() == 6:
-                    return "Sunday"
-                # Treat Christmas Eve and New Year's Eve as Saturdays if they are not Sundays
-                elif (date.weekday() == 5) or ((date.month, date.day) in [(12, 24), (12, 31)]):
-                    return "Saturday"
-                else:
-                    return "Workday"
-
-            # Read BDEW SLP profiles
-            slp = pd.read_csv(
-                self.scenario.paths.data_persist / "slp_bdew.csv",
-                skiprows=[0],
-                header=[0, 1, 2],
-                index_col=0,
+        if self.load_profile in self._SLP_IDS:
+            data = self.get_slp(
+                slp_id=self.load_profile,
+                ts_start=self.scenario.times.sim.start,
+                ts_end=self.scenario.times.sim.end,
+                holiday_dates=self.scenario.holiday_dates,
+                path_data_file=self.scenario.paths.data_persist / "slp_bdew.csv",
             )
-
-            slp.index = pd.to_datetime(slp.index, format="%H:%M").time
-
-            # use a fixed frequency of 15 minutes for the timeseries generation as the SLPs are given with that frequency
-            freq_slp = "15min"
-            dti_slp = pd.DatetimeIndex(
-                pd.date_range(
-                    start=self.scenario.times.sim.start.floor(freq_slp),
-                    end=self.scenario.times.sim.end.ceil(freq_slp),
-                    freq=freq_slp,
-                )
-            )
-
-            data = pd.Series(index=dti_slp, data=0, dtype="float64")
-
-            data = data.index.to_series().apply(
-                lambda x: slp.loc[
-                    x.time(),
-                    (
-                        self.load_profile.upper(),
-                        get_timeframe(x),
-                        get_daytype(x, self.scenario.holiday_dates),
-                    ),
-                ]
-            )
-
-            # apply dynamic correction for household profiles
-            if self.load_profile == "h0":
-                # for private households use dynamic correction as stated in VDEW manual -> round to 1/10 Watt
-                num_day = data.index.dayofyear.astype("int64")
-                data = round(
-                    data
-                    * (
-                        -3.92e-10 * num_day**4 + 3.2e-7 * num_day**3 - 7.02e-5 * num_day**2 + 2.1e-3 * num_day**1 + 1.24
-                    ),
-                    ndigits=1,
-                )
 
             # scale load profile (given for consumption of 1MWh per year) to specified yearly consumption
             # this calculation leads to small deviations from the specified yearly consumption due to varying holidays and
@@ -858,23 +675,26 @@ class FixedDemand(SinkBlock):
 
             # resample to simulation time step
             self.flows_apriori["demand"] = data.resample(self.scenario.timestep.td).mean().ffill().bfill()
+
         elif self.load_profile in ["const", "constant"]:
             self.flows_apriori["demand"] = self.consumption_yrl / (365 * 24)
+
         elif isinstance(self.load_profile, str):  # load_profile is a file name
+            load_profile_file = self.scenario.paths.input / utils.set_extension(
+                filename=self.load_profile, default_extension=".csv"
+            )
             try:
                 data = utils.read_timeseries_csv(
-                    path_input_file=(
-                        self.scenario.paths.input
-                        / utils.set_extension(filename=self.load_profile, default_extension=".csv")
-                    ),
-                    scenario=self.scenario,
+                    path_input_file=load_profile_file,
+                    timezone=self.scenario.location.timezone,
+                    resampling_dti=self.scenario.times.sim.dti,
                 )
             except IndexError as exc:
                 raise IndexError(f"Failed to read load profile for block {self.name}: {exc}")
 
             if data.shape[1] != 1:
                 self.scenario.logger.warning(
-                    f'Input file "{utils.set_extension(self.load_profile)}" for parameter '
+                    f"Input file {load_profile_file} for parameter "
                     f'"load_profile" in block "{self.name}" has more than one column. '
                     f"Sum of all columns is calculated for load profile."
                 )
@@ -891,77 +711,138 @@ class FixedDemand(SinkBlock):
 
 
 class ControllableSource(SourceBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["block"] = eco.EcoEvaluator(
+    _SIZE_NAMES = [("block", "kW")]
+    _FLOW_NAMES = ["out"]
+
+    def init_pois(self):
+        super().init_pois()
+        self.pois["block"] = eco.POI.create(
             name="block",
-            scenario=self.scenario,
-            block=self,
-            size_name="block",
-            size_unit="kW",
-            flow_name="out",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_block, spec=self.capex_spec),
-            mntex_config=dict(spec=self.mntex_spec),
-            opex_config=dict(spec=self.opex_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_block,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            opex=eco.OpexParams(spec_power=self.opex_spec),
+            name_size="block",
+            name_flow="out",
         )
 
-    def __init__(self, name: str, scenario: scn.Scenario):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             params=None,
             flow_apriori_names=None,
             parent=scenario,
+            **kwargs,
         )
 
 
 class GridConnection(ElectricBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["g2s"] = eco.EcoEvaluator(
+    _SIZE_NAMES = [("g2s", "kW"), ("s2g", "kW")]
+    _FLOW_NAMES = ["in", "out"]
+
+    def init_pois(self):
+        super().init_pois()
+        self.pois["g2s"] = eco.POI.create(
             name="g2s",
-            scenario=self.scenario,
-            block=self,
-            size_name="g2s",
-            size_unit="kW",
-            flow_name="out",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_g2s, spec=self.capex_spec),
-            mntex_config=dict(spec=self.mntex_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_g2s,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            name_size="g2s",
+            name_flow="out",
         )
 
-        self.evaluators["s2g"] = eco.EcoEvaluator(
+        self.pois["s2g"] = eco.POI.create(
             name="s2g",
-            scenario=self.scenario,
-            block=self,
-            size_name="s2g",
-            size_unit="kW",
-            flow_name="in",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(consider_preexisting=self.capex_preexisting_s2g, spec=self.capex_spec),
-            mntex_config=dict(spec=self.mntex_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
+                spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_s2g,
+                ls=self.ls,
+                ccr=self.ccr,
+            ),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            name_size="s2g",
+            name_flow="in",
         )
 
-    def __init__(self, name: str, scenario: scn.Scenario):
+        self.power_circles.append(("in", "out"))
+
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
-        self.inflows = dict()
-        self.outflows = dict()
+        self.peak_storages = dict()
 
-        self.peak_periods = pd.DataFrame()
-        self.bus_activation = pd.DataFrame()
+        peak_period = peak_periods.PeakPowerPeriodFreq[self.peak_period.upper()]
+        peak_period_start = peak_periods.PeakPowerPeriodStart[self.peak_period_start.upper()]
 
-        self.initialize_peakshaving()
+        self.peak_period_measurement = time.Timestep.from_str(self.peak_period_measurement)
+
+        timeframe = self.scenario.times.sim
+
+        self.peak_periods, self.peak_periods_activation = peak_periods.get_peak_periods(
+            timeframe=timeframe,
+            peak_period=peak_period,
+            peak_period_start=peak_period_start,
+            peak_power_init=self.peak_power_init,
+        )
+
+        steps_per_period = int(self.peak_period_measurement.hours / timeframe.timestep.hours)
+        len_timeframe = len(timeframe.dti)
+        t = np.arange(len_timeframe)
+        t_extd = np.arange(len_timeframe + 1)
+
+        # SOC of virtual storage has to be 0 at the start of each new measurement period
+        self.peak_periods_soc_limit = pd.Series(
+            data=(t_extd % steps_per_period != 0).astype(int),
+            index=timeframe.dti_extd,
+        )
+
+        # outflow out of virtual storage for peak shaving is only allowed in the last timestep of a measurement period
+        # activate outflow for all periods, if there are not at least 2 timesteps per measurement period
+        self.peak_periods_storage_flush = pd.Series(
+            data=((t % steps_per_period == steps_per_period - 1).astype(int)) if steps_per_period >= 2 else 1.0,
+            index=timeframe.dti,
+        )
+
+        peak_period_pois = {
+            period.label: eco.POI.create(
+                name=period.label,
+                eco=self.scenario.eco_params,
+                data_dir=self.scenario.paths.input,
+                opex=eco.OpexParams(
+                    spec_peak=self.opex_spec_peak,
+                    frac_peak=period.fraction,
+                ),
+            )
+            for period in self.peak_periods.itertuples(index=False)
+        }
+
+        self.pois.update(peak_period_pois)
+        for poi in peak_period_pois.values():
+            self.aggregator.add_block(poi)
+
+        self.flows[list(self.peak_periods.keys())] = 0.0
 
         if not self.markets:
             raise ValueError(
@@ -981,207 +862,118 @@ class GridConnection(ElectricBlock):
         self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
         self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
 
-    def initialize_peakshaving(self):
-        # Create functions to extract relevant property of datetimeindex for peakshaving intervals
-        periods_func = {
-            "day": lambda x: x.strftime("%Y-%m-%d"),
-            "week": lambda x: x.strftime("%Y-CW%W"),
-            "month": lambda x: x.strftime("%Y-%m"),
-            "quarter": lambda x: f"{x.year}-Q{(x.month - 1) // 3 + 1}",
-            "year": lambda x: x.strftime("%Y"),
-        }
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
+        kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
-        if self.peak_period not in periods_func.keys():
-            raise ValueError(f'Block {self.name}: parameter "peak_period" must be one of {periods_func.keys()}')
+        if poi.name not in self.peak_periods.index:
+            return kwargs_eval
 
-        # Get dummies directly from the 'periods' data
-        self.bus_activation = pd.get_dummies(
-            self.scenario.times.sim.dti.to_series().map(periods_func[str(self.peak_period)])
-        ).astype(int)
+        row = self.peak_periods.loc[poi.name]
 
-        # Create a series to store peak power values
-        self.peak_periods = pd.DataFrame(
-            index=self.bus_activation.columns,
-            columns=["power"],
-            data=self.peak_power_init,  # cumulative variable
-            dtype="float64",
-        )
-
-        def process_period(period):
-            dti_period = self.bus_activation[self.bus_activation[period] == 1].index
-            dti_period_sim = dti_period[dti_period.isin(self.scenario.times.sim.dti)]  # remove non-sim timestamps
-
-            # if interval is not part of dti_sim (happens for rh), dti is empty -> return 0
-            if len(dti_period_sim) == 0:
-                period_fraction = 0.0
-            else:
-                if period == "day":
-                    start = dti_period_sim.min().normalize()
-                    end = start + pd.DateOffset(days=1) - self.scenario.timestep.td
-                elif period == "week":
-                    start = dti_period_sim.min().normalize() - pd.Timedelta(days=dti_period_sim[0].weekday())
-                    end = start + pd.DateOffset(weeks=1) - self.scenario.timestep.td
-                elif period == "month":
-                    start = dti_period_sim.min().normalize().replace(day=1)
-                    end = start + pd.DateOffset(months=1) - self.scenario.timestep.td
-                elif period == "quarter":
-                    start = (
-                        dti_period_sim.min()
-                        .normalize()
-                        .replace(day=1, month=((dti_period_sim[0].month - 1) // 3) * 3 + 1)
-                    )
-                    end = start + pd.DateOffset(months=3) - self.scenario.timestep.td
-                elif period == "year":
-                    start = dti_period_sim.min().normalize().replace(day=1, month=1)
-                    end = start + pd.DateOffset(years=1) - self.scenario.timestep.td
-                else:
-                    start = dti_period_sim.min()
-                    end = dti_period_sim.max()
-
-                period_fraction = len(dti_period_sim) / len(pd.date_range(start, end, freq=self.scenario.timestep.td))
-
-            return pd.Series(
-                {
-                    "period_fraction": period_fraction,
-                    "start": dti_period.min(),
-                    "end": dti_period.max(),
-                }
-            )
-
-        # Apply the function to each period in peak_periods
-        self.peak_periods[["period_fraction", "start", "end"]] = self.peak_periods.index.to_series().apply(
-            process_period
-        )
-
-        self.n_peak_periods_yr = (
-            (
-                pd.date_range(
-                    start=self.scenario.times.sim.start,
-                    end=self.scenario.times.sim.start + pd.DateOffset(years=1),
-                    freq=self.scenario.timestep.td,
-                    inclusive="left",
-                )
-                .to_series()
-                .apply(periods_func[str(self.peak_period)])
-            )
-            .unique()
-            .size
-        )
-
-        self.evaluators.update(
-            {
-                period: eco.EcoEvaluator(
-                    name=period,
-                    block=self,
-                    scenario=self.scenario,
-                    opex_config_peak=dict(spec_peak=self.opex_spec_peak),
-                )
-                for period in self.peak_periods.index
-            }
-        )
-
-    def calc_results_flows(self):
-        super().calc_results_flows()
-        self.flows["circular_in_out"] = self.flows[["in", "out"]].min(axis=1)
+        kwargs_eval["power_peak"] = row["peak_power"]
+        return kwargs_eval
 
     def calc_results_energies(self):
         super().calc_results_energies()
-        self.scenario.energies.loc[("sources", "pro"), :] += self.energies.loc["out", :]
-        self.scenario.energies.loc[("sinks", "del"), :] += self.energies.loc["in", :]
+        self.scenario.energies["sources"].add_energy(self.energies["out"])
+        self.scenario.energies["sinks"].add_energy(self.energies["in"])
 
 
 class GridMarket(ElectricBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["g2s"] = eco.EcoEvaluator(
+    _SIZE_NAMES = [("g2s", "kW"), ("s2g", "kW")]
+    _FLOW_NAMES = ["in", "out"]
+
+    def init_pois(self):
+        super().init_pois()
+        self.pois["g2s"] = eco.POI.create(
             name="g2s",
-            scenario=self.scenario,
-            block=self,
-            flow_name="out",
-            opex_config=dict(spec=self.opex_spec_g2s),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_g2s),
+            name_size="g2s",
+            name_flow="out",
         )
 
-        self.evaluators["s2g"] = eco.EcoEvaluator(
+        self.pois["s2g"] = eco.POI.create(
             name="s2g",
-            scenario=self.scenario,
-            block=self,
-            flow_name="in",
-            opex_config=dict(spec=self.opex_spec_s2g),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_s2g),
+            name_size="s2g",
+            name_flow="in",
         )
 
-    def __init__(self, name: str, scenario: scn.OptimizationHorizon, params, parent):
+    def __init__(self, name: str, scenario: scn.Scenario, params, parent, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=params,
             parent=parent,
+            **kwargs,
         )
 
 
-class StorageBlock(ElectricBlock):
-    """
-    abstract class
-    """
+class StorageBlock(ElectricBlock, ABC):
+    _SIZE_NAMES = [("storage", "kWh")]
+    _FLOW_NAMES = ["in", "out", "bat_in", "bat_out"]
+    _STATE_NAMES = [
+        "energy",
+        "soc",
+        "soh",
+        "q_loss_cal",
+        "q_loss_cyc",
+        "soc_min",
+        "soc_max",
+    ]
 
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["storage"] = eco.EcoEvaluator(
+    def init_pois(self):
+        super().init_pois()
+        self.pois["storage"] = eco.POI.create(
             name="storage",
-            scenario=self.scenario,
-            block=self,
-            size_name="storage",
-            size_unit="kWh",
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(
-                consider_preexisting=self.capex_preexisting_storage,
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
                 spec=self.capex_spec,
+                consider_preexisting=self.capex_preexisting_storage,
+                ls=self.ls,
+                ccr=self.ccr,
             ),
-            mntex_config=dict(spec=self.mntex_spec),
+            mntex=eco.MntexParams(spec=self.mntex_spec),
+            name_size="storage",
         )
 
-        self.evaluators["in"] = eco.EcoEvaluator(
+        self.pois["in"] = eco.POI.create(
             name="in",
-            scenario=self.scenario,
-            block=self,
-            flow_name="in",
-            opex_config=dict(spec=self.opex_spec),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec),
+            name_flow="in",
         )
 
-        self.evaluators["out"] = eco.EcoEvaluator(
+        self.pois["out"] = eco.POI.create(
             name="out",
-            scenario=self.scenario,
-            block=self,
-            flow_name="out",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            name_flow="out",
         )
 
-        self.evaluators["bat_in"] = eco.EcoEvaluator(
+        self.pois["bat_in"] = eco.POI.create(
             name="bat_in",
-            scenario=self.scenario,
-            block=self,
-            flow_name="bat_in",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            name_flow="bat_in",
         )
 
-        self.evaluators["bat_out"] = eco.EcoEvaluator(
+        self.pois["bat_out"] = eco.POI.create(
             name="bat_out",
-            scenario=self.scenario,
-            block=self,
-            flow_name="bat_out",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            name_flow="bat_out",
         )
 
-    def init_states(self):
-        super().init_states()
-        for state in [
-            "energy",
-            "soc",
-            "soh",
-            "q_loss_cal",
-            "q_loss_cyc",
-            "soc_min",
-            "soc_max",
-        ]:
-            self.states[state] = np.nan
+        self.power_circles.append(("in", "out"))
+        self.power_circles.append(("bat_in", "bat_out"))
 
     def __init__(
         self,
@@ -1190,6 +982,7 @@ class StorageBlock(ElectricBlock):
         flow_apriori_names: list = None,
         params: dict = None,
         parent: BaseBlock | scn.Scenario = None,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -1197,6 +990,7 @@ class StorageBlock(ElectricBlock):
             flow_apriori_names=flow_apriori_names,
             params=params,
             parent=parent,
+            **kwargs,
         )
 
         def calc_loss_rate_per_period(
@@ -1234,18 +1028,14 @@ class StorageBlock(ElectricBlock):
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
 
-    def pre_scenario(self):
-        super().pre_scenario()
-        self.aging_model = bat.BatteryPackModel(self)
+    def pre_scenario(self, **kwargs):
+        super().pre_scenario(**kwargs)
+        self.aging_model = bat.BatteryPackModel.from_block(self)
 
     def calc_results_flows(self):
-        self.flows["total"] = self.flows.get(key="out", default=0) - self.flows.get(
-            key="in", default=0
-        )  # same as Block
+        super().calc_results_flows()
+        # ToDo: what is bat_total required for?
         self.flows["bat_total"] = self.flows.get(key="bat_out", default=0) - self.flows.get(key="bat_in", default=0)
-
-        self.flows["circular_in_out"] = self.flows[["in", "out"]].min(axis=1)
-        self.flows["bat_circular_bat_in_bat_out"] = self.flows[["bat_in", "bat_out"]].min(axis=1)
 
 
 class StationaryBattery(StorageBlock):
@@ -1253,6 +1043,7 @@ class StationaryBattery(StorageBlock):
         self,
         name: str,
         scenario: scn.Scenario,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -1260,6 +1051,7 @@ class StationaryBattery(StorageBlock):
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
     def initialize_efficiencies(self):
@@ -1277,31 +1069,34 @@ class StationaryBattery(StorageBlock):
 
 
 class Fleet(SinkBlock):
-    def init_evaluators(self):
-        super().init_evaluators()
-        self.evaluators["f2s"] = eco.EcoEvaluator(
+    _FLOW_NAMES = ["in", "out"]
+
+    def init_pois(self):
+        super().init_pois()
+        self.pois["f2s"] = eco.POI.create(
             name="f2s",
-            scenario=self.scenario,
-            block=self,
-            flow_name="out",
-            opex_config=dict(spec=self.opex_spec_f2s),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_f2s),
+            name_flow="out",
         )
 
-        self.evaluators["s2f"] = eco.EcoEvaluator(
+        self.pois["s2f"] = eco.POI.create(
             name="s2f",
-            scenario=self.scenario,
-            block=self,
-            flow_name="in",
-            opex_config=dict(spec=self.opex_spec_s2f),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_s2f),
+            name_flow="in",
         )
 
-    def __init__(self, name: str, scenario: scn.Scenario):
+    def __init__(self, name: str, scenario: scn.Scenario, **kwargs):
         super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=None,
             params=None,
             parent=scenario,
+            **kwargs,
         )
 
         self.demand = None
@@ -1337,6 +1132,7 @@ class Fleet(SinkBlock):
                 path_timeframe_mapper=self.scenario.paths.input / f"{self.filename_mapper}.py",
                 path_demand=path_demand,
                 key_timeframe_mapper=self.name,
+                subfleets=self.subfleets,
             )
 
         elif self.data_source == "demand":
@@ -1374,9 +1170,8 @@ class Fleet(SinkBlock):
                 path_input_file=(
                     self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
                 ),
-                scenario=self.scenario,
+                timezone=self.scenario.location.timezone,
                 multiheader=True,
-                resampling=False,
             )  # Normal resampling cannot be used as consumption must be
         # meaned, while booleans, distances and dsocs must not.
         except IndexError as exc:
@@ -1393,7 +1188,7 @@ class Fleet(SinkBlock):
                 f'Block "{self.name}": log file does not match specified timestep - Resampling'
             )
 
-            cols = df.columns  # save orignal column sorting to apply after resampling
+            cols = df.columns  # save original column sorting to apply after resampling
             cols_consumption = df.columns[df.columns.get_level_values(1) == "consumption"]
             cols_dist = df.columns[df.columns.get_level_values(1) == "dist"]
             cols_bool = df.columns.difference(cols_consumption).difference(cols_dist)
@@ -1413,12 +1208,12 @@ class Fleet(SinkBlock):
 
 
 class SubFleet(NonElectricBlock):
-    def __init__(self, name: str, scenario: scn.Scenario, parent):
+    def __init__(self, name: str, scenario: scn.Scenario, parent, **kwargs):
         # subfleet parameters contain FleetUnit parameters -> split parameters for FleetUnits and SubFleet
         params = scenario.parameters.loc[name]
         params_subfleet = {key: params.pop(key) if key in params else None for key in ["num", "type_unit", "rex"]}
 
-        super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent)
+        super().__init__(name=name, scenario=scenario, params=params_subfleet, parent=parent, **kwargs)
 
         self.demand = None
         self.log = None
@@ -1434,40 +1229,52 @@ class SubFleet(NonElectricBlock):
         if params.get("mode_scheduling") in scenario.apriori_lvls:  # mode scheduling attr is in FleetUnit
             self.scenario.block_registry.setdefault("SubFleetScheduling", {})[self.name] = self
 
-        if getattr(self, "invest", False) and self.data_source in [
-            "usecases",
-            "demand",
-        ]:
+        if getattr(self, "invest", False) and self.data_source in ["usecases", "demand"]:
             self.scenario.logger.Error(
                 f'Subfleet "{self.name}": investment not implemented for data source "{self.data_source}"'
             )
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
-        super().pre_scenario()
+        super().pre_scenario(**kwargs)
 
 
-class FleetUnit:
-    def init_evaluators(self):
-        self.evaluators["glider"] = eco.EcoEvaluator(
+class FleetUnit(BaseBlock):
+    def init_pois(self):
+        self.pois["glider"] = eco.POI.create(
             name="glider",
-            scenario=self.scenario,
-            block=self,
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(
-                consider_preexisting=self.capex_preexisting_glider,
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
                 fix=self.capex_fix_glider,
+                ls=self.ls,
+                ccr=self.ccr,
+                consider_preexisting=self.capex_preexisting_glider,
             ),
-            mntex_config=dict(fix=self.mntex_fix_glider),
-            opex_config_fleetunit=dict(dist=self.opex_spec_dist),
-            crev_config_fleetunit=dict(dist=self.crev_spec_dist, time=self.crev_spec_time),
+            mntex=eco.MntexParams(fix=self.mntex_fix_glider),
+            opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
+            crev=eco.CrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
         )
 
-    def __init__(self):
+    def __init__(
+        self,
+        name: str,
+        scenario: scn.Scenario,
+        params: dict = None,
+        parent: BaseBlock | scn.Scenario = None,
+        **kwargs,
+    ):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
+
         self.log = None
 
-    def pre_scenario(self):
+    def pre_scenario(self, **kwargs):
         """
         slice log file from subfleet
         """
@@ -1485,47 +1292,58 @@ class FleetUnit:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
 
+        super().pre_scenario(**kwargs)
+
+    def post_scenario(self):
+        self.utilization = self.log["atbase"].mean()
+        self.dist_eval = self.log["dist"].sum() if "dist" in self.log.columns else 0
+        super().post_scenario()
+
+    def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
+        kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
+
+        kwargs_eval["dist"] = self.log["dist"]
+        # convert to active time -> vehicle not at base
+        kwargs_eval["time"] = ~(self.log["atbase"].astype(bool))
+        return kwargs_eval
+
 
 class ElectricFleetUnit(StorageBlock, FleetUnit):
-    """
-    abstract class
-    """
+    _FLOW_NAMES = ["ext_ac", "ext_dc"]
 
-    def init_evaluators(self):
-        StorageBlock.init_evaluators(self)
-        FleetUnit.init_evaluators(self)
+    def init_pois(self):
+        super().init_pois()
 
-        self.evaluators["charger"] = eco.EcoEvaluator(
+        self.pois["charger"] = eco.POI.create(
             name="charger",
-            scenario=self.scenario,
-            block=self,
-            ls=self.ls,
-            ccr=self.ccr,
-            capex_config=dict(
-                consider_preexisting=self.capex_preexisting_charger,
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            capex=eco.CapexParams(
                 fix=self.capex_fix_charger,
+                ls=self.ls,
+                ccr=self.ccr,
+                consider_preexisting=self.capex_preexisting_charger,
             ),
         )
 
-        self.evaluators["ext_ac"] = eco.EcoEvaluator(
+        self.pois["ext_ac"] = eco.POI.create(
             name="ext_ac",
-            scenario=self.scenario,
-            block=self,
-            flow_name="ext_ac",
-            opex_config=dict(spec=self.opex_spec_ext_ac),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_ext_ac),
+            name_flow="ext_ac",
         )
 
-        self.evaluators["ext_dc"] = eco.EcoEvaluator(
+        self.pois["ext_dc"] = eco.POI.create(
             name="ext_dc",
-            scenario=self.scenario,
-            block=self,
-            flow_name="ext_dc",
-            opex_config=dict(spec=self.opex_spec_ext_dc),
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            opex=eco.OpexParams(spec_power=self.opex_spec_ext_dc),
+            name_flow="ext_dc",
         )
 
-    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict):
-        StorageBlock.__init__(
-            self=self,
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
+        super().__init__(
             name=name,
             scenario=scenario,
             flow_apriori_names=[
@@ -1538,9 +1356,8 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             ],
             params=params,
             parent=parent,
+            **kwargs,
         )
-
-        FleetUnit.__init__(self=self)
 
         self.apriori = True if self.mode_scheduling in self.scenario.apriori_lvls else False
 
@@ -1555,20 +1372,16 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
         self.eff["dis_int"] = {"ac": self.eff_dis_ac, "dc": self.eff_dis_dc}[self.parent.parent.system]
         super().initialize_efficiencies()
 
-    def pre_scenario(self):
-        StorageBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
-
 
 class CombustionVehicle(NonElectricBlock, FleetUnit):
-    def init_evaluators(self):
-        NonElectricBlock.init_evaluators(self=self)
-        FleetUnit.init_evaluators(self=self)
-
-    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict):
-        NonElectricBlock.__init__(self=self, name=name, scenario=scenario, params=params, parent=parent)
-
-        FleetUnit.__init__(self=self)
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
+        super().__init__(
+            name=name,
+            scenario=scenario,
+            params=params,
+            parent=parent,
+            **kwargs,
+        )
 
         # delete parameters not needed for CombustionVehicles
         # ToDo: specify required parameters instead of obsolete ones
@@ -1596,21 +1409,14 @@ class CombustionVehicle(NonElectricBlock, FleetUnit):
             if hasattr(self, param):
                 delattr(self, param)
 
-    def pre_scenario(self):
-        NonElectricBlock.pre_scenario(self=self)
-        FleetUnit.pre_scenario(self=self)
-
 
 class ElectricVehicle(ElectricFleetUnit):
-    """
-    dummy class to enable tracking
-    """
-
     pass
 
 
 class MobileBattery(ElectricFleetUnit):
-    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict):
-        self.opex_spec_dist = 0.0  # no distance based opex for mobile battery
-        self.opex_spec_time = 0.0  # no distance based opex for mobile battery
-        super().__init__(name=name, scenario=scenario, parent=parent, params=params)
+    def __init__(self, name: str, scenario: scn.Scenario, parent: SubFleet, params: dict, **kwargs):
+        # initialize for scenario files without these parameters
+        self.opex_spec_dist = 0.0
+        self.opex_spec_time = 0.0
+        super().__init__(name=name, scenario=scenario, parent=parent, params=params, **kwargs)

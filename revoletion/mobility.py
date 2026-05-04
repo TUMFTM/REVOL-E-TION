@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-
+import ast
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import scipy as sp
 
-from . import utils
-
-
-def lognormal_params(mean: float, stdev: float) -> tuple:
-    """
-    calculate lognormal parameters mu and sigma from mean and standard deviation
-    """
-    mu = np.log(mean**2 / np.sqrt((mean**2) + (stdev**2)))
-    sig = np.sqrt(np.log(1 + (stdev**2) / (mean**2)))
-    return mu, sig
+from . import stochastics, utils
 
 
-class FleetDemand:
+def parse_entry(value):
+    if isinstance(value, list):
+        return value
+    if pd.isna(value):
+        return []
+    if isinstance(value, str):
+        parsed = ast.literal_eval(value)
+        if isinstance(parsed, list):
+            return parsed
+
+
+# ToDo: FleetDemand currently does not need to  be a class as it's just a pd.DataFrame.
+#  -> convert to functions (read_demand_file + sample_demand)
+#  -> for sampling use object of class Sampler (BatteryFleetSampler + VehicleFleetSampler)
+#  -> think about: dataclass UseCase
+class FleetDemand(ABC):
     """
     abstract class
     """
@@ -33,157 +39,169 @@ class FleetDemand:
         self.rng = np.random.default_rng(seed=42)  # random number generator
 
     def from_usecases(
-        self, path_usecases: str, path_timeframe_mapper: str, key_timeframe_mapper: str, path_demand: str = None
+        self,
+        path_usecases: Path,
+        path_timeframe_mapper: Path,
+        key_timeframe_mapper: str,
+        path_demand: Path = None,
+        subfleets: list = None,
     ):
-        self.read_usecase_file(path_usecases=Path(path_usecases).resolve())
-        self.sample(
-            path_timeframe_mapper=Path(path_timeframe_mapper).resolve(), key_timeframe_mapper=key_timeframe_mapper
-        )
+        self.usecases = self.read_usecase_file(path_usecases=path_usecases)
+
+        if (subfleets is not None) and (("subfleets", "list") in self.usecases.columns):
+            subfleets_set = set(subfleets)
+            self.usecases = self.usecases[
+                self.usecases[("subfleets", "list")].apply(
+                    lambda usecase_subfleets: any(item in subfleets_set for item in usecase_subfleets)
+                )
+            ]
+
+        self.mapper_timeframe = self.get_timeframe_mapper(path_timeframe_mapper=path_timeframe_mapper)
+        self.requests = self.sample(key_timeframe_mapper=key_timeframe_mapper)
 
         if path_demand is not None:
-            self.requests.to_csv(Path(path_demand).resolve())
+            self.requests.to_csv(path_demand)
 
-    def from_file(self, path_demand=str, dti=None):
+    def from_file(self, path_demand: Path, dti=None):
         """
         read in a subfleet requests csv file directly
         """
-        self.requests = pd.read_csv(Path(path_demand).resolve(), index_col=0)
+        requests = pd.read_csv(path_demand, index_col=0)
 
-        self.requests["time_req"] = pd.to_datetime(self.requests["time_req"], utc=True).dt.tz_convert(self.dti.tz)
-        self.requests["dtime_active"] = pd.to_timedelta(self.requests["dtime_active"])
-        self.requests["dtime_idle"] = pd.to_timedelta(self.requests["dtime_idle"])
-        self.requests["dtime_patience"] = pd.to_timedelta(self.requests["dtime_patience"])
+        requests["time_req"] = pd.to_datetime(requests["time_req"], utc=True).dt.tz_convert(self.dti.tz)
+        requests["dtime_active"] = pd.to_timedelta(requests["dtime_active"])
+        requests["dtime_idle"] = pd.to_timedelta(requests["dtime_idle"])
+        requests["dtime_patience"] = pd.to_timedelta(requests["dtime_patience"])
+
+        if "subfleets" in requests.columns:
+            requests["subfleets"] = requests["subfleets"].apply(parse_entry)
 
         dti_filter = dti if dti is not None else self.dti
-        self.requests = self.requests.loc[self.requests["time_req"].isin(dti_filter), :]
+        self.requests = requests.loc[requests["time_req"].isin(dti_filter), :]
 
-    def read_usecase_file(self, path_usecases: str) -> pd.DataFrame:
+    @staticmethod
+    def read_usecase_file(path_usecases: Path) -> pd.DataFrame:
         """
-        read a usecase definition csv file and perform necessary normalization for each timeframe.
+        read a usecase csv file and check for normalization of mixture model weights.
         """
 
-        self.usecases = pd.read_csv(path_usecases, header=0, index_col=["usecase", "timeframe"])
+        usecases = pd.read_csv(path_usecases, header=[0, 1], index_col=[0, 1])
 
-        for timeframe in self.usecases.index.get_level_values("timeframe").unique():
-            self.usecases.loc[(slice(None), timeframe), "rel_prob_norm"] = (
-                self.usecases.loc[(slice(None), timeframe), "rel_prob"]
-                / self.usecases.loc[(slice(None), timeframe), "rel_prob"].sum()
-            )
+        if ("subfleets", "list") in usecases.columns:
+            usecases[("subfleets", "list")] = usecases[("subfleets", "list")].apply(parse_entry)
 
-            sum_dep_magn = (
-                self.usecases.loc[(slice(None), timeframe), "dep1_magnitude"]
-                + self.usecases.loc[(slice(None), timeframe), "dep2_magnitude"]
-            )
-            self.usecases.loc[(slice(None), timeframe), "dep1_magnitude_norm"] = (
-                self.usecases.loc[(slice(None), timeframe), "dep1_magnitude"] / sum_dep_magn
-            )
-            self.usecases.loc[(slice(None), timeframe), "dep2_magnitude_norm"] = (
-                self.usecases.loc[(slice(None), timeframe), "dep2_magnitude"] / sum_dep_magn
-            )
+        usecases.index.names = ["usecase", "timeframe"]
+        usecases.columns.names = ["variable", "parameter"]
 
-    def sample(self, path_timeframe_mapper: str, key_timeframe_mapper: str) -> pd.DataFrame:
+        if any(usecases[("time_req", "weight1")] + usecases[("time_req", "weight2")] != 1):
+            raise ValueError(f"usecase file {path_usecases}: departure time mixture weights must add to 1")
+
+        return usecases
+
+    @staticmethod
+    def get_timeframe_mapper(path_timeframe_mapper: Path):
+        return utils.import_module_from_path(module_name=path_timeframe_mapper.stem, file_path=path_timeframe_mapper)
+
+    @abstractmethod
+    def sample_energy_demand(self, requests: pd.DataFrame) -> pd.DataFrame: ...
+
+    def sample(self, key_timeframe_mapper: str) -> pd.DataFrame:
         """
         generate requests dataframe from usecases & timeframes including all pre-dispatch information
         """
 
-        self.mapper_timeframe = utils.import_module_from_path(
-            module_name=path_timeframe_mapper.stem, file_path=path_timeframe_mapper
-        )
+        # region sample daily usecase requests from timeframe mapper and poisson distribution
+        days = pd.DataFrame(index=pd.to_datetime(np.unique(self.dti.date)))
+        days["timeframe"] = self.mapper_timeframe.map_timeframes(days, key_timeframe_mapper)
 
-        # region sample daily total requests from timeframe mapper and lognormal distribution
-        daily_total = pd.DataFrame(index=pd.to_datetime(np.unique(self.dti.date)))
-        daily_total["timeframe"], daily_total["demand_mean"], daily_total["demand_std"] = (
-            self.mapper_timeframe.map_timeframes(daily_total, key_timeframe_mapper)
-        )
-        daily_total["mu"], daily_total["sigma"] = lognormal_params(
-            daily_total["demand_mean"], daily_total["demand_std"]
-        )
-        daily_total["requests"] = daily_total.apply(
-            lambda row: np.round(self.rng.lognormal(row["mu"], row["sigma"])).astype(int), axis=1
-        )
+        usecase_lambdas = {
+            usecase: df["demand", "lambda"].droplevel("usecase")
+            for usecase, df in self.usecases.groupby(level="usecase")
+        }
+
+        if not usecase_lambdas:  # no usecases defined
+            requests = pd.DataFrame(
+                columns=[
+                    "date",
+                    "usecase",
+                    "timeframe",
+                    "time_req",
+                    "energy_req",
+                    "dtime_active",
+                    "dtime_idle",
+                    "dtime_patience",
+                ]
+            )
+            return requests
+
+        for usecase, lambdas in usecase_lambdas.items():
+            lam_values = days["timeframe"].map(lambdas).fillna(0)
+            days[f"{usecase}"] = np.random.poisson(lam=lam_values)
         # endregion
 
-        # region get request dates
-        self.requests["date"] = pd.to_datetime(np.repeat(daily_total.index, daily_total["requests"]))
-        self.requests["year"] = self.requests["date"].dt.year
-        self.requests["month"] = self.requests["date"].dt.month
-        self.requests["day"] = self.requests["date"].dt.day
-        self.requests["timeframe"] = daily_total.loc[self.requests["date"], "timeframe"].values
+        # region fill requests dataframe
+        requests_dfs = []
+        for usecase in usecase_lambdas:
+            dates = np.repeat(days.index.values, days[usecase].values)
+            timeframes = np.repeat(days["timeframe"].values, days[usecase].values)
+            requests_uc = pd.DataFrame({"date": dates, "usecase": usecase, "timeframe": timeframes})
+            requests_dfs.append(requests_uc)
 
-        def sample_usecases(group):
-            try:
-                ucgrp = pd.Series(
-                    np.random.choice(
-                        self.usecases.index.get_level_values("usecase").unique(),
-                        size=len(group),
-                        replace=True,
-                        p=self.usecases.loc[(slice(None), group.name), "rel_prob_norm"],
-                    ),
-                    index=group.index,
-                )
-            except ValueError:
-                raise ValueError("Sampling usecases failed. Check usecase and timeframe consistency.")
-            return ucgrp
-
-        self.requests["usecase"] = None
-        self.requests["usecase"] = self.requests.groupby("timeframe")["usecase"].transform(sample_usecases)
+        requests = pd.concat(requests_dfs, ignore_index=True)
         # endregion
 
         # region sample request times of day from usecase distribution
         def sample_time_uctf(group):
             # always sample finer than timestep to avoid rounding errors
             timestep_hours = (pd.to_timedelta(self.dti.freq)).total_seconds() / 3600
-            time_vals = np.arange(start=0, stop=24, step=timestep_hours / 100)
 
-            mag1 = self.usecases.loc[group.name, "dep1_magnitude"]
-            mean1 = np.median([self.usecases.loc[group.name, "dep1_time_mean"], 0, 24])
-            std1 = np.max([self.usecases.loc[group.name, "dep1_time_std"], 1e-8])
-            cdf1_vals = sp.stats.norm.cdf(time_vals, mean1, std1)
+            model = stochastics.DepartureDistribution.from_mean_std(
+                weight1=self.usecases.at[group.name, ("time_req", "weight1")],
+                weight2=self.usecases.at[group.name, ("time_req", "weight2")],
+                mean1=self.usecases.at[group.name, ("time_req", "mean1")],
+                mean2=self.usecases.at[group.name, ("time_req", "mean2")],
+                std1=self.usecases.at[group.name, ("time_req", "std1")],
+                std2=self.usecases.at[group.name, ("time_req", "std2")],
+            )
 
-            mag2 = self.usecases.loc[group.name, "dep2_magnitude"]
-            mean2 = np.median([self.usecases.loc[group.name, "dep2_time_mean"], 0, 24])
-            std2 = np.max([self.usecases.loc[group.name, "dep2_time_std"], 1e-8])
-            cdf2_vals = sp.stats.norm.cdf(time_vals, mean2, std2)
+            samples = model.sample(size=len(group))
+            time_samples = np.round(samples / timestep_hours) * timestep_hours  # Round to timestep
+            return pd.DataFrame({"hour": time_samples}, index=group.index)
 
-            cdf_vals = mag1 * cdf1_vals + mag2 * cdf2_vals
-            # Generate n uniform random numbers between 0 and 1
-            uniform_samples = np.random.rand(len(group))
-            # Interpolate to find the samples
-            time_samples = np.interp(uniform_samples, cdf_vals, time_vals)
-            # round to timestep
-            time_samples = np.round(time_samples / timestep_hours) * timestep_hours
-            return pd.DataFrame(data=time_samples, index=group.index)
+        requests["hour"] = requests.groupby(["usecase", "timeframe"], group_keys=False).apply(sample_time_uctf)
 
-        self.requests["hour"] = (
-            self.requests.groupby(["usecase", "timeframe"])
-            .apply(sample_time_uctf, include_groups=False)
-            .reset_index(level=[0, 1], drop=True)
-            .sort_index()
-        )
-        self.requests["time_req"] = pd.to_datetime(self.requests[["year", "month", "day", "hour"]])
-        self.requests.drop(["date", "year", "month", "day", "hour"], inplace=True, axis=1)
-        self.requests["time_req"] = self.requests["time_req"].dt.tz_localize(
+        requests["time_req"] = requests["date"] + pd.to_timedelta(requests["hour"], unit="h")
+        requests.drop(["date", "hour"], inplace=True, axis=1)
+        requests["time_req"] = requests["time_req"].dt.tz_localize(
             self.dti.tz,
             ambiguous="NaT",  # fall
             nonexistent="shift_forward",
-        )  # spring
-        self.requests.dropna(axis="index", subset=["time_req"], inplace=True)
+        )
+        requests.dropna(axis="index", subset=["time_req"], inplace=True)
+        requests.sort_values(by=["time_req"], inplace=True)
+        requests.reset_index(drop=True, inplace=True)
         # endregion
 
-        self.sample_energy_demand()  # specific to type of subfleet units (battery or vehicle)
+        requests = self.sample_energy_demand(
+            requests=requests
+        )  # specific to type of subfleet units (battery or vehicle)
 
         # region sample idle time
         def sample_idle_uctf(group):
-            uc_idle_mean = self.usecases.loc[group.name, "idle_mean"]
-            uc_idle_stdev = self.usecases.loc[group.name, "idle_std"]
-            p1, p2 = lognormal_params(uc_idle_mean, uc_idle_stdev)
-            idle = pd.to_timedelta(self.rng.lognormal(p1, p2, len(group)), unit="hour")
-            return pd.Series(idle, index=group.index)
+            distribution = stochastics.IdleDistribution(
+                p0=self.usecases.at[group.name, ("idle", "p0")],
+                a=self.usecases.at[group.name, ("idle", "a")],
+                c=self.usecases.at[group.name, ("idle", "c")],
+                scale=self.usecases.at[group.name, ("idle", "scale")],
+            )
 
-        self.requests["dtime_idle"] = None
-        self.requests["dtime_idle"] = self.requests.groupby(["usecase", "timeframe"])["dtime_idle"].transform(
-            sample_idle_uctf
-        )
+            return pd.Series(
+                pd.to_timedelta(distribution.sample(size=len(group)), unit="hour"),
+                index=group.index,
+            )
+
+        requests["dtime_idle"] = None
+        requests["dtime_idle"] = requests.groupby(["usecase", "timeframe"])["dtime_idle"].transform(sample_idle_uctf)
         # endregion
 
         # region get patience
@@ -192,20 +210,22 @@ class FleetDemand:
             groupby function
             get patience for one usecase and timeframe from usecase file
             """
-            patience = pd.to_timedelta(self.usecases.loc[group.name, "patience"], unit="hour")
+            patience = pd.to_timedelta(self.usecases.loc[group.name, ("patience", "value")], unit="hour")
             return pd.DataFrame({"patience_primary": [patience] * len(group)}, index=group.index)
 
-        self.requests["dtime_patience"] = (
-            self.requests.groupby(["usecase", "timeframe"])
+        requests["dtime_patience"] = (
+            requests.groupby(["usecase", "timeframe"])
             .apply(get_patience_uctf, include_groups=False)
             .reset_index(level=[0, 1], drop=True)
             .sort_index()
         )
         # endregion
 
+        return requests
+
 
 class BatteryFleetDemand(FleetDemand):
-    def sample_energy_demand(self):
+    def sample_energy_demand(self, requests: pd.DataFrame) -> pd.DataFrame:
         """
         Sample energy requirement for each request
         """
@@ -215,36 +235,40 @@ class BatteryFleetDemand(FleetDemand):
             groupby function
             sample energy requirements for one usecase and timeframe.
             """
-            uc_energy_mean = self.usecases.loc[group.name, "energy_mean"]
-            uc_energy_stdev = self.usecases.loc[group.name, "energy_std"]
-            p1, p2 = lognormal_params(uc_energy_mean, uc_energy_stdev)
-            dist = self.rng.lognormal(p1, p2, len(group))
-            return pd.Series(dist, index=group.index)
+            distribution = stochastics.EnergyDistribution(
+                alpha=self.usecases.at[group.name, ("energy", "alpha")],
+                beta=self.usecases.at[group.name, ("energy", "beta")],
+                capacity=self.usecases.at[group.name, ("energy", "capacity")],
+            )
+            return pd.Series(
+                distribution.sample(size=len(group)),
+                index=group.index,
+            )
 
-        self.requests["energy_req"] = None
-        self.requests["energy_req"] = self.requests.groupby(["usecase", "timeframe"])["energy_req"].transform(
-            sample_energy_uctf
-        )
+        requests["energy_req"] = None
+        requests["energy_req"] = requests.groupby(["usecase", "timeframe"])["energy_req"].transform(sample_energy_uctf)
 
         def calc_time_active_uctf(group):
             """
             groupby function
             calculate active time for one usecase and timeframe
             """
-            power = self.usecases.loc[group.name, "power_avg"]
+            power = self.usecases.loc[group.name, ("power", "value")]
             dtime_active = pd.to_timedelta(group["energy_req"] / power, unit="hour")
             return pd.Series(dtime_active, index=group.index)
 
-        self.requests["dtime_active"] = (
-            self.requests.groupby(["usecase", "timeframe"])
+        requests["dtime_active"] = (
+            requests.groupby(["usecase", "timeframe"])
             .apply(calc_time_active_uctf, include_groups=False)
             .reset_index(level=[0, 1], drop=True)
             .sort_index()
         )
 
+        return requests
+
 
 class VehicleFleetDemand(FleetDemand):
-    def sample_energy_demand(self):
+    def sample_energy_demand(self, requests: pd.DataFrame) -> pd.DataFrame:
         """
         Sample distances for each request within a VehicleFleet
         """
@@ -254,43 +278,43 @@ class VehicleFleetDemand(FleetDemand):
             groupby function
             sample distances for one usecase and timeframe from lognormal distribution
             """
-            uc_dist_mean = self.usecases.loc[group.name, "dist_mean"]
-            uc_dist_stdev = self.usecases.loc[group.name, "dist_std"]
-            p1, p2 = lognormal_params(uc_dist_mean, uc_dist_stdev)
-            dist = self.rng.lognormal(p1, p2, len(group))
-            return pd.Series(dist, index=group.index)
+            distribution = stochastics.DistanceDistribution.from_mu_sigma(
+                mu=self.usecases.at[group.name, ("dist", "mu")], sigma=self.usecases.at[group.name, ("dist", "sigma")]
+            )
+            return pd.Series(
+                distribution.sample(size=len(group)),
+                index=group.index,
+            )
 
-        self.requests["distance"] = np.nan
-        self.requests["distance"] = self.requests.groupby(["usecase", "timeframe"])["distance"].transform(
-            sample_distance_uctf
-        )
+        requests["distance"] = np.nan
+        requests["distance"] = requests.groupby(["usecase", "timeframe"])["distance"].transform(sample_distance_uctf)
 
         def get_params_uctf(group):
             """
             groupby function
             get consumption and speed values for one usecase and timeframe from the usecase file
             """
-            consumption = self.usecases.loc[group.name, "consumption"]
-            speed_avg = self.usecases.loc[group.name, "speed_avg"]
-            subfleets = self.usecases.loc[group.name, "subfleets"]
+            consumption = self.usecases.loc[group.name, ("consumption", "value")]
+            speed = self.usecases.loc[group.name, ("speed", "value")]
+            subfleets = self.usecases.loc[group.name, ("subfleets", "list")]
             return pd.DataFrame(
                 data={
                     "consumption": [consumption] * len(group),
-                    "speed_avg": [speed_avg] * len(group),
+                    "speed": [speed] * len(group),
                     "subfleets": [subfleets] * len(group),
                 },
                 index=group.index,
             )
 
-        self.requests[["consumption", "speed_avg", "subfleets"]] = (
-            self.requests.groupby(["usecase", "timeframe"])
+        requests[["consumption", "speed", "subfleets"]] = (
+            requests.groupby(["usecase", "timeframe"])
             .apply(get_params_uctf, include_groups=False)
             .reset_index(level=[0, 1], drop=True)
             .sort_index()
         )
 
-        self.requests["dtime_active"] = pd.to_timedelta(
-            self.requests["distance"] / self.requests["speed_avg"], unit="hour"
-        )
+        requests["dtime_active"] = pd.to_timedelta(requests["distance"] / requests["speed"], unit="hour")
 
-        self.requests["energy_req"] = self.requests["distance"] * self.requests["consumption"]
+        requests["energy_req"] = requests["distance"] * requests["consumption"]
+
+        return requests

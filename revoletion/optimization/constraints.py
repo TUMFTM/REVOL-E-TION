@@ -1,117 +1,281 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass, field
+
 import pyomo.environ as po
+from oemof import solph
+
+
+@dataclass
+class EquateFlowParams:
+    """
+    Dataclass storing the arguments which are later passed to oemof.solph.constraints.equate_flows()
+    This ensures
+          sum(flows1) * factor1 = sum(flows2)
+    for all timesteps
+    """
+
+    flows1: list = field(default_factory=list)
+    flows2: list = field(default_factory=list)
+    factor1: float = 1.0
+    name: str | None = None
+
+    @property
+    def dict(self) -> dict:
+        if not self.flows1 or not self.flows2:
+            raise ValueError(f"None of flows1 and flows2 is allowed to be empty! Pass flows to {self.name}")
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+@dataclass
+class EquateInvestParams:
+    """
+    Dataclass storing the arguments which are later passed to oemof.solph.constraints.equate_variables()
+    This ensures
+          invests[0] = invests[1] = ... = invests[n]
+    """
+
+    invests: list = field(default_factory=list)
+    name: str | None = None
+
+    @property
+    def dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+class _BaseParamsDict(dict):
+    """
+    Dictionary, which auto-creates missing entries and uses the key to initialize the entries value (therefore no defaultdict is used).
+    """
+
+    _FACTORY = None  # to be defined by subclasses
+
+    @staticmethod
+    def _validate_key(key):
+        """
+        ensure that all keys are a tuple of two strings
+        """
+        if not (isinstance(key, tuple) and len(key) == 2 and all(isinstance(k, str) for k in key)):
+            raise TypeError("Key must be a tuple of two strings, e.g. ('node1', 'node2')")
+
+    def __setitem__(self, key, value):
+        self._validate_key(key)
+        super().__setitem__(key, value)
+
+    def __missing__(self, key: tuple[str, str]):
+        self._validate_key(key)
+
+        if self._FACTORY is None:
+            raise NotImplementedError("Subclasses must define a _factory.")
+        value = self._FACTORY(name="_".join(key))
+        self[key] = value
+        return value
+
+
+class FlowParamsDict(_BaseParamsDict):
+    _FACTORY = EquateFlowParams
+
+
+class InvestParamsDict(_BaseParamsDict):
+    _FACTORY = EquateInvestParams
 
 
 class CustomConstraints:
     def __init__(self, scenario):
         self.scenario = scenario
-        self.equal_invests = []
-        self.invest_costs = {"flow": [], "storage": []}
+
+        self._equal_flows = FlowParamsDict()
+        self._equal_invests = InvestParamsDict()
+        self._limited_invests = {"flow": [], "storage": []}
 
     def apply_constraints(self, model):
         # Add pyomo block to model to store custom constraints
         model.CUSTOM_CONSTRAINTS = po.Block()
+
+        # Apply constraints to enforce equal flows
+        self._equate_flows(model)
+
         # Apply additional constraints to equalize investment variables for bidirectional flows
-        self.equate_invests(model)
-
-        # Limit the sum of the power flows of different GridMarkets to the current power of the GridConnection
-        self.limit_pwr_gridmarket(model)
-
-        # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
-        self.renewables_only(model)
-
-        # Force all charged energy into the commodity's storage
-        self.external_charging_to_storage(model)
+        self._equate_invests(model)
 
         # Limit initial investment costs
-        self.limit_invest_costs(model)
+        self._limit_invests(model)
 
-    def add_equal_invests(self, invests):
-        # Add a list of investment variables represented as dicts containing the start and end node of a flow
-        self.equal_invests.append(invests)
+        # Limit energy fed into grids and energy storages for which "res_only" is activated to renewable energies only
+        self._limit_to_renewables(model)
 
-    def add_invest_costs(self, invest, capex_spec, invest_type):
-        # needs to be a custom solution, as peakshaving also uses investement objects but should not be considered
-        if invest_type == "flow":
-            self.invest_costs[invest_type].append({"fi": invest[0], "fo": invest[1], "capex_spec": capex_spec})
-        elif invest_type == "storage":
-            self.invest_costs[invest_type].append({"so": invest[0], "capex_spec": capex_spec})
+    def add_equal_flows(
+        self,
+        key: tuple[str, str],
+        flow1: tuple | None = None,
+        flow2: tuple | None = None,
+        flows1: list[tuple] | None = None,
+        flows2: list[tuple] | None = None,
+    ):
+        """
+        Add one or more flows to a pair of equal-flow groups.
 
-    def equate_invests(self, model):
-        # Goal:     Several sizes (e.g. SystemCore's AC/DC and DC/AC converter, GridConnection sizes) can be forced to
-        #           have the same value despite being optimized by independent Investment objects
-        # Approach: Add a constraint to force a specified list of values to be equal
-        model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS = po.Block()
+        Each flow is represented as a tuple (from_node, to_node). Flows added to
+        `flows1` are constrained to be equal to the corresponding flows in `flows2`
+        within the group identified by `key`.
 
-        def _equate_invest_variables(m, block, name, variables):
-            def _equate_invest_variables_rule(block):
-                return variables[0] == variables[1]
+        Parameters
+        ----------
+        key : tuple[str, str]
+            Identifier of the equal-flow group.
+        flow1 : tuple, optional
+            A single flow to add to the first group.
+        flow2 : tuple, optional
+            A single flow to add to the second group.
+        flows1 : list of tuple, optional
+            A list of flows to add to the first group.
+        flows2 : list of tuple, optional
+            A list of flows to add to the second group.
 
-            setattr(block, name, po.Constraint(rule=_equate_invest_variables_rule))
+        Notes
+        -----
+        If both singular and plural arguments are provided, all flows will be added to their respective groups.
+        """
 
-        # Add additional user-specific constraints for investment variables
-        for var_list in self.equal_invests:
-            for var_equal in var_list[1:]:
-                _equate_invest_variables(
-                    m=model,
-                    block=model.CUSTOM_CONSTRAINTS.EQUATE_INVESTS,
-                    name="_equal_".join([f"{var['in']}_to_{var['out']}" for var in [var_list[0], var_equal]]),
-                    variables=[
-                        model.InvestmentFlowBlock.invest[var["in"], var["out"], 0] for var in [var_list[0], var_equal]
-                    ],
+        target_flows1 = self._equal_flows[key].flows1
+        target_flows2 = self._equal_flows[key].flows2
+
+        if flow1 is not None:
+            target_flows1.append(flow1)
+        if flow2 is not None:
+            target_flows2.append(flow2)
+        if flows1 is not None:
+            target_flows1.extend(flows1)
+        if flows2 is not None:
+            target_flows2.extend(flows2)
+
+    def add_equal_invests(self, key: tuple[str, str], invest: tuple | None = None, invests: list[tuple] | None = None):
+        """
+        Add one or more investment flows to an equal-investment group.
+
+        An investment flow is represented as a tuple of the form (from_node, to_node).
+
+        Parameters
+        ----------
+        key : tuple[str, str]
+            Identifier of the equal-flow group.
+        invest : tuple, optional
+            A single investment flow to add.
+        invests : list of tuple, optional
+            A list of investment flows to add.
+
+        Notes
+        -----
+        If both `invest` and `invests` are provided, both will be added to the group.
+        """
+        target = self._equal_invests[key].invests
+        if invest is not None:
+            target.append(invest)
+        if invests is not None:
+            target.extend(invests)
+
+    def add_invest_to_limitation(
+        self,
+        capex_spec: float,
+        flow: tuple | None = None,
+        storage: solph.components.GenericStorage | None = None,
+    ):
+        """
+        Add an investment object which is to be considered for the investment limit.
+
+        An investment flow is represented as a tuple of the form (from_node, to_node).
+        An investment storage is represented by the storage object.
+
+        Parameters
+        ----------
+        capex_spec : float
+            Specific investment cost of the flow or storage to be added.
+        flow : tuple, optional
+            A single investment flow to add.
+        storage : storage object, optional
+            A single investment storage to add.
+
+        Notes
+        -----
+        If both `flow` and `storage` are provided, both will be added using the same `capex_spec` value.
+        """
+
+        if flow is not None:
+            self._limited_invests["flow"].append({"element": flow, "capex_spec": capex_spec})
+        if storage is not None:
+            self._limited_invests["storage"].append({"element": storage, "capex_spec": capex_spec})
+
+    def _equate_flows(self, model: solph.Model):
+        """
+        Forces all flows within an equal flow group stored in self._equal_flows to be identical in the given model
+        by using oemof.solph.constraints.equate_flows() to add constraints to the model.
+
+        Parameters
+        ----------
+        model : solph.Model
+            Energy system model
+        """
+        for v in self._equal_flows.values():
+            solph.constraints.equate_flows(model=model, **v.dict)
+
+    def _equate_invests(self, model):
+        """
+        Forces all flow investments within an equal investment group stored in self._equal_invests to be identical in
+        the given model by using oemof.solph.constraints.equate_variables() to add constraints to the model.
+
+        Parameters
+        ----------
+        model : solph.Model
+            Energy system model
+        """
+        for v in self._equal_invests.values():
+            var1 = model.InvestmentFlowBlock.invest[*v.invests[0], 0]  # last 0 -> period ID
+            multiple = True if len(v.invests) > 2 else False
+
+            for invest_idx, invest_flow in enumerate(v.invests[1:]):
+                solph.constraints.equate_variables(
+                    model=model,
+                    var1=var1,
+                    var2=model.InvestmentFlowBlock.invest[*invest_flow, 0],
+                    factor1=1.0,  # has to be one due to multiple unordered investment flows
+                    name=f"{v.name}{f'_{invest_idx}' if multiple else ''}",
                 )
 
-    def limit_pwr_gridmarket(self, model):
-        # Goal:         Limit the sum of the power flows of different GridMarkets to the current power of the
-        #               GridConnection. This ensures that all power being bought or sold has to reach the local energy
-        #               system and avoids unlimited trading with energy on the different markets without any power
-        #               limitations. As this model focuses on modeling a local energy system, trading without any
-        #               physical power flow is not considered.
-        # Approach:     1.  For each direction (buy/sell = g2s/s2g) sum up all power flows of different GridMarkets
-        #                   connected to the same GridConnection.
-        #               2.  Constrain the sum of GridMarkets' power flows in each direction to not exceed the current
-        #                   corresponding power flow of the GridConnection considering the parallel flows connecting the
-        #                   grid bus to the main bus to allow peakshaving.
+    def _limit_invests(self, model):
+        # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)
+        # Approach: Add a constraint adding all initial investment costs and limiting the sum to the specified value
+        model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS = po.Block()
 
-        model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET = po.Block()
+        def _limit_invests(m, block, name, invest_max):
+            def _limit_invest_rule(block):
+                expr = 0
 
-        def _limit_flows(m, block, name, flows_markets, flows_grid):
-            def _limit_flows_rule(block):
-                for p, ts in m.TIMEINDEX:
-                    pwr_market = sum(m.flow[fi, fo, ts] for fi, fo in flows_markets)
-                    pwr_grid = sum(m.flow[fi, fo, ts] for fi, fo in flows_grid)
-                    expr = pwr_market == pwr_grid
+                # Add investment costs for all flow objects
+                expr += sum(
+                    m.InvestmentFlowBlock.invest[*flow["element"], 0] * flow["capex_spec"]
+                    for flow in self._limited_invests["flow"]
+                )
 
-                    if expr is not True:
-                        getattr(block, name).add((p, ts), expr)
+                # Add investment costs for all storage objects
+                expr += sum(
+                    m.GenericInvestmentStorageBlock.invest[storage["element"], 0] * storage["capex_spec"]
+                    for storage in self._limited_invests["storage"]
+                )
 
-            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
-            setattr(block, name + "_build", po.BuildAction(rule=_limit_flows_rule))
+                return expr <= invest_max
 
-        # Apply constraints for every GridConnection
-        for grid in self.scenario.block_registry.get("GridConnection", {}).values():
-            _limit_flows(
+            setattr(block, name, po.Constraint(rule=_limit_invest_rule))
+
+        # Add additional user-specific constraints for investment cost limit
+        if self.scenario.invest_max is not None:
+            _limit_invests(
                 m=model,
-                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                name=f"limit_{grid.name}_g2s_markets",
-                flows_markets=[
-                    (market.components["src"], grid.components["bus"]) for market in grid.subblocks.values()
-                ],
-                flows_grid=[(grid.components["bus"], converter) for converter in grid.outflows.values()],
+                block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS,
+                name="limit_invest_costs",
+                invest_max=self.scenario.invest_max - self.scenario.capex_preexisting_considered,
             )
 
-            _limit_flows(
-                m=model,
-                block=model.CUSTOM_CONSTRAINTS.LIMIT_PWR_GRIDMARKET,
-                name=f"limit_{grid.name}_s2g_markets",
-                flows_markets=[
-                    (grid.components["bus"], market.components["snk"]) for market in grid.subblocks.values()
-                ],
-                flows_grid=[(converter, grid.components["bus"]) for converter in grid.inflows.values()],
-            )
-
-    def renewables_only(self, model):
+    def _limit_to_renewables(self, model):
         # Goal:         For all specified blocks restrict feed_in of energy into the block to renewable energy only
         # Definition:   Renewable energy is energy generated by PV and wind sources and energy generated by those
         #               blocks which is stored in a storage which only allows renewable energy to be stored
@@ -294,68 +458,3 @@ class CustomConstraints:
             ],
             eff_conv=[self.scenario.block_registry.get("TopLevelBlock", {})["core"].eff["acdc"], 1],
         )
-
-    def external_charging_to_storage(self, model):
-        # Goal:         Force all external charged power to flow into the commodity's storage.
-        #               This is necessary to ensure that the external charged power is not consumed without .
-        # Approach:     For each commodity ensure that the sum of all three charging powers is equal to the storage inflow
-
-        model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE = po.Block()
-
-        def _equal_flows(m, block, name, flows_charging, flows_storage):
-            def _equal_flows_rule(block):
-                for p, ts in m.TIMEINDEX:
-                    pwr_charging = sum(m.flow[fi, fo, ts] for fi, fo in flows_charging)
-                    pwr_storage = sum(m.flow[fi, fo, ts] for fi, fo in flows_storage)
-                    expr = pwr_charging == pwr_storage
-
-                    if expr is not True:
-                        getattr(block, name).add((p, ts), expr)
-
-            setattr(block, name, po.Constraint(m.TIMEINDEX, noruleinit=True))
-            setattr(block, name + "_build", po.BuildAction(rule=_equal_flows_rule))
-
-        # Apply constraints for every ElectricFleetUnit
-        for efu in self.scenario.block_registry.get("ElectricFleetUnit", {}).values():
-            _equal_flows(
-                m=model,
-                block=model.CUSTOM_CONSTRAINTS.EXTERNAL_CHARGING_STORAGE,
-                name=f"limit_{efu.name}_external_charging_to_storage",
-                flows_charging=[
-                    (efu.components["inflow"], efu.components["bus"]),
-                    (efu.components["conv_ext_ac"], efu.components["bus"]),
-                    (efu.components["conv_ext_dc"], efu.components["bus"]),
-                ],
-                flows_storage=[(efu.components["bus"], efu.components["storage"])],
-            )
-
-    def limit_invest_costs(self, model):
-        # Goal:     Limit all initial investment costs to a specified value (neglect peakshaving investments)
-        # Approach: Add a constraint adding all initial investment costs and limiting the sum to the specified value
-        model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS = po.Block()
-
-        def _limit_invests(m, block, name):
-            def _limit_invest_rule(block):
-                expr = 0
-
-                # Add investment costs for all flow objects
-                expr += sum(
-                    m.InvestmentFlowBlock.invest[invest_flow["fi"], invest_flow["fo"], 0] * invest_flow["capex_spec"]
-                    for invest_flow in self.invest_costs["flow"]
-                )
-
-                # Add investment costs for all storage objects
-                expr += sum(
-                    m.GenericInvestmentStorageBlock.invest[invest_storage["so"], 0] * invest_storage["capex_spec"]
-                    for invest_storage in self.invest_costs["storage"]
-                )
-
-                expr += self.scenario.capex_preexisting_considered
-
-                return expr <= self.scenario.invest_max
-
-            setattr(block, name, po.Constraint(rule=_limit_invest_rule))
-
-        # Add additional user-specific constraints for investment cost limit
-        if self.scenario.invest_max is not None:
-            _limit_invests(m=model, block=model.CUSTOM_CONSTRAINTS.LIMIT_INVESTS, name="limit_invest_costs")
