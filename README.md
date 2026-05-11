@@ -83,30 +83,51 @@ REVOL-E-TION is available on [GitLab](https://gitlab.lrz.de/energysystemmodellin
 git clone https://gitlab.lrz.de/energysystemmodelling/revol-e-tion.git
 ```
 
-#### Step 2: Create a clean virtual environment
+#### Step 2: Install package and dependencies locally
+Dependencies are listed in the ```pyproject.toml``` file in the root directory of the repository (where ```README.md``` and ```pyproject.toml``` are located).
+There, three different groups are defined:
+- The default group contains all dependencies required to run REVOL-E-TION.
+- The 'dev' group contains additional dependencies required for development such as code formatting and linting tools.
+- The 'tests' group contains additional dependencies required for testing such as pytest and coverage.
+- 
+Depending on your use case, you can choose to install only the default dependencies (if you just want to run the package) or also the dev and tests dependencies (if you want to develop the package).
+This manual describes the installation using three different package managers: uv or conda / pip.
+
+##### a) uv
+
+To install REVOL-E-TION using uv, navigate to the root directory of the repository in your terminal and execute the following command:
+```bash
+uv sync
+```
+
+This command installs the package in editable mode and all dependencies of the default group.
+To install all additional dependency groups add ```--all-groups``` to the previous command or select the groups you want to install using ```--group <group_name>```.
+
+##### b) conda / pip
+
 It is recommended to create and activate a clean virtual environment for the installation of REVOL-E-TION.
+
 This can be done using conda:
 ```bash
 conda create -n <name_of_virtual_environment> python=3.12
 conda activate <name_of_virtual_environment>
 ```
-or alternatively with the following command:
+or alternatively with a pip virtual environment using the following command:
 ```bash
 python -m venv <path_to_virtual_environment>
 source <path_to_virtual_environment>/bin/activate
 ```
 
-#### Step 3: Install package and dependencies locally
-After cloning the repository, navigate to its root directory (where ```README.md``` and ```pyproject.toml``` are located) in your terminal.
+Navigate to package's root directory in your terminal.
 Then install the package and its dependencies using one of the following commands depending on the chosen mode of installation:
-##### a) Standard Installation
+###### i. Standard Installation
 This copies the package into your (virtual environment’s) site-packages directory:
 ```bash
 pip install .
 ```
 After pulling new changes from the repository, the package has to be reinstalled using the same command to take the changes into account.
 
-##### b) Editable Installation (recommended for development)
+###### ii. Editable Installation (recommended for development)
 
 This links the package to your local source code, so any changes (you make or pulled from the repository) are immediately reflected without reinstalling:
 ```bash
@@ -114,12 +135,12 @@ pip install -e . --group dev --group tests
 ```
 Use the editable mode if you plan to modify the code during development. The previous command also installs additional dependencies required for development and testing, which are not necessary for running the package but required for development.
 
-#### Step 4: MILP Solver
+#### Step 3: MILP Solver
 REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
 The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
 The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
 If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi and the license file have to match. The python package gurobipy is NOT required to run REVOL-E-TION.
-To ensure this get the version of both your gurobi license and installation (```grbgetkey --version```).
+To ensure this get the version of both your Gurobi license and installation (```grbgetkey --version```).
 
 ## Basic Usage
 > ⚠️ **Important** ⚠️
@@ -186,14 +207,14 @@ An example notebook executing REVOL-E-TION from Python is provided in ```.revole
 
 
 ## Common Problems & Troubleshooting
-| Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                               |
-|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.12. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                  |
-| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). The python package gurobipy is NOT required to run REVOL-E-TION. |
-| ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                    |
-| ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                 |
-| ```Scenario failed: Infeasible or Unbounded (To solve this error try to set investment limits for blocks or for the scenario)``` | Depending on the costs specified the optimization problem might be unbounded as infinite investment is beneficial | Redefine the provided cost structure (i.e. reduce prices for energy feed-in or increase CAPEX or OPEX for energy generation)                                                                                                                                                                                                                                                           |
-| Any other error messages or errors                                                                                               | various                                                                                                           | REVOL-E-TION prints specific error messages in most cases which help you to understand the cause of the error. Nevertheless, REVOL-E-TION is still in development and therefore might contain bugs and errors that are not covered yet. If you encounter a bug or an error message that you do not understand, please feel free to open an issue on GitHub or contact the developers.  |
+| Error message                                                                                                                    | Cause                                                                                                             | Solution                                                                                                                                                                                                                                                                                                                                                                                           |
+|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Errors while installing the required Python packages                                                                             | various                                                                                                           | Make sure to start with a clean Python environment using Python >=3.12. We recommend conda for dependency resolution.                                                                                                                                                                                                                                                                              |
+| Gurobi related installation & execution errors                                                                                   | Faulty Gurobi installation, missing Gurobi license                                                                | Check your Gurobi installation by executing ```gurobi-cl``` in a shell. If the command itself fails, Gurobi itself is not installed properly. In this case, follow the [Gurobi Install and Troubleshooting Guide](https://support.gurobi.com/hc/en-us/articles/14799677517585-Getting-Started-with-Gurobi-Optimizer). Make sure that installed versions of ```Gurobi``` and ```gurobipy``` match.  |
+| ```IndexError: Block "X": Input timeseries data does not cover simulation timeframe```                                           | A timeseries data file provided does not cover the complete simulation period or resampling it has failed         | Specify a different simulation period or select a different timeseries input file. Make sure the entire simulation timeframe (possibly including overhanging data for the last prediction horizons)                                                                                                                                                                                                |
+| ```Class "X" not found in blocks.py file```                                                                                      | The class name specified in the blocks dictionary in the scenario file is not specified in REVOL-E-TION           | Check the blocks dictionary string in the scenario csv file for typos.                                                                                                                                                                                                                                                                                                                             |
+| ```Scenario failed: Infeasible or Unbounded (To solve this error try to set investment limits for blocks or for the scenario)``` | Depending on the costs specified the optimization problem might be unbounded as infinite investment is beneficial | Redefine the provided cost structure (i.e. reduce prices for energy feed-in or increase CAPEX or OPEX for energy generation)                                                                                                                                                                                                                                                                       |
+| Any other error messages or errors                                                                                               | various                                                                                                           | REVOL-E-TION prints specific error messages in most cases which help you to understand the cause of the error. Nevertheless, REVOL-E-TION is still in development and therefore might contain bugs and errors that are not covered yet. If you encounter a bug or an error message that you do not understand, please feel free to open an issue on GitHub or contact the developers.              |
 
 
 ## General Terms & Definitions
