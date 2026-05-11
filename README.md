@@ -29,7 +29,7 @@ Hannes Henglein, B.Sc. - Master's Thesis submitted 01/2024<br>
 Florian Melzig, B.Sc. - Master's Thesis submitted 10/2024<br>
 Florian Honeder, B.Sc. - Semester Thesis submitted 09/2025<br>
 Jan-Niklas Weghorn, B.Sc. - IDP submitted 09/2025<br>
-Jan-Niklas Weghorn, B.Sc. - Master's Thesis ongoing<br>
+Jan-Niklas Weghorn, B.Sc. - Master's Thesis submitted 04/2026<br>
 
 ## Table of Contents
 - [Licensing](#licensing)
