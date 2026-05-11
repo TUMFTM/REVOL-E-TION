@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
 import logging
-import pprint
-
-import oemof.solph as solph
-import pyomo.environ as po
+import types
+from typing import override
 
 from revoletion import scenario as scn
 
-from . import constraints, time
+from . import blocks, optimization, time
 from . import logger as logger_fcs
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +34,94 @@ class OptimizationError(Exception):
         super().__init__(msg)
 
 
+class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
+    def __init__(self, optimization_result: optimization.OptimizationResult) -> None:
+        self._optimization_result = optimization_result
+
+    @classmethod
+    def collect_optimization_results(
+        cls,
+        optimization_result: optimization.OptimizationResult,
+        scenario: scn.Scenario,
+        horizon: time.TimeFrame,
+        horizon_index: int,
+    ) -> None:
+        """
+        Collect the optimization results and write them back to each individual block.
+
+        :param optimization_result: The optimization results from an `OptimizationHorizon`.
+        :param scenario: The scenario which was optimized.
+        :param horizon: The time horizon of the optimization.
+        :param horizon_index: The index of the optimization horizon.
+        """
+        visitor = cls(optimization_result)
+        for block in scenario.block_registry.get("TopLevelBlock", {}).values():
+            # `horizon_index` must be passed down, because the battery aging model currently uses it.
+            # TODO: Ideally, the aging model would be independent of this and the `horizon_index` can be removed.
+            visitor.visit_block(block, horizon=horizon, horizon_index=horizon_index)
+
+    @override
+    def visit_block(self, block: blocks.BaseBlock, horizon: time.TimeFrame, horizon_index: int) -> None:
+        # Always traverse to children even for NonElectricBlock. This is necessary, since
+        # SubFleet is a NonElectricBlock, but it might have electric subblocks.
+        for subblock in block.subblocks.values():
+            self.visit_block(subblock, horizon=horizon, horizon_index=horizon_index)
+
+        # For `NonElectricBlock` no further processing should be done, since they have no power flows
+        # and also no investment option.
+        if not isinstance(block, blocks.ElectricBlock):
+            return
+
+        # Investments are directly written back to each block.
+        expansions = self._optimization_result.get_expansion(block)
+        for size_name, expansion in expansions.items():
+            block.sizes[size_name].expansion = expansion
+
+        power_flows = self._optimization_result.get_power_flow(block, horizon.dti)
+
+        for power_flow_name, power_flow in power_flows.items():
+            block.flows.loc[horizon.dti, power_flow_name] = power_flow
+
+        if isinstance(block, blocks.StorageBlock):
+            self.visit_storage_block(block, horizon, horizon_index)
+        elif isinstance(block, blocks.GridConnection):
+            self.visit_grid_connection(block, horizon)
+
+    def visit_grid_connection(self, block: blocks.GridConnection, horizon: time.TimeFrame) -> None:
+        """
+        Collect the results for a `GridConnection`.
+
+        Aggregates the individual results for each peak-period.
+        """
+        # get peak powers per peak interval
+        block.peak_periods.update(
+            {
+                "peak_power": {
+                    period.label: max(
+                        # this leads to inconsistencies for dti_sim != dti_eval if peak power occurs after dti_eval
+                        block.flows.loc[horizon.dti, "out"][block.peak_periods_activation[period.label]]
+                        .resample(block.peak_period_measurement.freqstr)
+                        .mean()
+                        .max(),
+                        period.peak_power,
+                    )
+                    for period in block.peak_periods.itertuples()
+                    if period.label in block.peak_storages.keys()
+                }
+            }
+        )
+
+    def visit_storage_block(self, block: blocks.StorageBlock, horizon: time.TimeFrame, horizon_index: int) -> None:
+        stored_energy = self._optimization_result.get_stored_energy(block, horizon.dti_extd)
+        block.states.loc[horizon.dti_extd, "energy"] = stored_energy
+        block.states.loc[horizon.dti_extd, "soc"] = (stored_energy / block.sizes["storage"].total).fillna(0)
+
+        # This is a small hack to make the battery aging model compatible with the new results extraction API.
+        # TODO: decouple the battery aging model from the horizon and remove this hack.
+        comp_horizon = types.SimpleNamespace(ch=horizon, index=horizon_index)
+        block.aging_model.age(comp_horizon)
+
+
 class PredictionHorizon:
     def __init__(self, index: int, scenario: scn.Scenario, logger: logging.Logger):
         self.index = index
@@ -45,8 +131,6 @@ class PredictionHorizon:
         self._logger = logger_fcs.ContextLoggerAdapter(
             logger=logger, extra={"n_horizon": self.index + 1, "n_horizon_total": self.scenario.nhorizons}
         )
-
-        self._results = None
 
         # region time and data generation and slicing
         start = self.scenario.times.sim.start + (self.index * self.scenario.len_ch)
@@ -70,91 +154,59 @@ class PredictionHorizon:
 
         self._logger.info("Start: %s - CH end: %s - PH end: %s", self.ph.start, self.ch.end, self.ph.end)
 
-        self.es = solph.EnergySystem(
-            timeindex=self.ph.dti, infer_last_interval=True
-        )  # initialize energy system model instance
-
-        self.constraints = constraints.CustomConstraints(scenario=self.scenario)
-
         # if apriori power scheduling is necessary, calculate power schedules:
         if self.scenario.scheduler:
             self._logger.debug("Calculating power schedules for commodities with rulebased charging strategies")
             self.scenario.scheduler.calc_ph_schedule(self.ph)
         # endregion
 
-    @property
-    def results(self):
-        """Get the results of the previous execution."""
-        return self._results
-
     def execute(self) -> None:
         """
         Perform the concrete optimization across a prediction horizon.
         """
+        solver = optimization.Solver(self.scenario.settings.solver)
 
-        self._logger.info("Building oemof model")
-        self._pre_horizon()
-        self._logger.debug("Model build completed")
-
-        model = self._create_model()
-
-        self._logger.info("Model built, starting optimization")
-        results = model.solve(
-            solver=self.scenario.settings.solver, solve_kwargs={"tee": self.scenario.settings.debugmode}
+        self._logger.info("Building optimization problem")
+        optimization_problem_config = optimization.OptimizationProblemConfig(
+            cost_eps=self.scenario.cost_eps,
+            debug=self.scenario.settings.debugmode,
+            solver=solver,
+            invest=True,
         )
-        if (results.solver.status == po.SolverStatus.ok) and (
-            results.solver.termination_condition == po.TerminationCondition.optimal
-        ):
-            self._logger.info("Optimization completed, getting results")
-            if (
-                self.scenario.nhorizons == 1
-            ):  # Don't store objective for multiple horizons in scenario (most RH scenarios)
-                self.scenario.objective_opt = model.objective()
-        elif results.solver.termination_condition == po.TerminationCondition.infeasible:
-            raise OptimizationError(
-                "Scenario failed: Infeasible",
-                prediction_horizon_idx=self.index,
-                prediction_horizon_num=self.scenario.nhorizons,
-            )
-        elif results.solver.termination_condition == po.TerminationCondition.unbounded:
-            raise OptimizationError(
-                "Scenario failed: Unbounded",
-                prediction_horizon_idx=self.index,
-                prediction_horizon_num=self.scenario.nhorizons,
-            )
-        elif results.solver.termination_condition == po.TerminationCondition.infeasibleOrUnbounded:
+        optimization_problem = optimization.OemofOptimizationProblem.from_revoletion_scenario(
+            scenario=self.scenario,
+            horizon=self.ph,
+            logger=self._logger,
+            config=optimization_problem_config,
+        )
+
+        self._logger.info(f"Optimization problem built; starting optimization with {solver}")
+        status, optimization_result = optimization_problem.solve()
+
+        if status == optimization.OptimizationStatus.INFEASIBLE_OR_UNBOUNDED:
             raise OptimizationError(
                 "Scenario failed: Infeasible or Unbounded (To solve this error try to "
                 "set investment limits for blocks or for the scenario)",
                 prediction_horizon_idx=self.index,
                 prediction_horizon_num=self.scenario.nhorizons,
             )
-        else:
-            raise Exception(f"Optimization terminated with unknown status: {results.solver.termination_condition}")
+        elif status != optimization.OptimizationStatus.OPTIMAL:
+            raise OptimizationError(
+                f"Scenario failed: {status}. Enable debug mode for more information.",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
+            )
 
-        self._logger.debug(pprint.pformat(solph.processing.meta_results(model)))
+        if optimization_result is None:
+            raise OptimizationError(
+                "Optimization failed: No optimization result, even though the solver signaled an optimal result. This is a bug.",
+                prediction_horizon_idx=self.index,
+                prediction_horizon_num=self.scenario.nhorizons,
+            )
 
-        # Get result data slice for current CH from results and save in result dataframes for later analysis
-        # Get (possibly optimized) component sizes from results to handle outputs more easily
-        self._results = solph.processing.results(model)
+        if self.scenario.nhorizons == 1:  # Don't store objective for multiple horizons in scenario (most RH scenarios)
+            self.scenario.objective_opt = optimization_result.get_objective()
 
-        self._post_horizon()
-
-    def _create_model(self) -> solph.Model:
-        self._logger.info("Building optimization problem from oemof model")
-
-        model = solph.Model(self.es, debug=self.scenario.settings.debugmode)
-        self.constraints.apply_constraints(model=model)
-
-        if self.scenario.settings.debugmode and self.index == 1:
-            model.write(self.scenario.paths.dump, io_options={"symbolic_solver_labels": True})
-
-        return model
-
-    def _pre_horizon(self) -> None:
-        for block in self.scenario.block_registry.get("TopLevelBlock", {}).values():
-            block.pre_horizon(self)
-
-    def _post_horizon(self) -> None:
-        for block in self.scenario.block_registry.get("TopLevelBlock", {}).values():
-            block.post_horizon(self)
+        _OptimizationHorizonResultProcessor.collect_optimization_results(
+            optimization_result, self.scenario, horizon=self.ch, horizon_index=self.index
+        )
