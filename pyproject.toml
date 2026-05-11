@@ -40,6 +40,8 @@ tests = [
 ]
 
 dev = [
+    "ipykernel",
+    "jupyterlab",
     "pre-commit",
     "pymupdf",
 ]
