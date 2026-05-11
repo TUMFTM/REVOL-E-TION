@@ -300,17 +300,17 @@
 %GridConnection
 \coordinate(grid_bus_top) at ([yshift=-\compdist - \buffer] wind_bus_bottom);
 
-\draw[->] ([yshift=-\buffer]grid_bus_top) -- ([yshift=-\buffer]grid_bus_top-|core_ac_top) node (peak1_mid) [pos=0.5] {};
-\node(peak1_label) [arrowlabel] at (peak1_mid) {period 1};
-\node(peak_dots) [arrowdots] at (peak1_mid) {$\vdots$};
+\node(grid_s2g_acac)[acac] at ([xshift=-\compdist, yshift=-\buffer] grid_bus_top) {};
+\draw[->] (grid_bus_top|-grid_s2g_acac.east) to (grid_s2g_acac.east);
+\draw[->] (grid_s2g_acac.west) to (core_ac_top|-grid_s2g_acac.west);
 
-\draw[->] ([yshift=-\buffer]peak_dots.south-|grid_bus_top) -- ([yshift=-\buffer]peak_dots.south-|core_ac_top) node (peakn_mid) [pos=0.5] {};
-\node(peakn_label) [arrowlabel] at (peakn_mid) {period n};
+\node(grid_g2s_acac)[acac, anchor=north] at ([yshift=-\buffer] grid_s2g_acac.south) {};
+\draw[->] (grid_g2s_acac.west-|core_ac_top) to (grid_g2s_acac.west);
+\draw[->] (grid_g2s_acac.east) to (grid_bus_top|-grid_g2s_acac.east);
 
-\draw[->] ([yshift=-2\buffer]peakn_mid-|core_ac_top) -- ([yshift=-2\buffer]peakn_mid-|grid_bus_top) node (grid_in) [pos=0.5] {};
-
-\coordinate(grid_bus_bottom) at ([yshift=-\buffer]grid_in-|grid_bus_top);
+\coordinate(grid_bus_bottom) at ([yshift=-\buffer]grid_g2s_acac.east-|grid_bus_top);
 \draw[bus] (grid_bus_top) to (grid_bus_bottom);
+\node(grid_dots) [busdots] at (grid_bus_bottom) {$\vdots$};
 
 \node(market_buy) [component, anchor=west] at ([yshift=-\buffer, xshift=\compdist] grid_bus_top) {Buy $\blacktriangle$};
 \draw[->] (market_buy.west) to (market_buy.west-|grid_bus_top);
@@ -323,7 +323,7 @@
 \node(market_label) [blocklabel, anchor=west] at ([xshift=\buffer] market_box.north west) {GridMarket};
 \node(market_dots) [blockdots] at (market_box.south) {$\vdots$};
 
-\node(grid_box) [blockbox, fit= (market_box) (market_label) (peakn_label) (peak1_label) (grid_bus_bottom)] {};
+\node(grid_box) [blockbox, fit= (market_box) (market_label) (grid_g2s_acac) (grid_s2g_acac) (grid_dots) (market_dots)] {};
 \node(grid_label) [blocklabel, anchor=west] at ([xshift=\buffer] grid_box.north west) {GridConnection};
 
 \node(grid_pricing) [input, anchor=west, align=center] at ([xshift=\buffer, yshift=-0.5\buffer]grid_box.east|-market_buy.south east) {Historical dynamic\\pricing data \faMoney};
@@ -332,7 +332,7 @@
 \draw[->, input] ([yshift=-0.5\buffer]grid_pricing.west) to ([yshift=-0.5\buffer, xshift=\buffer]grid_pricing.west-|market_sell.east) to ([xshift=\buffer]market_sell.east) to (market_sell.east);
 
 %ControllableSource
-\node(gen_source) [component, anchor=north west] at ([yshift=-\compdist, xshift=\singlecompdist] core_ac_top|-grid_bus_bottom) {Fossil fuel generator $\blacktriangle$};
+\node(gen_source) [component, anchor=north west] at ([yshift=-\compdist, xshift=\singlecompdist] core_ac_top|-market_dots.south) {Fossil fuel generator $\blacktriangle$};
 \draw[->] (gen_source.west) to (gen_source.west-|core_ac_top);
 \node(gen_label_phantom) [blocklabel, opacity=0, anchor=west] at (gen_source.west)
   {ControllableSource};
