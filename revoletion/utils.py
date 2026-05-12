@@ -70,43 +70,6 @@ def add_index_level(index: pd.Index, level_name: str, level_value) -> pd.MultiIn
     )
 
 
-def infer_dtype(value):
-    """
-    infer the data type of a value from a string representation. To be used as a .map(infer_dtype) function.
-    """
-
-    # remove whitespace at beginning or end of string (convert to string, as nan already is of type float)
-    value = str(value).strip()
-
-    try:
-        return int(value)
-    except ValueError or OverflowError:
-        pass
-
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    if value.lower() == "true":
-        return True
-    elif value.lower() == "false":
-        return False
-    elif value.lower() in ["none", "null", "nan", ""]:
-        return None
-
-    try:
-        evaluated = ast.literal_eval(value)
-        if isinstance(evaluated, dict):
-            return evaluated
-        elif isinstance(evaluated, list):
-            return evaluated
-    except (ValueError, SyntaxError):
-        pass
-
-    return value.lower()
-
-
 def create_results_from_dataframe(df: pd.DataFrame, name_prefix: str) -> pd.Series:
     """
     Convert results stored in a DataFrame to a Series for scenario.result_summary.
@@ -225,43 +188,6 @@ def get_revoletion_python_package_version() -> str:
             "Failed to query REVOL-E_TION package version. This probably means that the package is not correctly installed in your current python environment."
         )
         return UNKNOWN_VERSION
-
-
-def read_scenario_from_file(scenario_path: Path) -> pd.DataFrame:
-    """
-    Load the scenario from the scenario path. Valid formats are CSV and Python pickle.
-
-    Args:
-        scenario_path: Path to the scenario file.
-
-    Returns:
-        The pandas DataFrame containing the scenario parameters.
-
-    Raises:
-        FileNotFoundError: Either if `scenario_path` does not exist or if it isn't a valid file.
-        TypeError: If the scenario file content is not a pandas DataFrame.
-        ValueError: If the file is neither a CSV nor a pickle file.
-    """
-    if not scenario_path.exists():
-        raise FileNotFoundError(f"Scenario file '{scenario_path}' does not exist")
-
-    if not scenario_path.is_file():
-        raise FileNotFoundError(f"Scenario at '{scenario_path}' is not a file")
-
-    if scenario_path.suffix == ".csv":
-        parameters = pd.read_csv(scenario_path, index_col=[0, 1], keep_default_na=False)
-    elif scenario_path.suffix == ".pkl":
-        parameters = pd.read_pickle(scenario_path)
-        if not isinstance(parameters, pd.DataFrame):
-            raise TypeError(
-                f"Scenario parameters from file '{scenario_path}' have wrong format:"
-                + "Expected '{type(pd.DataFrame)} but got {type(parameters)}'"
-            )
-    else:
-        raise ValueError(f"Scenario file '{scenario_path}' is neither CSV nor PKL file.")
-
-    parameters = parameters.sort_index(sort_remaining=True).map(infer_dtype)
-    return parameters
 
 
 class RevoletionError(Exception): ...

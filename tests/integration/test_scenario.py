@@ -5,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from revoletion import run, utils
+from revoletion import run
+from revol_e_tion_model.utils import read_scenario_from_file
 from revoletion import scenario as scn
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ def test_process_example_scenarios(scenario_name: str):
             output=tempdir_path,
         )
         simulation_settings = scn.SimulationSettings(solver="cbc")
-        scenario_parameters = utils.read_scenario_from_file(simulation_paths.scenario)
+        scenario_parameters = read_scenario_from_file(simulation_paths.scenario)
 
         single_scenario_parameters = scenario_parameters[scenario_name]
 

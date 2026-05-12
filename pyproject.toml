@@ -31,6 +31,7 @@ dependencies = [
     "tk",
     "windpowerlib",
     "pydantic",
+    "revol-e-tion-core",
 ]
 
 [dependency-groups]
@@ -74,3 +75,6 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["revoletion"]
+
+[tool.uv.sources]
+revol-e-tion-core = { path = "../revol-e-tion-core", editable = true }

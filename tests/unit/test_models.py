@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from revoletion.models import ScenarioModel, validate_scenario_csv_file
+from revol_e_tion_model.model import ScenarioModel, validate_scenario_csv_file
 
 
 def test_example_scenario_is_valid():

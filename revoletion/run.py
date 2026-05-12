@@ -10,6 +10,9 @@ import os
 import shutil
 import sys
 import threading
+
+from revol_e_tion_core.utils import read_scenario_from_file
+
 import time as pytime
 import traceback
 import typing
@@ -75,7 +78,7 @@ class SimulationRun:
         self.version_revoletion = utils.get_revoletion_python_package_version()
 
         # region read, copy and check scenario data
-        self.scenario_data = utils.read_scenario_from_file(self.paths.scenario)
+        self.scenario_data = read_scenario_from_file(self.paths.scenario)
         self.scenario_names = [name for name in self.scenario_data.columns if not name.startswith("#")]
 
         # region define logger structure

@@ -3,9 +3,9 @@
 import argparse
 from pathlib import Path
 
-from .logger import configure_root_logger
-from .run import SimulationRun
-from .scenario import SimulationPaths, SimulationSettings
+from revoletion.logger import configure_root_logger
+from revoletion.run import SimulationRun
+from revoletion.scenario import SimulationPaths, SimulationSettings
 
 
 def main():

@@ -14,7 +14,7 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
-from revoletion.models import (
+from revol_e_tion_core.model import (
     ControllableSourceModel,
     FixedDemandModel,
     FleetModel,
