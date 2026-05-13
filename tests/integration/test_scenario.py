@@ -5,8 +5,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from revoletion import run, utils
+from revoletion import run, simulation, utils
 from revoletion import scenario as scn
+from revoletion.optimization import Solver
 
 _LOGGER = logging.getLogger(__name__)
 _NPV_TOLERANCE = 0.1
@@ -21,7 +22,7 @@ def test_process_example_scenarios(scenario_name: str):
             scenario=example_scenarios_path,
             output=tempdir_path,
         )
-        simulation_settings = scn.SimulationSettings(solver="cbc")
+        simulation_settings = simulation.SimulationSettings(solver=Solver.CBC)
         scenario_parameters = utils.read_scenario_from_file(simulation_paths.scenario)
 
         single_scenario_parameters = scenario_parameters[scenario_name]

@@ -7,6 +7,7 @@ from .optimization_problem import (
     OptimizationStatus,
     Solver,
 )
+from .pypsa_backend import PypsaOptimizationProblem, PypsaOptimizationResult
 
 __all__ = [
     "OptimizationProblem",
@@ -18,4 +19,6 @@ __all__ = [
     "create_optimization_problem",
     "OemofOptimizationProblem",
     "OemofOptimizationResult",
+    "PypsaOptimizationProblem",
+    "PypsaOptimizationResult",
 ]

@@ -56,6 +56,7 @@ class OptimizationResult(abc.ABC):
 class Solver(enum.Enum):
     CBC = "cbc"
     GUROBI = "gurobi"
+    HIGHS = "highs"
 
     def __str__(self) -> str:
         return self.value
@@ -73,6 +74,12 @@ class OptimizationProblemConfig:
 
     invest: bool = True
     """Whether capital investments should be enabled in the optimization."""
+
+    warmstart: bool = False
+    """Cache the optimization model and problem to reduce the time for repeated optimizations. Only supported by PyPSA."""
+
+    commitment: bool = False
+    """Whether unit commitment should be enabled in the optimization. Only supported by PyPSA."""
 
 
 class OptimizationProblem(abc.ABC):

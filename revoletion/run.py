@@ -62,10 +62,10 @@ class SimulationRun:
     def __init__(
         self,
         paths: scn.SimulationPaths,
-        settings: scn.SimulationSettings | None = None,
+        settings: simulation.SimulationSettings | None = None,
     ):
         self.paths = paths
-        self.settings = settings or scn.SimulationSettings()
+        self.settings = settings or simulation.SimulationSettings()
 
         self.run_timer = time.RunTimer()
 
@@ -361,7 +361,7 @@ class ScenarioWorker:
     def __init__(
         self,
         paths: scn.SimulationPaths,
-        settings: scn.SimulationSettings,
+        settings: simulation.SimulationSettings,
         name: str,
         parameters: pd.Series,
         logger: logging.Logger,
@@ -410,10 +410,15 @@ class ScenarioWorker:
         if self._lock:
             self._lock.release()
 
+        scenario_settings = scn.ScenarioSettings(
+            largescalemode=self._settings.largescalemode,
+            key_solcast_api=self._settings.key_solcast_api,
+        )
+
         try:
             scenario = scn.Scenario(
                 paths=self._paths,
-                settings=self._settings,
+                settings=scenario_settings,
                 name=self._name,
                 parameters=self._parameters,
                 location=loc,
@@ -435,7 +440,7 @@ class ScenarioWorker:
         try:
             for horizon_index in range(scenario.nhorizons):
                 prediction_horizon = simulation.PredictionHorizon(
-                    index=horizon_index, scenario=scenario, logger=scenario.logger
+                    index=horizon_index, scenario=scenario, settings=self._settings, logger=scenario.logger
                 )
                 prediction_horizon.execute()
 
