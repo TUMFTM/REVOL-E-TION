@@ -91,8 +91,9 @@ class FleetDemand(ABC):
         usecases.index.names = ["usecase", "timeframe"]
         usecases.columns.names = ["variable", "parameter"]
 
-        if any(usecases[("time_req", "weight1")] + usecases[("time_req", "weight2")] != 1):
-            raise ValueError(f"usecase file {path_usecases}: departure time mixture weights must add to 1")
+        weight_sum = usecases[("time_req", "weight1")] + usecases[("time_req", "weight2")]
+        usecases[("time_req", "weight1")] /= weight_sum
+        usecases[("time_req", "weight2")] /= weight_sum
 
         return usecases
 
