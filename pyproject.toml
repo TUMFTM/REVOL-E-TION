@@ -31,7 +31,9 @@ dependencies = [
     "tk",
     "windpowerlib",
     "pydantic",
-    "revol-e-tion-core",
+    "revoletion-core",
+    "pypsa>=1.2.0",
+    "polars[rtcompat]"
 ]
 
 [dependency-groups]
@@ -77,4 +79,4 @@ testpaths = ["tests"]
 source = ["revoletion"]
 
 [tool.uv.sources]
-revol-e-tion-core = { path = "../revol-e-tion-core", editable = true }
+revoletion-core = { path = "../revol-e-tion-core", editable = true }

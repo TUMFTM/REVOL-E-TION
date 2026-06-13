@@ -2,6 +2,7 @@
 
 import logging
 import types
+from dataclasses import dataclass
 from typing import override
 
 from revoletion import scenario as scn
@@ -122,10 +123,22 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
         block.aging_model.age(comp_horizon)
 
 
+@dataclass
+class SimulationSettings:
+    solver: optimization.Solver = optimization.Solver.GUROBI
+    backend: optimization.OptimizationBackend = optimization.OptimizationBackend.OEMOF
+    largescalemode: bool = False
+    n_processes: int = 1
+    debugmode: bool = False
+    rerun_infeasible: bool = True
+    key_solcast_api: str | None = None
+
+
 class PredictionHorizon:
-    def __init__(self, index: int, scenario: scn.Scenario, logger: logging.Logger):
+    def __init__(self, index: int, scenario: scn.Scenario, settings: SimulationSettings, logger: logging.Logger):
         self.index = index
         self.scenario = scenario
+        self._settings = settings
 
         # set up the logger as a child of the scenario logger with some additional horizon index metadata
         self._logger = logger_fcs.ContextLoggerAdapter(
@@ -164,23 +177,22 @@ class PredictionHorizon:
         """
         Perform the concrete optimization across a prediction horizon.
         """
-        solver = optimization.Solver(self.scenario.settings.solver)
-
         self._logger.info("Building optimization problem")
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
-            debug=self.scenario.settings.debugmode,
-            solver=solver,
+            debug=self._settings.debugmode,
+            solver=self._settings.solver,
             invest=True,
         )
-        optimization_problem = optimization.OemofOptimizationProblem.from_revoletion_scenario(
+        optimization_problem = optimization.create_optimization_problem(
+            backend=self._settings.backend,
             scenario=self.scenario,
             horizon=self.ph,
             logger=self._logger,
             config=optimization_problem_config,
         )
 
-        self._logger.info(f"Optimization problem built; starting optimization with {solver}")
+        self._logger.info(f"Optimization problem built; starting optimization with {self._settings.solver}")
         status, optimization_result = optimization_problem.solve()
 
         if status == optimization.OptimizationStatus.INFEASIBLE_OR_UNBOUNDED:

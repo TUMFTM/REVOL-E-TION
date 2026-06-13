@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+import warnings
 from pathlib import Path
 
-from revoletion.logger import configure_root_logger
-from revoletion.run import SimulationRun
-from revoletion.scenario import SimulationPaths, SimulationSettings
+from .logger import configure_root_logger
+from .optimization import OptimizationBackend, Solver
+from .run import SimulationRun
+from .scenario import SimulationPaths
+from .simulation import SimulationSettings
 
 
 def main():
@@ -34,10 +37,20 @@ def main():
     parser.add_argument(
         "-slv",
         "--solver",
-        type=str,
+        type=Solver,
         default=settings_template.solver,
-        help="Pyomo compatible solver to be used for the optimization problem.",
+        help="Compatible solver to be used for the optimization problem.",
+        choices=list(Solver),
     )
+    parser.add_argument(
+        "-bnd",
+        "--backend",
+        type=OptimizationBackend,
+        default=settings_template.backend,
+        help="Set the backend with which the optimization problem is modeled.",
+        choices=list(OptimizationBackend),
+    )
+
     parser.add_argument(
         "-np",
         "--n_processes",
@@ -79,6 +92,15 @@ def main():
         if not isinstance(arg, bool):
             raise ValueError(f'Argument --{arg_name} must be a boolean value, got "{arg}" of type {type(arg).__name__}')
 
+    # validate that backend and solver are compatible.
+    if not args.backend.is_compatible_solver(args.solver):
+        raise ValueError(f"Solver {args.solver} is not supported by the {args.backend} backend")
+
+    if args.backend == OptimizationBackend.PYPSA:
+        warnings.warn(
+            "The PyPSA backend is currently experimental and does not yet have feature parity with the oemof backend. Bugs are expected."
+        )
+
     # region interpret scenario file path
     scenarios_example = False
     # Option 1: No scenario file argument passed -> select via GUI
@@ -111,6 +133,7 @@ def main():
 
     settings = SimulationSettings(
         solver=args.solver,
+        backend=args.backend,
         n_processes=args.n_processes,
         largescalemode=args.largescalemode,
         debugmode=args.debugmode,
