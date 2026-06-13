@@ -11,7 +11,7 @@ import shutil
 import sys
 import threading
 
-from revol_e_tion_core.utils import read_scenario_from_file
+from revoletion_core.utils import read_scenario_from_file
 
 import time as pytime
 import traceback
