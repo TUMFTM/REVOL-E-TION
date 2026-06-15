@@ -1,0 +1,22 @@
+name: revoletion
+prefect-version: "3.7.4"
+
+deployments:
+  - name: revoletion
+    entrypoint: revoletion/flows.py:scenario_run_flow
+    build: null
+    schedules: []
+    pull:
+      # Prefect resolves the flow entrypoint as a literal file path relative to the
+      # working directory. Without this, it defaults to /opt/prefect and fails to
+      # find revoletion/flows.py, which the Dockerfile copies to /app/revoletion/.
+      - prefect.deployments.steps.set_working_directory:
+          directory: /app
+    work_pool:
+      name: docker
+      job_variables:
+        image: revoletion:local
+        networks:
+          - "revoletion_default"
+        env:
+          PREFECT_API_URL: "http://prefect-server:4200/api"

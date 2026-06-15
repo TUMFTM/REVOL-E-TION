@@ -33,7 +33,8 @@ dependencies = [
     "pydantic",
     "revoletion-core",
     "pypsa>=1.2.0",
-    "polars[rtcompat]"
+    "polars[rtcompat]",
+    "prefect>=3.7.4",
 ]
 
 [dependency-groups]

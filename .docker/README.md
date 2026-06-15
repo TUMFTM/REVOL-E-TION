@@ -37,3 +37,11 @@ Start a Docker worker against your pool:
 ```bash
 prefect worker start --pool <pool-name>
 ```
+
+## Prefect deployment
+
+```bash
+PREFECT_API_URL=http://localhost:4200/api .venv/bin/prefect --no-prompt deploy --all
+```
+
+for this to work, the docker image for the deployment must already exist.
