@@ -1,11 +1,33 @@
-# Setuptools build artifacts — these are stale intermediate files that setuptools
-# reuses when building wheels, causing the Docker image to install old source code
-# instead of the current files.
-revol-e-tion/build/
-revol-e-tion/dist/
-revol-e-tion/**/*.egg-info/
+# Setuptools build artifacts
+build/
+dist/
+**/*.egg-info/
 
 # Python cache
 **/__pycache__/
 **/*.pyc
 **/*.pyo
+
+# Development environments — local virtualenvs and tooling dirs are never needed in the image.
+.venv/
+venv/
+.devenv/
+.direnv/
+
+# Local config — secrets and editor settings must never be baked into the image.
+.env
+.gitignore
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+
+# Version control
+.git/
+
+# Docker configuration — the Dockerfile and compose files are not part of the application.
+.docker/
+
+# Large output directories produced by simulation runs
+results/
+images/
