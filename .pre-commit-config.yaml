@@ -23,6 +23,11 @@ repos:
         language: pygrep
         entry: '^[^#]*revoletion-core\s*=\s*\{[^}]*path='
         files: pyproject\.toml
+      - id: no-local-uv-lock
+        name: Check uv.lock for local path dependencies
+        language: pygrep
+        entry: 'source = \{ (editable|path) ='
+        files: uv\.lock
       - id: generate_scenario_schema
         name: Generate the scenario schema in README
         entry: python scripts/generate_scenario_schema.py
