@@ -86,3 +86,5 @@ explicit = true
 
 [tool.uv.sources]
 revoletion-core = { index = "gitlab-lrz" }
+# Useful for development, requires `uv sync` to take affect.
+#revoletion-core = { path="../revol-e-tion-core", editable = true }
