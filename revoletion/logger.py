@@ -76,7 +76,7 @@ def _configure_third_party_loggers() -> None:
     logging.getLogger("gurobipy").disabled = True
 
 
-def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
+def configure_root_logger(log_file: Path, debugmode: bool = False, stdout: bool = True) -> None:
     """
     Configure the `revoletion` root logger with its level according to `debugmode` and
     output handlers to console and the file `log_file`.
@@ -84,24 +84,22 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     Args:
         log_file: File where the logs are writing to.
         debugmode: Flag to control whether debugging is enabled. If True the log level is set to 'debug' else 'info'.
+        stdout: Whether to add a console handler. Set to False when a custom handler (e.g. Prefect) replaces stdout.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(_get_logger_level(debugmode))
 
-    # Pad the level name column to the maximum level name length.
-    # define log formatter
     log_formatter_stdout = LogFormatter(fmt="%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s")
     log_formatter_file = LogFormatter(
         fmt="%(_timestamp_str)s%(_levelname_str)s%(_scenarioname_str)s%(_horizon_str)s%(message)s"
     )
 
-    # define root logger handler for console output
-    log_stream_handler = logging.StreamHandler(sys.stdout)
-    log_stream_handler.setFormatter(log_formatter_stdout)
-    log_stream_handler.addFilter(OptimizationSuccessfulFilter())
-    root_logger.addHandler(log_stream_handler)
+    if stdout:
+        log_stream_handler = logging.StreamHandler(sys.stdout)
+        log_stream_handler.setFormatter(log_formatter_stdout)
+        log_stream_handler.addFilter(OptimizationSuccessfulFilter())
+        root_logger.addHandler(log_stream_handler)
 
-    # define root logger handler for file output
     log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(log_formatter_file)
     log_file_handler.addFilter(OptimizationSuccessfulFilter())
