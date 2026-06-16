@@ -19,7 +19,7 @@ resolution-markers = [
 [[package]]
 name = "aiosqlite"
 version = "0.22.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4e/8a/64761f4005f17809769d23e518d915db74e6310474e733e3593cfc854ef1/aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650", size = 14821, upload-time = "2025-12-23T19:25:43.997Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/b7/e3bf5133d697a08128598c8d0abc5e16377b51465a33756de24fa7dee953/aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb", size = 17405, upload-time = "2025-12-23T19:25:42.139Z" },
@@ -28,7 +28,7 @@ wheels = [
 [[package]]
 name = "alembic"
 version = "1.18.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mako" },
     { name = "sqlalchemy" },
@@ -42,7 +42,7 @@ wheels = [
 [[package]]
 name = "amplitude-analytics"
 version = "1.2.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6e/f7/b23d28b1c405c22a25375e2c638c8cdcd054cbc4b43b76cf77bd358a0540/amplitude_analytics-1.2.3.tar.gz", hash = "sha256:4c9525847c391c19675d6e026f4601c27204ffeec71cb92252770d84d4538404", size = 22413, upload-time = "2026-03-31T18:33:20.291Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/56/83af6ef6a8bac9fdf2059de0276008e9eab40a315b8b732eba466bf6cc74/amplitude_analytics-1.2.3-py3-none-any.whl", hash = "sha256:ba2092c1d37ce8a2e3f69d023da145f4e322d02429e20436a5227178b1e594e9", size = 24762, upload-time = "2026-03-31T18:33:19.032Z" },
@@ -51,7 +51,7 @@ wheels = [
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/57/ba/046ceea27344560984e26a590f90bc7f4a75b06701f653222458922b558c/annotated_doc-0.0.4.tar.gz", hash = "sha256:fbcda96e87e9c92ad167c2e53839e57503ecfda18804ea28102353485033faa4", size = 7288, upload-time = "2025-11-10T22:07:42.062Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl", hash = "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320", size = 5303, upload-time = "2025-11-10T22:07:40.673Z" },
@@ -60,7 +60,7 @@ wheels = [
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89", size = 16081, upload-time = "2024-05-20T21:33:25.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53", size = 13643, upload-time = "2024-05-20T21:33:24.1Z" },
@@ -69,7 +69,7 @@ wheels = [
 [[package]]
 name = "anyio"
 version = "4.13.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
@@ -82,7 +82,7 @@ wheels = [
 [[package]]
 name = "appnope"
 version = "0.1.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/35/5d/752690df9ef5b76e169e68d6a129fa6d08a7100ca7f754c89495db3c6019/appnope-0.1.4.tar.gz", hash = "sha256:1de3860566df9caf38f01f86f65e0e13e379af54f9e4bee1e66b48f2efffd1ee", size = 4170, upload-time = "2024-02-06T09:43:11.258Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/29/5ecc3a15d5a33e31b26c11426c45c501e439cb865d0bff96315d86443b78/appnope-0.1.4-py2.py3-none-any.whl", hash = "sha256:502575ee11cd7a28c0205f379b525beefebab9d161b7c964670864014ed7213c", size = 4321, upload-time = "2024-02-06T09:43:09.663Z" },
@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "apprise"
 version = "1.11.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "click" },
@@ -109,7 +109,7 @@ wheels = [
 [[package]]
 name = "argon2-cffi"
 version = "25.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "argon2-cffi-bindings" },
 ]
@@ -121,7 +121,7 @@ wheels = [
 [[package]]
 name = "argon2-cffi-bindings"
 version = "25.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
 ]
@@ -152,7 +152,7 @@ wheels = [
 [[package]]
 name = "arrow"
 version = "1.4.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil" },
     { name = "tzdata" },
@@ -165,7 +165,7 @@ wheels = [
 [[package]]
 name = "asgi-lifespan"
 version = "2.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "sniffio" },
 ]
@@ -177,7 +177,7 @@ wheels = [
 [[package]]
 name = "asttokens"
 version = "3.0.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/be/a5/8e3f9b6771b0b408517c82d97aed8f2036509bc247d46114925e32fe33f0/asttokens-3.0.1.tar.gz", hash = "sha256:71a4ee5de0bde6a31d64f6b13f2293ac190344478f081c3d1bccfcf5eacb0cb7", size = 62308, upload-time = "2025-11-15T16:43:48.578Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/39/e7eaf1799466a4aef85b6a4fe7bd175ad2b1c6345066aa33f1f58d4b18d0/asttokens-3.0.1-py3-none-any.whl", hash = "sha256:15a3ebc0f43c2d0a50eeafea25e19046c68398e487b9f1f5b517f7c0f40f976a", size = 27047, upload-time = "2025-11-15T16:43:16.109Z" },
@@ -186,7 +186,7 @@ wheels = [
 [[package]]
 name = "async-lru"
 version = "2.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/1f/989ecfef8e64109a489fff357450cb73fa73a865a92bd8c272170a6922c2/async_lru-2.3.0.tar.gz", hash = "sha256:89bdb258a0140d7313cf8f4031d816a042202faa61d0ab310a0a538baa1c24b6", size = 16332, upload-time = "2026-03-19T01:04:32.413Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/e2/c2e3abf398f80732e58b03be77bde9022550d221dd8781bf586bd4d97cc1/async_lru-2.3.0-py3-none-any.whl", hash = "sha256:eea27b01841909316f2cc739807acea1c623df2be8c5cfad7583286397bb8315", size = 8403, upload-time = "2026-03-19T01:04:30.883Z" },
@@ -195,7 +195,7 @@ wheels = [
 [[package]]
 name = "asyncpg"
 version = "0.31.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fe/cc/d18065ce2380d80b1bcce927c24a2642efd38918e33fd724bc4bca904877/asyncpg-0.31.0.tar.gz", hash = "sha256:c989386c83940bfbd787180f2b1519415e2d3d6277a70d9d0f0145ac73500735", size = 993667, upload-time = "2025-11-24T23:27:00.812Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/a6/59d0a146e61d20e18db7396583242e32e0f120693b67a8de43f1557033e2/asyncpg-0.31.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:b44c31e1efc1c15188ef183f287c728e2046abb1d26af4d20858215d50d91fad", size = 662042, upload-time = "2025-11-24T23:25:49.578Z" },
@@ -235,7 +235,7 @@ wheels = [
 [[package]]
 name = "attrs"
 version = "26.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/82a0fe20a541c03148528be8cac2408564a6c9a0cc7e9171802bc1d26985/attrs-26.1.0.tar.gz", hash = "sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32", size = 952055, upload-time = "2026-03-19T14:22:25.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl", hash = "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309", size = 67548, upload-time = "2026-03-19T14:22:23.645Z" },
@@ -244,7 +244,7 @@ wheels = [
 [[package]]
 name = "babel"
 version = "2.18.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/b2/51899539b6ceeeb420d40ed3cd4b7a40519404f9baf3d4ac99dc413a834b/babel-2.18.0.tar.gz", hash = "sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d", size = 9959554, upload-time = "2026-02-01T12:30:56.078Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl", hash = "sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35", size = 10196845, upload-time = "2026-02-01T12:30:53.445Z" },
@@ -253,7 +253,7 @@ wheels = [
 [[package]]
 name = "beartype"
 version = "0.22.9"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c7/94/1009e248bbfbab11397abca7193bea6626806be9a327d399810d523a07cb/beartype-0.22.9.tar.gz", hash = "sha256:8f82b54aa723a2848a56008d18875f91c1db02c32ef6a62319a002e3e25a975f", size = 1608866, upload-time = "2025-12-13T06:50:30.72Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/cc/18245721fa7747065ab478316c7fea7c74777d07f37ae60db2e84f8172e8/beartype-0.22.9-py3-none-any.whl", hash = "sha256:d16c9bbc61ea14637596c5f6fbff2ee99cbe3573e46a716401734ef50c3060c2", size = 1333658, upload-time = "2025-12-13T06:50:28.266Z" },
@@ -262,7 +262,7 @@ wheels = [
 [[package]]
 name = "beautifulsoup4"
 version = "4.15.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "soupsieve" },
     { name = "typing-extensions" },
@@ -275,7 +275,7 @@ wheels = [
 [[package]]
 name = "bleach"
 version = "6.4.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "webencodings" },
 ]
@@ -292,7 +292,7 @@ css = [
 [[package]]
 name = "blinker"
 version = "1.9.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/21/28/9b3f50ce0e048515135495f198351908d99540d69bfdc8c1d15b73dc55ce/blinker-1.9.0.tar.gz", hash = "sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf", size = 22460, upload-time = "2024-11-08T17:25:47.436Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl", hash = "sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc", size = 8458, upload-time = "2024-11-08T17:25:46.184Z" },
@@ -301,7 +301,7 @@ wheels = [
 [[package]]
 name = "bottleneck"
 version = "1.6.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -347,7 +347,7 @@ wheels = [
 [[package]]
 name = "burner-redis"
 version = "0.1.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/52/89/54706febafc135095b2a9d797cfbd4eed2ab1ad7819808b99b587020471b/burner_redis-0.1.7.tar.gz", hash = "sha256:7474ff092669fd11ef765411572cdafcc3d89b8054aef4ca0617be6d6be4c680", size = 638644, upload-time = "2026-05-08T15:01:42.961Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6c/5d/198bd1d22e504b3034353430703afbdb3efe6e25cb90bf52d896e1d266a7/burner_redis-0.1.7-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f80c866996e0455d584eb3c0f3b067e411c632fb0519eab454e0968edf01e62c", size = 1288888, upload-time = "2026-05-08T15:01:26.103Z" },
@@ -363,7 +363,7 @@ wheels = [
 [[package]]
 name = "cachetools"
 version = "7.1.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f4/8b/0d3945a13955303b81272f759a0331e54c5c793da455e6f5706b89d2639c/cachetools-7.1.4.tar.gz", hash = "sha256:437f55a4e0c1b01a4f3077cc470e6991d47430970e36fbcb77e2be0df4fc1cd6", size = 40085, upload-time = "2026-05-21T22:40:43.376Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8c/7b/1fc1c09cc0756cf25861a3be10565915953876da48bb228fb9a672b20a42/cachetools-7.1.4-py3-none-any.whl", hash = "sha256:323dc4127934744db5b54eb4924482d7edafbf9554e820d1531c2e08c0e4ef54", size = 16761, upload-time = "2026-05-21T22:40:41.845Z" },
@@ -372,7 +372,7 @@ wheels = [
 [[package]]
 name = "certifi"
 version = "2026.5.20"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/ce/ee2ecad540810a79593028e88299baeae54d346cc7a0d94b6199988b89b1/certifi-2026.5.20.tar.gz", hash = "sha256:69dea482ab64caa7b9f6aba1c6bf48bb6a5448d1c0f1b17ab42ad8c763a5344d", size = 135422, upload-time = "2026-05-20T11:46:50.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/59/8c/57e832b7af6d7c5abe66eb3fbe3a3a32f4d11ea23a1aa7131371035be991/certifi-2026.5.20-py3-none-any.whl", hash = "sha256:3c52e209ba0a4ad7aebe60436a4ab349c39e1e602e8c134221e546902ad25897", size = 134134, upload-time = "2026-05-20T11:46:48.578Z" },
@@ -381,7 +381,7 @@ wheels = [
 [[package]]
 name = "cffi"
 version = "2.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
@@ -438,7 +438,7 @@ wheels = [
 [[package]]
 name = "cfgv"
 version = "3.5.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4e/b5/721b8799b04bf9afe054a3899c6cf4e880fcf8563cc71c15610242490a0c/cfgv-3.5.0.tar.gz", hash = "sha256:d5b1034354820651caa73ede66a6294d6e95c1b00acc5e9b098e917404669132", size = 7334, upload-time = "2025-11-19T20:55:51.612Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/3c/33bac158f8ab7f89b2e59426d5fe2e4f63f7ed25df84c036890172b412b5/cfgv-3.5.0-py2.py3-none-any.whl", hash = "sha256:a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0", size = 7445, upload-time = "2025-11-19T20:55:50.744Z" },
@@ -447,7 +447,7 @@ wheels = [
 [[package]]
 name = "cftime"
 version = "1.6.5"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -485,7 +485,7 @@ wheels = [
 [[package]]
 name = "charset-normalizer"
 version = "3.4.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e7/a1/67fe25fac3c7642725500a3f6cfe5821ad557c3abb11c9d20d12c7008d3e/charset_normalizer-3.4.7.tar.gz", hash = "sha256:ae89db9e5f98a11a4bf50407d4363e7b09b31e55bc117b4f7d80aab97ba009e5", size = 144271, upload-time = "2026-04-02T09:28:39.342Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/eb/4fc8d0a7110eb5fc9cc161723a34a8a6c200ce3b4fbf681bc86feee22308/charset_normalizer-3.4.7-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:eca9705049ad3c7345d574e3510665cb2cf844c2f2dcfe675332677f081cbd46", size = 311328, upload-time = "2026-04-02T09:26:24.331Z" },
@@ -558,7 +558,7 @@ wheels = [
 [[package]]
 name = "click"
 version = "8.4.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
@@ -570,7 +570,7 @@ wheels = [
 [[package]]
 name = "cloudpickle"
 version = "3.1.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/27/fb/576f067976d320f5f0114a8d9fa1215425441bb35627b1993e5afd8111e5/cloudpickle-3.1.2.tar.gz", hash = "sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414", size = 22330, upload-time = "2025-11-03T09:25:26.604Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl", hash = "sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a", size = 22228, upload-time = "2025-11-03T09:25:25.534Z" },
@@ -579,7 +579,7 @@ wheels = [
 [[package]]
 name = "colorama"
 version = "0.4.6"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
@@ -588,7 +588,7 @@ wheels = [
 [[package]]
 name = "comm"
 version = "0.2.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4c/13/7d740c5849255756bc17888787313b61fd38a0a8304fc4f073dfc46122aa/comm-0.2.3.tar.gz", hash = "sha256:2dc8048c10962d55d7ad693be1e7045d891b7ce8d999c97963a5e3e99c055971", size = 6319, upload-time = "2025-07-25T14:02:04.452Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/97/891a0971e1e4a8c5d2b20bbe0e524dc04548d2307fee33cdeba148fd4fc7/comm-0.2.3-py3-none-any.whl", hash = "sha256:c615d91d75f7f04f095b30d1c1711babd43bdc6419c1be9886a85f2f4e489417", size = 7294, upload-time = "2025-07-25T14:02:02.896Z" },
@@ -597,7 +597,7 @@ wheels = [
 [[package]]
 name = "contourpy"
 version = "1.3.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -663,7 +663,7 @@ wheels = [
 [[package]]
 name = "coolname"
 version = "5.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fe/45/deae12f31934301a488df985880240a200119aca2e4b5ceba71d73bc5e86/coolname-5.0.0.tar.gz", hash = "sha256:594bc6c98ebc75ddd51c0ce10efbb5d2556c14eac60b5b36900dfdd5db20eecf", size = 45800, upload-time = "2026-04-23T06:04:50.824Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/97/35/cf824e535233c432048bd7455b28808776471ab5861375772b2c98ea4cbd/coolname-5.0.0-py3-none-any.whl", hash = "sha256:b86eea9670aa0620965167d1bfadfe654fabec839a5b51e8da611c4a64f86192", size = 47368, upload-time = "2026-04-23T06:04:49.374Z" },
@@ -672,7 +672,7 @@ wheels = [
 [[package]]
 name = "coverage"
 version = "7.14.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/54/fd/0ab2772530e946e1be1abd0bc09e647ec9b02e88f0867857601fefca8953/coverage-7.14.1.tar.gz", hash = "sha256:30c08f7d90415aa98b3c990385dea2939b0da55f38515e5b369b83655f8523be", size = 920132, upload-time = "2026-05-26T20:41:36.783Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/b7/bdbb725ba02c5b42825b200c940f38b7a54fcad24627b7192f78f8110d76/coverage-7.14.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:a06c76364a9360e33d6d23769aefdf7f66f38e2ffb60ceb1baaa4989d83b695c", size = 220022, upload-time = "2026-05-26T20:39:03.702Z" },
@@ -756,7 +756,7 @@ wheels = [
 [[package]]
 name = "cronsim"
 version = "2.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/1a/02f105147f7f2e06ed4f734ff5a6439590bb275a53dd91fc73df6312298a/cronsim-2.7-py3-none-any.whl", hash = "sha256:1e1431fa08c51dc7f72e67e571c7c7a09af26420169b607badd4ca9677ffad1e", size = 14213, upload-time = "2025-10-21T16:38:20.431Z" },
 ]
@@ -764,7 +764,7 @@ wheels = [
 [[package]]
 name = "cryptography"
 version = "49.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
@@ -814,7 +814,7 @@ wheels = [
 [[package]]
 name = "cycler"
 version = "0.12.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a9/95/a3dbbb5028f35eafb79008e7522a75244477d2838f38cbb722248dabc2a8/cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c", size = 7615, upload-time = "2023-10-07T05:32:18.335Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30", size = 8321, upload-time = "2023-10-07T05:32:16.783Z" },
@@ -823,7 +823,7 @@ wheels = [
 [[package]]
 name = "cyclopts"
 version = "4.18.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "docstring-parser" },
@@ -838,7 +838,7 @@ wheels = [
 [[package]]
 name = "dask"
 version = "2026.6.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "cloudpickle" },
@@ -856,7 +856,7 @@ wheels = [
 [[package]]
 name = "dateparser"
 version = "1.4.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil" },
     { name = "pytz" },
@@ -871,7 +871,7 @@ wheels = [
 [[package]]
 name = "debugpy"
 version = "1.8.21"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f2/aa/12037145b7a56eaa5b29b41872f7a21b538e807e13f32c4d3c46e59be084/debugpy-1.8.21.tar.gz", hash = "sha256:a3c53278e84c94e11bd87c53970ec391d1a67396c8b22609fcac576520e611a6", size = 1697577, upload-time = "2026-06-01T19:30:35.156Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/df/bf625547431a9cadc9f4cbfeda38866e2b17f6aed147b625377e87834449/debugpy-1.8.21-cp312-cp312-macosx_15_0_universal2.whl", hash = "sha256:9f96713896f39c3dff0ee841f47320c3f2983d33c341e009361bb0ebc79adc4e", size = 2483609, upload-time = "2026-06-01T19:30:50.794Z" },
@@ -892,7 +892,7 @@ wheels = [
 [[package]]
 name = "decorator"
 version = "5.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/60/8b/32f9823da46cde7df2087faa08cd98d01b908f8dcab982cdba9c84e85355/decorator-5.3.1.tar.gz", hash = "sha256:4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82", size = 58084, upload-time = "2026-05-18T06:03:28.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl", hash = "sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c", size = 10365, upload-time = "2026-05-18T06:03:26.517Z" },
@@ -901,7 +901,7 @@ wheels = [
 [[package]]
 name = "defusedxml"
 version = "0.7.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
@@ -910,7 +910,7 @@ wheels = [
 [[package]]
 name = "deprecation"
 version = "2.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
 ]
@@ -922,7 +922,7 @@ wheels = [
 [[package]]
 name = "dill"
 version = "0.4.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
@@ -931,7 +931,7 @@ wheels = [
 [[package]]
 name = "distlib"
 version = "0.4.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c9/02/bd72be9134d25ed783ecbbc38a539ffaefbf90c78418c7fb7229600dbac7/distlib-0.4.3.tar.gz", hash = "sha256:f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed", size = 615141, upload-time = "2026-06-12T08:04:52.847Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/08/9c41fb51ab5b43eb21674aff13df270e8ba6c4b29c8624e328dc7a9482af/distlib-0.4.3-py2.py3-none-any.whl", hash = "sha256:4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b", size = 470628, upload-time = "2026-06-12T08:04:50.506Z" },
@@ -940,7 +940,7 @@ wheels = [
 [[package]]
 name = "docker"
 version = "7.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "requests" },
@@ -954,7 +954,7 @@ wheels = [
 [[package]]
 name = "docstring-parser"
 version = "0.18.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e0/4d/f332313098c1de1b2d2ff91cf2674415cc7cddab2ca1b01ae29774bd5fdf/docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015", size = 29341, upload-time = "2026-04-14T04:09:19.867Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/5f/ed01f9a3cdffbd5a008556fc7b2a08ddb1cc6ace7effa7340604b1d16699/docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b", size = 22484, upload-time = "2026-04-14T04:09:18.638Z" },
@@ -963,7 +963,7 @@ wheels = [
 [[package]]
 name = "exceptiongroup"
 version = "1.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
@@ -975,7 +975,7 @@ wheels = [
 [[package]]
 name = "executing"
 version = "2.2.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cc/28/c14e053b6762b1044f34a13aab6859bbf40456d37d23aa286ac24cfd9a5d/executing-2.2.1.tar.gz", hash = "sha256:3632cc370565f6648cc328b32435bd120a1e4ebb20c77e3fdde9a13cd1e533c4", size = 1129488, upload-time = "2025-09-01T09:48:10.866Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/ea/53f2148663b321f21b5a606bd5f191517cf40b7072c0497d3c92c4a13b1e/executing-2.2.1-py2.py3-none-any.whl", hash = "sha256:760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017", size = 28317, upload-time = "2025-09-01T09:48:08.5Z" },
@@ -984,7 +984,7 @@ wheels = [
 [[package]]
 name = "fastapi"
 version = "0.137.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
     { name = "pydantic" },
@@ -1000,7 +1000,7 @@ wheels = [
 [[package]]
 name = "fastjsonschema"
 version = "2.21.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/20/b5/23b216d9d985a956623b6bd12d4086b60f0059b27799f23016af04a74ea1/fastjsonschema-2.21.2.tar.gz", hash = "sha256:b1eb43748041c880796cd077f1a07c3d94e93ae84bba5ed36800a33554ae05de", size = 374130, upload-time = "2025-08-14T18:49:36.666Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/a8/20d0723294217e47de6d9e2e40fd4a9d2f7c4b6ef974babd482a59743694/fastjsonschema-2.21.2-py3-none-any.whl", hash = "sha256:1c797122d0a86c5cace2e54bf4e819c36223b552017172f32c5c024a6b77e463", size = 24024, upload-time = "2025-08-14T18:49:34.776Z" },
@@ -1009,7 +1009,7 @@ wheels = [
 [[package]]
 name = "filelock"
 version = "3.29.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e6/dc/be6cbe99670cd6e4ad387123647cb08e0c32975e223f82551e914c5568a6/filelock-3.29.4.tar.gz", hash = "sha256:10cdb3656fc44541cdf30652a93fb10ec6b05325620eb316bd26893e4201538a", size = 63028, upload-time = "2026-06-13T16:12:00.744Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/13/37/a065dc3bd6e49423a6532c642ca7378d3f467b1ef44c2800c937af7f9739/filelock-3.29.4-py3-none-any.whl", hash = "sha256:dac1648087d5115554850d113e7dd8c83ab2d38e3435dde2d4f163847e57b767", size = 42757, upload-time = "2026-06-13T16:11:59.582Z" },
@@ -1018,7 +1018,7 @@ wheels = [
 [[package]]
 name = "flatbuffers"
 version = "25.12.19"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/2d/d2a548598be01649e2d46231d151a6c56d10b964d94043a335ae56ea2d92/flatbuffers-25.12.19-py2.py3-none-any.whl", hash = "sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4", size = 26661, upload-time = "2025-12-19T23:16:13.622Z" },
 ]
@@ -1026,7 +1026,7 @@ wheels = [
 [[package]]
 name = "fonttools"
 version = "4.63.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/84/69/c97f2c18e0db87d2c7b15da1974dace76ae938f1cfa22e2727a648b7ed43/fonttools-4.63.0.tar.gz", hash = "sha256:caeb583deeb5168e694b65cda8b4ee62abedfa66cf88488734466f2366b9c4e0", size = 3597189, upload-time = "2026-05-14T12:04:30.958Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/08/ef/b3c6b9b5be2f82416d73fe2ed2e96e2793cd80e7510bd6a17ca79cdd88ec/fonttools-4.63.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:37dd23e621e3b0aef1baa70a303b80aaf38449632cfc8fd2a55fb285bbccfc02", size = 2881131, upload-time = "2026-05-14T12:03:13.386Z" },
@@ -1067,7 +1067,7 @@ wheels = [
 [[package]]
 name = "fqdn"
 version = "1.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/30/3e/a80a8c077fd798951169626cde3e239adeba7dab75deb3555716415bd9b0/fqdn-1.5.1.tar.gz", hash = "sha256:105ed3677e767fb5ca086a0c1f4bb66ebc3c100be518f0e0d755d9eae164d89f", size = 6015, upload-time = "2021-03-11T07:16:29.08Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cf/58/8acf1b3e91c58313ce5cb67df61001fc9dcd21be4fadb76c1a2d540e09ed/fqdn-1.5.1-py3-none-any.whl", hash = "sha256:3a179af3761e4df6eb2e026ff9e1a3033d3587bf980a0b1b2e1e5d08d7358014", size = 9121, upload-time = "2021-03-11T07:16:28.351Z" },
@@ -1076,7 +1076,7 @@ wheels = [
 [[package]]
 name = "fsspec"
 version = "2026.4.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d5/8d/1c51c094345df128ca4a990d633fe1a0ff28726c9e6b3c41ba65087bba1d/fsspec-2026.4.0.tar.gz", hash = "sha256:301d8ac70ae90ef3ad05dcf94d6c3754a097f9b5fe4667d2787aa359ec7df7e4", size = 312760, upload-time = "2026-04-29T20:42:38.635Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/0c/043d5e551459da400957a1395e0febbf771446ff34291afcbe3d8be2a279/fsspec-2026.4.0-py3-none-any.whl", hash = "sha256:11ef7bb35dab8a394fde6e608221d5cf3e8499401c249bebaeaad760a1a8dec2", size = 203402, upload-time = "2026-04-29T20:42:36.842Z" },
@@ -1085,7 +1085,7 @@ wheels = [
 [[package]]
 name = "geographiclib"
 version = "2.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/df/78/4892343230a9d29faa1364564e525307a37e54ad776ea62c12129dbba704/geographiclib-2.1.tar.gz", hash = "sha256:6a6545e6262d0ed3522e13c515713718797e37ed8c672c31ad7b249f372ef108", size = 37004, upload-time = "2025-08-21T21:34:26Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/31/b3/802576f2ea5dcb48501bb162e4c7b7b3ca5654a42b2c968ef98a797a4c79/geographiclib-2.1-py3-none-any.whl", hash = "sha256:e2a873b9b9e7fc38721ad73d5f4e6c9ed140d428a339970f505c07056997d40b", size = 40740, upload-time = "2025-08-21T21:34:24.955Z" },
@@ -1094,7 +1094,7 @@ wheels = [
 [[package]]
 name = "geopandas"
 version = "1.1.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
@@ -1111,7 +1111,7 @@ wheels = [
 [[package]]
 name = "geopy"
 version = "2.4.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "geographiclib" },
 ]
@@ -1123,7 +1123,7 @@ wheels = [
 [[package]]
 name = "graphviz"
 version = "0.21"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
@@ -1132,7 +1132,7 @@ wheels = [
 [[package]]
 name = "greenlet"
 version = "3.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6d/6e/802acd792aebb2256fbbee8cacf2727faaeb6f240ac11008f09eae4414bc/greenlet-3.5.1.tar.gz", hash = "sha256:5a56aeb7d5d9cc4b3a735efb5095bd4b4f6f0e4f93e5ca876d0e2315137b7829", size = 197356, upload-time = "2026-05-20T15:05:03.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/37/4549f149c9797c21b32c2683c33522af22522099de128b2406672526d005/greenlet-3.5.1-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:fa4f98af3a528f0c3fd592a26df7f376f93329c8f4d987f6bb979057af8bf5e2", size = 286220, upload-time = "2026-05-20T13:07:28.463Z" },
@@ -1199,7 +1199,7 @@ wheels = [
 [[package]]
 name = "griffe"
 version = "2.0.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "griffecli" },
     { name = "griffelib" },
@@ -1212,7 +1212,7 @@ wheels = [
 [[package]]
 name = "griffecli"
 version = "2.0.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
     { name = "griffelib" },
@@ -1225,7 +1225,7 @@ wheels = [
 [[package]]
 name = "griffelib"
 version = "2.0.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9d/82/74f4a3310cdabfbb10da554c3a672847f1ed33c6f61dd472681ce7f1fe67/griffelib-2.0.2.tar.gz", hash = "sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e", size = 166461, upload-time = "2026-03-27T11:34:51.091Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/11/8c/c9138d881c79aa0ea9ed83cbd58d5ca75624378b38cee225dcf5c42cc91f/griffelib-2.0.2-py3-none-any.whl", hash = "sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1", size = 142357, upload-time = "2026-03-27T11:34:46.275Z" },
@@ -1234,7 +1234,7 @@ wheels = [
 [[package]]
 name = "gurobipy"
 version = "13.0.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/52/84706ec7c4c8d76a7e36ac602f873e9a367dfbaa035ac145eda79b3bc983/gurobipy-13.0.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:64b66660238f57b75adc9761f981524373f32ce8cdd37f4bf2f28dc1b699d1d5", size = 15988917, upload-time = "2026-05-05T10:42:49.424Z" },
     { url = "https://files.pythonhosted.org/packages/2e/70/460e4cc66508b9025919f6c260b93211169058917153e58c0f17a57846ea/gurobipy-13.0.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f35e404fc32921a94cbc5b047e01ad714ced23ba0c1ddf81b5e5a20bf53d757a", size = 14868660, upload-time = "2026-05-05T10:42:56.31Z" },
@@ -1257,7 +1257,7 @@ wheels = [
 [[package]]
 name = "h11"
 version = "0.16.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
@@ -1266,7 +1266,7 @@ wheels = [
 [[package]]
 name = "h2"
 version = "4.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "hpack" },
     { name = "hyperframe" },
@@ -1279,7 +1279,7 @@ wheels = [
 [[package]]
 name = "h3"
 version = "4.5.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2d/1c/12f1e2842d6493de4dd8244538c30a556712e9a6b25c5151a0e0e522a67e/h3-4.5.0.tar.gz", hash = "sha256:a1e279a1674fc799445c710e35bc4b1b388a406c881d8b5e59a9b8bebeb5bb43", size = 180838, upload-time = "2026-05-30T00:59:24.988Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/63/1acc39ba0fc4b8ba7786662d7b5800a2b12653d64c6658e7293f6821abd3/h3-4.5.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:c1ae8f31981cf0dbdae15f1cc817ec30b6bbec7f27461cb28a0e1eb1794360d0", size = 848134, upload-time = "2026-05-30T00:59:00.271Z" },
@@ -1308,7 +1308,7 @@ wheels = [
 [[package]]
 name = "h5py"
 version = "3.16.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -1351,7 +1351,7 @@ wheels = [
 [[package]]
 name = "highspy"
 version = "1.14.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -1392,7 +1392,7 @@ wheels = [
 [[package]]
 name = "holidays"
 version = "0.98"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil" },
 ]
@@ -1404,7 +1404,7 @@ wheels = [
 [[package]]
 name = "hpack"
 version = "4.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2c/48/71de9ed269fdae9c8057e5a4c0aa7402e8bb16f2c6e90b3aa53327b113f8/hpack-4.1.0.tar.gz", hash = "sha256:ec5eca154f7056aa06f196a557655c5b009b382873ac8d1e66e79e87535f1dca", size = 51276, upload-time = "2025-01-22T21:44:58.347Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/c6/80c95b1b2b94682a72cbdbfb85b81ae2daffa4291fbfa1b1464502ede10d/hpack-4.1.0-py3-none-any.whl", hash = "sha256:157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496", size = 34357, upload-time = "2025-01-22T21:44:56.92Z" },
@@ -1413,7 +1413,7 @@ wheels = [
 [[package]]
 name = "httpcore"
 version = "1.0.9"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "h11" },
@@ -1426,7 +1426,7 @@ wheels = [
 [[package]]
 name = "httpx"
 version = "0.28.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "certifi" },
@@ -1446,7 +1446,7 @@ http2 = [
 [[package]]
 name = "humanize"
 version = "4.15.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ba/66/a3921783d54be8a6870ac4ccffcd15c4dc0dd7fcce51c6d63b8c63935276/humanize-4.15.0.tar.gz", hash = "sha256:1dd098483eb1c7ee8e32eb2e99ad1910baefa4b75c3aff3a82f4d78688993b10", size = 83599, upload-time = "2025-12-20T20:16:13.19Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/7b/bca5613a0c3b542420cf92bd5e5fb8ebd5435ce1011a091f66bb7693285e/humanize-4.15.0-py3-none-any.whl", hash = "sha256:b1186eb9f5a9749cd9cb8565aee77919dd7c8d076161cf44d70e59e3301e1769", size = 132203, upload-time = "2025-12-20T20:16:11.67Z" },
@@ -1455,7 +1455,7 @@ wheels = [
 [[package]]
 name = "hyperframe"
 version = "6.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/02/e7/94f8232d4a74cc99514c13a9f995811485a6903d48e5d952771ef6322e30/hyperframe-6.1.0.tar.gz", hash = "sha256:f630908a00854a7adeabd6382b43923a4c4cd4b821fcb527e6ab9e15382a3b08", size = 26566, upload-time = "2025-01-22T21:41:49.302Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/30/47d0bf6072f7252e6521f3447ccfa40b421b6824517f82854703d0f5a98b/hyperframe-6.1.0-py3-none-any.whl", hash = "sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5", size = 13007, upload-time = "2025-01-22T21:41:47.295Z" },
@@ -1464,7 +1464,7 @@ wheels = [
 [[package]]
 name = "identify"
 version = "2.6.19"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/52/63/51723b5f116cc04b061cb6f5a561790abf249d25931d515cd375e063e0f4/identify-2.6.19.tar.gz", hash = "sha256:6be5020c38fcb07da56c53733538a3081ea5aa70d36a156f83044bfbf9173842", size = 99567, upload-time = "2026-04-17T18:39:50.265Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/94/84/d9273cd09688070a6523c4aee4663a8538721b2b755c4962aafae0011e72/identify-2.6.19-py2.py3-none-any.whl", hash = "sha256:20e6a87f786f768c092a721ad107fc9df0eb89347be9396cadf3f4abbd1fb78a", size = 99397, upload-time = "2026-04-17T18:39:49.221Z" },
@@ -1473,7 +1473,7 @@ wheels = [
 [[package]]
 name = "idna"
 version = "3.18"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cd/63/9496c57188a2ee585e0f1db071d75089a11e98aa86eb99d9d7618fc1edce/idna-3.18.tar.gz", hash = "sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848", size = 196711, upload-time = "2026-06-02T14:34:07.794Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl", hash = "sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2", size = 65455, upload-time = "2026-06-02T14:34:06.319Z" },
@@ -1482,7 +1482,7 @@ wheels = [
 [[package]]
 name = "iniconfig"
 version = "2.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
@@ -1491,7 +1491,7 @@ wheels = [
 [[package]]
 name = "ipykernel"
 version = "7.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "appnope", marker = "sys_platform == 'darwin'" },
     { name = "comm" },
@@ -1515,7 +1515,7 @@ wheels = [
 [[package]]
 name = "ipython"
 version = "9.14.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "decorator" },
@@ -1537,7 +1537,7 @@ wheels = [
 [[package]]
 name = "ipython-pygments-lexers"
 version = "1.1.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pygments" },
 ]
@@ -1549,7 +1549,7 @@ wheels = [
 [[package]]
 name = "isoduration"
 version = "20.11.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow" },
 ]
@@ -1561,7 +1561,7 @@ wheels = [
 [[package]]
 name = "jedi"
 version = "0.20.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "parso" },
 ]
@@ -1573,7 +1573,7 @@ wheels = [
 [[package]]
 name = "jinja2"
 version = "3.1.6"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
@@ -1585,7 +1585,7 @@ wheels = [
 [[package]]
 name = "jinja2-humanize-extension"
 version = "0.4.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "humanize" },
     { name = "jinja2" },
@@ -1598,7 +1598,7 @@ wheels = [
 [[package]]
 name = "joblib"
 version = "1.5.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/41/f2/d34e8b3a08a9cc79a50b2208a93dce981fe615b64d5a4d4abee421d898df/joblib-1.5.3.tar.gz", hash = "sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3", size = 331603, upload-time = "2025-12-15T08:41:46.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/91/984aca2ec129e2757d1e4e3c81c3fcda9d0f85b74670a094cc443d9ee949/joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713", size = 309071, upload-time = "2025-12-15T08:41:44.973Z" },
@@ -1607,7 +1607,7 @@ wheels = [
 [[package]]
 name = "json5"
 version = "0.14.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9c/4b/6f8906aaf67d501e259b0adab4d312945bb7211e8b8d4dcc77c92320edaa/json5-0.14.0.tar.gz", hash = "sha256:b3f492fad9f6cdbced8b7d40b28b9b1c9701c5f561bef0d33b81c2ff433fefcb", size = 52656, upload-time = "2026-03-27T22:50:48.108Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/42/cf027b4ac873b076189d935b135397675dac80cb29acb13e1ab86ad6c631/json5-0.14.0-py3-none-any.whl", hash = "sha256:56cf861bab076b1178eb8c92e1311d273a9b9acea2ccc82c276abf839ebaef3a", size = 36271, upload-time = "2026-03-27T22:50:47.073Z" },
@@ -1616,7 +1616,7 @@ wheels = [
 [[package]]
 name = "jsonpatch"
 version = "1.33"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonpointer" },
 ]
@@ -1628,7 +1628,7 @@ wheels = [
 [[package]]
 name = "jsonpointer"
 version = "3.1.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/18/c7/af399a2e7a67fd18d63c40c5e62d3af4e67b836a2107468b6a5ea24c4304/jsonpointer-3.1.1.tar.gz", hash = "sha256:0b801c7db33a904024f6004d526dcc53bbb8a4a0f4e32bfd10beadf60adf1900", size = 9068, upload-time = "2026-03-23T22:32:32.458Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/6a/a83720e953b1682d2d109d3c2dbb0bc9bf28cc1cbc205be4ef4be5da709d/jsonpointer-3.1.1-py3-none-any.whl", hash = "sha256:8ff8b95779d071ba472cf5bc913028df06031797532f08a7d5b602d8b2a488ca", size = 7659, upload-time = "2026-03-23T22:32:31.568Z" },
@@ -1637,7 +1637,7 @@ wheels = [
 [[package]]
 name = "jsonschema"
 version = "4.26.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "jsonschema-specifications" },
@@ -1665,7 +1665,7 @@ format-nongpl = [
 [[package]]
 name = "jsonschema-specifications"
 version = "2025.9.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "referencing" },
 ]
@@ -1677,7 +1677,7 @@ wheels = [
 [[package]]
 name = "jupyter-client"
 version = "8.9.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jupyter-core" },
     { name = "python-dateutil" },
@@ -1694,7 +1694,7 @@ wheels = [
 [[package]]
 name = "jupyter-core"
 version = "5.9.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "platformdirs" },
     { name = "traitlets" },
@@ -1707,7 +1707,7 @@ wheels = [
 [[package]]
 name = "jupyter-events"
 version = "0.12.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonschema", extra = ["format-nongpl"] },
     { name = "packaging" },
@@ -1726,7 +1726,7 @@ wheels = [
 [[package]]
 name = "jupyter-lsp"
 version = "2.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jupyter-server" },
 ]
@@ -1738,7 +1738,7 @@ wheels = [
 [[package]]
 name = "jupyter-server"
 version = "2.19.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "argon2-cffi" },
@@ -1767,7 +1767,7 @@ wheels = [
 [[package]]
 name = "jupyter-server-terminals"
 version = "0.5.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pywinpty", marker = "os_name == 'nt'" },
     { name = "terminado" },
@@ -1780,7 +1780,7 @@ wheels = [
 [[package]]
 name = "jupyterlab"
 version = "4.5.8"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "async-lru" },
     { name = "httpx" },
@@ -1804,7 +1804,7 @@ wheels = [
 [[package]]
 name = "jupyterlab-pygments"
 version = "0.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/90/51/9187be60d989df97f5f0aba133fa54e7300f17616e065d1ada7d7646b6d6/jupyterlab_pygments-0.3.0.tar.gz", hash = "sha256:721aca4d9029252b11cfa9d185e5b5af4d54772bb8072f9b7036f4170054d35d", size = 512900, upload-time = "2023-11-23T09:26:37.44Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/dd/ead9d8ea85bf202d90cc513b533f9c363121c7792674f78e0d8a854b63b4/jupyterlab_pygments-0.3.0-py3-none-any.whl", hash = "sha256:841a89020971da1d8693f1a99997aefc5dc424bb1b251fd6322462a1b8842780", size = 15884, upload-time = "2023-11-23T09:26:34.325Z" },
@@ -1813,7 +1813,7 @@ wheels = [
 [[package]]
 name = "jupyterlab-server"
 version = "2.28.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "babel" },
     { name = "jinja2" },
@@ -1831,7 +1831,7 @@ wheels = [
 [[package]]
 name = "kiwisolver"
 version = "1.5.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d0/67/9c61eccb13f0bdca9307614e782fec49ffdde0f7a2314935d489fa93cd9c/kiwisolver-1.5.0.tar.gz", hash = "sha256:d4193f3d9dc3f6f79aaed0e5637f45d98850ebf01f7ca20e69457f3e8946b66a", size = 103482, upload-time = "2026-03-09T13:15:53.382Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/b2/818b74ebea34dabe6d0c51cb1c572e046730e64844da6ed646d5298c40ce/kiwisolver-1.5.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:4e9750bc21b886308024f8a54ccb9a2cc38ac9fa813bf4348434e3d54f337ff9", size = 123158, upload-time = "2026-03-09T13:13:23.127Z" },
@@ -1917,7 +1917,7 @@ wheels = [
 [[package]]
 name = "lark"
 version = "1.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/da/34/28fff3ab31ccff1fd4f6c7c7b0ceb2b6968d8ea4950663eadcb5720591a0/lark-1.3.1.tar.gz", hash = "sha256:b426a7a6d6d53189d318f2b6236ab5d6429eaf09259f1ca33eb716eed10d2905", size = 382732, upload-time = "2025-10-27T18:25:56.653Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl", hash = "sha256:c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12", size = 113151, upload-time = "2025-10-27T18:25:54.882Z" },
@@ -1926,7 +1926,7 @@ wheels = [
 [[package]]
 name = "levenshtein"
 version = "0.27.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rapidfuzz" },
 ]
@@ -1992,7 +1992,7 @@ wheels = [
 [[package]]
 name = "linopy"
 version = "0.8.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bottleneck" },
     { name = "dask" },
@@ -2014,7 +2014,7 @@ wheels = [
 [[package]]
 name = "locket"
 version = "1.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2f/83/97b29fe05cb6ae28d2dbd30b81e2e402a3eed5f460c26e9eaa5895ceacf5/locket-1.0.0.tar.gz", hash = "sha256:5c0d4c052a8bbbf750e056a8e65ccd309086f4f0f18a2eac306a8dfa4112a632", size = 4350, upload-time = "2022-04-20T22:04:44.312Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/bc/83e112abc66cd466c6b83f99118035867cecd41802f8d044638aa78a106e/locket-1.0.0-py2.py3-none-any.whl", hash = "sha256:b6c819a722f7b6bd955b80781788e4a66a55628b858d347536b7e81325a3a5e3", size = 4398, upload-time = "2022-04-20T22:04:42.23Z" },
@@ -2023,7 +2023,7 @@ wheels = [
 [[package]]
 name = "mako"
 version = "1.3.12"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
@@ -2035,7 +2035,7 @@ wheels = [
 [[package]]
 name = "markdown"
 version = "3.10.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2b/f4/69fa6ed85ae003c2378ffa8f6d2e3234662abd02c10d216c0ba96081a238/markdown-3.10.2.tar.gz", hash = "sha256:994d51325d25ad8aa7ce4ebaec003febcce822c3f8c911e3b17c52f7f589f950", size = 368805, upload-time = "2026-02-09T14:57:26.942Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/1f/77fa3081e4f66ca3576c896ae5d31c3002ac6607f9747d2e3aa49227e464/markdown-3.10.2-py3-none-any.whl", hash = "sha256:e91464b71ae3ee7afd3017d9f358ef0baf158fd9a298db92f1d4761133824c36", size = 108180, upload-time = "2026-02-09T14:57:25.787Z" },
@@ -2044,7 +2044,7 @@ wheels = [
 [[package]]
 name = "markdown-it-py"
 version = "4.2.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mdurl" },
 ]
@@ -2056,7 +2056,7 @@ wheels = [
 [[package]]
 name = "markupsafe"
 version = "3.0.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz", hash = "sha256:722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698", size = 80313, upload-time = "2025-09-27T18:37:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/72/147da192e38635ada20e0a2e1a51cf8823d2119ce8883f7053879c2199b5/markupsafe-3.0.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:d53197da72cc091b024dd97249dfc7794d6a56530370992a5e1a08983ad9230e", size = 11615, upload-time = "2025-09-27T18:36:30.854Z" },
@@ -2119,7 +2119,7 @@ wheels = [
 [[package]]
 name = "matplotlib"
 version = "3.11.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "contourpy" },
     { name = "cycler" },
@@ -2173,7 +2173,7 @@ wheels = [
 [[package]]
 name = "matplotlib-inline"
 version = "0.2.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "traitlets" },
 ]
@@ -2185,7 +2185,7 @@ wheels = [
 [[package]]
 name = "mdurl"
 version = "0.1.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
@@ -2194,7 +2194,7 @@ wheels = [
 [[package]]
 name = "mistune"
 version = "3.2.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ca/84/620cc3f7e3adf6f5067e10f4dbae71295d8f9e16d5d3f9ef97c40f2f592c/mistune-3.2.1.tar.gz", hash = "sha256:7c8e5501d38bac1582e067e46c8343f17d57ea1aaa735823f3aba1fd59c88a28", size = 98003, upload-time = "2026-05-03T14:33:22.312Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/7f/a946aa4f8752b37102b41e64dca18a1976ac705c3a0d1dfe74d820a02552/mistune-3.2.1-py3-none-any.whl", hash = "sha256:78cdb0ba5e938053ccf63651b352508d2efa9411dc8810bfb05f2dc5140c0048", size = 53749, upload-time = "2026-05-03T14:33:20.551Z" },
@@ -2203,7 +2203,7 @@ wheels = [
 [[package]]
 name = "narwhals"
 version = "2.22.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/62/3c/c4ef2164a71c1a63d7f1ae411c4082c5fa872405106db60a4b7114989ad7/narwhals-2.22.1.tar.gz", hash = "sha256:d62920805a0a43b7ff8b54b0c0d3142d796f8a9301836ada37e573d6a33cbcd9", size = 647493, upload-time = "2026-06-05T12:34:34.051Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/ca/36339329c4604adbcc99c899b7eb1ce1a555c499b6a6860757dc9bfed36d/narwhals-2.22.1-py3-none-any.whl", hash = "sha256:60567d774edf77db53906f89d9fbd164e66e56d66d388e1e6990f17ac33cfb53", size = 454815, upload-time = "2026-06-05T12:34:32.289Z" },
@@ -2212,7 +2212,7 @@ wheels = [
 [[package]]
 name = "nbclient"
 version = "0.11.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jupyter-client" },
     { name = "jupyter-core" },
@@ -2227,7 +2227,7 @@ wheels = [
 [[package]]
 name = "nbconvert"
 version = "7.17.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "bleach", extra = ["css"] },
@@ -2252,7 +2252,7 @@ wheels = [
 [[package]]
 name = "nbformat"
 version = "5.10.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastjsonschema" },
     { name = "jsonschema" },
@@ -2267,7 +2267,7 @@ wheels = [
 [[package]]
 name = "nest-asyncio2"
 version = "1.7.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b4/73/731debf26e27e0a0323d7bda270dc2f634b398e38f040a09da1f4351d0aa/nest_asyncio2-1.7.2.tar.gz", hash = "sha256:1921d70b92cc4612c374928d081552efb59b83d91b2b789d935c665fa01729a8", size = 14743, upload-time = "2026-02-13T00:34:04.386Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/3c/3179b85b0e1c3659f0369940200cd6d0fa900e6cefcc7ea0bc6dd0e29ffb/nest_asyncio2-1.7.2-py3-none-any.whl", hash = "sha256:f5dfa702f3f81f6a03857e9a19e2ba578c0946a4ad417b4c50a24d7ba641fe01", size = 7843, upload-time = "2026-02-13T00:34:02.691Z" },
@@ -2276,7 +2276,7 @@ wheels = [
 [[package]]
 name = "netcdf4"
 version = "1.7.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "cftime" },
@@ -2303,7 +2303,7 @@ wheels = [
 [[package]]
 name = "networkx"
 version = "3.6.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762", size = 2068504, upload-time = "2025-12-08T17:02:38.159Z" },
@@ -2312,7 +2312,7 @@ wheels = [
 [[package]]
 name = "nodeenv"
 version = "1.10.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/bf/d1bda4f6168e0b2e9e5958945e01910052158313224ada5ce1fb2e1113b8/nodeenv-1.10.0.tar.gz", hash = "sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb", size = 55611, upload-time = "2025-12-20T14:08:54.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl", hash = "sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827", size = 23438, upload-time = "2025-12-20T14:08:52.782Z" },
@@ -2321,7 +2321,7 @@ wheels = [
 [[package]]
 name = "notebook-shim"
 version = "0.2.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jupyter-server" },
 ]
@@ -2333,7 +2333,7 @@ wheels = [
 [[package]]
 name = "numexpr"
 version = "2.14.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -2384,7 +2384,7 @@ wheels = [
 [[package]]
 name = "numpy"
 version = "2.4.6"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d0/ad/fed0499ce6a338d2a03ebae59cd15093910c8875328855781952abf6c2fe/numpy-2.4.6.tar.gz", hash = "sha256:f3a3570c4a2a16746ac2c31a7c7c7b0c186b95ce902e33db6f28094ed7387dda", size = 20735807, upload-time = "2026-05-18T23:37:14.07Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/2a/3d7b5ac8aac24feaf9ad7ed58f45b0bbc06d37e4338ae84c9f2298b570f9/numpy-2.4.6-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:001fbb8e08d942dd57599e781f2472269ee7f2755fae407b4f67b2f0b17da3f1", size = 16689119, upload-time = "2026-05-18T23:33:54.065Z" },
@@ -2445,7 +2445,7 @@ wheels = [
 [[package]]
 name = "numpy-financial"
 version = "1.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -2457,7 +2457,7 @@ wheels = [
 [[package]]
 name = "oauthlib"
 version = "3.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
@@ -2466,7 +2466,7 @@ wheels = [
 [[package]]
 name = "oemof-network"
 version = "0.5.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blinker" },
     { name = "dill" },
@@ -2482,7 +2482,7 @@ wheels = [
 [[package]]
 name = "oemof-solph"
 version = "0.6.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blinker" },
     { name = "dill" },
@@ -2501,7 +2501,7 @@ wheels = [
 [[package]]
 name = "oemof-tools"
 version = "0.4.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/41/db/42490e632d5e64edf1bd6aa24d6e5844475288833a8a8008a8c10dfe3a2e/oemof.tools-0.4.3.tar.gz", hash = "sha256:f64851573fec793e3fc2046aa434b2076707c71861eb756e2b48688d1a7d673c", size = 19647, upload-time = "2023-10-12T17:49:17.505Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6e/67/3d3b695ca4e8fc63b92fba790f48b25ebb785a5ed9971e88865969e811ad/oemof.tools-0.4.3-py2.py3-none-any.whl", hash = "sha256:dd951cf4570cde706ea3e9191c52007f45582b8a864398cd8c375938cf087c57", size = 7485, upload-time = "2023-10-12T17:49:15.665Z" },
@@ -2510,7 +2510,7 @@ wheels = [
 [[package]]
 name = "opentelemetry-api"
 version = "1.42.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions" },
 ]
@@ -2522,7 +2522,7 @@ wheels = [
 [[package]]
 name = "orjson"
 version = "3.11.9"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/0c/964746fcafbd16f8ff53219ad9f6b412b34f345c75f384ad434ceaadb538/orjson-3.11.9.tar.gz", hash = "sha256:4fef17e1f8722c11587a6ef18e35902450221da0028e65dbaaa543619e68e48f", size = 5599163, upload-time = "2026-05-06T15:11:08.309Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/6d/11867a3ffa3a3608d84a4de51ef4dd0896d6b5cc9132fbe1daf593e677bc/orjson-3.11.9-cp312-cp312-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl", hash = "sha256:9ef6fe90aadef185c7b128859f40beb24720b4ecea95379fc9000931179c3a49", size = 228515, upload-time = "2026-05-06T15:09:57.265Z" },
@@ -2575,7 +2575,7 @@ wheels = [
 [[package]]
 name = "packaging"
 version = "26.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
@@ -2584,7 +2584,7 @@ wheels = [
 [[package]]
 name = "pandas"
 version = "3.0.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "python-dateutil" },
@@ -2636,7 +2636,7 @@ wheels = [
 [[package]]
 name = "pandocfilters"
 version = "1.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/70/6f/3dd4940bbe001c06a65f88e36bad298bc7a0de5036115639926b0c5c0458/pandocfilters-1.5.1.tar.gz", hash = "sha256:002b4a555ee4ebc03f8b66307e287fa492e4a77b4ea14d3f934328297bb4939e", size = 8454, upload-time = "2024-01-18T20:08:13.726Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/af/4fbc8cab944db5d21b7e2a5b8e9211a03a79852b1157e2c102fcc61ac440/pandocfilters-1.5.1-py2.py3-none-any.whl", hash = "sha256:93be382804a9cdb0a7267585f157e5d1731bbe5545a85b268d6f5fe6232de2bc", size = 8663, upload-time = "2024-01-18T20:08:11.28Z" },
@@ -2645,7 +2645,7 @@ wheels = [
 [[package]]
 name = "parso"
 version = "0.8.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/30/4b/90c937815137d43ce71ba043cd3566221e9df6b9c805f24b5d138c9d40a7/parso-0.8.7.tar.gz", hash = "sha256:eaaac4c9fdd5e9e8852dc778d2d7405897ec510f2a298071453e5e3a07914bb1", size = 401824, upload-time = "2026-05-01T23:13:02.138Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/5d/8268b644392ee874ee82a635cd0df1773de230bde356c38de28e298392cc/parso-0.8.7-py2.py3-none-any.whl", hash = "sha256:a8926eb2a1b915486941fdbd31e86a4baf88fe8c210f25f2f35ecec5b574ca1c", size = 107025, upload-time = "2026-05-01T23:12:58.867Z" },
@@ -2654,7 +2654,7 @@ wheels = [
 [[package]]
 name = "partd"
 version = "1.4.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "locket" },
     { name = "toolz" },
@@ -2667,7 +2667,7 @@ wheels = [
 [[package]]
 name = "pathspec"
 version = "1.1.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5a/82/42f767fc1c1143d6fd36efb827202a2d997a375e160a71eb2888a925aac1/pathspec-1.1.1.tar.gz", hash = "sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a", size = 135180, upload-time = "2026-04-27T01:46:08.907Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl", hash = "sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189", size = 57328, upload-time = "2026-04-27T01:46:07.06Z" },
@@ -2676,7 +2676,7 @@ wheels = [
 [[package]]
 name = "pendulum"
 version = "3.2.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil", marker = "python_full_version < '3.13'" },
     { name = "tzdata", marker = "python_full_version < '3.13'" },
@@ -2719,7 +2719,7 @@ wheels = [
 [[package]]
 name = "pexpect"
 version = "4.9.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
@@ -2731,7 +2731,7 @@ wheels = [
 [[package]]
 name = "pillow"
 version = "12.2.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz", hash = "sha256:a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5", size = 46987819, upload-time = "2026-04-01T14:46:17.687Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/58/be/7482c8a5ebebbc6470b3eb791812fff7d5e0216c2be3827b30b8bb6603ed/pillow-12.2.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:2d192a155bbcec180f8564f693e6fd9bccff5a7af9b32e2e4bf8c9c69dbad6b5", size = 5308279, upload-time = "2026-04-01T14:43:13.246Z" },
@@ -2800,7 +2800,7 @@ wheels = [
 [[package]]
 name = "platformdirs"
 version = "4.10.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/47/e4501f49c178ae1d9f4a75073fda4204f52647993f075a9db4d14930e0c5/platformdirs-4.10.0.tar.gz", hash = "sha256:31e761a6a0ca04faf7353ea759bdba55652be214725111e5aac52dfa29d4bef7", size = 31224, upload-time = "2026-05-28T03:32:53.587Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/e6/cd9575ac904136b3cbf7aa7ee819ef86eedb7274e46f230e94ea4342e729/platformdirs-4.10.0-py3-none-any.whl", hash = "sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a", size = 22743, upload-time = "2026-05-28T03:32:52.175Z" },
@@ -2809,7 +2809,7 @@ wheels = [
 [[package]]
 name = "plotly"
 version = "6.8.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "narwhals" },
     { name = "packaging" },
@@ -2822,7 +2822,7 @@ wheels = [
 [[package]]
 name = "pluggy"
 version = "1.6.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
@@ -2831,7 +2831,7 @@ wheels = [
 [[package]]
 name = "polars"
 version = "1.41.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "polars-runtime-32" },
 ]
@@ -2848,7 +2848,7 @@ rtcompat = [
 [[package]]
 name = "polars-runtime-32"
 version = "1.41.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/56/54e3ea0e9b64f327179049e4742241cc6b1d3e8fa414b05a057dd26df367/polars_runtime_32-1.41.2.tar.gz", hash = "sha256:7af09ec1ab053da2c9669e8d15f809a4083a29be05db57111688b8051062af56", size = 2989474, upload-time = "2026-05-29T17:39:17.257Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/9b/fe72a3811c0357cdb06c67bdc7695fa1623ad47948fc523195f5ac31037f/polars_runtime_32-1.41.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:95a08346dac337357cdb825c8076df7d36da54c4caa59a5cb41d0a30691c5edd", size = 52265283, upload-time = "2026-05-29T17:37:09.407Z" },
@@ -2864,7 +2864,7 @@ wheels = [
 [[package]]
 name = "polars-runtime-compat"
 version = "1.41.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/50/3c/a274ecfeb1f39231e166d3b7df87674865211abc00dc42c2c57e9709dd80/polars_runtime_compat-1.41.2.tar.gz", hash = "sha256:cdd12ca3d79cc9748b6217dc969f8b3a3b282effa1b088aab00595ed86947f09", size = 2990973, upload-time = "2026-05-29T17:39:21.364Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/53/b9/f6d13337327c6a6aecb9eb615bafc09cee1c7fb02bdeecb838e14f7bae68/polars_runtime_compat-1.41.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c9646fc527ac8167adc681b17b78370e3064ef7ff3fe6a4253626fbef76bf3ea", size = 52212192, upload-time = "2026-05-29T17:38:32.948Z" },
@@ -2880,7 +2880,7 @@ wheels = [
 [[package]]
 name = "pre-commit"
 version = "4.6.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cfgv" },
     { name = "identify" },
@@ -2896,7 +2896,7 @@ wheels = [
 [[package]]
 name = "prefect"
 version = "3.7.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -2964,7 +2964,7 @@ wheels = [
 [[package]]
 name = "prometheus-client"
 version = "0.25.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1b/fb/d9aa83ffe43ce1f19e557c0971d04b90561b0cfd50762aafb01968285553/prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28", size = 86035, upload-time = "2026-04-09T19:53:42.359Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/9b/d4b1e644385499c8346fa9b622a3f030dce14cd6ef8a1871c221a17a67e7/prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1", size = 64154, upload-time = "2026-04-09T19:53:41.324Z" },
@@ -2973,7 +2973,7 @@ wheels = [
 [[package]]
 name = "prompt-toolkit"
 version = "3.0.52"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "wcwidth" },
 ]
@@ -2985,7 +2985,7 @@ wheels = [
 [[package]]
 name = "psutil"
 version = "7.2.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/aa/c6/d1ddf4abb55e93cebc4f2ed8b5d6dbad109ecb8d63748dd2b20ab5e57ebe/psutil-7.2.2.tar.gz", hash = "sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372", size = 493740, upload-time = "2026-01-28T18:14:54.428Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/08/510cbdb69c25a96f4ae523f733cdc963ae654904e8db864c07585ef99875/psutil-7.2.2-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:2edccc433cbfa046b980b0df0171cd25bcaeb3a68fe9022db0979e7aa74a826b", size = 130595, upload-time = "2026-01-28T18:14:57.293Z" },
@@ -3013,7 +3013,7 @@ wheels = [
 [[package]]
 name = "ptyprocess"
 version = "0.7.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/20/e5/16ff212c1e452235a90aeb09066144d0c5a6a8c0834397e03f5224495c4e/ptyprocess-0.7.0.tar.gz", hash = "sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220", size = 70762, upload-time = "2020-12-28T15:15:30.155Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/22/a6/858897256d0deac81a172289110f31629fc4cee19b6f01283303e18c8db3/ptyprocess-0.7.0-py2.py3-none-any.whl", hash = "sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35", size = 13993, upload-time = "2020-12-28T15:15:28.35Z" },
@@ -3022,7 +3022,7 @@ wheels = [
 [[package]]
 name = "pure-eval"
 version = "0.2.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cd/05/0a34433a064256a578f1783a10da6df098ceaa4a57bbeaa96a6c0352786b/pure_eval-0.2.3.tar.gz", hash = "sha256:5f4e983f40564c576c7c8635ae88db5956bb2229d7e9237d03b3c0b0190eaf42", size = 19752, upload-time = "2024-07-21T12:58:21.801Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8e/37/efad0257dc6e593a18957422533ff0f87ede7c9c6ea010a2177d738fb82f/pure_eval-0.2.3-py3-none-any.whl", hash = "sha256:1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0", size = 11842, upload-time = "2024-07-21T12:58:20.04Z" },
@@ -3031,7 +3031,7 @@ wheels = [
 [[package]]
 name = "pvlib"
 version = "0.15.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
     { name = "numpy" },
@@ -3048,7 +3048,7 @@ wheels = [
 [[package]]
 name = "py-key-value-aio"
 version = "0.4.5"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beartype" },
     { name = "typing-extensions" },
@@ -3069,7 +3069,7 @@ redis = [
 [[package]]
 name = "pycparser"
 version = "3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1b/7d/92392ff7815c21062bea51aa7b87d45576f649f16458d78b7cf94b9ab2e6/pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29", size = 103492, upload-time = "2026-01-21T14:26:51.89Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992", size = 48172, upload-time = "2026-01-21T14:26:50.693Z" },
@@ -3078,7 +3078,7 @@ wheels = [
 [[package]]
 name = "pydantic"
 version = "2.13.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-types" },
     { name = "pydantic-core" },
@@ -3093,7 +3093,7 @@ wheels = [
 [[package]]
 name = "pydantic-core"
 version = "2.46.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions" },
 ]
@@ -3168,7 +3168,7 @@ wheels = [
 [[package]]
 name = "pydantic-extra-types"
 version = "2.11.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
@@ -3181,7 +3181,7 @@ wheels = [
 [[package]]
 name = "pydantic-settings"
 version = "2.14.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -3195,7 +3195,7 @@ wheels = [
 [[package]]
 name = "pydeck"
 version = "0.9.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
     { name = "numpy" },
@@ -3208,7 +3208,7 @@ wheels = [
 [[package]]
 name = "pydocket"
 version = "0.21.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "burner-redis" },
     { name = "cloudpickle" },
@@ -3232,7 +3232,7 @@ wheels = [
 [[package]]
 name = "pygments"
 version = "2.20.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
@@ -3241,7 +3241,7 @@ wheels = [
 [[package]]
 name = "pymupdf"
 version = "1.27.2.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/22/32/708bedc9dde7b328d45abbc076091769d44f2f24ad151ad92d56a6ec142b/pymupdf-1.27.2.3.tar.gz", hash = "sha256:7a92faa25129e8bbec5e50eeb9214f187665428c31b05c4ef6e36c58c0b1c6d2", size = 85759618, upload-time = "2026-04-24T14:13:14.42Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/09/ddbdfa7ee91fbabd6f63d7d744884cbdfe3e7ff9b8604749fb38bddf5c5d/pymupdf-1.27.2.3-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:fc1bc3cae6e9e150b0dbb0a9221bdfd411d65f0db2fe359eaa22467d7cc2a05f", size = 24002636, upload-time = "2026-04-24T14:09:17.459Z" },
@@ -3257,7 +3257,7 @@ wheels = [
 [[package]]
 name = "pyogrio"
 version = "0.12.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "numpy" },
@@ -3300,7 +3300,7 @@ wheels = [
 [[package]]
 name = "pyomo"
 version = "6.10.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9b/16/5ee100614f82b8bc482336afc15a554b98d847d0bcdc22e51bb559112183/pyomo-6.10.1.tar.gz", hash = "sha256:74a9109c3b4ab97e69d6b1a1ca4e96a54442a177d8b1a19393e417e6ba008ba3", size = 3276980, upload-time = "2026-06-04T21:45:42.76Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/3d/55089dbb8fdbed2b08600c50c52a7f2193f1de8bd6454a6541a8c56643ee/pyomo-6.10.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f446764a499e535c6980435b71f297873cb13f0b040a1275853431abd35033d9", size = 4554942, upload-time = "2026-06-04T21:49:53.156Z" },
@@ -3325,7 +3325,7 @@ wheels = [
 [[package]]
 name = "pyparsing"
 version = "3.3.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
@@ -3334,7 +3334,7 @@ wheels = [
 [[package]]
 name = "pyproj"
 version = "3.7.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
 ]
@@ -3390,7 +3390,7 @@ wheels = [
 [[package]]
 name = "pypsa"
 version = "1.2.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecation" },
     { name = "geopandas" },
@@ -3419,7 +3419,7 @@ wheels = [
 [[package]]
 name = "pytest"
 version = "9.0.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
@@ -3435,7 +3435,7 @@ wheels = [
 [[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "six" },
 ]
@@ -3447,7 +3447,7 @@ wheels = [
 [[package]]
 name = "python-discovery"
 version = "1.4.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
     { name = "platformdirs" },
@@ -3460,7 +3460,7 @@ wheels = [
 [[package]]
 name = "python-dotenv"
 version = "1.2.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
@@ -3469,7 +3469,7 @@ wheels = [
 [[package]]
 name = "python-json-logger"
 version = "4.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f7/ff/3cc9165fd44106973cd7ac9facb674a65ed853494592541d339bdc9a30eb/python_json_logger-4.1.0.tar.gz", hash = "sha256:b396b9e3ed782b09ff9d6e4f1683d46c83ad0d35d2e407c09a9ebbf038f88195", size = 17573, upload-time = "2026-03-29T04:39:56.805Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/be/0631a861af4d1c875f096c07d34e9a63639560a717130e7a87cbc82b7e3f/python_json_logger-4.1.0-py3-none-any.whl", hash = "sha256:132994765cf75bf44554be9aa49b06ef2345d23661a96720262716438141b6b2", size = 15021, upload-time = "2026-03-29T04:39:55.266Z" },
@@ -3478,7 +3478,7 @@ wheels = [
 [[package]]
 name = "python-slugify"
 version = "8.0.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "text-unidecode" },
 ]
@@ -3490,7 +3490,7 @@ wheels = [
 [[package]]
 name = "pytz"
 version = "2026.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ff/46/dd499ec9038423421951e4fad73051febaa13d2df82b4064f87af8b8c0c3/pytz-2026.2.tar.gz", hash = "sha256:0e60b47b29f21574376f218fe21abc009894a2321ea16c6754f3cad6eb7cdd6a", size = 320861, upload-time = "2026-05-04T01:35:29.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/dd/96da98f892250475bdf2328112d7468abdd4acc7b902b6af23f4ed958ea0/pytz-2026.2-py2.py3-none-any.whl", hash = "sha256:04156e608bee23d3792fd45c94ae47fae1036688e75032eea2e3bf0323d1f126", size = 510141, upload-time = "2026-05-04T01:35:27.408Z" },
@@ -3499,7 +3499,7 @@ wheels = [
 [[package]]
 name = "pywin32"
 version = "312"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/ff/32aa7d2ed0ab12b323aaa64f9b75e6ad4f8fd09f9ccfc28c79414d46838d/pywin32-312-cp312-cp312-win32.whl", hash = "sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b", size = 6371877, upload-time = "2026-06-04T07:49:28.836Z" },
     { url = "https://files.pythonhosted.org/packages/03/d9/77040d3b43df3f3be32ea289433d660d2727f5ba327bc73be835127d9d60/pywin32-312-cp312-cp312-win_amd64.whl", hash = "sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc", size = 6914841, upload-time = "2026-06-04T07:49:31.85Z" },
@@ -3518,7 +3518,7 @@ wheels = [
 [[package]]
 name = "pywinpty"
 version = "3.0.5"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a9/ef/2d27f30c59a67be7025b2d7858c8c2d282b74d66544b2384730b82de74fd/pywinpty-3.0.5.tar.gz", hash = "sha256:61db0db063de9865adbea66db294628f8577f608d9764a4c7d3384eeacc4e81b", size = 16223484, upload-time = "2026-06-11T00:11:58.93Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/45/34/942cc95ca4e26489875aa8a95192766247a687379ec29543eebe73ec945f/pywinpty-3.0.5-cp312-cp312-win_amd64.whl", hash = "sha256:d62946adf14b15b54c0b8d785f93fe18b04da23f4ad59e2e8c4612646e9abd23", size = 2090915, upload-time = "2026-06-10T23:43:14.98Z" },
@@ -3536,7 +3536,7 @@ wheels = [
 [[package]]
 name = "pyyaml"
 version = "6.0.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz", hash = "sha256:d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f", size = 130960, upload-time = "2025-09-25T21:33:16.546Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/33/422b98d2195232ca1826284a76852ad5a86fe23e31b009c9886b2d0fb8b2/pyyaml-6.0.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:7f047e29dcae44602496db43be01ad42fc6f1cc0d8cd6c83d342306c32270196", size = 182063, upload-time = "2025-09-25T21:32:11.445Z" },
@@ -3582,7 +3582,7 @@ wheels = [
 [[package]]
 name = "pyzmq"
 version = "27.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi", marker = "implementation_name == 'pypy'" },
 ]
@@ -3625,7 +3625,7 @@ wheels = [
 [[package]]
 name = "rainflow"
 version = "3.2.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d4/59/57218a5eba4772d1422fe67d37aa3840f80b7bb2b360153d25484f2d32af/rainflow-3.2.0.tar.gz", hash = "sha256:a78f7cd0acab11ccb80567a5c5db9f3a619dee8ac89a5fc861685fe5ffe827fd", size = 4515, upload-time = "2023-04-17T07:05:24.604Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3e/c8/a6d626326cec5eb7c2f8f0646607e90a24d862b64976fc8f111bdb30aa2d/rainflow-3.2.0-py3-none-any.whl", hash = "sha256:cb6c254aa1a16a9e658ff3f39c6e5a77650d6c4e8304146169b36516d1f01660", size = 4941, upload-time = "2023-04-17T07:05:23.107Z" },
@@ -3634,7 +3634,7 @@ wheels = [
 [[package]]
 name = "rapidfuzz"
 version = "3.14.5"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2c/21/ef6157213316e85790041254259907eb722e00b03480256c0545d98acd33/rapidfuzz-3.14.5.tar.gz", hash = "sha256:ba10ac57884ce82112f7ed910b67e7fb6072d8ef2c06e30dc63c0f604a112e0e", size = 57901753, upload-time = "2026-04-07T11:16:31.931Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d3/e3/574435c6aafb80254c191ef40d7aca2cb2bb97a095ec9395e9fa59ac307a/rapidfuzz-3.14.5-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:0d3378f471ef440473a396ce2f8e97ee12f89a78b495540e0a5617bbfe895638", size = 1944601, upload-time = "2026-04-07T11:14:18.771Z" },
@@ -3697,7 +3697,7 @@ wheels = [
 [[package]]
 name = "readchar"
 version = "4.2.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ed/49/a10341024c45bed95d13197ec9ef0f4e2fd10b5ca6e7f8d7684d18082398/readchar-4.2.2.tar.gz", hash = "sha256:e3b270fe16fc90c50ac79107700330a133dd4c63d22939f5b03b4f24564d5dd8", size = 9762, upload-time = "2026-04-06T19:45:54.226Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/ca/36133653e00939922dd1416f4c56177361289172a30563fcb9552c9ccde4/readchar-4.2.2-py3-none-any.whl", hash = "sha256:92daf7e42c52b0787e6c75d01ecfb9a94f4ceff3764958b570c1dddedd47b200", size = 9401, upload-time = "2026-04-06T19:45:52.993Z" },
@@ -3706,7 +3706,7 @@ wheels = [
 [[package]]
 name = "redis"
 version = "8.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/ae/ed461cca5780b5fc8b9fe8ca0ed98d89508645fb9d880c24cc42c087678f/redis-8.0.0.tar.gz", hash = "sha256:a00c5355432051ac14e593b8b197fc76c887ee12d55a0984f69328a1115fdc49", size = 5101591, upload-time = "2026-05-28T12:45:13.5Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/e3/b519734372d305bd547534a9f32e4ce9f98552af753dce72cf3483a0ff0b/redis-8.0.0-py3-none-any.whl", hash = "sha256:c938c18338585009f0bc310f4c7e4e4b4d37639356c4ac072cedf3af570c8dc7", size = 499870, upload-time = "2026-05-28T12:45:11.697Z" },
@@ -3715,7 +3715,7 @@ wheels = [
 [[package]]
 name = "referencing"
 version = "0.37.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "rpds-py" },
@@ -3729,7 +3729,7 @@ wheels = [
 [[package]]
 name = "regex"
 version = "2026.5.9"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/dc/0e/49aee608ad09480e7fd276898c99ec6192985fa331abe4eb3a986094490b/regex-2026.5.9.tar.gz", hash = "sha256:a8234aa23ec39894bfe4a3f1b85616a7032481964a13ac6fc9f10de4f6fca270", size = 416074, upload-time = "2026-05-09T23:15:19.37Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/50/9b/6550044bc44e17c84d312c031c2ec42fbdb6a4ec4e29093be3a172d08772/regex-2026.5.9-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:57eeeb05db7979413dec5438f2db21d7ecbba787cde7a711df1a6f6df672aa06", size = 490451, upload-time = "2026-05-09T23:12:34.72Z" },
@@ -3817,7 +3817,7 @@ wheels = [
 [[package]]
 name = "requests"
 version = "2.34.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "charset-normalizer" },
@@ -3832,7 +3832,7 @@ wheels = [
 [[package]]
 name = "requests-oauthlib"
 version = "2.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "oauthlib" },
     { name = "requests" },
@@ -3900,7 +3900,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pypsa", specifier = ">=1.2.0" },
     { name = "rainflow" },
-    { name = "revoletion-core", index = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" },
+    { name = "revoletion-core", specifier = ">=1.0.0.dev0", index = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "simpy" },
@@ -3923,21 +3923,21 @@ tests = [
 
 [[package]]
 name = "revoletion-core"
-version = "0.1.0"
+version = "1.0.0.dev0"
 source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
 dependencies = [
     { name = "pandas" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/dd7f4aa656770062a99964133976ac53eacf82dcb5c305a4aa28c4fed86f4d02/revoletion_core-0.1.0.tar.gz", hash = "sha256:dd7f4aa656770062a99964133976ac53eacf82dcb5c305a4aa28c4fed86f4d02" }
+sdist = { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/bd8aa9bed65476dae87620e67828ff5372beea5a6cff824041d1e234e2a676b0/revoletion_core-1.0.0.dev0.tar.gz", hash = "sha256:bd8aa9bed65476dae87620e67828ff5372beea5a6cff824041d1e234e2a676b0" }
 wheels = [
-    { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/de6424dda991598d7570b682d33cf61357b4729e34d231826f297306bcb1de45/revoletion_core-0.1.0-py3-none-any.whl", hash = "sha256:de6424dda991598d7570b682d33cf61357b4729e34d231826f297306bcb1de45" },
+    { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/e4f82bbc2153d4678fe7d2819c212243512a52468ba715799af9feddf619ad6b/revoletion_core-1.0.0.dev0-py3-none-any.whl", hash = "sha256:e4f82bbc2153d4678fe7d2819c212243512a52468ba715799af9feddf619ad6b" },
 ]
 
 [[package]]
 name = "rfc3339-validator"
 version = "0.1.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "six" },
 ]
@@ -3949,7 +3949,7 @@ wheels = [
 [[package]]
 name = "rfc3986-validator"
 version = "0.1.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/da/88/f270de456dd7d11dcc808abfa291ecdd3f45ff44e3b549ffa01b126464d0/rfc3986_validator-0.1.1.tar.gz", hash = "sha256:3d44bde7921b3b9ec3ae4e3adca370438eccebc676456449b145d533b240d055", size = 6760, upload-time = "2019-10-28T16:00:19.144Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/51/17023c0f8f1869d8806b979a2bffa3f861f26a3f1a66b094288323fba52f/rfc3986_validator-0.1.1-py2.py3-none-any.whl", hash = "sha256:2f235c432ef459970b4306369336b9d5dbdda31b510ca1e327636e01f528bfa9", size = 4242, upload-time = "2019-10-28T16:00:13.976Z" },
@@ -3958,7 +3958,7 @@ wheels = [
 [[package]]
 name = "rfc3987-syntax"
 version = "1.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lark" },
 ]
@@ -3970,7 +3970,7 @@ wheels = [
 [[package]]
 name = "rich"
 version = "15.0.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "pygments" },
@@ -3983,7 +3983,7 @@ wheels = [
 [[package]]
 name = "rich-rst"
 version = "2.0.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pygments" },
     { name = "rich" },
@@ -3996,7 +3996,7 @@ wheels = [
 [[package]]
 name = "rpds-py"
 version = "2026.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2e/43/25a8dcd3feedd735039a8f0b5b7e3b118232b5eae288c4fd9ab200d41094/rpds_py-2026.5.1.tar.gz", hash = "sha256:07b24fea40541e28570e5b795a4a38fbdcd12550c06bd0748005ecc8116ca256", size = 64459, upload-time = "2026-05-28T12:02:13.232Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d4/e7/a78582dc57caa592dcc7d4fb69b61390561e908eb3d2f5df5928a8e354c0/rpds_py-2026.5.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:3abe24a66e57adcfa645d718063a5fa5103ecc71ddbf26d78af8f9368018ff1d", size = 353040, upload-time = "2026-05-28T11:59:12.531Z" },
@@ -4106,7 +4106,7 @@ wheels = [
 [[package]]
 name = "ruamel-yaml"
 version = "0.19.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c7/3b/ebda527b56beb90cb7652cb1c7e4f91f48649fbcd8d2eb2fb6e77cd3329b/ruamel_yaml-0.19.1.tar.gz", hash = "sha256:53eb66cd27849eff968ebf8f0bf61f46cdac2da1d1f3576dd4ccee9b25c31993", size = 142709, upload-time = "2026-01-02T16:50:31.84Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl", hash = "sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93", size = 118102, upload-time = "2026-01-02T16:50:29.201Z" },
@@ -4115,7 +4115,7 @@ wheels = [
 [[package]]
 name = "ruamel-yaml-clib"
 version = "0.2.15"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ea/97/60fda20e2fb54b83a61ae14648b0817c8f5d84a3821e40bfbdae1437026a/ruamel_yaml_clib-0.2.15.tar.gz", hash = "sha256:46e4cc8c43ef6a94885f72512094e482114a8a706d3c555a34ed4b0d20200600", size = 225794, upload-time = "2025-11-16T16:12:59.761Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/72/4b/5fde11a0722d676e469d3d6f78c6a17591b9c7e0072ca359801c4bd17eee/ruamel_yaml_clib-0.2.15-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:cb15a2e2a90c8475df45c0949793af1ff413acfb0a716b8b94e488ea95ce7cff", size = 149088, upload-time = "2025-11-16T16:13:22.836Z" },
@@ -4153,7 +4153,7 @@ wheels = [
 [[package]]
 name = "scikit-learn"
 version = "1.9.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
     { name = "narwhals" },
@@ -4192,7 +4192,7 @@ wheels = [
 [[package]]
 name = "scipy"
 version = "1.17.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -4253,7 +4253,7 @@ wheels = [
 [[package]]
 name = "seaborn"
 version = "0.13.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
@@ -4267,7 +4267,7 @@ wheels = [
 [[package]]
 name = "semver"
 version = "3.0.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/d1/d3159231aec234a59dd7d601e9dd9fe96f3afff15efd33c1070019b26132/semver-3.0.4.tar.gz", hash = "sha256:afc7d8c584a5ed0a11033af086e8af226a9c0b206f313e0301f8dd7b6b589602", size = 269730, upload-time = "2025-01-24T13:19:27.617Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/24/4d91e05817e92e3a61c8a21e08fd0f390f5301f1c448b137c57c4bc6e543/semver-3.0.4-py3-none-any.whl", hash = "sha256:9c824d87ba7f7ab4a1890799cec8596f15c1241cb473404ea1cb0c55e4b04746", size = 17912, upload-time = "2025-01-24T13:19:24.949Z" },
@@ -4276,7 +4276,7 @@ wheels = [
 [[package]]
 name = "send2trash"
 version = "2.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c5/f0/184b4b5f8d00f2a92cf96eec8967a3d550b52cf94362dad1100df9e48d57/send2trash-2.1.0.tar.gz", hash = "sha256:1c72b39f09457db3c05ce1d19158c2cbef4c32b8bedd02c155e49282b7ea7459", size = 17255, upload-time = "2026-01-14T06:27:36.056Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/78/504fdd027da3b84ff1aecd9f6957e65f35134534ccc6da8628eb71e76d3f/send2trash-2.1.0-py3-none-any.whl", hash = "sha256:0da2f112e6d6bb22de6aa6daa7e144831a4febf2a87261451c4ad849fe9a873c", size = 17610, upload-time = "2026-01-14T06:27:35.218Z" },
@@ -4285,7 +4285,7 @@ wheels = [
 [[package]]
 name = "setuptools"
 version = "82.0.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz", hash = "sha256:7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9", size = 1152316, upload-time = "2026-03-09T12:47:17.221Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl", hash = "sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb", size = 1006223, upload-time = "2026-03-09T12:47:15.026Z" },
@@ -4294,7 +4294,7 @@ wheels = [
 [[package]]
 name = "shapely"
 version = "2.1.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -4345,7 +4345,7 @@ wheels = [
 [[package]]
 name = "shellingham"
 version = "1.5.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
@@ -4354,7 +4354,7 @@ wheels = [
 [[package]]
 name = "simpy"
 version = "4.1.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4a/38/fb393d1a5c2f35b65609e8d3c39d1508ada6a767c7e624ffa16ed3e84ffd/simpy-4.1.2.tar.gz", hash = "sha256:76ef36b71e0436ba94e55febc001c78879e493a323f045bbcfbb0b216e9b1fbc", size = 410129, upload-time = "2026-05-24T04:37:12.834Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/ed/07a1e054922c16b2c18ca3598771936c344d52337b8aaf0f1e3ed8b223dc/simpy-4.1.2-py3-none-any.whl", hash = "sha256:43071f84b6512c9b4fcb33ef057f240ccb1d1f3b263f9b4f9229d072e310b372", size = 27375, upload-time = "2026-05-24T04:37:11.74Z" },
@@ -4363,7 +4363,7 @@ wheels = [
 [[package]]
 name = "six"
 version = "1.17.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
@@ -4372,7 +4372,7 @@ wheels = [
 [[package]]
 name = "sniffio"
 version = "1.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc", size = 20372, upload-time = "2024-02-25T23:20:04.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
@@ -4381,7 +4381,7 @@ wheels = [
 [[package]]
 name = "soupsieve"
 version = "2.8.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/2c/0a5f6f8ee0d5589e48c7640213ed5175d52cf540a06725b628cc1a45d6ce/soupsieve-2.8.4.tar.gz", hash = "sha256:e121fd02e975c695e4e9e8774a5ee35d74714b59307868dcc5319ad2d9e3328e", size = 121110, upload-time = "2026-05-24T13:55:57.154Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/f5/0c41cb68dcae6b7de4fac4188a3a9589e21fb31df21ea3a2e888db95e6c9/soupsieve-2.8.4-py3-none-any.whl", hash = "sha256:e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65", size = 37304, upload-time = "2026-05-24T13:55:55.406Z" },
@@ -4390,7 +4390,7 @@ wheels = [
 [[package]]
 name = "sqlalchemy"
 version = "2.0.50"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet", marker = "platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'" },
     { name = "typing-extensions" },
@@ -4436,7 +4436,7 @@ asyncio = [
 [[package]]
 name = "stack-data"
 version = "0.6.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asttokens" },
     { name = "executing" },
@@ -4450,7 +4450,7 @@ wheels = [
 [[package]]
 name = "starlette"
 version = "1.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
@@ -4463,7 +4463,7 @@ wheels = [
 [[package]]
 name = "terminado"
 version = "0.18.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ptyprocess", marker = "os_name != 'nt'" },
     { name = "pywinpty", marker = "os_name == 'nt'" },
@@ -4477,7 +4477,7 @@ wheels = [
 [[package]]
 name = "text-unidecode"
 version = "1.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ab/e2/e9a00f0ccb71718418230718b3d900e71a5d16e701a3dae079a21e9cd8f8/text-unidecode-1.3.tar.gz", hash = "sha256:bad6603bb14d279193107714b288be206cac565dfa49aa5b105294dd5c4aab93", size = 76885, upload-time = "2019-08-30T21:36:45.405Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/a5/c0b6468d3824fe3fde30dbb5e1f687b291608f9473681bbf7dabbf5a87d7/text_unidecode-1.3-py2.py3-none-any.whl", hash = "sha256:1311f10e8b895935241623731c2ba64f4c455287888b18189350b67134a822e8", size = 78154, upload-time = "2019-08-30T21:37:03.543Z" },
@@ -4486,7 +4486,7 @@ wheels = [
 [[package]]
 name = "threadpoolctl"
 version = "3.6.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b7/4d/08c89e34946fce2aec4fbb45c9016efd5f4d7f24af8e5d93296e935631d8/threadpoolctl-3.6.0.tar.gz", hash = "sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e", size = 21274, upload-time = "2025-03-13T13:49:23.031Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl", hash = "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb", size = 18638, upload-time = "2025-03-13T13:49:21.846Z" },
@@ -4495,7 +4495,7 @@ wheels = [
 [[package]]
 name = "timezonefinder"
 version = "8.2.4"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
     { name = "flatbuffers" },
@@ -4512,7 +4512,7 @@ wheels = [
 [[package]]
 name = "tinycss2"
 version = "1.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "webencodings" },
 ]
@@ -4524,7 +4524,7 @@ wheels = [
 [[package]]
 name = "tk"
 version = "0.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a0/81/742b342fd642e672fbedecde725ba44db44e800dc4c936216c3c6729885a/tk-0.1.0.tar.gz", hash = "sha256:60bc8923d5d35f67f5c6bd93d4f0c49d2048114ec077768f959aef36d4ed97f8", size = 2247, upload-time = "2019-07-08T06:51:58.051Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/0b/029cbdb868bb555fed99bf6540fff072d500b3f895873709f25084e85e33/tk-0.1.0-py3-none-any.whl", hash = "sha256:703a69ff0d5ba2bd2f7440582ad10160e4a6561595d33457dc6caa79b9bf4930", size = 3879, upload-time = "2019-07-08T06:51:55.175Z" },
@@ -4533,7 +4533,7 @@ wheels = [
 [[package]]
 name = "toml"
 version = "0.10.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f", size = 22253, upload-time = "2020-11-01T01:40:22.204Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b", size = 16588, upload-time = "2020-11-01T01:40:20.672Z" },
@@ -4542,7 +4542,7 @@ wheels = [
 [[package]]
 name = "toolz"
 version = "1.1.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/11/d6/114b492226588d6ff54579d95847662fc69196bdeec318eb45393b24c192/toolz-1.1.0.tar.gz", hash = "sha256:27a5c770d068c110d9ed9323f24f1543e83b2f300a687b7891c1a6d56b697b5b", size = 52613, upload-time = "2025-10-17T04:03:21.661Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/12/5911ae3eeec47800503a238d971e51722ccea5feb8569b735184d5fcdbc0/toolz-1.1.0-py3-none-any.whl", hash = "sha256:15ccc861ac51c53696de0a5d6d4607f99c210739caf987b5d2054f3efed429d8", size = 58093, upload-time = "2025-10-17T04:03:20.435Z" },
@@ -4551,7 +4551,7 @@ wheels = [
 [[package]]
 name = "tornado"
 version = "6.5.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/64/24/95ec527ad67b76d59299e5465b3935d05e4294b7e0290a3924b7487df30b/tornado-6.5.7.tar.gz", hash = "sha256:66c513a76cda70d53907bc27cf1447557699c2e95aa48ba27a442ff61c3ddfc2", size = 519252, upload-time = "2026-06-08T17:34:51.232Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/dc/c7043cab6fed8ae159fc1923ce829ada35c4dbd797d408a43858ffaf9639/tornado-6.5.7-cp39-abi3-macosx_10_9_universal2.whl", hash = "sha256:148b2eb15c2c765a50796172c1e499649b35f30d2e3c3d3e15913cfa56bfb163", size = 448543, upload-time = "2026-06-08T17:34:38.052Z" },
@@ -4568,7 +4568,7 @@ wheels = [
 [[package]]
 name = "tqdm"
 version = "4.68.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
@@ -4580,7 +4580,7 @@ wheels = [
 [[package]]
 name = "traitlets"
 version = "5.15.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/57/a9/a2584b8313b89f94869ddb3c4074617a691de1812a614d2d50e32ca5a7a6/traitlets-5.15.1.tar.gz", hash = "sha256:7b1c07854fe25acb39e009bae49f11b79ff6cbb2f27999104e9110e7a6b53722", size = 163344, upload-time = "2026-06-03T12:26:06.181Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/96/8d/1080ee4c231f361b6ce4470d556c8c435b67c7e0753aaa641497ee92f88b/traitlets-5.15.1-py3-none-any.whl", hash = "sha256:770a53705f84b81ac107e83a1b3328ff2dae16094d8fc3cfc004e4b22dfd8e92", size = 85858, upload-time = "2026-06-03T12:26:04.395Z" },
@@ -4589,7 +4589,7 @@ wheels = [
 [[package]]
 name = "typer"
 version = "0.26.7"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -4604,7 +4604,7 @@ wheels = [
 [[package]]
 name = "typing-extensions"
 version = "4.15.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/94/1a15dd82efb362ac84269196e94cf00f187f7ed21c242792a923cdb1c61f/typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466", size = 109391, upload-time = "2025-08-25T13:49:26.313Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548", size = 44614, upload-time = "2025-08-25T13:49:24.86Z" },
@@ -4613,7 +4613,7 @@ wheels = [
 [[package]]
 name = "typing-inspection"
 version = "0.4.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions" },
 ]
@@ -4625,7 +4625,7 @@ wheels = [
 [[package]]
 name = "tzdata"
 version = "2026.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ba/19/1b9b0e29f30c6d35cb345486df41110984ea67ae69dddbc0e8a100999493/tzdata-2026.2.tar.gz", hash = "sha256:9173fde7d80d9018e02a662e168e5a2d04f87c41ea174b139fbef642eda62d10", size = 198254, upload-time = "2026-04-24T15:22:08.651Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/e4/dccd7f47c4b64213ac01ef921a1337ee6e30e8c6466046018326977efd95/tzdata-2026.2-py2.py3-none-any.whl", hash = "sha256:bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7", size = 349321, upload-time = "2026-04-24T15:22:05.876Z" },
@@ -4634,7 +4634,7 @@ wheels = [
 [[package]]
 name = "tzlocal"
 version = "5.3.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
@@ -4646,7 +4646,7 @@ wheels = [
 [[package]]
 name = "uncalled-for"
 version = "0.3.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b5/82/345cc927f7fbdae6065e7768759932fcc827fc20b29b45dfbafa2f1f7da4/uncalled_for-0.3.2.tar.gz", hash = "sha256:89f5dbcd71e2b8f47c030b1fa302e6cce2ec795d1ac565eeb6525c5fe55cb8a2", size = 50032, upload-time = "2026-05-06T13:38:25.204Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/25/2c87754f3a9e692315f7b811244090e68f362979fc8886b3fbd2985a1d8c/uncalled_for-0.3.2-py3-none-any.whl", hash = "sha256:0ff60b142c7d1f8070bde9d42afaa70aedc77dcc10998c227687e9c15713418e", size = 11444, upload-time = "2026-05-06T13:38:24.025Z" },
@@ -4655,7 +4655,7 @@ wheels = [
 [[package]]
 name = "uri-template"
 version = "1.3.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/31/c7/0336f2bd0bcbada6ccef7aaa25e443c118a704f828a0620c6fa0207c1b64/uri-template-1.3.0.tar.gz", hash = "sha256:0e00f8eb65e18c7de20d595a14336e9f337ead580c70934141624b6d1ffdacc7", size = 21678, upload-time = "2023-06-21T01:49:05.374Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/00/3fca040d7cf8a32776d3d81a00c8ee7457e00f80c649f1e4a863c8321ae9/uri_template-1.3.0-py3-none-any.whl", hash = "sha256:a44a133ea12d44a0c0f06d7d42a52d71282e77e2f937d8abd5655b8d56fc1363", size = 11140, upload-time = "2023-06-21T01:49:03.467Z" },
@@ -4664,7 +4664,7 @@ wheels = [
 [[package]]
 name = "urllib3"
 version = "2.7.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
@@ -4673,7 +4673,7 @@ wheels = [
 [[package]]
 name = "uvicorn"
 version = "0.49.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "h11" },
@@ -4686,7 +4686,7 @@ wheels = [
 [[package]]
 name = "validators"
 version = "0.35.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/66/a435d9ae49850b2f071f7ebd8119dd4e84872b01630d6736761e6e7fd847/validators-0.35.0.tar.gz", hash = "sha256:992d6c48a4e77c81f1b4daba10d16c3a9bb0dbb79b3a19ea847ff0928e70497a", size = 73399, upload-time = "2025-05-01T05:42:06.7Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/6e/3e955517e22cbdd565f2f8b2e73d52528b14b8bcfdb04f62466b071de847/validators-0.35.0-py3-none-any.whl", hash = "sha256:e8c947097eae7892cb3d26868d637f79f47b4a0554bc6b80065dfe5aac3705dd", size = 44712, upload-time = "2025-05-01T05:42:04.203Z" },
@@ -4695,7 +4695,7 @@ wheels = [
 [[package]]
 name = "virtualenv"
 version = "21.4.3"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
     { name = "filelock" },
@@ -4710,7 +4710,7 @@ wheels = [
 [[package]]
 name = "wcwidth"
 version = "0.8.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/49/b4/51fe890511f0f242d07cb1ebe6a5b6db417262b9d2568b460347c57d95cc/wcwidth-0.8.1.tar.gz", hash = "sha256:faf5b4a5366a72dc49cad48cdf21f52bdf63bdda995178e483ba247ff79089b9", size = 1466072, upload-time = "2026-06-08T05:57:23.146Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/6e/95b0e537de1f4d4301f76f944642c6da50d1511cc7b3d64dc418a66c7509/wcwidth-0.8.1-py3-none-any.whl", hash = "sha256:f453740b1e4a4f3291faa37944c555d71056c4da08d59809b307ef4feba695c8", size = 323092, upload-time = "2026-06-08T05:57:21.413Z" },
@@ -4719,7 +4719,7 @@ wheels = [
 [[package]]
 name = "webcolors"
 version = "25.10.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1d/7a/eb316761ec35664ea5174709a68bbd3389de60d4a1ebab8808bfc264ed67/webcolors-25.10.0.tar.gz", hash = "sha256:62abae86504f66d0f6364c2a8520de4a0c47b80c03fc3a5f1815fedbef7c19bf", size = 53491, upload-time = "2025-10-31T07:51:03.977Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e2/cc/e097523dd85c9cf5d354f78310927f1656c422bd7b2613b2db3e3f9a0f2c/webcolors-25.10.0-py3-none-any.whl", hash = "sha256:032c727334856fc0b968f63daa252a1ac93d33db2f5267756623c210e57a4f1d", size = 14905, upload-time = "2025-10-31T07:51:01.778Z" },
@@ -4728,7 +4728,7 @@ wheels = [
 [[package]]
 name = "webencodings"
 version = "0.5.1"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/02/ae6ceac1baeda530866a85075641cec12989bd8d31af6d5ab4a3e8c92f47/webencodings-0.5.1.tar.gz", hash = "sha256:b36a1c245f2d304965eb4e0a82848379241dc04b865afcc4aab16748587e1923", size = 9721, upload-time = "2017-04-05T20:21:34.189Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/24/2a3e3df732393fed8b3ebf2ec078f05546de641fe1b667ee316ec1dcf3b7/webencodings-0.5.1-py2.py3-none-any.whl", hash = "sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78", size = 11774, upload-time = "2017-04-05T20:21:32.581Z" },
@@ -4737,7 +4737,7 @@ wheels = [
 [[package]]
 name = "websocket-client"
 version = "1.9.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576, upload-time = "2025-10-07T21:16:36.495Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616, upload-time = "2025-10-07T21:16:34.951Z" },
@@ -4746,7 +4746,7 @@ wheels = [
 [[package]]
 name = "websockets"
 version = "16.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/04/24/4b2031d72e840ce4c1ccb255f693b15c334757fc50023e4db9537080b8c4/websockets-16.0.tar.gz", hash = "sha256:5f6261a5e56e8d5c42a4497b364ea24d94d9563e8fbd44e78ac40879c60179b5", size = 179346, upload-time = "2026-01-10T09:23:47.181Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/84/7b/bac442e6b96c9d25092695578dda82403c77936104b5682307bd4deb1ad4/websockets-16.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:71c989cbf3254fbd5e84d3bff31e4da39c43f884e64f2551d14bb3c186230f00", size = 177365, upload-time = "2026-01-10T09:22:46.787Z" },
@@ -4791,7 +4791,7 @@ wheels = [
 [[package]]
 name = "whenever"
 version = "0.10.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tzdata", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
     { name = "tzlocal", marker = "python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux'" },
@@ -4874,7 +4874,7 @@ wheels = [
 [[package]]
 name = "windpowerlib"
 version = "0.2.2"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pandas" },
     { name = "requests" },
@@ -4887,7 +4887,7 @@ wheels = [
 [[package]]
 name = "xarray"
 version = "2026.4.0"
-source = { registry = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
