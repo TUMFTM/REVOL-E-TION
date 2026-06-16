@@ -31,7 +31,7 @@ dependencies = [
     "tk",
     "windpowerlib",
     "pydantic",
-    "revoletion-core",
+    "revoletion-core>=1.0.0.dev0",
     "pypsa>=1.2.0",
     "polars[rtcompat]",
     "prefect>=3.7.4",
