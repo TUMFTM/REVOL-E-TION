@@ -4,13 +4,13 @@ This image packages `revoletion` together with the Gurobi solver for use by a Pr
 
 ## Build
 
-Because `revoletion-core` is a local path dependency (`../revol-e-tion-core`), the build context must be the **parent directory**, not this repository root.
+Run from the **`revol-e-tion/` directory**:
 
 ```bash
-# Run from parent/
 docker build \
-  -f revol-e-tion/.docker/Dockerfile \
+  -f .docker/Dockerfile \
   -t <registry>/<image>:<tag> \
+  --secret id=gitlab_token,env=GITLAB_TOKEN \
   .
 ```
 

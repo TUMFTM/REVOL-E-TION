@@ -1,5 +1,5 @@
-# Build context must be the parent `parent/` directory, e.g.:
-#   docker build -f revol-e-tion/.docker/Dockerfile -t <registry>/<image>:<tag> .
+# Build from the revol-e-tion/ directory, e.g.:
+#   docker build -f .docker/Dockerfile -t <registry>/<image>:<tag> .
 #
 # Gurobi WLS credentials are NOT baked in — pass at runtime via env vars:
 #   WLSACCESSID, WLSSECRET, LICENSEID
@@ -16,21 +16,21 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 
-# Install dependencies first for better layer caching — this layer is only
-# invalidated when pyproject.toml, uv.lock, or revoletion-core source change.
-# revoletion-core must be fully present here because uv builds it as a wheel
-# (it's a local path dependency), not just resolved from the lock file.
-COPY revol-e-tion/pyproject.toml revol-e-tion/uv.lock ./revol-e-tion/
-COPY revol-e-tion-core/ ./revol-e-tion-core/
+# Install dependencies first for better layer caching.
+COPY pyproject.toml uv.lock ./revol-e-tion/
 
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
-    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=secret,id=gitlab_token \
+    UV_INDEX_GITLAB_LRZ_USERNAME=oauth2 \
+    UV_INDEX_GITLAB_LRZ_PASSWORD="$(cat /run/secrets/gitlab_token)" \
     uv sync --no-install-project --no-editable --project /build/revol-e-tion
 
-COPY revol-e-tion/ ./revol-e-tion/
+COPY . ./revol-e-tion/
 
 RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv \
-    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=secret,id=gitlab_token \
+    UV_INDEX_GITLAB_LRZ_USERNAME=oauth2 \
+    UV_INDEX_GITLAB_LRZ_PASSWORD="$(cat /run/secrets/gitlab_token)" \
     uv sync --locked --no-editable --project /build/revol-e-tion
 
 
@@ -46,7 +46,8 @@ COPY --from=builder --chown=appuser /build/revol-e-tion/revoletion /app/revoleti
 USER appuser
 
 ENV VIRTUAL_ENV="/app/.venv" \
-    PATH="/app/.venv/bin:${PATH}"
+    PATH="/app/.venv/bin:${PATH}" \
+    MPLCONFIGDIR="/tmp/matplotlib"
 
 # Gurobi WLS credentials — set these at runtime, never here.
 # WLSACCESSID, WLSSECRET, LICENSEID (Gurobi 10+)

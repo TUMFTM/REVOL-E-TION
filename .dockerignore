@@ -26,6 +26,3 @@ venv/
 dist/
 build/
 *.egg-info/
-
-# The dependencies will be locked during building.
-uv.lock

@@ -50,8 +50,8 @@ dev = [
     "pymupdf",
 ]
 
-[tool.setuptools]
-packages = ["revoletion"]
+[tool.setuptools.packages.find]
+where = ["."]
 
 [tool.setuptools.package-data]
 revoletion = ["data/*"]
@@ -79,5 +79,10 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["revoletion"]
 
+[[tool.uv.index]]
+name = "gitlab-lrz"
+url = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple"
+explicit = true
+
 [tool.uv.sources]
-revoletion-core = { path = "../revol-e-tion-core", editable = true }
+revoletion-core = { index = "gitlab-lrz" }

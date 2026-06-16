@@ -1,0 +1,11 @@
+# Setuptools build artifacts — these are stale intermediate files that setuptools
+# reuses when building wheels, causing the Docker image to install old source code
+# instead of the current files.
+revol-e-tion/build/
+revol-e-tion/dist/
+revol-e-tion/**/*.egg-info/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
