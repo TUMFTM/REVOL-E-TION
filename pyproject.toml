@@ -81,7 +81,7 @@ source = ["revoletion"]
 
 [[tool.uv.index]]
 name = "gitlab-lrz"
-url = "https://gitlab.lrz.de/api/v4/projects/energysystemmodelling%2Frevol-e-tion_architecture_idp%2Frevol-e-tion-core/packages/pypi/simple"
+url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/simple"
 explicit = true
 
 [tool.uv.sources]
