@@ -18,6 +18,11 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
+      - id: no-local-uv-sources
+        name: Check for local path sources in pyproject.toml
+        language: pygrep
+        entry: '^[^#]*revoletion-core\s*=\s*\{[^}]*path='
+        files: pyproject\.toml
       - id: generate_scenario_schema
         name: Generate the scenario schema in README
         entry: python scripts/generate_scenario_schema.py
