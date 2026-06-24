@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 from prefect import flow, get_run_logger
@@ -43,6 +44,28 @@ class _PrefectBridgeHandler(logging.Handler):
             self.handleError(record)
 
 
+def _verify_gurobi_license(logger: logging.Logger) -> None:
+    lic_file = os.getenv("GRB_LICENSE_FILE", "")
+    if lic_file:
+        exists = Path(lic_file).exists()
+        logger.info("GRB_LICENSE_FILE=%s (exists=%s)", lic_file, exists)
+        if not exists:
+            logger.warning("Gurobi license file not found — solver will fail")
+            return
+    else:
+        logger.warning("GRB_LICENSE_FILE is not set — Gurobi will search default locations")
+
+    try:
+        import gurobipy as gp
+
+        with gp.Env() as env:
+            with gp.Model(env=env) as m:
+                m.optimize()
+        logger.info("Gurobi license verified successfully")
+    except gp.GurobiError as exc:
+        logger.error("Gurobi license check failed: %s", exc)
+
+
 @flow(name="scenario-run")
 def scenario_run_flow(
     scenario_path: str = str(_EXAMPLE_SCENARIO),
@@ -53,12 +76,7 @@ def scenario_run_flow(
 ) -> None:
     logger = get_run_logger()
 
-    # DEBUG: Check if env vars are present
-    import os
-
-    logger.info("WLSACCESSID: %s", os.getenv("WLSACCESSID", "NOT SET"))
-    logger.info("WLSSECRET: %s", os.getenv("WLSSECRET", "NOT SET"))
-    logger.info("LICENSEID: %s", os.getenv("LICENSEID", "NOT SET"))
+    _verify_gurobi_license(logger)
 
     logger.info("Starting scenario run: scenario_path=%s", scenario_path)
     logger.info("solver=%s  debugmode=%s", solver, debugmode)

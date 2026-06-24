@@ -21,8 +21,8 @@ deployments:
         image: revoletion:local
         networks:
           - "revoletion_default"
+        volumes:
+          - "/home/revoletion/gurobi/gurobi.lic:/opt/gurobi/gurobi.lic:ro"
         env:
           PREFECT_API_URL: "http://prefect-server:4200/api"
-          WLSACCESSID: "321d9ddc-3e5c-448c-b325-d4d9a5e9c6fe"
-          WLSSECRET: "a0c7e27c-6d02-4fbb-9e17-44c7ff33d2cf"
-          LICENSEID: "2835065"
+          GRB_LICENSE_FILE: "/opt/gurobi/gurobi.lic"

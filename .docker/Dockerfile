@@ -1,10 +1,3 @@
-# Build from the revol-e-tion/ directory, e.g.:
-#   docker build -f .docker/Dockerfile -t <registry>/<image>:<tag> .
-#
-# Gurobi WLS credentials are NOT baked in — pass at runtime via env vars:
-#   WLSACCESSID, WLSSECRET, LICENSEID
-# or set GRB_LICENSE_FILE to point to a mounted gurobi.lic file.
-
 ARG GUROBI_VERSION=12.0.0
 ARG PYTHON_VERSION=3.12
 
@@ -38,7 +31,7 @@ FROM gurobi/python:${GUROBI_VERSION}_${PYTHON_VERSION} AS runtime
 
 WORKDIR /app
 
-RUN useradd --uid 1001 --no-create-home --shell /usr/sbin/nologin appuser
+RUN useradd --uid 1001 --home-dir /app --no-create-home --shell /usr/sbin/nologin appuser
 
 COPY --from=builder --chown=appuser /app/.venv /app/.venv
 COPY --from=builder --chown=appuser /build/revol-e-tion/revoletion /app/revoletion
@@ -52,10 +45,3 @@ USER appuser
 ENV VIRTUAL_ENV="/app/.venv" \
     PATH="/app/.venv/bin:${PATH}" \
     MPLCONFIGDIR="/tmp/matplotlib"
-
-# Gurobi WLS credentials — set these at runtime, never here.
-# WLSACCESSID, WLSSECRET, LICENSEID (Gurobi 10+)
-# or GRB_LICENSE_FILE=/path/to/mounted/gurobi.lic
-
-# Prefect reads PREFECT_API_URL and PREFECT_API_KEY from the environment.
-# The worker injects these; no defaults are set here.
