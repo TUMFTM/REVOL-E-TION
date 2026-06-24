@@ -1,3 +1,6 @@
+# This file is required for prefect orchestration. It tells the prefect-worker container
+# how to spin up a revol-e-tion container for running a scenario.
+---
 name: revoletion
 prefect-version: "3.7.4"
 
@@ -20,3 +23,6 @@ deployments:
           - "revoletion_default"
         env:
           PREFECT_API_URL: "http://prefect-server:4200/api"
+          WLSACCESSID: "321d9ddc-3e5c-448c-b325-d4d9a5e9c6fe"
+          WLSSECRET: "a0c7e27c-6d02-4fbb-9e17-44c7ff33d2cf"
+          LICENSEID: "2835065"
