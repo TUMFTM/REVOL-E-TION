@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 
 from prefect import flow, get_run_logger
@@ -9,8 +8,6 @@ from .optimization import Solver
 from .run import SimulationRun
 from .scenario import SimulationPaths
 from .simulation import SimulationSettings
-
-_EXAMPLE_SCENARIO = Path(__file__).parent.parent / "example" / "scenarios.csv"
 
 
 class _PrefectBridgeHandler(logging.Handler):
@@ -44,39 +41,18 @@ class _PrefectBridgeHandler(logging.Handler):
             self.handleError(record)
 
 
-def _verify_gurobi_license(logger: logging.Logger) -> None:
-    lic_file = os.getenv("GRB_LICENSE_FILE", "")
-    if lic_file:
-        exists = Path(lic_file).exists()
-        logger.info("GRB_LICENSE_FILE=%s (exists=%s)", lic_file, exists)
-        if not exists:
-            logger.warning("Gurobi license file not found — solver will fail")
-            return
-    else:
-        logger.warning("GRB_LICENSE_FILE is not set — Gurobi will search default locations")
-
-    try:
-        import gurobipy as gp
-
-        with gp.Env() as env:
-            with gp.Model(env=env) as m:
-                m.optimize()
-        logger.info("Gurobi license verified successfully")
-    except gp.GurobiError as exc:
-        logger.error("Gurobi license check failed: %s", exc)
-
-
 @flow(name="scenario-run")
 def scenario_run_flow(
-    scenario_path: str = str(_EXAMPLE_SCENARIO),
+    scenario_path: str = "",
     input_dir: str = "",
     output_dir: str = "",
     solver: str = "GUROBI",
     debugmode: bool = False,
 ) -> None:
-    logger = get_run_logger()
+    # TODO: define the correct input schema
+    # TODO: input validation
 
-    _verify_gurobi_license(logger)
+    logger = get_run_logger()
 
     logger.info("Starting scenario run: scenario_path=%s", scenario_path)
     logger.info("solver=%s  debugmode=%s", solver, debugmode)
@@ -90,14 +66,13 @@ def scenario_run_flow(
         output=output_path,
     )
 
+    # Required to get output on the prefect-server.
+    # The _PrefectBridgeHandler essentially reroutes stdout to the prefect logger.
     configure_root_logger(paths.log, debugmode=debugmode, stdout=False)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger().addHandler(_PrefectBridgeHandler(logger))
 
-    settings = SimulationSettings(
-        solver=Solver[solver.upper()],
-        debugmode=debugmode,
-    )
+    settings = SimulationSettings(solver=Solver[solver.upper()], debugmode=debugmode, n_processes=1)
 
     run = SimulationRun(paths=paths, settings=settings)
     run.execute()

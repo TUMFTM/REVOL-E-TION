@@ -22,7 +22,9 @@ deployments:
         networks:
           - "revoletion_default"
         volumes:
-          - "/home/revoletion/gurobi/gurobi.lic:/opt/gurobi/gurobi.lic:ro"
+        # Requires the license file at /opt/gurobi/gurobi.lic
+        # on all worker machines.
+          - "/opt/gurobi/gurobi.lic:/opt/gurobi/gurobi.lic:ro"
         env:
           PREFECT_API_URL: "http://prefect-server:4200/api"
           GRB_LICENSE_FILE: "/opt/gurobi/gurobi.lic"
