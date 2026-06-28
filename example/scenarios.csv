@@ -143,7 +143,7 @@ ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
 ess,ccr,1,1,1,1
 vehicles,system,ac,ac,ac,ac
-vehicles,subfleets,"['icev']","['bev', 'icev']","['bev', 'icev']","['bev', 'icev']"
+vehicles,subfleets,['icev'],"['bev', 'icev']","['bev', 'icev']","['bev', 'icev']"
 vehicles,data_source,usecases,usecases,usecases,usecases
 vehicles,filename,vehicle_usecases,vehicle_usecases,vehicle_usecases,vehicle_usecases
 vehicles,filename_mapper,mtf,mtf,mtf,mtf
@@ -206,7 +206,7 @@ icev,opex_spec_dist,0.3,0.3,0.3,0.3
 icev,crev_spec_time,0.1,0.1,0.1,0.1
 icev,crev_spec_dist,0.2,0.2,0.2,0.2
 brs,system,ac,ac,ac,ac
-brs,subfleets,"['mb']","['mb']","['mb']","['mb']"
+brs,subfleets,['mb'],['mb'],['mb'],['mb']
 brs,data_source,usecases,usecases,usecases,usecases
 brs,filename,brs_usecases,brs_usecases,brs_usecases,brs_usecases
 brs,filename_mapper,mtf,mtf,mtf,mtf
@@ -227,6 +227,7 @@ mb,mntex_fix_glider,30,30,30,30
 mb,opex_spec,0,0,0,0
 mb,opex_spec_dist,0,0,0,0
 mb,crev_spec_time,0.1,0.1,0.1,0.1
+mb,crev_spec_energy,0.0002,0.0002,0.0002,0.0002
 mb,crev_spec_dist,0,0,0,0
 mb,opex_spec_ext_ac,0,0,0,0
 mb,opex_spec_ext_dc,0,0,0,0
