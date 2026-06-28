@@ -316,7 +316,7 @@ class SystemCore(ElectricBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="acdc",
             name_flow="acdc",
         )
@@ -332,7 +332,7 @@ class SystemCore(ElectricBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="dcac",
             name_flow="dcac",
         )
@@ -380,7 +380,7 @@ class RenewableSource(SourceBlock, ABC):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -535,7 +535,7 @@ class FixedDemand(SinkBlock):
                 consider_preexisting=self.capex_preexisting_metering,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_metering),
-            crev=eco.CrevParams(spec_power=self.crev_spec),
+            crev=eco.CrevParams(spec_energy=self.crev_spec),
             name_flow="in",
         )
 
@@ -725,7 +725,7 @@ class ControllableSource(SourceBlock):
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -887,7 +887,7 @@ class GridMarket(ElectricBlock):
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_g2s),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_g2s),
             name_size="g2s",
             name_flow="out",
         )
@@ -896,7 +896,7 @@ class GridMarket(ElectricBlock):
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_s2g),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_s2g),
             name_size="s2g",
             name_flow="in",
         )
@@ -945,7 +945,7 @@ class StorageBlock(ElectricBlock, ABC):
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_flow="in",
         )
 
@@ -1075,7 +1075,7 @@ class Fleet(SinkBlock):
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_f2s),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_f2s),
             name_flow="out",
         )
 
@@ -1083,7 +1083,7 @@ class Fleet(SinkBlock):
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_s2f),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_s2f),
             name_flow="in",
         )
 
@@ -1251,7 +1251,11 @@ class FleetUnit(BaseBlock):
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_glider),
             opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
-            crev=eco.CrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
+            crev=eco.CrevParams(
+                spec_dist=self.crev_spec_dist if hasattr(self, "crev_spec_dist") else 0.0,
+                spec_time=self.crev_spec_time if hasattr(self, "crev_spec_time") else 0.0,
+                spec_energy=self.crev_spec_energy if hasattr(self, "crev_spec_energy") else 0.0,
+            ),
         )
 
     def __init__(
@@ -1328,7 +1332,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_ext_ac),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_ext_ac),
             name_flow="ext_ac",
         )
 
@@ -1336,7 +1340,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_ext_dc),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_ext_dc),
             name_flow="ext_dc",
         )
 

@@ -1030,13 +1030,19 @@ class SubFleetModel(RevoletionBaseModel):
     crev_spec_time: float = Field(
         ge=0.0,
         title="Specific customer revenues per time",
-        description="Specific customer revenues per time: Revenues from vehicle utilization specified as revenue in currency per used time in hours. Total revenue is calculated by summing up time and distance revenue",
+        description="Specific customer revenues per time: Revenues from vehicle utilization specified as revenue in currency per used time in hours. Total revenue is calculated by summing up time, distance, and energy revenue",
     )
 
     crev_spec_dist: float = Field(
         ge=0.0,
         title="Specific customer revenues per distance",
-        description="Specific customer revenues per distance: Revenues from vehicle utilization specified as revenue in currency per driven distance in km. Total revenue is calculated by summing up time and distance revenue",
+        description="Specific customer revenues per distance: Revenues from vehicle utilization specified as revenue in currency per driven distance in km. Total revenue is calculated by summing up time, distance, and energy revenue",
+    )
+
+    crev_spec_energy: float = Field(
+        ge=0.0,
+        title="Specific customer revenues per energy",
+        description="Specific customer revenues per energy: Revenues from vehicle utilization specified as revenue in currency per energy used in Wh. Total revenue is calculated by summing up time, distance, and energy revenue",
     )
 
     opex_spec_ext_ac: float | str = Field(
