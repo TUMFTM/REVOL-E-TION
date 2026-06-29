@@ -161,7 +161,7 @@ class DispatchEnvironment:
         for fleet in self.fleets.values():
             fleet.log = fleet.dispatcher.log
             fleet.rate_success = fleet.dispatcher.rate_success
-            fleet.rate_use = fleet.dispatcher.rate_use
+            fleet.rate_active = fleet.dispatcher.rate_active
 
 
 @dataclass
@@ -422,15 +422,19 @@ class FleetDispatcher:
         self.rate_success = np.mean(["success" in process.status for process in self.processes.values()])
 
         time_active_total = np.sum(
-            [process.dtime_rental + process.dtime_chg_prim for process in self.processes.values()]
+            [
+                process.num_prim * (process.dtime_rental + process.dtime_chg_prim)
+                for process in self.processes.values()
+                if process.status == "success"
+            ]
         )
-        time_total = self.time.time_end - self.time.time_start
+        time_total = (self.time.dti_base.max() + self.time.step) - self.time.dti_base.min()
         n_units = sum(store.capacity for store in self.stores.values())
 
         try:
-            self.rate_use = time_active_total / time_total / n_units
+            self.rate_active = time_active_total / time_total / n_units
         except TypeError:
-            self.rate_use = 0.0
+            self.rate_active = 0.0
 
     def save_data(self, path_log: str = None):
         """

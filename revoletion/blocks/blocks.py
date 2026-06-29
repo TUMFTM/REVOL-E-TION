@@ -1297,7 +1297,7 @@ class FleetUnit(BaseBlock):
         super().pre_scenario(**kwargs)
 
     def post_scenario(self):
-        self.utilization = self.log["atbase"].mean()
+        self.utilization = 1 - self.log["atbase"].mean()
         self.dist_eval = self.log["dist"].sum() if "dist" in self.log.columns else 0
         super().post_scenario()
 
