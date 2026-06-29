@@ -14,6 +14,10 @@ class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
     def _calc_eval(self, flow: pd.Series) -> float:
         return flow[self.eco.dti_eval].to_numpy().sum() * self.eco.timestep_hours
 
+    @property
+    def _result_summary_prefix(self) -> str:
+        return f"{self._TYPE.value.label}_{self.name}_"
+
 
 class EnergyAggregator(CalculableTimeseriesElement, EnergyElement):
     """
