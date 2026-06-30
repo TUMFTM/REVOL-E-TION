@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from revoletion.utils import read_timeseries_csv, set_extension
+from revoletion.utils import read_timeseries, set_extension
 
 
 class OccursAt(Enum):
@@ -131,7 +131,7 @@ def transform_scalar_var(
             raise FileNotFoundError(f"Timeseries file {filepath} not found.")
 
         try:
-            df = read_timeseries_csv(
+            df = read_timeseries(
                 path_input_file=filepath,
                 timezone=dti.tz,
                 multiheader=False,

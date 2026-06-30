@@ -503,7 +503,7 @@ class WindSource(RenewableSource):
         elif self.data_source == "file":
             # region get data from file
             try:
-                self.data = utils.read_timeseries_csv(
+                self.data = utils.read_timeseries(
                     path_input_file=(
                         self.scenario.paths.input
                         / utils.set_extension(filename=self.filename, default_extension=".csv")
@@ -517,7 +517,10 @@ class WindSource(RenewableSource):
             raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable data input specified")
 
         if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
+            # feather does not serialize a non-default index, so move the DatetimeIndex into a column
+            self.data.reset_index().to_feather(
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.feather")
+            )
 
 
 class FixedDemand(SinkBlock):
@@ -682,7 +685,7 @@ class FixedDemand(SinkBlock):
                 filename=self.load_profile, default_extension=".csv"
             )
             try:
-                data = utils.read_timeseries_csv(
+                data = utils.read_timeseries(
                     path_input_file=load_profile_file,
                     timezone=self.scenario.location.timezone,
                     resampling_dti=self.scenario.times.sim.dti,
@@ -703,8 +706,9 @@ class FixedDemand(SinkBlock):
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
         if not self.scenario.settings.largescalemode:
-            self.flows_apriori["demand"].to_csv(
-                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.csv")
+            # feather requires a DataFrame with a default index, so frame the Series and move the index into a column
+            self.flows_apriori["demand"].to_frame().reset_index().to_feather(
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.feather")
             )
 
 
@@ -1120,7 +1124,7 @@ class Fleet(SinkBlock):
 
         if self.data_source == "usecases":
             path_demand = (
-                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.csv")
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.feather")
                 if not self.scenario.settings.largescalemode
                 else None
             )
@@ -1164,7 +1168,7 @@ class Fleet(SinkBlock):
         """
 
         try:
-            df = utils.read_timeseries_csv(
+            df = utils.read_timeseries(
                 path_input_file=(
                     self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
                 ),

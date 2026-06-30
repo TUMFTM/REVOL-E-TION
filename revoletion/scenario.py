@@ -292,7 +292,7 @@ class Scenario:
             and (self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")).is_file()
         ):
             try:
-                self.temp_air = utils.read_timeseries_csv(
+                self.temp_air = utils.read_timeseries(
                     path_input_file=(
                         self.paths.input / utils.set_extension(filename=self.temp_air, default_extension=".csv")
                     ),
@@ -438,7 +438,10 @@ class Scenario:
         if not self.settings.largescalemode:
             result_timeseries = blocks.TimeseriesCollectionBlockVisitor().collect_timeseries(self.block_registry)
             result_timeseries_aggregated = pd.concat(result_timeseries, axis=1)
-            result_timeseries_aggregated.to_csv(self.paths.create_result_path(suffix=f"{self.name}_results_ts.csv"))
+            # feather does not serialize a non-default index, so move the DatetimeIndex into a column
+            result_timeseries_aggregated.reset_index().to_feather(
+                self.paths.create_result_path(suffix=f"{self.name}_results_ts.feather")
+            )
 
             result_messages = blocks.MessageCollectionBlockVisitor().collect_messages(self.block_registry)
             for msg in result_messages:

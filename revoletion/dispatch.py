@@ -154,7 +154,7 @@ class DispatchEnvironment:
             dispatcher.calc_kpis()
             if not self.scenario.settings.largescalemode:
                 path_log = self.scenario.paths.create_result_path(
-                    suffix=f"{self.scenario.name}_{dispatcher.params.name}_log.csv"
+                    suffix=f"{self.scenario.name}_{dispatcher.params.name}_log.feather"
                 )
                 dispatcher.save_data(path_log=path_log)
 
@@ -438,12 +438,13 @@ class FleetDispatcher:
 
     def save_data(self, path_log: str = None):
         """
-        This function saves the converted log dataframe as a suitable example csv file for the energy system model.
+        This function saves the converted log dataframe as a suitable example feather file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
         """
         if path_log is not None:
-            self.log.to_csv(Path(path_log).resolve())
+            # feather does not serialize a non-default index, so move the DatetimeIndex into a column
+            self.log.reset_index().to_feather(Path(path_log).resolve())
 
 
 @dataclass
