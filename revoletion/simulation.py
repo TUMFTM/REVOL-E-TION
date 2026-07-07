@@ -152,6 +152,7 @@ class PredictionHorizon:
             timestep=self.scenario.timestep,
             timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
+            start_ref=self.scenario.times.sim.start,
         )
 
         self.ch = time.TimeFrame.create_from_start_timestamp(
@@ -159,6 +160,7 @@ class PredictionHorizon:
             timestep=self.scenario.timestep,
             timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
+            start_ref=self.scenario.times.sim.start,
         )
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
