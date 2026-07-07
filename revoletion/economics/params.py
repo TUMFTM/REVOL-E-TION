@@ -10,9 +10,10 @@ import numpy.typing as npt
 import pandas as pd
 
 from .utils import OccursAt, annuity, discount
+from revoletion.time import get_indices
 
 if TYPE_CHECKING:
-    from revoletion.time import SimulationTimes, Timestep
+    from revoletion.time import SimulationTimes
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class EcoParams:
     sim_prj_rat: float
     dti_sim: pd.DatetimeIndex
     dti_eval: pd.DatetimeIndex
+    idx_sim: slice
+    idx_eval: slice
     timestep_hours: float
 
     @classmethod
@@ -39,7 +42,6 @@ class EcoParams:
         discount_rate: float,
         compensate_sim_prj: bool,
         times: SimulationTimes,
-        timestep: Timestep,
     ) -> Self:
         return cls(
             prj_duration_yrs=prj_duration_yrs,
@@ -51,7 +53,9 @@ class EcoParams:
             sim_prj_rat=times.sim.duration / times.prj.duration,
             dti_sim=times.sim.dti,
             dti_eval=times.eval.dti,
-            timestep_hours=timestep.hours,
+            idx_sim=times.sim.idx.dti,
+            idx_eval=times.eval.idx.dti,
+            timestep_hours=times.sim.timestep.hours,
         )
 
     @classmethod
@@ -65,6 +69,12 @@ class EcoParams:
     ) -> Self:
         td_eval = dti_eval[-1] - dti_eval[0]
         td_sim = dti_sim[-1] - dti_sim[0]
+
+        idx_sim, idx_eval = get_indices(
+            dti_full=dti_sim,
+            dti_subset=dti_eval,
+        )
+
         return cls(
             prj_duration_yrs=prj_duration_yrs,
             discount_rate=discount_rate,
@@ -75,6 +85,8 @@ class EcoParams:
             sim_prj_rat=td_sim / ((dti_sim[0] + pd.DateOffset(years=prj_duration_yrs)) - dti_sim[0]),
             dti_sim=dti_sim,
             dti_eval=dti_eval,
+            idx_sim=idx_sim,
+            idx_eval=idx_eval,
             timestep_hours=pd.Timedelta(dti_sim.inferred_freq).total_seconds() / 3600,
         )
 

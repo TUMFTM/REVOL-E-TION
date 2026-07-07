@@ -223,7 +223,6 @@ class Scenario:
             discount_rate=self.wacc,
             compensate_sim_prj=self.compensate_sim_prj,
             times=self.times,
-            timestep=self.timestep,
         )
 
         for param in [

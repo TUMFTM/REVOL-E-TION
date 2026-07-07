@@ -7,7 +7,54 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Self, override
 
+import numpy as np
 import pandas as pd
+
+
+def get_indices(dti_full: pd.DatetimeIndex, dti_subset: pd.DatetimeIndex) -> tuple[slice, slice]:
+    """
+    Get slice indices for a subset DatetimeIndex within a full DatetimeIndex.
+
+    The function determines the integer slice positions of ``dti_subset`` in ``dti_full``.
+    The subset must be a contiguous segment of the full index.
+
+    Parameters
+    ----------
+    dti_full : pandas.DatetimeIndex
+        Full reference datetime index.
+    dti_subset : pandas.DatetimeIndex
+        Datetime index representing a contiguous subset of ``dti_full``.
+
+    Returns
+    -------
+    tuple[slice, slice]
+        Tuple containing:
+        
+        - Full index slice spanning the complete ``dti_full`` range.
+        - Subset slice selecting the corresponding range within ``dti_full``.
+
+    Raises
+    ------
+    ValueError
+        If ``dti_subset`` is not a contiguous subset of ``dti_full``.
+
+    Notes
+    -----
+    The returned slices can be used directly for NumPy array indexing, for
+    example::
+
+        arr_full[idx_full]
+        arr_full[idx_subset]
+    """
+    # check if idx_subset is real subset of idx_full
+    locs = dti_full.get_indexer(dti_subset)
+    if (np.diff(locs) != 1).any():
+        raise ValueError("subset is not a contiguous slice of full index")
+    
+    idx_full = slice(0, len(dti_full))
+    idx_subset = slice(int(locs[0]), int(locs[-1] + 1))
+
+    return idx_full, idx_subset
 
 
 def duration2steps(duration: pd.Timedelta, timestep: pd.Timedelta) -> int:
