@@ -1,13 +1,19 @@
 import logging
 from pathlib import Path
 
+import requests
 from prefect import flow, get_run_logger
+from prefect.blocks.system import Secret
+from prefect.variables import Variable
+from revoletion_core.model import ScenarioModel
 
 from .logger import configure_root_logger
 from .optimization import Solver
 from .run import SimulationRun
 from .scenario import SimulationPaths
 from .simulation import SimulationSettings
+
+worker_token: str = "cm91dGVraWRzc3VjaGNvbGRwZW9wbGVwYXJ0bHlmb3J3YXJkc3dpbmdleHBlcmllbmM="
 
 
 class _PrefectBridgeHandler(logging.Handler):
@@ -41,11 +47,35 @@ class _PrefectBridgeHandler(logging.Handler):
             self.handleError(record)
 
 
+async def download_scenarios(ids: list[str]) -> list[ScenarioModel]:
+    backend_url: str | None = Variable.get("REVOLETION_BACKEND_URL")
+    worker_token: str | None = Secret.load("REVOLETION_WORKER_TOKEN").get()
+
+    if not backend_url:
+        raise Exception(
+            "Worker does not know a backend url. Make sure `REVOLETION_BACKEND_URL` is set as a Prefect variable."
+        )
+
+    if not worker_token:
+        raise Exception(
+            "Worker can't authenticate. Worker token missing. Make sure `REVOLETION_WORKER_TOKEN` is set as Prefect secret block."
+        )
+
+    headers = {"Authorization": f"Bearer {worker_token}", "Accept": "application/json"}
+
+    # For now just assume there is only a single id.
+    scenario_id = ids[0]
+
+    return [requests.get(f"{backend_url}/api/scenarios/{scenario_id}", headers=headers)]
+
+
+def save_as_csv(scenarios: list[ScenarioModel]) -> Path:
+    return Path()
+
+
 @flow(name="scenario-run")
 def scenario_run_flow(
-    scenario_path: str = "",
-    input_dir: str = "",
-    output_dir: str = "",
+    scenario_ids: list[str] = "",
     solver: str = "GUROBI",
     debugmode: bool = False,
 ) -> None:
@@ -54,21 +84,16 @@ def scenario_run_flow(
 
     logger = get_run_logger()
 
-    logger.info("Starting scenario run: scenario_path=%s", scenario_path)
     logger.info("solver=%s  debugmode=%s", solver, debugmode)
 
-    input_path: Path | None = Path(input_dir) if input_dir else None
-    output_path: Path | None = Path(output_dir) if output_dir else None
-
-    paths = SimulationPaths.from_plain_paths(
-        scenario=Path(scenario_path),
-        input=input_path,
-        output=output_path,
-    )
+    scenarios: list[ScenarioModel] = download_scenarios(scenario_ids)
+    scenario_path: Path = save_as_csv(scenarios)
+    paths = SimulationPaths.from_plain_paths(scenario_path)
+    logger.info("Starting scenario run: scenario_path=%s", scenario_path)
 
     # Required to get output on the prefect-server.
     # The _PrefectBridgeHandler essentially reroutes stdout to the prefect logger.
-    configure_root_logger(paths.log, debugmode=debugmode, stdout=False)
+    configure_root_logger("/example/log.log", debugmode=debugmode, stdout=False)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger().addHandler(_PrefectBridgeHandler(logger))
 

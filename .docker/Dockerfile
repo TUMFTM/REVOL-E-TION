@@ -35,8 +35,6 @@ RUN useradd --uid 1001 --home-dir /app --no-create-home --shell /usr/sbin/nologi
 
 COPY --from=builder --chown=appuser /app/.venv /app/.venv
 COPY --from=builder --chown=appuser /build/revol-e-tion/revoletion /app/revoletion
-# TODO: remove once deployments always receive an explicit scenario_path parameter
-COPY --from=builder --chown=appuser /build/revol-e-tion/example /app/example
 
 RUN mkdir /app/results && chown appuser /app/results
 
