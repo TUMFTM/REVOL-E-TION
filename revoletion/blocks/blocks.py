@@ -1073,6 +1073,12 @@ class StationaryBattery(StorageBlock):
 class Fleet(SinkBlock):
     _FLOW_NAMES = ["in", "out"]
 
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # pwr_lim_f2s may be set to 'equal' to reuse pwr_lim_s2f
+        if self.pwr_lim_f2s == "equal":
+            self.pwr_lim_f2s = self.pwr_lim_s2f
+
     def init_pois(self):
         super().init_pois()
         self.pois["f2s"] = eco.POI.create(
@@ -1372,6 +1378,12 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 f'ElectricFleetUnit "{self.name}": size optimization not '
                 f"implemented for a priori integration levels: {self.scenario.apriori_lvls}"
             )
+
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # pwr_dis_max may be set to 'equal' to reuse pwr_chg_max
+        if self.pwr_dis_max == "equal":
+            self.pwr_dis_max = self.pwr_chg_max
 
     def initialize_efficiencies(self):
         self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.system]

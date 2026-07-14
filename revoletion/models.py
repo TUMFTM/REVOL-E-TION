@@ -901,11 +901,10 @@ class FleetModel(RevoletionBaseModel):
         description="Filename of the file containing the mapping function assigning timeframes to individual days (e.g. weekday/weekend) for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. Base search path is the scenario file's path, unless explicitly specified.",
         json_schema_extra={"valid_values_or_format": "string with filename of python file with or without '.py'"},
     )
-    pwr_lim_f2s: float | None = Field(
-        ge=0.0,
+    pwr_lim_f2s: float | None | Literal["equal"] = Field(
         title="Power limit of fleet to site",
-        description="Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None.",
-        json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
+        description="Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None. Set to 'equal' to use the same value as pwr_lim_s2f.",
+        json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
     pwr_lim_s2f: float | None = Field(
         default=None,
@@ -1188,12 +1187,12 @@ class SubFleetModel(RevoletionBaseModel):
         },
     )
 
-    pwr_dis_max: float = Field(
-        ge=0.0,
+    pwr_dis_max: float | Literal["equal"] = Field(
         title="Maximum discharging power",
-        description="Maximum discharging power at the local energy system in W",
+        description="Maximum discharging power at the local energy system in W. Set to 'equal' to use the same value as pwr_chg_max.",
         json_schema_extra={
             "not_required_for": "`type_unit` == 'icev'",
+            "valid_values_or_format": "[0, inf[ or 'equal'",
         },
     )
 
