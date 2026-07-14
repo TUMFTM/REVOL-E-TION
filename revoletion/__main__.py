@@ -149,7 +149,7 @@ def main():
     )
 
     # Configure the level of the logger according to `debugmode` and setup handlers.
-    configure_root_logger(paths.log, args.debugmode)
+    configure_root_logger(paths.log, args.debugmode, args.largescalemode)
 
     simulation_run = SimulationRun(paths=paths, settings=settings)
     simulation_run.execute()

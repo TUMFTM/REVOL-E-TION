@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
+from tqdm import tqdm
+
 
 @dataclass
 class ColumnLayout:
@@ -61,6 +63,24 @@ class LogFormatter(logging.Formatter):
         return super().format(record)
 
 
+class TqdmLoggingHandler(logging.StreamHandler):
+    """
+    Logging handler that emits records via :func:`tqdm.write` so that log messages do not
+    corrupt an active tqdm progress bar (as used for the scenario progress bar in large-scale mode).
+    """
+
+    @override
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg, file=self.stream)
+            self.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+
 def _get_logger_level(debugmode: bool):
     """
     Determine the logger level based on the settings.
@@ -76,7 +96,7 @@ def _configure_third_party_loggers() -> None:
     logging.getLogger("gurobipy").disabled = True
 
 
-def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
+def configure_root_logger(log_file: Path, debugmode: bool = False, largescalemode: bool = False) -> None:
     """
     Configure the `revoletion` root logger with its level according to `debugmode` and
     output handlers to console and the file `log_file`.
@@ -84,6 +104,8 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     Args:
         log_file: File where the logs are writing to.
         debugmode: Flag to control whether debugging is enabled. If True the log level is set to 'debug' else 'info'.
+        largescalemode: If True, only errors are printed to the console (in favor of a scenario progress bar);
+            info and warning messages are still written to `log_file`.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(_get_logger_level(debugmode))
@@ -96,7 +118,13 @@ def configure_root_logger(log_file: Path, debugmode: bool = False) -> None:
     )
 
     # define root logger handler for console output
-    log_stream_handler = logging.StreamHandler(sys.stdout)
+    # In large-scale mode, console output is limited to errors and routed through tqdm.write so that
+    # it does not corrupt the scenario progress bar. Info/warning messages are kept in the log file.
+    if largescalemode:
+        log_stream_handler = TqdmLoggingHandler(sys.stdout)
+        log_stream_handler.setLevel(logging.ERROR)
+    else:
+        log_stream_handler = logging.StreamHandler(sys.stdout)
     log_stream_handler.setFormatter(log_formatter_stdout)
     log_stream_handler.addFilter(OptimizationSuccessfulFilter())
     root_logger.addHandler(log_stream_handler)
