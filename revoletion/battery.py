@@ -223,10 +223,7 @@ class BatteryPackModel(ABC):
         self.block.states.loc[horizon.ch.end, "soh"] = 1 - (sum(self.q_loss_cyc) + sum(self.q_loss_cal))
         self.block.states.loc[horizon.ch.end, "q_loss_cal"] = sum(self.q_loss_cal)
         self.block.states.loc[horizon.ch.end, "q_loss_cyc"] = sum(self.q_loss_cyc)
-        self.block.states.loc[horizon.ch.end :, "soc_min"] = (1 - self.block.states.loc[horizon.ch.end, "soh"]) / 2
-        self.block.states.loc[horizon.ch.end :, "soc_max"] = 1 - (
-            (1 - self.block.states.loc[horizon.ch.end, "soh"]) / 2
-        )
+        self.block.update_soc_limits(ts=horizon.ch.end)
 
     @abstractmethod
     def calc_aging(self, horizon, t_hor, cycles_hor, temp_hor_k, **kwargs): ...

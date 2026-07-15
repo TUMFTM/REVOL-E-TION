@@ -977,6 +977,42 @@ class StorageBlock(ElectricBlock, ABC):
         self.power_circles.append(("in", "out"))
         self.power_circles.append(("bat_in", "bat_out"))
 
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # soc_min and soc_max are optional -> unset limits mean the full SOC window is usable
+        for name_param, default in [("soc_min", 0.0), ("soc_max", 1.0)]:
+            if getattr(self, name_param, None) is None:
+                setattr(self, name_param, default)
+
+        if self.soc_min >= self.soc_max:
+            raise ValueError(f'"{self.name}": soc_min ({self.soc_min}) must be smaller than soc_max ({self.soc_max})')
+
+    def update_soc_limits(self, ts: pd.Timestamp):
+        """
+        Write the SOC limits valid from timestamp ts onwards into the block's states.
+
+        Capacity fade is modeled as a symmetric shrinking of the usable SOC window around SOC 0.5, so the limits
+        depend on the block's SOH at ts. The user defined limits are applied on top: on either side, the more
+        restrictive of the two limits is used.
+        """
+        soc_min_aging = (1 - self.states.loc[ts, "soh"]) / 2
+        soc_max_aging = 1 - soc_min_aging
+
+        soc_min = max(soc_min_aging, self.soc_min)
+        soc_max = min(soc_max_aging, self.soc_max)
+
+        if soc_min >= soc_max:
+            # user defined and aging window do not overlap -> no SOC satisfies both
+            self.scenario.logger.warning(
+                f'"{self.name}": user defined SOC window [{self.soc_min}, {self.soc_max}] does not overlap the '
+                f"window [{soc_min_aging:.3f}, {soc_max_aging:.3f}] left by aging at a SOH of "
+                f"{self.states.loc[ts, 'soh']:.3f} - ignoring the user defined limits"
+            )
+            soc_min, soc_max = soc_min_aging, soc_max_aging
+
+        self.states.loc[ts:, "soc_min"] = soc_min
+        self.states.loc[ts:, "soc_max"] = soc_max
+
     def __init__(
         self,
         name: str,
@@ -1024,8 +1060,7 @@ class StorageBlock(ElectricBlock, ABC):
         self.states.loc[self.scenario.times.eval.start, "q_loss_cyc"] = self.q_loss_cyc_init
         delattr(self, "q_loss_cyc_init")
 
-        self.states.loc[:, "soc_min"] = (1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2
-        self.states.loc[:, "soc_max"] = 1 - ((1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2)
+        self.update_soc_limits(ts=self.scenario.times.eval.start)
 
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None

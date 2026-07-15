@@ -847,6 +847,22 @@ class StationaryBatteryModel(RevoletionBaseModel):
         ge=0,
         le=1,
     )
+    soc_min: float | None = Field(
+        default=None,
+        title="Minimum SOC",
+        description="Lower limit of the usable SOC window of the storage. Set to None to use the full window (0). The lower limit imposed by aging is applied on top: the higher of both limits is used.",
+        ge=0,
+        le=1,
+        json_schema_extra={"valid_values_or_format": "[0, 1] or None"},
+    )
+    soc_max: float | None = Field(
+        default=None,
+        title="Maximum SOC",
+        description="Upper limit of the usable SOC window of the storage. Set to None to use the full window (1). The upper limit imposed by aging is applied on top: the lower of both limits is used.",
+        ge=0,
+        le=1,
+        json_schema_extra={"valid_values_or_format": "[0, 1] or None"},
+    )
     q_loss_cal_init: float = Field(
         title="Initial capacity loss due to calendric aging",
         description="Initial capacity loss of the storage at simulation start due to calendric aging given as fraction of the total capacity. The capacity-related initial SOH is calculated by 1 - (q_loss_cal_init + q_loss_cyc_init).",
@@ -869,6 +885,15 @@ class StationaryBatteryModel(RevoletionBaseModel):
         description="Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan.",
         ge=0,
     )
+
+    @field_validator("soc_max")
+    @classmethod
+    def validate_soc_window(cls, value, info: ValidationInfo):
+        """Validate that the user defined SOC window is not empty."""
+        soc_min = info.data.get("soc_min")
+        if value is not None and soc_min is not None and soc_min >= value:
+            raise ValueError(f"soc_min '{soc_min}' must be smaller than soc_max '{value}'")
+        return value
 
 
 class FleetModel(RevoletionBaseModel):
@@ -1148,6 +1173,30 @@ class SubFleetModel(RevoletionBaseModel):
         },
     )
 
+    soc_min: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        title="Minimum SOC",
+        description="Lower limit of the usable SOC window of the storage. Set to None to use the full window (0). The lower limit imposed by aging is applied on top: the higher of both limits is used",
+        json_schema_extra={
+            "not_required_for": "`type_unit` == 'icev'",
+            "valid_values_or_format": "[0, 1] or None",
+        },
+    )
+
+    soc_max: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        title="Maximum SOC",
+        description="Upper limit of the usable SOC window of the storage. Set to None to use the full window (1). The upper limit imposed by aging is applied on top: the lower of both limits is used",
+        json_schema_extra={
+            "not_required_for": "`type_unit` == 'icev'",
+            "valid_values_or_format": "[0, 1] or None",
+        },
+    )
+
     soc_target: float = Field(
         ge=0.0,
         le=1.0,
@@ -1272,6 +1321,15 @@ class SubFleetModel(RevoletionBaseModel):
             "not_required_for": "`type_unit` == 'icev'",
         },
     )
+
+    @field_validator("soc_max")
+    @classmethod
+    def validate_soc_window(cls, value, info: ValidationInfo):
+        """Validate that the user defined SOC window is not empty."""
+        soc_min = info.data.get("soc_min")
+        if value is not None and soc_min is not None and soc_min >= value:
+            raise ValueError(f"soc_min '{soc_min}' must be smaller than soc_max '{value}'")
+        return value
 
 
 # The block types which are currently being validate.

@@ -138,6 +138,8 @@ ess,eff_dcac,0.95,0.95,0.95,0.95
 ess,crate_chg,0.8,0.8,0.8,0.8
 ess,crate_dis,0.8,0.8,0.8,0.8
 ess,soc_init,1,1,1,1
+ess,soc_min,0.1,0.1,0.1,0.1
+ess,soc_max,0.9,0.9,0.9,0.9
 ess,q_loss_cal_init,0,0,0,0
 ess,q_loss_cyc_init,0,0,0,0
 ess,sdr,0.02,0.02,0.02,0.02
@@ -181,6 +183,8 @@ bev,temp_battery,None,None,None,None
 bev,q_loss_cal_init,0,0,0,0
 bev,q_loss_cyc_init,0,0,0,0
 bev,soc_init,1,1,1,1
+bev,soc_min,0.05,0.05,0.05,0.05
+bev,soc_max,0.95,0.95,0.95,0.95
 bev,soc_target,0.95,0.95,0.95,0.95
 bev,soc_return,0.1,0.1,0.1,0.1
 bev,dsoc_buffer,0.05,0.05,0.05,0.05
@@ -245,6 +249,8 @@ mb,temp_battery,None,None,None,None
 mb,q_loss_cal_init,0,0,0,0
 mb,q_loss_cyc_init,0,0,0,0
 mb,soc_init,1,1,1,1
+mb,soc_min,None,None,None,None
+mb,soc_max,None,None,None,None
 mb,soc_target,0.95,0.95,0.95,0.95
 mb,soc_return,0.1,0.1,0.1,0.1
 mb,dsoc_buffer,0.05,0.05,0.05,0.05
