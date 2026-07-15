@@ -177,7 +177,7 @@ class SimulationRun:
         return state
 
     def copy_scenario_file(self):
-        target = self.paths.output / f"{self.name}.csv"
+        target = self.paths.output / f"{self.name}{self.paths.scenario.suffix}"
         try:  # with metadata
             shutil.copy2(self.paths.scenario, target)
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
