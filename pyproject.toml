@@ -80,11 +80,10 @@ testpaths = ["tests"]
 source = ["revoletion"]
 
 [[tool.uv.index]]
-name = "gitlab-lrz"
+name = "internal"
 url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/simple"
 explicit = true
+authenticate = "always"
 
 [tool.uv.sources]
-revoletion-core = { index = "gitlab-lrz" }
-# Useful for development, requires `uv sync` to take affect.
-#revoletion-core = { path="../revol-e-tion-core", editable = true }
+revoletion-core = { index = "internal" }
