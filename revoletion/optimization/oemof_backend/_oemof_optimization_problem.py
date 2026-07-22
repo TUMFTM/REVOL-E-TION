@@ -45,6 +45,8 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         return {
             "acdc": self._get_flow_for_components(block, ("ac", "acdc"), dti),
             "dcac": self._get_flow_for_components(block, ("dc", "dcac"), dti),
+            "deficit_ac": self._get_flow_for_components(block, ("deficit_ac", "ac"), dti),
+            "deficit_dc": self._get_flow_for_components(block, ("deficit_dc", "dc"), dti),
         }
 
     @get_power_flow.register

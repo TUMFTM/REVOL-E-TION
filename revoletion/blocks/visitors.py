@@ -121,6 +121,22 @@ class VisualizationBlockVisitor(BlockVisitor[None]):
             secondary_ys=[False, False],
         )
 
+        # Deficit power is only non-zero if the energy system cannot cover its demand. The traces are shown by
+        # default in that case, as they point at a scenario which does not work as intended.
+        plot_traces.extend(
+            plot_lines=[
+                go.Scatter(
+                    x=block.scenario.times.eval.dti,
+                    y=block.flows.loc[block.scenario.times.eval.dti, f"deficit_{system}"],
+                    mode="lines",
+                    name=f"{block.name} {system.upper()} deficit power",
+                    line=dict(width=2, dash=None, shape="hv"),
+                    visible=True if block.energies[f"deficit_{system}"].eval > 0 else "legendonly",
+                )
+                for system in block._SYSTEMS_DEFICIT
+            ],
+        )
+
     def visit_renewable_source(self, block: blocks.RenewableSource, plot_traces: PlotTraces) -> None:
         plot_traces.extend(
             plot_lines=[

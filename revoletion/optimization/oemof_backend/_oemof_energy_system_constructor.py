@@ -222,16 +222,27 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
 
         x denotes the flow measurement point in results
 
-        dc          ac
-        |-x--dcac-->|
-        |           |
-        |<---acdc-x-|
+                    dc          ac
+         deficit_dc->|-x--dcac-->|<-x-deficit_ac
+                    |           |
+                    |<---acdc-x-|
         """
         ac_bus = solph.Bus(label=self._CORE_AC_BUS_NAME)
         es.add(block, self._CORE_AC_BUS_NAME, ac_bus)
 
         dc_bus = solph.Bus(label=self._CORE_DC_BUS_NAME)
         es.add(block, self._CORE_DC_BUS_NAME, dc_bus)
+
+        # The deficit sources are unlimited in power and keep the energy system solvable even if no other component
+        # can cover the demand. Their high specific opex makes them the optimizer's last resort.
+        for system, bus in ((self._CORE_AC_BUS_NAME, ac_bus), (self._CORE_DC_BUS_NAME, dc_bus)):
+            deficit_source = solph.components.Source(
+                label=_label(block, f"deficit_{system}"),
+                outputs={
+                    bus: solph.Flow(variable_costs=block.pois[f"deficit_{system}"].spec_ep_operation[self._horizon.dti])
+                },
+            )
+            es.add(block, f"deficit_{system}", deficit_source)
 
         acdc_converter = solph.components.Converter(
             label=_label(block, "acdc"),

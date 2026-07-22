@@ -157,6 +157,17 @@ class PypsaEnergySystemConstructor(blocks.BlockVisitor[None]):
             marginal_cost=block.pois["dcac"].spec_ep_operation[self._dti] + self._cost_eps,
         )
 
+        # The deficit sources are unlimited in power and keep the network solvable even if no other component
+        # can cover the demand. Their high specific opex makes them the optimizer's last resort.
+        for system, bus in (("ac", self._CORE_AC_BUS_NAME), ("dc", self._CORE_DC_BUS_NAME)):
+            builder.add_generator(
+                name=make_pypsa_label(block, f"deficit-{system}-gen"),
+                bus=bus,
+                marginal_cost=block.pois[f"deficit_{system}"].spec_ep_operation[self._dti],
+                p_nom=np.inf,
+                p_nom_extendable=False,
+            )
+
     def visit_grid_connection(
         self, block: blocks.GridConnection, builder: PypsaNetworkBuilder, bus_connected: str
     ) -> None:

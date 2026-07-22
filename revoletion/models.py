@@ -11,6 +11,13 @@ from revoletion import utils
 
 _LOGGER = logging.getLogger(__name__)
 
+OPEX_SPEC_DEFICIT_DEFAULT = 1
+"""
+Default specific opex of the `SystemCore` deficit sources in currency/Wh, applied if `opex_spec_deficit` is not given
+in the scenario file. Far above any realistic energy price, so that the optimizer only draws from the deficit sources
+if the energy system cannot be balanced in any other way.
+"""
+
 
 class RevoletionBaseModel(BaseModel):
     _revoletion_docs_title: str
@@ -272,6 +279,12 @@ class SystemCoreModel(RevoletionBaseModel):
     opex_spec: float | str = Field(
         title="Specific operational expenditures",
         description="Specific operational expenditures for each of the converters in the `SystemCore` cost in currency per converted energy in Wh. Energy is measured at each converter's inflow. Can be given as float or filename of a csv file containing a timeseries.",
+        json_schema_extra={"valid_values_or_format": "string with filename or [0, inf["},
+    )
+    opex_spec_deficit: float | str = Field(
+        default=OPEX_SPEC_DEFICIT_DEFAULT,
+        title="Specific operational expenditures of the deficit sources",
+        description="Specific operational expenditures of the unlimited deficit sources on the AC and DC bus of the `SystemCore`: cost in currency per drawn energy in Wh. The deficit sources keep the energy system solvable if no other component can cover the demand; a warning is raised whenever energy is drawn from them. These costs only penalize the use of the deficit sources within the optimization and are not part of the economic results. Optional: if not given, it defaults to 1, which is far above any realistic energy price and therefore keeps the deficit sources the optimizer's last resort. Can be given as float or filename of a csv file containing a timeseries.",
         json_schema_extra={"valid_values_or_format": "string with filename or [0, inf["},
     )
     ls: float = Field(

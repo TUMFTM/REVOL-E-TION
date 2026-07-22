@@ -13,7 +13,7 @@ import pandas as pd
 import windpowerlib
 
 from revoletion import battery as bat
-from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils
+from revoletion import data_manager, energy, mobility, models, peak_periods, size, time, utils
 from revoletion import economics as eco
 from revoletion import scenario as scn
 
@@ -117,7 +117,8 @@ class BaseBlock(BlockScenarioInterface, ABC):
 
         self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
         for poi in self.pois.values():
-            self.aggregator.add_block(poi)
+            if poi.aggregate:
+                self.aggregator.add_block(poi)
         self.parent.aggregator.add_block(self.aggregator)
 
         self.energies = {
@@ -300,7 +301,9 @@ class SinkBlock(ElectricBlock, ABC):
 
 class SystemCore(ElectricBlock):
     _SIZE_NAMES = [("acdc", "kW"), ("dcac", "kW")]
-    _FLOW_NAMES = ["acdc", "dcac"]
+    _FLOW_NAMES = ["acdc", "dcac", "deficit_ac", "deficit_dc"]
+
+    _SYSTEMS_DEFICIT = ["ac", "dc"]
 
     def init_pois(self):
         super().init_pois()
@@ -337,6 +340,18 @@ class SystemCore(ElectricBlock):
             name_flow="dcac",
         )
 
+        # The deficit sources are unlimited in power and free of capex and mntex. Their opex only serves as a
+        # penalty steering the optimizer away from them and is therefore excluded from the aggregated results.
+        for system in self._SYSTEMS_DEFICIT:
+            self.pois[f"deficit_{system}"] = eco.POI.create(
+                name=f"deficit_{system}",
+                eco=self.scenario.eco_params,
+                data_dir=self.scenario.paths.input,
+                opex=eco.OpexParams(spec_energy=self.opex_spec_deficit),
+                name_flow=f"deficit_{system}",
+                aggregate=False,
+            )
+
         self.power_circles.append(("acdc", "dcac"))
 
     def __init__(self, name: str, scenario, **kwargs):
@@ -350,6 +365,10 @@ class SystemCore(ElectricBlock):
         )
 
     def params_preprocessing(self):
+        # opex_spec_deficit is optional in the scenario file
+        if not hasattr(self, "opex_spec_deficit"):
+            self.opex_spec_deficit = models.OPEX_SPEC_DEFICIT_DEFAULT
+
         self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
 
         self.init_equalizable_variables(name_vars=["invest_acdc", "invest_dcac"])
@@ -361,6 +380,20 @@ class SystemCore(ElectricBlock):
         post scenario method
         """
         super().calc_results_flows()
+
+    def calc_results_energies(self):
+        """
+        post scenario method
+        """
+        super().calc_results_energies()
+
+        for system in self._SYSTEMS_DEFICIT:
+            energy_deficit = self.energies[f"deficit_{system}"].eval
+            if energy_deficit > 0:
+                self.scenario.logger.warning(
+                    f'Block "{self.name}" - {energy_deficit / 1e3:.1f} kWh of energy drawn from the '
+                    f"{system.upper()} deficit source - the energy system cannot cover its demand"
+                )
 
 
 class RenewableSource(SourceBlock, ABC):

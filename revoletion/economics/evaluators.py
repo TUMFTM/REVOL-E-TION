@@ -424,6 +424,13 @@ class POI(BlockElement):
     opex: OpexEvaluator | None
     crev: CrevEvaluator | None
 
+    aggregate: bool = True
+    """
+    Whether the POI's costs and revenues are part of its block's aggregated economic results.
+    Set to False for POIs whose specific costs only steer the optimization, but do not represent
+    real cashflows of the energy system, such as the deficit sources of the SystemCore.
+    """
+
     @classmethod
     def create(
         cls,
@@ -436,6 +443,7 @@ class POI(BlockElement):
         mntex: MntexParams | None = None,
         opex: OpexParams | None = None,
         crev: CrevParams | None = None,
+        aggregate: bool = True,
     ) -> Self:
         return cls(
             name=name,
@@ -446,6 +454,7 @@ class POI(BlockElement):
             mntex=MntexEvaluator.create_from_params(name, eco, mntex, data_dir) if mntex else None,
             opex=OpexEvaluator.create_from_params(name, eco, opex, data_dir) if opex else None,
             crev=CrevEvaluator.create_from_params(name, eco, crev, data_dir) if crev else None,
+            aggregate=aggregate,
         )
 
     @property
