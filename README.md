@@ -331,13 +331,13 @@ For pure AC or DC systems, the respective core cost and size parameters can be s
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_acdc` | Preexisting AC/DC size | float or str |  | Installed power of the AC/DC converter in the SystemCore in W. Set either size_preexisting_acdc or size_preexisting_dcac to 'equal' to set both preexisting converter sizes to the same value. | [0, inf[ or 'equal' |
-| `capex_preexisting_acdc` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_acdc in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_acdc` | Maximum size of AC/DC converter | float or str or None |  | Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_preexisting_acdc. To enable unlimited investment set this parameter to None. Set either size_max_acdc or size_max_dcac to 'equal' to set both converters' maximum investments to the same value. | [0, inf[ or None or 'equal' |
+| `size_acdc_preexisting` | Preexisting AC/DC size | float or str |  | Installed power of the AC/DC converter in the SystemCore in W. Set either size_acdc_preexisting or size_dcac_preexisting to 'equal' to set both preexisting converter sizes to the same value. | [0, inf[ or 'equal' |
+| `capex_acdc_preexisting` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_acdc_preexisting in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_acdc_max` | Maximum size of AC/DC converter | float or str or None |  | Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_acdc_preexisting. To enable unlimited investment set this parameter to None. Set either size_acdc_max or size_dcac_max to 'equal' to set both converters' maximum investments to the same value. | [0, inf[ or None or 'equal' |
 | `invest_acdc` | Investment into AC/DC converter | bool or str |  | Enable additional investment into the AC/DC converter of the SystemCore. Set either invest_acdc or invest_dcac to 'equal' to force the same expansion for both converters. | True, False |
-| `size_preexisting_dcac` | Existing DC/AC size | float or str |  | Installed power of the DC/AC converter in the SystemCore in W. Set either size_preexisting_acdc or size_preexisting_dcac to 'equal' to set both preexisting converter sizes to the same value. | [0, inf[ or 'equal' |
-| `capex_preexisting_dcac` | Consideration of preexisting DC/AC size in capex | bool |  | Consider existing DC/AC size in initial capex calculation. | True, False |
-| `size_max_dcac` | Maximum size of DC/AC converter | float or str or None |  | Maximum size of the DC/AC converter of the SystemCore including preexisting size specified in `size_preexisting_dcac`. To enable unlimited investment set this parameter to None. Set either `size_max_acdc` or `size_max_dcac` to 'equal' to set both converters' maximum investments to the same value. | [0, inf[ or None or 'equal' |
+| `size_dcac_preexisting` | Existing DC/AC size | float or str |  | Installed power of the DC/AC converter in the SystemCore in W. Set either size_acdc_preexisting or size_dcac_preexisting to 'equal' to set both preexisting converter sizes to the same value. | [0, inf[ or 'equal' |
+| `capex_dcac_preexisting` | Consideration of preexisting DC/AC size in capex | bool |  | Consider existing DC/AC size in initial capex calculation. | True, False |
+| `size_dcac_max` | Maximum size of DC/AC converter | float or str or None |  | Maximum size of the DC/AC converter of the SystemCore including preexisting size specified in `size_dcac_preexisting`. To enable unlimited investment set this parameter to None. Set either `size_acdc_max` or `size_dcac_max` to 'equal' to set both converters' maximum investments to the same value. | [0, inf[ or None or 'equal' |
 | `invest_dcac` | Investment into DC/AC converter | bool or str |  | Enable additional investment into the DC/AC converter of the `SystemCore`. Set either `invest_acdc` or `invest_dcac` to 'equal' to force the same expansion for both converters. | True, False |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures for each of the converters in the `SystemCore`: cost in currency per installed power (cumulative size of both converters) in W. | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures for each of the converters in the `SystemCore`: cost in currency per year per installed power (cumulative size of both converters) in W. | [0, inf[ |
@@ -368,7 +368,7 @@ Undeferrable (i.e. inflexible) power demand such as households.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `capex_preexisting_metering` | Consideration of preexisting metering capital expensditures | bool |  | Consider existing metering and operational capex in cost calculation. | True, False |
+| `capex_metering_preexisting` | Consideration of preexisting metering capital expensditures | bool |  | Consider existing metering and operational capex in cost calculation. | True, False |
 | `capex_fix_metering` | Fixed capital expenditures for metering infrastructure | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
 | `mntex_fix_metering` | Fixed maintenance expenditures for metering infrastructure and operations | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
 | `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'} |
@@ -397,9 +397,9 @@ Although the Solcast API requires an active subscription plan, there is a limite
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_block` | Preexisting size | float |  | Installed peak power of the pv array in in W. | [0, inf[ |
-| `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_block` | Maximum size | float or None |  | Maximum size of `PVSource` including preexisting size specified in `size_preexisting_block`. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
+| `size_block_preexisting` | Preexisting size | float |  | Installed peak power of the pv array in in W. | [0, inf[ |
+| `capex_block_preexisting` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_block_preexisting` in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_block_max` | Maximum size | float or None |  | Maximum size of `PVSource` including preexisting size specified in `size_block_preexisting`. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the PV system. | True, False |
 | `data_source` | Data source | str |  | Data source for pv power. This can be an API (PVGIS or Solcast) or a file containing data (PVGIS, Solcast or custom file). If Solcast API is chosen a valid API key has to specified in the run's arguments. A custom file has to include the columns 'time' (timezone aware timestamps), 'power_spec' (specific power in W per Wp), 'speed_wind' (in m/s), 'temp_air' (air temperature in °C). | 'pvgis api', 'solcast api', 'pvgis file', 'solcast file', 'file' |
 | `filename` | Filename | str or None |  | Name of a PVGIS, Solcast, or custom csv file if data_source is set to 'pvgis file', 'solcast file', or 'file', respectively. Otherwise set to None. | filename or None |
@@ -439,9 +439,9 @@ For the latter option, a PVSource block must exist.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_block` | Preexisting size | float |  | Installed rated power of wind turbine in W | [0, inf[ |
-| `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_block` | Maximum size | float or None |  | Maximum size of WindSource including existing size. To enable unlimited investment set this parameter to None | [0, inf[ or None |
+| `size_block_preexisting` | Preexisting size | float |  | Installed rated power of wind turbine in W | [0, inf[ |
+| `capex_block_preexisting` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_block_max` | Maximum size | float or None |  | Maximum size of WindSource including existing size. To enable unlimited investment set this parameter to None | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the wind turbine | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
 | `data_source` | Data source | str |  | Data source for wind power. Wind power can either be given as a separate csv file or calculated from a PVSource block's data. | 'file' or a string with the name of a block of class PVSource |
@@ -474,9 +474,9 @@ Independently controllable power sources (e.g. fossil generator, hydro power pla
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_block` | Preexisting size | float |  | Installed rated power of the source in W | [0, inf[ |
-| `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_block` | Maximum size | float or None |  | Maximum size of ControllableSource including preexisting size specified in size_preexisting_block. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
+| `size_block_preexisting` | Preexisting size | float |  | Installed rated power of the source in W | [0, inf[ |
+| `capex_block_preexisting` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_block_preexisting` in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_block_max` | Maximum size | float or None |  | Maximum size of ControllableSource including preexisting size specified in size_block_preexisting. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the power source | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed power in W | [0, inf[ |
@@ -506,13 +506,13 @@ Physical grid connection. A GridConnection instance requires one or multiple Gri
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_g2s` | Preexisting connection power from public grid to local site | float or str |  | Installed power for the power flow from the public grid to the local site (Grid2Site) in W. Set either `size_preexisting_g2s` or `size_preexisting_s2g` to 'equal' to set both directions' sizes to the same value. | [0, inf[ or 'equal' |
-| `capex_preexisting_g2s` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_g2s in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_g2s` | Maximum size of Grid2Site | float or str or None |  | Maximum size of Grid2Site including preexisting size specified in size_preexisting_g2s. To enable unlimited investment set this parameter to None. Set either size_max_g2s or size_max_s2g to 'equal' to set both directions' maximum investments to the same value. | [0, inf[ or None or 'equal' |
+| `size_g2s_preexisting` | Preexisting connection power from public grid to local site | float or str |  | Installed power for the power flow from the public grid to the local site (Grid2Site) in W. Set either `size_g2s_preexisting` or `size_s2g_preexisting` to 'equal' to set both directions' sizes to the same value. | [0, inf[ or 'equal' |
+| `capex_g2s_preexisting` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_g2s_preexisting in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_g2s_max` | Maximum size of Grid2Site | float or str or None |  | Maximum size of Grid2Site including preexisting size specified in size_g2s_preexisting. To enable unlimited investment set this parameter to None. Set either size_g2s_max or size_s2g_max to 'equal' to set both directions' maximum investments to the same value. | [0, inf[ or None or 'equal' |
 | `invest_g2s` | Investment into Grid2Site | bool or str |  | Enable additional investment into the maximum power from the grid to the local site. To ensure the same additional power for both directions set one invest variable to 'equal'. | True, False |
-| `size_preexisting_s2g` | Existing maximum power from local site to grid | float or str |  | Installed power for the power flow from the local site to the grid in W. To set both directions' existing powers to the same value set one size to 'equal'. | [0, inf[ or 'equal' |
-| `capex_preexisting_s2g` | Consider existing block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_s2g` | Maximum size of Site2Grid | float or str or None |  | Maximum size of Site2Grid including existing size. To enable unlimited investment set this parameter to None. To set both directions' maximum investments to the same value set one maximum investment to 'equal'. | [0, inf[ or None or 'equal' |
+| `size_s2g_preexisting` | Existing maximum power from local site to grid | float or str |  | Installed power for the power flow from the local site to the grid in W. To set both directions' existing powers to the same value set one size to 'equal'. | [0, inf[ or 'equal' |
+| `capex_s2g_preexisting` | Consider existing block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_s2g_max` | Maximum size of Site2Grid | float or str or None |  | Maximum size of Site2Grid including existing size. To enable unlimited investment set this parameter to None. To set both directions' maximum investments to the same value set one maximum investment to 'equal'. | [0, inf[ or None or 'equal' |
 | `invest_s2g` | Investment into Site2Grid | bool or str |  | Enable additional investment into the maximum power from the local site to the grid. To ensure the same additional power for both directions set one invest variable to 'equal'. | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `peakshaving` | Activation of peak shaving | bool |  | Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here. | True, False |
@@ -576,9 +576,9 @@ Storage modelling is done linearly without SOC or temperature based limits of ch
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `size_preexisting_storage` | Preexisting size | float |  | Installed nominal capacity of the storage in Wh. | [0, inf[ |
-| `capex_preexisting_storage` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_storage in initial capex calculation. Replacement capex are unaffected. | True, False |
-| `size_max_storage` | Maximum size | float or None |  | Maximum size of StationaryBattery including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
+| `size_storage_preexisting` | Preexisting size | float |  | Installed nominal capacity of the storage in Wh. | [0, inf[ |
+| `capex_storage_preexisting` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_storage_preexisting in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `size_storage_max` | Maximum size | float or None |  | Maximum size of StationaryBattery including preexisting size specified in size_storage_preexisting. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_storage` | Investment | bool |  | Enable additional investment into the storage capacity. | True, False |
 | `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `res_only` | Renewable energy sources only | bool |  | If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter. | True, False |
@@ -656,14 +656,14 @@ Behavior can either be given or generated within the integrated Discrete Event S
 |-----|------|------|------------------|-------------|------------------------|
 | `num` | Number of fleet units | int |  | Number of fleet units within the SubFleet. | [1, inf[ |
 | `type_unit` | Fleet unit type | str |  | Type of Fleet units contained in the Subfleet. 'ev': Electric Vehicle, 'icev': Internal Combustion Engine Vehicle, 'mb': Mobile Battery | 'ev', 'icev', 'mb' |
-| `size_preexisting_storage` | Preexisting size of storage | float | `type_unit` == 'icev' | Installed nominal capacity of the Fleet unit's storage in Wh per single Fleet unit for all Fleet units within the Subfleet. Parameter is neglected if type_unit is set to 'icev' | [0.0, inf[ |
-| `size_max_storage` | Maximum size of storage | float or None | `type_unit` == 'icev' | Maximum size of storage per Fleet unit including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None | [0, inf[ or None |
+| `size_storage_preexisting` | Preexisting size of storage | float | `type_unit` == 'icev' | Installed nominal capacity of the Fleet unit's storage in Wh per single Fleet unit for all Fleet units within the Subfleet. Parameter is neglected if type_unit is set to 'icev' | [0.0, inf[ |
+| `size_storage_max` | Maximum size of storage | float or None | `type_unit` == 'icev' | Maximum size of storage per Fleet unit including preexisting size specified in size_storage_preexisting. To enable unlimited investment set this parameter to None | [0, inf[ or None |
 | `invest_storage` | Investment into storage | bool | `type_unit` == 'icev' | Enable additional investment into the Fleet units' storages | True, False |
-| `capex_preexisting_storage` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_storage in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `capex_storage_preexisting` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_storage_preexisting in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `capex_fix_glider` | Capital expenditures for base vehicle | float |  | Fixed capital expenditures for each of the Fleet units in the SubFleet, irrespective of storage size, representing the base vehicle | [0.0, inf[ |
-| `capex_preexisting_glider` | Consideration of preexisting glider in capex | bool |  | Trigger whether to consider preexisting glider capex specified in capex_fix_glider in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `capex_glider_preexisting` | Consideration of preexisting glider in capex | bool |  | Trigger whether to consider preexisting glider capex specified in capex_fix_glider in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `capex_fix_charger` | Capital expenditures for charger | float | `type_unit` == 'icev' | Fixed capital expenditures for each of the Fleet units in the SubFleet, irrespective of storage size, representing the charger | [0.0, inf[ |
-| `capex_preexisting_charger` | Consideration of preexisting charger in capex | bool | `type_unit` == 'icev' | rigger whether to consider preexisting charger capex specified in capex_fix_charger in initial capex calculation. Replacement capex are unaffected. | True, False |
+| `capex_charger_preexisting` | Consideration of preexisting charger in capex | bool | `type_unit` == 'icev' | rigger whether to consider preexisting charger capex specified in capex_fix_charger in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's (glider, storage, and charger) nominal price per year to be considered for replacement after its lifespan | [0.0, 1.0] |
 | `ls` | Lifespan | float |  | Lifespan of the block (glider, storage, and charger) in years after which it will be replaced | [1.0, inf[ |
 | `mntex_fix_glider` | Fixed maintenance expenditures for glider | float |  | Fixed maintenance expenditures: cost in currency per year per Fleet unit, irrespective of traction battery size | [0.0, inf[ |

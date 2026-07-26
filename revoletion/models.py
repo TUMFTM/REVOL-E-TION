@@ -227,19 +227,19 @@ class SystemCoreModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_acdc: float | str = Field(
+    size_acdc_preexisting: float | str = Field(
         title="Preexisting AC/DC size",
-        description="Installed power of the AC/DC converter in the SystemCore in W. Set either size_preexisting_acdc or size_preexisting_dcac to 'equal' to set both preexisting converter sizes to the same value.",
+        description="Installed power of the AC/DC converter in the SystemCore in W. Set either size_acdc_preexisting or size_dcac_preexisting to 'equal' to set both preexisting converter sizes to the same value.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or 'equal'"},
     )
-    capex_preexisting_acdc: bool = Field(
+    capex_acdc_preexisting: bool = Field(
         title="Consideration of preexisting AC/DC size in capex",
-        description="Trigger whether to consider preexisting component size specified in size_preexisting_acdc in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in size_acdc_preexisting in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_acdc: float | None | Literal["equal"] = Field(
+    size_acdc_max: float | None | Literal["equal"] = Field(
         default=None,
         title="Maximum size of AC/DC converter",
-        description="Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_preexisting_acdc. To enable unlimited investment set this parameter to None. Set either size_max_acdc or size_max_dcac to 'equal' to set both converters' maximum investments to the same value.",
+        description="Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_acdc_preexisting. To enable unlimited investment set this parameter to None. Set either size_acdc_max or size_dcac_max to 'equal' to set both converters' maximum investments to the same value.",
         ge=0,
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
@@ -247,19 +247,19 @@ class SystemCoreModel(RevoletionBaseModel):
         title="Investment into AC/DC converter",
         description="Enable additional investment into the AC/DC converter of the SystemCore. Set either invest_acdc or invest_dcac to 'equal' to force the same expansion for both converters.",
     )
-    size_preexisting_dcac: float | Literal["equal"] = Field(
+    size_dcac_preexisting: float | Literal["equal"] = Field(
         title="Existing DC/AC size",
-        description="Installed power of the DC/AC converter in the SystemCore in W. Set either size_preexisting_acdc or size_preexisting_dcac to 'equal' to set both preexisting converter sizes to the same value.",
+        description="Installed power of the DC/AC converter in the SystemCore in W. Set either size_acdc_preexisting or size_dcac_preexisting to 'equal' to set both preexisting converter sizes to the same value.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or 'equal'"},
     )
-    capex_preexisting_dcac: bool = Field(
+    capex_dcac_preexisting: bool = Field(
         title="Consideration of preexisting DC/AC size in capex",
         description="Consider existing DC/AC size in initial capex calculation.",
     )
-    size_max_dcac: float | None | Literal["equal"] = Field(
+    size_dcac_max: float | None | Literal["equal"] = Field(
         default=None,
         title="Maximum size of DC/AC converter",
-        description="Maximum size of the DC/AC converter of the SystemCore including preexisting size specified in `size_preexisting_dcac`. To enable unlimited investment set this parameter to None. Set either `size_max_acdc` or `size_max_dcac` to 'equal' to set both converters' maximum investments to the same value.",
+        description="Maximum size of the DC/AC converter of the SystemCore including preexisting size specified in `size_dcac_preexisting`. To enable unlimited investment set this parameter to None. Set either `size_acdc_max` or `size_dcac_max` to 'equal' to set both converters' maximum investments to the same value.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
     invest_dcac: bool | Literal["equal"] = Field(
@@ -319,7 +319,7 @@ class FixedDemandModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    capex_preexisting_metering: bool = Field(
+    capex_metering_preexisting: bool = Field(
         title="Consideration of preexisting metering capital expensditures",
         description="Consider existing metering and operational capex in cost calculation.",
     )
@@ -366,18 +366,18 @@ class PVSourceModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_block: float = Field(
+    size_block_preexisting: float = Field(
         title="Preexisting size",
         description="Installed peak power of the pv array in in W.",
         ge=0,
     )
-    capex_preexisting_block: bool = Field(
+    capex_block_preexisting: bool = Field(
         title="Consideration of preexisting block size in capex",
-        description="Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in `size_block_preexisting` in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_block: float | None = Field(
+    size_block_max: float | None = Field(
         title="Maximum size",
-        description="Maximum size of `PVSource` including preexisting size specified in `size_preexisting_block`. To enable unlimited investment set this parameter to None.",
+        description="Maximum size of `PVSource` including preexisting size specified in `size_block_preexisting`. To enable unlimited investment set this parameter to None.",
         ge=0,
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
     )
@@ -481,16 +481,16 @@ class WindSourceModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_block: float = Field(
+    size_block_preexisting: float = Field(
         title="Preexisting size",
         description="Installed rated power of wind turbine in W",
         ge=0,
     )
-    capex_preexisting_block: bool = Field(
+    capex_block_preexisting: bool = Field(
         title="Consideration of preexisting block size in capex",
         description="Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_block: float | None = Field(
+    size_block_max: float | None = Field(
         title="Maximum size",
         description="Maximum size of WindSource including existing size. To enable unlimited investment set this parameter to None",
         ge=0,
@@ -560,18 +560,18 @@ class ControllableSourceModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_block: float = Field(
+    size_block_preexisting: float = Field(
         title="Preexisting size",
         description="Installed rated power of the source in W",
         ge=0,
     )
-    capex_preexisting_block: bool = Field(
+    capex_block_preexisting: bool = Field(
         title="Consideration of preexisting block size in capex",
-        description="Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in `size_block_preexisting` in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_block: float | None = Field(
+    size_block_max: float | None = Field(
         title="Maximum size",
-        description="Maximum size of ControllableSource including preexisting size specified in size_preexisting_block. To enable unlimited investment set this parameter to None.",
+        description="Maximum size of ControllableSource including preexisting size specified in size_block_preexisting. To enable unlimited investment set this parameter to None.",
         ge=0,
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
     )
@@ -621,34 +621,34 @@ class GridConnectionModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_g2s: float | Literal["equal"] = Field(
+    size_g2s_preexisting: float | Literal["equal"] = Field(
         title="Preexisting connection power from public grid to local site",
-        description="Installed power for the power flow from the public grid to the local site (Grid2Site) in W. Set either `size_preexisting_g2s` or `size_preexisting_s2g` to 'equal' to set both directions' sizes to the same value.",
+        description="Installed power for the power flow from the public grid to the local site (Grid2Site) in W. Set either `size_g2s_preexisting` or `size_s2g_preexisting` to 'equal' to set both directions' sizes to the same value.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or 'equal'"},
     )
-    capex_preexisting_g2s: bool = Field(
+    capex_g2s_preexisting: bool = Field(
         title="Consideration of preexisting AC/DC size in capex",
-        description="Trigger whether to consider preexisting component size specified in size_preexisting_g2s in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in size_g2s_preexisting in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_g2s: float | Literal["equal"] | None = Field(
+    size_g2s_max: float | Literal["equal"] | None = Field(
         title="Maximum size of Grid2Site",
-        description="Maximum size of Grid2Site including preexisting size specified in size_preexisting_g2s. To enable unlimited investment set this parameter to None. Set either size_max_g2s or size_max_s2g to 'equal' to set both directions' maximum investments to the same value.",
+        description="Maximum size of Grid2Site including preexisting size specified in size_g2s_preexisting. To enable unlimited investment set this parameter to None. Set either size_g2s_max or size_s2g_max to 'equal' to set both directions' maximum investments to the same value.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
     )
     invest_g2s: bool | Literal["equal"] = Field(
         title="Investment into Grid2Site",
         description="Enable additional investment into the maximum power from the grid to the local site. To ensure the same additional power for both directions set one invest variable to 'equal'.",
     )
-    size_preexisting_s2g: float | Literal["equal"] = Field(
+    size_s2g_preexisting: float | Literal["equal"] = Field(
         title="Existing maximum power from local site to grid",
         description="Installed power for the power flow from the local site to the grid in W. To set both directions' existing powers to the same value set one size to 'equal'.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or 'equal'"},
     )
-    capex_preexisting_s2g: bool = Field(
+    capex_s2g_preexisting: bool = Field(
         title="Consider existing block size in capex",
         description="Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_s2g: float | Literal["equal"] | None = Field(
+    size_s2g_max: float | Literal["equal"] | None = Field(
         title="Maximum size of Site2Grid",
         description="Maximum size of Site2Grid including existing size. To enable unlimited investment set this parameter to None. To set both directions' maximum investments to the same value set one maximum investment to 'equal'.",
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None or 'equal'"},
@@ -763,18 +763,18 @@ class StationaryBatteryModel(RevoletionBaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    size_preexisting_storage: float = Field(
+    size_storage_preexisting: float = Field(
         title="Preexisting size",
         description="Installed nominal capacity of the storage in Wh.",
         ge=0,
     )
-    capex_preexisting_storage: bool = Field(
+    capex_storage_preexisting: bool = Field(
         title="Consideration of preexisting block size in capex",
-        description="Trigger whether to consider preexisting component size specified in size_preexisting_storage in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in size_storage_preexisting in initial capex calculation. Replacement capex are unaffected.",
     )
-    size_max_storage: float | None = Field(
+    size_storage_max: float | None = Field(
         title="Maximum size",
-        description="Maximum size of StationaryBattery including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None.",
+        description="Maximum size of StationaryBattery including preexisting size specified in size_storage_preexisting. To enable unlimited investment set this parameter to None.",
         ge=0,
         json_schema_extra={"valid_values_or_format": "[0, inf[ or None"},
     )
@@ -986,18 +986,18 @@ class SubFleetModel(RevoletionBaseModel):
         description="Type of Fleet units contained in the Subfleet. 'ev': Electric Vehicle, 'icev': Internal Combustion Engine Vehicle, 'mb': Mobile Battery",
     )
 
-    size_preexisting_storage: float = Field(
+    size_storage_preexisting: float = Field(
         ge=0.0,
         title="Preexisting size of storage",
         description="Installed nominal capacity of the Fleet unit's storage in Wh per single Fleet unit for all Fleet units within the Subfleet. Parameter is neglected if type_unit is set to 'icev'",
         json_schema_extra={"not_required_for": "`type_unit` == 'icev'"},
     )
 
-    size_max_storage: float | None = Field(
+    size_storage_max: float | None = Field(
         default=None,
         ge=0,
         title="Maximum size of storage",
-        description="Maximum size of storage per Fleet unit including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None",
+        description="Maximum size of storage per Fleet unit including preexisting size specified in size_storage_preexisting. To enable unlimited investment set this parameter to None",
         json_schema_extra={
             "not_required_for": "`type_unit` == 'icev'",
             "valid_values_or_format": "[0, inf[ or None",
@@ -1010,9 +1010,9 @@ class SubFleetModel(RevoletionBaseModel):
         json_schema_extra={"not_required_for": "`type_unit` == 'icev'"},
     )
 
-    capex_preexisting_storage: bool = Field(
+    capex_storage_preexisting: bool = Field(
         title="Consideration of preexisting block size in capex",
-        description="Trigger whether to consider preexisting component size specified in size_preexisting_storage in initial capex calculation. Replacement capex are unaffected.",
+        description="Trigger whether to consider preexisting component size specified in size_storage_preexisting in initial capex calculation. Replacement capex are unaffected.",
     )
 
     capex_fix_glider: float = Field(
@@ -1021,7 +1021,7 @@ class SubFleetModel(RevoletionBaseModel):
         description="Fixed capital expenditures for each of the Fleet units in the SubFleet, irrespective of storage size, representing the base vehicle",
     )
 
-    capex_preexisting_glider: bool = Field(
+    capex_glider_preexisting: bool = Field(
         title="Consideration of preexisting glider in capex",
         description="Trigger whether to consider preexisting glider capex specified in capex_fix_glider in initial capex calculation. Replacement capex are unaffected.",
     )
@@ -1033,7 +1033,7 @@ class SubFleetModel(RevoletionBaseModel):
         json_schema_extra={"not_required_for": "`type_unit` == 'icev'"},
     )
 
-    capex_preexisting_charger: bool = Field(
+    capex_charger_preexisting: bool = Field(
         title="Consideration of preexisting charger in capex",
         description="rigger whether to consider preexisting charger capex specified in capex_fix_charger in initial capex calculation. Replacement capex are unaffected.",
         json_schema_extra={"not_required_for": "`type_unit` == 'icev'"},

@@ -314,7 +314,7 @@ class SystemCore(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_acdc,
+                consider_preexisting=self.capex_acdc_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -330,7 +330,7 @@ class SystemCore(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_dcac,
+                consider_preexisting=self.capex_dcac_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -372,8 +372,8 @@ class SystemCore(ElectricBlock):
         self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
 
         self.init_equalizable_variables(name_vars=["invest_acdc", "invest_dcac"])
-        self.init_equalizable_variables(name_vars=["size_preexisting_acdc", "size_preexisting_dcac"])
-        self.init_equalizable_variables(name_vars=["size_max_acdc", "size_max_dcac"])
+        self.init_equalizable_variables(name_vars=["size_acdc_preexisting", "size_dcac_preexisting"])
+        self.init_equalizable_variables(name_vars=["size_acdc_max", "size_dcac_max"])
 
     def calc_results_flows(self):
         """
@@ -408,7 +408,7 @@ class RenewableSource(SourceBlock, ABC):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_block,
+                consider_preexisting=self.capex_block_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -568,7 +568,7 @@ class FixedDemand(SinkBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 fix=self.capex_fix_metering,
-                consider_preexisting=self.capex_preexisting_metering,
+                consider_preexisting=self.capex_metering_preexisting,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_metering),
             crev=eco.CrevParams(spec_energy=self.crev_spec),
@@ -757,7 +757,7 @@ class ControllableSource(SourceBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_block,
+                consider_preexisting=self.capex_block_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -790,7 +790,7 @@ class GridConnection(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_g2s,
+                consider_preexisting=self.capex_g2s_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -805,7 +805,7 @@ class GridConnection(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_s2g,
+                consider_preexisting=self.capex_s2g_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -894,8 +894,8 @@ class GridConnection(ElectricBlock):
         self.expansion_equal = True if self.invest_g2s == "equal" or self.invest_s2g == "equal" else False
 
         self.init_equalizable_variables(name_vars=["invest_s2g", "invest_g2s"])
-        self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
-        self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
+        self.init_equalizable_variables(name_vars=["size_g2s_preexisting", "size_s2g_preexisting"])
+        self.init_equalizable_variables(name_vars=["size_g2s_max", "size_s2g_max"])
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
@@ -970,7 +970,7 @@ class StorageBlock(ElectricBlock, ABC):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_storage,
+                consider_preexisting=self.capex_storage_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -1325,7 +1325,7 @@ class FleetUnit(BaseBlock):
                 fix=self.capex_fix_glider,
                 ls=self.ls,
                 ccr=self.ccr,
-                consider_preexisting=self.capex_preexisting_glider,
+                consider_preexisting=self.capex_glider_preexisting,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_glider),
             opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
@@ -1402,7 +1402,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 fix=self.capex_fix_charger,
                 ls=self.ls,
                 ccr=self.ccr,
-                consider_preexisting=self.capex_preexisting_charger,
+                consider_preexisting=self.capex_charger_preexisting,
             ),
         )
 

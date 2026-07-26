@@ -367,20 +367,24 @@ class SummaryCollectionBlockVisitor(BlockVisitor[list[pd.DataFrame]]):
 
         # To construct the dataframe for a block, we first collect the individual series into a list.
         summary_list = []
+
+        # get size results
+        summaries_size = [size.result_summary for size in block.sizes.values()]
+        # scenario parameters sharing their name with a size result (e.g. size_storage_preexisting) are only reported once
+        keys_size = {key for summary_size in summaries_size for key in summary_size.index}
+
         # get attributes of type int, float, bool and str for scenario.summary_list
         summary_list.append(
             pd.Series(
                 {
                     key: value
                     for key, value in block.__dict__.items()
-                    if isinstance(value, (int, float, bool, str, np.number))
+                    if isinstance(value, (int, float, bool, str, np.number)) and key not in keys_size
                 }
             )
         )
 
-        # get energy results
-        for size in block.sizes.values():
-            summary_list.append(size.result_summary)
+        summary_list.extend(summaries_size)
 
         # get economic results
         summary_list.append(block.aggregator.result_summary)
