@@ -191,6 +191,7 @@ class SimulationRun:
                 unit="scenario",
                 position=0,
                 dynamic_ncols=True,  # re-layout on terminal resize
+                smoothing=0,  # rate/ETA from the average over all finished scenarios instead of the last one
                 file=sys.stdout,
             )
             # one horizon bar per worker slot below the overall bar (a single bar in single-process mode)
