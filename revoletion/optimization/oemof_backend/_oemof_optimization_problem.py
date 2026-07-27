@@ -183,7 +183,11 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         return self._objective
 
 
-VALID_OEMOF_SOLVERS = {optimization_problem.Solver.CBC, optimization_problem.Solver.GUROBI}
+VALID_OEMOF_SOLVERS = {
+    optimization_problem.Solver.CBC,
+    optimization_problem.Solver.GUROBI,
+    optimization_problem.Solver.HIGHS,
+}
 
 
 class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
@@ -226,12 +230,18 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
         self._logger.info("Building oemof model")
         model = self._create_model()
 
+        solver_args: dict[str, Any] = {}
+        if self._config.solver == optimization_problem.Solver.HIGHS:
+            solver_args["solver_io"] = None
+            model.receive_duals()
+
         self._logger.info("Model built, starting optimization")
         results = model.solve(
             solver=self._config.solver.value,
             solve_kwargs={"tee": self._config.debug},
             # We explicitly handle the return code, so oemof should not raise an error if the result is not optimal.
             allow_nonoptimal=True,
+            **solver_args,
         )
 
         # The optimization result has two status codes: one for the solver and one for the termination condition.
