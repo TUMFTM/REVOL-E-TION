@@ -13,7 +13,7 @@ import pandas as pd
 import windpowerlib
 
 from revoletion import battery as bat
-from revoletion import data_manager, energy, mobility, models, peak_periods, size, time, utils
+from revoletion import data_manager, energy, events, mobility, models, peak_periods, size, time, utils
 from revoletion import economics as eco
 from revoletion import scenario as scn
 
@@ -1177,6 +1177,7 @@ class Fleet(SinkBlock):
 
         self.demand = None
         self.log = None
+        self.events = None
 
         types_units = {self.scenario.parameters[(subfleet, "type_unit")] for subfleet in self.subfleets}
 
@@ -1221,6 +1222,15 @@ class Fleet(SinkBlock):
 
         elif self.data_source in ["log", "logfile"]:
             self.log = self.read_logfile()
+            self.events = events.from_log(log=self.log, step=self.scenario.timestep.td)
+
+        elif self.data_source == "events":
+            # replay the dispatch of a previous run instead of dispatching the demand again
+            self.events = events.read(
+                path=self.scenario.paths.input
+                / utils.set_extension(filename=self.filename, default_extension=".feather"),
+                timezone=self.scenario.location.timezone,
+            )
 
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
@@ -1231,10 +1241,39 @@ class Fleet(SinkBlock):
 
         # check for dispatch inconsistency after subblocks are available
         if any(
-            (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand"])
+            (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand", "events"])
             for subfleet in self.subblocks.values()
         ):
-            raise ValueError("all subfleets with range extension must be actively dispatched")
+            raise ValueError("all subfleets with range extension must be actively dispatched or replayed")
+
+        if self.data_source == "events":
+            self.check_events()
+            for name, value in events.kpis(
+                events=self.events,
+                index=self.scenario.times.sim.dti,
+                step=self.scenario.timestep.td,
+                n_units=sum(subfleet.num for subfleet in self.subblocks.values()),
+            ).items():
+                setattr(self, name, value)
+
+    def check_events(self):
+        """
+        Verify that a replayed event table belongs to this fleet. Units missing from it would silently
+        materialize an idle log instead of raising, which is indistinguishable from a unit never rented.
+        """
+        units_fleet = {unit for subfleet in self.subblocks.values() for unit in subfleet.unit_names}
+        units_events = set(events.served(self.events)["unit"].unique())
+
+        if units_events - units_fleet:
+            raise ValueError(
+                f'Block "{self.name}": event file contains units that the fleet does not have:'
+                f" {sorted(units_events - units_fleet)}"
+            )
+        if units_fleet - units_events:
+            self.scenario.logger.warning(
+                f'Block "{self.name}": no events for units {sorted(units_fleet - units_events)}'
+                f" - they stay at base for the whole simulation"
+            )
 
     def read_logfile(self) -> pd.DataFrame:
         """
@@ -1293,6 +1332,7 @@ class SubFleet(NonElectricBlock):
 
         self.demand = None
         self.log = None
+        self.events = None
 
         cls_fu = {
             "ev": ElectricVehicle,
@@ -1311,13 +1351,18 @@ class SubFleet(NonElectricBlock):
             )
 
     def pre_scenario(self, **kwargs):
-        self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
+        self.events = self.parent.events[self.parent.events["unit"].str.contains(self.name)]
+        # a fleet wide log only exists for fleets read from file - dispatched fleets pass down events
+        # only and let their units materialize what they need
+        if self.parent.log is not None:
+            self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
         super().pre_scenario(**kwargs)
 
 
 class FleetUnit(BaseBlock):
     # energy consumed by the customer while the unit is rented out. This is not an optimization flow, but is derived from the dispatch log in pre_scenario (see below).
-    _FLOW_NAMES = ["consumption"]
+    # "consumption" covers all rentals, "consumption_ext" only the externally invoiced ones.
+    _FLOW_NAMES = ["consumption", "consumption_ext"]
 
     def init_pois(self):
         self.pois["glider"] = eco.POI.create(
@@ -1332,12 +1377,22 @@ class FleetUnit(BaseBlock):
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_glider),
             opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
+        )
+
+        # Revenue is evaluated on its own POI because it has a narrower basis than cost: costs accrue
+        # on every rental, while only external ones are invoiced. Serving the own vehicle fleet as a
+        # range extender is an internal transfer - booking revenue on it would invoice the operator
+        # to themselves.
+        self.pois["rental"] = eco.POI.create(
+            name="rental",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
             crev=eco.CrevParams(
                 spec_dist=self.crev_spec_dist if hasattr(self, "crev_spec_dist") else 0.0,
                 spec_time=self.crev_spec_time if hasattr(self, "crev_spec_time") else 0.0,
                 spec_energy=self.crev_spec_energy if hasattr(self, "crev_spec_energy") else 0.0,
             ),
-            name_flow="consumption",
+            name_flow="consumption_ext",
         )
 
     def __init__(
@@ -1357,27 +1412,35 @@ class FleetUnit(BaseBlock):
         )
 
         self.log = None
+        self.events = None
 
     def pre_scenario(self, **kwargs):
         """
-        slice log file from subfleet
+        take over the dispatch events of this unit and provide its time based log
         """
-        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        dti = self.scenario.times.sim.dti
+        self.events = events.overlapping(events=self.parent.events[self.parent.events["unit"].eq(self.name)], index=dti)
 
-        # ensure that all columns are present in the log file
-        for col_name, col_value in [
-            ("atac", False),
-            ("atdc", False),
-            ("atbase", True),
-            ("consumption", 0.0),
-            ("dist", 0.0),
-            ("dsoc", 0.0),
-        ]:
-            if col_name not in self.log.columns:
-                self.log[col_name] = col_value
+        if self.parent.log is not None:  # fleet read from file -> slice the log instead
+            self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
 
-        # the consumption flow is not part of the optimization and is therefore filled from the dispatch log instead of being written back by the simulation result visitor
-        self.flows["consumption"] = self.log["consumption"].astype(float)
+            # ensure that all columns are present in the log file
+            for col_name, col_value in events.LOG_DEFAULTS.items():
+                if col_name not in self.log.columns:
+                    # a log read from file carries no range extension information -> external rentals
+                    self.log[col_name] = col_value
+        else:
+            self.log = events.materialize_unit(
+                events=self.events,
+                index=dti,
+                step=self.scenario.timestep.td,
+                step_hours=self.scenario.timestep.hours,
+            )
+
+        # the consumption flows are not part of the optimization and are therefore filled from the dispatch log instead of being written back by the simulation result visitor
+        consumption = self.log["consumption"].astype(float)
+        self.flows["consumption"] = consumption
+        self.flows["consumption_ext"] = consumption.where(~self.log["rex"].astype(bool), 0.0)
 
         super().pre_scenario(**kwargs)
 
@@ -1389,9 +1452,18 @@ class FleetUnit(BaseBlock):
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
-        kwargs_eval["dist"] = self.log["dist"]
+        dist = self.log["dist"]
         # convert to active time -> vehicle not at base
-        kwargs_eval["time"] = ~(self.log["atbase"].astype(bool))
+        time = ~(self.log["atbase"].astype(bool))
+
+        if poi.name == "rental":
+            # restrict the revenue basis to external rentals (see init_pois)
+            external = ~(self.log["rex"].astype(bool))
+            dist = dist.where(external, 0.0)
+            time = time & external
+
+        kwargs_eval["dist"] = dist
+        kwargs_eval["time"] = time
         return kwargs_eval
 
 

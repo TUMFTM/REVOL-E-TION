@@ -273,18 +273,11 @@ class AprioriFleetUnit:
 
         self.soh = None
 
-        # get the indices of all nonzero target soc rows in the data
-        self.dsoc_dti = self.block.log.index[self.block.log["dsoc"] != 0]
-
-        # get first timesteps, where vehicle has left the base
-        self.dep_base_dti = self.block.log.index[
-            ~self.block.log["atbase"] & self.block.log["atbase"].shift(periods=1, fill_value=False)
-        ]
-
-        # get first timesteps, where vehicle is at base again
-        self.arr_base_dti = self.block.log.index[
-            self.block.log["atbase"] & ~self.block.log["atbase"].shift(periods=1, fill_value=False)
-        ]
+        # Departures, arrivals and target SOCs are taken from the dispatch events instead of being
+        # recovered from the log: the log only records occupancy, which merges two rentals following
+        # each other without an idle timestep in between into a single absence.
+        self.dep_base_dti = pd.DatetimeIndex(self.block.events["time_dep"]).intersection(self.block.log.index)
+        self.arr_base_dti = pd.DatetimeIndex(self.block.events["time_return"]).intersection(self.block.log.index)
 
         # get first timesteps, where vehicle has left the destination
         self.dep_dest_dti = self.block.log.index[

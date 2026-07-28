@@ -16,9 +16,10 @@ import pandas as pd
 import simpy
 
 # from local packages
-from . import blocks
+from . import events
 
 if TYPE_CHECKING:
+    from . import blocks
     from . import scenario as scn
 
 
@@ -150,16 +151,24 @@ class DispatchEnvironment:
                 dispatcher.transfer_rex_processes()
 
         for dispatcher in self.dispatchers.values():
-            dispatcher.generate_log(dti_output=self.scenario.times.sim.dti)
+            # events have to be collected after the rex transfer above, as the transferred processes
+            # are part of the receiving dispatcher's result
+            dispatcher.generate_events()
             dispatcher.calc_kpis()
             if not self.scenario.settings.largescalemode:
+                # the blocks materialize their own log per unit, so the fleet wide log is only built
+                # here to be written out as an input file for other tools
+                dispatcher.generate_log(dti_output=self.scenario.times.sim.dti)
                 path_log = self.scenario.paths.create_result_path(
                     suffix=f"{self.scenario.name}_{dispatcher.params.name}_log.feather"
                 )
-                dispatcher.save_data(path_log=path_log)
+                path_events = self.scenario.paths.create_result_path(
+                    suffix=f"{self.scenario.name}_{dispatcher.params.name}_events.feather"
+                )
+                dispatcher.save_data(path_log=path_log, path_events=path_events)
 
         for fleet in self.fleets.values():
-            fleet.log = fleet.dispatcher.log
+            fleet.events = fleet.dispatcher.events
             fleet.rate_success = fleet.dispatcher.rate_success
             fleet.rate_blocked = fleet.dispatcher.rate_blocked
             fleet.rate_utilization = fleet.dispatcher.rate_utilization
@@ -294,12 +303,9 @@ class FleetDispatcher:
                 name=f"{self.params.name}_fp", subfleet_params={self.params.name: self.params}, is_vehicle_fleet=True
             )
 
-        unit_names = [unit for sfparams in self.params.subfleet_params.values() for unit in sfparams.units]
-        log_cols = pd.MultiIndex.from_tuples(
-            [(name, col) for name in unit_names for col in ["atbase", "atac", "atdc", "dsoc", "consumption", "dist"]],
-            names=["unit", "time"],
-        )
-        self.log = pd.DataFrame(index=self.time.dti, columns=log_cols)
+        self.unit_names = [unit for sfparams in self.params.subfleet_params.values() for unit in sfparams.units]
+        self.log = None
+        self.events = events.empty()
 
         self.stores = dict()
 
@@ -359,6 +365,7 @@ class FleetDispatcher:
 
     def run_standalone(self, dti_output: pd.DatetimeIndex = None):
         self.env.run()
+        self.generate_events()
         self.generate_log(dti_output=dti_output)
 
     def transfer_rex_processes(self):
@@ -374,6 +381,7 @@ class FleetDispatcher:
                     setattr(rex_process, f.name, getattr(process, rex_name))
                     setattr(rex_process, rex_name, None)
             rex_process.pid = pid
+            rex_process.is_rex = True
             return rex_process
 
         for process in self.processes.values():
@@ -383,40 +391,68 @@ class FleetDispatcher:
             pid = f"{self.params.name}_{process.pid}"
             process.dispatcher_rex.processes.update({pid: switch_prim_rex(process, pid)})
 
+    def generate_events(self):
+        """
+        post DES method
+        collect the dispatched processes into the event table
+
+        Requests that could not be served are kept, so that the table is a complete record of the
+        dispatch. They have no unit and none of the dispatched values.
+        """
+
+        def rows(process):
+            if process.status != events.STATUS_SUCCESS:
+                return [
+                    {
+                        "pid": process.pid,
+                        "status": process.status,
+                        "time_req": process.time_req,
+                        "rex": process.is_rex,
+                    }
+                ]
+
+            return [
+                {
+                    "pid": process.pid,
+                    "unit": unit,
+                    "status": process.status,
+                    "time_req": process.time_req,
+                    "time_dep": process.time_dep,
+                    "time_return": process.time_return,
+                    # the unit is only free again once it has been recharged
+                    "time_available": process.time_return + process.dtime_chg_prim,
+                    "dsoc": process.dsoc_prim,
+                    "energy": process.energy_req_prim,
+                    # the requested distance belongs to the process, not to the individual unit, and
+                    # is therefore repeated for every unit taken along
+                    "dist": process.distance_req if process.distance_req is not None else 0.0,
+                    "rex": process.is_rex,
+                }
+                for unit in process.result_prim
+            ]
+
+        self.events = events.normalize(
+            pd.DataFrame([row for process in self.processes.values() for row in rows(process)], columns=events.COLUMNS)
+        )
+
     def generate_log(self, dti_output: pd.DatetimeIndex = None):
         """
         post DES method
-        convert processes to time based log
+        materialize the event table into a fleet wide time based log
+
+        The blocks of a dispatched fleet materialize their own log per unit and do not use this one -
+        it is built for standalone operation and to be written out as an input file for other tools.
         """
         if dti_output is None:
             dti_output = self.time.dti_base
 
-        # region convert processes to time based log
-        self.log.loc[:, (slice(None), "atbase")] = True
-        self.log.loc[:, (slice(None), "atac")] = False
-        self.log.loc[:, (slice(None), "atdc")] = False
-        self.log.loc[:, (slice(None), "dsoc")] = 0.0
-        self.log.loc[:, (slice(None), "dist")] = 0.0
-        self.log.loc[:, (slice(None), "consumption")] = 0.0
-
-        for process in self.processes.values():
-            if process.status != "success":
-                continue  # skip, go to next process
-
-            time_end = process.time_return - self.time.step
-            power_avg = process.energy_req_prim / (process.steps_rental * self.time.step_hours)
-            dist_avg = process.distance_req / process.steps_rental if process.distance_req is not None else 0.0
-
-            for unit in process.result_prim:
-                self.log.loc[process.time_dep : time_end, (unit, "atbase")] = False
-                self.log.loc[process.time_dep : time_end, (unit, "atac")] = False  # todo destination charging?
-                self.log.loc[process.time_dep : time_end, (unit, "atdc")] = True
-                self.log.loc[process.time_dep : time_end, (unit, "consumption")] = power_avg
-                self.log.loc[process.time_dep : time_end, (unit, "dist")] = dist_avg
-                self.log.loc[process.time_dep, (unit, "dsoc")] = process.dsoc_prim
-
-        self.log = self.log.loc[dti_output, :].convert_dtypes()
-        # endregion
+        self.log = events.materialize(
+            events=events.overlapping(events=self.events, index=dti_output),
+            index=dti_output,
+            units=self.unit_names,
+            step=self.time.step,
+            step_hours=self.time.step_hours,
+        ).convert_dtypes()
 
     def calc_kpis(self):
         """
@@ -424,34 +460,31 @@ class FleetDispatcher:
 
         rate_blocked counts all time units are unavailable for other requests (rental plus subsequent recharging),
         rate_utilization only counts the rental time itself, i.e. the time units are not at base.
+
+        Calculated from the event table rather than from the processes, so that a fleet replaying a
+        dispatch from file arrives at the same KPIs.
         """
-        self.rate_success = np.mean(["success" in process.status for process in self.processes.values()])
+        for name, value in events.kpis(
+            events=self.events,
+            index=self.time.dti_base,
+            step=self.time.step,
+            n_units=sum(store.capacity for store in self.stores.values()),
+        ).items():
+            setattr(self, name, value)
 
-        processes_success = [process for process in self.processes.values() if process.status == "success"]
-
-        time_blocked_total = np.sum(
-            [process.num_prim * (process.dtime_rental + process.dtime_chg_prim) for process in processes_success]
-        )
-        time_utilized_total = np.sum([process.num_prim * process.dtime_rental for process in processes_success])
-        time_total = (self.time.dti_base.max() + self.time.step) - self.time.dti_base.min()
-        n_units = sum(store.capacity for store in self.stores.values())
-
-        try:
-            self.rate_blocked = time_blocked_total / time_total / n_units
-            self.rate_utilization = time_utilized_total / time_total / n_units
-        except TypeError:
-            self.rate_blocked = 0.0
-            self.rate_utilization = 0.0
-
-    def save_data(self, path_log: str = None):
+    def save_data(self, path_log: str = None, path_events: str = None):
         """
         This function saves the converted log dataframe as a suitable example feather file for the energy system model.
         The resulting dataframe can also be handed to the energy system model directly in addition for faster
         delivery through execute_des.
+        The event table is saved alongside it, as it is the dispatch result the log is derived from.
         """
         if path_log is not None:
             # feather does not serialize a non-default index, so move the DatetimeIndex into a column
             self.log.reset_index().to_feather(Path(path_log).resolve())
+
+        if path_events is not None:
+            self.events.to_feather(Path(path_events).resolve())
 
 
 @dataclass
@@ -467,6 +500,9 @@ class DispatchProcess:
     dtime_patience: pd.Timedelta
     steps_patience: int
     processed: Optional[bool] = False
+    # set on the copies created by transfer_rex_processes: the units serve another fleet as range
+    # extenders rather than an external customer
+    is_rex: bool = False
     distance_req: Optional[float] = None
     subfleets: Optional[list] = None
     num_prim: Optional[int] = None

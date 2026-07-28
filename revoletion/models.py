@@ -925,13 +925,13 @@ class FleetModel(RevoletionBaseModel):
         title="Subfleets",
         description="List of names of subfleets in Fleet in no particular order. Each of these subfleets must exist as such in the scenario file.",
     )
-    data_source: Literal["usecases", "demand", "log"] = Field(
+    data_source: Literal["usecases", "demand", "log", "events"] = Field(
         title="Data source",
-        description="Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations.",
+        description="Define whether the fleet's usage should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file, (c) read directly from a time based log file, forgoing a priori simulations, or (d) replayed from an event file written by a previous run, which forgoes the dispatch simulation and reproduces its result exactly. Fleets linked through range extension have to use the same data source, as their dispatch cannot be resolved independently.",
     )
     filename: str | None = Field(
         title="Filename of input file",
-        description="Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Base search path is the scenario file's path, unless explicitly specified.",
+        description="Filename of the file containing (a) usecase definition for DES, (b) sampled demand, (c) a time based log, or (d) an event table, according to ```data_source```. Base search path is the scenario file's path, unless explicitly specified.",
         json_schema_extra={"valid_values_or_format": "string with filename or None"},
     )
     filename_mapper: str = Field(
@@ -1067,19 +1067,19 @@ class SubFleetModel(RevoletionBaseModel):
     crev_spec_time: float = Field(
         ge=0.0,
         title="Specific customer revenues per time",
-        description="Specific customer revenues per time: Revenues from vehicle utilization specified as revenue in currency per used time in hours. Total revenue is calculated by summing up time, distance, and energy revenue",
+        description="Specific customer revenues per time: Revenues from vehicle utilization specified as revenue in currency per used time in hours. Total revenue is calculated by summing up time, distance, and energy revenue. Only rentals to external customers are invoiced: serving another SubFleet as a range extender is an internal service of the same operator and yields no revenue, while its costs still accrue.",
     )
 
     crev_spec_dist: float = Field(
         ge=0.0,
         title="Specific customer revenues per distance",
-        description="Specific customer revenues per distance: Revenues from vehicle utilization specified as revenue in currency per driven distance in km. Total revenue is calculated by summing up time, distance, and energy revenue",
+        description="Specific customer revenues per distance: Revenues from vehicle utilization specified as revenue in currency per driven distance in km. Total revenue is calculated by summing up time, distance, and energy revenue. Only rentals to external customers are invoiced, see ```crev_spec_time```.",
     )
 
     crev_spec_energy: float = Field(
         ge=0.0,
         title="Specific customer revenues per energy",
-        description="Specific customer revenues per energy: Revenues from vehicle utilization specified as revenue in currency per energy used in Wh. Total revenue is calculated by summing up time, distance, and energy revenue",
+        description="Specific customer revenues per energy: Revenues from vehicle utilization specified as revenue in currency per energy consumed by the customer during the rental in Wh. Total revenue is calculated by summing up time, distance, and energy revenue. Only rentals to external customers are invoiced, see ```crev_spec_time```.",
     )
 
     opex_spec_ext_ac: float | str = Field(
