@@ -1316,6 +1316,9 @@ class SubFleet(NonElectricBlock):
 
 
 class FleetUnit(BaseBlock):
+    # energy consumed by the customer while the unit is rented out. This is not an optimization flow, but is derived from the dispatch log in pre_scenario (see below).
+    _FLOW_NAMES = ["consumption"]
+
     def init_pois(self):
         self.pois["glider"] = eco.POI.create(
             name="glider",
@@ -1334,6 +1337,7 @@ class FleetUnit(BaseBlock):
                 spec_time=self.crev_spec_time if hasattr(self, "crev_spec_time") else 0.0,
                 spec_energy=self.crev_spec_energy if hasattr(self, "crev_spec_energy") else 0.0,
             ),
+            name_flow="consumption",
         )
 
     def __init__(
@@ -1371,6 +1375,9 @@ class FleetUnit(BaseBlock):
         ]:
             if col_name not in self.log.columns:
                 self.log[col_name] = col_value
+
+        # the consumption flow is not part of the optimization and is therefore filled from the dispatch log instead of being written back by the simulation result visitor
+        self.flows["consumption"] = self.log["consumption"].astype(float)
 
         super().pre_scenario(**kwargs)
 
