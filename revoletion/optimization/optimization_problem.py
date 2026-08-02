@@ -66,6 +66,19 @@ class Solver(enum.Enum):
 class OptimizationProblemConfig:
     cost_eps: float = 1e-8
 
+    optimality_tol: float | None = 1e-9
+    """Solver tolerance on reduced costs, i.e. the smallest per-unit objective
+    difference the solver still resolves.
+
+    This has to stay well below `cost_eps`, which exists purely to break ties
+    such as a storage charging and discharging in the same timestep. Where the
+    tolerance is the coarser of the two, the epsilon is inside the solver's
+    noise floor, the tie is not broken, and such circular flows survive in the
+    returned dispatch as an equally optimal solution. Every solver's own
+    default is coarser than the default `cost_eps` (Gurobi's is 1e-6, i.e. 100x
+    the epsilon), so leaving this at None disables the tie breaking in
+    practice."""
+
     debug: bool = False
     """Whether to enable debugging for the optimization."""
 

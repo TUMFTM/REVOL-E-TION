@@ -126,6 +126,7 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
 @dataclass
 class SimulationSettings:
     solver: optimization.Solver = optimization.Solver.GUROBI
+    optimality_tol: float | None = 1e-9
     backend: optimization.OptimizationBackend = optimization.OptimizationBackend.OEMOF
     largescalemode: bool = False
     n_processes: int = 1
@@ -182,6 +183,7 @@ class PredictionHorizon:
         self._logger.info("Building optimization problem")
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
+            optimality_tol=self._settings.optimality_tol,
             debug=self._settings.debugmode,
             solver=self._settings.solver,
             invest=True,

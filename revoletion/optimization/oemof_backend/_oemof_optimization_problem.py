@@ -189,6 +189,14 @@ VALID_OEMOF_SOLVERS = {
     optimization_problem.Solver.HIGHS,
 }
 
+# Each solver spells its reduced cost tolerance differently on the command line,
+# see OptimizationProblemConfig.optimality_tol for why it is set at all.
+_OPTIMALITY_TOL_OPTION = {
+    optimization_problem.Solver.CBC: "dualTolerance",
+    optimization_problem.Solver.GUROBI: "OptimalityTol",
+    optimization_problem.Solver.HIGHS: "dual_feasibility_tolerance",
+}
+
 
 class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
     def __init__(
@@ -235,10 +243,23 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
             solver_args["solver_io"] = None
             model.receive_duals()
 
+        cmdline_options: dict[str, Any] = {}
+        if self._config.optimality_tol is not None:
+            option = _OPTIMALITY_TOL_OPTION.get(self._config.solver)
+            if option is None:
+                self._logger.warning(
+                    f"No reduced cost tolerance option known for solver {self._config.solver}; "
+                    f"optimality_tol={self._config.optimality_tol} is ignored and cost_eps "
+                    f"may be inside the solver's own tolerance"
+                )
+            else:
+                cmdline_options[option] = self._config.optimality_tol
+
         self._logger.info("Model built, starting optimization")
         results = model.solve(
             solver=self._config.solver.value,
             solve_kwargs={"tee": self._config.debug},
+            cmdline_options=cmdline_options,
             # We explicitly handle the return code, so oemof should not raise an error if the result is not optimal.
             allow_nonoptimal=True,
             **solver_args,

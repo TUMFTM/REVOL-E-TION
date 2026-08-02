@@ -43,6 +43,15 @@ def main():
         choices=list(Solver),
     )
     parser.add_argument(
+        "-otol",
+        "--optimality_tol",
+        type=float,
+        default=settings_template.optimality_tol,
+        help="Solver tolerance on reduced costs. Has to stay below the scenario's cost_eps, "
+        "otherwise the tie breaking epsilon is inside the solver's noise floor and circular "
+        "flows survive in the dispatch. Pass 0 to leave the solver at its own default.",
+    )
+    parser.add_argument(
         "-bnd",
         "--backend",
         type=OptimizationBackend,
@@ -133,6 +142,8 @@ def main():
 
     settings = SimulationSettings(
         solver=args.solver,
+        # 0 is the CLI's way of saying "leave the solver alone", see the argument's help
+        optimality_tol=args.optimality_tol or None,
         backend=args.backend,
         n_processes=args.n_processes,
         largescalemode=args.largescalemode,
