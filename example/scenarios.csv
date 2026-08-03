@@ -19,6 +19,7 @@ scenario,state,BY,BY,BY,BY
 scenario,consider_holidays,True,True,True,True
 scenario,temp_air,temperature_air.csv,temperature_air.csv,pv,pv
 scenario,cost_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
+scenario,storage_reward_eps,1.00E-8,1.00E-8,1.00E-8,1.00E-8
 scenario,blocks,"{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}","{'dem': 'FixedDemand', 'grid': 'GridConnection', 'gen': 'ControllableSource', 'pv': 'PVSource', 'wind': 'WindSource', 'ess': 'StationaryBattery', 'vehicles': 'Fleet', 'brs': 'Fleet'}"
 core,size_acdc_preexisting,0,0,0,55000
 core,capex_acdc_preexisting,True,True,True,True

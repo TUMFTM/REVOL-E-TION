@@ -18,6 +18,13 @@ in the scenario file. Far above any realistic energy price, so that the optimize
 if the energy system cannot be balanced in any other way.
 """
 
+STORAGE_REWARD_EPS_DEFAULT = 1e-8
+"""
+Default reward per Wh and timestep for energy held in a `StationaryBattery`, applied if `storage_reward_eps` is not given
+in the scenario file. Small enough to only ever decide between dispatches the real costs value equally, see the
+`storage_reward_eps` field for how to size it.
+"""
+
 
 class RevoletionBaseModel(BaseModel):
     _revoletion_docs_title: str
@@ -167,7 +174,33 @@ class ScenarioModel(RevoletionBaseModel):
     )
     cost_eps: float = Field(
         title="Epsilon costs",
-        description="Cost added to some flows in order to disincentivice circular flows",
+        description=(
+            "Cost added to some flows in order to disincentivice circular flows, i.e. a block "
+            "charging and discharging within the same timestep. Only takes effect if it is larger "
+            "than the solver's tolerance on reduced costs, see the `--optimality_tol` argument. "
+            "Being a cost on flows it is the same per Wh whenever it is paid and can therefore not "
+            "order charging in time; that is what `storage_reward_eps` is for."
+        ),
+        ge=0,
+    )
+    storage_reward_eps: float = Field(
+        default=STORAGE_REWARD_EPS_DEFAULT,
+        title="Epsilon storage content reward",
+        description=(
+            "Reward per Wh and timestep for energy held in a `StationaryBattery`, given as a positive magnitude and "
+            "applied by the backends as a negative cost on the storage content. Wherever surplus generation would "
+            "otherwise be curtailed the energy is free, so the "
+            "objective is flat in *when* the battery charges and the solver resolves that arbitrarily, typically by "
+            "front loading each horizon. `cost_eps` cannot break this tie, as a cost on a flow is the same per Wh "
+            "whenever it is paid; only a cost on the content, which accrues per timestep the energy sits there, "
+            "orders earlier over later. Under the 'rh' strategy it doubles as a crude terminal value, since nothing "
+            "else values energy left in the storage when a horizon ends. Applied to stationary batteries only, so "
+            "fleet units are not biased against discharging (V2G). Optional: if not given, it defaults to 1e-8. Keep "
+            "it far below the cheapest real specific cost in the scenario, as energy held for a whole prediction "
+            "horizon earns `n_timesteps * storage_reward_eps`, which has to stay well under e.g. a "
+            "`ControllableSource`'s `opex_spec`, or the model would burn fuel to fill the battery. Set to 0 to "
+            "disable."
+        ),
         ge=0,
     )
     blocks: dict[str, str] = Field(

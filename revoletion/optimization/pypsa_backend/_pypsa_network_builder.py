@@ -159,6 +159,9 @@ class PypsaNetworkBuilder:
         e_max_pu: _OptTimeSeriesArg = None,
         e_initial: float | None = None,
         marginal_cost: _OptTimeSeriesArg = None,
+        # per energy unit and *hour*, as PyPSA defines it; the caller converts from
+        # the per timestep convention the oemof backend's storage_costs uses
+        marginal_cost_storage: _OptTimeSeriesArg = None,
         capital_cost: _OptTimeSeriesArg = None,
         standing_loss: float | None = None,
     ) -> None:
@@ -178,6 +181,7 @@ class PypsaNetworkBuilder:
                 e_max_pu=self._normalize_optional_timeseries_input(e_max_pu),
                 e_initial=e_initial,
                 marginal_cost=self._normalize_optional_timeseries_input(marginal_cost),
+                marginal_cost_storage=self._normalize_optional_timeseries_input(marginal_cost_storage),
                 capital_cost=self._normalize_optional_timeseries_input(capital_cost),
                 standing_loss=self._scale_hourly_to_time_step(standing_loss),
             )

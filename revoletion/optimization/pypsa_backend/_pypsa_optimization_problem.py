@@ -321,6 +321,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             horizon,
             logger,
             config.cost_eps,
+            config.storage_reward_eps,
             enable_investment=config.invest,
             enable_commitment=config.commitment,
         )

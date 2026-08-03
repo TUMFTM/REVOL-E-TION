@@ -183,6 +183,7 @@ class PredictionHorizon:
         self._logger.info("Building optimization problem")
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
+            storage_reward_eps=self.scenario.storage_reward_eps,
             optimality_tol=self._settings.optimality_tol,
             debug=self._settings.debugmode,
             solver=self._settings.solver,

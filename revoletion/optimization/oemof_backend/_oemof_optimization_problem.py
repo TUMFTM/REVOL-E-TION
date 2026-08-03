@@ -223,7 +223,7 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
             config = optimization_problem.OptimizationProblemConfig()
 
         energy_system_ctx = OemofEnergySystemConstructor.create_oemof_energy_system(
-            scenario, horizon, config.cost_eps, logger
+            scenario, horizon, config.cost_eps, logger, config.storage_reward_eps
         )
 
         return cls(energy_system_ctx, scenario, logger, config)

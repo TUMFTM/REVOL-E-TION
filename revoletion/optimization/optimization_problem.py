@@ -66,6 +66,25 @@ class Solver(enum.Enum):
 class OptimizationProblemConfig:
     cost_eps: float = 1e-8
 
+    storage_reward_eps: float = 1e-8
+    """Reward per Wh and timestep for energy held in a stationary storage. Positive
+    magnitude; the backends apply it as a negative cost on the storage content
+    (oemof `storage_costs`, pypsa `marginal_cost_storage`). Set to 0 to disable.
+
+    `cost_eps` sits on flows and is therefore the same per Wh whenever it is paid,
+    so it cannot express *when* to charge. Where surplus generation would otherwise
+    be curtailed the energy is free, the objective is flat in the charge timing, and
+    the solver resolves that arbitrarily - typically by front loading each horizon.
+    A cost on the storage content accrues per timestep the energy sits there and is
+    the only one of the two that orders earlier over later. Under a rolling horizon
+    it doubles as a crude terminal value, since nothing else values energy left in
+    the storage when a horizon ends.
+
+    Keep it far below the cheapest real per-Wh cost in the scenario: energy held for
+    a whole horizon earns `n_timesteps * storage_reward_eps`, which must stay well
+    under e.g. a generator's `opex_spec`, or the model would burn fuel to fill the
+    battery."""
+
     optimality_tol: float | None = 1e-9
     """Solver tolerance on reduced costs, i.e. the smallest per-unit objective
     difference the solver still resolves.
