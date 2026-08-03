@@ -83,7 +83,6 @@ source = ["revoletion"]
 name = "internal"
 url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/simple"
 explicit = true
-authenticate = "always"
 
 [tool.uv.sources]
 revoletion-core = { index = "internal" }
