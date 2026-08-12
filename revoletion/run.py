@@ -279,6 +279,19 @@ class SimulationRun:
 
         if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
             joined_df = pd.concat(scenario_frames, axis=0)
+
+            if self.paths.rerun and self.paths.cashflow_pkl.is_file():
+                # as in join_results: a rerun only covers part of the run, so the
+                # originally successful scenarios have to be carried over from the
+                # previous file - writing only the rerun ones would drop their cashflows
+                cashflows_prev = pd.read_pickle(self.paths.cashflow_pkl)
+                cashflows_prev = cashflows_prev.drop(
+                    index=joined_df.index.get_level_values("scenario").unique(),
+                    level="scenario",
+                    errors="ignore",
+                )
+                joined_df = pd.concat([cashflows_prev, joined_df], axis=0)
+
             joined_df.to_csv(self.paths.cashflow_csv, index=True)
             joined_df.to_pickle(self.paths.cashflow_pkl)
             self.logger.info("Result cashflow file created")
@@ -299,9 +312,18 @@ class SimulationRun:
 
         if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
             joined_results = pd.concat(scenario_frames, axis=1)
+            results_run_prev = None
 
             if self.paths.rerun and self.paths.summary_pkl.is_file():  # only happens for infeasible scenarios
                 results_summary_prev = pd.read_pickle(self.paths.summary_pkl)
+                # the previous summary carries a run block of its own. Keep it for the
+                # scenarios it describes - those were not simulated again - but take it
+                # out of the results, so the block prepended below remains the only one
+                # and every (block, key) row of the merged summary stays unique
+                results_run_prev = results_summary_prev.loc[["run"]].drop(
+                    columns=joined_results.columns, errors="ignore"
+                )
+                results_summary_prev = results_summary_prev.drop(index="run", level="block")
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
 
             # apply same order of scenarios as in scenario input file
@@ -328,6 +350,11 @@ class SimulationRun:
             # convert to DataFrame and repeat for all scenarios
             results_run = pd.DataFrame([results_run] * len(joined_results.columns)).T
             results_run.columns = joined_results.columns
+
+            if results_run_prev is not None:
+                # scenarios carried over from the previous summary keep the run they
+                # were simulated in; only the rerun ones get this run's block
+                results_run[results_run_prev.columns] = results_run_prev
 
             joined_results = pd.concat(
                 [
