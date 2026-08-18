@@ -39,8 +39,11 @@ main_testing:
 
 pre_commit:
   stage: style
+  variables:
+    UV_INDEX_INTERNAL_USERNAME: gitlab-ci-token
   before_script:
     - *default_before_script
+    - export UV_INDEX_INTERNAL_PASSWORD="$CI_JOB_TOKEN"
     - uv sync --group dev
   script:
     - uv run --no-sync pre-commit run --all-files --show-diff-on-failure
