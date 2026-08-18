@@ -10,13 +10,14 @@ variables:
   # so we need to copy instead of using hard links.
   UV_LINK_MODE: copy
   UV_CACHE_DIR: .uv-cache
-
+  UV_INDEX_INTERNAL_USERNAME: gitlab-ci-token
 
 default:
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
   before_script: &default_before_script
     - apt-get update
     - apt-get install -y --no-install-recommends git coinor-cbc
+    - export UV_INDEX_INTERNAL_PASSWORD="$CI_JOB_TOKEN"
   cache:
     paths:
       - $UV_CACHE_DIR
@@ -40,10 +41,8 @@ main_testing:
 pre_commit:
   stage: style
   variables:
-    UV_INDEX_INTERNAL_USERNAME: gitlab-ci-token
   before_script:
     - *default_before_script
-    - export UV_INDEX_INTERNAL_PASSWORD="$CI_JOB_TOKEN"
     - uv sync --group dev
   script:
     - uv run --no-sync pre-commit run --all-files --show-diff-on-failure
