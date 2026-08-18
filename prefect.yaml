@@ -20,7 +20,8 @@ deployments:
       job_variables:
         image: revoletion:local
         networks:
-          - "revoletion_default"
+          - "revoletion_default"   # DNS for prefect-server
+          - "bridge"               # reach host backend via 172.17.0.1 (docker0)
         volumes:
         # Requires the license file at /opt/gurobi/gurobi.lic
         # on all worker machines.

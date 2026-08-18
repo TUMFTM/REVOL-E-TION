@@ -53,6 +53,8 @@ COPY --from=builder --chown=appuser /app/.venv /app/.venv
 COPY --from=builder --chown=appuser /build/revol-e-tion/revoletion /app/revoletion
 
 RUN mkdir /app/results && chown appuser /app/results
+RUN touch /app/results/run.log && chown appuser /app/results/run.log
+RUN mkdir /app/downloads && chown appuser /app/downloads
 
 USER appuser
 

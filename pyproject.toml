@@ -35,6 +35,7 @@ dependencies = [
     "pypsa>=1.2.0",
     "polars[rtcompat]",
     "prefect>=3.7.4",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
