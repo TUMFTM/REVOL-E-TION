@@ -24,9 +24,13 @@ if TYPE_CHECKING:
 
 
 class MultiFilterStorePut(simpy.resources.base.Put):
-    def __init__(self, resource, items, **kwargs):
+    def __init__(self, resource, items, timestamps=None, **kwargs):
+        # timestamps lets a caller restore items with their original put time
+        # (e.g. an item that was reserved via get() but never actually used)
+        # instead of the default of stamping them as put right now.
         now = resource._env.now
-        self.items = [(item, now) for item in items]
+        ts = timestamps if timestamps is not None else [now] * len(items)
+        self.items = list(zip(items, ts))
         super().__init__(resource, **kwargs)
 
 
@@ -34,6 +38,7 @@ class MultiFilterStoreGet(simpy.resources.base.Get):
     def __init__(self, resource, amount=1, filter: Callable[[Tuple[Any, float]], bool] = lambda x: True, **kwargs):
         self.amount = amount
         self.filter = filter
+        self.timestamps = None  # populated in _do_get once the request resolves
         super().__init__(resource, **kwargs)
 
 
@@ -59,7 +64,11 @@ class MultiFilterStore(simpy.resources.base.BaseResource):
             for item in selected:
                 self.items.remove(item)
 
-            # Return only the items, not their timestamps
+            # Keep the original put timestamps available to the caller (e.g. to
+            # restore an item that was reserved but never actually used, via
+            # put(items, timestamps=...) below), even though only the plain
+            # items are returned as the event's value.
+            event.timestamps = [timestamp for item, timestamp in selected]
             event.succeed([item for item, timestamp in selected])
 
 
@@ -656,12 +665,17 @@ class DispatchProcess:
 
                     # ensure resources are put back after concurrent patience and request firing
                     # https://stackoverflow.com/q/75371166
+                    # pass the original timestamps back in: these items were only reserved,
+                    # never actually used, so their charging progress must carry over rather
+                    # than being reset to now - otherwise a fully charged unit can be forced
+                    # to wait out a full recharge again just because its partner resource
+                    # (vehicle or swap battery) wasn't simultaneously available.
                     if self.request_prim.triggered:
                         resource_prim = yield self.request_prim
-                        store_prim.put(resource_prim)
+                        store_prim.put(resource_prim, timestamps=self.request_prim.timestamps)
                     if getattr(self.request_rex, "triggered", False):
                         resource_rex = yield self.request_rex
-                        store_rex.put(resource_rex)
+                        store_rex.put(resource_rex, timestamps=self.request_rex.timestamps)
 
                     continue  # try next store
 
