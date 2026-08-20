@@ -463,6 +463,9 @@ class AprioriFleetUnit:
 
     def calc_soc_target(self, idx: int) -> float:
         # ToDo: add input parameter to specify target SOCs
+        if self._e_storage == 0:  # no onboard battery to schedule (e.g. pure swap/rex unit)
+            return 0.0
+
         if self.atdc[idx]:
             return 0.8
 
@@ -557,6 +560,9 @@ class AprioriFleetUnit:
         """
         calculate charging power from external sources
         """
+        if self._e_storage == 0:  # no onboard battery to charge externally
+            return
+
         ts_i8 = self._dti_i8[idx]
 
         # determine whether destination charging is necessary
@@ -612,6 +618,10 @@ class AprioriFleetUnit:
 
     def calc_soc(self, idx: int) -> None:
         # calculate state of charge based on calculated charging powers, consumption and self discharge
+        if self._e_storage == 0:  # no onboard battery: soc is not meaningful, keep it at 0
+            self.soc[idx + 1] = 0.0
+            return
+
         soc_delta = (self.p_consumption[idx] + self.p_sd[idx] + self.p_chg[idx]) * self._hours / self._e_storage
 
         self.soc[idx + 1] = self.soc[idx] + soc_delta
