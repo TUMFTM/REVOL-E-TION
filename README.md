@@ -136,8 +136,10 @@ pip install -e . --group dev --group tests
 Use the editable mode if you plan to modify the code during development. The previous command also installs additional dependencies required for development and testing, which are not necessary for running the package but required for development.
 
 #### Step 3: MILP Solver
-REVOL-E-TION requires a [pyomo compatible](https://pyomo.readthedocs.io/en/stable/solving_pyomo_models.html#supported-solvers) Mixed Integer Linear Programming (MILP) solver (as does oemof).
-The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well.
+REVOL-E-TION requires a Mixed Integer Linear Programming (MILP) solver (as does oemof).
+Three solvers are supported, selected via ```--solver```: ```cbc```, ```gurobi``` and ```highs```.
+The open-source [HiGHS](https://highs.dev/) solver requires no separate installation, as it is installed automatically as part of the package dependencies.
+The open-source [cbc](https://github.com/coin-or/Cbc/releases/latest) solver works well, but has to be installed separately.
 The proprietary [Gurobi](https://www.gurobi.com/downloads/) solver is recommended however, as it is faster in execution, especially for large problems and offers a free academic license.
 If [Gurobi](https://www.gurobi.com/downloads/) is used, the version of Gurobi and the license file have to match. The python package gurobipy is NOT required to run REVOL-E-TION.
 To ensure this get the version of both your Gurobi license and installation (```grbgetkey --version```).
@@ -175,7 +177,9 @@ REVOL-E-TION can be run using one of two terminal commands, given the correct vi
 | Input directory path            | -in        | --input            | Directory of the scenario file provided in ```--scenario```                  | Directory path to input data files.                                                                                                                                                                                                | string with directory path (absolute or relative to current working directory)                                                                        |
 | Output directory path           | -out       | --output           | Directory "results" in the current working directory (created automatically) | Directory path to save output data.                                                                                                                                                                                                | string with directory path (absolute or relative to current working directory)                                                                        |
 | Rerun previous run              | -rer       | --rerun            | None                                                                         | Rerun scenarios of a previous run which were not completed successfully (due to unexpected termination of SimulationRun or non-deterministic infeasibilities). Specify a path or 'latest' to rerun latest run in output directory. | False, 'latest' or string with directory path (absolute or relative to output directory defined in ```--output```) containing results of previous run |
-| Solver                          | -slv       | --solver           | 'gurobi'                                                                     | Solver to be used for optimization.                                                                                                                                                                                                | string containing lowercase name of pyomo compatible solver to be used                                                                                |
+| Solver                          | -slv       | --solver           | 'gurobi'                                                                     | Solver to be used for optimization. All three solvers are supported by both backends.                                                                                                                                              | 'cbc', 'gurobi', 'highs'                                                                                                                              |
+| Solver optimality tolerance     | -otol      | --optimality_tol   | 1e-9                                                                         | Solver tolerance on reduced costs, i.e. the smallest per-unit objective difference the solver still resolves. Has to stay well below the scenario's ```cost_eps```, otherwise the tie breaking epsilon lies inside the solver's noise floor and circular flows survive in the dispatch. Pass 0 to leave the solver at its own default (coarser than ```cost_eps```, e.g. 1e-6 for Gurobi).                | float, 0 to keep the solver default                                                                                                                   |
+| Optimization backend            | -bnd       | --backend          | 'oemof'                                                                      | Framework used to model the optimization problem. The pypsa backend is experimental and does not yet have feature parity with the oemof backend.                                                                                    | 'oemof', 'pypsa'                                                                                                                                      |
 | Number of Processes             | -np        | --n_processes      | 1                                                                            | Number of parallel processed (i.e. cores) scenarios.                                                                                                                                                                               | integer, is limited to maximum thread count of CPU automatically                                                                                      |
 | Large scale execution mode      | -ls        | --largescalemode   | False                                                                        | Boolean controlling output saving and display detail. Timeseries parameters are omitted in large scale mode.                                                                                                                       | True, False                                                                                                                                           |
 | Debugmode                       | -db        | --debugmode        | False                                                                        | Boolean controlling whether to print solver progress information during the solving process. This is resource intensive and should therefore be avoided unless explicitly necessary.                                               | True, False                                                                                                                                           |
@@ -287,27 +291,11 @@ After a successful optimization it also contains the aggregated techno-economic 
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `starttime` | Start Time | str |  | Start time of the project and the simulation in local time. If no time is given in addition to the date the project starts at 00:00 local time | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' |
-| `timestep` | Time step | str |  | Time step used for the simulation | Formats compatible with pd.to_timedelta() such as 15min, 1h, 1D. |
-| `sim_duration` | Project duration | int or str or None | `sim_endtime` is given | Simulation duration. If given as integer the number is interpreted as number of days. Specifying a pandas.Timedelta() compliant string is also supported. The duration is rounded down to the specified timestep. | [1, inf[ or strings such as '1 day 12 hours 14 minutes' |
-| `sim_endtime` | Simulation end time | str or None | `sim_duration` is given | End time of the simulation in local time. If no time is given in addition to the date the simulation ends at 00:00 local time. The timestep starting at the provided time is not part of the simulation. Only one of the parameters sim_duration and sim_endtime can be specified. The other one has to be None. | 'dd.mm.YYYY' or 'dd.mm.YYYY HH:MM' or None |
-| `prj_duration` | Project duration | int |  | Project duration in years to which the economic results of the simulation duration are extrapolated | [1, inf[ |
-| `compensate_sim_prj` | Specific Capex/Opex compensation trigger | bool |  | Trigger whether to optimize for sim duration (False) or project duration (True) | True, False |
-| `strategy` | Strategy | str |  | Optimization strategy | 'go' or 'rh' (global optimum, rolling horizon) |
-| `len_ph` | Prediction horizon length | float or str or None |  | Length of the prediction horizon in hours. Will be rounded down to specified timestep of simulation. It can be given as float, which is interpreted as number of hours or a pd.Timedelta readable string. Neglected for every optimization strategy other than 'rh'. | ]0, inf[ or string such as 1 day |
-| `len_ch` | Control horizon length | int or str or None |  | Length of the control horizon in hours. Will be rounded down to specified timestep of simulation. It can be given as float, which is interpreted as number of hours or a pd.Timedelta readable string. Neglected for every optimization strategy other than 'rh'. | ]0, inf[ or string such as 12 hours |
-| `truncate_ph` | Truncate Prediction Horizon | bool |  | Toggles whether to truncate predictions horizons to simulation end time when using 'rh' optimization strategy. If activated all horizons are truncated to the simulation end time. Deactivation requires additional input data for all Prediction Horizons even beyond the end of the simulation specified by starttime and sim_duration. | True, False |
-| `invest_max` | Maximum initial investment costs | float or None |  | Limit the initial investment costs to a specific amount. If no limit should be considered set this parameter to None. | ]-inf, inf[ or None |
-| `wacc` | Weighted average cost of capital | float or None |  | Weighted average cost of capital: discount rate for future expenses/revenues and energies per year. | [0, 1] |
-| `currency` | Currency | str |  | Currency used to display results of economic calculations. No influence of calculation itself, only used for displaying. | 'str', e.g. 'EUR', 'USD' |
-| `latitude` | Latitude | float |  | Latitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84 | [-90, 90] |
-| `longitude` | Longitude | float |  | Longitude of the location of the local energy system. Used to determine timezone, pv and wind data. Has to be given in WGS84 | [-90, 90] |
-| `country` | Country  | str or None |  | Country of the location of the local energy system in ISO3166-1 alpha-2 format. If not given, REVOL-E-TION tries to infer the value from the provided coordinates. | 'str', e.g. 'DE', 'US' or or None |
-| `state` | State | str or None |  | State of the country in ISO3166-2 format. If neither country nor state are given, REVOL-E-TION tries to infer the value from the provided coordinates. If country is given, but state is not, state will be neglected. | 'str', e.g. 'EUR', 'USD' or None |
-| `consider_holidays` | Consider holidays | bool or None |  | Consider public holidays. This affects standard load profile generation and mobility sampling. | True, False or None |
-| `temp_air` | Air temperature | float or str or None |  | Air temperature. Can be given as string wih filename to csv file containing the columns 'time' (timezone aware timestamps) and 'temp_air' (temperature in °C), a float or int specifying a constant temperature in °C or the name of a PVSource. | string with filename or name of PVSource instance or ]-inf, inf[ |
-| `cost_eps` | Epsilon costs | float |  | Cost added to some flows in order to disincentivice circular flows | [0, inf[ |
+| `context` | Context |  |  |  |  |
+| `simulation_config` | Simulation Config |  |  |  |  |
+| `system_core` | System Core |  |  |  |  |
 | `blocks` | Blocks | dict |  | All blocks present in the scenario except for the SystemCore, which is added automatically, in the format {block_name: class_name}. Non valid names are 'run', 'scenario' and 'core' (default name for block of class SystemCore). | "{'custom block name': 'class name of block'}" |
+| `block_configs` | Block Configurations | dict |  | All blocks present in the scenario except for the SystemCore, which is added automatically, in the format {block_name: class_name}. Non valid names are 'run', 'scenario' and 'core' (default name for block of class SystemCore). |  |
 
 </details>
 
@@ -331,6 +319,7 @@ For pure AC or DC systems, the respective core cost and size parameters can be s
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `id` | System Core ID | str |  |  |  |
 | `size_preexisting_acdc` | Preexisting AC/DC size | float or str |  | Installed power of the AC/DC converter in the SystemCore in W. Set either size_preexisting_acdc or size_preexisting_dcac to 'equal' to set both preexisting converter sizes to the same value. | [0, inf[ or 'equal' |
 | `capex_preexisting_acdc` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_acdc in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_acdc` | Maximum size of AC/DC converter | float or str or None |  | Maximum size of the AC/DC converter of the SystemCore including preexisting size specified in size_preexisting_acdc. To enable unlimited investment set this parameter to None. Set either size_max_acdc or size_max_dcac to 'equal' to set both converters' maximum investments to the same value. | [0, inf[ or None or 'equal' |
@@ -341,7 +330,7 @@ For pure AC or DC systems, the respective core cost and size parameters can be s
 | `invest_dcac` | Investment into DC/AC converter | bool or str |  | Enable additional investment into the DC/AC converter of the `SystemCore`. Set either `invest_acdc` or `invest_dcac` to 'equal' to force the same expansion for both converters. | True, False |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures for each of the converters in the `SystemCore`: cost in currency per installed power (cumulative size of both converters) in W. | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures for each of the converters in the `SystemCore`: cost in currency per year per installed power (cumulative size of both converters) in W. | [0, inf[ |
-| `opex_spec` | Specific operational expenditures | float or str |  | Specific operational expenditures for each of the converters in the `SystemCore` cost in currency per converted energy in Wh. Energy is measured at each converter's inflow. Can be given as float or filename of a csv file containing a timeseries. | string with filename or [0, inf[ |
+| `opex_spec` | Specific operational expenditures | float or dict |  | Specific operational expenditures for each of the converters in the `SystemCore` cost in currency per converted energy in Wh. Energy is measured at each converter's inflow. Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or [0, inf[ |
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced. | [1, inf[ |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan. | [0, inf[ |
 | `eff_dcac` | DC/AC efficiency | float |  | Efficiency of the DC/AC converter in the `SystemCore`. | [0, 1] |
@@ -367,13 +356,17 @@ Undeferrable (i.e. inflexible) power demand such as households.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `capex_preexisting_metering` | Consideration of preexisting metering capital expensditures | bool |  | Consider existing metering and operational capex in cost calculation. | True, False |
 | `capex_fix_metering` | Fixed capital expenditures for metering infrastructure | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
 | `mntex_fix_metering` | Fixed maintenance expenditures for metering infrastructure and operations | float |  | Fixed maintenance expenditures: total cost in currency per year, irrespective of actual demand | [0.0, inf[ |
-| `load_profile` | Load Profile | str |  | Load profile for the fixed demand. Can be given as filename of a csv file containing a timeseries specifying the fixed demand of the block or as string defining a constant load or one of the standard load profiles by BDEW. If a filename is given, the file has to include the two columns 'time' and 'power' including a timezone aware timestamp and the corresponding power value in W | string with filename, {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'} |
+| `load_profile` | Load Profile | str or dict |  | Load profile for the fixed demand. Can be given as reference to a TimeSeries containing the fixed demand of the block, as a constant string load, or as one of the standard load profiles by BDEW. Standard profiles include 'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'. | Ref[TimeSeries], {'const', 'H0', 'G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'L0', 'L1', 'L2', 'H25', 'G25', 'L25', 'P25', 'S25'} |
 | `consumption_yrl` | Yearly consumption | float |  | Yearly consumption in Wh. Neglected if a filename is provided in load_profile. | [0, inf[ |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
-| `crev_spec` | Specific customer revenue | float or str |  | Specific customer revenue for consumed energy in currency per Wh. Can be given as float or filename of a csv file containing a timeseries. | ]-inf, inf[ |
+| `crev_spec` | Specific customer revenue | float or dict |  | Specific customer revenue for consumed energy in currency per Wh. Can be given as float or file of a csv file containing a timeseries. | Ref[TimeSeries] or float |
 
 </details>
 
@@ -396,16 +389,20 @@ Although the Solcast API requires an active subscription plan, there is a limite
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `size_preexisting_block` | Preexisting size | float |  | Installed peak power of the pv array in in W. | [0, inf[ |
 | `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_block` | Maximum size | float or None |  | Maximum size of `PVSource` including preexisting size specified in `size_preexisting_block`. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the PV system. | True, False |
 | `data_source` | Data source | str |  | Data source for pv power. This can be an API (PVGIS or Solcast) or a file containing data (PVGIS, Solcast or custom file). If Solcast API is chosen a valid API key has to specified in the run's arguments. A custom file has to include the columns 'time' (timezone aware timestamps), 'power_spec' (specific power in W per Wp), 'speed_wind' (in m/s), 'temp_air' (air temperature in °C). | 'pvgis api', 'solcast api', 'pvgis file', 'solcast file', 'file' |
-| `filename` | Filename | str or None |  | Name of a PVGIS, Solcast, or custom csv file if data_source is set to 'pvgis file', 'solcast file', or 'file', respectively. Otherwise set to None. | filename or None |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
+| `filename` | Filename | dict or None |  | Name of a PVGIS, Solcast, or custom csv file if data_source is set to 'pvgis file', 'solcast file', or 'file', respectively. Otherwise set to None. | Ref[TimeSeries] or None |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed peak power in W | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures: cost in currency per year per installed peak power in W | [0, inf[ |
-| `opex_spec` | Specific operational expenditures | float or str |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
+| `opex_spec` | Specific operational expenditures | float or dict |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries | Ref[TimeSeries] or [0, inf[ |
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced | [1, inf[ |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan | [0, inf[ |
 | `eff_block` | Efficiency | float |  | Efficiency of the PV array, taking into account all losses occurring from insulation up to the point of feeding power into the bus to which the block is connected. | [0, 1] |
@@ -438,17 +435,21 @@ For the latter option, a PVSource block must exist.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `size_preexisting_block` | Preexisting size | float |  | Installed rated power of wind turbine in W | [0, inf[ |
 | `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_block` | Maximum size | float or None |  | Maximum size of WindSource including existing size. To enable unlimited investment set this parameter to None | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the wind turbine | True, False |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
-| `data_source` | Data source | str |  | Data source for wind power. Wind power can either be given as a separate csv file or calculated from a PVSource block's data. | 'file' or a string with the name of a block of class PVSource |
+| `data_source` | Data source | str or None |  | Data source for wind power. Wind power can either be given as a separate csv file or calculated from a PVSource block's data. | Ref[TimeSeries] or a string with the name of a block of class PVSource |
 | `height` | Height | float |  | Hub height of the wind turbine in meters | [0, inf[ |
-| `filename` | Filename | str or None |  | Filename of csv file containing wind power data including the columns 'time' (timezone aware timestamps) and 'power_spec' (specific power in W per rated power in W). Only considered if 'file' is given in data_source. | string with filename or None |
+| `filename` | Filename | dict or None |  | Filename of csv file containing wind power data including the columns 'time' (timezone aware timestamps) and 'power_spec' (specific power in W per rated power in W). Only considered if 'file' is given in data_source. | Ref[TimeSeries] or None |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed rated power in W | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures: cost in currency per year per installed rated power in W | [0, inf[ |
-| `opex_spec` | Specific operational expenditures | float or str |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries. | string with filename |
+| `opex_spec` | Specific operational expenditures | float or dict |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries. | Ref[TimeSeries] or float |
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced | [1, inf[ |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan. | [0, inf[ |
 | `eff_block` | Efficiency | float |  | Efficiency of the wind turbine. | [0, 1] |
@@ -473,14 +474,18 @@ Independently controllable power sources (e.g. fossil generator, hydro power pla
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `size_preexisting_block` | Preexisting size | float |  | Installed rated power of the source in W | [0, inf[ |
 | `capex_preexisting_block` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in `size_preexisting_block` in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_block` | Maximum size | float or None |  | Maximum size of ControllableSource including preexisting size specified in size_preexisting_block. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_block` | Investment | bool |  | Enable additional investment into the power source | True, False |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed power in W | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures: cost in currency per year per installed peak power in W | [0, inf[ |
-| `opex_spec` | Specific operational expenditures | float or str |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
+| `opex_spec` | Specific operational expenditures | float or dict |  | Specific operational expenditures: cost in currency per generated energy in Wh. Can be given as float or filename of a csv file containing a timeseries | Ref[TimeSeries] or [0, inf[ |
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced | [1, inf[ |
 | `ccr` | Cost change ratio | float |  | Cost change ratio of the block's nominal price per year to be considered for replacement after its lifespan | [0, inf[ |
 | `eff_block` | Efficiency | float |  | Efficiency of the source | [0, 1] |
@@ -505,6 +510,11 @@ Physical grid connection. A GridConnection instance requires one or multiple Gri
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `size_preexisting_g2s` | Preexisting connection power from public grid to local site | float or str |  | Installed power for the power flow from the public grid to the local site (Grid2Site) in W. Set either `size_preexisting_g2s` or `size_preexisting_s2g` to 'equal' to set both directions' sizes to the same value. | [0, inf[ or 'equal' |
 | `capex_preexisting_g2s` | Consideration of preexisting AC/DC size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_g2s in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_g2s` | Maximum size of Grid2Site | float or str or None |  | Maximum size of Grid2Site including preexisting size specified in size_preexisting_g2s. To enable unlimited investment set this parameter to None. Set either size_max_g2s or size_max_s2g to 'equal' to set both directions' maximum investments to the same value. | [0, inf[ or None or 'equal' |
@@ -513,7 +523,6 @@ Physical grid connection. A GridConnection instance requires one or multiple Gri
 | `capex_preexisting_s2g` | Consider existing block size in capex | bool |  | Trigger whether to consider existing component size in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_s2g` | Maximum size of Site2Grid | float or str or None |  | Maximum size of Site2Grid including existing size. To enable unlimited investment set this parameter to None. To set both directions' maximum investments to the same value set one maximum investment to 'equal'. | [0, inf[ or None or 'equal' |
 | `invest_s2g` | Investment into Site2Grid | bool or str |  | Enable additional investment into the maximum power from the local site to the grid. To ensure the same additional power for both directions set one invest variable to 'equal'. | True, False |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `peakshaving` | Activation of peak shaving | bool |  | Trigger whether to consider peak power costs in the optimization (leads to peak shaving). Peak power costs will always be considered in the post-processing regardless the parameter specified here. | True, False |
 | `peak_period` | Peak power cost period | str |  | Peak power cost period. | 'day', 'week', 'month', 'quarter', 'year' |
 | `peak_period_start` | Peak power cost period start | str |  | Start of the peak power periods. If 'calendar' is chosen, peak periods start at the beginning of the calendar period (e.g. at 01/01 for yearly peak periods). If 'simulation' is chosen, the first peak period starts at the simulation start time. | 'calendar', 'simulation' |
@@ -547,9 +556,14 @@ Virtual GridMarket connected to a specific physical GridConnection.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `res_only` | Renewable energy sources only | bool |  | If activated, selling energy to the grid is restricted to energy produced by renewable energies blocks (PVSource, WindSource) in the current timestep and energy stored in a storage with activated res_only parameter. | True, False |
-| `opex_spec_g2s` | Specific operational expenditures for public grid to local site | str or float |  | Specific operational expenditures for buying energy: cost in currency per energy in Wh. Can be given as float or filename of a csv file containing a timeseries. | string with filename or ]-inf, inf[ |
-| `opex_spec_s2g` | Specific operational expenditures for local site to public grid | str or float |  | Specific operational expenditures for selling energy: cost in currency per energy in Wh (set this parameter to a negative number to earn money for feeding in energy). Can be given as float or filename of a csv file containing a timeseries. | string with filename or ]-inf, inf[ |
+| `opex_spec_g2s` | Specific operational expenditures for public grid to local site | float or dict |  | Specific operational expenditures for buying energy: cost in currency per energy in Wh. Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or ]-inf, inf[ |
+| `opex_spec_s2g` | Specific operational expenditures for local site to public grid | float or dict |  | Specific operational expenditures for selling energy: cost in currency per energy in Wh (set this parameter to a negative number to earn money for feeding in energy). Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or ]-inf, inf[ |
 | `pwr_s2g` | Power limit from public grid to local site | float or None |  | Power limit considered for the power flow from the public grid to the local site in W. If no additional limit for the market but only the limits of the physical grid connection should be taken into account, set to None. | [0, inf[ or None |
 | `pwr_g2s` | Power limit from public grid to local site | float or None |  | Power limit considered for the power flow from the local site to the public grid in W. If no additional limit for the market but only the limits of the physical grid connection should be taken into account, set to None. | [0, inf[ or None |
 
@@ -575,11 +589,15 @@ Storage modelling is done linearly without SOC or temperature based limits of ch
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `size_preexisting_storage` | Preexisting size | float |  | Installed nominal capacity of the storage in Wh. | [0, inf[ |
 | `capex_preexisting_storage` | Consideration of preexisting block size in capex | bool |  | Trigger whether to consider preexisting component size specified in size_preexisting_storage in initial capex calculation. Replacement capex are unaffected. | True, False |
 | `size_max_storage` | Maximum size | float or None |  | Maximum size of StationaryBattery including preexisting size specified in size_preexisting_storage. To enable unlimited investment set this parameter to None. | [0, inf[ or None |
 | `invest_storage` | Investment | bool |  | Enable additional investment into the storage capacity. | True, False |
-| `system` | System | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
 | `res_only` | Renewable energy sources only | bool |  | If activated, only energy from renewable sources (PVSource, WindSource) can be stored in the storage. This allows to feed energy from the storage into GridMarket instances with activated res_only parameter. | True, False |
 | `balanced` | Balanced Storage Content | bool |  | If activated, the storage's energy content at the start of the simulation has to be identical to the energy content at the end of the simulation. The parameter is neglected for Rolling Horizon optimization. | True, False |
 | `aging` | Consideration of battery aging | bool |  | Battery aging calculation after each horizon. Aging results are taken into account for the next horizon by limiting the available SOC range. Maximum power is not reduced. | True, False |
@@ -587,7 +605,7 @@ Storage modelling is done linearly without SOC or temperature based limits of ch
 | `temp_battery` | Battery temperature | float or str |  | Battery temperature used as stress factor in aging model. Can be set to a constant value, defined using the timeseries of a PVSource block as this contains a temperature timeseries, or set to None to inherit the temperature specified in temp_air of the Scenario. | string with name of block of class StationaryBattery or ]-inf, inf[ |
 | `capex_spec` | Specific capital expenditures | float |  | Specific capital expenditures: cost in currency per installed nominal storage capacity in Wh. | [0, inf[ |
 | `mntex_spec` | Specific maintenance expenditures | float |  | Specific maintenance expenditures: cost in currency per year per installed nominal storage capacity in Wh. | [0, inf[ |
-| `opex_spec` | Specific operational expenditures | float or str |  | Specific operational expenditures: cost in currency per energy stored in the storage in Wh. Energy is measured at storage inflow. Can be given as float or filename of a csv file containing a timeseries. | string with filename or [0, inf[ |
+| `opex_spec` | Specific operational expenditures | float or dict |  | Specific operational expenditures: cost in currency per energy stored in the storage in Wh. Energy is measured at storage inflow. Can be given as float or filename of a csv file containing a timeseries. | Ref[TimeSeries] or [0, inf[ |
 | `ls` | Lifespan | float |  | Lifespan of the block in years after which it will be replaced. | [1, inf[ |
 | `eff_storage_roundtrip` | Roundtrip efficiency | float |  | Storage roundtrip efficiency. Charge and discharge efficiency is calculated using sqrt(eff_roundtrip). | [0, 1] |
 | `eff_acdc` | Efficiency of the AC/DC converter | float |  | Efficiency of the AC/DC converter connecting the block to the AC bus. This parameter is neglected if the block is connected to the DC bus. | [0, 1] |
@@ -620,15 +638,19 @@ Fleet consisting of one or several SubFleets.
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
-| `system` | System | str |  | The bus (AC or DC) the block is connected to | 'ac', 'dc' |
-| `subfleets` | Subfleets | list |  | List of names of subfleets in Fleet in no particular order. Each of these subfleets must exist as such in the scenario file. |  |
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `data_source` | Data source | str |  | Define whether usage timeseries (log file) should be (a) generated through mobility and dispatch simulation when given a usecase file, (b) generated through dispatch simulation only given a demand file or (c) read directly from a log file, forgoing a priori simulations. | 'usecases', 'demand', 'log' |
-| `filename` | Filename of input file | str or None |  | Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Base search path is the scenario file's path, unless explicitly specified. | string with filename or None |
-| `filename_mapper` | Filename of TimeframeMapper file | str |  | Filename of the file containing the mapping function assigning timeframes to individual days (e.g. weekday/weekend) for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. Base search path is the scenario file's path, unless explicitly specified. | string with filename of python file with or without '.py' |
+| `filename` | Filename of input file | dict or None |  | Filename of csv file containing (a) usecase definition for DES, (b) sampled demand, or None, if the usage of a log file is specified in ```data_source```. Base search path is the scenario file's path, unless explicitly specified. | Ref[TimeSeries] or None |
+| `filename_mapper` | Filename of TimeframeMapper file | dict or None |  | Filename of the file containing the mapping function assigning timeframes to individual days (e.g. weekday/weekend) for the Group's DES with or without the ending '.py'. The file itself has to be placed in the input directory. Base search path is the scenario file's path, unless explicitly specified. | Ref[TimeSeries] of python file with or without '.py' |
 | `pwr_lim_f2s` | Power limit of fleet to site | float or None |  | Maximum power flow from Fleet to the local site (Fleet2Site) in W. To enable unlimited power flow set this parameter to None. | [0, inf[ or None |
 | `pwr_lim_s2f` | Power limit of site to fleet | float or None |  | Maximum power flow from the local site to Fleet (Site2Fleet) in W. To enable unlimited power flow set this parameter to None. | [0, inf[ or None |
-| `opex_spec_f2s` | Specific operational expenditures for fleet charging | float or str |  | Specific operational expenditures for Fleet charging: cost in currency per energy charged into Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
-| `opex_spec_s2f` | Specific operational expenditures for fleet discharging | float or str |  | Specific operational expenditures for Fleet discharging: cost in currency per energy discharged from Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
+| `opex_spec_f2s` | Specific operational expenditures for fleet charging | float or dict |  | Specific operational expenditures for Fleet charging: cost in currency per energy charged into Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or [0, inf[ |
+| `opex_spec_s2f` | Specific operational expenditures for fleet discharging | float or dict |  | Specific operational expenditures for Fleet discharging: cost in currency per energy discharged from Fleet in Wh. This can be used to simulate different operators for fleets and local energy grid. Negative costs can lead to unwanted behavior (e.g. wasting energy)! Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or [0, inf[ |
+| `subfleets` | Subfleets | list |  | List of names of subfleets in Fleet in no particular order. Each of these subfleets must exist as such in the scenario file. |  |
 
 </details>
 
@@ -651,6 +673,11 @@ Behavior can either be given or generated within the integrated Discrete Event S
 
 | Key | Name | Type | Not required for | Description | Valid values or format |
 |-----|------|------|------------------|-------------|------------------------|
+| `name` | Block name | str |  | Name of the block |  |
+| `id` | Block ID | str |  | Unique ID of the block. Only used internally. |  |
+| `enabled` | Block enabled | bool |  | Whether the block is enabled or not. | True, False |
+| `bus` | Bus | str |  | The bus (AC or DC) the block is connected to. | 'ac', 'dc' |
+| `revoletion_model` | Revoletion model | str |  | The revoletion model schema the block is connected to. This is only used internally. |  |
 | `num` | Number of fleet units | int |  | Number of fleet units within the SubFleet. | [1, inf[ |
 | `type_unit` | Fleet unit type | str |  | Type of Fleet units contained in the Subfleet. 'ev': Electric Vehicle, 'icev': Internal Combustion Engine Vehicle, 'mb': Mobile Battery | 'ev', 'icev', 'mb' |
 | `size_preexisting_storage` | Preexisting size of storage | float | `type_unit` == 'icev' | Installed nominal capacity of the Fleet unit's storage in Wh per single Fleet unit for all Fleet units within the Subfleet. Parameter is neglected if type_unit is set to 'icev' | [0.0, inf[ |
@@ -667,15 +694,15 @@ Behavior can either be given or generated within the integrated Discrete Event S
 | `opex_spec_dist` | Specific operational expenditures per distance | float |  | Specific operational expenditures per distance: cost in currency per driven distance in km | [0.0, inf[ |
 | `crev_spec_time` | Specific customer revenues per time | float |  | Specific customer revenues per time: Revenues from vehicle utilization specified as revenue in currency per used time in hours. Total revenue is calculated by summing up time and distance revenue | [0.0, inf[ |
 | `crev_spec_dist` | Specific customer revenues per distance | float |  | Specific customer revenues per distance: Revenues from vehicle utilization specified as revenue in currency per driven distance in km. Total revenue is calculated by summing up time and distance revenue | [0.0, inf[ |
-| `opex_spec_ext_ac` | Specific operational expenditures for external AC charging | float or str | `type_unit` == 'icev' | Specific operational expenditures for external AC charging: cost in currency per charged energy in Wh. Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
-| `opex_spec_ext_dc` | Specific operational expenditures for external DC charging | float or str | `type_unit` == 'icev' | Specific operational expenditures for external DC charging: cost in currency per charged energy in Wh. Can be given as float or filename of a csv file containing a timeseries | string with filename or [0, inf[ |
+| `opex_spec_ext_ac` | Specific operational expenditures for external AC charging | float or dict | `type_unit` == 'icev' | Specific operational expenditures for external AC charging: cost in currency per charged energy in Wh. Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or [0, inf[ |
+| `opex_spec_ext_dc` | Specific operational expenditures for external DC charging | float or dict | `type_unit` == 'icev' | Specific operational expenditures for external DC charging: cost in currency per charged energy in Wh. Can be given as float or reference to a TimeSeries. | Ref[TimeSeries] or [0, inf[ |
 | `capex_spec` | Specific capital expenditures for storage | float |  | Specific capital expenditures for Fleet unit's storages: cost in currency per installed nominal storage capacity in Wh | [0.0, inf[ |
 | `rex` | Range extender SubFleet | str | `type_unit` == 'icev' | Name of a Mobile Battery SubFleet which can be used as Range Extender. Neglected, if (a) DES is not activated or (b) unit_type is not 'ev' | string with name of SubFleet |
 | `mode_scheduling` | Scheduling Mode | str |  | Scheduling Mode for charging the SubFleet's Fleet units: Available options are uncoordinated charging ('uc'), three different rulebased strategies (equal distribution of the available power - 'equal', first come first served - 'fcfs', soc based charging - 'soc') and optimized charging ('oc'). Bidirectional charging is only available for 'oc' | 'uc', 'equal', 'fcfs', 'soc', 'oc' |
 | `forecast_hours` | Forecast hours | float | `type_unit` == 'icev' | Neglected, if mode_scheduling is 'oc': Defines how much time in advance a trip can be seen by the charging scheduler in order to adjust the target SOC based on soc_target_high and soc_target_low. Feature currently not enabled | [0.0, inf[ |
 | `aging` | Consideration of battery aging | bool | `type_unit` == 'icev' | Trigger whether to calculate battery aging for the Fleet unit's storage after each horizon. Aging results are taken into account for the next horizon by limiting the available SOC range. Maximum power is not reduced | True, False |
 | `chemistry` | Cell chemistry | str | `type_unit` == 'icev' | Cell chemistry of the storage to select the correct aging model for aging calculation | 'NMC', 'LFP' |
-| `temp_battery` | Battery temperature | float or str | `type_unit` == 'icev' | Battery temperature used as stress factor in aging model. Can be set to a constant value, defined using the timeseries of a PVSource block as this contains a temperature timeseries, or set to None to inherit the temperature specified in temp_air of the Scenario | string with name of block of class SubFleet or ]-inf, inf[ |
+| `temp_battery` | Battery temperature | float or str or None | `type_unit` == 'icev' | Battery temperature used as stress factor in aging model. Can be set to a constant value, defined using the timeseries of a PVSource block as this contains a temperature timeseries, or set to None to inherit the temperature specified in temp_air of the Scenario | string with name of block of class SubFleet or ]-inf, inf[ |
 | `q_loss_cal_init` | Initial capacity loss due to calendric aging | float | `type_unit` == 'icev' | Initial capacity loss of the storage at simulation start due to calendric aging given as fraction of the total capacity. The capacity-related initial SOH is calculated by 1 - (q_loss_cal_init + q_loss_cyc_init) | [0.0, 1.0] |
 | `q_loss_cyc_init` | Initial capacity loss due to cyclic aging | float | `type_unit` == 'icev' | Initial cyclic loss of the storage at simulation start due to cyclic aging given as fraction of the total capacity. The capacity-related initial SOH is calculated by 1 - (q_loss_cal_init + q_loss_cyc_init) | [0.0, 1.0] |
 | `soc_init` | Initial SOC | float | `type_unit` == 'icev' | Initial SOC of the storage at simulation start | [0.0, 1.0] |
@@ -707,6 +734,7 @@ The DES takes stochastically defined mobility or energy demand in multiple use c
 This enables to model the mobility/energy demand independently of the (Sub)Fleet's size.
 However, the DES is run a priori to the dispatch/sizing optimization, so no consideration of whether the resulting FleetUnit dispatch is beneficial to the energy system is taken and limitations through battery aging and/or other limitations have to be covered by safety margins in dispatch to achieve a feasible solution to the energy system's optimization problem.
 Through the sampling, the DES also makes REVOL-E-TION outputs non-deterministic once it is activated even though the actual core optimization is deterministic.
+A run can be made reproducible by writing out its dispatch events and feeding them back in through the 'events' data source, see "Dispatch events and the time based log" below.
 The DES is run separately for every scenario in a simulation run, but only once per scenario, as some Fleets might be linked and can therefore not be simulated independently.
 It is built on the [simpy](https://simpy.readthedocs.io/en/latest/) library and is implemented in the ```dispatch.py``` file.
 A modification is made to simpy to enable processes to require multiple resources at once, which is necessary for mobile battery use cases requiring high energy.
@@ -714,22 +742,37 @@ A modification is made to simpy to enable processes to require multiple resource
 The core element of the DES is a so-called environment which is populated with processes that each represent one rental of a FleetUnit from a store holding those FleetUnits.
 The request time for each rental is sampled from a dual normal distribution over time of day defined for each timeframe and use case in the use case definition csv file.
 An example use case file is distributed with REVOL-E-TION for both Vehicles and mobile batteries (for explanation see chapter "Classes of Blocks") in the respective input directories.
-Inside the code for the DES, RentalSystem instances are created for each SubFleet in the scenario as well as a RentalProcess instance for each process.
+Inside the code for the DES, a FleetDispatcher instance is created for each Fleet in the scenario, holding one store of FleetUnits per SubFleet, as well as a DispatchProcess instance for each request.
 
-Each process not only covers the actual rental time (which itself is made up of an active part and idle time, both of which are sampled stochastically), but also a block time to give the energy system enough time to recharge before renting the FleetUnit out again to a new request.
-For vehicle SubFleets, this block time is placed before each rental, while for mobile battery SubFleets it is placed after.
-<mark>explanation of block time placement not clear</mark>.
+Each process not only covers the actual rental time (which itself is made up of an active part and idle time, both of which are sampled stochastically), but also a charging time to give the energy system enough time to recharge the FleetUnit.
+This charging time follows from the energy the upcoming rental requires and from the FleetUnit's charging power, and it is placed before the rental: a FleetUnit can only be taken from its store once it has been back at base for at least that long.
+The same holds for range extension FleetUnits with their own energy share, so a rental only starts once both the primary and the range extension FleetUnits have been resting long enough.
+Since the charging time is derived from the request rather than from the FleetUnit's state, a FleetUnit without a traction battery of its own, which relies entirely on range extension, is available again immediately upon its return.
+Note that the dispatch KPI "rate_blocked" attributes the charging time to the rental that caused it and therefore counts it after the return rather than before the departure.
 
-Since vehicle SubFleets can be linked to mobile battery SubFleets through the scenario parameter "rex_cs" for range extension, VehicleRentalSystems can also populate BatteryRentalSystems with additional processes representing range extension as a use case.
-Such a process then has a primary and secondary FleetUnit, both of which need to be available for the process to be successful.
-For each RentalSystem, the primary FleetUnit is the one from that RentalSystem, while the secondary is from the linked one.
-This results in range extension batteries being treated as primary in the BatteryRentalSystem and as secondary in the VehicleRentalSystem.
+Since vehicle SubFleets can be linked to mobile battery SubFleets through the scenario parameter "rex" for range extension, a process of a vehicle Fleet can require FleetUnits from its own store and from the linked battery Fleet's store at the same time.
+Such a process then has a primary and a range extension FleetUnit, both of which need to be available for the process to be successful.
+Once the environment has been run, every successful process that took range extension FleetUnits along is copied into the linked battery Fleet's dispatcher with the two roles swapped, so that the batteries also appear as rented within their own Fleet.
+These copies are flagged as range extension, which is what distinguishes an internal service to another SubFleet of the same operator from an external rental in the economic evaluation.
 
 Once all stores have been populated with FleetUnits and all processes have been created, the environment is run and determines which processes are successful (i.e. get their required FleetUnits) and which ones fail.
-The successful processes are then converted to a time based log format for the core energy system optimization to use as input.
-This contains columns of availability in the energy system(called "<FleetUnit_name>_atbase"), energy consumption while not at base, availability of external AC and DC charging and the Delta SOC ("<FleetUnit_name>_dsoc") of a rental for every FleetUnit and timestep.
-For vehicle SubFleets, this is expanded by a column with the trip distance, as even with a constant consumption this is no more traceable from the energy consumption due to the possibility of range extension.
+
+#### Dispatch events and the time based log
+The result of the DES is an event table, implemented in the ```events.py``` file: essentially the demand list after dispatch, with one row per rented FleetUnit and process holding the requested time, the actual departure and return, the FleetUnit taken, the consumed energy, the driven distance and the Delta SOC.
+Requests that could not be served are kept as rows without a FleetUnit and without dispatched values, which makes the table a complete record of the dispatch and allows the dispatch KPIs (success, utilization and blocked rate) to be derived from it.
+Values are stored per event rather than per timestep, so the table is independent of the simulation timestep, and departure and return are resolved exactly.
+A row is additionally flagged if the rental serves another SubFleet as a range extender rather than an external customer, which is what keeps the operator from invoicing themselves (see "crev_spec_time" in the parameter tables above).
+
+The energy system model works per timestep, so each FleetUnit materializes its own time based log from its events.
+This contains columns of availability in the energy system (called "atbase"), energy consumption while not at base, availability of external AC and DC charging, the Delta SOC ("dsoc") of a rental, the trip distance and the range extension flag ("rex").
+Event values are distributed evenly over the rental period, as the DES resolves no intra-rental detail.
+The distance is needed for vehicle SubFleets because even with a constant consumption it is no more traceable from the energy consumption due to the possibility of range extension.
 Only if the dispatch of the FleetUnits is left to the optimizer (as opposed to the a priori power scheduling) myopically (i.e. in the "rh" strategy"), the 'dsoc' column is actually transferred to a hard minimum SOC constraint for the optimizer, as all other cases handle this intrinsically.
+
+A Fleet reading a time based log from file ("log" data source) keeps that log as it is and reconstructs its events from the occupancy it records.
+This reconstruction is necessarily incomplete: a log holds no record of requests that were never served, none of the recharging after a return, and no range extension flag, so such a Fleet reports no dispatch KPIs and all of its rentals are treated as external.
+Two rentals following each other without an idle timestep in between are indistinguishable in a log and are recovered as a single event.
+Replaying an event file ("events" data source) has none of these limitations and reproduces the dispatch of the run it was written by exactly, which is the way to obtain deterministic results despite the stochastic sampling of the DES.
 
 ### A Priori Power Scheduling
 Dependent on the chosen scheduling method ("mode_scheduling") of a SubFleet a charging schedule for the SubFleet's FleetUnits is calculated before the linear optimization starts (a priori).
@@ -793,6 +836,8 @@ There, the following files are saved (some of them optionally):
 - A single result summary file named ```<runtimestamp>_<scenario_file_name>_summary.csv``` containing all noncomplex (int, float, bool or string) attributes of the SimulationRun, Scenario, and all blocks in the scenario.
 - A single result summary file named ```<runtimestamp>_<scenario_file_name>_summary.pkl```. This is the same as the summary csv file but in pickle format which eases further processing.
 - A single scenario status file named ```<runtimestamp>_<scenario_file_name>_status.csv``` containing the current status ('started', 'fully initialized', 'completed horizon x out of y', 'successful', 'failed') and occurring exception tracebacks of all scenarios in the run. It is constantly updated during the run and can be used for monitoring purposes and filtering in the analysis of the results.
-- (Optional) One result timeseries file per scenario named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_results_ts.csv```. This contains all timeseries results of the energy system for every timestep, facilitating easy plotting.
-- (Optional) One DES processes and one log file per SubFleet named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_<subfleet_name>_processes.csv``` and ```<runtimestamp>_<scenario_name>_<commodity_system_name>_log.csv```. This facilitates debugging and reuse as an input for another scenario that is then deterministically run on that behavior.
+- (Optional) One result timeseries file per scenario named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_results_ts.feather```. This contains all timeseries results of the energy system for every timestep, facilitating easy plotting.
+- (Optional) One sampled demand file per Fleet whose usage is generated from use cases, named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_<fleet_name>_demand.feather```. This holds the requests the DES was run on and can be fed back in through the 'demand' data source to skip the sampling stage. Input files are accepted in both csv and feather format.
+- (Optional) One time based log file per dispatched Fleet named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_<fleet_name>_log.feather```. This is what the energy system model is run on and can be fed back in through the 'log' data source.
+- (Optional) One event file per dispatched Fleet named ```<runtimestamp>_<scenario_file_name>_<scenario_name>_<fleet_name>_events.feather```. This is the dispatch result the log is derived from and can be fed back in through the 'events' data source to replay the run exactly. It supersedes the log as a reuse format, as it additionally holds the requests that could not be served, the range extension flag and the exact departure and return times. Fleets whose usage is read from file are not dispatched and therefore write no event file.
 - (Optional) One plot file per scenario named ```<runtimestamp>_<scenario_file_name>_<scenario_name>.html``` containing an interactive line plot of the dispatch and state variables (i.e. SOCs and SOHs) of every block in the scenario.

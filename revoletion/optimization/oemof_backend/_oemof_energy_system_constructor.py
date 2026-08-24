@@ -118,16 +118,27 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
     _CORE_DC_BUS_NAME = "dc"
 
     def __init__(
-        self, scenario: scn.Scenario, horizon: time.TimeFrame, cost_eps: float, logger: logging.Logger
+        self,
+        scenario: scn.Scenario,
+        horizon: time.TimeFrame,
+        cost_eps: float,
+        logger: logging.Logger,
+        storage_reward_eps: float = 0.0,
     ) -> None:
         self._scenario = scenario
         self._horizon = horizon
         self._cost_eps = cost_eps
+        self._storage_reward_eps = storage_reward_eps
         self._logger = logger
 
     @classmethod
     def create_oemof_energy_system(
-        cls, scenario: scn.Scenario, horizon: time.TimeFrame, cost_eps: float, logger: logging.Logger
+        cls,
+        scenario: scn.Scenario,
+        horizon: time.TimeFrame,
+        cost_eps: float,
+        logger: logging.Logger,
+        storage_reward_eps: float = 0.0,
     ) -> OemofEnergySystemContext:
         """
         Factory method that constructs a complete oemof energy system from a scenario.
@@ -135,10 +146,13 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
         :param scenario: Scenario with all blocks and parameters.
         :param horizon: Time settings for the optimization period.
         :param cost_eps: Small positive value for numerical tie-breaking.
+        :param storage_reward_eps: Small positive magnitude rewarding stored energy,
+            negated at the call site, see
+            OptimizationProblemConfig.storage_reward_eps.
         :return: A fully constructed wrapped energy system ready for optimization.
         """
         wrapped_es = OemofEnergySystemContext(horizon.dti, scenario)
-        visitor = cls(scenario, horizon, cost_eps, logger)
+        visitor = cls(scenario, horizon, cost_eps, logger, storage_reward_eps)
 
         # Logically the root node of the block structure is the system core, since any node is
         # connected to either its AC or DC bus. The oemof components of the core are therefore
@@ -222,16 +236,27 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
 
         x denotes the flow measurement point in results
 
-        dc          ac
-        |-x--dcac-->|
-        |           |
-        |<---acdc-x-|
+                    dc          ac
+         deficit_dc->|-x--dcac-->|<-x-deficit_ac
+                    |           |
+                    |<---acdc-x-|
         """
         ac_bus = solph.Bus(label=self._CORE_AC_BUS_NAME)
         es.add(block, self._CORE_AC_BUS_NAME, ac_bus)
 
         dc_bus = solph.Bus(label=self._CORE_DC_BUS_NAME)
         es.add(block, self._CORE_DC_BUS_NAME, dc_bus)
+
+        # The deficit sources are unlimited in power and keep the energy system solvable even if no other component
+        # can cover the demand. Their high specific opex makes them the optimizer's last resort.
+        for system, bus in ((self._CORE_AC_BUS_NAME, ac_bus), (self._CORE_DC_BUS_NAME, dc_bus)):
+            deficit_source = solph.components.Source(
+                label=_label(block, f"deficit_{system}"),
+                outputs={
+                    bus: solph.Flow(variable_costs=block.pois[f"deficit_{system}"].spec_ep_operation[self._horizon.dti])
+                },
+            )
+            es.add(block, f"deficit_{system}", deficit_source)
 
         acdc_converter = solph.components.Converter(
             label=_label(block, "acdc"),
@@ -623,6 +648,9 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
             "invest_relation_input_capacity": block.crate_chg,
             "invest_relation_output_capacity": block.crate_dis,
             "storage_balanced": block.balanced if self._scenario.strategy == "go" else False,
+            # the stationary battery is the block whose charge timing is otherwise
+            # undetermined whenever surplus generation would just be curtailed
+            "storage_content_incentive": True,
         }
         self._visit_storage_block(block, es, bus_connected, params)
 
@@ -727,6 +755,9 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
             "invest_relation_input_capacity": None,
             "invest_relation_output_capacity": None,
             "storage_balanced": False,
+            # off for fleet units: rewarding a high SOC here would bias against
+            # discharging, i.e. against the V2G the bidirectional modes exist to study
+            "storage_content_incentive": False,
         }
         bus_internal = self._visit_storage_block(block, es, bus_connected, params)
 
@@ -870,6 +901,13 @@ class OemofEnergySystemConstructor(blocks.BlockVisitor[None]):
             },
             loss_rate=block.loss_rate_per_hour,
             balanced=params["storage_balanced"],
+            # Negative, i.e. a reward for holding energy. A cost on a flow is the same
+            # per Wh whenever it is paid, so it cannot express *when* to charge; only a
+            # cost on the content, which accrues per timestep the energy sits there, can.
+            # Under rolling horizon nothing values energy left at the end of a horizon
+            # either, so this doubles as a crude terminal value against end of horizon
+            # dumping. Off (0.0) unless the block opts in, see storage_content_incentive.
+            storage_costs=(-self._storage_reward_eps if params.get("storage_content_incentive") else 0.0),
             initial_storage_level=block.states.loc[self._horizon.start, ["soc", "soc_min", "soc_max"]].median(),
             # crate measured "outside" of conversion factor (efficiency)
             invest_relation_input_capacity=params["invest_relation_input_capacity"],

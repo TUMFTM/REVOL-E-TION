@@ -58,21 +58,27 @@ class FleetDemand(ABC):
         self.requests = self.sample(key_timeframe_mapper=key_timeframe_mapper)
 
         if path_demand is not None:
-            self.requests.to_csv(path_demand)
+            self.requests.to_feather(path_demand)
 
     def from_file(self, path_demand: Path, dti=None):
         """
-        read in a subfleet requests csv file directly
+        read in a subfleet requests file (CSV or feather) directly
         """
-        requests = pd.read_csv(path_demand, index_col=0)
+        if Path(path_demand).suffix == ".feather":
+            # feather preserves the native dtypes, so the timedeltas and the (numpy array) subfleets only
+            # need normalizing to match the CSV path below
+            requests = pd.read_feather(path_demand)
+            if "subfleets" in requests.columns:
+                requests["subfleets"] = requests["subfleets"].apply(list)
+        else:
+            requests = pd.read_csv(path_demand, index_col=0)
+            requests["dtime_active"] = pd.to_timedelta(requests["dtime_active"])
+            requests["dtime_idle"] = pd.to_timedelta(requests["dtime_idle"])
+            requests["dtime_patience"] = pd.to_timedelta(requests["dtime_patience"])
+            if "subfleets" in requests.columns:
+                requests["subfleets"] = requests["subfleets"].apply(parse_entry)
 
         requests["time_req"] = pd.to_datetime(requests["time_req"], utc=True).dt.tz_convert(self.dti.tz)
-        requests["dtime_active"] = pd.to_timedelta(requests["dtime_active"])
-        requests["dtime_idle"] = pd.to_timedelta(requests["dtime_idle"])
-        requests["dtime_patience"] = pd.to_timedelta(requests["dtime_patience"])
-
-        if "subfleets" in requests.columns:
-            requests["subfleets"] = requests["subfleets"].apply(parse_entry)
 
         dti_filter = dti if dti is not None else self.dti
         self.requests = requests.loc[requests["time_req"].isin(dti_filter), :]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revoletion"
-version = "1.6.3"
+version = "1.7.1"
 description = "Resilient Electric Vehicle Optimization model for Local Energy TransitION"
 authors = [
     { name = "Philipp Rosner", email = "philipp.rosner@tum.de" },
@@ -15,6 +15,7 @@ requires-python = ">=3.12"
 dependencies = [
     "geopy",
     "gurobipy",
+    "highspy",
     "holidays",
     "numpy",
     "numpy_financial",
@@ -37,7 +38,8 @@ dependencies = [
     "prefect>=3.7.4",
     "httpx>=0.28",
     "aiofiles",
-    "aiocsv"
+    "aiocsv",
+    "tqdm"
 ]
 
 [dependency-groups]

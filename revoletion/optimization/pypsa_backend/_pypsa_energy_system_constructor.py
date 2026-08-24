@@ -30,6 +30,7 @@ class PypsaEnergySystemConstructor(blocks.BlockVisitor[None]):
         horizon: time.TimeFrame,
         logger: logging.Logger,
         cost_eps: float,
+        storage_reward_eps: float = 0.0,
         enable_investment: bool = True,
         enable_fixed_dispatch: bool = True,
         enforce_soc_min: bool = True,
@@ -44,6 +45,10 @@ class PypsaEnergySystemConstructor(blocks.BlockVisitor[None]):
         self._logger = logger
         # self._cost_eps = cost_eps
         self._cost_eps = 1e-5
+        # PyPSA prices stored energy per hour and multiplies by snapshot_weightings.objective,
+        # which the builder sets to the timestep length. oemof's storage_costs is per timestep
+        # and carries no such weighting, so dividing here makes the two backends agree.
+        self._storage_reward_eps_per_hour = storage_reward_eps / horizon.timestep.hours
         self._enable_investment = enable_investment
         self._enable_fixed_dispatch = enable_fixed_dispatch
         self._enforce_soc_min = enforce_soc_min
@@ -156,6 +161,17 @@ class PypsaEnergySystemConstructor(blocks.BlockVisitor[None]):
             capital_cost=block.pois["dcac"].spec_ep_invest,
             marginal_cost=block.pois["dcac"].spec_ep_operation[self._dti] + self._cost_eps,
         )
+
+        # The deficit sources are unlimited in power and keep the network solvable even if no other component
+        # can cover the demand. Their high specific opex makes them the optimizer's last resort.
+        for system, bus in (("ac", self._CORE_AC_BUS_NAME), ("dc", self._CORE_DC_BUS_NAME)):
+            builder.add_generator(
+                name=make_pypsa_label(block, f"deficit-{system}-gen"),
+                bus=bus,
+                marginal_cost=block.pois[f"deficit_{system}"].spec_ep_operation[self._dti],
+                p_nom=np.inf,
+                p_nom_extendable=False,
+            )
 
     def visit_grid_connection(
         self, block: blocks.GridConnection, builder: PypsaNetworkBuilder, bus_connected: str
@@ -363,6 +379,12 @@ class PypsaEnergySystemConstructor(blocks.BlockVisitor[None]):
             e_max_pu=block.states.loc[self._dti, "soc_max"],
             e_nom_extendable=self._enable_investment and block.sizes["storage"].invest,
             capital_cost=block.pois["storage"].spec_ep_invest,
+            # Negative, i.e. a reward for holding energy. The link costs above are per Wh
+            # whenever they are paid and so cannot express *when* to absorb a surplus that
+            # would otherwise be curtailed; only a cost on the content can. Mirrors
+            # storage_costs on the oemof side, and like there it is the stationary battery
+            # only - rewarding a high SOC on fleet units would bias against V2G.
+            marginal_cost_storage=-self._storage_reward_eps_per_hour,
         )
 
     def visit_fleet(self, block: blocks.Fleet, builder: PypsaNetworkBuilder, bus_connected: str) -> None:

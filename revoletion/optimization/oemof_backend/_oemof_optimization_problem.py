@@ -45,6 +45,8 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         return {
             "acdc": self._get_flow_for_components(block, ("ac", "acdc"), dti),
             "dcac": self._get_flow_for_components(block, ("dc", "dcac"), dti),
+            "deficit_ac": self._get_flow_for_components(block, ("deficit_ac", "ac"), dti),
+            "deficit_dc": self._get_flow_for_components(block, ("deficit_dc", "dc"), dti),
         }
 
     @get_power_flow.register
@@ -181,7 +183,19 @@ class OemofOptimizationResult(optimization_problem.OptimizationResult):
         return self._objective
 
 
-VALID_OEMOF_SOLVERS = {optimization_problem.Solver.CBC, optimization_problem.Solver.GUROBI}
+VALID_OEMOF_SOLVERS = {
+    optimization_problem.Solver.CBC,
+    optimization_problem.Solver.GUROBI,
+    optimization_problem.Solver.HIGHS,
+}
+
+# Each solver spells its reduced cost tolerance differently on the command line,
+# see OptimizationProblemConfig.optimality_tol for why it is set at all.
+_OPTIMALITY_TOL_OPTION = {
+    optimization_problem.Solver.CBC: "dualTolerance",
+    optimization_problem.Solver.GUROBI: "OptimalityTol",
+    optimization_problem.Solver.HIGHS: "dual_feasibility_tolerance",
+}
 
 
 class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
@@ -209,7 +223,7 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
             config = optimization_problem.OptimizationProblemConfig()
 
         energy_system_ctx = OemofEnergySystemConstructor.create_oemof_energy_system(
-            scenario, horizon, config.cost_eps, logger
+            scenario, horizon, config.cost_eps, logger, config.storage_reward_eps
         )
 
         return cls(energy_system_ctx, scenario, logger, config)
@@ -224,12 +238,31 @@ class OemofOptimizationProblem(optimization_problem.OptimizationProblem):
         self._logger.info("Building oemof model")
         model = self._create_model()
 
+        solver_args: dict[str, Any] = {}
+        if self._config.solver == optimization_problem.Solver.HIGHS:
+            solver_args["solver_io"] = None
+            model.receive_duals()
+
+        cmdline_options: dict[str, Any] = {}
+        if self._config.optimality_tol is not None:
+            option = _OPTIMALITY_TOL_OPTION.get(self._config.solver)
+            if option is None:
+                self._logger.warning(
+                    f"No reduced cost tolerance option known for solver {self._config.solver}; "
+                    f"optimality_tol={self._config.optimality_tol} is ignored and cost_eps "
+                    f"may be inside the solver's own tolerance"
+                )
+            else:
+                cmdline_options[option] = self._config.optimality_tol
+
         self._logger.info("Model built, starting optimization")
         results = model.solve(
             solver=self._config.solver.value,
             solve_kwargs={"tee": self._config.debug},
+            cmdline_options=cmdline_options,
             # We explicitly handle the return code, so oemof should not raise an error if the result is not optimal.
             allow_nonoptimal=True,
+            **solver_args,
         )
 
         # The optimization result has two status codes: one for the solver and one for the termination condition.

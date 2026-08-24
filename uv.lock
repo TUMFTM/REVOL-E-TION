@@ -3904,13 +3904,14 @@ wheels = [
 
 [[package]]
 name = "revoletion"
-version = "1.6.3"
+version = "1.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiocsv" },
     { name = "aiofiles" },
     { name = "geopy" },
     { name = "gurobipy" },
+    { name = "highspy" },
     { name = "holidays" },
     { name = "httpx" },
     { name = "numpy" },
@@ -3931,6 +3932,7 @@ dependencies = [
     { name = "simpy" },
     { name = "timezonefinder" },
     { name = "tk" },
+    { name = "tqdm" },
     { name = "windpowerlib" },
 ]
 
@@ -3952,6 +3954,7 @@ requires-dist = [
     { name = "aiofiles" },
     { name = "geopy" },
     { name = "gurobipy" },
+    { name = "highspy" },
     { name = "holidays" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy" },
@@ -3972,6 +3975,7 @@ requires-dist = [
     { name = "simpy" },
     { name = "timezonefinder" },
     { name = "tk" },
+    { name = "tqdm" },
     { name = "windpowerlib" },
 ]
 

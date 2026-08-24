@@ -10,6 +10,39 @@ from typing import Self, override
 import pandas as pd
 
 
+def duration2steps(duration: pd.Timedelta, timestep: pd.Timedelta) -> int:
+    """
+    Convert a time duration into the number of discrete simulation steps
+    defined by a given timestep.
+
+    The function assumes that `duration` is an exact multiple of `timestep`.
+    If this is not the case, a ValueError is raised.
+
+    Parameters
+    ----------
+    duration : pd.Timedelta
+        Total time span to be converted into steps.
+    timestep : pd.Timedelta
+        Duration of a single time step.
+
+    Returns
+    -------
+    int
+        Number of full timesteps contained in `duration`.
+
+    Raises
+    ------
+    ValueError
+        If `duration` is not exactly divisible by `timestep`.
+    """
+    
+    ratio = duration / timestep
+    if not ratio.is_integer():
+        raise ValueError(f"Duration {duration} is not divisible by timestep {timestep}")
+    
+    return int(ratio)
+
+
 def extend_dti(dti: pd.DatetimeIndex) -> pd.DatetimeIndex:
     """
     Extend a DatetimeIndex by one additional timestep.
@@ -639,6 +672,104 @@ class Timestep:
         Timedelta('0 days 02:00:00')
         """
         return cls(_td=pd.Timedelta(convert_freqstr(timestep_str)))
+    
+
+@dataclass(frozen=True)
+class TimeSlice:
+    """
+    Integer slice representation of a time frame.
+
+    The class stores the start and end indices of a time interval on a discrete time grid.
+    The end index is exclusive, following standard Python slicing semantics.
+
+    Parameters
+    ----------
+    start : int
+        Inclusive start index.
+    end : int
+        Exclusive end index.
+
+    Parameters
+    ----------
+    end_extd : int
+        End index incremented by one.
+    dti : slice
+        Slice equivalent to ``slice(start, end)``.
+    dti_extd : slice
+        Slice equivalent to ``slice(start, end + 1)``.
+    """
+    start: int
+    end: int
+
+    @classmethod
+    def from_timeframe(cls, tf: TimeFrame, ref: bool = True):
+        """
+        Create a TimeSlice from a TimeFrame.
+
+        Parameters
+        ----------
+        tf : TimeFrame
+            Time frame to convert.
+        ref : bool, default=True
+            If True, compute the start index relative to ``tf.start_ref``.
+            Otherwise, the returned slice starts at index 0.
+
+        Returns
+        -------
+        TimeSlice
+            Integer slice corresponding to the given time frame.
+
+        Raises
+        ------
+        ValueError
+            If the duration between timestamps is not an integer multiple of the time step.
+        """
+        timestep=tf.timestep.td
+        start = duration2steps(
+            duration=tf.start - tf.start_ref,
+            timestep=timestep,
+        ) if ref else 0
+        end = start + duration2steps(
+            duration=tf.end - tf.start,
+            timestep=timestep,
+        )
+        return cls(start=start, end=end)
+
+    @cached_property
+    def end_extd(self) -> int:
+        """
+        Extended end index. Corresponds to ``TimeFrame.end_extd``
+
+        Returns
+        -------
+        int
+            End index incremented by one.
+        """
+        return self.end + 1
+
+    @cached_property
+    def dti(self) -> slice:
+        """
+        Slice corresponding to ``TimeFrame.dti``.
+
+        Returns
+        -------
+        slice
+            Slice equivalent to ``slice(start, end)``.
+        """
+        return slice(self.start, self.end)
+    
+    @cached_property
+    def dti_extd(self) -> slice:
+        """
+        Slice corresponding to ``TimeFrame.dti_extd``.
+
+        Returns
+        -------
+        slice
+            Slice equivalent to ``slice(start, end + 1)``.
+        """
+        return slice(self.start, self.end_extd)
 
 
 @dataclass(frozen=True)
@@ -661,6 +792,8 @@ class TimeFrame:
         The temporal resolution of the time frame.
     timezone : zoneinfo.ZoneInfo
         The timezone associated with the timestamps.
+    start_ref : pandas.Timestamp
+        The reference start time, usually the start of the simulation TimeFrame.
 
     Attributes
     ----------
@@ -670,6 +803,10 @@ class TimeFrame:
         Datetime index spanning ``[start, end]`` (inclusive of both bounds).
     end_extd : pandas.Timestamp
         The last timestamp in ``dti_extd``.
+    idx : TimeIndex
+        TimeIndex relative to ``start_ref``.
+    idx_tf : TimeIndex
+        TimeIndex relative to ``start``.
 
     Notes
     -----
@@ -707,6 +844,7 @@ class TimeFrame:
     duration: pd.Timedelta
     timestep: Timestep
     timezone: zoneinfo.ZoneInfo
+    start_ref: pd.Timestamp
 
     @classmethod
     def create_from_start_timestamp(
@@ -716,6 +854,7 @@ class TimeFrame:
         timezone: zoneinfo.ZoneInfo | str,
         end: pd.Timestamp | None = None,
         duration: pd.Timedelta | None = None,
+        start_ref: pd.Timestamp | None = None,
     ) -> Self:
         """
         Create a ``TimeFrame`` from a start timestamp.
@@ -736,6 +875,8 @@ class TimeFrame:
             The end timestamp. Must not be provided together with ``duration``.
         duration : pandas.Timedelta, optional
             The duration of the time frame. Must not be provided together with ``end``.
+        start_ref : pd.Timestamp, optional
+            The start time used to calculate ``idx``.
 
         Returns
         -------
@@ -782,7 +923,12 @@ class TimeFrame:
         start = ensure_timezone(ts=start, timezone=tz)
         end = ensure_timezone(ts=end, timezone=tz)
 
-        return cls(start=start, end=end, duration=duration, timestep=timestep, timezone=tz)
+        if start_ref is None:
+            start_ref = start
+        else:
+            start_ref = ensure_timezone(ts=start_ref, timezone=tz)
+
+        return cls(start=start, end=end, duration=duration, timestep=timestep, timezone=tz, start_ref=start_ref)
 
     @cached_property
     def dti(self) -> pd.DatetimeIndex:
@@ -823,6 +969,30 @@ class TimeFrame:
             The last value of ``dti_extd``.
         """
         return self.dti_extd[-1]
+    
+    @cached_property
+    def idx(self) -> TimeSlice:
+        """
+        Returns a TimeSlice. Indexing starts at ``TimeFrame.start_ref``.
+
+        Returns
+        -------
+        TimeSlice
+            Timeslice with indexing starting at ``self.start_ref``.
+        """
+        return TimeSlice.from_timeframe(tf=self, ref=True)
+    
+    @cached_property
+    def idx_tf(self) -> TimeSlice:
+        """
+        Returns a TimeSlice. Indexing starts at ``TimeFrame.start``.
+
+        Returns
+        -------
+        TimeSlice
+            Timeslice with indexing starting at ``self.start``.
+        """
+        return TimeSlice.from_timeframe(tf=self, ref=False)
 
 
 @dataclass

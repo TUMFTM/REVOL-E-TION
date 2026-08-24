@@ -100,25 +100,33 @@ def import_module_from_path(module_name, file_path):
     return module
 
 
-def read_timeseries_csv(
+def read_timeseries(
     path_input_file: str | Path,
     timezone: zoneinfo.ZoneInfo,
     multiheader: bool = False,
     resampling_dti: pd.DatetimeIndex | None = None,
 ) -> pd.DataFrame:
     """
-    Properly read in timezone-aware example timeseries csv files and form correct datetimeindex
+    Properly read in timezone-aware example timeseries files (CSV or feather) and form correct datetimeindex
 
-    :param path_input_file: Path to the CSV file containing the timeseries data.
+    :param path_input_file: Path to the CSV or feather file containing the timeseries data.
     :param timezone: Timezone to which the timeseries data should be aligned to.
-    :param multiheader: Whether the timeseries data is stored in CSV file with multiple headers.
+    :param multiheader: Whether the timeseries data is stored with multiple headers.
     :param resampling_dti: If given, the timeseries data is resampled to the given datetimeindex.
 
     :raises IndexError: If timeseries data does not cover `resampling_dti` timeframe.
     """
-    if multiheader:
+    if Path(path_input_file).suffix == ".feather":
+        # feather preserves the (multi-)column structure via pandas metadata; the DatetimeIndex was written
+        # into the first column (see the to_feather exports), so it is restored the same way as for CSV
+        df = pd.read_feather(path_input_file)
+    elif multiheader:
         df = pd.read_csv(path_input_file, header=[0, 1])
-        df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
+    else:
+        df = pd.read_csv(path_input_file)
+    df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
+
+    if multiheader:
         df.sort_index(
             axis=1,
             level=0,
@@ -131,9 +139,6 @@ def read_timeseries_csv(
             sort_remaining=True,
             inplace=True,
         )
-    else:
-        df = pd.read_csv(path_input_file)
-        df = df.set_index(pd.to_datetime(df.iloc[:, 0], utc=True)).drop(df.columns[0], axis=1)
 
     # parser in to_csv does not create datetimeindex
     df = df.tz_convert(timezone)

@@ -126,6 +126,7 @@ class _OptimizationHorizonResultProcessor(blocks.BlockVisitor[None]):
 @dataclass
 class SimulationSettings:
     solver: optimization.Solver = optimization.Solver.GUROBI
+    optimality_tol: float | None = 1e-9
     backend: optimization.OptimizationBackend = optimization.OptimizationBackend.OEMOF
     largescalemode: bool = False
     n_processes: int = 1
@@ -152,6 +153,7 @@ class PredictionHorizon:
             timestep=self.scenario.timestep,
             timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ph, self.scenario.times.sim.end),
+            start_ref=self.scenario.times.sim.start,
         )
 
         self.ch = time.TimeFrame.create_from_start_timestamp(
@@ -159,6 +161,7 @@ class PredictionHorizon:
             timestep=self.scenario.timestep,
             timezone=self.scenario.location.timezone,
             end=min(start + self.scenario.len_ch, self.scenario.times.eval.end),
+            start_ref=self.scenario.times.sim.start,
         )
 
         # Display logger message if PH exceeds simulation end time and has to be truncated
@@ -180,6 +183,8 @@ class PredictionHorizon:
         self._logger.info("Building optimization problem")
         optimization_problem_config = optimization.OptimizationProblemConfig(
             cost_eps=self.scenario.cost_eps,
+            storage_reward_eps=self.scenario.storage_reward_eps,
+            optimality_tol=self._settings.optimality_tol,
             debug=self._settings.debugmode,
             solver=self._settings.solver,
             invest=True,

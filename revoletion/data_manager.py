@@ -401,7 +401,7 @@ class BasicFileProvider(DataProvider):
 
     @override
     def load_data_from_file(self, file: pathlib.Path, **_) -> pd.DataFrame:
-        data = utils.read_timeseries_csv(
+        data = utils.read_timeseries(
             path_input_file=file,
             timezone=self.location.timezone,
             multiheader=False,

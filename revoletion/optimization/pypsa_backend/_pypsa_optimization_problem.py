@@ -45,6 +45,8 @@ class PypsaOptimizationResult(optimization_problem.OptimizationResult):
         return {
             "acdc": self._get_pypsa_link_power_flow(block, dti, "acdc-link"),
             "dcac": self._get_pypsa_link_power_flow(block, dti, "dcac-link"),
+            "deficit_ac": self._get_pypsa_generator_power_flow(block, dti, "deficit-ac-gen"),
+            "deficit_dc": self._get_pypsa_generator_power_flow(block, dti, "deficit-dc-gen"),
         }
 
     @get_power_flow.register
@@ -319,6 +321,7 @@ class PypsaOptimizationProblem(optimization_problem.OptimizationProblem):
             horizon,
             logger,
             config.cost_eps,
+            config.storage_reward_eps,
             enable_investment=config.invest,
             enable_commitment=config.commitment,
         )

@@ -54,11 +54,11 @@ class Size:
         invest: bool | None = None,
         total_max: float | None = None,
     ) -> Self:
-        preexisting = float(getattr(block, f"size_preexisting_{name}", 0)) if preexisting is None else preexisting
+        preexisting = float(getattr(block, f"size_{name}_preexisting", 0)) if preexisting is None else preexisting
         expansion = 0.0 if expansion is None else expansion
         invest = bool(getattr(block, f"invest_{name}", False)) if invest is None else invest
         if total_max is None:
-            total_max = getattr(block, f"size_max_{name}", None)
+            total_max = getattr(block, f"size_{name}_max", None)
             if total_max is None:
                 total_max = np.inf
         else:

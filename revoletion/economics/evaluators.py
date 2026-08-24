@@ -89,7 +89,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         self,
         name: str,
         eco: EcoParams,
-        spec_power: pd.Series,
+        spec_energy: pd.Series,
         spec_dist: pd.Series,
         spec_time: pd.Series,
         fix: float,
@@ -101,7 +101,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
             **kwargs,
         )
 
-        self.spec_power = spec_power
+        self.spec_energy = spec_energy
         self.spec_dist = spec_dist
         self.spec_time = spec_time
         self.fix = fix
@@ -109,7 +109,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
     @classmethod
     def _build_kwargs_from_params(cls, params: TimeseriesParams, eco: EcoParams, data_dir: Path, **kwargs) -> dict:
         return dict(
-            spec_power=transform_scalar_var(value=params.spec_power, dti=eco.dti_sim, data_dir=data_dir),
+            spec_energy=transform_scalar_var(value=params.spec_energy, dti=eco.dti_sim, data_dir=data_dir),
             spec_dist=transform_scalar_var(value=params.spec_dist, dti=eco.dti_sim, data_dir=data_dir),
             spec_time=transform_scalar_var(value=params.spec_time, dti=eco.dti_sim, data_dir=data_dir),
             fix=params.fix,
@@ -144,8 +144,8 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
         """
 
         # calculate costs related to the provided power flow
-        cost_power = (
-            np.dot(self.spec_power.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
+        cost_energy = (
+            np.dot(self.spec_energy.to_numpy(), power[self.eco.dti_eval].to_numpy()) * self.eco.timestep_hours
             if power is not None
             else 0.0
         )
@@ -160,7 +160,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
             else 0.0
         )
 
-        return cost_power + cost_dist + cost_time
+        return cost_energy + cost_dist + cost_time
 
     def evaluate(self, power: pd.Series | None, dist: pd.Series | None = None, time: pd.Series | None = None, **kwargs):
         # run evaluate method of super and pass dist and time as additional arguments to power
@@ -169,7 +169,7 @@ class TimeseriesEvaluator(CostEvaluator, CalculableTimeseriesElement, ABC):
     def _calc_spec_ep(self, **kwargs) -> pd.Series:
         # include linear scaling from simulation duration to year in cashflow_factors for correct spec_ep calculation
         factor_ep = self._calc_ep_factor(cashflow_factors=self.cashflow_factors / self.eco.sim_yr_rat)
-        return self.spec_power * factor_ep
+        return self.spec_energy * factor_ep
 
 
 class CapexEvaluator(CostEvaluator, CapexElement):
@@ -340,7 +340,7 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         self,
         name: str,
         eco: EcoParams,
-        spec_power: pd.Series,
+        spec_energy: pd.Series,
         spec_dist: pd.Series,
         spec_time: pd.Series,
         fix: float,
@@ -351,7 +351,7 @@ class OpexEvaluator(TimeseriesEvaluator, OpexElement):
         super().__init__(
             name=name,
             eco=eco,
-            spec_power=spec_power,
+            spec_energy=spec_energy,
             spec_dist=spec_dist,
             spec_time=spec_time,
             fix=fix,
@@ -424,6 +424,13 @@ class POI(BlockElement):
     opex: OpexEvaluator | None
     crev: CrevEvaluator | None
 
+    aggregate: bool = True
+    """
+    Whether the POI's costs and revenues are part of its block's aggregated economic results.
+    Set to False for POIs whose specific costs only steer the optimization, but do not represent
+    real cashflows of the energy system, such as the deficit sources of the SystemCore.
+    """
+
     @classmethod
     def create(
         cls,
@@ -436,6 +443,7 @@ class POI(BlockElement):
         mntex: MntexParams | None = None,
         opex: OpexParams | None = None,
         crev: CrevParams | None = None,
+        aggregate: bool = True,
     ) -> Self:
         return cls(
             name=name,
@@ -446,6 +454,7 @@ class POI(BlockElement):
             mntex=MntexEvaluator.create_from_params(name, eco, mntex, data_dir) if mntex else None,
             opex=OpexEvaluator.create_from_params(name, eco, opex, data_dir) if opex else None,
             crev=CrevEvaluator.create_from_params(name, eco, crev, data_dir) if crev else None,
+            aggregate=aggregate,
         )
 
     @property

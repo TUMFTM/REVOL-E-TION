@@ -13,7 +13,7 @@ import pandas as pd
 import windpowerlib
 
 from revoletion import battery as bat
-from revoletion import data_manager, energy, mobility, peak_periods, size, time, utils
+from revoletion import data_manager, energy, events, mobility, models, peak_periods, size, time, utils
 from revoletion import economics as eco
 from revoletion import scenario as scn
 
@@ -117,7 +117,8 @@ class BaseBlock(BlockScenarioInterface, ABC):
 
         self.aggregator = eco.Aggregator(name=self.name, prj_duration_yrs=self.scenario.eco_params.prj_duration_yrs)
         for poi in self.pois.values():
-            self.aggregator.add_block(poi)
+            if poi.aggregate:
+                self.aggregator.add_block(poi)
         self.parent.aggregator.add_block(self.aggregator)
 
         self.energies = {
@@ -300,7 +301,9 @@ class SinkBlock(ElectricBlock, ABC):
 
 class SystemCore(ElectricBlock):
     _SIZE_NAMES = [("acdc", "kW"), ("dcac", "kW")]
-    _FLOW_NAMES = ["acdc", "dcac"]
+    _FLOW_NAMES = ["acdc", "dcac", "deficit_ac", "deficit_dc"]
+
+    _SYSTEMS_DEFICIT = ["ac", "dc"]
 
     def init_pois(self):
         super().init_pois()
@@ -311,12 +314,12 @@ class SystemCore(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_acdc,
+                consider_preexisting=self.capex_acdc_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="acdc",
             name_flow="acdc",
         )
@@ -327,15 +330,27 @@ class SystemCore(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_dcac,
+                consider_preexisting=self.capex_dcac_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="dcac",
             name_flow="dcac",
         )
+
+        # The deficit sources are unlimited in power and free of capex and mntex. Their opex only serves as a
+        # penalty steering the optimizer away from them and is therefore excluded from the aggregated results.
+        for system in self._SYSTEMS_DEFICIT:
+            self.pois[f"deficit_{system}"] = eco.POI.create(
+                name=f"deficit_{system}",
+                eco=self.scenario.eco_params,
+                data_dir=self.scenario.paths.input,
+                opex=eco.OpexParams(spec_energy=self.opex_spec_deficit),
+                name_flow=f"deficit_{system}",
+                aggregate=False,
+            )
 
         self.power_circles.append(("acdc", "dcac"))
 
@@ -350,17 +365,35 @@ class SystemCore(ElectricBlock):
         )
 
     def params_preprocessing(self):
+        # opex_spec_deficit is optional in the scenario file
+        if not hasattr(self, "opex_spec_deficit"):
+            self.opex_spec_deficit = models.OPEX_SPEC_DEFICIT_DEFAULT
+
         self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
 
         self.init_equalizable_variables(name_vars=["invest_acdc", "invest_dcac"])
-        self.init_equalizable_variables(name_vars=["size_preexisting_acdc", "size_preexisting_dcac"])
-        self.init_equalizable_variables(name_vars=["size_max_acdc", "size_max_dcac"])
+        self.init_equalizable_variables(name_vars=["size_acdc_preexisting", "size_dcac_preexisting"])
+        self.init_equalizable_variables(name_vars=["size_acdc_max", "size_dcac_max"])
 
     def calc_results_flows(self):
         """
         post scenario method
         """
         super().calc_results_flows()
+
+    def calc_results_energies(self):
+        """
+        post scenario method
+        """
+        super().calc_results_energies()
+
+        for system in self._SYSTEMS_DEFICIT:
+            energy_deficit = self.energies[f"deficit_{system}"].eval
+            if energy_deficit > 0:
+                self.scenario.logger.warning(
+                    f'Block "{self.name}" - {energy_deficit / 1e3:.1f} kWh of energy drawn from the '
+                    f"{system.upper()} deficit source - the energy system cannot cover its demand"
+                )
 
 
 class RenewableSource(SourceBlock, ABC):
@@ -375,12 +408,12 @@ class RenewableSource(SourceBlock, ABC):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_block,
+                consider_preexisting=self.capex_block_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -503,7 +536,7 @@ class WindSource(RenewableSource):
         elif self.data_source == "file":
             # region get data from file
             try:
-                self.data = utils.read_timeseries_csv(
+                self.data = utils.read_timeseries(
                     path_input_file=(
                         self.scenario.paths.input
                         / utils.set_extension(filename=self.filename, default_extension=".csv")
@@ -517,7 +550,10 @@ class WindSource(RenewableSource):
             raise ValueError(f"Scenario {self.scenario.name} - Block {self.name}: No usable data input specified")
 
         if not self.scenario.settings.largescalemode:
-            self.data.to_csv(self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.csv"))
+            # feather does not serialize a non-default index, so move the DatetimeIndex into a column
+            self.data.reset_index().to_feather(
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_log.feather")
+            )
 
 
 class FixedDemand(SinkBlock):
@@ -532,10 +568,10 @@ class FixedDemand(SinkBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 fix=self.capex_fix_metering,
-                consider_preexisting=self.capex_preexisting_metering,
+                consider_preexisting=self.capex_metering_preexisting,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_metering),
-            crev=eco.CrevParams(spec_power=self.crev_spec),
+            crev=eco.CrevParams(spec_energy=self.crev_spec),
             name_flow="in",
         )
 
@@ -682,7 +718,7 @@ class FixedDemand(SinkBlock):
                 filename=self.load_profile, default_extension=".csv"
             )
             try:
-                data = utils.read_timeseries_csv(
+                data = utils.read_timeseries(
                     path_input_file=load_profile_file,
                     timezone=self.scenario.location.timezone,
                     resampling_dti=self.scenario.times.sim.dti,
@@ -703,8 +739,9 @@ class FixedDemand(SinkBlock):
             raise ValueError(f'Parameter "load_profile" in block "{self.block.name}" is not valid')
 
         if not self.scenario.settings.largescalemode:
-            self.flows_apriori["demand"].to_csv(
-                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.csv")
+            # feather requires a DataFrame with a default index, so frame the Series and move the index into a column
+            self.flows_apriori["demand"].to_frame().reset_index().to_feather(
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_flow.feather")
             )
 
 
@@ -720,12 +757,12 @@ class ControllableSource(SourceBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_block,
+                consider_preexisting=self.capex_block_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
             mntex=eco.MntexParams(spec=self.mntex_spec),
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_size="block",
             name_flow="out",
         )
@@ -753,7 +790,7 @@ class GridConnection(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_g2s,
+                consider_preexisting=self.capex_g2s_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -768,7 +805,7 @@ class GridConnection(ElectricBlock):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_s2g,
+                consider_preexisting=self.capex_s2g_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -857,8 +894,8 @@ class GridConnection(ElectricBlock):
         self.expansion_equal = True if self.invest_g2s == "equal" or self.invest_s2g == "equal" else False
 
         self.init_equalizable_variables(name_vars=["invest_s2g", "invest_g2s"])
-        self.init_equalizable_variables(name_vars=["size_preexisting_g2s", "size_preexisting_s2g"])
-        self.init_equalizable_variables(name_vars=["size_max_g2s", "size_max_s2g"])
+        self.init_equalizable_variables(name_vars=["size_g2s_preexisting", "size_s2g_preexisting"])
+        self.init_equalizable_variables(name_vars=["size_g2s_max", "size_s2g_max"])
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
@@ -887,7 +924,7 @@ class GridMarket(ElectricBlock):
             name="g2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_g2s),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_g2s),
             name_size="g2s",
             name_flow="out",
         )
@@ -896,7 +933,7 @@ class GridMarket(ElectricBlock):
             name="s2g",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_s2g),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_s2g),
             name_size="s2g",
             name_flow="in",
         )
@@ -933,7 +970,7 @@ class StorageBlock(ElectricBlock, ABC):
             data_dir=self.scenario.paths.input,
             capex=eco.CapexParams(
                 spec=self.capex_spec,
-                consider_preexisting=self.capex_preexisting_storage,
+                consider_preexisting=self.capex_storage_preexisting,
                 ls=self.ls,
                 ccr=self.ccr,
             ),
@@ -945,7 +982,7 @@ class StorageBlock(ElectricBlock, ABC):
             name="in",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec),
+            opex=eco.OpexParams(spec_energy=self.opex_spec),
             name_flow="in",
         )
 
@@ -972,6 +1009,42 @@ class StorageBlock(ElectricBlock, ABC):
 
         self.power_circles.append(("in", "out"))
         self.power_circles.append(("bat_in", "bat_out"))
+
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # soc_min and soc_max are optional -> unset limits mean the full SOC window is usable
+        for name_param, default in [("soc_min", 0.0), ("soc_max", 1.0)]:
+            if getattr(self, name_param, None) is None:
+                setattr(self, name_param, default)
+
+        if self.soc_min >= self.soc_max:
+            raise ValueError(f'"{self.name}": soc_min ({self.soc_min}) must be smaller than soc_max ({self.soc_max})')
+
+    def update_soc_limits(self, ts: pd.Timestamp):
+        """
+        Write the SOC limits valid from timestamp ts onwards into the block's states.
+
+        Capacity fade is modeled as a symmetric shrinking of the usable SOC window around SOC 0.5, so the limits
+        depend on the block's SOH at ts. The user defined limits are applied on top: on either side, the more
+        restrictive of the two limits is used.
+        """
+        soc_min_aging = (1 - self.states.loc[ts, "soh"]) / 2
+        soc_max_aging = 1 - soc_min_aging
+
+        soc_min = max(soc_min_aging, self.soc_min)
+        soc_max = min(soc_max_aging, self.soc_max)
+
+        if soc_min >= soc_max:
+            # user defined and aging window do not overlap -> no SOC satisfies both
+            self.scenario.logger.warning(
+                f'"{self.name}": user defined SOC window [{self.soc_min}, {self.soc_max}] does not overlap the '
+                f"window [{soc_min_aging:.3f}, {soc_max_aging:.3f}] left by aging at a SOH of "
+                f"{self.states.loc[ts, 'soh']:.3f} - ignoring the user defined limits"
+            )
+            soc_min, soc_max = soc_min_aging, soc_max_aging
+
+        self.states.loc[ts:, "soc_min"] = soc_min
+        self.states.loc[ts:, "soc_max"] = soc_max
 
     def __init__(
         self,
@@ -1020,8 +1093,7 @@ class StorageBlock(ElectricBlock, ABC):
         self.states.loc[self.scenario.times.eval.start, "q_loss_cyc"] = self.q_loss_cyc_init
         delattr(self, "q_loss_cyc_init")
 
-        self.states.loc[:, "soc_min"] = (1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2
-        self.states.loc[:, "soc_max"] = 1 - ((1 - self.states.loc[self.scenario.times.eval.start, "soh"]) / 2)
+        self.update_soc_limits(ts=self.scenario.times.eval.start)
 
         # initialization of aging model after all blocks are initialized to get temp from pv blocks
         self.aging_model = None
@@ -1069,13 +1141,19 @@ class StationaryBattery(StorageBlock):
 class Fleet(SinkBlock):
     _FLOW_NAMES = ["in", "out"]
 
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # pwr_lim_f2s may be set to 'equal' to reuse pwr_lim_s2f
+        if self.pwr_lim_f2s == "equal":
+            self.pwr_lim_f2s = self.pwr_lim_s2f
+
     def init_pois(self):
         super().init_pois()
         self.pois["f2s"] = eco.POI.create(
             name="f2s",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_f2s),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_f2s),
             name_flow="out",
         )
 
@@ -1083,7 +1161,7 @@ class Fleet(SinkBlock):
             name="s2f",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_s2f),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_s2f),
             name_flow="in",
         )
 
@@ -1099,6 +1177,7 @@ class Fleet(SinkBlock):
 
         self.demand = None
         self.log = None
+        self.events = None
 
         types_units = {self.scenario.parameters[(subfleet, "type_unit")] for subfleet in self.subfleets}
 
@@ -1120,7 +1199,7 @@ class Fleet(SinkBlock):
 
         if self.data_source == "usecases":
             path_demand = (
-                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.csv")
+                self.scenario.paths.create_result_path(suffix=f"{self.scenario.name}_{self.name}_demand.feather")
                 if not self.scenario.settings.largescalemode
                 else None
             )
@@ -1143,6 +1222,15 @@ class Fleet(SinkBlock):
 
         elif self.data_source in ["log", "logfile"]:
             self.log = self.read_logfile()
+            self.events = events.from_log(log=self.log, step=self.scenario.timestep.td)
+
+        elif self.data_source == "events":
+            # replay the dispatch of a previous run instead of dispatching the demand again
+            self.events = events.read(
+                path=self.scenario.paths.input
+                / utils.set_extension(filename=self.filename, default_extension=".feather"),
+                timezone=self.scenario.location.timezone,
+            )
 
         else:
             raise ValueError(f'Block "{self.name}": invalid data source')
@@ -1153,10 +1241,39 @@ class Fleet(SinkBlock):
 
         # check for dispatch inconsistency after subblocks are available
         if any(
-            (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand"])
+            (subfleet.rex is not None and subfleet.parent.data_source not in ["usecases", "demand", "events"])
             for subfleet in self.subblocks.values()
         ):
-            raise ValueError("all subfleets with range extension must be actively dispatched")
+            raise ValueError("all subfleets with range extension must be actively dispatched or replayed")
+
+        if self.data_source == "events":
+            self.check_events()
+            for name, value in events.kpis(
+                events=self.events,
+                index=self.scenario.times.sim.dti,
+                step=self.scenario.timestep.td,
+                n_units=sum(subfleet.num for subfleet in self.subblocks.values()),
+            ).items():
+                setattr(self, name, value)
+
+    def check_events(self):
+        """
+        Verify that a replayed event table belongs to this fleet. Units missing from it would silently
+        materialize an idle log instead of raising, which is indistinguishable from a unit never rented.
+        """
+        units_fleet = {unit for subfleet in self.subblocks.values() for unit in subfleet.unit_names}
+        units_events = set(events.served(self.events)["unit"].unique())
+
+        if units_events - units_fleet:
+            raise ValueError(
+                f'Block "{self.name}": event file contains units that the fleet does not have:'
+                f" {sorted(units_events - units_fleet)}"
+            )
+        if units_fleet - units_events:
+            self.scenario.logger.warning(
+                f'Block "{self.name}": no events for units {sorted(units_fleet - units_events)}'
+                f" - they stay at base for the whole simulation"
+            )
 
     def read_logfile(self) -> pd.DataFrame:
         """
@@ -1164,7 +1281,7 @@ class Fleet(SinkBlock):
         """
 
         try:
-            df = utils.read_timeseries_csv(
+            df = utils.read_timeseries(
                 path_input_file=(
                     self.scenario.paths.input / utils.set_extension(filename=self.filename, default_extension=".csv")
                 ),
@@ -1215,6 +1332,7 @@ class SubFleet(NonElectricBlock):
 
         self.demand = None
         self.log = None
+        self.events = None
 
         cls_fu = {
             "ev": ElectricVehicle,
@@ -1233,11 +1351,19 @@ class SubFleet(NonElectricBlock):
             )
 
     def pre_scenario(self, **kwargs):
-        self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
+        self.events = self.parent.events[self.parent.events["unit"].str.contains(self.name)]
+        # a fleet wide log only exists for fleets read from file - dispatched fleets pass down events
+        # only and let their units materialize what they need
+        if self.parent.log is not None:
+            self.log = self.parent.log.loc[:, self.parent.log.columns.get_level_values(0).str.contains(self.name)]
         super().pre_scenario(**kwargs)
 
 
 class FleetUnit(BaseBlock):
+    # energy consumed by the customer while the unit is rented out. This is not an optimization flow, but is derived from the dispatch log in pre_scenario (see below).
+    # "consumption" covers all rentals, "consumption_ext" only the externally invoiced ones.
+    _FLOW_NAMES = ["consumption", "consumption_ext"]
+
     def init_pois(self):
         self.pois["glider"] = eco.POI.create(
             name="glider",
@@ -1247,11 +1373,26 @@ class FleetUnit(BaseBlock):
                 fix=self.capex_fix_glider,
                 ls=self.ls,
                 ccr=self.ccr,
-                consider_preexisting=self.capex_preexisting_glider,
+                consider_preexisting=self.capex_glider_preexisting,
             ),
             mntex=eco.MntexParams(fix=self.mntex_fix_glider),
             opex=eco.OpexParams(spec_dist=self.opex_spec_dist),
-            crev=eco.CrevParams(spec_dist=self.crev_spec_dist, spec_time=self.crev_spec_time),
+        )
+
+        # Revenue is evaluated on its own POI because it has a narrower basis than cost: costs accrue
+        # on every rental, while only external ones are invoiced. Serving the own vehicle fleet as a
+        # range extender is an internal transfer - booking revenue on it would invoice the operator
+        # to themselves.
+        self.pois["rental"] = eco.POI.create(
+            name="rental",
+            eco=self.scenario.eco_params,
+            data_dir=self.scenario.paths.input,
+            crev=eco.CrevParams(
+                spec_dist=self.crev_spec_dist if hasattr(self, "crev_spec_dist") else 0.0,
+                spec_time=self.crev_spec_time if hasattr(self, "crev_spec_time") else 0.0,
+                spec_energy=self.crev_spec_energy if hasattr(self, "crev_spec_energy") else 0.0,
+            ),
+            name_flow="consumption_ext",
         )
 
     def __init__(
@@ -1271,38 +1412,58 @@ class FleetUnit(BaseBlock):
         )
 
         self.log = None
+        self.events = None
 
     def pre_scenario(self, **kwargs):
         """
-        slice log file from subfleet
+        take over the dispatch events of this unit and provide its time based log
         """
-        self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+        dti = self.scenario.times.sim.dti
+        self.events = events.overlapping(events=self.parent.events[self.parent.events["unit"].eq(self.name)], index=dti)
 
-        # ensure that all columns are present in the log file
-        for col_name, col_value in [
-            ("atac", False),
-            ("atdc", False),
-            ("atbase", True),
-            ("consumption", 0.0),
-            ("dist", 0.0),
-            ("dsoc", 0.0),
-        ]:
-            if col_name not in self.log.columns:
-                self.log[col_name] = col_value
+        if self.parent.log is not None:  # fleet read from file -> slice the log instead
+            self.log = self.parent.log.loc[:, (self.name, slice(None))].droplevel(0, axis=1)
+
+            # ensure that all columns are present in the log file
+            for col_name, col_value in events.LOG_DEFAULTS.items():
+                if col_name not in self.log.columns:
+                    # a log read from file carries no range extension information -> external rentals
+                    self.log[col_name] = col_value
+        else:
+            self.log = events.materialize_unit(
+                events=self.events,
+                index=dti,
+                step=self.scenario.timestep.td,
+                step_hours=self.scenario.timestep.hours,
+            )
+
+        # the consumption flows are not part of the optimization and are therefore filled from the dispatch log instead of being written back by the simulation result visitor
+        consumption = self.log["consumption"].astype(float)
+        self.flows["consumption"] = consumption
+        self.flows["consumption_ext"] = consumption.where(~self.log["rex"].astype(bool), 0.0)
 
         super().pre_scenario(**kwargs)
 
     def post_scenario(self):
-        self.utilization = self.log["atbase"].mean()
+        self.utilization = 1 - self.log["atbase"].mean()
         self.dist_eval = self.log["dist"].sum() if "dist" in self.log.columns else 0
         super().post_scenario()
 
     def _build_poi_evaluation_kwargs(self, poi: eco.POI, **kwargs) -> dict[str, Any]:
         kwargs_eval = super()._build_poi_evaluation_kwargs(poi, **kwargs)
 
-        kwargs_eval["dist"] = self.log["dist"]
+        dist = self.log["dist"]
         # convert to active time -> vehicle not at base
-        kwargs_eval["time"] = ~(self.log["atbase"].astype(bool))
+        time = ~(self.log["atbase"].astype(bool))
+
+        if poi.name == "rental":
+            # restrict the revenue basis to external rentals (see init_pois)
+            external = ~(self.log["rex"].astype(bool))
+            dist = dist.where(external, 0.0)
+            time = time & external
+
+        kwargs_eval["dist"] = dist
+        kwargs_eval["time"] = time
         return kwargs_eval
 
 
@@ -1320,7 +1481,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 fix=self.capex_fix_charger,
                 ls=self.ls,
                 ccr=self.ccr,
-                consider_preexisting=self.capex_preexisting_charger,
+                consider_preexisting=self.capex_charger_preexisting,
             ),
         )
 
@@ -1328,7 +1489,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_ac",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_ext_ac),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_ext_ac),
             name_flow="ext_ac",
         )
 
@@ -1336,7 +1497,7 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
             name="ext_dc",
             eco=self.scenario.eco_params,
             data_dir=self.scenario.paths.input,
-            opex=eco.OpexParams(spec_power=self.opex_spec_ext_dc),
+            opex=eco.OpexParams(spec_energy=self.opex_spec_ext_dc),
             name_flow="ext_dc",
         )
 
@@ -1364,6 +1525,12 @@ class ElectricFleetUnit(StorageBlock, FleetUnit):
                 f'ElectricFleetUnit "{self.name}": size optimization not '
                 f"implemented for a priori integration levels: {self.scenario.apriori_lvls}"
             )
+
+    def params_preprocessing(self):
+        super().params_preprocessing()
+        # pwr_dis_max may be set to 'equal' to reuse pwr_chg_max
+        if self.pwr_dis_max == "equal":
+            self.pwr_dis_max = self.pwr_chg_max
 
     def initialize_efficiencies(self):
         self.eff["chg_int"] = {"ac": self.eff_chg_ac, "dc": self.eff_chg_dc}[self.parent.parent.system]

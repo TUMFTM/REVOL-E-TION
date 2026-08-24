@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 from oemof import solph as solph
 from revoletion_core.utils import read_scenario_from_file
+from tqdm import tqdm
 
 from . import location, simulation, time, utils
 from . import logger as logger_fcs
@@ -37,6 +38,11 @@ class _ScenarioStatus(enum.Enum):
     SUCCESSFUL = "successful"
 
 
+# Statuses that mark a scenario as done (in one way or another). Reaching any of these
+# advances the scenario progress bar shown in large-scale mode.
+_TERMINAL_STATUSES = frozenset({_ScenarioStatus.SUCCESSFUL, _ScenarioStatus.FAILED, _ScenarioStatus.INFEASIBLE})
+
+
 @dataclass
 class _ScenarioStatusMessage:
     """
@@ -51,6 +57,12 @@ class _ScenarioStatusMessage:
 
     extras: dict[str, typing.Any] | None = None
     """The worker process can include additional information, like an error message or a traceback."""
+
+    worker_name: str | None = None
+    """Name of the process handling the scenario (used to route per-process horizon progress bars)."""
+
+    n_horizons_total: int | None = None
+    """Total number of prediction horizons of the scenario, sent once the scenario is initialized."""
 
 
 class _StatusUpdateCallback(typing.Protocol):
@@ -69,6 +81,13 @@ class SimulationRun:
         self.settings = settings or simulation.SimulationSettings()
 
         self.run_timer = time.RunTimer()
+
+        # Progress bars, only used in large-scale mode (created in `execute`).
+        # `progress_bar` tracks finished scenarios; `horizon_bars` shows completed horizons per
+        # worker slot (one per process; a single bar in single-process mode).
+        self.progress_bar: tqdm | None = None
+        self.horizon_bars: list[tqdm] = []
+        self._worker_bar_map: dict[str, tqdm] = {}
 
         self.name = self.paths.scenario.stem  # set name of scenario file as run name
 
@@ -148,53 +167,93 @@ class SimulationRun:
             f"with {self.settings.n_processes} process{('es' if self.settings.n_processes > 1 else '')}"
         )
 
+    def __getstate__(self):
+        # `execute_scenario` is dispatched to worker processes via `pool.starmap`, which pickles `self`.
+        # The tqdm progress bars hold unpicklable file handles and only live in the parent process,
+        # so they are dropped from the state sent to workers.
+        state = self.__dict__.copy()
+        state["progress_bar"] = None
+        state["horizon_bars"] = []
+        state["_worker_bar_map"] = {}
+        return state
+
     def copy_scenario_file(self):
-        target = self.paths.output / f"{self.name}.csv"
+        target = self.paths.output / f"{self.name}{self.paths.scenario.suffix}"
         try:  # with metadata
             shutil.copy2(self.paths.scenario, target)
         except PermissionError:  # can happen if metadata is not writable, e.g. on network drives
             shutil.copyfile(self.paths.scenario, target)
 
     def execute(self):
-        if self.settings.n_processes > 1:
-            with mp.Manager() as manager:
-                lock = manager.Lock()
+        if self.settings.largescalemode:
+            self.progress_bar = tqdm(
+                total=self.scenario_num,
+                desc="Scenarios finished",
+                unit="scenario",
+                position=0,
+                dynamic_ncols=True,  # re-layout on terminal resize
+                smoothing=0,  # rate/ETA from the average over all finished scenarios instead of the last one
+                file=sys.stdout,
+            )
+            # one horizon bar per worker slot below the overall bar (a single bar in single-process mode)
+            self.horizon_bars = [
+                tqdm(
+                    total=None,
+                    desc="idle",
+                    unit="horizon",
+                    position=slot + 1,
+                    leave=False,
+                    dynamic_ncols=True,  # re-layout on terminal resize
+                    file=sys.stdout,
+                )
+                for slot in range(self.settings.n_processes)
+            ]
 
-                status_queue = manager.Queue()
-                status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
-                status_thread.start()
+        try:
+            if self.settings.n_processes > 1:
+                with mp.Manager() as manager:
+                    lock = manager.Lock()
 
-                log_queue = manager.Queue()
-                log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
-                log_thread.start()
+                    status_queue = manager.Queue()
+                    status_thread = threading.Thread(target=self.read_status_queue, args=(status_queue,))
+                    status_thread.start()
 
-                with mp.Pool(
-                    processes=self.settings.n_processes,
-                    initializer=_worker_init,
-                    initargs=(log_queue, self.settings.debugmode),
-                ) as pool:
-                    pool.starmap(
-                        self.execute_scenario,
-                        zip(
-                            self.scenario_names,
-                            itertools.repeat(status_queue),
-                            itertools.repeat(lock),
-                            itertools.repeat(self.settings.largescalemode),
-                        ),
-                    )
-                status_queue.put(None)
-                status_thread.join()
-                log_queue.put(None)
-                log_thread.join()
-        else:
-            for scenario_name in self.scenario_names:
-                self.execute_scenario(name=scenario_name, largescalemode=self.settings.largescalemode)
+                    log_queue = manager.Queue()
+                    log_thread = threading.Thread(target=logger_fcs.read_mplogger_queue, args=(log_queue,))
+                    log_thread.start()
 
-        self.run_timer.stop()
-        self.logger.info(f"Total runtime for all scenarios: {self.run_timer}")
+                    with mp.Pool(
+                        processes=self.settings.n_processes,
+                        initializer=_worker_init,
+                        initargs=(log_queue, self.settings.debugmode),
+                    ) as pool:
+                        pool.starmap(
+                            self.execute_scenario,
+                            zip(
+                                self.scenario_names,
+                                itertools.repeat(status_queue),
+                                itertools.repeat(lock),
+                                itertools.repeat(self.settings.largescalemode),
+                            ),
+                        )
+                    status_queue.put(None)
+                    status_thread.join()
+                    log_queue.put(None)
+                    log_thread.join()
+            else:
+                for scenario_name in self.scenario_names:
+                    self.execute_scenario(name=scenario_name, largescalemode=self.settings.largescalemode)
 
-        self.join_cashflows()
-        self.join_results()
+            self.run_timer.stop()
+            self.logger.info(f"Total runtime for all scenarios: {self.run_timer}")
+
+            self.join_cashflows()
+            self.join_results()
+        finally:
+            for bar in self.horizon_bars:
+                bar.close()
+            if self.progress_bar is not None:
+                self.progress_bar.close()
 
     def handle_exception(self, exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -221,6 +280,19 @@ class SimulationRun:
 
         if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
             joined_df = pd.concat(scenario_frames, axis=0)
+
+            if self.paths.rerun and self.paths.cashflow_pkl.is_file():
+                # as in join_results: a rerun only covers part of the run, so the
+                # originally successful scenarios have to be carried over from the
+                # previous file - writing only the rerun ones would drop their cashflows
+                cashflows_prev = pd.read_pickle(self.paths.cashflow_pkl)
+                cashflows_prev = cashflows_prev.drop(
+                    index=joined_df.index.get_level_values("scenario").unique(),
+                    level="scenario",
+                    errors="ignore",
+                )
+                joined_df = pd.concat([cashflows_prev, joined_df], axis=0)
+
             joined_df.to_csv(self.paths.cashflow_csv, index=True)
             joined_df.to_pickle(self.paths.cashflow_pkl)
             self.logger.info("Result cashflow file created")
@@ -241,9 +313,18 @@ class SimulationRun:
 
         if scenario_frames:  # empty scenario_frames, if all scenarios fail during initialization
             joined_results = pd.concat(scenario_frames, axis=1)
+            results_run_prev = None
 
             if self.paths.rerun and self.paths.summary_pkl.is_file():  # only happens for infeasible scenarios
                 results_summary_prev = pd.read_pickle(self.paths.summary_pkl)
+                # the previous summary carries a run block of its own. Keep it for the
+                # scenarios it describes - those were not simulated again - but take it
+                # out of the results, so the block prepended below remains the only one
+                # and every (block, key) row of the merged summary stays unique
+                results_run_prev = results_summary_prev.loc[["run"]].drop(
+                    columns=joined_results.columns, errors="ignore"
+                )
+                results_summary_prev = results_summary_prev.drop(index="run", level="block")
                 joined_results = pd.concat([results_summary_prev, joined_results], axis=1)
 
             # apply same order of scenarios as in scenario input file
@@ -270,6 +351,11 @@ class SimulationRun:
             # convert to DataFrame and repeat for all scenarios
             results_run = pd.DataFrame([results_run] * len(joined_results.columns)).T
             results_run.columns = joined_results.columns
+
+            if results_run_prev is not None:
+                # scenarios carried over from the previous summary keep the run they
+                # were simulated in; only the rerun ones get this run's block
+                results_run[results_run_prev.columns] = results_run_prev
 
             joined_results = pd.concat(
                 [
@@ -315,6 +401,7 @@ class SimulationRun:
                     scenario_name=name,
                     status=_ScenarioStatus.FAILED,
                     extras={"exception": str(e), "traceback": traceback.format_exc()},
+                    worker_name=mp.current_process().name,
                 ),
                 queue=status_queue,
             )
@@ -351,6 +438,46 @@ class SimulationRun:
 
         self.scenario_status.to_csv(self.paths.status, index=True)
 
+        # update the large-scale mode progress bars
+        if self.progress_bar is not None:
+            self._update_horizon_bar(status_msg)
+            # advance the overall scenario bar once a scenario reaches a terminal state
+            if status_msg.status in _TERMINAL_STATUSES:
+                self.progress_bar.update(1)
+
+    def _get_horizon_bar(self, worker_name: str) -> tqdm:
+        """Return the horizon bar assigned to `worker_name`, assigning a free slot on first sight."""
+        bar = self._worker_bar_map.get(worker_name)
+        if bar is None:
+            assigned = set(self._worker_bar_map.values())
+            bar = next(b for b in self.horizon_bars if b not in assigned)
+            self._worker_bar_map[worker_name] = bar
+        return bar
+
+    def _update_horizon_bar(self, status_msg: _ScenarioStatusMessage) -> None:
+        """Drive the per-worker horizon progress bar according to the reported scenario status."""
+        if not self.horizon_bars or status_msg.worker_name is None:
+            return
+
+        bar = self._get_horizon_bar(status_msg.worker_name)
+        status = status_msg.status
+
+        if status == _ScenarioStatus.STARTED:
+            # total is not known until the scenario is initialized: show "initializing" instead of a counter
+            bar.reset()
+            bar.bar_format = "{desc}initializing"
+            bar.set_description(status_msg.scenario_name)
+        elif status == _ScenarioStatus.INITIALIZED and status_msg.n_horizons_total is not None:
+            bar.bar_format = None  # restore the default proportional bar layout
+            bar.reset(total=status_msg.n_horizons_total)
+            bar.set_description(status_msg.scenario_name)
+        elif status == _ScenarioStatus.COMPLETED_HORIZON:
+            bar.update(1)
+        elif status in _TERMINAL_STATUSES:
+            bar.reset()
+            bar.bar_format = "{desc}"
+            bar.set_description_str("idle")
+
 
 class ScenarioWorker:
     """
@@ -379,8 +506,19 @@ class ScenarioWorker:
         self._status_update = status_update
         self._status_queue = status_queue
 
-    def update_scenario_status(self, status: _ScenarioStatus, extras: dict[str, str] | None = None) -> None:
-        status_msg = _ScenarioStatusMessage(scenario_name=self._name, status=status, extras=extras)
+    def update_scenario_status(
+        self,
+        status: _ScenarioStatus,
+        extras: dict[str, str] | None = None,
+        n_horizons_total: int | None = None,
+    ) -> None:
+        status_msg = _ScenarioStatusMessage(
+            scenario_name=self._name,
+            status=status,
+            extras=extras,
+            worker_name=mp.current_process().name,
+            n_horizons_total=n_horizons_total,
+        )
 
         self._status_update(status_msg, self._status_queue)
 
@@ -436,7 +574,7 @@ class ScenarioWorker:
             return
 
         self._logger.info("Scenario fully initialized")
-        self.update_scenario_status(status=_ScenarioStatus.INITIALIZED)
+        self.update_scenario_status(status=_ScenarioStatus.INITIALIZED, n_horizons_total=scenario.nhorizons)
 
         try:
             for horizon_index in range(scenario.nhorizons):

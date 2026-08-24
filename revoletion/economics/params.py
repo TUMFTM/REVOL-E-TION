@@ -151,7 +151,7 @@ class TimeseriesParams(CostParams):
     Base dataclass to store all parameters needed for cost evaluation of a power flow.
     """
 
-    spec_power: str | float | int = 0.0
+    spec_energy: str | float | int = 0.0
     spec_dist: str | float | int = 0.0
     spec_time: str | float | int = 0.0
     fix: float = 0.0
