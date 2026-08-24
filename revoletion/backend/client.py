@@ -3,6 +3,7 @@ from typing import Self
 
 import httpx
 from revoletion_core.model import ScenarioModel
+from revoletion_core.types import RemoteObject
 
 
 class Client:
@@ -24,6 +25,12 @@ class Client:
         _ = response.raise_for_status()
 
         return ScenarioModel.model_validate(response.json())
+
+    async def get_remote_object(self, remote_object_id: str) -> RemoteObject:
+        response = await self._client.get(f"/objects/{remote_object_id}")
+        _ = response.raise_for_status()
+
+        return RemoteObject.model_validate(response.json())
 
     async def close(self) -> None:
         await self._client.aclose()

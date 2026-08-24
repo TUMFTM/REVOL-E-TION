@@ -10,9 +10,6 @@ import os
 import shutil
 import sys
 import threading
-
-from revoletion_core.utils import read_scenario_from_file
-
 import time as pytime
 import traceback
 import typing
@@ -21,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 from oemof import solph as solph
+from revoletion_core.utils import read_scenario_from_file
 
 from . import location, simulation, time, utils
 from . import logger as logger_fcs

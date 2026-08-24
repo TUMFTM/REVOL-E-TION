@@ -36,6 +36,8 @@ dependencies = [
     "polars[rtcompat]",
     "prefect>=3.7.4",
     "httpx>=0.28",
+    "aiofiles",
+    "aiocsv"
 ]
 
 [dependency-groups]
@@ -59,7 +61,7 @@ revoletion = ["data/*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 # Enable import sorting.

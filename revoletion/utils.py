@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import ast
 import importlib.metadata
 import importlib.util
 import logging
