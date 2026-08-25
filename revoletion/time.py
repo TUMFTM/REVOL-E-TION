@@ -35,11 +35,11 @@ def duration2steps(duration: pd.Timedelta, timestep: pd.Timedelta) -> int:
     ValueError
         If `duration` is not exactly divisible by `timestep`.
     """
-    
+
     ratio = duration / timestep
     if not ratio.is_integer():
         raise ValueError(f"Duration {duration} is not divisible by timestep {timestep}")
-    
+
     return int(ratio)
 
 
@@ -672,7 +672,7 @@ class Timestep:
         Timedelta('0 days 02:00:00')
         """
         return cls(_td=pd.Timedelta(convert_freqstr(timestep_str)))
-    
+
 
 @dataclass(frozen=True)
 class TimeSlice:
@@ -698,6 +698,7 @@ class TimeSlice:
     dti_extd : slice
         Slice equivalent to ``slice(start, end + 1)``.
     """
+
     start: int
     end: int
 
@@ -724,11 +725,15 @@ class TimeSlice:
         ValueError
             If the duration between timestamps is not an integer multiple of the time step.
         """
-        timestep=tf.timestep.td
-        start = duration2steps(
-            duration=tf.start - tf.start_ref,
-            timestep=timestep,
-        ) if ref else 0
+        timestep = tf.timestep.td
+        start = (
+            duration2steps(
+                duration=tf.start - tf.start_ref,
+                timestep=timestep,
+            )
+            if ref
+            else 0
+        )
         end = start + duration2steps(
             duration=tf.end - tf.start,
             timestep=timestep,
@@ -758,7 +763,7 @@ class TimeSlice:
             Slice equivalent to ``slice(start, end)``.
         """
         return slice(self.start, self.end)
-    
+
     @cached_property
     def dti_extd(self) -> slice:
         """
@@ -969,7 +974,7 @@ class TimeFrame:
             The last value of ``dti_extd``.
         """
         return self.dti_extd[-1]
-    
+
     @cached_property
     def idx(self) -> TimeSlice:
         """
@@ -981,7 +986,7 @@ class TimeFrame:
             Timeslice with indexing starting at ``self.start_ref``.
         """
         return TimeSlice.from_timeframe(tf=self, ref=True)
-    
+
     @cached_property
     def idx_tf(self) -> TimeSlice:
         """

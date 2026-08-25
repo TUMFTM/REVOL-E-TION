@@ -39,7 +39,8 @@ dependencies = [
     "httpx>=0.28",
     "aiofiles",
     "aiocsv",
-    "tqdm"
+    "tqdm",
+    "pyarrow>=25.0.1",
 ]
 
 [dependency-groups]
@@ -53,6 +54,7 @@ dev = [
     "jupyterlab",
     "pre-commit",
     "pymupdf",
+    "pyright>=1.1.411",
 ]
 
 [tool.setuptools.packages.find]

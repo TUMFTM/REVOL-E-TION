@@ -406,9 +406,8 @@ class SimulationRun:
                 queue=status_queue,
             )
 
-            self.logger.error(
-                msg=f"{str(e)} - continue on next scenario",
-                exc_info=True,
+            self.logger.exception(
+                msg=f"{traceback.format_exc()} - {e!s} - continue on next scenario",
             )
 
     def read_status_queue(self, queue: mpq.Queue):
@@ -567,9 +566,8 @@ class ScenarioWorker:
             self.update_scenario_status(
                 status=_ScenarioStatus.FAILED, extras={"exception": str(e), "traceback": traceback.format_exc()}
             )
-            self._logger.error(
-                msg=f"{str(e)} - continue on next scenario",
-                exc_info=True,
+            self._logger.exception(
+                msg=f"{traceback.format_exc()} - {e!s} - continue on next scenario",
             )
             return
 
@@ -595,8 +593,9 @@ class ScenarioWorker:
                 extras={"exception": str(e), "traceback": traceback.format_exc()},
             )
 
-            self._logger.error(
-                msg=f"{str(e)} - continue on next scenario", exc_info=(not isinstance(e, simulation.OptimizationError))
+            self._logger.exception(
+                msg=f"{traceback.format_exc()} - {e!s} - continue on next scenario",
+                exc_info=(not isinstance(e, simulation.OptimizationError)),
             )
         finally:
             scenario.process_results()

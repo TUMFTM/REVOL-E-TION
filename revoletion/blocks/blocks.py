@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import ast
@@ -11,9 +9,10 @@ from typing import TYPE_CHECKING, Any, override
 import numpy as np
 import pandas as pd
 import windpowerlib
+from revoletion_core.model import OPEX_SPEC_DEFICIT_DEFAULT
 
 from revoletion import battery as bat
-from revoletion import data_manager, energy, events, mobility, models, peak_periods, size, time, utils
+from revoletion import data_manager, energy, events, mobility, peak_periods, size, time, utils
 from revoletion import economics as eco
 from revoletion import scenario as scn
 
@@ -367,7 +366,7 @@ class SystemCore(ElectricBlock):
     def params_preprocessing(self):
         # opex_spec_deficit is optional in the scenario file
         if not hasattr(self, "opex_spec_deficit"):
-            self.opex_spec_deficit = models.OPEX_SPEC_DEFICIT_DEFAULT
+            self.opex_spec_deficit = OPEX_SPEC_DEFICIT_DEFAULT
 
         self.expansion_equal = True if self.invest_acdc == "equal" or self.invest_dcac == "equal" else False
 
@@ -1295,7 +1294,7 @@ class Fleet(SinkBlock):
         # Timedelta of frequency of log file
         freq_log = pd.infer_freq(df.index).lower()
         # pd.Timedelta('h') fails --> add '1' --> pd.Timedelta('1h')
-        freq_log = pd.Timedelta((freq_log if freq_log[0].isdigit() else "1" + freq_log))
+        freq_log = pd.Timedelta(freq_log if freq_log[0].isdigit() else "1" + freq_log)
 
         # Compare Timedelta objects instead of strings to avoid problems (1h vs. 60min)
         if freq_log != self.scenario.timestep.td:
