@@ -3,6 +3,7 @@ import base64
 import io
 import logging
 import pathlib
+import re
 import zipfile
 from pathlib import Path
 from typing import override
@@ -11,7 +12,7 @@ import aiocsv
 import aiofiles
 from prefect import flow, get_run_logger
 from prefect.logging.loggers import LoggingAdapter
-from revoletion_core.model import ScenarioModel
+from revoletion_core.model import PolymorphicBlock, ScenarioModel
 from revoletion_core.types import CollectedRef, RemoteObject, RunParameters, TimeSeries, collect_refs
 
 from revoletion.backend.client import Client
@@ -98,7 +99,7 @@ async def _fetch_and_save_remote_object(
 
 async def _download_remote_objects_and_save(
     collected_refs: list[CollectedRef], destination_dir: Path, logger: Logger
-) -> dict[str, Path]:
+) -> dict[str, str]:
     downloadable_refs = [ref for ref in collected_refs if ref.target_type is TimeSeries]
     async with Client(BACKEND_URL, WORKER_TOKEN) as client:
         semaphore = asyncio.Semaphore(_MAX_CONCURRENT_DOWNLOADS)
@@ -118,14 +119,24 @@ async def _download_remote_objects_and_save(
 
     tuples: list[tuple[str, Path]] = [t.result() for t in tasks]
 
-    mapping: dict[str, Path] = {}
+    mapping: dict[str, str] = {}
     for key, value in tuples:
-        mapping[key] = value
+        mapping[key] = str(value)
 
     return mapping
 
 
-async def _replace_ids_in_csv(file_path: Path, mapping: dict[str, Path]) -> Path:
+def _get_block_id_name_mapping(scenarios: list[ScenarioModel]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for scenario in scenarios:
+        block_configs: dict[str, PolymorphicBlock] = scenario.block_configs
+        for key, value in block_configs.items():
+            mapping[key] = value.name
+
+    return mapping
+
+
+async def _replace_ids_in_csv(file_path: Path, mapping: dict[str, str]) -> Path:
     """
     Replaces ID values across all cells in a CSV file and safely overwrites it.
     """
@@ -144,10 +155,13 @@ async def _replace_ids_in_csv(file_path: Path, mapping: dict[str, Path]) -> Path
         reader = aiocsv.AsyncReader(infile)
         writer = aiocsv.AsyncWriter(outfile)
 
-        row: list[str]
+        sorted_keys = sorted(mapping.keys(), key=len, reverse=True)
+        pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
+
         async for row in reader:
-            # Cast to str() because mapping values are Path objects
-            await writer.writerow([str(mapping.get(cell, cell)) for cell in row])
+            # Replace mapped IDs in every cell of the row
+            new_row = [pattern.sub(lambda m: mapping[m.group(0)], cell) for cell in row]
+            await writer.writerow(new_row)
 
     # Atomically overwrite the original file
     _ = temp_path.replace(resolved_path)
@@ -216,13 +230,17 @@ async def scenario_run_flow(parameters: RunParameters) -> None:
     scenarios, collected_refs = await _download_scenarios_and_collect_refs(parameters.scenario_hashes, logger)
 
     scenario_path: Path = _save_as_flipped_csv(scenarios, download_dir, logger)
-    remote_objects_id_path_mapping: dict[str, Path] = await _download_remote_objects_and_save(
+
+    remote_objects_id_path_mapping: dict[str, str] = await _download_remote_objects_and_save(
         collected_refs, download_dir, logger
     )
 
-    logger.info("mapping: %s", remote_objects_id_path_mapping)
+    block_name_id_mapping = _get_block_id_name_mapping(scenarios)
 
-    scenario_path: Path = await _replace_ids_in_csv(scenario_path, remote_objects_id_path_mapping)
+    mapping = {**remote_objects_id_path_mapping, **block_name_id_mapping}
+    logger.info("mapping: %s", mapping)
+
+    scenario_path: Path = await _replace_ids_in_csv(scenario_path, mapping)
 
     async with aiofiles.open(scenario_path, mode="r", encoding="utf-8") as file:
         content: str = await file.read()

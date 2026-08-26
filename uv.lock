@@ -4046,15 +4046,15 @@ tests = [
 
 [[package]]
 name = "revoletion-core"
-version = "1.0.0.dev38+ga97d891f2"
+version = "1.0.0.dev40+g72ce63bbd"
 source = { registry = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/simple" }
 dependencies = [
     { name = "pandas" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/02554ae3f2ccaeca775e13111408f59c6fc8ad5944337c01330348087501e02a/revoletion_core-1.0.0.dev38+ga97d891f2.tar.gz", hash = "sha256:02554ae3f2ccaeca775e13111408f59c6fc8ad5944337c01330348087501e02a" }
+sdist = { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/e967e5174c0f5f768696a5e8f1bcae986b2ae2b1567bf97ea87ed9e683ab08fd/revoletion_core-1.0.0.dev40+g72ce63bbd.tar.gz", hash = "sha256:e967e5174c0f5f768696a5e8f1bcae986b2ae2b1567bf97ea87ed9e683ab08fd" }
 wheels = [
-    { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/c5378a818fbc49c5b0a4acce480649730ea78b9b50ce1d6f08b4ba4a359ba49c/revoletion_core-1.0.0.dev38+ga97d891f2-py3-none-any.whl", hash = "sha256:c5378a818fbc49c5b0a4acce480649730ea78b9b50ce1d6f08b4ba4a359ba49c" },
+    { url = "https://gitlab.lrz.de/api/v4/projects/260872/packages/pypi/files/ca206da3bc29968cc78e8ce2820976b0265cb25a226017c151639e66eeb9c6e0/revoletion_core-1.0.0.dev40+g72ce63bbd-py3-none-any.whl", hash = "sha256:ca206da3bc29968cc78e8ce2820976b0265cb25a226017c151639e66eeb9c6e0" },
 ]
 
 [[package]]
