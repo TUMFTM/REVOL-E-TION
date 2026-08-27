@@ -101,7 +101,7 @@ def format_starttime(value: JsonValue) -> str:
 def unwrap_ref(value: JsonValue) -> JsonValue:
     """Unwrap a Ref (e.g. {'id': 'dem_timeseries'}) to its plain id."""
 
-    if isinstance(value, dict) and set(value.keys()) == {"id", "ref_type"}:
+    if isinstance(value, dict) and set(value.keys()) == {"id", "type"}:
         identifier = value["id"]
         return identifier
 

@@ -186,7 +186,7 @@ async def _download_scenarios_and_collect_refs(
     """
     Downloads the scenarios identified by their hashes as well as
     the remote objects identified by their ids and
-    ref_types from the backend.
+    types from the backend.
     """
     logger.info("Downloading scenarios { %s } from %s", str.join(", ", hashes), BACKEND_URL)
     async with Client(BACKEND_URL, WORKER_TOKEN) as client:
