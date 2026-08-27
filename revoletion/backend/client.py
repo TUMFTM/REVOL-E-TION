@@ -3,7 +3,7 @@ from typing import Self
 
 import httpx
 from revoletion_core.model import ScenarioModel
-from revoletion_core.types import RemoteObject
+from revoletion_core.types import RemoteObject, Result
 
 
 class Client:
@@ -32,6 +32,10 @@ class Client:
 
         return RemoteObject.model_validate(response.json())
 
+    async def upload_result(self, result: Result) -> None:
+        response = await self._client.post("/results", json=result.model_dump(mode="json"))
+        _ = response.raise_for_status()
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -39,6 +43,9 @@ class Client:
         return self
 
     async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> bool | None:
         await self.close()

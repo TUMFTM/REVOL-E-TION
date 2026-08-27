@@ -1,4 +1,5 @@
-# TODO: This is a mainly AI-GENERATED helper lib, that should not live forever. Its only used to glue scientific and backend together without the need to refactor scientific heavily.
+# TODO: This is a mainly AI-GENERATED helper lib, that should not live forever.
+# Its only used to glue scientific and backend together without the need to refactor scientific heavily.
 
 """
 Library that converts a REVOL-E-TION `ScenarioModel` back into the scenario
