@@ -427,7 +427,7 @@ class Scenario:
         for block in self.block_registry.get("TopLevelBlock", {}).values():
             block.post_scenario()
 
-        self.aggregator.aggregate()
+        self.aggregator.evaluate()
 
         for e in self.energies.values():
             e.evaluate()

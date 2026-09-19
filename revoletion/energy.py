@@ -3,14 +3,14 @@ from abc import ABC
 import pandas as pd
 
 from revoletion.economics import EcoParams
-from revoletion.economics.abstractclasses import CalculableTimeseriesElement, CostType, TimeseriesElement
+from revoletion.economics.model import TimeseriesEvaluator, CostType, TimeseriesElement
 
 
 class EnergyElement(TimeseriesElement, ABC):
     _TYPE = CostType.ENERGY
 
 
-class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
+class EnergyEvaluator(TimeseriesEvaluator, EnergyElement):
     def _calc_eval(self, flow: pd.Series) -> float:
         return flow[self.eco.dti_eval].to_numpy().sum() * self.eco.timestep_hours
 
@@ -19,7 +19,7 @@ class EnergyEvaluator(CalculableTimeseriesElement, EnergyElement):
         return f"{self._TYPE.value.label}_{self.name}_"
 
 
-class EnergyAggregator(CalculableTimeseriesElement, EnergyElement):
+class EnergyAggregator(TimeseriesEvaluator, EnergyElement):
     """
     This class is used to aggregate energies.
 

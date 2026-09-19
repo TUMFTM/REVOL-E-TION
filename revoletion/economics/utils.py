@@ -26,6 +26,34 @@ class Depreciation(Enum):
     LINEAR = "linear"
 
 
+def dot_scalar(a: float | npt.ArrayLike, b: float | npt.ArrayLike) -> np.number:
+    """
+    Compute the dot product of two inputs.
+
+    Unlike ``numpy.dot``, this function also accepts scalar inputs.
+    The inputs are multiplied elementwise using NumPy broadcasting, and the sum of the resulting product is returned.
+
+    Parameters
+    ----------
+    a : array_like
+        First input. May be a scalar or an array.
+    b : array_like
+        Second input. May be a scalar or an array.
+
+    Returns
+    -------
+    scalar
+        Sum of the elementwise product of ``a`` and ``b``.
+        For one-dimensional arrays, this is equivalent to the standard dot product.
+
+    See Also
+    --------
+    numpy.dot : Standard NumPy dot product.
+    numpy.sum : Sum reduction.
+    """
+    return np.sum(np.asarray(a) * np.asarray(b))
+
+
 def discount(
     future_value: float,
     periods: int | npt.NDArray[np.integer],
@@ -113,7 +141,7 @@ def calc_residual_value(
 
 
 def transform_scalar_var(
-    value: str | float, dti: pd.DatetimeIndex, data_dir: Path, allow_scalar: bool = False
+    value: str | float, dti: pd.DatetimeIndex, data_dir: Path, allow_scalar: bool = True
 ) -> pd.Series | float:
     """
     Transform a value holding either the path to a csv file containing a timeseries or a scalar
